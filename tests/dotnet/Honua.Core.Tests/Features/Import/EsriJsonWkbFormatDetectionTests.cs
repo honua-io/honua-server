@@ -18,6 +18,7 @@ public sealed class EsriJsonWkbFormatDetectionTests
     private readonly FileFormatDetectionService _service =
         new(NullLogger<FileFormatDetectionService>.Instance);
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("sample.esrijson")]
     [InlineData("SAMPLE.EsriJson")]
@@ -26,6 +27,7 @@ public sealed class EsriJsonWkbFormatDetectionTests
         _service.DetectFormat(fileName).Should().Be(SupportedFileFormat.EsriJson);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("sample.wkb")]
     [InlineData("SAMPLE.WKB")]
@@ -34,6 +36,7 @@ public sealed class EsriJsonWkbFormatDetectionTests
         _service.DetectFormat(fileName).Should().Be(SupportedFileFormat.Wkb);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetSupportedExtensions_IncludesEsriJsonAndWkb()
     {
@@ -42,6 +45,7 @@ public sealed class EsriJsonWkbFormatDetectionTests
         extensions.Should().Contain(".wkb");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DetectFormatFromContent_EsriFeatureSet_ReturnsEsriJson_NotGeoJson()
     {
@@ -55,6 +59,7 @@ public sealed class EsriJsonWkbFormatDetectionTests
             .Should().Be(SupportedFileFormat.EsriJson);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DetectFormatFromContent_EsriPolygonRings_ReturnsEsriJson()
     {
@@ -68,6 +73,7 @@ public sealed class EsriJsonWkbFormatDetectionTests
             .Should().Be(SupportedFileFormat.EsriJson);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(true)]  // little-endian (NDR)
     [InlineData(false)] // big-endian (XDR)
@@ -81,6 +87,7 @@ public sealed class EsriJsonWkbFormatDetectionTests
         _service.DetectFormatFromContent(wkb, "payload.bin").Should().Be(SupportedFileFormat.Wkb);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DetectFormatFromContent_EwkbWithSrid_ReturnsWkb()
     {
@@ -91,6 +98,7 @@ public sealed class EsriJsonWkbFormatDetectionTests
         _service.DetectFormatFromContent(wkb, "payload.bin").Should().Be(SupportedFileFormat.Wkb);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DetectFormatFromContent_GeoJsonFeatureCollection_StillReturnsGeoJson()
     {

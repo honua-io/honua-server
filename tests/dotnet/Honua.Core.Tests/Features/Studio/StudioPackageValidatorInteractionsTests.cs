@@ -55,6 +55,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         Assert.Empty(InteractionCodes(summary));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("featureDoubleClick", "studio.interaction.event.unsupported")]
     [InlineData("", "studio.interaction.event.unsupported")]
@@ -254,6 +255,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         AssertInvalidWith(summary, "studio.interaction.id.too-long");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("[]")]
     [InlineData("\"not-an-object\"")]
@@ -297,6 +299,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         AssertInvalidWith(summary, "studio.interactions.array");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("interactions", "studio.interactions.array")]
     [InlineData("layout", "studio.layout.object")]
@@ -308,6 +311,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         AssertInvalidWith(summary, expectedCode);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("\"y\":0")]
     [InlineData("\"x\":0")]
@@ -357,6 +361,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         Assert.Contains(summary.Diagnostics, d => d.Path == "/body/layout/items/0/typoItem");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("\"args\":null", "studio.interaction.args.object")]
     [InlineData("\"disabled\":null", "studio.interaction.disabled.boolean")]
@@ -379,6 +384,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         AssertInvalidWith(summary, expectedCode);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(25)]
@@ -397,6 +403,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         AssertInvalidWith(summary, "studio.layout.grid.columns.invalid");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(1)]
     [InlineData(12)]

@@ -37,6 +37,7 @@ public sealed class CurveGeometryConverterTests
         action.Should().Throw<ArgumentException>().WithMessage("*budget*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("[0,1,2,3,4]")]
     [InlineData("[0,1e999]")]

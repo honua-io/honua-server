@@ -40,6 +40,7 @@ public sealed class FilterExpressionServiceParseBoundsTests
         { FilterLanguage.ArcGisSql, string.Join(" AND ", Enumerable.Repeat("name = 'a'", OperandsBeyondLimit)) }
     };
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(FlatLogicalSequences))]
     public void Parse_FlatLogicalSequenceBeyondOperandLimit_ReturnsFailure(FilterLanguage language, string filter)

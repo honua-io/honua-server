@@ -46,7 +46,7 @@ require(
     "run architecture tests without rebuilding or restoring",
 )
 require(
-    r"dotnet test tests/dotnet/Honua\.Ai\.Tests/Honua\.Ai\.Tests\.csproj \\\s+--no-build \\\s+--no-restore",
+    r"dotnet test tests/dotnet/Honua\.Ai\.UnitTests/Honua\.Ai\.UnitTests\.csproj \\\s+--no-build \\\s+--no-restore",
     "run the focused MCP roster drift smoke without rebuilding or restoring",
 )
 require(
@@ -63,7 +63,7 @@ def require_local_mcp_filter(text: str) -> None:
     """
     expected = "FullyQualifiedName~McpTaxonomyAlignmentTests|FullyQualifiedName~CapabilityRegistryConformanceTests"
     invocation = re.search(
-        r"dotnet test tests/dotnet/Honua\.Ai\.Tests/Honua\.Ai\.Tests\.csproj"
+        r"dotnet test tests/dotnet/Honua\.Ai\.UnitTests/Honua\.Ai\.UnitTests\.csproj"
         r"(?P<arguments>(?:[^\n]*\\\n)*[^\n]*)", text)
     if invocation is None:
         raise AssertionError("local pre-PR check must execute the MCP test project")
@@ -325,7 +325,7 @@ require(
     text=TEXT,
 )
 require(
-    r'FIXTURE="tests/dotnet/Honua\.TestKit/PostgresFixture\.cs"[\s\S]*?'
+    r'FIXTURE="tests/dotnet/Honua\.TestKit\.Postgres/PostgresFixture\.cs"[\s\S]*?'
     r'resolve_image\(\) \{[\s\S]*?grep[^\n]+"\$\{FIXTURE\}"[\s\S]*?\}[\s\S]*?'
     r'image="\$\(resolve_image \|\| true\)"[\s\S]*?'
     r'nohup docker pull "\$\{image\}" > "\$\{LOG_FILE\}" 2>&1 &$',
@@ -382,3 +382,11 @@ if scope_mode(FORMAT_SCOPE_SCRIPT, FORMAT_SCOPE="affected", GITHUB_EVENT_NAME="m
     )
 
 print("Lean-gate command contract fixtures passed.")
+
+# Dynamic isolated Fast projects must be the same reviewed catalog in build and run.
+require(r'python3 scripts/ci/test-projects\.py gate-fast-projects',
+        'seed catalogued unit Fast projects in the combined build', text=SCOPE_TEXT)
+require(r'for project in "\$\{REQUIRED_TEST_PROJECTS\[@\]\}" "\$\{UNIT_FAST_TEST_PROJECTS\[@\]\}"',
+        'union dynamic Fast smoke inputs with existing required test projects', text=SCOPE_TEXT)
+require(r'python3 scripts/ci/test-projects\.py gate-fast\s',
+        'execute the catalogued isolated Fast smoke without another build')

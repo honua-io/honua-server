@@ -12,6 +12,7 @@ public sealed class GeocodeLimitEnforcerTests
     private static GeocodeProviderCapabilities Caps(int? rateLimit = null, int maxBatch = 100)
         => new() { RateLimitPerMinute = rateLimit, MaxBatchSize = maxBatch };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CheckRequestRate_WithinLimit_Allows()
     {
@@ -24,6 +25,7 @@ public sealed class GeocodeLimitEnforcerTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CheckRequestRate_OverLimit_RejectsWithRetryAfter()
     {
@@ -43,6 +45,7 @@ public sealed class GeocodeLimitEnforcerTests
         Assert.True(rejected.RetryAfter > TimeSpan.Zero);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CheckRequestRate_WindowResets_AllowsAgain()
     {
@@ -59,6 +62,7 @@ public sealed class GeocodeLimitEnforcerTests
         Assert.True(enforcer.CheckRequestRate("amazon-location", caps).Allowed);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CheckRequestRate_ScopesAreIndependent()
     {
@@ -72,6 +76,7 @@ public sealed class GeocodeLimitEnforcerTests
         Assert.False(enforcer.CheckRequestRate("azure-maps", caps, scope: "tenant-a").Allowed);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CheckRequestRate_NoAdvertisedLimit_AlwaysAllows()
     {
@@ -84,6 +89,7 @@ public sealed class GeocodeLimitEnforcerTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CheckRequestRate_EnforcementDisabled_AlwaysAllows()
     {
@@ -95,6 +101,7 @@ public sealed class GeocodeLimitEnforcerTests
         Assert.True(enforcer.CheckRequestRate("azure-maps", caps).Allowed);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CheckBatch_WithinProviderCap_Allows()
     {
@@ -106,6 +113,7 @@ public sealed class GeocodeLimitEnforcerTests
         Assert.Equal(100, decision.EffectiveLimit);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CheckBatch_OverProviderCap_Rejects()
     {
@@ -119,6 +127,7 @@ public sealed class GeocodeLimitEnforcerTests
         Assert.Contains(GeocodeLimitMetadata.BatchSizeMarker, decision.Reason);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CheckBatch_LicenseCapLowerThanProvider_UsesLicenseCap()
     {

@@ -42,10 +42,9 @@ internal static class ArchitectureTestHelpers
     /// Loads every assembly that may carry integration tests with endpoint /
     /// operation coverage attributes: the monolithic <c>Honua.Server.Tests</c>
     /// plus each extracted per-protocol test project
-    /// (<c>Honua.Protocols.&lt;X&gt;.Tests</c>). They are discovered by globbing
-    /// the test output directory, so a newly extracted protocol test project is
-    /// picked up automatically once Architecture.Tests references it (which puts
-    /// its assembly in the output directory).
+    /// (<c>Honua.Protocols.&lt;X&gt;.Tests</c>). The catalog generates explicit
+    /// project references and a required assembly inventory. Missing assemblies
+    /// fail discovery rather than silently reducing coverage.
     /// </summary>
     /// <remarks>
     /// Coverage scans must union these assemblies: as protocols are physically
@@ -57,42 +56,28 @@ internal static class ArchitectureTestHelpers
     internal static IReadOnlyList<Assembly> IntegrationTestAssemblies()
     {
         var baseDir = AppContext.BaseDirectory;
-        // Honua.Ai.Tests carries the MCP protocol-surface tests (MCP lives in
-        // Honua.Ai, not a standalone Honua.Protocols.Mcp), so it holds endpoint /
-        // operation coverage that the scans must see alongside the Server.Tests
-        // and per-protocol Honua.Protocols.*.Tests assemblies.
-        var patterns = new[]
+        var inventory = Path.Combine(baseDir, "test-coverage-assemblies.txt");
+        if (!File.Exists(inventory))
         {
-            "Honua.Server.Tests.dll",
-            "Honua.Protocols.*.Tests.dll",
-            "Honua.Ai.Tests.dll",
-            "Honua.Worker.Gdal.Tests.dll",
-            // honua-server#2947: provider-http-smoke suite. Named Honua.ProviderSmoke.Tests
-            // (not Honua.Protocols.*.Tests) since it spans multiple protocol families
-            // against multiple provider fixtures, so it needs its own explicit glob entry.
-            "Honua.ProviderSmoke.Tests.dll"
-        };
+            throw new InvalidOperationException("Required test assembly catalog is missing from architecture output.");
+        }
+
+        var names = File.ReadAllLines(inventory).Where(name => !string.IsNullOrWhiteSpace(name)).ToArray();
+        if (names.Length == 0)
+        {
+            throw new InvalidOperationException("Required test assembly catalog is empty.");
+        }
 
         var assemblies = new List<Assembly>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var pattern in patterns)
+        foreach (var name in names)
         {
-            foreach (var path in Directory.EnumerateFiles(baseDir, pattern))
+            var path = Path.Combine(baseDir, name);
+            if (!File.Exists(path))
             {
-                if (!seen.Add(Path.GetFileName(path)))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    assemblies.Add(Assembly.LoadFrom(path));
-                }
-                catch (BadImageFormatException)
-                {
-                    // Native / mixed-mode sidecar that happens to match the glob — skip.
-                }
+                throw new InvalidOperationException($"Required coverage assembly is missing: {name}");
             }
+
+            assemblies.Add(Assembly.LoadFrom(path));
         }
 
         return assemblies;

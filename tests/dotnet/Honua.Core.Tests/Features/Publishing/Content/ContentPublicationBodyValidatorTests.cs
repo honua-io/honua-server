@@ -23,6 +23,7 @@ public sealed class ContentPublicationBodyValidatorTests
     private const string VegaLiteSpec =
         """{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","mark":"bar"}""";
 
+    [Trait("Tier", "Fast")]
     [Operation(Operations.Create)]
     [Theory]
     // Every non-chart panel kind the report and dashboard documents allow.
@@ -44,6 +45,7 @@ public sealed class ContentPublicationBodyValidatorTests
         error.Message.Should().Contain(kind);
     }
 
+    [Trait("Tier", "Fast")]
     [Operation(Operations.Create)]
     [Theory]
     [InlineData("map")]
@@ -58,6 +60,7 @@ public sealed class ContentPublicationBodyValidatorTests
         Capture(ContentPublicationKind.Report, payload).Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Operation(Operations.Create)]
     [Theory]
     // Absent, explicitly null, an empty object, an empty string, and a whitespace string are all

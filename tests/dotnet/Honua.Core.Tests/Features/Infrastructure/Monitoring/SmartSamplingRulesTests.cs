@@ -23,6 +23,7 @@ public class SmartSamplingRulesTests
         _samplingRules = new SmartSamplingRules(_logger, _vipClients);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("auth.login", true, "Critical operation")]
     [InlineData("user.create", true, "Critical operation")]
@@ -55,6 +56,7 @@ public class SmartSamplingRulesTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EvaluateSampling_ErrorCondition_ReturnsAlwaysSample()
     {
@@ -75,6 +77,7 @@ public class SmartSamplingRulesTests
         Assert.Equal(1.0, decision.ConfidenceScore);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EvaluateSampling_HttpErrorStatus_ReturnsAlwaysSample()
     {
@@ -95,6 +98,7 @@ public class SmartSamplingRulesTests
         Assert.Equal(1.0, decision.ConfidenceScore);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(15000, true, "Large operation (high feature count)")]
     [InlineData(20 * 1024 * 1024, true, "Large operation (high feature count)")] // 20MB data
@@ -119,6 +123,7 @@ public class SmartSamplingRulesTests
         Assert.Contains(expectedReason, decision.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(6000, true, "Slow operation detected")]
     [InlineData(1000, null, "No smart rules matched, defer to adaptive sampling")]
@@ -141,6 +146,7 @@ public class SmartSamplingRulesTests
         Assert.Contains(expectedReason, decision.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("vip-client-1", true, "VIP client operation")]
     [InlineData("premium-user", true, "VIP client operation")]
@@ -165,6 +171,7 @@ public class SmartSamplingRulesTests
         Assert.Contains(expectedReason, decision.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("spatial.buffer", 2000, 3, true, true, "Geospatially complex operation")]
     [InlineData("geometry.union", 500, 2, false, null, "No smart rules matched, defer to adaptive sampling")]
@@ -192,6 +199,7 @@ public class SmartSamplingRulesTests
         Assert.Contains(expectedReason, decision.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EvaluateSampling_PerformanceBaselineExceeded_ReturnsAlwaysSample()
     {
@@ -214,6 +222,7 @@ public class SmartSamplingRulesTests
         Assert.Equal(0.7, decision.ConfidenceScore);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("personal.data.access", null, true, "Security-sensitive operation")]
     [InlineData("user.profile.update", null, true, "Security-sensitive operation")]
@@ -239,6 +248,7 @@ public class SmartSamplingRulesTests
         Assert.Contains(expectedReason, decision.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("experimental.feature", true, "New or untested code path")]
     [InlineData("beta.endpoint", true, "New or untested code path")]
@@ -262,6 +272,7 @@ public class SmartSamplingRulesTests
         Assert.Contains(expectedReason, decision.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(85, 90, 1200, 95, 80, true, "High business value under system stress")]
     [InlineData(85, 90, 1200, 95, 30, false, "System under stress, low business value")]
@@ -291,6 +302,7 @@ public class SmartSamplingRulesTests
         Assert.Contains(expectedReason, decision.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void UpdatePerformanceBaseline_ValidInput_UpdatesBaseline()
     {
@@ -316,6 +328,7 @@ public class SmartSamplingRulesTests
         Assert.Equal("Performance baseline exceeded", decision.Reason);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AddVipClient_ValidClientId_AddsToVipList()
     {
@@ -341,6 +354,7 @@ public class SmartSamplingRulesTests
         Assert.Equal("VIP client operation", decision.Reason);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RemoveVipClient_ExistingClient_RemovesFromVipList()
     {
@@ -379,6 +393,7 @@ public class SmartSamplingRulesTests
         Assert.Contains("No smart rules matched", decisionAfter.Reason);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EvaluateSampling_NullContext_ReturnsNoSample()
     {
@@ -391,6 +406,7 @@ public class SmartSamplingRulesTests
         Assert.Equal(0.0, decision.ConfidenceScore);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("bulk.import", true)]
     [InlineData("batch.process", true)]

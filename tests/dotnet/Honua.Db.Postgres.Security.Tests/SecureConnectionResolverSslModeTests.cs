@@ -19,6 +19,7 @@ namespace Honua.Db.Postgres.Security.Tests;
 /// </summary>
 public sealed class SecureConnectionResolverSslModeTests
 {
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData("Allow")]
@@ -51,6 +52,7 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Contains("allows plaintext fallback", exception.InnerException!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData("Host=replica.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require", "resolved host does not match configured host")]
@@ -85,6 +87,7 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Contains(expectedMessage, exception.InnerException!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public async Task ResolveConnectionStringAsync_SecretReferenceWithoutDeclaredHostOrPort_ResolvesWithoutTamperCheck()
@@ -121,6 +124,7 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Equal(resolvedConnectionString, resolved);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public async Task ResolveConnectionStringAsync_SecretReferenceWithApiPersistedHostPlaceholder_ResolvesWithoutTamperCheck()
@@ -158,6 +162,7 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Equal(resolvedConnectionString, resolved);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData("Options=-c statement_timeout=0")]
@@ -184,6 +189,7 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.DoesNotContain("secret", exception.InnerException.Message, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData("Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require")]
@@ -200,6 +206,7 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Equal(resolvedConnectionString, resolved);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData("Host=other.example.net;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require")]
@@ -223,6 +230,7 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Contains("not permitted by the connection host policy", exception.InnerException!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public async Task ResolveConnectionStringAsync_ResolvedHostInsideHostPolicy_Resolves()
@@ -267,6 +275,7 @@ public sealed class SecureConnectionResolverSslModeTests
             connectionDriverRegistry: null,
             hostAllowlist: hostAllowlist);
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData("honua")]

@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Configuration;
 /// </summary>
 public class ConfigurationExtensionsTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsFeatureEnabled_WithTrueValue_ReturnsTrue()
     {
@@ -29,6 +30,7 @@ public class ConfigurationExtensionsTests
         Assert.True(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsFeatureEnabled_WithOneValue_ReturnsTrue()
     {
@@ -47,6 +49,7 @@ public class ConfigurationExtensionsTests
         Assert.True(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsFeatureEnabled_WithYesValue_ReturnsTrue()
     {
@@ -65,6 +68,7 @@ public class ConfigurationExtensionsTests
         Assert.True(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsFeatureEnabled_WithOnValue_ReturnsTrue()
     {
@@ -83,6 +87,7 @@ public class ConfigurationExtensionsTests
         Assert.True(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsFeatureEnabled_WithFalseValue_ReturnsFalse()
     {
@@ -101,6 +106,7 @@ public class ConfigurationExtensionsTests
         Assert.False(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsFeatureEnabled_WithMissingKey_ReturnsFalse()
     {
@@ -116,6 +122,7 @@ public class ConfigurationExtensionsTests
         Assert.False(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsFeatureEnabled_WithEmptyValue_ReturnsFalse()
     {
@@ -134,6 +141,7 @@ public class ConfigurationExtensionsTests
         Assert.False(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsFeatureEnabled_CaseInsensitive_ReturnsTrue()
     {
@@ -152,6 +160,7 @@ public class ConfigurationExtensionsTests
         Assert.True(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetRequiredValue_WithExistingKey_ReturnsValue()
     {
@@ -170,6 +179,7 @@ public class ConfigurationExtensionsTests
         Assert.Equal("Host=localhost;Database=test", result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetRequiredValue_WithMissingKey_ThrowsWithHelpfulMessage()
     {
@@ -187,6 +197,7 @@ public class ConfigurationExtensionsTests
         Assert.Contains("environment variable", ex.Message);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetRequiredValue_WithEmptyValue_ThrowsWithHelpfulMessage()
     {
@@ -205,6 +216,7 @@ public class ConfigurationExtensionsTests
         Assert.Contains("SomeKey", ex.Message);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetValueOrDefault_WithExistingKey_ReturnsValue()
     {
@@ -223,6 +235,7 @@ public class ConfigurationExtensionsTests
         Assert.Equal(8080, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetValueOrDefault_WithMissingKey_ReturnsDefault()
     {
@@ -238,6 +251,7 @@ public class ConfigurationExtensionsTests
         Assert.Equal(3000, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetValueOrDefault_WithBoolValue_ReturnsCorrectType()
     {
@@ -256,6 +270,7 @@ public class ConfigurationExtensionsTests
         Assert.True(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetValueOrDefault_WithNullableValue_ReturnsConvertedUnderlyingType()
     {
@@ -276,6 +291,7 @@ public class ConfigurationExtensionsTests
         Assert.Equal(8080, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetWithEnvOverride_WithConfigValue_ReturnsValue()
     {
@@ -294,6 +310,7 @@ public class ConfigurationExtensionsTests
         Assert.Equal("true", result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetWithEnvOverride_WithMissingKey_ReturnsNull()
     {
@@ -309,6 +326,7 @@ public class ConfigurationExtensionsTests
         Assert.Null(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsFeatureEnabled_WithNullConfiguration_ThrowsArgumentNullException()
     {
@@ -319,6 +337,7 @@ public class ConfigurationExtensionsTests
         Assert.Throws<ArgumentNullException>(() => config!.IsFeatureEnabled("FEATURE"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsFeatureEnabled_WithNullFeatureName_ThrowsArgumentException()
     {
@@ -331,6 +350,7 @@ public class ConfigurationExtensionsTests
         Assert.Throws<ArgumentNullException>(() => config.IsFeatureEnabled(null!));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsFeatureEnabled_WithEmptyFeatureName_ThrowsArgumentException()
     {
@@ -343,6 +363,7 @@ public class ConfigurationExtensionsTests
         Assert.Throws<ArgumentException>(() => config.IsFeatureEnabled(""));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetRequiredValue_WithNullKey_ThrowsArgumentException()
     {

@@ -124,7 +124,7 @@ if printf '%s\n' "${affected}" | grep -qx 'ALL'; then
   full "shared build infrastructure changed (compute-affected-projects.sh reported ALL)"
 fi
 
-changed_files="$(git diff --name-only "${base_ref}...HEAD" 2>/dev/null || true)"
+changed_files="$(git diff --no-renames --name-only "${base_ref}...HEAD" 2>/dev/null || true)"
 if [[ -z "${changed_files}" ]]; then
   full "empty diff against '${base_ref}'; nothing trustworthy to scope by"
 fi

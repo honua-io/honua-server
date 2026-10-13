@@ -42,6 +42,7 @@ public sealed class OperatorCatalogTests
         catalog.OperatorNames.Should().BeEquivalentTo(s_expectedOperators);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("filter")]
     [InlineData("spatial_join")]

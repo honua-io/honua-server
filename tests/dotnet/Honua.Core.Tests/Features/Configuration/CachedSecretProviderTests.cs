@@ -28,6 +28,7 @@ public class CachedSecretProviderTests
             NullLogger<CachedSecretProvider>.Instance);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetSecretAsync_WithCachedValue_ReturnsCachedValue()
     {
@@ -47,6 +48,7 @@ public class CachedSecretProviderTests
         _mockSecretResolver.Verify(x => x.ResolveConnectionStringAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetSecretAsync_WithoutCachedValue_ResolvesAndCaches()
     {
@@ -74,6 +76,7 @@ public class CachedSecretProviderTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -84,6 +87,7 @@ public class CachedSecretProviderTests
         await Assert.ThrowsAsync<ArgumentException>(() => _provider.GetSecretAsync(invalidSecretRef!));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("invalid")]
     [InlineData("env")]
@@ -95,6 +99,7 @@ public class CachedSecretProviderTests
         await Assert.ThrowsAsync<ArgumentException>(() => _provider.GetSecretAsync(invalidSecretRef));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task CanResolveSecretAsync_DelegatesToResolver()
     {
@@ -111,6 +116,7 @@ public class CachedSecretProviderTests
         Assert.True(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task CanResolveSecretAsync_WithInvalidReference_ReturnsFalse()
     {
@@ -121,6 +127,7 @@ public class CachedSecretProviderTests
         Assert.False(result);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("env:TEST_SECRET", true)]
     [InlineData("aws:secretsmanager:my-secret", true)]
@@ -139,6 +146,7 @@ public class CachedSecretProviderTests
         Assert.Equal(expected, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetSupportedProviders_DelegatesToResolver()
     {
@@ -153,6 +161,7 @@ public class CachedSecretProviderTests
         Assert.Equal(providers, result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ClearCacheAsync_WithSpecificSecretRef_RemovesSpecificEntry()
     {
@@ -166,6 +175,7 @@ public class CachedSecretProviderTests
         _mockCacheService.Verify(x => x.RemoveAsync("secret:env:TEST_SECRET", It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ClearCacheAsync_WithoutSecretRef_RemovesAllSecrets()
     {
@@ -176,6 +186,7 @@ public class CachedSecretProviderTests
         _mockCacheService.Verify(x => x.RemoveByPatternAsync("secret:*", It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TestConnectivityAsync_WithCachedResults_ReturnsCachedResults()
     {
@@ -192,6 +203,7 @@ public class CachedSecretProviderTests
         Assert.Equal(cachedResults, results);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TestConnectivityAsync_WithoutCachedResults_TestsAndCaches()
     {

@@ -22,6 +22,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
     private const string WmsContainerId = "service:wms";
     private const string WmtsContainerId = "service:wmts";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void WmsPlanner_ClassifiesLayerMetadataAsAutomated_AndRenderDataAsUnsupported()
     {
@@ -44,6 +45,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
         renderDataEntry.ManualSteps.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void WmsPlanner_EmitsAssistedStyleAndDiagnostic_AndDoesNotAutoImport()
     {
@@ -65,6 +67,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
             diagnostic.Severity == "info");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void WmsPlanner_LayerMetadata_CarriesPreferredCompanionWfsSourceHint()
     {
@@ -86,6 +89,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
             diagnostic.Severity == "info");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DeriveCompanionWfsCapabilitiesUrl_OnInvalidBaseUrl_ReturnsEmpty()
     {
@@ -93,6 +97,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
         OgcWmsMigrationPlanner.DeriveCompanionWfsCapabilitiesUrl("not a url").Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DeriveCompanionWfsCapabilitiesUrl_PreservesPathAndReplacesQuery()
     {
@@ -102,6 +107,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
         derived.Should().Be("https://gs.example.test/geoserver/wms?service=WFS&request=GetCapabilities");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void WmsPlanner_ClassifiesRenderEndpointAsManualReview()
     {
@@ -115,6 +121,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
             .Which.AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.ManualReview);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void WmsPlanner_IsIdempotent_ReplanProducesEqualResult()
     {
@@ -127,6 +134,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
         second.Diagnostics.Should().BeEquivalentTo(first.Diagnostics, options => options.WithStrictOrdering());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void WmsPlanner_OnNonWmsInventory_ReturnsEmptyResult()
     {
@@ -138,6 +146,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
         result.Diagnostics.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void WmtsPlanner_TrivialTileMatrixSet_IsClassifiedAutomated()
     {
@@ -154,6 +163,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
                 entry.ManualSteps.Length == 0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void WmtsPlanner_NonTrivialTileMatrixSet_IsClassifiedManualReview()
     {
@@ -170,6 +180,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
         entry.ManualSteps.Should().NotBeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void WmtsPlanner_ClassifiesTileDataAsUnsupported_AndMetadataAsAutomated()
     {
@@ -185,6 +196,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
             .Which.AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.Unsupported);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void WmtsPlanner_EmitsAssistedStyleDiagnostic()
     {
@@ -197,6 +209,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
             diagnostic.Code == ImportCompatibilityCodes.OgcRenderStyleAssisted);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void WmtsPlanner_IsIdempotent_ReplanProducesEqualResult()
     {
@@ -209,6 +222,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
         second.Diagnostics.Should().BeEquivalentTo(first.Diagnostics, options => options.WithStrictOrdering());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MigrationManifestTranslator_OnWmsInventory_AttachesPlanEntriesAndDiagnostics()
     {
@@ -231,6 +245,7 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
             diagnostic.Code == ImportCompatibilityCodes.OgcRenderStyleAssisted);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MigrationManifestTranslator_OnWmtsInventory_AttachesPlanEntriesIncludingTileSet()
     {

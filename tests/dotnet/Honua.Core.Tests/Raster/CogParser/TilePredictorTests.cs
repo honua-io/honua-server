@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Raster.CogParser;
 /// </summary>
 public class TilePredictorTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Undo_EightBitSingleBand_RunsPrefixSumPerRow()
     {
@@ -26,6 +27,7 @@ public class TilePredictorTests
         pixels.Should().Equal(1, 2, 3, 4, 100, 102, 104, 106);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Undo_EightBitThreeBands_StridesBySamplesPerPixel()
     {
@@ -38,6 +40,7 @@ public class TilePredictorTests
         pixels.Should().Equal(10, 20, 30, 11, 22, 33, 12, 24, 36);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Undo_EightBit_WrapsAtSampleWidth()
     {
@@ -49,6 +52,7 @@ public class TilePredictorTests
         pixels.Should().Equal(250, 4);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Undo_SixteenBitLittleEndian_AccumulatesInFileByteOrder()
     {
@@ -61,6 +65,7 @@ public class TilePredictorTests
         pixels.Should().Equal(0x00, 0x01, 0x02, 0x01);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Undo_SixteenBitBigEndian_AccumulatesInFileByteOrder()
     {
@@ -73,6 +78,7 @@ public class TilePredictorTests
         pixels.Should().Equal(0x01, 0x00, 0x01, 0x02);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Undo_ThirtyTwoBitLittleEndian_AccumulatesPerSample()
     {
@@ -87,6 +93,7 @@ public class TilePredictorTests
         BitConverter.ToUInt32(pixels, 4).Should().Be(70005u);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Undo_PredictorNone_LeavesPixelsUntouched()
     {
@@ -97,6 +104,7 @@ public class TilePredictorTests
         pixels.Should().Equal(1, 1, 1, 1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Undo_RowStrideMismatch_ThrowsInvalidData()
     {
@@ -109,6 +117,7 @@ public class TilePredictorTests
         act.Should().Throw<InvalidDataException>().WithMessage("*whole number*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Undo_UnsupportedBitDepth_ThrowsNamingPredictor()
     {

@@ -8,6 +8,7 @@ namespace Honua.Core.Tests.Features.Tiles;
 
 public class TileMathTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0, 0, 0, -20037508.342789244, -20037508.342789244, 20037508.342789244, 20037508.342789244)]
     [InlineData(0, 0, 1, -20037508.342789244, 0, 0, 20037508.342789244)]
@@ -27,6 +28,7 @@ public class TileMathTests
         bounds.YMax.Should().BeApproximately(expectedYMax, 0.001);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(5, 1000.0)]
     [InlineData(8, 500.0)]
@@ -42,6 +44,7 @@ public class TileMathTests
         tolerance.Should().Be(expectedTolerance);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0, 0, 0, true)]
     [InlineData(0, 0, 1, true)]
@@ -65,6 +68,7 @@ public class TileMathTests
         result.Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetTileBounds_ZoomLevel10_HasCorrectTileSize()
     {
@@ -81,6 +85,7 @@ public class TileMathTests
         actualTileSize.Should().BeApproximately(expectedTileSize, 0.001);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TileBounds_Record_HasCorrectProperties()
     {

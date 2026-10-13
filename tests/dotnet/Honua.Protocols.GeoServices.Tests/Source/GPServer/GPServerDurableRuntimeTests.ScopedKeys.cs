@@ -44,7 +44,7 @@ public sealed partial class GPServerDurableRuntimeTests
             foreach (var operation in new[] { "GetJobStatus", "GetJobMessages", "GetJobToolName", "GetJobResult", "CancelJob" })
             {
                 using var refused = await PostSoapAsync(other, operation, $"<JobID>{jobId}</JobID>" +
-                    "<ParameterNames><String>outputScalar</String></ParameterNames>");
+                    (operation == "GetJobResult" ? "<ParameterNames><String>outputScalar</String></ParameterNames>" : string.Empty));
                 var refusedBody = await refused.Content.ReadAsStringAsync();
                 refused.StatusCode.Should().Be(HttpStatusCode.NotFound, refusedBody);
                 refusedBody.Should().NotContain("esriJob").And.NotContain("data:application/json");
@@ -57,7 +57,7 @@ public sealed partial class GPServerDurableRuntimeTests
             using var result = JsonDocument.Parse(Convert.FromBase64String(dataUri[prefix.Length..]));
             result.RootElement.GetProperty("value").GetDouble().Should().Be(12);
             // The same key has no OGC/operator execute grant, even for the granted canonical process.
-            using var generic = await owner.PostAsJsonAsync("/ogc/processes/geometry.area/execution", new { inputs = new { } });
+            using var generic = await owner.PostAsJsonAsync("/ogc/processes/processes/geometry.area/execution", new { inputs = new { } });
             generic.StatusCode.Should().Be(HttpStatusCode.Forbidden, await generic.Content.ReadAsStringAsync());
             // Synchronous Execute uses the same shared submission recheck and terminal seam.
             var executed = await SendSoapAsync(owner, "Execute", arguments);

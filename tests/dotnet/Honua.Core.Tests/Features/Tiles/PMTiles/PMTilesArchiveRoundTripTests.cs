@@ -28,6 +28,7 @@ namespace Honua.Core.Tests.Features.Tiles.PMTiles;
 /// </remarks>
 public class PMTilesArchiveRoundTripTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_GzipCompressedMvtTiles_DecompressToTheirOwnCoordinatesTile()
     {
@@ -73,6 +74,7 @@ public class PMTilesArchiveRoundTripTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_ArchiveLargerThanTheRootDirectory_ResolvesTilesThroughALeafDirectory()
     {

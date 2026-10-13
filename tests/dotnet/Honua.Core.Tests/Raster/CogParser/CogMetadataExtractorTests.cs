@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Raster.CogParser;
 /// </summary>
 public class CogMetadataExtractorTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(4)]
     [InlineData(5)]
@@ -29,6 +30,7 @@ public class CogMetadataExtractorTests
         await read.Should().ThrowAsync<InvalidDataException>().WithMessage("*SampleFormat*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_SharedJpegTables_CarriesTablesOnTheirLevel()
     {
@@ -41,6 +43,7 @@ public class CogMetadataExtractorTests
         metadata.OverviewLevels[0].JpegTables.Should().Equal(0xFF, 0xD8, 0xFF, 0xD9);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0xC0FFD8FFu, (ushort)7)] // SOI then a truncated frame header: not tables-only.
     [InlineData(0xD9FFD9FFu, (ushort)7)] // No SOI.
@@ -76,6 +79,7 @@ public class CogMetadataExtractorTests
         return tiff;
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_PixelScaleBeforeTiepoint_ComputesCorrectExtent()
     {
@@ -104,6 +108,7 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(45.0, 1e-10);  // 50 - 0.01*500
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_NoGeoTags_FallsBackToUnitExtent()
     {
@@ -125,6 +130,7 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMax.Should().Be(256);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_ReportsCorrectIfdOffset()
     {
@@ -142,6 +148,7 @@ public class CogMetadataExtractorTests
         metadata.OverviewLevels[0].IfdOffset.Should().Be(8);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_BothGeoKeys_PrefersProjectedCrs()
     {
@@ -163,6 +170,7 @@ public class CogMetadataExtractorTests
         metadata.Srid.Should().Be(3857);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_OnlyGeographicGeoKey_ReturnsGeographicSrid()
     {
@@ -181,6 +189,7 @@ public class CogMetadataExtractorTests
         metadata.Srid.Should().Be(4326);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_Float32WithSampleFormat_ReportsFloat32()
     {
@@ -198,6 +207,7 @@ public class CogMetadataExtractorTests
         metadata.PixelType.Should().Be("float32");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_Int16WithSampleFormat_ReportsInt16()
     {
@@ -215,6 +225,7 @@ public class CogMetadataExtractorTests
         metadata.PixelType.Should().Be("int16");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_UInt32WithSampleFormat_ReportsUInt32()
     {
@@ -232,6 +243,7 @@ public class CogMetadataExtractorTests
         metadata.PixelType.Should().Be("uint32");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_InlineShortArrays_UsesFirstArrayElementForPixelMetadata()
     {
@@ -251,6 +263,7 @@ public class CogMetadataExtractorTests
         metadata.PixelType.Should().Be("uint8");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_TiepointTagWithNonDoubleType_ReturnsDefaultOriginWithoutThrowing()
     {
@@ -274,6 +287,7 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(-0.5, 1e-10);  // 0 - 0.01 * 50
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_PixelScaleTagWithNonDoubleType_ReturnsUnitScaleWithoutThrowing()
     {
@@ -297,6 +311,7 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(0.0, 1e-10);   // 50  - 1.0 * 50
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_PixelIsPointAndNonZeroTiepointCoordinates_NormalizesToPixelCorner()
     {
@@ -319,6 +334,7 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(22, 1e-10);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_ModelTransformation_ComputesNorthUpExtent()
     {
@@ -339,6 +355,7 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(800, 1e-10);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(1, 0.25)]
     [InlineData(4, 0.25)]
@@ -742,6 +759,7 @@ public class CogMetadataExtractorTests
         return ms.ToArray();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(258, 16)]
     [InlineData(339, 2)]

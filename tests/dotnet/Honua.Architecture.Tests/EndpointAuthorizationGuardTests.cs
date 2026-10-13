@@ -22,7 +22,7 @@ namespace Honua.Architecture.Tests;
 [Trait("Category", "Architecture")]
 public sealed class EndpointAuthorizationGuardTests
 {
-    private const string FeaturesRelativePath = "src/Honua.Server/Features";
+    private static readonly string[] FeaturesRelativePaths = ["src/Honua.Server/Features", "src/Honua.Ai/Features"];
     private const string ProgramRelativePath = "src/Honua.Server/Program.cs";
 
     private static readonly string[] AuthOptInMarkers =
@@ -78,13 +78,15 @@ public sealed class EndpointAuthorizationGuardTests
     public void EveryMutationEndpoint_HasExplicitAuthorizationDecision()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var featuresRoot = ArchitectureTestHelpers.CombinePath(repoRoot, FeaturesRelativePath);
-        Directory.Exists(featuresRoot)
-            .Should().BeTrue($"the audited features directory should exist at {featuresRoot}");
+        var featureRoots = FeaturesRelativePaths.Select(path => ArchitectureTestHelpers.CombinePath(repoRoot, path)).ToArray();
+        foreach (var featuresRoot in featureRoots)
+        {
+            Directory.Exists(featuresRoot).Should().BeTrue($"the audited features directory should exist at {featuresRoot}");
+        }
 
         var gaps = new List<string>();
 
-        foreach (var file in Directory.EnumerateFiles(featuresRoot, "*Endpoints.cs", SearchOption.AllDirectories))
+        foreach (var file in featureRoots.SelectMany(path => Directory.EnumerateFiles(path, "*Endpoints.cs", SearchOption.AllDirectories)))
         {
             var raw = File.ReadAllText(file);
             var content = StripComments(raw);
@@ -118,7 +120,7 @@ public sealed class EndpointAuthorizationGuardTests
         }
 
         gaps.Should().BeEmpty(
-            "every HTTP mutation route under src/Honua.Server/Features must call one of "
+            "every HTTP mutation route under the canonical Server/Ai feature directories must call one of "
             + string.Join(", ", AuthOptInMarkers)
             + " on either the route itself or its parent group; intentionally public endpoints "
             + "must opt in via AllowAnonymous() so the decision is visible to reviewers.");
@@ -153,9 +155,13 @@ public sealed class EndpointAuthorizationGuardTests
     public void AuditedFeaturesDirectory_ContainsEndpointFiles()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var featuresRoot = ArchitectureTestHelpers.CombinePath(repoRoot, FeaturesRelativePath);
+        var featureRoots = FeaturesRelativePaths.Select(path => ArchitectureTestHelpers.CombinePath(repoRoot, path)).ToArray();
+        foreach (var featuresRoot in featureRoots)
+        {
+            Directory.EnumerateFiles(featuresRoot, "*Endpoints.cs", SearchOption.AllDirectories).Should().NotBeEmpty();
+        }
 
-        var fileCount = Directory.EnumerateFiles(featuresRoot, "*Endpoints.cs", SearchOption.AllDirectories).Count();
+        var fileCount = featureRoots.Sum(path => Directory.EnumerateFiles(path, "*Endpoints.cs", SearchOption.AllDirectories).Count());
 
         fileCount.Should().BeGreaterThan(50,
             "the architecture guard depends on scanning *Endpoints.cs files in src/Honua.Server/Features; "

@@ -28,8 +28,9 @@
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />
-    <InternalsVisibleTo Include="Honua.Protocols.OData.Unit.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OData.UnitTests" />
     <InternalsVisibleTo Include="Honua.TestKit" />
+    <InternalsVisibleTo Include="Honua.OData.TestHost" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 

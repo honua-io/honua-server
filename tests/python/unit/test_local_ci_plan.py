@@ -19,6 +19,18 @@ class LocalPlanTests(unittest.TestCase):
         (self.scripts / "lib").mkdir(parents=True)
         for name in ("pre-pr-check.sh", "classify-pre-pr-changes.sh", "lib/jq-cr-safe.sh"):
             shutil.copy2(ROOT / "scripts/ci" / name, self.scripts / name)
+        # Reuse the actual reviewed Fast policy, without evaluating/building fake projects.
+        self.fast_projects = sorted(p for p, entry in json.loads(
+            (ROOT / ".github/test-projects.json").read_text())["projects"].items()
+            if entry["role"] == "unit" and entry["isolated"])
+        (self.scripts / "test-projects.py").write_text(
+            "import importlib.util, json, sys\n"
+            + "spec=importlib.util.spec_from_file_location('policy', "
+            + repr(str(ROOT / "scripts/ci/test-projects.py")) + ")\n"
+            + "policy=importlib.util.module_from_spec(spec); spec.loader.exec_module(policy)\n"
+            + "projects=" + repr(self.fast_projects) + "\n"
+            + "completed=sys.argv[3::2]; projects=[p for p in projects if p not in completed]\n"
+            + "print('\\n'.join(projects) if sys.argv[1]=='gate-fast-projects' else json.dumps(policy.gate_fast_actions(projects)))\n")
         self.stub("check-instructions-sync.sh", "exit 0")
         self.stub("compute-affected-projects.sh", "echo src/A/A.csproj")
         self.stub("honua-server-targeted-tests.sh", "echo '{\"run_all\":false,\"shards\":[\"example\"],\"reason\":\"fixture\"}'")
@@ -70,7 +82,7 @@ if sys.argv[1] != "validate":
         self.assertFalse(plan["fast"])
         self.assertEqual(["example"], plan["serverShards"]["shards"])
         self.assertEqual("Tier=Fast", plan["serverTestActions"][0]["filter"])
-        self.assertEqual(5, len(plan["unitTestActions"]))
+        self.assertEqual(len(self.fast_projects) + 4, len(plan["unitTestActions"]))
 
     def test_fast_defers_shards_but_preserves_routing_diagnostic(self):
         plan = self.plan("--fast")
@@ -78,8 +90,13 @@ if sys.argv[1] != "validate":
         self.assertEqual([], plan["serverShards"]["shards"])
         self.assertFalse(plan["serverShards"]["run_all"])
         self.assertEqual(["example"], plan["selectionRouting"]["shards"])
-        self.assertEqual(1, len(plan["unitTestActions"]))  # unconditional MCP governance
-        self.assertIn("McpTaxonomyAlignmentTests", plan["unitTestActions"][0]["filter"])
+        self.assertEqual(len(self.fast_projects) + 2, len(plan["unitTestActions"]))
+        actions = plan["unitTestActions"]
+        self.assertEqual(set(self.fast_projects), {a["project"] for a in actions if a["project"] in self.fast_projects})
+        governance = actions[-1]
+        self.assertIn("McpTaxonomyAlignmentTests", governance["filter"])
+        self.assertEqual("tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj", governance["project"])
+        self.assertTrue(any(a["project"].endswith("Honua.Server.Tests.csproj") and a["filter"] == "Tier=Fast" for a in actions))
 
     def test_smart_records_final_narrowed_filter_and_fallback_project(self):
         plan = self.plan()
@@ -101,3 +118,21 @@ if sys.argv[1] != "validate":
         self.assertEqual("full", plan["mode"])
         self.assertEqual(["README.md"], plan["changedFiles"])
         self.assertEqual(["example"], plan["serverShards"]["shards"])
+
+    def test_plan_rejects_feedback_modes_before_dispatch(self):
+        for mode in ("--unit-only", "--affected-tests"):
+            result = subprocess.run(["bash", "scripts/ci/pre-pr-check.sh", mode,
+                                     "--plan-json", str(self.root / "invalid.json")],
+                                    cwd=self.root, capture_output=True, text=True)
+            self.assertEqual(2, result.returncode)
+            self.assertIn("cannot be combined with feedback", result.stderr)
+            self.assertFalse((self.root / "invalid.json").exists())
+
+    def test_real_full_shard_catalog_serializes_beyond_per_argument_limit(self):
+        registry = json.loads((ROOT / ".github/ci-shards.json").read_text())
+        (self.root / ".github/ci-shards.json").write_text(json.dumps(registry))
+        plan = self.plan("--full")
+        self.assertEqual(len(registry["shards"]), len(plan["serverTestActions"]))
+        self.assertEqual({s["shard_name"] for s in registry["shards"]},
+                         {s["shard_name"] for s in plan["serverTestActions"]})
+        self.assertGreater(len(json.dumps(plan["serverTestActions"])), 128 * 1024)

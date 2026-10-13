@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class ArcGisRestClientRelationshipTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("Feature Layer", "esriRelRoleOrigin", 1)]
     [InlineData("Table", "esriRelRoleDestination", 0)]
@@ -42,6 +43,7 @@ public sealed class ArcGisRestClientRelationshipTests
         relationship.Composite.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("{}", 0)]
     [InlineData("{\"relationships\":null}", 0)]

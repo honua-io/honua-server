@@ -10,6 +10,7 @@ namespace Honua.Core.Tests.Features.Geoprocessing;
 /// </summary>
 public class RetentionPolicyTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Defaults_ContainsAllWorkspaceKinds()
     {
@@ -21,6 +22,7 @@ public class RetentionPolicyTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(WorkspaceKind.Scratch)]
     [InlineData(WorkspaceKind.TempLayer)]
@@ -32,6 +34,7 @@ public class RetentionPolicyTests
         Assert.True(policy.DefaultTimeToLive > TimeSpan.Zero);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(WorkspaceKind.Persistent)]
     [InlineData(WorkspaceKind.SavedLayer)]
@@ -42,6 +45,7 @@ public class RetentionPolicyTests
         Assert.Null(policy.MaxTimeToLive);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(WorkspaceKind.Scratch)]
     [InlineData(WorkspaceKind.TempLayer)]
@@ -52,6 +56,7 @@ public class RetentionPolicyTests
         Assert.True(policy.AllowPromotionBeforeCleanup);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Defaults_ScratchMaxTtl_IsLessThanTempLayer()
     {
@@ -61,6 +66,7 @@ public class RetentionPolicyTests
         Assert.True(scratch.MaxTimeToLive < tempLayer.MaxTimeToLive);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void WorkspaceQuota_Default_HasReasonableLimits()
     {

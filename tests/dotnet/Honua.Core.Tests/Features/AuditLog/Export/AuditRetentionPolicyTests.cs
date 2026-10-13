@@ -13,6 +13,7 @@ public sealed class AuditRetentionPolicyTests
 {
     private static readonly DateTimeOffset Now = new(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsExpired_EventOlderThanWindow_IsExpired()
     {
@@ -22,6 +23,7 @@ public sealed class AuditRetentionPolicyTests
         policy.IsExpired(Now.AddDays(-31), Now).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsExpired_EventWithinWindow_IsRetained()
     {
@@ -30,6 +32,7 @@ public sealed class AuditRetentionPolicyTests
         policy.IsExpired(Now.AddDays(-29), Now).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsExpired_ZeroWindow_RetainsForever()
     {
@@ -39,6 +42,7 @@ public sealed class AuditRetentionPolicyTests
         policy.IsExpired(Now.AddYears(-10), Now).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CutoffUtc_Unbounded_IsMinValue()
     {
@@ -47,6 +51,7 @@ public sealed class AuditRetentionPolicyTests
         policy.CutoffUtc(Now).Should().Be(DateTimeOffset.MinValue);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CutoffUtc_Bounded_SubtractsWindow()
     {
@@ -63,6 +68,7 @@ public sealed class InMemoryAuditRetentionPrunerTests
 {
     private static readonly DateTimeOffset Now = new(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PruneAsync_RemovesExpiredAndKeepsRetainedInOrder()
     {
@@ -80,6 +86,7 @@ public sealed class InMemoryAuditRetentionPrunerTests
         pruner.Remaining.Select(e => e.Action).Should().Equal("keep.1", "keep.2");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PruneAsync_UnboundedPolicy_PrunesNothing()
     {

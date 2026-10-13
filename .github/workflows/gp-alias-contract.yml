@@ -5,7 +5,7 @@ on:
     branches: [trunk]
     paths:
       - 'src/Honua.Protocols.GeoServices/GPServer/GPServerEsriTaskAliases.cs'
-      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEsriTaskAliasesTests.cs'
+      - 'tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerEsriTaskAliasesTests.cs'
       - 'tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/OgcProcessesEndpointsTests.cs'
       - 'docs/gis/data/geoservices-parity-judgment.json'
       - '.github/workflows/gp-alias-contract.yml'
@@ -32,7 +32,7 @@ jobs:
           nuget-cache-read-only: 'true'
       - name: Run the actual GeoServices alias contract tests
         run: |
-          dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj \
             --configuration Release -m:1 \
             --filter 'FullyQualifiedName~GPServerEsriTaskAliasesTests' \
             --logger 'trx;LogFileName=gp-alias-contract.trx' --results-directory alias-results
@@ -42,7 +42,7 @@ jobs:
           from pathlib import Path
           import re
           import xml.etree.ElementTree as ET
-          source = Path('tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEsriTaskAliasesTests.cs').read_text()
+          source = Path('tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerEsriTaskAliasesTests.cs').read_text()
           facts = re.findall(r'\[UnitTest\].*?public void (\w+)\(', source, re.S)
           routing_cases = re.findall(r'\[InlineData\("(routing\.[^"]+)", "([^"]+)"\)\]', source)
           expected = len(facts) + len(routing_cases)

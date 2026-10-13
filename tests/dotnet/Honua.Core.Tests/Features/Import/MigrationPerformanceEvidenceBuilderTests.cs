@@ -27,6 +27,7 @@ public sealed class MigrationPerformanceEvidenceBuilderTests
     private static readonly DateTimeOffset GeneratedAt =
         DateTimeOffset.Parse("2026-05-19T12:00:00Z", CultureInfo.InvariantCulture);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_ProducesArtifactWithPassStatusAndStableFingerprint()
     {
@@ -51,6 +52,7 @@ public sealed class MigrationPerformanceEvidenceBuilderTests
         artifact.Summary.Should().Contain("within").And.Contain("geoserver-small-v1");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_IsDeterministic_ForIdenticalInputs()
     {
@@ -68,6 +70,7 @@ public sealed class MigrationPerformanceEvidenceBuilderTests
         firstJson.Should().Be(secondJson);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_FingerprintChanges_WhenAnyMetricChanges()
     {
@@ -84,6 +87,7 @@ public sealed class MigrationPerformanceEvidenceBuilderTests
         perturbed.Fingerprint.Should().NotBe(baselineArtifact.Fingerprint);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_PropagatesWarnAndFailStatuses()
     {
@@ -102,6 +106,7 @@ public sealed class MigrationPerformanceEvidenceBuilderTests
         failArtifact.Summary.Should().Contain("failed");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_ThrowsWhenRunAndBaselineFamiliesDisagree()
     {
@@ -115,6 +120,7 @@ public sealed class MigrationPerformanceEvidenceBuilderTests
         act.Should().Throw<ArgumentException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_RedactionPosture_IsDenyByDefaultAndCarriesOmittedFields()
     {
@@ -135,6 +141,7 @@ public sealed class MigrationPerformanceEvidenceBuilderTests
         artifact.Redaction.Summary.Should().Contain("Deny-by-default");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_SerializedArtifact_ExcludesSourceUrlsAndCredentialMarkers()
     {
@@ -152,6 +159,7 @@ public sealed class MigrationPerformanceEvidenceBuilderTests
         json.Should().NotContain("authorization");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ArtifactSchema_TopLevelProperties_AreStable()
     {
@@ -187,6 +195,7 @@ public sealed class MigrationPerformanceEvidenceBuilderTests
             options => options.WithStrictOrdering());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RedactionPosture_TopLevelProperties_AreStable()
     {
@@ -208,6 +217,7 @@ public sealed class MigrationPerformanceEvidenceBuilderTests
             options => options.WithStrictOrdering());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_RoundTripsThroughJson_WithStableShape()
     {

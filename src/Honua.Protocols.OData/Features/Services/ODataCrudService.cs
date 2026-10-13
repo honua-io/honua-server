@@ -82,18 +82,33 @@ internal sealed partial class ODataCrudService
         CancellationToken cancellationToken = default)
         => GetFeatureAsync(layerId, objectId, baseUrl, _featureReader, layerId, cancellationToken);
 
-    public async Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
+    public Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
         int layerId,
         long objectId,
         string baseUrl,
         IFeatureReader reader,
         int storageLayerId,
         CancellationToken cancellationToken = default)
+        => GetFeatureAsync(layerId, objectId, baseUrl, reader, storageLayerId, null, cancellationToken);
+
+    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
+    public async Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
+        int layerId,
+        long objectId,
+        string baseUrl,
+        IFeatureReader reader,
+        int storageLayerId,
+        MetadataV2Resource? resolvedResource,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            // Verify layer exists via the V2 graph snapshot.
-            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+            // HTTP callers already resolved and authorized the OData publication. Keep
+            // that exact resource: a generic integer lookup can select a raster sidecar
+            // sharing this layer index and lose the feature schema and access decision.
+            var layerResult = resolvedResource is not null
+                ? ResourceValidationResult.Success(resolvedResource)
+                : await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
@@ -146,17 +161,37 @@ internal sealed partial class ODataCrudService
     /// resolver. Only coincides with <paramref name="layerId"/> when the publication's
     /// identifier was assigned from the storage id.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
+    public Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
         int layerId,
         ParsedFeaturePayload payload,
         string baseUrl,
         int storageLayerId,
         CancellationToken cancellationToken = default)
+        => CreateFeatureAsync(layerId, payload, baseUrl, storageLayerId, null, cancellationToken);
+
+    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
+    /// <param name="layerId">Service-local layer identifier.</param>
+    /// <param name="payload">Parsed feature payload.</param>
+    /// <param name="baseUrl">Base URL used for entity links.</param>
+    /// <param name="storageLayerId">Resolved physical storage-layer handle.</param>
+    /// <param name="resolvedResource">Authorized canonical feature resource, or null for legacy internal callers.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
+        int layerId,
+        ParsedFeaturePayload payload,
+        string baseUrl,
+        int storageLayerId,
+        MetadataV2Resource? resolvedResource,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            // Verify layer exists via the V2 graph snapshot.
-            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+            // HTTP callers already resolved and authorized the OData publication. Keep
+            // that exact resource: a generic integer lookup can select a raster sidecar
+            // sharing this layer index and lose the feature schema and access decision.
+            var layerResult = resolvedResource is not null
+                ? ResourceValidationResult.Success(resolvedResource)
+                : await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
@@ -251,7 +286,7 @@ internal sealed partial class ODataCrudService
     /// <summary>
     /// Updates an existing feature with partial update support (PATCH semantics).
     /// </summary>
-    public async Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
+    public Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
         int layerId,
         long objectId,
         ParsedFeaturePayload payload,
@@ -261,11 +296,29 @@ internal sealed partial class ODataCrudService
         int storageLayerId,
         bool replace = false,
         CancellationToken cancellationToken = default)
+        => UpdateFeatureAsync(layerId, objectId, payload, baseUrl, ifMatch, ifNoneMatch, storageLayerId, replace, null, cancellationToken);
+
+    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
+    public async Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
+        int layerId,
+        long objectId,
+        ParsedFeaturePayload payload,
+        string baseUrl,
+        string? ifMatch,
+        string? ifNoneMatch,
+        int storageLayerId,
+        bool replace,
+        MetadataV2Resource? resolvedResource,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            // Verify layer exists via the V2 graph snapshot.
-            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+            // HTTP callers already resolved and authorized the OData publication. Keep
+            // that exact resource: a generic integer lookup can select a raster sidecar
+            // sharing this layer index and lose the feature schema and access decision.
+            var layerResult = resolvedResource is not null
+                ? ResourceValidationResult.Success(resolvedResource)
+                : await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
@@ -450,18 +503,33 @@ internal sealed partial class ODataCrudService
     /// <summary>
     /// Deletes a feature with proper validation and error handling.
     /// </summary>
-    public async Task<ODataCrudResult<object>> DeleteFeatureAsync(
+    public Task<ODataCrudResult<object>> DeleteFeatureAsync(
         int layerId,
         long objectId,
         string? ifMatch,
         string? ifNoneMatch,
         int storageLayerId,
         CancellationToken cancellationToken = default)
+        => DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, storageLayerId, null, cancellationToken);
+
+    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
+    public async Task<ODataCrudResult<object>> DeleteFeatureAsync(
+        int layerId,
+        long objectId,
+        string? ifMatch,
+        string? ifNoneMatch,
+        int storageLayerId,
+        MetadataV2Resource? resolvedResource,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            // Verify layer exists via the V2 graph snapshot.
-            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+            // HTTP callers already resolved and authorized the OData publication. Keep
+            // that exact resource: a generic integer lookup can select a raster sidecar
+            // sharing this layer index and lose the feature schema and access decision.
+            var layerResult = resolvedResource is not null
+                ? ResourceValidationResult.Success(resolvedResource)
+                : await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<object>(layerResult, layerId);

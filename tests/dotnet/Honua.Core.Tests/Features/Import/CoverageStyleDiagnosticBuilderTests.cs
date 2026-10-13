@@ -19,6 +19,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class CoverageStyleDiagnosticBuilderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_SingleBandGrayscaleWithStats_EmitsAutomatedLinearStretch()
     {
@@ -39,6 +40,7 @@ public sealed class CoverageStyleDiagnosticBuilderTests
         bandStats.ManualSteps.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_IndexedColorTable_EmitsAssistedColorMapWithPreservedPalette()
     {
@@ -56,6 +58,7 @@ public sealed class CoverageStyleDiagnosticBuilderTests
         colorMap.Reason.Should().Contain("transferred verbatim");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_ContinuousColorRamp_EmitsManualReviewWithGuidance()
     {
@@ -73,6 +76,7 @@ public sealed class CoverageStyleDiagnosticBuilderTests
         colorMap.ManualSteps[0].Should().Contain("Export the source style document");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_VendorMarker_EsriExtension_EmitsManualReviewWithVendorName()
     {
@@ -90,6 +94,7 @@ public sealed class CoverageStyleDiagnosticBuilderTests
         hint.ManualSteps.Should().HaveCount(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_VendorMarker_GeoServerSld_EmitsManualReviewWithGeoServerVendor()
     {
@@ -103,6 +108,7 @@ public sealed class CoverageStyleDiagnosticBuilderTests
             .Which.VendorName.Should().Be("GeoServer");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_NoDataMarker_EmitsAutomatedDiagnostic()
     {
@@ -125,6 +131,7 @@ public sealed class CoverageStyleDiagnosticBuilderTests
         nodata.SourceStyleId.Should().Be("elevation");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_TransparencyCapability_EmitsAssistedDiagnostic()
     {
@@ -138,6 +145,7 @@ public sealed class CoverageStyleDiagnosticBuilderTests
             .Which.Classification.Should().Be("assisted");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_MultiBandCoverage_EmitsAssistedBandStatisticsDiagnostic()
     {
@@ -158,6 +166,7 @@ public sealed class CoverageStyleDiagnosticBuilderTests
         bandStats.ManualSteps.Should().HaveCount(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_NonCoverageResources_Ignored()
     {
@@ -171,6 +180,7 @@ public sealed class CoverageStyleDiagnosticBuilderTests
         diagnostics.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_Ordering_IsDeterministic()
     {
@@ -190,6 +200,7 @@ public sealed class CoverageStyleDiagnosticBuilderTests
             .Should().ContainInOrder("a-coverage", "m-coverage", "z-coverage");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Diagnostic_JsonRoundTrip_PreservesAllFields()
     {

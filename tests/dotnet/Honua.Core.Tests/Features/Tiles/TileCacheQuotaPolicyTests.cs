@@ -13,6 +13,7 @@ public class TileCacheQuotaPolicyTests
     private static TileCacheEntry Entry(string key, long bytes, int minutesAgo)
         => new(key, bytes, Base.AddMinutes(-minutesAgo));
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SelectEvictions_Disabled_ReturnsEmpty()
     {
@@ -22,6 +23,7 @@ public class TileCacheQuotaPolicyTests
         TileCacheQuotaPolicy.SelectEvictions(entries, options).Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SelectEvictions_NoQuotaConfigured_ReturnsEmpty()
     {
@@ -31,6 +33,7 @@ public class TileCacheQuotaPolicyTests
         TileCacheQuotaPolicy.SelectEvictions(entries, options).Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SelectEvictions_WithinQuota_ReturnsEmpty()
     {
@@ -40,6 +43,7 @@ public class TileCacheQuotaPolicyTests
         TileCacheQuotaPolicy.SelectEvictions(entries, options).Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SelectEvictions_EntryCapExceeded_EvictsLeastRecentlyUsedFirst()
     {
@@ -56,6 +60,7 @@ public class TileCacheQuotaPolicyTests
         evicted.Should().ContainSingle().Which.Should().Be("oldest");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SelectEvictions_ByteCapExceeded_EvictsUntilUnderQuota()
     {
@@ -73,6 +78,7 @@ public class TileCacheQuotaPolicyTests
         evicted.Should().ContainSingle().Which.Should().Be("oldest");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SelectEvictions_BothQuotas_EvictsToSatisfyTighter()
     {
@@ -91,6 +97,7 @@ public class TileCacheQuotaPolicyTests
         evicted.Should().Equal("e1", "e2");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SelectEvictions_EmptyInput_ReturnsEmpty()
     {
@@ -99,6 +106,7 @@ public class TileCacheQuotaPolicyTests
         TileCacheQuotaPolicy.SelectEvictions([], options).Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SelectEvictions_NonPositiveCaps_TreatedAsNoCap()
     {

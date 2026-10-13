@@ -13,3 +13,6 @@
 
 global using FluentAssertions;
 global using Xunit;
+
+global using Operations = Honua.TestKit.Constants.Operations;
+global using TestProtocols = Honua.TestKit.Constants.ProtocolNames;

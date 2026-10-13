@@ -404,6 +404,15 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
                 return Task.FromResult(CreateQueuedExecutionJobRecord());
             });
         jobService
+            .SubmitGPServerJobAsync(
+                Arg.Any<AnalysisPlan>(),
+                Arg.Any<string?>(),
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<GPServerExecutionContext>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => DelayProtocolSubmitAsync(call.ArgAt<CancellationToken>(5)));
+        jobService
             .SubmitProtocolJobAsync(
                 Arg.Any<AnalysisPlan>(),
                 Arg.Any<string?>(),

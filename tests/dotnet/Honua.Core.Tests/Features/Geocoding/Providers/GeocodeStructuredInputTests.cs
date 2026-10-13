@@ -32,6 +32,7 @@ public sealed class GeocodeStructuredInputTests
         StructuredAddress = Sample
     };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Nominatim_StructuredInput_UsesStructuredQueryParameters()
     {
@@ -54,6 +55,7 @@ public sealed class GeocodeStructuredInputTests
         Assert.DoesNotContain("&q=", uri, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AzureMaps_StructuredInput_UsesStructuredAddressEndpoint()
     {
@@ -74,6 +76,7 @@ public sealed class GeocodeStructuredInputTests
         Assert.Contains("countryCode=US", uri, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AzureMaps_SingleLineInput_UsesFreeformSearchEndpoint()
     {
@@ -93,6 +96,7 @@ public sealed class GeocodeStructuredInputTests
         Assert.DoesNotContain("/structured/", uri, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AmazonLocation_StructuredInput_ComposesTextQuery()
     {
@@ -101,6 +105,7 @@ public sealed class GeocodeStructuredInputTests
         Assert.Equal("380 New York St, Redlands, CA, 92373, US", composed);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AmazonLocation_NoStructuredInput_ReturnsNull()
     {

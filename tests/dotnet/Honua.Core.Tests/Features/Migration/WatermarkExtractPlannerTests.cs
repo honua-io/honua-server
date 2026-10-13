@@ -16,6 +16,7 @@ public sealed class WatermarkExtractPlannerTests
         Value = SourceWatermark.Encode(instant)
     };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void PlanEsri_NullWatermark_PlansFullPull()
     {
@@ -26,6 +27,7 @@ public sealed class WatermarkExtractPlannerTests
         query.SinceEpochMilliseconds.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void PlanEsri_WithWatermark_PlansChangedSincePredicate()
     {
@@ -37,6 +39,7 @@ public sealed class WatermarkExtractPlannerTests
         query.WhereClause.Should().Be($"last_edited_date > {since.ToUnixTimeMilliseconds()}");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void PlanEsri_MissingEditField_FallsBackToFullPull()
     {
@@ -47,6 +50,7 @@ public sealed class WatermarkExtractPlannerTests
         query.WhereClause.Should().Be("1=1");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void PlanOgc_WithWatermark_PlansHalfOpenIntervalAfterMark()
     {
@@ -61,6 +65,7 @@ public sealed class WatermarkExtractPlannerTests
         filter.DatetimeParameter.Should().EndWith("/..");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void PlanOgc_NullWatermark_PlansFullPull()
     {
@@ -70,6 +75,7 @@ public sealed class WatermarkExtractPlannerTests
         filter.DatetimeParameter.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ShouldPullFile_NullWatermark_PullsEveryFile()
     {
@@ -77,6 +83,7 @@ public sealed class WatermarkExtractPlannerTests
             .Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ShouldPullFile_OnlyPullsFilesNewerThanMark()
     {
@@ -94,6 +101,7 @@ public sealed class WatermarkExtractPlannerTests
         WatermarkExtractPlanner.ShouldPullFile(watermark, mark.AddSeconds(-1)).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Advance_OnlyMovesForward_NeverRewinds()
     {
@@ -114,6 +122,7 @@ public sealed class WatermarkExtractPlannerTests
         noRecords.AsTimestamp().Should().Be(new DateTimeOffset(2026, 6, 8, 0, 0, 0, TimeSpan.Zero));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SourceWatermark_RoundTripsTimestampThroughEncode()
     {
@@ -123,6 +132,7 @@ public sealed class WatermarkExtractPlannerTests
         watermark.AsTimestamp().Should().Be(instant);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SourceWatermark_NullOrUnparseableValue_TreatedAsNoLowerBound()
     {

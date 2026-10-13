@@ -14,6 +14,7 @@ namespace Honua.Core.Tests.Features.Spec;
 /// </summary>
 public class SpecPlannerTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PlanAsync_LinearChain_AssignsDistinctContentHashes()
     {
@@ -31,6 +32,7 @@ public class SpecPlannerTests
         Assert.Equal(new[] { "a" }, plan.Nodes[1].DependsOn);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PlanAsync_SameDocumentTwice_ProducesSameContentHashes()
     {
@@ -51,6 +53,7 @@ public class SpecPlannerTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PlanAsync_SingleNodeMutation_InvalidatesClosureOnly()
     {
@@ -81,6 +84,7 @@ public class SpecPlannerTests
         Assert.NotEqual(hashes1["c"], hashes2["c"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PlanAsync_WithCycle_ReturnsEmptyNodesAndCycleWarning()
     {
@@ -95,6 +99,7 @@ public class SpecPlannerTests
         Assert.Contains(plan.Warnings, w => w.Code == SpecDiagnosticCodes.DagCycle);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PlanAsync_ReservedDatasetKind_EmitsSpecKindNotInS1()
     {
@@ -117,6 +122,7 @@ public class SpecPlannerTests
         Assert.Contains(d.Warnings, w => w.Code == SpecDiagnosticCodes.SpecKindNotInS1);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(SpecResourceKind.Dataset)]
     [InlineData(SpecResourceKind.Service)]
@@ -138,6 +144,7 @@ public class SpecPlannerTests
         Assert.Contains(n.Warnings, w => w.Code == SpecDiagnosticCodes.SpecKindNotInS1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PlanAsync_MutableSourceWithoutPin_EmitsMutableSourceNoPin()
     {
@@ -157,6 +164,7 @@ public class SpecPlannerTests
         Assert.Contains(a.Warnings, w => w.Code == SpecDiagnosticCodes.MutableSourceNoPin);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PlanAsync_MutableSourceWithPin_SuppressesWarning()
     {
@@ -180,6 +188,7 @@ public class SpecPlannerTests
         Assert.DoesNotContain(a.Warnings, w => w.Code == SpecDiagnosticCodes.MutableSourceNoPin);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PlanAsync_NondeterministicOp_EmitsInfoWarning()
     {
@@ -194,6 +203,7 @@ public class SpecPlannerTests
         Assert.Equal(SpecDiagnosticSeverity.Info, warn.Severity);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PlanAsync_OversizeEstimate_EmitsEstimatedOversizeWarning()
     {
@@ -214,6 +224,7 @@ public class SpecPlannerTests
         Assert.True(n.Cost.EstimatedBytes > 1024L * 1024 * 1024);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
@@ -239,6 +250,7 @@ public class SpecPlannerTests
         Assert.Contains("grammarVersion", skew.Message, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
@@ -260,6 +272,7 @@ public class SpecPlannerTests
         Assert.Contains("processFamilyVersion", skew.Message, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PlanAsync_MissingBothVersions_EmitsSingleAggregateVersionSkew()
     {

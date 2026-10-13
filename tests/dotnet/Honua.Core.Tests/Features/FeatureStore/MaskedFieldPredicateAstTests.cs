@@ -44,6 +44,7 @@ public sealed class MaskedFieldPredicateAstTests
         { "json accessor spaced", "attributes ->> 'secret' NOT LIKE 'a%'" },
     };
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(MaskedWhereClauses))]
     public void WhereReferencingMaskedFieldIsRejectedForEveryOperator(string operatorFamily, string where)
@@ -60,6 +61,7 @@ public sealed class MaskedFieldPredicateAstTests
         act.Should().Throw<ArgumentException>().WithMessage("*secret*masked*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("name NOT LIKE 'secret%'")]
     [InlineData("name = 'secret'")]
@@ -79,6 +81,7 @@ public sealed class MaskedFieldPredicateAstTests
         act.Should().NotThrow();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("\"secret\" NOT LIKE @p0")]
     [InlineData("\"secret\" NOT IN (@p0, @p1)")]
@@ -98,6 +101,7 @@ public sealed class MaskedFieldPredicateAstTests
         act.Should().Throw<ArgumentException>().WithMessage("*secret*masked*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(MaskedWhereClauses))]
     public void ParsedExpressionReferencingMaskedFieldIsRejected(string operatorFamily, string where)
@@ -120,6 +124,7 @@ public sealed class MaskedFieldPredicateAstTests
         act.Should().Throw<ArgumentException>().WithMessage("*secret*masked*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ParsedExpressionWithoutMasksIsAccepted()
     {

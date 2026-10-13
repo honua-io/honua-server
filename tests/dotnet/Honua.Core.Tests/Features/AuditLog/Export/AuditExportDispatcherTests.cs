@@ -27,6 +27,7 @@ public sealed class AuditExportDispatcherTests
             DelayAsync = static (_, _) => Task.CompletedTask,
         };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DispatchAsync_TransientThenSuccess_RetriesAndSucceeds()
     {
@@ -44,6 +45,7 @@ public sealed class AuditExportDispatcherTests
         deadLettered.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DispatchAsync_TransientExhaustsRetries_DeadLettersFullBatchAndFailsPermanently()
     {
@@ -64,6 +66,7 @@ public sealed class AuditExportDispatcherTests
         batchRecord.Events.Should().HaveCount(3, "the full tamper-evident batch must be preserved");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DispatchAsync_PermanentFailure_DeadLettersWithoutRetrying()
     {
@@ -80,6 +83,7 @@ public sealed class AuditExportDispatcherTests
         deadLettered.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DispatchAsync_ResidencyViolation_DeadLettersAndNeverCallsSink()
     {
@@ -98,6 +102,7 @@ public sealed class AuditExportDispatcherTests
         batchRecord.Events.Should().HaveCount(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DispatchAsync_EmptyBatch_ShortCircuitsToSuccess()
     {

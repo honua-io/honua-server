@@ -42,6 +42,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         { "https://gis.example.com/arcgis/rest/services/Basemap/Parcels/MapServer", "/arcgis/rest/services/Basemap/Parcels/MapServer" },
     };
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(SourceRoots))]
     public async Task QueryFeaturesAsync_AddressesEverySourceRootShape_AndReturnsSourceValues(string serviceUrl, string expectedServicePath)
@@ -81,6 +82,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         geometry.GetProperty("m").GetDouble().Should().Be(4);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(SourceRoots))]
     public async Task MetadataReads_UseEverySourceRoot_AndPreserveRawSourcePresence(string serviceUrl, string expectedServicePath)
@@ -119,6 +121,7 @@ public sealed class ArcGisRestClientSourceSdkTests
             && !request.Uri.Query.Contains("metadata-secret", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PublishedSdkMetadata_PreservesFieldPresenceCrsDomainsRelationshipsAndIds()
     {
@@ -179,6 +182,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         imported.Extent.Ymax.Should().Be(4);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PublishedSdkQuery_PreservesWktOnlySpatialReferenceAndInt64Ids()
     {
@@ -200,6 +204,7 @@ public sealed class ArcGisRestClientSourceSdkTests
             .Should().Be(9_007_199_254_740_993);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -216,6 +221,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().HaveCount(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -233,6 +239,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -248,6 +255,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -276,6 +284,7 @@ public sealed class ArcGisRestClientSourceSdkTests
             : client.GetServiceMetadataAsync(source, maxRetries, 5, null, cancellationToken);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryFeaturesAsync_ObjectIdWindow_SendsIdsWithoutOffsetPaging()
     {
@@ -295,6 +304,7 @@ public sealed class ArcGisRestClientSourceSdkTests
             .And.NotContainKey("resultRecordCount");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryFeaturesAsync_EmptyObjectIdWindow_SendsNoRequest()
     {
@@ -309,6 +319,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryFeaturesAsync_LongObjectIdWindow_PostsTheQueryWithCredentialHeader()
     {
@@ -331,6 +342,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         request.Body.Should().NotContain("post-secret");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryObjectIdsAndCount_ReturnSourceIdsAndCount()
     {
@@ -350,6 +362,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().OnlyContain(r => r.Uri.AbsolutePath == "/Org123/arcgis/rest/services/Hydrants/FeatureServer/2/query");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_MapsServiceRootMetadataFromTheSdkModel()
     {
@@ -381,6 +394,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         service.SupportedQueryFormats.Should().Equal("JSON", "geoJSON", "PBF");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_OmittedMaxRecordCountAndSpatialReference_StayUnadvertised()
     {
@@ -398,6 +412,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         service.SupportedQueryFormats.Should().Equal("JSON");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryAttachmentsAsync_ReturnsSourceAttachmentMetadata()
     {
@@ -432,6 +447,7 @@ public sealed class ArcGisRestClientSourceSdkTests
                 (502L, "notes.pdf", "application/pdf", 1024L, (string?)null));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryAttachmentsAsync_ErrorEnvelope_IsRejectedInsteadOfReadAsNoAttachments()
     {
@@ -446,6 +462,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().ContainSingle("an HTTP-200 error envelope is a definitive answer and is not retried");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DownloadAttachmentAsync_StreamsSourceBytesWithCredentialHeader()
     {
@@ -475,6 +492,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         request.EsriAuthorization.Should().Be("Bearer download-secret");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DownloadAttachmentAsync_DisallowedResolution_SendsNoRequest()
     {
@@ -489,6 +507,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Credentials_AreSentAsHeadersAndNeverInTheRequestUrl()
     {
@@ -513,6 +532,7 @@ public sealed class ArcGisRestClientSourceSdkTests
             && !r.Uri.ToString().Contains("private-password", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ErrorEnvelope_IsSanitizedAndNotRetried()
     {
@@ -532,6 +552,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(498, nameof(ArcGisAuthenticationFailureKind.CredentialExpired))]
     [InlineData(499, nameof(ArcGisAuthenticationFailureKind.CredentialRequired))]
@@ -551,6 +572,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized, false, nameof(ArcGisAuthenticationFailureKind.CredentialRequired))]
     [InlineData(HttpStatusCode.Unauthorized, true, nameof(ArcGisAuthenticationFailureKind.CredentialDenied))]
@@ -570,6 +592,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TransientServerError_IsRetriedThenSucceeds()
     {
@@ -585,6 +608,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().HaveCount(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TransientServerError_WhenRetriesExhausted_SurfacesSanitizedStatus()
     {
@@ -599,6 +623,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TooManyRequests_HonoursRetryAfter()
     {
@@ -626,6 +651,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().HaveCount(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DeclaredOversizedBody_FailsWithoutBufferingOrRetry()
     {
@@ -645,6 +671,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task UndeclaredOversizedBody_StopsReadingAtTheLimit()
     {
@@ -665,6 +692,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         body!.BytesRead.Should().BeLessThanOrEqualTo(MigrationHttpContentReader.DefaultMaxResponseBytes + (64 * 1024));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task CallerCancellation_PropagatesWithoutRetry()
     {
@@ -684,6 +712,7 @@ public sealed class ArcGisRestClientSourceSdkTests
         handler.Requests.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("https://gis.example.com/arcgis/rest/services/Inspections/FeatureServer/0/query")]
     // An ArcGIS service root names its service before the type segment; a bare host-level

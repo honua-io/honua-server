@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class WktFormatReaderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_PlainWkt_ParsesFeatures()
     {
@@ -24,6 +25,7 @@ public sealed class WktFormatReaderTests
         features[1].Geometry.Should().BeOfType<LineString>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_EwktWithSridPrefix_ParsesFeatureAndHonoursSrid()
     {
@@ -37,6 +39,7 @@ public sealed class WktFormatReaderTests
         point.X.Should().BeApproximately(-122.4194, 1e-6);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_MultiLineGeometry_ParsesSingleFeature()
     {
@@ -57,6 +60,7 @@ public sealed class WktFormatReaderTests
         features[0].Geometry!.Coordinates.Should().HaveCount(5);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_WkbHexLine_ParsesFeature()
     {
@@ -72,6 +76,7 @@ public sealed class WktFormatReaderTests
         point.SRID.Should().Be(4326);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_UnparseableRecord_IsRecordedInDiagnostics()
     {
@@ -94,6 +99,7 @@ public sealed class WktFormatReaderTests
         diagnostics.UnparseableRecords.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_AllValidRecords_RecordsNoDiagnostics()
     {

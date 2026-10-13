@@ -23,6 +23,7 @@ public sealed class OgcCoverageImportServiceTests
 {
     private const string ServiceUrl = "https://example.com/geoserver/wcs";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_DryRun_BuildsPlannedManifestWithoutDownloadingCoverage()
     {
@@ -60,6 +61,7 @@ public sealed class OgcCoverageImportServiceTests
         rasterImportMock.VerifyNoOtherCalls();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_ApplyMode_DownloadsGeoTiffAndRegistersRaster()
     {
@@ -111,6 +113,7 @@ public sealed class OgcCoverageImportServiceTests
         capturedRequests[0].Format.Should().Be(SupportedRasterFormat.GeoTiff);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_ApplyMode_CogClassificationRequestsCloudOptimizedFormat()
     {
@@ -152,6 +155,7 @@ public sealed class OgcCoverageImportServiceTests
         handler.LastRequest!.RequestUri!.Query.Should().Contain("f=tif");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_ApplyMode_TwiceProducesIdenticalManifests()
     {
@@ -194,6 +198,7 @@ public sealed class OgcCoverageImportServiceTests
         handler.RequestCount.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_ApplyMode_MissingLayerIdProducesManualReviewWithoutCallingSource()
     {
@@ -221,6 +226,7 @@ public sealed class OgcCoverageImportServiceTests
         handler.RequestCount.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_ApplyMode_HttpFailurePropagatesAsFailedRecord()
     {
@@ -249,6 +255,7 @@ public sealed class OgcCoverageImportServiceTests
         handler.RequestCount.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_UnsupportedScientificFormat_ClassifiedAsManualReview()
     {
@@ -278,6 +285,7 @@ public sealed class OgcCoverageImportServiceTests
         handler.RequestCount.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_PopulatesStyleDiagnosticsFromInventoryStyleIds()
     {
@@ -304,6 +312,7 @@ public sealed class OgcCoverageImportServiceTests
         result.StyleDiagnostics.Should().Contain(d => d.VendorName == "Esri");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_RejectsPlainHttpUrl_UnlessAllowUnsafeIsSet()
     {

@@ -20,6 +20,7 @@ namespace Honua.Core.Tests.Features.Spec;
 /// </summary>
 public class SpecApplyOrchestratorTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_LinearChain_EmitsStartedRunningSucceededPerNodeThenCompleted()
     {
@@ -64,6 +65,7 @@ public class SpecApplyOrchestratorTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_SecondRunOnIdenticalDocument_HitsCacheForEveryNode()
     {
@@ -96,6 +98,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(SpecApplyEventKind.Cached, perNodeTerminal["c"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_SingleNodeMutation_ReusesUnchangedAndReRunsClosure()
     {
@@ -133,6 +136,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(SpecApplyEventKind.Succeeded, perNodeTerminal["c"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_CacheBypass_AlwaysInvokesExecutor()
     {
@@ -156,6 +160,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(4, fixture.Executor.InvocationCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_UpstreamFailure_EmitsSkippedWithUpstreamFailed()
     {
@@ -186,6 +191,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(2, summary.SkippedNodes);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_ExecutorRaisesSpecExecutionException_PropagatesCodeAndRemedy()
     {
@@ -206,6 +212,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal("install compute.noop", failed.Diagnostic.Remedy);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_TryCancel_TripsRunAndEmitsApplyCancelled()
     {
@@ -235,6 +242,7 @@ public class SpecApplyOrchestratorTests
         Assert.True(terminal.Summary!.Cancelled);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TryCancel_UnknownToken_ReturnsFalse()
     {
@@ -242,6 +250,7 @@ public class SpecApplyOrchestratorTests
         Assert.False(fixture.Engine.TryCancel("definitely-not-an-apply-token"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_ReservedDatasetKind_FailsWithSpecKindNotInS1()
     {
@@ -273,6 +282,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(0, fixture.Executor.InvocationCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task StartAsync_DuplicateNodeIds_ThrowsSpecDocumentInvalidException()
     {
@@ -294,6 +304,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(0, fixture.Executor.InvocationCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task StartAsync_Cycle_ThrowsSpecDocumentInvalidException()
     {
@@ -308,6 +319,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(0, fixture.Executor.InvocationCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task StartAsync_UnresolvedReference_ThrowsSpecDocumentInvalidException()
     {
@@ -321,6 +333,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(0, fixture.Executor.InvocationCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_EnumeratorCancellationDuringQuietPeriod_DetachesStreamImmediately()
     {
@@ -397,6 +410,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(1, fixture.Executor.InvocationCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_CallerCancellation_DoesNotStopRun()
     {
@@ -434,6 +448,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(1, terminal.Summary.RanNodes);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_TryCancel_DeferredNodesEmitApplyCancelledNotUpstreamFailed()
     {
@@ -481,6 +496,7 @@ public class SpecApplyOrchestratorTests
         Assert.True(events[^1].Summary!.Cancelled);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_MutableSourceWithoutPin_StampsTtlOnCachedPayload()
     {
@@ -513,6 +529,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(ttl, stamped.Ttl);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_NonMutableNode_DoesNotStampTtl()
     {
@@ -532,6 +549,7 @@ public class SpecApplyOrchestratorTests
         Assert.Null(put.Ttl);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_ReadOnlyCacheMiss_EmitsFailedWithReadOnlyCacheMissAndSkipsExecutor()
     {
@@ -560,6 +578,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(1, terminal.Summary.FailedNodes);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_ReadOnlyCacheHit_ServesFromCacheWithoutInvokingExecutor()
     {
@@ -583,6 +602,7 @@ public class SpecApplyOrchestratorTests
         Assert.DoesNotContain(rerun, e => e.Kind == SpecApplyEventKind.Failed);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_CancelWhileSiblingBlockedOnSemaphore_EmitsTerminalApplyCancelled()
     {
@@ -644,6 +664,7 @@ public class SpecApplyOrchestratorTests
         });
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_RunWithWarnings_SurfacesThemBeforeSucceeded()
     {
@@ -672,6 +693,7 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(SpecDiagnosticSeverity.Info, warning.Severity);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_ExecutorFailure_RecordsNodeDurationWithFailedOutcome()
     {
@@ -693,6 +715,7 @@ public class SpecApplyOrchestratorTests
         Assert.True(failed[0].Value >= 0, "Failed node duration must be recorded.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_ExecutorFailure_EmitsAppliesCompletedWithSuccessOutcome()
     {
@@ -718,6 +741,7 @@ public class SpecApplyOrchestratorTests
         Assert.True(HasTag(histogramSamples[0].Tags, "outcome", "ApplyCompleted"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Apply_Cancellation_RecordsApplyDurationWithCancelledOutcome()
     {

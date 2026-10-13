@@ -10,6 +10,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class GpxElevationRoundtripTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("trk", "trkseg", "trkpt")]
     [InlineData("rte", "", "rtept")]
@@ -48,6 +49,7 @@ public sealed class GpxElevationRoundtripTests
         Assert.Equal("Profile", Assert.IsType<string>(roundtrip.Attributes["name"]));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportExport_DisconnectedElevatedSegments_PreserveTopologyAndSamples()
     {
@@ -82,6 +84,7 @@ public sealed class GpxElevationRoundtripTests
         Assert.Equal("Profile", Assert.IsType<string>(roundtrip.Attributes["name"]));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_MissingElevation_DoesNotInventOrShiftSamples()
     {
@@ -105,6 +108,7 @@ public sealed class GpxElevationRoundtripTests
         Assert.Equal(40, geometry.Coordinates[2].Z);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData("not-a-number")]

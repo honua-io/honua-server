@@ -17,6 +17,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class ArcGisRestClientSecurityTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_HttpScheme_ThrowsWithoutSendingRequest()
     {
@@ -33,6 +34,7 @@ public sealed class ArcGisRestClientSecurityTests
         handler.RequestCount.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_PrivateResolution_ThrowsWithoutSendingRequest()
     {
@@ -49,6 +51,7 @@ public sealed class ArcGisRestClientSecurityTests
         handler.RequestCount.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_LayerUrl_ThrowsWithoutSendingRequest()
     {
@@ -66,6 +69,7 @@ public sealed class ArcGisRestClientSecurityTests
         handler.RequestCount.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_PublicResolution_SendsRequest()
     {
@@ -87,6 +91,7 @@ public sealed class ArcGisRestClientSecurityTests
         handler.RequestCount.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetServiceMetadataAsync_WithBasicCredentials_SendsAuthorizationHeaderWithoutQuerySecret()
     {
@@ -111,6 +116,7 @@ public sealed class ArcGisRestClientSecurityTests
         handler.LastAuthorizationHeader.Should().Be("Basic c2Nhbm5lcjpwcml2YXRlLXBhc3N3b3Jk");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_WhenRetryLogsTokenRequest_DoesNotLeakTokenValue()
     {
@@ -139,6 +145,7 @@ public sealed class ArcGisRestClientSecurityTests
         logger.Messages.Should().NotContain(message => message.Contains("token=", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAllowedAddressesAsync_MixedPublicAndPrivate_Throws()
     {
@@ -151,6 +158,7 @@ public sealed class ArcGisRestClientSecurityTests
         ex.Message.Should().Contain("disallowed network address");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAllowedAddressesAsync_PublicIpLiteral_ReturnsAddress()
     {
@@ -163,6 +171,7 @@ public sealed class ArcGisRestClientSecurityTests
         addresses[0].Should().Be(IPAddress.Parse("93.184.216.34"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CreatePinnedDnsHttpMessageHandler_ConfiguresConnectCallback()
     {
@@ -172,6 +181,7 @@ public sealed class ArcGisRestClientSecurityTests
         socketsHandler.ConnectCallback.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [LinuxProcFdFact]
     public async Task CreatePinnedDnsHttpMessageHandler_CanceledConnect_DoesNotLeakSockets()
     {
@@ -209,6 +219,7 @@ public sealed class ArcGisRestClientSecurityTests
         (settledDescriptors - baselineDescriptors).Should().BeLessThan(96);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetLayerInfoAsync_FeatureCountQueryCanceled_PropagatesCancellation()
     {

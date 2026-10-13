@@ -14,6 +14,7 @@ namespace Honua.Core.Tests.Raster.ZarrParser;
 
 public class ZarrMetadataExtractorTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_ConsolidatedGroupWithoutVariablesManifest_DiscoversArrays()
     {
@@ -39,6 +40,7 @@ public class ZarrMetadataExtractorTests
         metadata.Arrays.Should().ContainSingle().Which.Name.Should().Be("temperature");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_LargeConsolidatedMetadata_IsNotTruncated()
     {
@@ -56,6 +58,7 @@ public class ZarrMetadataExtractorTests
         metadata.Arrays.Should().ContainSingle().Which.Name.Should().Be("temperature");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_SingleArrayUncompressed_DiscoversShapeAndDtype()
     {
@@ -83,6 +86,7 @@ public class ZarrMetadataExtractorTests
         metadata.PrimaryVariable.Should().Be("example");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_GroupWithCrsAndExtent_PopulatesGeoreferencing()
     {
@@ -113,6 +117,7 @@ public class ZarrMetadataExtractorTests
         metadata.Arrays[0].DimensionNames.Should().Equal("y", "x");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_TemporalAttrsPresent_PopulatesTemporalExtent()
     {
@@ -134,6 +139,7 @@ public class ZarrMetadataExtractorTests
         metadata.Temporal.StepCount.Should().Be(5);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_TemporalAttrsAbsent_TemporalExtentNull()
     {
@@ -152,6 +158,7 @@ public class ZarrMetadataExtractorTests
         metadata.Temporal.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_InvalidJson_ThrowsInvalidData()
     {
@@ -164,6 +171,7 @@ public class ZarrMetadataExtractorTests
         await act.Should().ThrowAsync<InvalidDataException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_V3ArrayWithoutZarrJson_Rejected()
     {
@@ -178,6 +186,7 @@ public class ZarrMetadataExtractorTests
         (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*v3*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_V3SingleArray_DiscoversShapeAndNormalizesDtype()
     {
@@ -207,6 +216,7 @@ public class ZarrMetadataExtractorTests
         array.ChunkKeyEncoding.Separator.Should().Be("/");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_V3Group_PopulatesGeoreferencing()
     {
@@ -237,6 +247,7 @@ public class ZarrMetadataExtractorTests
         metadata.Arrays[0].DimensionNames.Should().Equal("y", "x");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_V3UnsupportedCodec_Rejected()
     {
@@ -249,6 +260,7 @@ public class ZarrMetadataExtractorTests
         (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*blosc*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_FortranOrder_Rejected()
     {
@@ -261,6 +273,7 @@ public class ZarrMetadataExtractorTests
         (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*Fortran*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_NonNullFilters_Rejected()
     {
@@ -273,6 +286,7 @@ public class ZarrMetadataExtractorTests
         (await act.Should().ThrowAsync<InvalidDataException>()).WithMessage("*filters*not supported*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_EvenlySpacedVerticalAxis_IsDiscovered()
     {
@@ -294,6 +308,7 @@ public class ZarrMetadataExtractorTests
         axis.Positive.Should().Be("up");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_ExplicitVerticalAxis_CarriesCoordinates()
     {
@@ -308,6 +323,7 @@ public class ZarrMetadataExtractorTests
         metadata.Axes[0].Coordinates.Should().Equal(0d, 10d, 100d, 1000d);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_NoAxesManifest_YieldsEmptyAxes()
     {

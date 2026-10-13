@@ -9,30 +9,24 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Infrastructure.Hosting.Modules;
 
 /// <summary>
-/// OData v4 protocol module. Wraps the existing
-/// <see cref="ODataServiceCollectionExtensions.AddOData"/> and
-/// <see cref="ODataEndpoints.MapODataEndpoints"/> registration calls behind
-/// the <see cref="IHonuaProtocolModule"/> contract so the host can iterate
-/// protocols uniformly. The wrapper is additive — the existing direct calls
-/// in <c>FeatureRegistrationExtensions</c> still own the canonical wiring
-/// until a follow-up PR migrates them to module-based dispatch.
+/// Compatibility wrapper delegating to the production OData assembly module.
 /// </summary>
 public sealed class ODataProtocolModule : IHonuaProtocolModule
 {
+    private readonly Honua.Protocols.OData.ODataProtocolModule _module = new();
+
     /// <inheritdoc />
-    public string Name => "OData";
+    public string Name => _module.Name;
 
     /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
-        ArgumentNullException.ThrowIfNull(services);
-        services.AddOData(configuration);
+        _module.ConfigureServices(services, configuration);
     }
 
     /// <inheritdoc />
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        ArgumentNullException.ThrowIfNull(endpoints);
-        endpoints.MapODataEndpoints();
+        _module.MapEndpoints(endpoints);
     }
 }

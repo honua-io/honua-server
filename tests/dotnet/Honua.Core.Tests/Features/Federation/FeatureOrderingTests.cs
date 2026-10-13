@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Features.Federation;
 
 public sealed class FeatureOrderingTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(true, 2, 3)]
     [InlineData(false, 1, 3)]

@@ -59,6 +59,7 @@ public sealed class SpecGrammarIntegrationTests
         }
         """;
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FullS1Pipeline_ParsesCanonicalizesValidatesWithoutErrors()
     {
@@ -94,6 +95,7 @@ public sealed class SpecGrammarIntegrationTests
             string.Join(" | ", validation.Diagnostics.Select(d => $"{d.Code}:{d.Severity}:{d.Message}")));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FullS1Pipeline_RoundTripsIdempotently()
     {
@@ -108,6 +110,7 @@ public sealed class SpecGrammarIntegrationTests
         second.Should().Be(first, "JSON → AST → JSON must be byte-for-byte idempotent");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AddSpecGrammar_RegistersPublicInterfacesAsSingletons()
     {
@@ -126,6 +129,7 @@ public sealed class SpecGrammarIntegrationTests
         parser1.Should().BeSameAs(parser2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FullS1Pipeline_JsonMatchesSchemaInvariants()
     {

@@ -7,6 +7,7 @@ namespace Honua.GeoServicesRest.Tests;
 
 public sealed class ArcGisRestUrlValidatorTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("https://10.1.2.3/arcgis/rest/services/parcels/FeatureServer")]
     [InlineData("https://172.16.2.3/arcgis/rest/services/parcels/FeatureServer")]
@@ -22,6 +23,7 @@ public sealed class ArcGisRestUrlValidatorTests
         Assert.Contains("private", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NormalizeServiceRootUrl_WithPublicServiceRoot_ReturnsCanonicalRoot()
     {

@@ -15,6 +15,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class EsriFieldDomainParserTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CodedValueDomain_ProducesCanonicalCodedValues()
     {
@@ -42,6 +43,7 @@ public sealed class EsriFieldDomainParserTests
         result.Domain.CodedValues.Select(v => v.Name).Should().BeEquivalentTo(["Active", "Closed"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_RangeDomain_ProducesTwoElementRange()
     {
@@ -64,6 +66,7 @@ public sealed class EsriFieldDomainParserTests
         result.Domain.Range![1].GetInt32().Should().Be(100);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CodedValueDomainOverCap_ReportsTruncatedAndOmitsDomain()
     {
@@ -93,6 +96,7 @@ public sealed class EsriFieldDomainParserTests
         result.DomainName.Should().Be("HugeDomain");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_FieldWithoutDomain_ReturnsNone()
     {
@@ -103,6 +107,7 @@ public sealed class EsriFieldDomainParserTests
         result.Should().Be(EsriFieldDomainParseResult.None);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_DomainAtCapBoundary_PersistsFully()
     {

@@ -17,6 +17,7 @@ namespace Honua.Core.Tests.Features.Geoprocessing;
 /// </summary>
 public sealed class RasterOutputContractTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Serialize_StagedObjectDescriptor_RoundTrips()
     {
@@ -29,6 +30,7 @@ public sealed class RasterOutputContractTests
         parsed.Should().BeEquivalentTo(descriptor);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Serialize_InlineDescriptor_RoundTripsPayload()
     {
@@ -41,6 +43,7 @@ public sealed class RasterOutputContractTests
             .Which.Payload.Should().Equal(payload);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -54,6 +57,7 @@ public sealed class RasterOutputContractTests
         descriptor.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryDeserialize_PublishedDescriptor_ReturnsTypedDescriptor()
     {
@@ -63,6 +67,7 @@ public sealed class RasterOutputContractTests
         descriptor.Should().BeOfType<StagedObjectRasterOutputDescriptor>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_WellFormedStagedDescriptor_Passes()
     {
@@ -71,6 +76,7 @@ public sealed class RasterOutputContractTests
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors.Select(e => e.Message)));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("application/vnd.zarr", "gp/outputs/job-1/a1/output1/output.bin")]
     [InlineData("image/tiff", "gp/outputs/job-1/a1/output1/result.zarr")]
@@ -90,6 +96,7 @@ public sealed class RasterOutputContractTests
             error.Code == RasterOutputValidationCodes.ZarrOutputUnsupported);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_InlinePayloadAboveCeiling_IsRejected()
     {
@@ -104,6 +111,7 @@ public sealed class RasterOutputContractTests
             error.Code == RasterOutputValidationCodes.InlinePayloadTooLarge);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_InlineChecksumMismatch_IsRejected()
     {
@@ -123,6 +131,7 @@ public sealed class RasterOutputContractTests
             error.Code == RasterOutputValidationCodes.ChecksumMismatch);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_MissingChecksum_IsRejected()
     {
@@ -137,6 +146,7 @@ public sealed class RasterOutputContractTests
             error.Code == RasterOutputValidationCodes.InvalidContentIdentity);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("/rooted/key.tif")]
     [InlineData("../escape.tif")]
@@ -152,6 +162,7 @@ public sealed class RasterOutputContractTests
             error.Code == RasterOutputValidationCodes.UnsafeLocator);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ObjectKeys_BuildAndParse_RoundTripAttemptIdentity()
     {
@@ -163,6 +174,7 @@ public sealed class RasterOutputContractTests
         attempt.Should().Be(3);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("unrelated/key.tif")]
     [InlineData("gp/outputs/job-1/notattempt/output/file.tif")]

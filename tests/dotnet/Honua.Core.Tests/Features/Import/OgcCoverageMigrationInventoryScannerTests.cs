@@ -15,6 +15,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class OgcCoverageMigrationInventoryScannerTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanAsync_WcsCoverageWithCogAndTemporalMetadata_ProducesCoverageInventory()
     {
@@ -152,6 +153,7 @@ public sealed class OgcCoverageMigrationInventoryScannerTests
             dependency.Metadata["interval"] == "P1D");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanAsync_OgcApiCoveragesScientificFormats_ClassifiesUnsupportedFormatsSeparately()
     {
@@ -236,6 +238,7 @@ public sealed class OgcCoverageMigrationInventoryScannerTests
                 ]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanAsync_CoverageLevelAccessConstraints_MarkServiceMetadataForManualReview()
     {
@@ -272,6 +275,7 @@ public sealed class OgcCoverageMigrationInventoryScannerTests
             compatibility.Warnings.Contains("internal use only"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanAsync_MissingOutputFormats_EmitsManualReviewCompletenessSignal()
     {
@@ -297,6 +301,7 @@ public sealed class OgcCoverageMigrationInventoryScannerTests
             compatibility.Code == OgcCoverageMigrationCompatibilityCodes.OutputFormatMissing);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanAsync_ReordersCoverageInventoryDeterministically()
     {

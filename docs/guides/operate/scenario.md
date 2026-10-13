@@ -269,7 +269,7 @@ the user to assemble rollback commands or edit telemetry settings.
 
 | Placement / backend | Wiring and required outcome |
 |---|---|
-| Local Docker | Retain the exact prior image and database compatibility/backup plan. Compose replacement is operator-managed unless the registered backend advertises a real rollback actuator. Otherwise fix forward or report manual intervention. |
+| Local Docker | Retain the exact prior image and database compatibility/backup plan. Compose replacement is operator-managed. A `SelfHostedRolling` target on the `honua-yarp-rolling` backend is a real rollback actuator: the server launches the replicas, keeps the prior one through the observation window and swaps its proxy back. It needs the host container runtime and the [rollback completion proof](../deploy/upgrade-and-rollback.md#rollback-completion-proof) parameters; without them, recovery ends in **Needs attention**. Otherwise fix forward or report manual intervention. |
 | AWS ECS-small | Terraform in `honua-iac` declares infrastructure; inspect the runtime backend and prior task revision. A GitOps handoff with `SupportsRollback=false` cannot revert workload traffic. A direct ECS adapter must supply its provider receipt before rollback is claimed. |
 | Helm / Kubernetes GitOps handoff | Pin chart values and image digest; the GitOps owner changes the revision. Unsupported handoff adapters return manual intervention. Helm wiring alone proves neither server rollback nor EKS certification. |
 | Registered real rollback adapter | Require advertised support, a prior revision, an approved operation and an observed provider revert, followed by the same verification window. Missing any one prevents a rollback claim. |

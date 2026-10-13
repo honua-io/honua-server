@@ -12,6 +12,7 @@ public class TilesetTtlResolverTests
     private const string LayerId = "0";
     private const string TileMatrixSetId = "WebMercatorQuad";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildKey_ComposesServiceLayerMatrixSet()
     {
@@ -19,6 +20,7 @@ public class TilesetTtlResolverTests
             .Should().Be("FeatureServer/0/WebMercatorQuad");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_PerTilesetOverride_ReturnsOverrideTtl()
     {
@@ -36,6 +38,7 @@ public class TilesetTtlResolverTests
             .Should().Be(60);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_KeyMiss_FallsBackToGlobalCacheMaxAge()
     {
@@ -52,6 +55,7 @@ public class TilesetTtlResolverTests
             .Should().Be(3600);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_NullLifecycleMap_ReturnsGlobalCacheMaxAge()
     {
@@ -61,6 +65,7 @@ public class TilesetTtlResolverTests
             .Should().Be(1800);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_EmptyLifecycleMap_ReturnsGlobalCacheMaxAge()
     {
@@ -74,6 +79,7 @@ public class TilesetTtlResolverTests
             .Should().Be(1800);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_OverrideEntryWithNullTtl_FallsBackToGlobal()
     {
@@ -93,6 +99,7 @@ public class TilesetTtlResolverTests
             .Should().Be(3600);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_KeyOverload_MatchesComposedKey()
     {
@@ -118,6 +125,7 @@ public class TilesetTtlResolverTests
     // the eviction / metatiling configuration.
     // ---------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TileOptions_ExposesEvictionAndMetatilingSeams()
     {
@@ -138,6 +146,7 @@ public class TilesetTtlResolverTests
         options.Eviction.MaxBytes.Should().Be(50_000_000);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TileOptions_DefaultEvictionDisabled_AndMetatilingOff()
     {

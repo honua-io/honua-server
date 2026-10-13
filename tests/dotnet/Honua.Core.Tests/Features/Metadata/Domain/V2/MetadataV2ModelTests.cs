@@ -482,6 +482,7 @@ public sealed class MetadataV2ModelTests
         result.Errors.Should().NotContain(error => error.Contains(oversizedUrl, StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("not-an-email")]
     [InlineData("a@")]
@@ -519,6 +520,7 @@ public sealed class MetadataV2ModelTests
         result.Errors.Should().NotContain(error => error.Contains(email, StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -553,6 +555,7 @@ public sealed class MetadataV2ModelTests
         result.Errors.Should().NotContain(error => error.Contains(contactName, StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(true, true)]
     [InlineData(true, false)]
@@ -700,6 +703,7 @@ public sealed class MetadataV2ModelTests
                 StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("license")]
     [InlineData("describedby")]
@@ -771,6 +775,7 @@ public sealed class MetadataV2ModelTests
                 StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("Not-A-License")]
     [InlineData(" MIT ")]

@@ -9,6 +9,7 @@ namespace Honua.Core.Tests.OperationScopes;
 
 public sealed class OperationScopeMappingTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("admin.layer.publish", OperatorOperation.Publish)]
     [InlineData("style.apply-preset", OperatorOperation.Publish)]
@@ -33,6 +34,7 @@ public sealed class OperationScopeMappingTests
     // #3429: the dispatcher refuses every scope-governed submission it cannot map (#4722), so each
     // Studio operation routed through the canonical runtime must resolve, with or without a gateway
     // envelope, to the same operation StudioAuthorizationService uses as its scope ceiling.
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("studio.draft.create", OperatorOperation.Create)]
     [InlineData("studio.draft.update", OperatorOperation.Update)]
@@ -64,6 +66,7 @@ public sealed class OperationScopeMappingTests
         directOperation.Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryResolve_UnknownStudioOperation_FailsClosed()
     {
@@ -80,6 +83,7 @@ public sealed class OperationScopeMappingTests
         OperationScopeMapping.TryResolve(routed, out _).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryResolve_UnknownAdminOperation_FailsClosed()
     {

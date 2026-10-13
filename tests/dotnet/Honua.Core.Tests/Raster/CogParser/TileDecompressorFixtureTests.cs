@@ -39,6 +39,7 @@ public class TileDecompressorFixtureTests
         { "none_uint8", "NONE", 1, 1, 8 },
     };
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(GdalFixtures))]
     public async Task Decompress_GdalProducedFixture_ReproducesGdalDecodedPixels(
@@ -57,6 +58,7 @@ public class TileDecompressorFixtureTests
         AssertBytesEqual(expected, actual, fixture);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Decompress_LzwWithPredictorButLayoutOmittingIt_ProducesWrongPixels()
     {
@@ -71,6 +73,7 @@ public class TileDecompressorFixtureTests
         withoutPredictor.Should().NotEqual(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Decompress_SameRasterAcrossCodecs_ReturnsIdenticalPixels()
     {
@@ -88,6 +91,7 @@ public class TileDecompressorFixtureTests
         AssertBytesEqual(none, deflate, "deflate_pred1_uint8 vs none_uint8");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(1)]
     [InlineData(7)]
@@ -109,6 +113,7 @@ public class TileDecompressorFixtureTests
         act.Should().NotThrow<OutOfMemoryException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Decompress_LzwCodeReferencingUndefinedEntry_ThrowsInvalidData()
     {
@@ -121,6 +126,7 @@ public class TileDecompressorFixtureTests
         act.Should().Throw<InvalidDataException>().WithMessage("*before it is defined*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Decompress_LzwNonLiteralAfterClear_ThrowsInvalidData()
     {
@@ -155,6 +161,7 @@ public class TileDecompressorFixtureTests
         return packed;
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Decompress_ZstdFrameWithoutContentSize_DecodesToExactLength()
     {
@@ -182,6 +189,7 @@ public class TileDecompressorFixtureTests
         decoded.Should().Equal(raw);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Decompress_ZstdFrameDeclaringOversizedContent_ThrowsBeforeAllocating()
     {
@@ -196,6 +204,7 @@ public class TileDecompressorFixtureTests
         act.Should().Throw<InvalidDataException>().WithMessage("*decompression bomb*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Decompress_UnsupportedCodec_ThrowsNamingCodecAndSupportedSet()
     {
@@ -207,6 +216,7 @@ public class TileDecompressorFixtureTests
         exception.Message.Should().Contain("LERC");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Decompress_FloatingPointPredictor_ThrowsNamingPredictor()
     {
@@ -224,6 +234,7 @@ public class TileDecompressorFixtureTests
         exception.Message.Should().Contain("317");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Decompress_NoneWithPredictor_DoesNotMutateCallerBuffer()
     {
@@ -236,6 +247,7 @@ public class TileDecompressorFixtureTests
         tile.Should().Equal(10, 5, 5, 5);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsSupported_LzwAndZstd_ReturnsTrue()
     {

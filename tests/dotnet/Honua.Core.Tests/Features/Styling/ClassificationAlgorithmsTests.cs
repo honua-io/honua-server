@@ -14,6 +14,7 @@ public sealed class ClassificationAlgorithmsTests
 {
     // ──────────────────── EqualInterval ────────────────────
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EqualInterval_FiveClasses_ProducesEvenBreaks()
     {
@@ -23,6 +24,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks.Should().BeEquivalentTo([20d, 40d, 60d, 80d]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EqualInterval_TwoClasses_ProducesSingleBreak()
     {
@@ -32,6 +34,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks[0].Should().BeApproximately(20d, 1e-10);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EqualInterval_ClassCountOne_ReturnsSingleBreakAtMax()
     {
@@ -41,6 +44,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks[0].Should().Be(100d);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EqualInterval_MinEqualsMax_ProducesIdenticalBreaks()
     {
@@ -50,6 +54,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks.Should().AllSatisfy(b => b.Should().Be(50d));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EqualInterval_NegativeRange_ProducesCorrectBreaks()
     {
@@ -62,6 +67,7 @@ public sealed class ClassificationAlgorithmsTests
 
     // ──────────────────── Quantile ────────────────────
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Quantile_EvenDistribution_ProducesExpectedBreaks()
     {
@@ -75,6 +81,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks[2].Should().BeApproximately(7.75, 1e-10);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Quantile_TwoClasses_ProducesMedian()
     {
@@ -85,6 +92,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks[0].Should().BeApproximately(3d, 1e-10);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Quantile_EmptyArray_ReturnsEmpty()
     {
@@ -93,6 +101,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Quantile_ClassCountOne_ReturnsEmpty()
     {
@@ -102,6 +111,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Quantile_SingleValue_ReturnsThatValue()
     {
@@ -114,6 +124,7 @@ public sealed class ClassificationAlgorithmsTests
 
     // ──────────────────── NaturalBreaks ────────────────────
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NaturalBreaks_ClearClusters_FindsBoundary()
     {
@@ -126,6 +137,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks[0].Should().BeInRange(3d, 100d);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NaturalBreaks_ThreeClusters_FindsTwoBoundaries()
     {
@@ -140,6 +152,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks[1].Should().BeInRange(52d, 200d);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NaturalBreaks_UniformData_FallsBackToEqualInterval()
     {
@@ -151,6 +164,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks.Should().AllSatisfy(b => b.Should().Be(5d));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NaturalBreaks_EmptyArray_ReturnsEmpty()
     {
@@ -159,6 +173,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NaturalBreaks_ClassCountOne_ReturnsEmpty()
     {
@@ -168,6 +183,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NaturalBreaks_ClassCountExceedsDataCount_CapsToDataCount()
     {
@@ -179,6 +195,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks.Should().BeInAscendingOrder();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NaturalBreaks_UnsortedInput_ProducesValidBreaks()
     {
@@ -193,6 +210,7 @@ public sealed class ClassificationAlgorithmsTests
         breaks[1].Should().BeInRange(52d, 200d);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NaturalBreaks_TwoValues_ProducesSingleBreak()
     {
@@ -205,6 +223,7 @@ public sealed class ClassificationAlgorithmsTests
 
     // ──────────────────── Cross-algorithm invariants ────────────────────
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(2)]
     [InlineData(3)]
@@ -223,6 +242,7 @@ public sealed class ClassificationAlgorithmsTests
             .Should().HaveCount(expectedBreaks);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AllMethods_BreaksAreAscending()
     {
@@ -238,6 +258,7 @@ public sealed class ClassificationAlgorithmsTests
 
     // ──────────────────── ColorPalette.MaxClassCount ────────────────────
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Palette_MaxClassCount_MatchesLargestKey()
     {
@@ -256,6 +277,7 @@ public sealed class ClassificationAlgorithmsTests
         palette.MaxClassCount.Should().Be(5);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Palette_GetColors_WithinMax_ReturnsExactColors()
     {
@@ -266,6 +288,7 @@ public sealed class ClassificationAlgorithmsTests
         palette.GetColors(9).Distinct().Count().Should().Be(9, "all 9 colors should be unique");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Palette_GetColors_ExceedingMax_RepeatsLastColor()
     {

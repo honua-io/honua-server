@@ -92,6 +92,7 @@ public sealed class MapPackageDraftFactoryTests
         Assert.Equal(Serialize(withStyle), Serialize(alsoWithStyle));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("EPSG:3857")]
     [InlineData("EPSG:4326")]
@@ -108,6 +109,7 @@ public sealed class MapPackageDraftFactoryTests
         Assert.Equal(crs, result.Package!.InitialView!.Crs);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("4326")]
     [InlineData("EPSG:")]
@@ -163,6 +165,7 @@ public sealed class MapPackageDraftFactoryTests
         Assert.Contains(result.Errors, error => error.Code == "bboxNotOrdered" && error.Message.Contains("minLat", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(3)]

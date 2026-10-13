@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Features.Scene;
 /// </summary>
 public class SceneDatasetValidatorTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("hosted-scene")]
     [InlineData("alpha")]
@@ -26,6 +27,7 @@ public class SceneDatasetValidatorTests
         Assert.Null(error);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
@@ -53,6 +55,7 @@ public class SceneDatasetValidatorTests
         Assert.Contains("characters or fewer", error, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("/var/lib/honua/scenes/alpha")]
     [InlineData("/data/scene")]
@@ -65,6 +68,7 @@ public class SceneDatasetValidatorTests
         Assert.Null(error);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("https://cdn.example.com/scene")]
     [InlineData("http://localhost/scene")]
@@ -84,6 +88,7 @@ public class SceneDatasetValidatorTests
         Assert.False(string.IsNullOrEmpty(error));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("EPSG:4326")]
     [InlineData("EPSG:4979")]
@@ -105,6 +110,7 @@ public class SceneDatasetValidatorTests
         Assert.Null(error);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("epsg:4326")]
     [InlineData("EPSG-4326")]
@@ -143,6 +149,7 @@ public class SceneDatasetValidatorTests
         Assert.True(SceneDatasetValidator.TryValidateCachePolicy(new SceneCachePolicy(86_400, true), out _));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(-1)]
     [InlineData(86_401)]
@@ -154,6 +161,7 @@ public class SceneDatasetValidatorTests
         Assert.Contains("Cache max-age", error, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("pro")]
     [InlineData("enterprise")]
@@ -169,6 +177,7 @@ public class SceneDatasetValidatorTests
         Assert.True(SceneDatasetValidator.TryValidateEditionGate(null, out _));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("Pro")]
     [InlineData("UPPER")]
@@ -193,6 +202,7 @@ public class SceneDatasetValidatorTests
         Assert.True(SceneDatasetValidator.TryValidateExtent(extent, out _));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(-181d, 0d, 1d, 1d)]
     [InlineData(0d, -91d, 1d, 1d)]
@@ -227,6 +237,7 @@ public class SceneDatasetValidatorTests
         Assert.Contains("exactly one", error, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]
@@ -235,6 +246,7 @@ public class SceneDatasetValidatorTests
         Assert.True(SceneDatasetValidator.TryValidateAccessFlags(isPublic, requiresAuth, out _));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("tileset.json")]
     [InlineData("scene.json")]
@@ -247,6 +259,7 @@ public class SceneDatasetValidatorTests
         Assert.True(SceneDatasetValidator.TryValidateTilesetFileName(tilesetFileName, out _));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("nested/tileset.json")]
     [InlineData("nested\\tileset.json")]

@@ -23,6 +23,7 @@ public sealed class PortalAccessProjectionTests
     private static PermissionDecision Allow()
         => PermissionDecision.Allow(new PermissionGrant { Service = "svc", Layer = "*", Operation = "query" });
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsEnabled_DefaultsToFalse_SoTheFacadeStaysOffByDefault()
     {
@@ -31,6 +32,7 @@ public sealed class PortalAccessProjectionTests
         projection.IsEnabled.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ProjectAccessLevel_AnonymousReadAllowed_IsPublic()
     {
@@ -39,6 +41,7 @@ public sealed class PortalAccessProjectionTests
         Enabled.ProjectAccessLevel(policy, null).Should().Be(PortalAccessLevel.Public);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ProjectAccessLevel_AuthenticatedNoRoleRestriction_IsOrg()
     {
@@ -47,6 +50,7 @@ public sealed class PortalAccessProjectionTests
         Enabled.ProjectAccessLevel(policy, null).Should().Be(PortalAccessLevel.Organization);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ProjectAccessLevel_RoleRestricted_IsPrivate()
     {
@@ -55,12 +59,14 @@ public sealed class PortalAccessProjectionTests
         Enabled.ProjectAccessLevel(policy, null).Should().Be(PortalAccessLevel.Private);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ProjectAccessLevel_NoPolicyAtAll_IsPrivate()
     {
         Enabled.ProjectAccessLevel(null, null).Should().Be(PortalAccessLevel.Private);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ProjectAccessLevel_LayerNarrowsService_TakesMoreRestrictiveLevel()
     {
@@ -70,6 +76,7 @@ public sealed class PortalAccessProjectionTests
         Enabled.ProjectAccessLevel(layer, service).Should().Be(PortalAccessLevel.Private);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ProjectAccessLevel_LayerWithoutPolicy_InheritsServiceLevel()
     {
@@ -78,6 +85,7 @@ public sealed class PortalAccessProjectionTests
         Enabled.ProjectAccessLevel(null, service).Should().Be(PortalAccessLevel.Public);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ProjectVisibility_ExplicitGrant_IsVisible()
     {
@@ -86,6 +94,7 @@ public sealed class PortalAccessProjectionTests
         visibility.IsVisible.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ProjectVisibility_ResolverRequiresAuth_RequestsAuthentication()
     {
@@ -97,6 +106,7 @@ public sealed class PortalAccessProjectionTests
         visibility.RequiresAuthentication.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ProjectVisibility_NoGrant_FallsBackToCoarseAllow()
     {
@@ -105,6 +115,7 @@ public sealed class PortalAccessProjectionTests
         visibility.IsVisible.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ProjectVisibility_NoGrantAndCoarseRequiresAuth_RequestsAuthentication()
     {
@@ -114,6 +125,7 @@ public sealed class PortalAccessProjectionTests
         visibility.RequiresAuthentication.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ProjectVisibility_NoGrantAndCoarseForbidden_IsHidden()
     {
@@ -123,6 +135,7 @@ public sealed class PortalAccessProjectionTests
         visibility.RequiresAuthentication.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(PortalAccessLevel.Public, "public")]
     [InlineData(PortalAccessLevel.Organization, "org")]
