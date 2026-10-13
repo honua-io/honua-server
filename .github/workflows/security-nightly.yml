@@ -10,6 +10,19 @@ on:
         description: 'Include transitive NuGet dependencies'
         type: boolean
         default: true
+      existing_image:
+        description: 'Read-only scan instead of builds: ghcr.io/honua-io/honua-server@sha256:<digest>'
+        type: string
+        default: ''
+      existing_image_platform:
+        description: 'Required platform of the existing image'
+        type: choice
+        options: [linux/amd64, linux/arm64]
+        default: linux/amd64
+      existing_image_revision:
+        description: 'Required full server source SHA when scanning an existing image'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -26,11 +39,65 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 concurrency:
-  group: security-nightly-${{ github.ref }}
+  group: security-nightly-${{ github.ref }}-${{ inputs.existing_image || 'build' }}-${{ inputs.existing_image_platform || 'default' }}
   cancel-in-progress: true
 
 jobs:
+  existing-image-scan:
+    name: Scan existing immutable image
+    if: github.event_name == 'workflow_dispatch' && inputs.existing_image != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SCAN_IMAGE: ${{ inputs.existing_image }}
+      SCAN_PLATFORM: ${{ inputs.existing_image_platform }}
+      SCAN_REVISION: ${{ inputs.existing_image_revision }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate requested identity
+        run: python3 scripts/security/existing-image-scan.py validate
+      - name: Verify scan receipt controls
+        run: python3 scripts/security/test-existing-image-scan.py
+      - name: Pull the existing image without running it
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
+          docker pull --platform "$SCAN_PLATFORM" "$SCAN_IMAGE"
+          docker image inspect "$SCAN_IMAGE" > existing-image-inspect.json
+          python3 scripts/security/existing-image-scan.py identity
+      - name: Scan full vulnerability inventory
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_PLATFORM: ${{ inputs.existing_image_platform }}
+        with:
+          scan-type: image
+          image-ref: ${{ inputs.existing_image }}
+          scanners: vuln
+          format: json
+          output: existing-image-trivy.json
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          trivyignores: /dev/null
+          exit-code: '0'
+      - name: Bind inventory and enforce fixed high severity findings
+        run: python3 scripts/security/existing-image-scan.py verdict
+      - name: Retain immutable scan evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: existing-image-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            existing-image-identity.json
+            existing-image-inspect.json
+            existing-image-trivy.json
+            existing-image-verdict.json
+          if-no-files-found: warn
+          retention-days: 90
+
   nuget-vulnerability-scan:
+    if: inputs.existing_image == ''
     name: NuGet Vulnerability Scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -143,6 +210,7 @@ jobs:
             }
 
   trivy-filesystem-scan:
+    if: inputs.existing_image == ''
     name: Trivy Filesystem Scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -191,6 +259,7 @@ jobs:
           exit-code: '1'
 
   container-security-scan:
+    if: inputs.existing_image == ''
     name: Container Security Scan (${{ matrix.variant }})
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout_minutes }}
