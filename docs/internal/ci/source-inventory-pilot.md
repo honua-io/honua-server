@@ -104,7 +104,13 @@ was performed. Standard hosted `dotnet msbuild` supports the required
 `-getItem`/`-getProperty` API; the optional hosted observation must provide actual
 qualification evidence. Local fixture success is not that evidence.
 
-## Optional workflow insertion (no cutover)
+## Hosted observation (no cutover)
+
+`ci.yml` runs the pilot in the foundation `server` family after its complete
+collector, with five-minute tool-build and fifteen-minute observation caps.
+The existing foundation test-results upload retains its evidence. Set repository
+variable `HONUA_SOURCE_INVENTORY_PILOT=false` to disable the pilot without affecting
+any existing checks. Other callers can use the following insertion pattern.
 
 Insert these steps **after existing normal test outputs, projection regeneration
 and the complete collector have run** in the same checkout/job. Do not add
