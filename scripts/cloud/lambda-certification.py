@@ -3,10 +3,12 @@
 import base64
 from datetime import datetime, timedelta, timezone
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
 import re
+import secrets
 import signal
 import subprocess
 import sys
@@ -185,14 +187,24 @@ def capture_deployment_inputs(directory, standing, ecr_digest):
             environment["Variables"][name] = SECRET_REFERENCE_PREFIX + secret_id + "?versionId=" + version
             versions[fingerprint(name)] = {"referenceFingerprint": fingerprint(secret_id), "versionId": version}
     write_json(directory / "environment.json", environment)
+    # Never publish a plain password verifier. This private key is discarded after the
+    # capture and is not included in the artifact; verification authenticates the capture.
+    commitment_key = secrets.token_bytes(32)
+
+    def commitment(name, value):
+        data = json.dumps({"name": name, "value": value}, sort_keys=True,
+                          separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
+        return "hmac-sha256:" + hmac.new(commitment_key, data, hashlib.sha256).hexdigest()
+
     configuration = {
-        "environmentDigest": canonical_digest(environment),
+        "privateInputCommitmentAlgorithm": "hmac-sha256",
+        "environmentCommitment": commitment("environment", environment),
         "vpcDigest": canonical_digest(json.loads((directory / "vpc.json").read_text())),
-        "standingConfigurationDigest": canonical_digest(standing["Configuration"]),
+        "standingConfigurationCommitment": commitment("standingConfiguration", standing["Configuration"]),
         "secretVersions": versions,
         "memoryMiB": 1024, "timeoutSeconds": 60, "packageType": "Image",
         "fixtureSha256": "sha256:" + hashlib.sha256(FIXTURE.read_bytes()).hexdigest(),
-        "runtimeInputs": {name: fingerprint(os.environ.get(name, "")) for name in (
+        "runtimeInputCommitments": {name: commitment(name, os.environ.get(name, "")) for name in (
             "AWS_REGION", "REALAWS_CERT_LAMBDA_FUNCTION", "REALAWS_CERT_LAMBDA_ALIAS",
             "HONUA_LAMBDA_WRITE_BASE_URL", "HONUA_DEMO_BASE_URL", "HONUA_LAMBDA_SOURCE_IMAGE",
             "HONUA_LAMBDA_PREVIEW_REPOSITORY", "HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN",

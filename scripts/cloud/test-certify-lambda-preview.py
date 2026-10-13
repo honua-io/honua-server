@@ -752,6 +752,49 @@ class DeploymentBindingTests(unittest.TestCase):
         rotated = self.capture("2"*32)
         self.assertNotEqual(self.driver.canonical_digest(after), self.driver.canonical_digest(rotated))
 
+    def test_private_commitments_are_fresh_field_bound_and_hide_credentials(self):
+        import hashlib
+        import hmac
+        credential = "low-entropy-private-test-credential"
+        key = b"k" * 32
+        with unittest.mock.patch.dict(os.environ, {
+                "HONUA_LAMBDA_CERT_ADMIN_KEY": credential,
+                "HONUA_LAMBDA_CERT_DENIED_KEY": credential}):
+            with unittest.mock.patch.object(self.driver.secrets, "token_bytes", return_value=key) as random:
+                captured = self.capture()
+            random.assert_called_once_with(32)
+            fresh = self.capture()
+        config = captured["deployment"]["configuration"]
+        self.assertEqual("hmac-sha256", config["privateInputCommitmentAlgorithm"])
+        commitments = config["runtimeInputCommitments"]
+        name = "HONUA_LAMBDA_CERT_ADMIN_KEY"
+        encoded = json.dumps({"name": name, "value": credential}, sort_keys=True,
+                             separators=(",", ":")).encode()
+        self.assertEqual("hmac-sha256:" + hmac.new(key, encoded, hashlib.sha256).hexdigest(), commitments[name])
+        self.assertNotEqual(commitments[name], commitments["HONUA_LAMBDA_CERT_DENIED_KEY"])
+        self.assertNotEqual(config["runtimeInputCommitments"], fresh["deployment"]["configuration"]["runtimeInputCommitments"])
+        for field in ("environmentCommitment", "standingConfigurationCommitment"):
+            self.assertTrue(config[field].startswith("hmac-sha256:"))
+        public = json.dumps(captured)
+        for private in (credential, self.driver.fingerprint(credential), key.hex(), key.decode()):
+            self.assertNotIn(private, public)
+
+    def test_private_input_mutation_changes_commitments_under_same_key(self):
+        with unittest.mock.patch.object(self.driver.secrets, "token_bytes", return_value=b"k" * 32):
+            before = self.capture()["deployment"]["configuration"]
+            # The first capture pinned the reference. Repeating those same inputs is stable
+            # under the controlled test key; changing real input bytes must change the binding.
+            repeated = self.capture()["deployment"]["configuration"]
+            self.assertEqual(before, repeated)
+            environment = json.loads((self.directory / "environment.json").read_text())
+            environment["Variables"]["ConnectionStrings__DefaultConnection"] = "changed-private-value"
+            (self.directory / "environment.json").write_text(json.dumps(environment))
+            self.standing["Configuration"]["Environment"] = environment
+            with unittest.mock.patch.dict(os.environ, {"HONUA_LAMBDA_CERT_ADMIN_KEY": "changed-runtime-key"}):
+                changed = self.capture()["deployment"]["configuration"]
+        for field in ("environmentCommitment", "standingConfigurationCommitment", "runtimeInputCommitments"):
+            self.assertNotEqual(before[field], changed[field])
+
     def test_mismatched_artifact_and_untrusted_producer_refuse_capture(self):
         for name, value in (("HONUA_LAMBDA_SERVER_REVISION", "e"*40),
                             ("HONUA_LAMBDA_SOURCE_DIGEST", "sha256:"+"e"*64),
