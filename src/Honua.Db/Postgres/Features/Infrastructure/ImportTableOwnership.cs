@@ -31,6 +31,7 @@ internal static class ImportTableOwnership
         {
             throw new ImportTableOwnershipException(schema, table);
         }
+
         return true;
     }
 
@@ -46,4 +47,6 @@ internal static class ImportTableOwnership
 }
 
 internal sealed class ImportTableOwnershipException(string schema, string table)
-    : InvalidOperationException($"IMPORT_TARGET_NOT_OWNED: Table '{schema}.{table}' is not owned by the importer; it was not modified. Choose a new target or ask the database administrator to explicitly adopt a verified legacy import.");
+    : InvalidOperationException($"IMPORT_TARGET_NOT_OWNED: Table '{schema}.{table}' is not owned by the importer; it was not modified. Choose a new target or ask the database administrator to explicitly adopt a verified legacy import.")
+{
+}
