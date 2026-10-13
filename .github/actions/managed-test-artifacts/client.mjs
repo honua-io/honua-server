@@ -11,9 +11,16 @@ const maxBytes = 335544320;
 export async function run(options, deps = {}) {
   const root = options.root ?? process.env.GITHUB_WORKSPACE;
   const env = {...process.env, ...deps.env};
-  const runner = deps.runner ?? (async (file, args, extra = {}) => exec(file, args, {
-    cwd: root, env: {...env, ...extra}, timeout: 120000, maxBuffer: 4 * 1024 * 1024
+  const now = deps.now ?? Date.now;
+  const deadline = now() + 600000;
+  const remaining = cap => Math.max(1, Math.min(cap, deadline - now()));
+  const actualRunner = deps.runner ?? (async (file, args, extra = {}, timeout) => exec(file, args, {
+    cwd: root, env: {...env, ...extra}, timeout, maxBuffer: 4 * 1024 * 1024
   }));
+  const runner = (file, args, extra = {}) => {
+    if (now() >= deadline) throw Object.assign(Error('Transport budget exhausted'), {code:'TRANSPORT_BUDGET'});
+    return actualRunner(file, args, extra, remaining(120000));
+  };
   if (!['publish', 'consume'].includes(options.mode)) throw Error('Invalid mode');
   if (!['true', 'false'].includes(options.enabled ?? 'true')) throw Error('Invalid enabled boolean');
   if ((options.configuration ?? 'Release') !== 'Release') throw Error('Only Release artifacts are supported');
@@ -51,8 +58,19 @@ export async function run(options, deps = {}) {
   const identity = {HONUA_SERVER_TEST_ARTIFACT_WORKFLOW_RUN_ID: env.GITHUB_RUN_ID,
     HONUA_SERVER_TEST_ARTIFACT_BUILD_PROPERTIES: properties, HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION: 'Release'};
   const artifact = deps.artifact ?? new (await import('@actions/artifact')).DefaultArtifactClient();
+  const transfer = async (method, ...args) => {
+    if (now() >= deadline) throw Object.assign(Error('Transport budget exhausted'), {code:'TRANSPORT_BUDGET'});
+    // execute() uses this deadline to kill the SDK child before cleanup.
+    return deps.transfer ? deps.transfer(method, args, remaining(180000)) : artifact[method](...args);
+  };
   try {
     for (const {project, suffix} of entries) {
+      if (now() >= deadline) {
+        receipts.push({project, sourceSha, name: `managed-tests-${attempt}-${suffix}`,
+          status: 'unrestored', reason: 'transport-budget-exhausted'});
+        await save();
+        continue;
+      }
       const temp = await mkdtemp(path.join(env.RUNNER_TEMP ?? tmpdir(), 'managed-test-payload-'));
       const record = {project, sourceSha, name: `managed-tests-${attempt}-${suffix}`, status: 'unrestored'};
       let packaging = options.mode === 'publish';
@@ -66,16 +84,16 @@ export async function run(options, deps = {}) {
           if ((await stat(archive)).size > maxBytes) throw Error('Packaged archive exceeds limit');
           record.archiveSha256 = metadata.archive_sha256;
           packaging = false;
-          const uploaded = await artifact.uploadArtifact(record.name, [manifest, archive], temp,
+          const uploaded = await transfer('uploadArtifact', record.name, [manifest, archive], temp,
             {retentionDays: 1, compressionLevel: 0});
           if (!uploaded.id) throw Error('Upload did not return an artifact id');
           record.status = 'published'; record.artifactId = uploaded.id;
         } else {
-          const {artifact: found} = await artifact.getArtifact(record.name);
+          const {artifact: found} = await transfer('getArtifact', record.name);
           if (!found?.id) throw Error('Artifact missing');
           // Transport zip includes the tar and a small manifest; reject before download.
           if (!Number.isFinite(found.size) || found.size > maxBytes + 1048576) throw Error('Artifact transport size exceeds limit');
-          await artifact.downloadArtifact(found.id, {path: temp});
+          await transfer('downloadArtifact', found.id, {path: temp});
           // Truncated/missing JSON is transport corruption, not a valid but
           // incompatible identity. Keep that distinction before the shell gate.
           JSON.parse(await readFile(manifest, 'utf8'));
@@ -98,9 +116,9 @@ export async function run(options, deps = {}) {
         const packageBudget = packaging && (timedOut ||
           /Staged payload.*exceeds|Archive.*exceeds|Packaging.*exceeds|Packaged archive exceeds limit/.test(
             `${error.stderr ?? ''} ${error.message ?? ''}`));
-        record.reason = error.identityFailure ? 'identity-mismatch' : packageBudget ? 'package-budget-exceeded' :
+        record.reason = error.code === 'TRANSPORT_BUDGET' ? 'transport-budget-exhausted' : error.identityFailure ? 'identity-mismatch' : packageBudget ? 'package-budget-exceeded' :
           timedOut ? 'timeout' : 'artifact-unavailable-or-invalid';
-        if (error.identityFailure || (packaging && !packageBudget)) throw error;
+        if (error.identityFailure || (packaging && !packageBudget && error.code !== 'TRANSPORT_BUDGET')) throw error;
       } finally {
         receipts.push(record);
         await rm(temp, {recursive: true, force: true});
@@ -114,15 +132,16 @@ export async function run(options, deps = {}) {
 // SDK calls run in killable children so a timed-out request cannot continue
 // writing into a cleaned temp directory or overlap the next project's transfer.
 export async function execute(options) {
-  const artifact = Object.fromEntries(['uploadArtifact', 'getArtifact', 'downloadArtifact'].map(method =>
-    [method, async (...args) => {
-      const response = await exec(process.execPath,
-        [fileURLToPath(import.meta.url), '--sdk', method, JSON.stringify(args)],
-        {env: process.env, timeout: 180000, maxBuffer: 8 * 1024 * 1024});
-      return JSON.parse(response.stdout.split('\n').findLast(line => line.startsWith('{')));
-    }]));
-  return run(options, {artifact});
+  const transfer = async (method, args, timeout) => {
+    const response = await exec(process.execPath,
+      [fileURLToPath(import.meta.url), '--sdk', method, JSON.stringify(args)],
+      {env: process.env, timeout, maxBuffer: 8 * 1024 * 1024});
+    return JSON.parse(response.stdout.split('\n').findLast(line => line.startsWith('{')));
+  };
+  // SDK import stays inside the child; the placeholder is never called.
+  return run(options, {artifact: {}, transfer});
 }
+
 if (process.argv[2] === '--sdk') {
   const {DefaultArtifactClient} = await import('@actions/artifact');
   try {

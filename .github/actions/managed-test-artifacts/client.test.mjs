@@ -119,3 +119,34 @@ for(const failure of ['archive-size','package-size','timeout'])test(`publish ${f
  assert.deepEqual(uploaded,['managed-tests-2-other']);assert.equal(rows[0].reason,'package-budget-exceeded');
  assert.equal(rows[0].status,'unrestored');assert.equal(rows[1].status,'published');await cleaned(f.root);
 });
+test('overall deadline stops requests and staging for every remaining project',async t=>{
+ const f=await fixture(t);const other='tests/dotnet/Other.Tests/Other.Tests.csproj';let now=0,calls=0;
+ await writeFile(f.opts.projectsFile,JSON.stringify([project,other]));
+ await writeFile(path.join(f.root,'.github/server-test-artifact-projects.json'),JSON.stringify({projects:[{csproj:project,artifact_suffix:'fixture'},{csproj:other,artifact_suffix:'other'}]}));
+ f.deps.now=()=>now;
+ f.artifact.getArtifact=async()=>{calls++;now=600000;return {artifact:{id:42,size:100}};};
+ f.artifact.downloadArtifact=async()=>{throw Error('must not download after deadline');};
+ const r=await run(f.opts,f.deps);assert.equal(calls,1);assert.deepEqual(JSON.parse(await readFile(r.restoredProjectsFile,'utf8')),[]);
+ assert.deepEqual((await receipt(r)).projects.map(p=>p.reason),['transport-budget-exhausted','transport-budget-exhausted']);await cleaned(f.root);
+});
+test('SDK and packaging timeouts are capped to remaining overall budget',async t=>{
+ const f=await fixture(t);let now=0;const limits=[];
+ f.deps.now=()=>now;
+ f.deps.transfer=async(method,args,timeout)=>{
+   limits.push(timeout);
+   if(method==='getArtifact'){now=590000;return {artifact:{id:42,size:100}};}
+   assert.equal(method,'downloadArtifact');await f.artifact.downloadArtifact(...args);
+ };
+ f.deps.runner=async(file,args,identity,timeout)=>{
+   if(file==='git')return f.runner(file,args,identity);
+   assert.equal(timeout,10000);return f.runner(file,args,identity);
+ };
+ const r=await run(f.opts,f.deps);assert.deepEqual(limits,[180000,10000]);assert.equal((await receipt(r)).projects[0].status,'restored');await cleaned(f.root);
+});
+test('publish expiration after packaging does not upload or become a fatal contract failure',async t=>{
+ const f=await fixture(t);let now=0;f.deps.now=()=>now;
+ f.deps.runner=async(...args)=>{const result=await f.runner(...args);if(args[0]!=='git')now=600000;return result;};
+ f.artifact.uploadArtifact=async()=>{throw Error('must not upload after deadline');};
+ const r=await run({...f.opts,mode:'publish'},f.deps);
+ assert.equal((await receipt(r)).projects[0].reason,'transport-budget-exhausted');await cleaned(f.root);
+});
