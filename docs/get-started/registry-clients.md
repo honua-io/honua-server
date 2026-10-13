@@ -20,8 +20,8 @@ records the pins and where each comes from.
 | npm | `@honua/sdk-js@0.1.16` | Alternative JS SDK and CLI | None |
 | npm | `create-honua-app@0.1.9` | Application scaffolding CLI | None |
 | npm | `@honua/mcp-server@0.1.16` | Alternative MCP proxy | None |
-| NuGet | `Honua.Sdk` `1.11.0` | Alternative .NET SDK | None |
-| NuGet | `Honua.Sdk.Admin` `1.11.0` | Dedicated .NET control-plane SDK | None |
+| NuGet | `Honua.Sdk` `1.11.1` | Alternative .NET SDK | None |
+| NuGet | `Honua.Sdk.Admin` `1.11.1` | Dedicated .NET control-plane SDK | None |
 
 Pick the one for your language; you do not need the others. The npm and NuGet
 pins are the release manifest's, not a claim that the Python quickstart exercised
@@ -35,7 +35,7 @@ anonymously:
 
 ```bash
 dotnet new console
-dotnet add package Honua.Sdk --version 1.11.0
+dotnet add package Honua.Sdk --version 1.11.1
 ```
 
 No feed to add, no token, no package-source mapping. The same builds are also
