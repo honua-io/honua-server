@@ -136,6 +136,11 @@ internal static partial class Wps20Endpoint
                 _ => Exception("OperationNotSupported", $"Operation '{request.Operation}' is not implemented.", "request", StatusCodes.Status501NotImplemented)
             };
         }
+        catch (WpsRequestException ex)
+        {
+            Log.InvalidRequest(logger, ex.Message);
+            return Exception(ex.Code, ex.Message, ex.Locator, ex.StatusCode);
+        }
         catch (GeoprocessingAuthorizationException ex)
         {
             return Exception("AccessDenied", ex.RequiresAuthentication ? "Authentication is required." : "The caller is not authorized.", null,

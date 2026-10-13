@@ -601,8 +601,9 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         var xml = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, xml);
         XNamespace ows = "http://www.opengis.net/ows/2.0";
-        XDocument.Parse(xml).Descendants(ows + "Exception").Single()
-            .Attribute("exceptionCode")!.Value.Should().Be("InvalidParameterValue");
+        var exception = XDocument.Parse(xml).Descendants(ows + "Exception").Single();
+        exception.Attribute("exceptionCode")!.Value.Should().Be("InvalidParameterValue");
+        exception.Attribute("locator")!.Value.Should().Be("boundingBoxInput");
     }
 
     [IntegrationTest]
