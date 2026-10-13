@@ -149,6 +149,17 @@ Oidc__Generic__ClientSecret=$OIDC_CLIENT_SECRET
 
 Provider blocks exist for `Generic`, `AzureAd`, `Google`, `Okta`, and `Auth0`; OIDC providers can also be managed at runtime via `/api/v1/admin/oidc/providers`. When OIDC is enabled, `Authorization: Bearer` tokens are evaluated before API keys. Map your IdP's admin group to a role in `Oidc__AdminRoles` (default `admin`, `administrator`) — without it, signed-in users hold no admin rights.
 
+An explicitly configured static JWT issuer may set
+`Oidc__TokenValidation__SymmetricSigningKey` to an `env:NAME` or
+`aws:secretsmanager:<secret-id>` reference. The server resolves it before binding
+bearer validation options and refuses startup if the reference cannot resolve or
+returns an empty value. The resolved key must contain at least 32 UTF-8 bytes.
+Issuer, audience, signature and lifetime validation remain enabled. This key is
+a process-lifetime snapshot; restart the deployment when rotating it. Keep the
+key value in the secret store, outside Terraform configuration and release
+evidence. Deployments without a static key continue using provider metadata and
+JWKS discovery.
+
 ### 4. Issue ArcGIS-compatible tokens
 
 Esri clients (ArcGIS Pro, Maps SDKs) authenticate against the portal token endpoint, which is always on:
