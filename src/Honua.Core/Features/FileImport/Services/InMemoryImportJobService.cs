@@ -268,7 +268,10 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 featureCount = result.FeatureCount;
                 failedFeatures = state.Progress.FailedFeatures;
                 errorMessage = result.ErrorMessage;
-                var clientErrorMessage = result.Success ? result.ErrorMessage : SafeImportFailureMessage;
+                var clientErrorMessage = result.Success ? result.ErrorMessage
+                    : result.ErrorCode == ImportTableOwnershipException.Code
+                        ? ImportTableOwnershipException.CreateSafeMessage(result.TableName)
+                        : SafeImportFailureMessage;
 
                 state.Progress = state.Progress with
                 {
@@ -276,11 +279,12 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                     FeaturesProcessed = result.FeatureCount,
                     CompletedAt = DateTimeOffset.UtcNow,
                     ErrorMessage = clientErrorMessage,
+                    ErrorCode = result.ErrorCode,
                     Warnings = result.Warnings,
                     DetectedSrid = result.DetectedSrid,
                     CurrentPhase = result.Success ? "Import completed" : "Import failed"
                 };
-                state.Result = result.Success ? result : result with { ErrorMessage = SafeImportFailureMessage };
+                state.Result = result.Success ? result : result with { ErrorMessage = clientErrorMessage };
 
                 if (result.Success)
                 {

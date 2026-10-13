@@ -180,6 +180,7 @@ internal static partial class OgcApiFeaturesImportEndpoints
                 OgcApiFeaturesImportErrorCodes.MissingItemsEndpoint => StatusCodes.Status422UnprocessableEntity,
                 OgcApiFeaturesImportErrorCodes.SourceUnreachable => StatusCodes.Status502BadGateway,
                 OgcApiFeaturesImportErrorCodes.Timeout => StatusCodes.Status504GatewayTimeout,
+                ImportTableOwnershipException.Code => StatusCodes.Status409Conflict,
                 OgcApiFeaturesImportErrorCodes.SinkFailure => StatusCodes.Status500InternalServerError,
                 _ => StatusCodes.Status500InternalServerError
             };

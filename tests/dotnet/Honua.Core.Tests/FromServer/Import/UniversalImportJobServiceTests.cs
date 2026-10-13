@@ -79,6 +79,29 @@ public sealed class UniversalImportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
+    public async Task QueueImportAsync_OwnershipConflict_PreservesStableCodeWithoutProviderDetails()
+    {
+        var progressStore = new InMemoryUniversalProgressStore();
+        var importService = new FakeFileImportService(
+            (_, _, _) => Task.FromResult(ImportResult.CreateFailure(
+                "widgets", SupportedFileFormat.GeoJson, "SQL and connection details must not escape",
+                errorCode: ImportTableOwnershipException.Code)));
+        using var jobService = CreateService(importService, progressStore);
+        using var stream = new MemoryStream([0x01]);
+        var jobId = await jobService.QueueImportAsync(
+            new ImportRequest { FileStream = stream, FileName = "widgets.geojson", TableName = "widgets" }, 1);
+
+        var progress = await WaitForTerminalProgressAsync(jobService, jobId);
+
+        progress.Status.Should().Be(ImportStatus.Failed);
+        progress.ErrorCode.Should().Be(ImportTableOwnershipException.Code);
+        progress.ErrorMessage.Should().Be(ImportTableOwnershipException.CreateSafeMessage("widgets"));
+        progress.ErrorMessage.Should().NotContain("SQL");
+        progress.CompletedAt.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
     public async Task CancelJobAsync_WhileImportIsRunning_RecordsCancelledProgressAndStopsTheImporter()
     {
         var progressStore = new InMemoryUniversalProgressStore();

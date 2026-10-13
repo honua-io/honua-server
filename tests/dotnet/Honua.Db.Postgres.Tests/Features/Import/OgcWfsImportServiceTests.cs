@@ -54,6 +54,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
                 OverwriteExisting = true
             });
             result.Success.Should().BeFalse();
+            result.ErrorCode.Should().Be(ImportTableOwnershipException.Code);
             result.FeatureTypesImported.Should().Be(0);
             result.FeatureTypes.Should().ContainSingle().Which.Warnings.Should()
                 .Contain(w => w.Contains("IMPORT_TARGET_NOT_OWNED", StringComparison.Ordinal));

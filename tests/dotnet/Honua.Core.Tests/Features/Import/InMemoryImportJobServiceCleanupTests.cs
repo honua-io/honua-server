@@ -94,6 +94,30 @@ public sealed class InMemoryImportJobServiceCleanupTests
         File.Exists(tempFilePath).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(null, "Import failed.")]
+    [InlineData(ImportTableOwnershipException.Code, null)]
+    public async Task QueueImportAsync_Failure_PreservesOnlyAuthoredOwnershipReason(string? code, string? expectedMessage)
+    {
+        var importService = new FakeFileImportService(ImportResult.CreateFailure(
+            "widgets", SupportedFileFormat.GeoJson, "SQL connection detail", errorCode: code));
+        using var jobService = new InMemoryImportJobService(importService, new NoopPerformanceMonitor(), NullLogger<InMemoryImportJobService>.Instance);
+        using var stream = new MemoryStream([0x01]);
+        var jobId = await jobService.QueueImportAsync(new ImportRequest
+        {
+            FileStream = stream, FileName = "widgets.geojson", TableName = "widgets"
+        }, 1);
+        await WaitForCompletionAsync(jobService, TimeSpan.FromSeconds(10));
+
+        var progress = await jobService.GetProgressAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(ImportStatus.Failed);
+        progress.ErrorCode.Should().Be(code);
+        progress.ErrorMessage.Should().Be(expectedMessage ?? ImportTableOwnershipException.CreateSafeMessage("widgets"));
+        progress.ErrorMessage.Should().NotContain("SQL");
+    }
+
     private static async Task WaitForCompletionAsync(InMemoryImportJobService jobService, TimeSpan timeout)
     {
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
@@ -144,7 +168,7 @@ public sealed class InMemoryImportJobServiceCleanupTests
         await Task.CompletedTask;
     }
 
-    private sealed class FakeFileImportService : IFileImportService
+    private sealed class FakeFileImportService(ImportResult? failure = null) : IFileImportService
     {
         public ImportLimits Limits { get; } = new();
 
@@ -170,7 +194,7 @@ public sealed class InMemoryImportJobServiceCleanupTests
                 await Task.Delay(TimeSpan.FromMilliseconds(index), cancellationToken);
             }
 
-            var result = ImportResult.CreateSuccess(request.TableName, SupportedFileFormat.GeoJson, 1);
+            var result = failure ?? ImportResult.CreateSuccess(request.TableName, SupportedFileFormat.GeoJson, 1);
             return result;
         }
 

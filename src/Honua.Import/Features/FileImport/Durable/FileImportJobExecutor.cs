@@ -63,6 +63,7 @@ internal sealed partial class FileImportJobExecutor(
             Status = ImportStatus.Processing,
             CompletedAt = null,
             ErrorMessage = null,
+            ErrorCode = null,
             CurrentPhase = "Processing",
             Runner = runner,
             InstanceId = instanceId,
@@ -140,8 +141,11 @@ internal sealed partial class FileImportJobExecutor(
         if (!result.Success)
         {
             Log.ImportFailed(logger, jobId, result.ErrorMessage ?? "unknown");
-            await WriteTerminalAsync(jobId, processing, ImportStatus.Failed, result, SafeImportFailureMessage).ConfigureAwait(false);
-            return NonRetryableFailure(SafeImportFailureMessage, result.Warnings);
+            var errorMessage = result.ErrorCode == ImportTableOwnershipException.Code
+                ? ImportTableOwnershipException.CreateSafeMessage(result.TableName)
+                : SafeImportFailureMessage;
+            await WriteTerminalAsync(jobId, processing, ImportStatus.Failed, result, errorMessage).ConfigureAwait(false);
+            return NonRetryableFailure(errorMessage, result.Warnings);
         }
 
         await WriteTerminalAsync(jobId, processing, ImportStatus.Completed, result, result.ErrorMessage).ConfigureAwait(false);
@@ -184,6 +188,7 @@ internal sealed partial class FileImportJobExecutor(
             FeaturesProcessed = result?.FeatureCount ?? current.FeaturesProcessed,
             CompletedAt = DateTimeOffset.UtcNow,
             ErrorMessage = errorMessage,
+            ErrorCode = result?.ErrorCode,
             Warnings = result?.Warnings ?? current.Warnings,
             DetectedSrid = result?.DetectedSrid ?? current.DetectedSrid,
             CurrentPhase = status == ImportStatus.Completed ? "Import completed" : "Import failed",
