@@ -6,6 +6,10 @@ inputs:
     description: '.NET SDK version'
     required: false
     default: '10.0.x'
+  artifact-sdk-version:
+    description: 'Exact SDK selected by the managed-artifact producer; isolates consumer SDK resolution'
+    required: false
+    default: ''
   enable-build-cache:
     description: 'Restore/save per-project bin/obj across jobs (opt-in; broad binary caches can exhaust hosted runner disk)'
     required: false
@@ -15,13 +19,59 @@ inputs:
     required: false
     default: 'false'
 
+outputs:
+  dotnet-sdk-version:
+    description: 'Actual dotnet --version after setup and any exact producer-SDK selection'
+    value: ${{ steps.sdk-identity.outputs.version }}
+
 runs:
   using: composite
   steps:
+    - name: Select exact managed producer SDK
+      if: inputs.artifact-sdk-version != ''
+      shell: bash
+      env:
+        EXPECTED_DOTNET_SDK: ${{ inputs.artifact-sdk-version }}
+      run: |
+        [[ "${EXPECTED_DOTNET_SDK}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] || {
+          echo '::error::Managed artifacts require an exact producer SDK version.' >&2; exit 1;
+        }
+        # A newer preinstalled SDK must not win dotnet's default resolution.
+        # setup-dotnet installs here, adds this host to PATH and exports DOTNET_ROOT.
+        # This is a job-private installation, not a repository/global SDK policy.
+        printf 'DOTNET_INSTALL_DIR=%s/honua-managed-sdk/%s\n' "${RUNNER_TEMP}" "${EXPECTED_DOTNET_SDK}" >> "${GITHUB_ENV}"
+
     - name: Setup .NET
       uses: actions/setup-dotnet@v6.0.0
       with:
-        dotnet-version: ${{ inputs.dotnet-version }}
+        dotnet-version: ${{ inputs.artifact-sdk-version || inputs.dotnet-version }}
+
+    - name: Record actual SDK identity
+      id: sdk-identity
+      shell: bash
+      env:
+        EXPECTED_DOTNET_SDK: ${{ inputs.artifact-sdk-version }}
+      run: |
+        actual_sdk="$(dotnet --version)"
+        [[ "${actual_sdk}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] || {
+          echo '::error::Selected SDK did not report an exact version.' >&2; exit 1;
+        }
+        if [[ -n "${EXPECTED_DOTNET_SDK}" && "${actual_sdk}" != "${EXPECTED_DOTNET_SDK}" ]]; then
+          echo "::error::Selected SDK ${actual_sdk} differs from managed producer ${EXPECTED_DOTNET_SDK}." >&2
+          exit 1
+        fi
+        if [[ -n "${EXPECTED_DOTNET_SDK}" ]]; then
+          [[ -n "${DOTNET_INSTALL_DIR:-}" && -n "${DOTNET_ROOT:-}" ]] || {
+            echo '::error::Managed producer SDK requires its private host and runtime root.' >&2; exit 1;
+          }
+          actual_host="$(realpath "$(command -v dotnet)")"
+          install_root="$(realpath "${DOTNET_INSTALL_DIR}")"
+          runtime_root="$(realpath "${DOTNET_ROOT}")"
+          [[ "$(dirname "${actual_host}")" == "${install_root}" && "${runtime_root}" == "${install_root}" ]] || {
+            echo '::error::Managed SDK host/runtime paths differ from the private producer-SDK installation.' >&2; exit 1;
+          }
+        fi
+        printf 'version=%s\n' "${actual_sdk}" >> "${GITHUB_OUTPUT}"
 
     # Two-tier key. Package VERSIONS live centrally — Directory.Packages.props sets
     # ManagePackageVersionsCentrally=true and no .csproj carries a Version= attribute
