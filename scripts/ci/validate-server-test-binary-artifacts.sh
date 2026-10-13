@@ -24,9 +24,9 @@ jq -e '
 ' "${REGISTRY}" >/dev/null
 
 registered="$(jq -c '[.projects[].csproj] | sort' "${REGISTRY}")"
-owned="$(jq -c '[.shards[] | if ((.csproj // "") == "") then "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" else .csproj end] | unique | sort' "${SHARDS}")"
+owned="$(python3 "${SCRIPT_DIR}/managed-test-build.py" inventory | jq -c 'sort')"
 if [[ "${registered}" != "${owned}" ]]; then
-  echo "::error::Artifact project registry must exactly equal the unique ci-shards project set." >&2
+  echo "::error::Artifact project registry must exactly equal the scheduled managed-test consumer set." >&2
   diff -u <(jq -r '.[]' <<<"${owned}") <(jq -r '.[]' <<<"${registered}") || true
   exit 1
 fi

@@ -160,6 +160,17 @@ def validate_modular_shard_owners(catalog, registry):
                 raise ValueError(f"{shard['shard_name']}: runtime owner missing shard route: {prefix}")
 
 
+def artifact_projects(root):
+    """Inventory every scheduled binary consumer, including foundation and gates."""
+    helper = root / 'scripts/ci/managed-test-build.py'
+    if not helper.is_file():
+        # Synthetic catalog fixtures only contain their declared shard surface.
+        return {e.get('csproj') or 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
+                for e in json.loads((root / '.github/ci-shards.json').read_text())['shards']}
+    return set(json.loads(subprocess.check_output(
+        ['python3', str(helper), 'inventory', '--root', str(root)], text=True)))
+
+
 def validate(root, catalog):
     entries = catalog['projects']
     validate_solution_members(root, entries)
@@ -211,7 +222,7 @@ def validate(root, catalog):
         registry_path = root / '.github/server-test-artifact-projects.json'
         if not registry_path.is_file():
             raise ValueError('Missing shard artifact inventory; run update')
-        routed = {entry.get('csproj') or 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj' for entry in json.loads(shard_path.read_text())['shards']}
+        routed = artifact_projects(root)
         registered = {entry['csproj'] for entry in json.loads(registry_path.read_text())['projects']}
         if registered != routed:
             raise ValueError('Stale shard artifact inventory; run update')
@@ -338,7 +349,7 @@ def main():
         if registry_path.is_file():
             registry = json.loads(registry_path.read_text())
             shard_file = root / '.github/ci-shards.json'
-            routed = {entry.get('csproj') or 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj' for entry in json.loads(shard_file.read_text())['shards']}
+            routed = artifact_projects(root)
             registry['projects'] = [entry for entry in registry['projects'] if entry['csproj'] in routed]
             known = {entry['csproj'] for entry in registry['projects']}
             for project in sorted(routed - known):
