@@ -44,7 +44,7 @@ public sealed class OgcApiFeaturesImportEndpointTests : IAsyncLifetime
             {
                 Success = false,
                 CollectionId = "roads",
-            Target = "honua_data.roads",
+                Target = "honua_data.roads",
                 ErrorCode = ImportTableOwnershipException.Code,
                 ErrorMessage = ImportTableOwnershipException.CreateSafeMessage("honua_data.roads")
             });

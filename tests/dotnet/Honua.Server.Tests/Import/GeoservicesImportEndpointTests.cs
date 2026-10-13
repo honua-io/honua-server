@@ -431,7 +431,10 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
             using var response = await fixture.Client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", new
             {
                 ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
-                LayerId = 0, TableName = tableName, OverwriteExisting = true, AutoPublish = false
+                LayerId = 0,
+                TableName = tableName,
+                OverwriteExisting = true,
+                AutoPublish = false
             });
             response.StatusCode.Should().Be(HttpStatusCode.Accepted);
             var accepted = await response.Content.ReadFromJsonAsync<JsonElement>();

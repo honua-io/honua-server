@@ -2396,6 +2396,24 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Importer ownership conflict. Choose a new target or explicitly adopt a verified legacy import.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "errorCode": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2751,6 +2769,11 @@
                     "instanceId": {
                       "type": "string",
                       "description": "Honua-Instance identity of the process running the import (the AWS Batch job id for `batch`); until a worker claims a durable job, the instance that accepted it."
+                    },
+                    "errorCode": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
                     }
                   }
                 }
@@ -2964,6 +2987,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Importer ownership conflict. Choose a new target or explicitly adopt a verified legacy import.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "errorCode": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
+                    }
+                  }
                 }
               }
             }
@@ -6969,6 +7010,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Importer ownership conflict. Choose a new target or explicitly adopt a verified legacy import.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportOgcApiFeaturesResult"
+                }
+              }
+            }
           }
         }
       }
@@ -7145,6 +7196,16 @@
           },
           "502": {
             "description": "The importer reported failure; the body is the same result document with success=false and an errorMessage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportOgcWfsResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Importer ownership conflict. Choose a new target or explicitly adopt a verified legacy import.",
             "content": {
               "application/json": {
                 "schema": {
@@ -31336,6 +31397,11 @@
             "items": {
               "$ref": "#/components/schemas/ImportMigrationFidelityDifference"
             }
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
           }
         }
       },
@@ -32683,6 +32749,11 @@
           "duration": {
             "type": "string",
             "description": "Serialized as a .NET TimeSpan string."
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
           }
         }
       },

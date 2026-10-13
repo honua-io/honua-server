@@ -106,7 +106,9 @@ public sealed class InMemoryImportJobServiceCleanupTests
         using var stream = new MemoryStream([0x01]);
         var jobId = await jobService.QueueImportAsync(new ImportRequest
         {
-            FileStream = stream, FileName = "widgets.geojson", TableName = "widgets"
+            FileStream = stream,
+            FileName = "widgets.geojson",
+            TableName = "widgets"
         }, 1);
         await WaitForCompletionAsync(jobService, TimeSpan.FromSeconds(10));
 
