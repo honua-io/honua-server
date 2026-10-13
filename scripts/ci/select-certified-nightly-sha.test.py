@@ -27,7 +27,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CI = ".github/workflows/ci.yml"
 REPOSITORY = "honua-io/honua-server"
 # honua-release certification/full-matrix-checks.yaml requires exactly these check-run names.
-RESOLVER_LANES = ["Build & Format Check", ".NET Foundation Tests", "Python Integration Tests",
+# Server CI additionally verifies independent full formatting. The shared release
+# lane contract is unchanged; CI Gate still covers this required server lane.
+RESOLVER_LANES = ["Build & Format Check", "Format Check", ".NET Foundation Tests", "Python Integration Tests",
                   "Test Suite Summary", "CI Gate"]
 
 
@@ -138,7 +140,7 @@ class SelectionTests(unittest.TestCase):
         recording = Recording([reverified, certified])
         recording.run(reverified, updated="2026-10-04T06:00:00Z")
         recording.run(reverified, updated="2026-10-04T07:00:00Z",
-                      skipped={"Build & Format Check", ".NET Foundation Tests", "Python Integration Tests"})
+                      skipped={"Build & Format Check", "Format Check", ".NET Foundation Tests", "Python Integration Tests"})
         recording.run(certified)
         chosen, _, log = choose(recording)
         self.assertEqual(chosen, certified)
@@ -153,7 +155,7 @@ class SelectionTests(unittest.TestCase):
         recording.run(certified)
         _, _, log = choose(recording)
         skip = next(line for line in log if line.strip().startswith(selective[:7]))
-        self.assertIn("missing lanes ['Build & Format Check', '.NET Foundation Tests', "
+        self.assertIn("missing lanes ['Build & Format Check', 'Format Check', '.NET Foundation Tests', "
                       "'Python Integration Tests']", skip)
 
     def test_only_schedule_and_dispatch_runs_of_ci_yml_certify(self) -> None:

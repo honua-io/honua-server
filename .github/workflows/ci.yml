@@ -1854,6 +1854,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs:
+      - changes
       # Both the family matrix and its fan-in: a bug in the fan-in job's result
       # check cannot then leave a foundation family un-gated (#3567).
       - dotnet-foundation-family-tests
@@ -1867,7 +1868,18 @@ jobs:
       - maplibre-compat
     steps:
       - name: Check required test job results
+        env:
+          REQUIRE_TEST_LANES: ${{ needs.changes.outputs.integration_changes == 'true' }}
+          FOUNDATION_MATRIX_RESULT: ${{ needs.dotnet-foundation-family-tests.result }}
+          FOUNDATION_RESULT: ${{ needs.dotnet-foundation-tests.result }}
+          SERVER_TEST_RESULT: ${{ needs.server-tests.result }}
         run: |
+          if [[ "${REQUIRE_TEST_LANES}" == true ]]; then
+            if [[ "${FOUNDATION_MATRIX_RESULT}" != success || "${FOUNDATION_RESULT}" != success || "${SERVER_TEST_RESULT}" != success ]]; then
+              echo "::error::Selected integration lanes must succeed: foundation-matrix=${FOUNDATION_MATRIX_RESULT}, foundation=${FOUNDATION_RESULT}, server=${SERVER_TEST_RESULT}"
+              exit 1
+            fi
+          fi
           if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
             echo "::error::One or more required test jobs failed."
             exit 1
@@ -3059,7 +3071,20 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check required job results
+        env:
+          REQUIRE_MANAGED_BUILD: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
+          REQUIRE_FORMAT: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          FORMAT_RESULT: ${{ needs.format.result }}
         run: |
+          if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${BUILD_RESULT}" != success ]]; then
+            echo "::error::Selected managed producer must succeed, got ${BUILD_RESULT}."
+            exit 1
+          fi
+          if [[ "${REQUIRE_FORMAT}" == true && "${FORMAT_RESULT}" != success ]]; then
+            echo "::error::Selected full-format verification must succeed, got ${FORMAT_RESULT}."
+            exit 1
+          fi
           if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
             echo "::error::One or more required CI jobs failed."
             exit 1
