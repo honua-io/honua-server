@@ -107,7 +107,7 @@ public sealed class IdempotentUrlImportEndpointTests : IAsyncLifetime
         Assert.Equal(first.Headers.GetValues("X-Honua-Operation-Instance-Id"), retry.Headers.GetValues("X-Honua-Operation-Instance-Id"));
         Assert.Equal(first.Headers.GetValues("X-Honua-Audit-Id"), retry.Headers.GetValues("X-Honua-Audit-Id"));
 
-        await AssertCompletedImportAsync(jobId, table);
+        await AssertCompletedImportAsync(jobId, table, first);
         using var completedRetry = await SendAsync(firstPath, key, body);
         Assert.Equal(HttpStatusCode.Accepted, completedRetry.StatusCode);
         Assert.Equal(firstBody, await completedRetry.Content.ReadAsStringAsync());
@@ -127,7 +127,7 @@ public sealed class IdempotentUrlImportEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
         Assert.DoesNotContain(jobId, await denied.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         Assert.Equal(1, _clients.Downloads);
-        await AssertCompletedImportAsync(jobId, table);
+        await AssertCompletedImportAsync(jobId, table, first);
 
         // A second authorized actor owns a distinct operation even when the key matches.
         // Use a separate table so this intentional new import cannot alter the first result.
@@ -148,12 +148,12 @@ public sealed class IdempotentUrlImportEndpointTests : IAsyncLifetime
         Assert.NotEqual(jobId, otherJobId);
         Assert.NotEqual(first.Headers.GetValues("X-Honua-Operation-Instance-Id").Single(),
             other.Headers.GetValues("X-Honua-Operation-Instance-Id").Single());
-        await AssertCompletedImportAsync(otherJobId, otherTable);
+        await AssertCompletedImportAsync(otherJobId, otherTable, other);
         Assert.Equal(2, _clients.Downloads);
-        await AssertCompletedImportAsync(jobId, table);
+        await AssertCompletedImportAsync(jobId, table, first);
     }
 
-    private async Task AssertCompletedImportAsync(string jobId, string table)
+    private async Task AssertCompletedImportAsync(string jobId, string table, HttpResponseMessage acceptedResponse)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         while (true)
@@ -173,8 +173,10 @@ public sealed class IdempotentUrlImportEndpointTests : IAsyncLifetime
                 Assert.Equal(1, root.GetProperty("featuresProcessed").GetInt32());
                 Assert.Equal(0, root.GetProperty("failedFeatures").GetInt32());
                 Assert.Equal(table, root.GetProperty("tableName").GetString());
-                Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("operationInstanceId").GetString()));
-                Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("auditId").GetString()));
+                Assert.Equal(acceptedResponse.Headers.GetValues("X-Honua-Operation-Instance-Id").Single(),
+                    root.GetProperty("operationInstanceId").GetString());
+                Assert.Equal(acceptedResponse.Headers.GetValues("X-Honua-Audit-Id").Single(),
+                    root.GetProperty("auditId").GetString());
                 break;
             }
             await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
