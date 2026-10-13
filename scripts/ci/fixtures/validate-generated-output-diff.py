@@ -258,16 +258,19 @@ class WorkflowCompletion(unittest.TestCase):
     def test_named_jobs_keep_completion_and_every_product_step_is_gated(self):
         import yaml
         gate = yaml.safe_load((ROOT / '.github/workflows/pr-gate.yml').read_text())
-        for job in ('format', 'pr-gate', 'ci-router-validation', 'required'):
+        for job in ('format', 'pr-gate', 'pr-gate-tests', 'ci-router-validation', 'required'):
             self.assertNotIn('if', gate['jobs'][job]) if job != 'required' else self.assertEqual(gate['jobs'][job]['if'], 'always()')
         self.assertEqual(gate['jobs']['required']['name'], 'PR Gate')
-        self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'format', 'ci-router-validation'])
+        self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'pr-gate-tests', 'format', 'ci-router-validation'])
         # Evaluate actual Actions expressions for the expensive steps. True and
         # false/absent classification must respectively skip and preserve them.
         for verdict in ('true', 'false', ''):
             values = {'env.REVIEW_FIRST_MODE': 'observe', 'github.event_name': 'pull_request',
                       'github.run_attempt': 1, 'steps.docs-only.outputs.docs_only': 'false',
                       'steps.generated-only.outputs.generated_only': verdict,
+                      'needs.pr-gate.outputs.docs_only': 'false',
+                      'needs.pr-gate.outputs.generated_only': verdict,
+                      'needs.pr-gate.outputs.skip': 'true' if verdict == 'true' else 'false',
                       'github.event.pull_request.head.repo.full_name': POLICY.REPOSITORY,
                       'github.repository': POLICY.REPOSITORY}
             def evaluate(condition):
@@ -275,7 +278,7 @@ class WorkflowCompletion(unittest.TestCase):
                     condition = condition.replace(variable, repr(values[variable]))
                 condition = condition.replace('&&', ' and ').replace('||', ' or ')
                 return eval(condition, {'__builtins__': {}}, {})
-            for job in ('format', 'pr-gate'):
+            for job in ('format', 'pr-gate', 'pr-gate-tests'):
                 for step in gate['jobs'][job]['steps']:
                     if ('dotnet ' in step.get('run', '') or step.get('uses', '').startswith(('./.github/actions/', 'docker/'))
                             or 'scripts/ci/server-boot-smoke.sh' in step.get('run', '')):
@@ -305,10 +308,13 @@ class WorkflowCompletion(unittest.TestCase):
         # The stable aggregate really exits success only for successful named
         # paths; it continues rejecting failed/skipped ordinary verification.
         aggregate = gate['jobs']['required']['steps'][0]['run']
-        for result, expected in (('success', 0), ('failure', 1), ('skipped', 1)):
-            run = subprocess.run(['bash', '-c', aggregate], capture_output=True,
-                                 env=dict(os.environ, BUILD_AND_TEST_RESULT=result, FORMAT_RESULT='success', CI_ROUTER_RESULT='success'))
-            self.assertEqual(run.returncode, expected)
+        keys = ('BUILD_AND_TEST_RESULT', 'TEST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT')
+        for key in keys:
+            for result, expected in (('success', 0), ('failure', 1), ('skipped', 1), ('cancelled', 1)):
+                env = dict(os.environ, **{name: 'success' for name in keys})
+                env[key] = result
+                run = subprocess.run(['bash', '-c', aggregate], capture_output=True, env=env)
+                self.assertEqual(run.returncode, expected, (key, result))
 
     def test_consumer_retargeting_and_trunk_advancement_use_trusted_frozen_policy(self):
         import yaml

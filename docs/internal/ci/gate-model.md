@@ -23,7 +23,7 @@
 
 4. **New checks default to nightly** unless explicitly justified as PR-blocking. Justification requires: deterministic behavior, sub-5-minute runtime, and author-actionable failure messages.
 
-   **Named exceptions — `PR Gate` and `Review Gate`.** Together, `PR Gate` and `Review Gate` are the required PR lane on `trunk`: the former is unprivileged verification and the latter is trusted exact-head admission. `PR Gate` is deterministic and author-actionable, but it does not meet the sub-5-minute bar because its whole-solution warnings-as-errors build dominates runtime. That is accepted deliberately, because the only cheaper option is to gate no code verification and the only stricter option is the full CI matrix (every server-test shard in `.github/ci-shards.json` plus the AOT/Docker/browser/MCP/provider lanes) whose per-PR fan-out caused the 2026-06-18 runner-starvation spiral. Judge it on **runner count (one, service-free)**, not wall-clock. `Review Gate` is a short GitHub-evidence evaluation and adds no build runner. Any further PR-blocking check still owes the sub-5-minute justification above and should first be considered inside an existing required workflow.
+   **Named exceptions — `PR Gate` and `Review Gate`.** Together, `PR Gate` and `Review Gate` remain the required PR lane on `trunk`: unprivileged verification and trusted exact-head admission. Verification uses a managed build producer, a downstream test/runtime consumer, and the existing independent format and CI-router jobs. Selected shard consumers reuse the same verified outputs. The test consumer retains real PostGIS-backed governance and execution proofs. Full collector compilation and runtime proofs remain the deliberate exception to the sub-five-minute rule. `Review Gate` adds no build runner. Any further PR-blocking check still owes the sub-5-minute justification above and should first be considered inside an existing required workflow.
 
 5. **AOT verification is full-CI only until trim debt is retired.** The `AOT Build Verification` job in `ci.yml` runs in the full scheduled/manual integration lane or on PRs explicitly labeled `ci/full`, not on routine PRs or merge-to-trunk pushes, because its current failures are not consistently fast or author-actionable within the default PR lane.
 
@@ -35,7 +35,7 @@ These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
 |---|---|---|
-| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission tier: every tracked text blob must decode as UTF-8 (#3321). Then one runner: affected-scope warnings-as-errors build, solution-wide `dotnet format --verify-no-changes`, `Tier=Fast` unit smoke, architecture-enforcement tests (incl. the `feature-catalog.json` drift guard). Shares its steps with `ci.yml`'s `Merge Queue Gate` via `.github/actions/lean-gate`; the only input that differs is `build-scope` (`affected` here, `full` there — see [Affected-scope gate build](#affected-scope-gate-build)). | None — a required context must never be path-filtered, or non-matching PRs block forever waiting for a status that will not report |
+| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs and runs the required boot/migration smoke against its canonical host output; a downstream consumer runs Fast units, source architecture and full collector architecture, MCP/governance checks, and the existing HTTP/PostGIS, GDAL/PDAL proofs. Independent format and CI-router jobs remain required. `required.needs` includes `pr-gate`, `pr-gate-tests`, `format`, and `ci-router-validation`. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |
 | `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head review evidence from an attesting reviewer (Codex or Claude — see [Attesting reviewers](#attesting-reviewers)) and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it retains a SHA-bound decision receipt for the read-only `review-first-evidence-ledger.yml`; the ledger reports but cannot promote. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | None — it must publish on every PR head |
 | `ci.yml` | **No `pull_request` trigger** (deliberate — see the header comment). PR template compliance, CI router validation, build, .NET foundation tests, targeted server-test shards, architecture gate, JavaScript typecheck, baseline Postgres compatibility all run on the train's `train/batch/*` `workflow_dispatch` and the nightly schedule. Its aggregator context `CI Gate` is produced by the batch CI only and never appears on a PR. | n/a — not PR-triggered |
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
@@ -45,8 +45,8 @@ These workflows are merge-blocking for all PRs to trunk:
 
 ### Affected-scope gate build
 
-`PR Gate` is the only gate a change must clear before a human looks at it, so its
-wall-clock is the tax on every PR in the repo. On the 2026-08-26 baseline the
+The following timings are historical context, not a measurement of the current
+producer/consumer topology. On the 2026-08-26 baseline the
 shared lean gate was 18m09s, split roughly:
 
 | Step | Duration |
@@ -58,7 +58,13 @@ shared lean gate was 18m09s, split roughly:
 | Governance/Drift (Testcontainers PostGIS, warm; moved to trailing trunk) | 1m15s |
 | Fixtures, policy checks, restore | ~1m |
 
-Two of those are addressed here.
+The build is now separated from test execution. Pristine outputs are packaged
+once before tests or coverage can modify them. Downstream consumers verify the
+same-run source, SDK, platform and build-property identity, then compile only
+missing projects as one scoped fallback graph. Both architecture suites run
+after projection regeneration; the full collector remains intact. Full CI also
+uses a managed producer and an independent, required full-solution format job.
+See the [managed artifact contract](server-test-binary-artifacts.md).
 
 **Build scope.** `.github/actions/lean-gate` takes a `build-scope` input.
 `PR Gate` passes `affected`; `Merge Queue Gate` keeps `full`.
@@ -67,9 +73,10 @@ holding the union of
 
 1. `scripts/ci/compute-affected-projects.sh` — the changed projects plus their
    reverse-dependency (consumer) closure, and
-2. the leaf test projects the gate's own `dotnet test --no-build` steps execute
-   (`Honua.Server.Tests`, `Honua.Architecture.Tests`, `Honua.Ai.Tests`), which
-   must be compiled even for a docs-only diff.
+2. the catalogued test projects used by the Fast, source-architecture, full
+   architecture, governance and execution-proof steps, and
+3. the selected non-advisory shard projects supplied by the managed producer
+   plan. Documentation-only exits skip compilation inside the jobs.
 
 MSBuild resolves each listed project's `<ProjectReference>` graph itself, so
 forward dependencies are built without being enumerated. A filter is used rather
@@ -77,46 +84,41 @@ than a project list because `dotnet build a.csproj b.csproj` is rejected outrigh
 (MSB1008); the filter also keeps the build to a single MSBuild invocation with
 full cross-project parallelism.
 
-The floor is the forward closure of those three test projects: 53 of the 83
-`.csproj` in the tree. The ~30 projects a narrowed gate stops compiling are
-sibling test assemblies (`Honua.Core.Tests`, the provider test projects,
-`Honua.LoadTests`, …) plus `Honua.AppHost`, `Honua.Analyzers`,
-`Honua.ControlPlane.Lambda`, the geoprocessing CLI and the custom-code harness —
-none of which any step of this gate consumes. **Expect a meaningful but bounded
-saving, not a step change**: the gate still compiles `Honua.Server` and its whole
-dependency graph on every PR, because its own tests need them.
+The current build floor is the forward dependency closure of that explicit
+producer plan, rather than a fixed count of test projects. Isolated unit projects
+and component hosts retain their own runtime ownership; the full architecture
+collector still requires its complete test-assembly graph.
 
 *Miss-risk contract.* Anything that could invalidate the closure forces a full
 build: `compute-affected-projects.sh` force-fulls on `Directory.*.props`,
 `Honua.sln`, `global.json`, `NuGet.config`, `.github/` and `scripts/ci/`, and the
 scope script force-fulls on any event without a trustworthy diff base, any
 checkout too shallow to hold the base commit, and any failure of the underlying
-script. A residual miss is caught by the merge train's full-solution build
-**before the change lands** — it is fixed forward from the train and never
-reaches trunk unverified. This is why `Merge Queue Gate` and the train's `build`
-job must stay full-solution; do not "align" them with `PR Gate`.
+script. Routine per-PR landings retain the required PR checks and trailing full
+CI; a deterministic trunk failure pauses routine landing for fix-forward repair.
+Explicit batch validation can run before landing. `Merge Queue Gate` retains its
+full-solution build. The full CI producer keeps its affected/full decision and
+unions every planned consumer root into an affected build graph.
 
 `pr-gate.yml` must check out with `fetch-depth: 2`. The checked-out ref is
 `refs/pull/N/merge` and its first parent is the current `trunk` tip, which is the
 diff base. At the default depth 1 those parent commits are absent, the scope
 computation force-fulls, and the optimization silently never fires.
 
-**Format scope.** `dotnet format` is deliberately left solution-wide even though
-it is co-dominant with the build. It takes exactly one workspace — a project or a
-solution, never a list — and most of its cost is loading that workspace rather
-than analysing documents, so narrowing it is a separate, measured change rather
-than a free win.
+**Format scope.** The PR's existing independent format job retains its affected
+or full document selection and complete formatter restore context. Full CI runs
+an independent full-solution format job; `CI Gate` requires it when build inputs
+are selected, without making test consumers wait for formatting.
 
-**Governance/drift relocation.** The complete `Category=Architecture` set in
-`Honua.Server.Tests` still runs against the real store-gated host and its
-Testcontainers PostgreSQL. It now runs as the trunk-only
-`Server Governance/Drift` job in `ci.yml`; `Test Suite Summary` requires that
-leaf job, so a failure makes `CI Gate` red and engages the fleet brake. The
-operator-approved trade is detection after landing with fix-forward handling,
-instead of blocking the PR. `scripts/ci/prepull-testcontainers-postgis.sh` still
-reads the image tag from `Honua.TestKit/PostgresFixture.cs`, starts the pull
-before restore/build, and awaits it immediately before the test. Every helper
-failure remains a no-op so Testcontainers can perform its normal pull fallback.
+**Governance and runtime proofs.** The PR test consumer retains the complete
+`Category=Architecture` governance set in `Honua.Server.Tests`, the real
+store-gated host and Testcontainers PostgreSQL, and the existing remote-source,
+raster, layer, geometry/calculate-field, imagery and PDAL proofs. The required
+boot/migration smoke runs on the producer after pristine artifact publication,
+using the canonical host output without duplicating it in test artifacts.
+Moving compilation to the producer does not remove these checks or move them to
+an advisory lane. Source architecture and full collector architecture remain
+separate required executions after fresh projections.
 
 ### Import-fidelity gates: correctness and performance
 

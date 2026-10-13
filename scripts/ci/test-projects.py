@@ -102,7 +102,7 @@ def proposed(root, project):
     name = Path(project).stem
     tree = ET.parse(root / project)
     test = any(e.text == 'true' for e in tree.findall('.//IsTestProject')) or any(e.get('Include') == 'Microsoft.NET.Test.Sdk' for e in tree.findall('.//PackageReference'))
-    role = 'unit' if name.endswith('.UnitTests') else 'component' if name.endswith('.ComponentTests') else 'architecture' if name == 'Honua.Architecture.Tests' else 'mixed' if test else 'support' if 'TestKit' in name else 'host'
+    role = 'unit' if name.endswith('.UnitTests') else 'component' if name.endswith('.ComponentTests') else 'architecture' if name in {'Honua.Architecture.Tests', 'Honua.Architecture.SourceTests'} else 'mixed' if test else 'support' if 'TestKit' in name else 'host'
     refs = closure(root, project)
     owners = sorted(p for p in refs if p.startswith('src/') and 'Analyzers' not in p)
     text = '\n'.join((root / p).read_text(errors='replace') for p in sources(root, project))
@@ -112,6 +112,9 @@ def proposed(root, project):
     for token, resource in [('PostgresFixture', 'postgres'), ('RedisFixture', 'redis'), ('GdalCli', 'native-gdal')]:
         if token in text:
             resources.append(resource)
+    if name == 'Honua.Architecture.SourceTests':
+        # Guards inspect fixture names in source text; they do not provision those resources.
+        resources = []
     if role == 'unit' and (resources or any('/Honua.Server/' in p or '/Honua.TestKit/' in p for p in refs) or any(token in text for token in ('WebApplicationFactory<', '[IntegrationTest', '[IntegrationTheory'))):
         role = 'mixed'
     return dict(role=role, shardRouted=name.endswith('.UnitTests') or name in {'Honua.Server.Tests', 'Honua.Ai.Tests', 'Honua.Geoprocessing.Cli.Tests'} or (name.startswith('Honua.Protocols.') and name.endswith('.Tests')), runtimeOwners=owners, resources=resources, isolated=role == 'unit',
@@ -160,6 +163,17 @@ def validate_modular_shard_owners(catalog, registry):
                 raise ValueError(f"{shard['shard_name']}: runtime owner missing shard route: {prefix}")
 
 
+def artifact_projects(root):
+    """Inventory every scheduled binary consumer, including foundation and gates."""
+    helper = root / 'scripts/ci/managed-test-build.py'
+    if not helper.is_file():
+        # Synthetic catalog fixtures only contain their declared shard surface.
+        return {e.get('csproj') or 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
+                for e in json.loads((root / '.github/ci-shards.json').read_text())['shards']}
+    return set(json.loads(subprocess.check_output(
+        ['python3', str(helper), 'inventory', '--root', str(root)], text=True)))
+
+
 def validate(root, catalog):
     entries = catalog['projects']
     validate_solution_members(root, entries)
@@ -169,6 +183,12 @@ def validate(root, catalog):
         if entry['role'] not in ROLES or not isinstance(entry['isolated'], bool) or not isinstance(entry['coverageRequired'], bool):
             raise ValueError(f'{project}: invalid role or flags')
         refs = closure(root, project)
+        if project == 'tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj':
+            allowed = {project, 'tests/dotnet/Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj', 'src/Honua.Analyzers/Honua.Analyzers.csproj'}
+            if entry['role'] != 'architecture' or entry['coverageRequired'] or entry['runtimeOwners'] or entry['resources'] or entry['isolated']:
+                raise ValueError(f'{project}: source architecture guards must remain resource-free architecture checks')
+            if not refs <= allowed:
+                raise ValueError(f'{project}: source architecture guards reference runtime or executable test projects')
         # Only the canonical full-coverage collector may load executable test assemblies.
         collector = project == 'tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj' and entry['role'] == 'architecture'
         if not collector:
@@ -211,7 +231,7 @@ def validate(root, catalog):
         registry_path = root / '.github/server-test-artifact-projects.json'
         if not registry_path.is_file():
             raise ValueError('Missing shard artifact inventory; run update')
-        routed = {entry.get('csproj') or 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj' for entry in json.loads(shard_path.read_text())['shards']}
+        routed = artifact_projects(root)
         registered = {entry['csproj'] for entry in json.loads(registry_path.read_text())['projects']}
         if registered != routed:
             raise ValueError('Stale shard artifact inventory; run update')
@@ -338,7 +358,7 @@ def main():
         if registry_path.is_file():
             registry = json.loads(registry_path.read_text())
             shard_file = root / '.github/ci-shards.json'
-            routed = {entry.get('csproj') or 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj' for entry in json.loads(shard_file.read_text())['shards']}
+            routed = artifact_projects(root)
             registry['projects'] = [entry for entry in registry['projects'] if entry['csproj'] in routed]
             known = {entry['csproj'] for entry in registry['projects']}
             for project in sorted(routed - known):

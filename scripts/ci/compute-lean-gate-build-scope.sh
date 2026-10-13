@@ -62,6 +62,10 @@ SOLUTION="Honua.sln"
 REQUIRED_TEST_PROJECTS=(
   "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
   "tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
+  "tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj"
+  # Projection generators run tests from these assemblies before verification.
+  "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj"
+  "tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj"
   "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj"
 )
 

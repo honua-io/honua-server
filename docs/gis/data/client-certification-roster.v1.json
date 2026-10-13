@@ -23,7 +23,7 @@
       "tests/baselines/client-compat/**/*.cert.json"
     ],
     "prosePair": "docs/gis/CLIENT_CERTIFICATION_ROSTER.md",
-    "driftTests": "tests/dotnet/Honua.Architecture.Tests/ClientCertificationRosterTests.cs"
+    "driftTests": "tests/dotnet/Honua.Architecture.SourceTests/ClientCertificationRosterTests.cs"
   },
   "reconciliationNotes": [
     {

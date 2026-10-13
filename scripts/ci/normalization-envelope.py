@@ -44,6 +44,7 @@ GENERATOR_INPUTS = (
     "scripts/ci/generate-capability-matrix.py",
     "scripts/ci/verify-admin-operation-parity.py",
     "tests/dotnet/Honua.Architecture.Tests/ArchitectureTestHelpers.cs",
+    "tests/dotnet/Honua.Architecture.SourceTests/ArchitectureTestHelpers.Source.cs",
     "tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj",
     "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/CapabilityRouteMapper.cs",
     "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogEmitter.cs",
