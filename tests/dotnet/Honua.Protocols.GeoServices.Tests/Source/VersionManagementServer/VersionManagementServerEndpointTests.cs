@@ -12,6 +12,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer;
 
@@ -806,6 +807,128 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var info = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}?f=json");
         await info.AssertGeoServicesErrorAsync(404);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/delete")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "delete")]
+    public async Task DeleteByName_RemovesExactVersionAndOverlay_PreservesOtherOwner()
+    {
+        var created = await CreateVersionAsync("delete_by_name");
+        var guid = created.GetProperty("versionGuid").GetString()!;
+        var otherGuid = Guid.NewGuid();
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync($"""
+            INSERT INTO honua.gdb_versions (version_id, version_name, owner, access)
+            VALUES ('{otherGuid}', 'delete_by_name', 'other', 2);
+            INSERT INTO honua.version_edits (version_id, layer_id, objectid, operation)
+            VALUES ('{guid}'::uuid, 0, 991, 1), ('{otherGuid}', 0, 992, 1);
+            """);
+
+        using var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/delete",
+            ("versionName", "admin.delete_by_name"), ("sessionId", Guid.NewGuid().ToString("B")), ("f", "json"));
+        await AssertSuccessMomentAsync(response);
+
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = new NpgsqlCommand("""
+            SELECT (SELECT count(*) FROM honua.gdb_versions WHERE version_id = @deleted)
+                + (SELECT count(*) FROM honua.version_edits WHERE version_id = @deleted),
+                (SELECT count(*) FROM honua.gdb_versions WHERE version_id = @other),
+                (SELECT count(*) FROM honua.version_edits WHERE version_id = @other)
+            """, connection);
+        command.Parameters.AddWithValue("deleted", Guid.Parse(guid));
+        command.Parameters.AddWithValue("other", otherGuid);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetInt64(0).Should().Be(0);
+        reader.GetInt64(1).Should().Be(1);
+        reader.GetInt64(2).Should().Be(1);
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/delete")]
+    [InlineData("", 400)]
+    [InlineData("bare_name", 400)]
+    [InlineData("admin.", 400)]
+    [InlineData("sde.DEFAULT", 409)]
+    [InlineData("admin.missing", 404)]
+    public async Task DeleteByName_InvalidOrDefaultIdentity_DoesNotDelete(string name, int errorCode)
+    {
+        var preservedName = "delete_name_guard_" + Guid.NewGuid().ToString("N");
+        var created = await CreateVersionAsync(preservedName);
+        using var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/delete",
+            ("versionName", name), ("f", "json"));
+        await response.AssertGeoServicesErrorAsync(errorCode);
+        using var info = await _fixture.Client.GetAsync(
+            $"{ServiceBase}/versions/{created.GetProperty("versionGuid").GetString()}?f=json");
+        info.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await info.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("versionName").GetString().Should().Be("admin." + preservedName);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/delete")]
+    public async Task DeleteByName_WrongService_DoesNotDelete()
+    {
+        var created = await CreateVersionAsync("delete_wrong_service");
+        using var response = await PostFormAsync(
+            "/rest/services/nonexistent-version-service/VersionManagementServer/delete",
+            ("versionName", "admin.delete_wrong_service"), ("f", "json"));
+        await response.AssertGeoServicesErrorAsync(404);
+        using var info = await _fixture.Client.GetAsync(
+            $"{ServiceBase}/versions/{created.GetProperty("versionGuid").GetString()}?f=json");
+        using var document = JsonDocument.Parse(await info.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("versionName").GetString().Should().Be("admin.delete_wrong_service");
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/delete")]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task DeleteByName_LockedVersion_PreservesRegistry(int state)
+    {
+        var lockedName = "delete_name_locked_" + state;
+        var created = await CreateVersionAsync(lockedName);
+        var guid = created.GetProperty("versionGuid").GetString();
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            $"UPDATE honua.gdb_versions SET state = {state} WHERE version_id = '{guid}'::uuid");
+        using var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/delete",
+            ("versionName", "admin." + lockedName), ("f", "json"));
+        await response.AssertGeoServicesErrorAsync(409);
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = new NpgsqlCommand(
+            "SELECT state FROM honua.gdb_versions WHERE version_id = @id", connection);
+        command.Parameters.AddWithValue("id", Guid.Parse(guid!));
+        (await command.ExecuteScalarAsync()).Should().Be((short)state);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/delete")]
+    public async Task DeleteByName_AmbiguousServedIdentity_DoesNotSelectFirstVersion()
+    {
+        await CreateVersionAsync("ambiguous_delete");
+        var otherGuid = Guid.NewGuid();
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync($"""
+            INSERT INTO honua.gdb_versions (version_id, version_name, owner)
+            VALUES ('{otherGuid}', 'admin.ambiguous_delete', 'admin');
+            """);
+        using var response = await PostFormAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/delete",
+            ("versionName", "admin.ambiguous_delete"), ("f", "json"));
+        await response.AssertGeoServicesErrorAsync(409);
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = new NpgsqlCommand("""
+            SELECT count(*) FROM honua.gdb_versions
+            WHERE owner = 'admin' AND version_name IN ('ambiguous_delete', 'admin.ambiguous_delete')
+            """, connection);
+        (await command.ExecuteScalarAsync()).Should().Be(2L);
     }
 
     // ---- helpers --------------------------------------------------------------------------------
