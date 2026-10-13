@@ -18,6 +18,7 @@ public sealed class TenantLifecycleServiceTests
     private static readonly TenantLifecycleActor Actor =
         new("operator-1", AuditActorType.UserId, "corr-1");
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task FullLifecycle_CreateSuspendResumeDelete_TransitionsAndAudits()
     {
@@ -48,6 +49,7 @@ public sealed class TenantLifecycleServiceTests
         audit.Events.Should().OnlyContain(e => e.ResourceType == "tenant" && e.ResourceId == "acme");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Create_DuplicateTenant_ReturnsConflictAndDoesNotAudit()
     {
@@ -61,6 +63,7 @@ public sealed class TenantLifecycleServiceTests
         audit.Events.Count(e => e.Action == "tenant.create").Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Suspend_NonActiveTenant_ReturnsInvalidTransition()
     {
@@ -73,6 +76,7 @@ public sealed class TenantLifecycleServiceTests
         again.Outcome.Should().Be(TenantLifecycleOutcome.InvalidTransition);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Resume_ActiveTenant_ReturnsInvalidTransition()
     {
@@ -84,6 +88,7 @@ public sealed class TenantLifecycleServiceTests
         resume.Outcome.Should().Be(TenantLifecycleOutcome.InvalidTransition);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Operations_OnUnknownTenant_ReturnNotFound()
     {
@@ -93,6 +98,7 @@ public sealed class TenantLifecycleServiceTests
         (await service.DeleteAsync("ghost", Actor)).Outcome.Should().Be(TenantLifecycleOutcome.NotFound);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Create_InvalidTenantId_ReturnsInvalid()
     {

@@ -18,6 +18,7 @@ public class DefaultPerformanceMonitorTests
         _monitor = new DefaultPerformanceMonitor();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RecordDatabaseQuery_ShouldNotThrow()
     {
@@ -32,6 +33,7 @@ public class DefaultPerformanceMonitorTests
         Assert.Null(exception);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RecordHttpRequest_ShouldNotThrow()
     {
@@ -46,6 +48,7 @@ public class DefaultPerformanceMonitorTests
         Assert.Null(exception);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RecordMemoryUsage_ShouldNotThrow()
     {
@@ -60,6 +63,7 @@ public class DefaultPerformanceMonitorTests
         Assert.Null(exception);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RecordCacheMetrics_ShouldNotThrow()
     {
@@ -72,6 +76,7 @@ public class DefaultPerformanceMonitorTests
         Assert.Null(exception);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void StartOperation_ShouldReturnValidScope()
     {
@@ -86,6 +91,7 @@ public class DefaultPerformanceMonitorTests
         Assert.IsAssignableFrom<IOperationScope>(scope);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OperationScope_ShouldRecordTagsOnDispose()
     {
@@ -106,6 +112,7 @@ public class DefaultPerformanceMonitorTests
         Assert.Null(exception);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RecordCounter_ShouldAcceptCustomMetric()
     {
@@ -123,6 +130,7 @@ public class DefaultPerformanceMonitorTests
         Assert.Null(exception);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RecordHistogram_ShouldAcceptCustomMetric()
     {
@@ -139,6 +147,7 @@ public class DefaultPerformanceMonitorTests
         Assert.Null(exception);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RecordCounter_WithNullTags_ShouldNotThrow()
     {
@@ -151,6 +160,7 @@ public class DefaultPerformanceMonitorTests
         Assert.Null(exception);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RecordHistogram_WithEmptyTags_ShouldNotThrow()
     {
@@ -164,6 +174,7 @@ public class DefaultPerformanceMonitorTests
         Assert.Null(exception);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OperationScope_WithTags_ShouldChain()
     {

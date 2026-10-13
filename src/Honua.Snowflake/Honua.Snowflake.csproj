@@ -33,4 +33,8 @@
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Snowflake.UnitTests" />
+  </ItemGroup>
+
 </Project>

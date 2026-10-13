@@ -38,18 +38,21 @@ public class TileMatrixSetOptionsValidatorTests
         return Validator.Validate(Options.DefaultName, options);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_NoCustom_Succeeds()
     {
         Validate().Succeeded.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ValidCustom_Succeeds()
     {
         Validate(Valid()).Succeeded.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("WebMercatorQuad")]
     [InlineData("worldcrs84quad")]
@@ -61,6 +64,7 @@ public class TileMatrixSetOptionsValidatorTests
         result.Failures.Should().Contain(f => f.Contains("reserved built-in"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_DuplicateId_Fails()
     {
@@ -70,6 +74,7 @@ public class TileMatrixSetOptionsValidatorTests
         result.Failures.Should().Contain(f => f.Contains("duplicate"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_NonMonotonicScaleDenominators_Fails()
     {
@@ -83,6 +88,7 @@ public class TileMatrixSetOptionsValidatorTests
         result.Failures.Should().Contain(f => f.Contains("ScaleDenominator must be strictly smaller"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ScaleDenominatorAndCellSize_MustAgreeForGeographicGrid()
     {
@@ -119,6 +125,7 @@ public class TileMatrixSetOptionsValidatorTests
         result.Failures.Should().Contain(f => f.Contains("contradicts ScaleDenominator"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ScaleDenominatorAndCellSize_AcceptConsistentGeographicGrid()
     {
@@ -138,6 +145,7 @@ public class TileMatrixSetOptionsValidatorTests
         Validate(custom).Succeeded.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_NonPositiveMatrixDimensions_Fails()
     {
@@ -150,6 +158,7 @@ public class TileMatrixSetOptionsValidatorTests
         result.Failures.Should().Contain(f => f.Contains("MatrixWidth and MatrixHeight"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_InvalidSrid_Fails()
     {
@@ -162,6 +171,7 @@ public class TileMatrixSetOptionsValidatorTests
         result.Failures.Should().Contain(f => f.Contains("positive Srid"));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -177,6 +187,7 @@ public class TileMatrixSetOptionsValidatorTests
         result.Failures.Should().Contain(f => f.Contains("TopLeftCorner"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_NoLevels_Fails()
     {
@@ -189,6 +200,7 @@ public class TileMatrixSetOptionsValidatorTests
         result.Failures.Should().Contain(f => f.Contains("at least one level"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_EmptyId_Fails()
     {

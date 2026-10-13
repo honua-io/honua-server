@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class MigrationRunCheckpointStoreTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task InMemory_SaveAndLoad_RoundTripsCheckpoint()
     {
@@ -32,6 +33,7 @@ public sealed class MigrationRunCheckpointStoreTests
         store.Count.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task InMemory_SaveOverwrites_PreviousCheckpoint()
     {
@@ -46,6 +48,7 @@ public sealed class MigrationRunCheckpointStoreTests
         loaded.Attempt.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task InMemory_Delete_RemovesCheckpoint()
     {
@@ -56,6 +59,7 @@ public sealed class MigrationRunCheckpointStoreTests
         (await store.DeleteAsync("run-2")).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task InMemory_Load_ForUnknownRun_ReturnsNull()
     {
@@ -63,6 +67,7 @@ public sealed class MigrationRunCheckpointStoreTests
         (await store.LoadAsync("missing")).Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SaveAsync_RedactsUrlLikeMarker_AndCapsLength()
     {
@@ -80,6 +85,7 @@ public sealed class MigrationRunCheckpointStoreTests
         truncated!.ResumeMarker.Length.Should().Be(MigrationRunCheckpointSanitizer.MaxMarkerLength);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task FileSystem_RoundTrips_CheckpointAcrossInstances()
     {
@@ -100,6 +106,7 @@ public sealed class MigrationRunCheckpointStoreTests
         (await second.LoadAsync("run-fs")).Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task FileSystem_RejectsPathTraversal_InRunId()
     {

@@ -16,6 +16,7 @@ namespace Honua.ControlPlane.Lambda.Tests;
 /// </summary>
 public sealed class ScheduledTickHandlerTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null, Function.BatchEventHandler)]
     [InlineData("", Function.BatchEventHandler)]
@@ -27,10 +28,12 @@ public sealed class ScheduledTickHandlerTests
     public void ResolveHandler_MapsEverySelectorIacSets(string? configured, string expected)
         => Function.ResolveHandler(configured).Should().Be(expected);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ResolveHandler_UnknownSelector_IsRejectedRatherThanRunAsBatchEvent()
         => Function.ResolveHandler("sweep-everything").Should().BeNull();
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunScheduledTickAsync_PostsKindToScheduledTickRoute_WithTheServersTickToken()
     {
@@ -59,6 +62,7 @@ public sealed class ScheduledTickHandlerTests
         handler.LastContentType.Should().Be("application/json");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData(" ")]
@@ -76,6 +80,7 @@ public sealed class ScheduledTickHandlerTests
         handler.LastRequest.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunScheduledTickAsync_ServerRejection_FailsTheInvocation()
     {
@@ -90,6 +95,7 @@ public sealed class ScheduledTickHandlerTests
         await act.Should().ThrowAsync<HttpRequestException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FromEnvironment_EventToken_PrefersTheServersConfigurationKey()
     {

@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591;CA1041;CA1707;CA1816;CA1822;CA1869;CA1310;xUnit2021;xUnit1041;CS4014;CS0618;CS0612;CS1061;IDE0051;IDE0052;IDE0005</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="dbup-postgresql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <!-- Preserve the audited transitive pin from the original TestKit. -->
+    <PackageReference Include="SSH.NET" />
+    <PackageReference Include="YamlDotNet" />
+    <PackageReference Include="xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Honua.Db/Postgres/Honua.Postgres.csproj" />
+    <InternalsVisibleTo Include="Honua.TestKit" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Postgres.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OData.ComponentTests" />
+    <!-- Canonical SQL, linked rather than forked. Keep original resource/journal identities. -->
+    <EmbeddedResource Include="../../../src/Honua.Server/Migrations/*.sql"
+                      Link="Migrations/%(Filename)%(Extension)"
+                      LogicalName="Honua.Server.Migrations.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices.ComponentTests" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi.ComponentTests" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.TestKit.Postgres.Hosting" />
+  </ItemGroup>
+</Project>

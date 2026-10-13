@@ -72,7 +72,7 @@ if [[ -n "${HONUA_CHANGED_FILES_FILE:-}" ]]; then
     exit 0
   fi
   changed_files="$(cat "${HONUA_CHANGED_FILES_FILE}")"
-elif ! changed_files="$(git diff --name-only "${base_ref}...${head_ref}" 2>/dev/null)"; then
+elif ! changed_files="$(git diff --no-renames --name-only "${base_ref}...${head_ref}" 2>/dev/null)"; then
   echo "ALL"
   exit 0
 fi

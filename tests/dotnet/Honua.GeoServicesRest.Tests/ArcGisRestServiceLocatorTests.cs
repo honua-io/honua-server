@@ -9,6 +9,7 @@ namespace Honua.GeoServicesRest.Tests;
 
 public class ArcGisRestServiceLocatorTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_PreferConnectionString_TrimsTrailingSlash()
     {
@@ -26,6 +27,7 @@ public class ArcGisRestServiceLocatorTests
         Assert.Null(resolved.Token);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_FallsBackToServiceUrlProperty_WhenConnectionStringEmpty()
     {
@@ -42,6 +44,7 @@ public class ArcGisRestServiceLocatorTests
         Assert.Equal("https://example.com/arcgis/rest/services/x/MapServer", resolved.ServiceUrl);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_ReadsTokenFromProperties()
     {
@@ -57,12 +60,14 @@ public class ArcGisRestServiceLocatorTests
         Assert.Equal("abc-token", resolved.Token);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_NullConnection_Throws()
     {
         Assert.Throws<InvalidOperationException>(() => ArcGisRestServiceLocator.Resolve(connection: null));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("http://services.arcgis.com/x/FeatureServer")]
     [InlineData("ftp://services.arcgis.com/x/FeatureServer")]

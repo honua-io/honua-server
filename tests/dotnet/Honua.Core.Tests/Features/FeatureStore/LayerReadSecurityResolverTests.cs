@@ -16,6 +16,7 @@ public sealed class LayerReadSecurityResolverTests
 {
     private const int LayerId = 7;
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("region = @p0 AND tier = @p1", "(status = @p0) AND (region = @p1 AND tier = @p2)")]
     [InlineData("region = $1 AND tier = $2", "(status = @p0) AND (region = $2 AND tier = $3)")]
@@ -32,6 +33,7 @@ public sealed class LayerReadSecurityResolverTests
         query.EnforcedSqlFilter.Parameters.Should().Equal("active", "west", "gold");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ApplyAsync_ResourceKeyed_ResolvesTheSamePolicyAsTheLayerIdLookup()
     {
@@ -49,6 +51,7 @@ public sealed class LayerReadSecurityResolverTests
         byResource.EnforcedMaskedFields.Should().Equal(ImmutableArray.Create("secret"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ApplyAsync_ResourceKeyed_UsesTheBoundResourceWhenStorageLayerIdsCollide()
     {
@@ -108,6 +111,7 @@ public sealed class LayerReadSecurityResolverTests
         applied.EnforcedMaskedFields.Should().Equal(ImmutableArray.Create("secret"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ApplyAsync_NothingResolves_ReturnsTheQueryUnchanged()
     {
@@ -119,6 +123,7 @@ public sealed class LayerReadSecurityResolverTests
         applied.Should().Be(query);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task EnsureNoUnenforcedPolicyAsync_NothingResolves_Completes()
     {
@@ -129,6 +134,7 @@ public sealed class LayerReadSecurityResolverTests
         await act.Should().NotThrowAsync();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task EnsureNoUnenforcedPolicyAsync_RowPredicateResolves_ThrowsNotSupported()
     {
@@ -140,6 +146,7 @@ public sealed class LayerReadSecurityResolverTests
             .WithMessage("*row-level security*Test provider cannot enforce it*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task EnsureNoUnenforcedPolicyAsync_FieldMaskResolves_ThrowsNotSupported()
     {
@@ -151,6 +158,7 @@ public sealed class LayerReadSecurityResolverTests
             .WithMessage("*field-mask*Test provider cannot enforce it*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -170,6 +178,7 @@ public sealed class LayerReadSecurityResolverTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task EnsureNoUnenforcedPolicyAsync_BoundResource_IsUsedWithoutALayerIdLookup()
     {

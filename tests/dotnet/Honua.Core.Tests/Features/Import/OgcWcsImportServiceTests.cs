@@ -25,6 +25,7 @@ public sealed class OgcWcsImportServiceTests
 {
     private const string ServiceUrl = "https://example.com/geoserver/wcs";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_DryRun_BuildsPlannedManifestWithoutDownloadingCoverage()
     {
@@ -52,6 +53,7 @@ public sealed class OgcWcsImportServiceTests
         rasterImportMock.VerifyNoOtherCalls();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_ApplyMode_DownloadsGeoTiffAndIssuesWcsGetCoverageRequest()
     {
@@ -107,6 +109,7 @@ public sealed class OgcWcsImportServiceTests
         capturedRequests[0].Format.Should().Be(SupportedRasterFormat.GeoTiff);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_NonGeoTiffFormat_DowngradesEveryCoverageToManualReview()
     {
@@ -141,6 +144,7 @@ public sealed class OgcWcsImportServiceTests
         handler.RequestCount.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_GeoTiffMimeVariant_IsTreatedAsAutomatedFormat()
     {
@@ -180,6 +184,7 @@ public sealed class OgcWcsImportServiceTests
         handler.RequestCount.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_Wcs1xVersion_PropagatesLegacyCoverageParameter()
     {
@@ -222,6 +227,7 @@ public sealed class OgcWcsImportServiceTests
         query.Should().NotContain("coverageId=");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_HttpFailurePropagatesAsFailedRecord()
     {
@@ -249,6 +255,7 @@ public sealed class OgcWcsImportServiceTests
         handler.RequestCount.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_RejectsUnknownVersion()
     {
@@ -271,6 +278,7 @@ public sealed class OgcWcsImportServiceTests
         handler.RequestCount.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_PropagatesStyleDiagnosticsFromUnderlyingCoverageService()
     {
@@ -296,6 +304,7 @@ public sealed class OgcWcsImportServiceTests
         result.StyleDiagnostics[0].Classification.Should().Be("manual-review");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportAsync_MissingServiceUrl_ThrowsArgumentException()
     {

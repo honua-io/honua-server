@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class OgcApiFeaturesMigrationInventoryScannerTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildInventory_WithGeoJsonCollection_ModelsOgcApiFeaturesScanFacts()
     {
@@ -108,6 +109,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
         resource.ExternalDependencyIds.Should().Contain(pagination.Id);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildInventory_WithNonJsonItems_MarksCollectionUnsupported()
     {
@@ -144,6 +146,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
         resource.Compatibility.ManualSteps.Should().Contain(step => step.Contains("GeoJSON", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildInventory_WithProbedPaginationButNoItemsLink_TreatsItemsEndpointAsSupported()
     {
@@ -178,6 +181,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
         resource.Compatibility.Code.Should().NotBe(OgcApiFeaturesImportCompatibilityCodes.MissingItemsEndpoint);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildInventory_WithDuplicateCollectionLinks_EmitsUniqueDependencyIds()
     {
@@ -221,6 +225,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
         resource.ExternalDependencyIds.Should().BeEquivalentTo(collectionDependencies.Select(static dependency => dependency.Id));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildInventory_WithTransactionsVendorExtensionsAndMissingLinks_ReturnsManualReviewWarnings()
     {
@@ -279,6 +284,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_WithFixtureSource_CapturesCollectionsSchemaPagingAndItems()
     {
@@ -324,6 +330,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
             record.AutomationStatus == MigrationFidelityAutomationStatuses.Automated);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_WithSameHostRedirect_FollowsRedirectAndScans()
     {
@@ -346,6 +353,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
         artifact.Resources.Should().ContainSingle(resource => resource.Name == "roads");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_WithCrossHostRedirect_BlocksRedirectWithoutForwardingAuthorization()
     {
@@ -371,6 +379,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
         handler.RequestUris.Should().NotContain(uri => uri.Host == "other.example");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Translate_WithOgcApiFeaturesInventory_EmitsFeatureImportTarget()
     {

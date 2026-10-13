@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class ArcGisRestClientDimensionTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false, 2)]
     [InlineData(false, 3)]

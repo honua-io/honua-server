@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Features.AttributeRules;
 /// </summary>
 public sealed class AttributeRuleEngineTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Apply_CalculationConstantRule_PopulatesTargetField()
     {
@@ -37,6 +38,7 @@ public sealed class AttributeRuleEngineTests
         result.Attributes["qty"].Should().Be(5);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Apply_CalculationArithmeticRule_ComputesFromFields()
     {
@@ -57,6 +59,7 @@ public sealed class AttributeRuleEngineTests
         result.Attributes["total"].Should().Be(12d);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Apply_ConstraintViolated_ReportsViolationWithMessage()
     {
@@ -78,6 +81,7 @@ public sealed class AttributeRuleEngineTests
         result.Violations[0].Message.Should().Be("Quantity must be positive");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Apply_ConstraintSatisfied_NoViolation()
     {
@@ -96,6 +100,7 @@ public sealed class AttributeRuleEngineTests
         result.IsValid.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Apply_TriggeringEventMismatch_RuleDoesNotFire()
     {
@@ -116,6 +121,7 @@ public sealed class AttributeRuleEngineTests
         result.IsValid.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Apply_DisabledRule_DoesNotFire()
     {
@@ -135,6 +141,7 @@ public sealed class AttributeRuleEngineTests
         result.IsValid.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Apply_UnsupportedExpression_RoutedOutOfScopeNotFailed()
     {
@@ -158,6 +165,7 @@ public sealed class AttributeRuleEngineTests
         sink.Unsupported.Should().ContainSingle().Which.Should().Be("ComplexArcade");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Apply_UnsupportedCalculation_DoesNotWriteTargetField()
     {
@@ -178,6 +186,7 @@ public sealed class AttributeRuleEngineTests
         result.Attributes.ContainsKey("status").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Apply_ImmediatePass_SkipsBatchRules()
     {
@@ -200,6 +209,7 @@ public sealed class AttributeRuleEngineTests
         result.Attributes.ContainsKey("total").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Apply_BatchPass_RunsBatchRulesOnly()
     {
@@ -233,6 +243,7 @@ public sealed class AttributeRuleEngineTests
         result.Attributes.ContainsKey("immediate").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("insert", true, false, false)]
     [InlineData("update", false, true, false)]
@@ -267,6 +278,7 @@ public sealed class AttributeRuleEngineTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Apply_ExclusionRuleMatches_AbortsEdit()
     {
@@ -293,6 +305,7 @@ public sealed class AttributeRuleEngineTests
         notMatched.IsValid.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Apply_CalculationWithSafeArcadeFunction_ComputesValue()
     {

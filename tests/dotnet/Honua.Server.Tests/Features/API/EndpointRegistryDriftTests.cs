@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Server;
@@ -582,24 +583,48 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// All integration-test source roots whose HTTP requests back EndpointRegistry
-    /// entries: the monolithic Honua.Server.Tests plus every extracted
-    /// Honua.Protocols.&lt;X&gt;.Tests project AND Honua.Ai.Tests. As protocols were
-    /// split into their own test assemblies (OData, OgcApi, …) the HTTP requests
-    /// that exercise their routes moved with them, so a scan limited to
-    /// Honua.Server.Tests would report those routes (e.g. DELETE /odata/Features(...))
-    /// as uncovered. The MCP protocol surface (POST /mcp) is consolidated into
-    /// Honua.Ai (not a standalone Honua.Protocols.Mcp), so its HTTP requests live in
-    /// Honua.Ai.Tests — which the Honua.Protocols.* glob would otherwise miss.
+    /// Catalogued integration and component sources whose actual HTTP requests
+    /// back EndpointRegistry entries. Unit and architecture sources cannot provide
+    /// integration evidence merely by containing route strings.
     /// </summary>
     private static List<string> FindIntegrationTestSourceRoots()
     {
         var serverTests = FindServerTestSourceRoot();
-        var testsRoot = Directory.GetParent(serverTests)!.FullName; // tests/dotnet
-        var roots = new List<string> { serverTests };
-        roots.AddRange(Directory.EnumerateDirectories(testsRoot, "Honua.Protocols.*.Tests", SearchOption.TopDirectoryOnly));
-        roots.AddRange(Directory.EnumerateDirectories(testsRoot, "Honua.Ai.Tests", SearchOption.TopDirectoryOnly));
-        return roots;
+        var repositoryRoot = Directory.GetParent(serverTests)!.Parent!.Parent!.FullName;
+        using var catalog = JsonDocument.Parse(File.ReadAllText(
+            Path.Join(repositoryRoot, ".github", "test-projects.json")));
+        var roots = new List<string>();
+        foreach (var project in catalog.RootElement.GetProperty("projects").EnumerateObject())
+        {
+            var entry = project.Value;
+            var role = entry.GetProperty("role").GetString();
+            if (!entry.GetProperty("coverageRequired").GetBoolean() || role is not ("mixed" or "component"))
+            {
+                continue;
+            }
+
+            var directory = Path.GetDirectoryName(Path.Join(repositoryRoot, project.Name))!;
+            if (!Directory.Exists(directory))
+            {
+                throw new DirectoryNotFoundException($"Catalogued integration source directory is missing: {directory}");
+            }
+
+            roots.Add(directory);
+        }
+
+        return roots.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+    }
+
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void IntegrationSourceDiscovery_IncludesComponentHosts_AndExcludesUnitSources()
+    {
+        var roots = FindIntegrationTestSourceRoots().Select(Path.GetFileName).ToArray();
+        roots.Should().Contain("Honua.Protocols.GeoServices.ComponentTests");
+        roots.Should().Contain("Honua.Ai.ComponentTests");
+        roots.Should().Contain("Honua.Server.Tests");
+        roots.Should().NotContain("Honua.Protocols.GeoServices.UnitTests");
+        roots.Should().NotContain("Honua.Architecture.Tests");
     }
 
     private static string NormalizeEndpointKey(string endpoint)

@@ -180,6 +180,7 @@ public sealed class PortalItemProjectorTests
         items.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(MetadataV2LifecycleStatus.Draft)]
     [InlineData(MetadataV2LifecycleStatus.Archived)]

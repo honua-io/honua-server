@@ -10,6 +10,7 @@ namespace Honua.Core.Tests.OperationScopes;
 
 public sealed class BoundOperationIdempotencyTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Acceptance_ConcurrentRetry_DoesNotGrantASecondActuation()
     {
@@ -26,6 +27,7 @@ public sealed class BoundOperationIdempotencyTests
         Assert.Equal(OperationHandleStatus.Accepted, (await store.GetAsync(first.OperationInstanceId))!.Status);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Acceptance_CompletedRetry_ReplaysThePersistedJobAcrossFactoryInstances()
     {
@@ -44,6 +46,7 @@ public sealed class BoundOperationIdempotencyTests
         Assert.Equal(OperationHandleStatus.Queued, retry.Status);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Acceptance_ChangedPayload_ConflictsWithoutOverwritingTheOriginalJob()
     {
@@ -70,6 +73,7 @@ public sealed class BoundOperationIdempotencyTests
         IdempotencyRequestHash = new string('a', 64),
     };
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -101,6 +105,7 @@ public sealed class BoundOperationIdempotencyTests
         Assert.Equal("original-job", persisted.JobId);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Acceptance_OwnerReclaimsDuringRetryAudit_NeverGrantsRetryActuation()
     {
@@ -116,6 +121,7 @@ public sealed class BoundOperationIdempotencyTests
         Assert.Equal(OperationHandleStatus.Accepted, (await store.GetAsync(first.OperationInstanceId))!.Status);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Acceptance_WorkerCompletesDuringRetryAudit_ReturnsLatestWithoutLostUpdate()
     {
@@ -131,6 +137,7 @@ public sealed class BoundOperationIdempotencyTests
         Assert.Equal(OperationHandleStatus.Completed, (await store.GetAsync(first.OperationInstanceId))!.Status);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -157,6 +164,7 @@ public sealed class BoundOperationIdempotencyTests
         Assert.Equal("original-job", persisted.JobId);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -192,6 +200,7 @@ public sealed class BoundOperationIdempotencyTests
         Assert.Equal(1, (await store.GetAsync(context.OperationInstanceId))!.Version);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Acceptance_CreateReplyLostOnCompetingAttempt_DoesNotFailTheWinner()
     {
@@ -211,6 +220,7 @@ public sealed class BoundOperationIdempotencyTests
         Assert.Equal(0, winner.Version);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Acceptance_CreateReplyLost_ConcurrentProgressWinsRecoveryCompareAndSet()
     {

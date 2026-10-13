@@ -43,7 +43,7 @@ ORDERING ("largest-impact first")
          literally execute the test the diff touched.
 
          Scored against the EFFECTIVE runner filter. run-server-test-shard.sh
-         composes every shard filter with `&Tier!=Slow&Tier!=Fast`, so a
+         composes integration filters with `&Tier!=Slow&Tier!=Fast`, so a
          changed class whose tests are all Fast or all Slow is run by none of
          the 71 families and must credit none of them -- otherwise the shard
          claiming it by name receives the top-priority ranking signal for tests
@@ -126,9 +126,20 @@ COVERAGE_MODULE = "scripts/ci/check-server-test-shard-coverage.py"
 # is. Discovered from the source rather than hard-coded, for the same reason the
 # coverage guard discovers its test-method attributes: a new tiered attribute
 # must not silently stop being recognised.
-TIER_ATTRIBUTE_DIR = "tests/dotnet/Honua.TestKit/Attributes"
+TIER_ATTRIBUTE_DIRS = (
+    "tests/dotnet/Honua.TestKit/Attributes",
+    "tests/dotnet/Honua.TestKit.Abstractions/Attributes",
+)
+# Retained for fixture/API compatibility; policy comes from the catalog.
+ODATA_UNIT_PROJECT = "tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj"
 
-# Tiers scripts/ci/run-server-test-shard.sh excludes from EVERY shard it runs.
+def catalog_unit_project(root: Path, project: str) -> bool:
+    catalog = json.loads((root / ".github/test-projects.json").read_text())
+    return catalog["projects"].get(project, {}).get("role") in {"unit", "component"}
+
+
+# Default exclusions for integration shards. The independent OData unit project
+# owns Fast cases as well (see runnable_methods and the runner project override).
 # It composes the shard's own `filter` with `&Tier!=Slow` and then `&Tier!=Fast`
 # (HONUA_SERVER_TEST_EXCLUDE_SLOW / _EXCLUDE_FAST, both defaulting to true, and
 # pr-gate.yml sets neither), so a changed test carrying one of these tiers is
@@ -215,7 +226,7 @@ def git_changed_files(root: Path, base: str, head: str) -> list[str] | None:
     if probe.returncode != 0:
         return None
     result = subprocess.run(
-        ["git", "-C", str(root), "diff", "--name-only", f"{base}...{head}"],
+        ["git", "-C", str(root), "diff", "--no-renames", "--name-only", f"{base}...{head}"],
         capture_output=True,
         text=True,
     )
@@ -295,10 +306,8 @@ def load_shard_coverage(root: Path) -> tuple[Any, dict[str, dict[str, Any]]]:
 def tier_attributes(root: Path) -> dict[str, str]:
     """`{attribute short name: tier}` for every TestKit attribute that emits one."""
     mapping: dict[str, str] = {}
-    directory = root / TIER_ATTRIBUTE_DIR
-    if not directory.is_dir():
-        return mapping
-    for path in sorted(directory.glob("*.cs")):
+    paths = (path for directory in TIER_ATTRIBUTE_DIRS for path in (root / directory).glob("*.cs"))
+    for path in sorted(paths):
         text = path.read_text(encoding="utf-8", errors="replace")
         emitted = _TIER_EMITTER_RE.search(text)
         if not emitted:
@@ -386,6 +395,10 @@ def runnable_methods(root: Path, fqn: str, entry: dict[str, Any]) -> list[str]:
     A method with no Tier trait at all survives `Tier!=X`, which is why the
     untiered majority is unaffected.
     """
+    # Catalogued isolated unit shards own Fast tests too; foundation
+    # jobs still exclude Fast from every existing integration shard.
+    excluded_tiers = EXCLUDED_TIERS - {"Fast"} if catalog_unit_project(root, entry.get("csproj", "")) else EXCLUDED_TIERS
+    fqn = entry.get("fqn", fqn)
     simple = fqn.rsplit(".", 1)[-1]
     class_tiers: set[str] = set()
     method_tiers: dict[str, set[str]] = {}
@@ -394,12 +407,12 @@ def runnable_methods(root: Path, fqn: str, entry: dict[str, Any]) -> list[str]:
         class_tiers |= classes.get(simple, set())
         for name, tiers in methods.items():
             method_tiers.setdefault(name, set()).update(tiers)
-    if class_tiers & EXCLUDED_TIERS:
+    if class_tiers & excluded_tiers:
         return []
     return [
         method
         for method in entry["methods"]
-        if not (method_tiers.get(method, set()) & EXCLUDED_TIERS)
+        if not (method_tiers.get(method, set()) & excluded_tiers)
     ]
 
 
@@ -431,7 +444,7 @@ def count_test_class_hits(
     hits: dict[str, int] = {}
     try:
         # Restricted to the methods a selectable shard would ACTUALLY execute.
-        # run-server-test-shard.sh composes every shard filter with
+        # run-server-test-shard.sh composes integration shard filters with
         # `&Tier!=Slow&Tier!=Fast`, so a changed class whose tests are all Fast
         # -- the class-level `[Trait("Tier", "Fast")]` on
         # ServingObservabilityContractTests is the shape -- is run by none of
@@ -452,7 +465,7 @@ def count_test_class_hits(
                     if entry["csproj"] != project:
                         continue
                     if any(
-                        coverage.shard_claims(shard["filter"], f"{fqn}.{method}")
+                        coverage.shard_claims(shard["filter"], f"{entry.get('fqn', fqn)}.{method}")
                         for method in runnable[fqn]
                     ):
                         count += 1
@@ -769,6 +782,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--router", default=DEFAULT_ROUTER)
     parser.add_argument("--projects-script", default=DEFAULT_PROJECTS_SCRIPT)
     parser.add_argument("--cap", type=int, default=DEFAULT_CAP)
+    parser.add_argument("--annotate-resources", action="store_true",
+                        help="annotate execution matrix using the shared conservative catalog policy")
     parser.add_argument("--json", dest="json_path", help="write the receipt JSON here")
     parser.add_argument("--summary", dest="summary_path", help="write the markdown summary here")
     parser.add_argument(
@@ -831,6 +846,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def emit(result: dict[str, Any], config: dict[str, Any], args: argparse.Namespace) -> int:
     include = matrix_include(result, config)
+    if getattr(args, "annotate_resources", False):
+        root = _repo_root()
+        include = json.loads(subprocess.check_output(
+            [sys.executable, str(root / "scripts/ci/annotate-shard-resources.py"),
+             "--catalog", str(root / ".github/test-projects.json")],
+            input=json.dumps(include), text=True))
+        # Record the exact annotated fan-out without changing selection/cap evidence.
+        result = {**result, "executionMatrix": include}
     summary = render_summary(result)
     if args.json_path:
         Path(args.json_path).write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

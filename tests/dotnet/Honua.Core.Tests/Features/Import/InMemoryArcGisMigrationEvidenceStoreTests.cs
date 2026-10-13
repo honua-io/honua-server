@@ -17,6 +17,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class InMemoryArcGisMigrationEvidenceStoreTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SaveManifestAsync_ThenList_ReturnsManifestOnlyStatus()
     {
@@ -34,6 +35,7 @@ public sealed class InMemoryArcGisMigrationEvidenceStoreTests
         list.Items[0].TargetResourceCount.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SaveParityAsync_AfterManifest_PromotesStatusToParityClassification()
     {
@@ -47,6 +49,7 @@ public sealed class InMemoryArcGisMigrationEvidenceStoreTests
         list.Items[0].HasParity.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SaveParityAsync_WithoutManifest_Throws()
     {
@@ -57,6 +60,7 @@ public sealed class InMemoryArcGisMigrationEvidenceStoreTests
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*missing*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ListAsync_FiltersBySourceUrlSubstring_CaseInsensitive()
     {
@@ -70,6 +74,7 @@ public sealed class InMemoryArcGisMigrationEvidenceStoreTests
         result.Items[0].RunId.Should().Be("a");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ListAsync_FiltersByStatus_ManifestOnlyAndPass()
     {
@@ -87,6 +92,7 @@ public sealed class InMemoryArcGisMigrationEvidenceStoreTests
         manifestOnly.Items[0].RunId.Should().Be("a");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ListAsync_OrdersNewestFirst_AndPaginates()
     {
@@ -110,6 +116,7 @@ public sealed class InMemoryArcGisMigrationEvidenceStoreTests
         page2.Items.Select(i => i.RunId).Should().Equal("run-0");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetManifestAsync_ReturnsPersistedArtifact()
     {
@@ -124,6 +131,7 @@ public sealed class InMemoryArcGisMigrationEvidenceStoreTests
         fetched.SourceKind.Should().Be("arcgis-geoservices-rest");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetParityAsync_ReturnsNullWhenAbsent()
     {
@@ -134,6 +142,7 @@ public sealed class InMemoryArcGisMigrationEvidenceStoreTests
         (await store.GetParityAsync("missing")).Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SaveManifestAsync_Twice_IsIdempotentUpsert()
     {

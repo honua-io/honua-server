@@ -394,7 +394,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         }
     }
 
-    private static UpgradeEngine BuildUpgrader(
+    internal static UpgradeEngine BuildUpgrader(
         string connectionString,
         Assembly migrationsAssembly,
         string metadataSchemaVariable,

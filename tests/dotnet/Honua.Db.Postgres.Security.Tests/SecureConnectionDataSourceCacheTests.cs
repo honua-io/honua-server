@@ -21,6 +21,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
     private const string SampleConnectionString =
         "Host=example.com;Port=5432;Database=honua_test;Username=app;Password=secret;SslMode=Disable";
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public void GetOrCreate_WithConfiguredDefaultSchema_MatchesDefaultDataSourceSessionWiring()
@@ -66,6 +67,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         Assert.True(string.IsNullOrEmpty(builder.Options));
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public void GetOrCreate_RoleDefaultsMode_NamedPoolKeepsPerConnectionSessionSettings()
@@ -89,6 +91,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         Assert.Contains("lock_timeout=30s", builder.Options ?? string.Empty, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public void GetOrCreate_WithoutConfiguredDefaultSchema_DoesNotEmbedSearchPath()
@@ -109,6 +112,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         Assert.DoesNotContain("search_path=", builder.Options ?? string.Empty);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public void GetOrCreate_SameConnectionString_ReturnsCachedInstance()
@@ -132,6 +136,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         Assert.Same(first, second);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public void GetOrCreate_WithConfiguredPoolLimits_PreservesSettings()
@@ -155,6 +160,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         Assert.Equal(15, settings.ConnectionPruningInterval);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public async Task GetOrCreate_RotatedConnection_DisposesOldPoolAndCachesReplacement()
@@ -173,6 +179,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         await AssertDisposedAsync(replacement);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public async Task GetOrCreate_FailedRotation_PreservesExistingPoolAndAllowsRetry()
@@ -202,6 +209,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         Assert.Equal(3, attempts);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public async Task Dispose_WithMultiplePools_DisposesAllAndRejectsFurtherCreation()
@@ -225,6 +233,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         Assert.Equal(2, attempts);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData(false)]

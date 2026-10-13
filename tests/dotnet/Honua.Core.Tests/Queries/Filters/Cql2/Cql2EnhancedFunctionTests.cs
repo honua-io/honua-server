@@ -14,6 +14,7 @@ public class Cql2EnhancedFunctionTests
 {
     private readonly Cql2Parser _parser = new();
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("ST_Area(shape) > 1000")]
     [InlineData("ST_Length(road) < 500")]
@@ -49,6 +50,7 @@ public class Cql2EnhancedFunctionTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("SQRT(area) > 10")]
     [InlineData("SIN(angle) < 0.5")]
@@ -79,6 +81,7 @@ public class Cql2EnhancedFunctionTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("COUNT(id) > 5")]
     [InlineData("SUM(amount) > 1000")]
@@ -107,6 +110,7 @@ public class Cql2EnhancedFunctionTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("CAST(value, 'INTEGER') = 42")]
     [InlineData("CAST(text_field, 'NUMERIC') > 3.14")]
@@ -128,6 +132,7 @@ public class Cql2EnhancedFunctionTests
         functionCall.Arguments.Should().HaveCount(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ComplexSpatialExpression_ShouldHandleNestedFunctions()
     {
@@ -151,6 +156,7 @@ public class Cql2EnhancedFunctionTests
         leftFunction.Arguments[0].Should().BeOfType<FunctionCall>(); // ST_Buffer
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SpatialDistanceWithGeometry_ShouldParseCorrectly()
     {
@@ -176,6 +182,7 @@ public class Cql2EnhancedFunctionTests
         distanceFunction.Arguments[1].Should().BeOfType<GeometryLiteral>(); // POINT(1 2)
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_MultipleEnhancedFunctions_InComplexExpression_ShouldParseCorrectly()
     {

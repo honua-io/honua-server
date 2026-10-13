@@ -28,6 +28,7 @@ public class ArcGisRestProviderResolutionTests
     private const int LayerId = 1;
     private const string ServiceUrl = "https://services.arcgis.com/org/arcgis/rest/services/parcels/FeatureServer";
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("arcgis-rest")]
     [InlineData("arcgis_rest")]
@@ -46,6 +47,7 @@ public class ArcGisRestProviderResolutionTests
         Assert.Same(provider, resolved);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Capabilities_AreReadOnlyAndQueryCountExtentOnly()
     {
@@ -66,6 +68,7 @@ public class ArcGisRestProviderResolutionTests
         Assert.Null(provider.Writer);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DefaultReader_WithoutMetadataV2Binding_ThrowsClearError()
     {
@@ -77,6 +80,7 @@ public class ArcGisRestProviderResolutionTests
         Assert.Contains("Metadata v2 provider binding", exception.Message, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryStatistics_OnArcGisRestProvider_Throws()
     {
@@ -86,6 +90,7 @@ public class ArcGisRestProviderResolutionTests
             () => reader.QueryStatisticsAsync(LayerId, new FeatureQuery()));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task CreateReaderForBinding_RoutesCountThroughHttpClientWithBoundConnection()
     {
@@ -108,6 +113,7 @@ public class ArcGisRestProviderResolutionTests
         Assert.Contains("where=" + Uri.EscapeDataString("STATE = 'WA'"), client.LastCountUrl, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryAsync_ProjectsArcGisFeaturesToCanonicalFeatures()
     {
@@ -151,6 +157,7 @@ public class ArcGisRestProviderResolutionTests
         Assert.Contains("outSR=3857", client.LastQueryUrl, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetExtentAsync_ReturnsExtentInResolvedSrid()
     {
@@ -181,6 +188,7 @@ public class ArcGisRestProviderResolutionTests
         Assert.Equal(4326, extentValue.SpatialReference);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryAsync_UpstreamError_Throws()
     {
@@ -202,6 +210,7 @@ public class ArcGisRestProviderResolutionTests
         Assert.Contains("Invalid where clause", exception.Message, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task QueryRouter_RoutesArcGisConnection_ThroughBindableSeam()
     {
@@ -251,6 +260,7 @@ public class ArcGisRestProviderResolutionTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(RefusedReads))]
     public async Task BoundReader_WithUnenforceableReadPolicy_RefusesReadBeforeCallingUpstream(string policy, string operation)
@@ -275,6 +285,7 @@ public class ArcGisRestProviderResolutionTests
         Assert.Null(client.LastObjectIdsUrl);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task BoundReader_WithNoPolicyResolved_SendsSameUpstreamRequestAsWithoutResolver()
     {

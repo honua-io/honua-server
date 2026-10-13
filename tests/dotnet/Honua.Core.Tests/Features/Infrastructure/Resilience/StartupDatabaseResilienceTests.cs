@@ -81,6 +81,7 @@ public sealed class StartupDatabaseResilienceTests
         StartupDatabaseResilience.IsTransientConnectivityError(aggregate).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData("53300", true)]  // too_many_connections (pool/slot exhaustion)

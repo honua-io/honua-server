@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.Infrastructure.Monitoring;
 /// </summary>
 public class EnhancedTelemetryIntegrationTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SmartSamplingRules_WithCriticalOperation_AlwaysSamples()
     {
@@ -35,6 +36,7 @@ public class EnhancedTelemetryIntegrationTests
         Assert.Equal(1.0, decision.ConfidenceScore);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SmartSamplingRules_WithVipClient_AlwaysSamples()
     {
@@ -60,6 +62,7 @@ public class EnhancedTelemetryIntegrationTests
         Assert.Equal(0.95, decision.ConfidenceScore);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SmartSamplingRules_WithLargeOperation_AlwaysSamples()
     {
@@ -83,6 +86,7 @@ public class EnhancedTelemetryIntegrationTests
         Assert.Equal(0.9, decision.ConfidenceScore);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SmartSamplingRules_WithSlowOperation_AlwaysSamples()
     {
@@ -106,6 +110,7 @@ public class EnhancedTelemetryIntegrationTests
         Assert.Equal(0.9, decision.ConfidenceScore);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SmartSamplingRules_WithErrorCondition_AlwaysSamples()
     {
@@ -130,6 +135,7 @@ public class EnhancedTelemetryIntegrationTests
         Assert.Equal(1.0, decision.ConfidenceScore);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SmartSamplingRules_WithRegularOperation_DefersToAdaptive()
     {
@@ -153,6 +159,7 @@ public class EnhancedTelemetryIntegrationTests
         Assert.Equal(0.0, decision.ConfidenceScore);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("auth.login", "Critical operation")]
     [InlineData("user.create", "Critical operation")]
@@ -183,6 +190,7 @@ public class EnhancedTelemetryIntegrationTests
         Assert.True(decision.ConfidenceScore > 0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SmartSamplingRules_PerformanceBaseline_WorksCorrectly()
     {
@@ -210,6 +218,7 @@ public class EnhancedTelemetryIntegrationTests
         Assert.Equal(0.7, decision.ConfidenceScore);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SmartSamplingRules_VipClientManagement_WorksCorrectly()
     {

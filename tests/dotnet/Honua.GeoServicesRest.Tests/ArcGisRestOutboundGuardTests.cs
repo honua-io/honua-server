@@ -16,6 +16,7 @@ namespace Honua.GeoServicesRest.Tests;
 /// </summary>
 public sealed class ArcGisRestOutboundGuardTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("169.254.169.254")] // cloud metadata
     [InlineData("127.0.0.1")]       // loopback
@@ -31,6 +32,7 @@ public sealed class ArcGisRestOutboundGuardTests
         Assert.True(ArcGisRestOutboundGuard.IsPrivateOrReservedAddress(IPAddress.Parse(address)));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("8.8.8.8")]
     [InlineData("1.1.1.1")]
@@ -40,6 +42,7 @@ public sealed class ArcGisRestOutboundGuardTests
         Assert.False(ArcGisRestOutboundGuard.IsPrivateOrReservedAddress(IPAddress.Parse(address)));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAllowedAddressesAsync_PublicResolution_ReturnsAddresses()
     {
@@ -52,6 +55,7 @@ public sealed class ArcGisRestOutboundGuardTests
         Assert.Equal(IPAddress.Parse("203.0.114.10"), resolved[0]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAllowedAddressesAsync_RebindToMetadataAddress_Throws()
     {
@@ -67,6 +71,7 @@ public sealed class ArcGisRestOutboundGuardTests
         Assert.Equal(ArcGisRestOutboundGuard.DisallowedNetworkAddressMessage, exception.Message);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAllowedAddressesAsync_RebindWithMixedAddresses_RejectsWhenAnyIsBlocked()
     {
@@ -85,6 +90,7 @@ public sealed class ArcGisRestOutboundGuardTests
         Assert.Equal(ArcGisRestOutboundGuard.DisallowedNetworkAddressMessage, exception.Message);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("localhost")]
     [InlineData("svc.localhost")]
@@ -97,6 +103,7 @@ public sealed class ArcGisRestOutboundGuardTests
                 CancellationToken.None));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAllowedAddressesAsync_PrivateIpLiteral_ThrowsWithoutResolving()
     {
@@ -115,6 +122,7 @@ public sealed class ArcGisRestOutboundGuardTests
         Assert.False(resolverInvoked, "An IP literal must be classified directly, never resolved.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveAllowedAddressesAsync_EmptyResolution_Throws()
     {

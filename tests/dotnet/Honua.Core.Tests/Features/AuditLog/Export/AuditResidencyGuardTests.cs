@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Features.AuditLog.Export;
 /// </summary>
 public sealed class AuditResidencyGuardTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsAllowed_EmptyAllowList_PermitsEverything()
     {
@@ -21,6 +22,7 @@ public sealed class AuditResidencyGuardTests
         guard.IsAllowed(null).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsAllowed_NullAllowList_PermitsEverything()
     {
@@ -29,6 +31,7 @@ public sealed class AuditResidencyGuardTests
         guard.IsAllowed("anywhere").Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsAllowed_Restricted_RejectsOutOfRegion()
     {
@@ -38,6 +41,7 @@ public sealed class AuditResidencyGuardTests
         guard.IsAllowed("eu-west-1").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsAllowed_Restricted_RejectsNullRegion()
     {
@@ -47,6 +51,7 @@ public sealed class AuditResidencyGuardTests
         guard.IsAllowed("   ").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsAllowed_Restricted_AllowsInRegionCaseInsensitively()
     {
@@ -56,6 +61,7 @@ public sealed class AuditResidencyGuardTests
         guard.IsAllowed("US-EAST-1").Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EnsureAllowed_OutOfRegion_Throws()
     {
@@ -67,6 +73,7 @@ public sealed class AuditResidencyGuardTests
             .Which.SinkRegion.Should().Be("eu-west-1");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EnsureAllowed_InRegion_DoesNotThrow()
     {

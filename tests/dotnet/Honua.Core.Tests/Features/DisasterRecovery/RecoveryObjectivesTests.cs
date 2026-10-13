@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Features.DisasterRecovery;
 /// </summary>
 public sealed class RecoveryObjectivesTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Constructor_ValidObjectives_AreStored()
     {
@@ -20,6 +21,7 @@ public sealed class RecoveryObjectivesTests
         objectives.RecoveryPointObjective.Should().Be(TimeSpan.FromMinutes(10));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Default_HasOneHourRtoAndFiveMinuteRpo()
     {
@@ -27,6 +29,7 @@ public sealed class RecoveryObjectivesTests
         RecoveryObjectives.Default.RecoveryPointObjective.Should().Be(TimeSpan.FromMinutes(5));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -38,6 +41,7 @@ public sealed class RecoveryObjectivesTests
             .Which.ParamName.Should().Be("recoveryTimeObjective");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -49,6 +53,7 @@ public sealed class RecoveryObjectivesTests
             .Which.ParamName.Should().Be("recoveryPointObjective");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BackupSchedule_WalIntervalWithinRpo_SatisfiesObjective()
     {
@@ -57,6 +62,7 @@ public sealed class RecoveryObjectivesTests
         schedule.SatisfiesRecoveryPointObjective(RecoveryObjectives.Default).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BackupSchedule_WalIntervalExceedsRpo_DoesNotSatisfyObjective()
     {
@@ -65,6 +71,7 @@ public sealed class RecoveryObjectivesTests
         schedule.SatisfiesRecoveryPointObjective(RecoveryObjectives.Default).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BackupSchedule_Default_SatisfiesDefaultObjective()
     {
@@ -72,6 +79,7 @@ public sealed class RecoveryObjectivesTests
             .Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -83,6 +91,7 @@ public sealed class RecoveryObjectivesTests
             .Which.ParamName.Should().Be("baseBackupInterval");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BackupRecord_DataProtectingKinds_AreBaseAndWal()
     {

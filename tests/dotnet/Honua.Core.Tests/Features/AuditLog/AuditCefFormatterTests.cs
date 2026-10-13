@@ -32,6 +32,7 @@ public sealed class AuditCefFormatterTests
             Details = details ?? string.Empty,
         };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Format_EmitsCefHeader()
     {
@@ -39,6 +40,7 @@ public sealed class AuditCefFormatterTests
         line.Should().StartWith("CEF:0|Honua|Honua Server|1|layer.delete|Authorization|7|");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Format_IncludesKeyExtensionFields()
     {
@@ -52,6 +54,7 @@ public sealed class AuditCefFormatterTests
         line.Should().Contain("src=10.0.0.9");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Format_DeniedOutcome_HasHigherSeverityThanSuccess()
     {
@@ -61,6 +64,7 @@ public sealed class AuditCefFormatterTests
         success.Should().Contain("|Authorization|3|");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Format_EscapesPipeInHeaderAndEqualsInExtension()
     {
@@ -70,6 +74,7 @@ public sealed class AuditCefFormatterTests
         line.Should().Contain("msg=key\\=value", "equals in CEF extension values must be escaped");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Format_OmitsEmptyExtensionFields()
     {

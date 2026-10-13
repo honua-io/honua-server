@@ -25,6 +25,7 @@ public sealed class GpxFormatReaderTests
         return features;
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_GdalWaypointsWithExtensions_ReturnsFeaturesWithAttributes()
     {
@@ -62,6 +63,7 @@ public sealed class GpxFormatReaderTests
         features[1].Attributes["zone_name"].Should().Be("Commercial");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_RouteWithNameAndTwoPoints_ReturnsSingleLineString()
     {
@@ -90,6 +92,7 @@ public sealed class GpxFormatReaderTests
         features[0].Attributes["name"].Should().Be("Route 1");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_TrackWithNameAndSegments_PreservesLineAndIsolatedPoint()
     {
@@ -127,6 +130,7 @@ public sealed class GpxFormatReaderTests
         features[0].Attributes["name"].Should().Be("Track 1");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_MixedWaypointsRoutesTracks_ReturnsAllFeatures()
     {
@@ -157,6 +161,7 @@ public sealed class GpxFormatReaderTests
             .BeEquivalentTo(["Point", "LineString", "LineString"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_SimpleWaypointChildren_ReturnsAttributes()
     {

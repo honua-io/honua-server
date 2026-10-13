@@ -15,6 +15,7 @@ public sealed class ReadPolicyEnforceabilityCheckerTests
 {
     private const string WarehouseConnectionId = "conn-warehouse";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Capabilities_OnlyThePostgisPresetAdvertisesReadPolicyEnforcement()
     {
@@ -24,6 +25,7 @@ public sealed class ReadPolicyEnforceabilityCheckerTests
         new FeatureProviderCapabilities().SupportsReadPolicyEnforcement.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("*", "parcels")]
     [InlineData("Maps", "PARCELS")]
@@ -36,6 +38,7 @@ public sealed class ReadPolicyEnforceabilityCheckerTests
         target.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("*", "roads")]
     [InlineData("Maps", "Roads")]
@@ -50,6 +53,7 @@ public sealed class ReadPolicyEnforceabilityCheckerTests
         target.Should().Be(new UnenforceableReadPolicyTarget("roads", DataProviderNames.DuckDb));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("OtherService", "roads")]
     [InlineData("*", "not-a-layer")]
@@ -62,6 +66,7 @@ public sealed class ReadPolicyEnforceabilityCheckerTests
         target.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task FindUnenforceableTargetAsync_WithoutMetadata_RequiresEveryRegisteredProviderToEnforce()
     {

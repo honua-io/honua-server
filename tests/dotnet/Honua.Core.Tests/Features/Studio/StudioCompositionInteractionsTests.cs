@@ -328,6 +328,7 @@ public sealed class StudioCompositionInteractionsTests
         Assert.Equal(4, item.H);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("map", StudioComponentRefResolution.Resolved)]
     [InlineData("layer:parcels", StudioComponentRefResolution.Resolved)]

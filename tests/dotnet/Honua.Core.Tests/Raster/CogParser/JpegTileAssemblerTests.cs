@@ -35,6 +35,7 @@ public sealed class JpegTileAssemblerTests
         { "jpeg_rgb_uint8", 3, 2, 73 },
     };
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(GdalJpegFixtures))]
     public async Task ReadMetadata_GdalJpegCog_CarriesSharedTablesForAbbreviatedTiles(
@@ -55,6 +56,7 @@ public sealed class JpegTileAssemblerTests
         IndexOf(tile, [0xFF, 0xDB]).Should().Be(-1);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(GdalJpegFixtures))]
     public async Task Assemble_GdalJpegTile_SplicesTablesBeforeTheFrame(
@@ -76,6 +78,7 @@ public sealed class JpegTileAssemblerTests
         IndexOf(assembled, [0xFF, 0xDB]).Should().BeLessThan(IndexOf(assembled, [0xFF, 0xC0]));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Assemble_AbbreviatedTileWithoutItsTables_ReturnsNull()
     {
@@ -84,6 +87,7 @@ public sealed class JpegTileAssemblerTests
         JpegTileAssembler.Assemble(tile, jpegTables: null, metadata).Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Assemble_TablesDefiningAnotherQuantizationTable_ReturnsNull()
     {
@@ -96,6 +100,7 @@ public sealed class JpegTileAssemblerTests
         JpegTileAssembler.Assemble(tile, tables, metadata).Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Assemble_TablesWithoutHuffmanForAnAbbreviatedScan_ReturnsNull()
     {
@@ -109,6 +114,7 @@ public sealed class JpegTileAssemblerTests
         JpegTileAssembler.Assemble(withoutHuffman, tables, metadata).Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(4, 2, 1, 8)] // Four components would decode as CMYK/YCCK.
     [InlineData(3, 5, 1, 8)] // Separated (CMYK) photometric.
@@ -130,6 +136,7 @@ public sealed class JpegTileAssemblerTests
         JpegTileAssembler.Assemble(tile, metadata.OverviewLevels[0].JpegTables, declared).Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Assemble_FrameDisagreeingWithTileGeometryOrBands_ReturnsNull()
     {
@@ -141,6 +148,7 @@ public sealed class JpegTileAssemblerTests
             .Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Assemble_ProgressiveOrTruncatedTile_ReturnsNull()
     {
@@ -154,6 +162,7 @@ public sealed class JpegTileAssemblerTests
         JpegTileAssembler.Assemble(tile.AsSpan(1..), tables, metadata).Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task IsValidTables_RejectsStreamsThatAreNotTablesOnly()
     {

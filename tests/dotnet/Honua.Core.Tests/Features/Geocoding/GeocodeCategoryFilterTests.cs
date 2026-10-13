@@ -7,6 +7,7 @@ namespace Honua.Core.Tests.Features.Geocoding;
 
 public sealed class GeocodeCategoryFilterTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -16,6 +17,7 @@ public sealed class GeocodeCategoryFilterTests
         Assert.Null(GeocodeCategoryFilter.ParseCategories(raw));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ParseCategories_SplitsAndTrimsTokens()
     {
@@ -25,6 +27,7 @@ public sealed class GeocodeCategoryFilterTests
         Assert.Equal(["POI", "PointAddress", "City"], result!);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Matches_ReturnsTrue_WhenNoFilterRequested()
     {
@@ -32,6 +35,7 @@ public sealed class GeocodeCategoryFilterTests
         Assert.True(GeocodeCategoryFilter.Matches(null, requestedCategories: null));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Matches_IsCaseInsensitive()
     {
@@ -40,6 +44,7 @@ public sealed class GeocodeCategoryFilterTests
         Assert.True(GeocodeCategoryFilter.Matches("POI", requested));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Matches_ReturnsFalse_WhenCategoryNotInRequestedSet()
     {
@@ -48,6 +53,7 @@ public sealed class GeocodeCategoryFilterTests
         Assert.False(GeocodeCategoryFilter.Matches("PointAddress", requested));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Matches_ReturnsFalse_WhenResultHasNoCategoryButFilterRequested()
     {
@@ -57,6 +63,7 @@ public sealed class GeocodeCategoryFilterTests
         Assert.False(GeocodeCategoryFilter.Matches("", requested));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("PointAddress")]
     [InlineData("StreetAddress")]
@@ -68,6 +75,7 @@ public sealed class GeocodeCategoryFilterTests
         Assert.True(GeocodeCategoryFilter.Matches(addressType, requested));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Matches_AddressCategory_DoesNotMatchNonAddressTypes()
     {

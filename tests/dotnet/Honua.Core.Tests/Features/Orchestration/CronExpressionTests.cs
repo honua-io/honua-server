@@ -7,6 +7,7 @@ namespace Honua.Core.Tests.Features.Orchestration;
 
 public sealed class CronExpressionTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("* * * * *")]
     [InlineData("0 0 * * *")]
@@ -21,6 +22,7 @@ public sealed class CronExpressionTests
         Assert.Equal(expression, parsed.Expression);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData("* * * *")]
@@ -36,6 +38,7 @@ public sealed class CronExpressionTests
         Assert.ThrowsAny<Exception>(() => CronExpression.Parse(expression));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetNextOccurrence_ReturnsNextMinuteForStarEverything()
     {
@@ -48,6 +51,7 @@ public sealed class CronExpressionTests
         Assert.Equal(new DateTimeOffset(2026, 4, 16, 12, 31, 0, TimeSpan.Zero), next);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetNextOccurrence_RespectsHourAndMinute()
     {
@@ -60,6 +64,7 @@ public sealed class CronExpressionTests
         Assert.Equal(new DateTimeOffset(2026, 4, 17, 9, 15, 0, TimeSpan.Zero), next);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetNextOccurrence_HandlesStepWildcard()
     {
@@ -72,6 +77,7 @@ public sealed class CronExpressionTests
         Assert.Equal(new DateTimeOffset(2026, 4, 16, 12, 15, 0, TimeSpan.Zero), next);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetNextOccurrence_ReturnsNullForUnreachableSchedule()
     {
@@ -84,6 +90,7 @@ public sealed class CronExpressionTests
         Assert.Null(next);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetNextOccurrence_OrsDayOfMonthAndDayOfWeek_WhenBothRestricted()
     {
@@ -99,6 +106,7 @@ public sealed class CronExpressionTests
         Assert.Equal(new DateTimeOffset(2026, 4, 19, 0, 0, 0, TimeSpan.Zero), next);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetNextOccurrence_OrsDayOfMonthAndDayOfWeek_SelectsFirstOfMonthWhenCloser()
     {
@@ -113,6 +121,7 @@ public sealed class CronExpressionTests
         Assert.Equal(new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero), next);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetNextOccurrence_UsesIntersection_WhenDayOfWeekWildcarded()
     {
@@ -126,6 +135,7 @@ public sealed class CronExpressionTests
         Assert.Equal(new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero), next);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetNextOccurrence_FindsLeapDayScheduleAcrossMultiYearGap()
     {
@@ -138,6 +148,7 @@ public sealed class CronExpressionTests
         Assert.Equal(new DateTimeOffset(2028, 2, 29, 0, 0, 0, TimeSpan.Zero), next);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetNextOccurrence_FindsLeapDayScheduleFromLeapYear()
     {
@@ -150,6 +161,7 @@ public sealed class CronExpressionTests
         Assert.Equal(new DateTimeOffset(2028, 2, 29, 0, 0, 0, TimeSpan.Zero), next);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetNextOccurrence_SkipsInvalidTime_DuringSpringForwardGap()
     {
@@ -166,6 +178,7 @@ public sealed class CronExpressionTests
         Assert.Equal(new DateTimeOffset(2026, 3, 9, 2, 30, 0, TimeSpan.FromHours(-7)).ToUniversalTime(), next);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetNextOccurrence_UsesFirstOccurrence_DuringFallBackOverlap()
     {

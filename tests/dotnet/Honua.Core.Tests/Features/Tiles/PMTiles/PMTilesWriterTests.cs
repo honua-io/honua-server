@@ -19,6 +19,7 @@ public class PMTilesWriterTests
         MaxZoom = 2
     };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_SingleTile_ProducesValidArchive()
     {
@@ -43,6 +44,7 @@ public class PMTilesWriterTests
         header.MaxZoom.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_MultipleTilesMultipleZooms_ProducesValidArchive()
     {
@@ -66,6 +68,7 @@ public class PMTilesWriterTests
         header.Clustered.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_EmptyTiles_AreSkipped()
     {
@@ -86,6 +89,7 @@ public class PMTilesWriterTests
         header.AddressedTilesCount.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_WithGzipCompression_SetsHeaderCorrectly()
     {
@@ -104,6 +108,7 @@ public class PMTilesWriterTests
         header.InternalCompression.Should().Be(PMTilesCompression.Gzip);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_MagicBytesAreCorrect()
     {
@@ -120,6 +125,7 @@ public class PMTilesWriterTests
         magic.Should().BeEquivalentTo("PMTiles"u8.ToArray());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_VersionIs3()
     {
@@ -135,6 +141,7 @@ public class PMTilesWriterTests
         version.Should().Be(3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_BoundsAreEncodedAsE7()
     {
@@ -167,6 +174,7 @@ public class PMTilesWriterTests
         header.MaxZoom.Should().Be(10);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_TileDataIsRetrievable()
     {
@@ -190,6 +198,7 @@ public class PMTilesWriterTests
         retrievedTile.Should().BeEquivalentTo(tileData);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_LayoutIsHeaderRootMetadataLeafData()
     {
@@ -217,6 +226,7 @@ public class PMTilesWriterTests
         header.TileDataOffset.Should().Be(header.LeafDirectoryOffset + header.LeafDirectoryLength);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_LargeRootDirectory_FitsWithinHeaderWindow()
     {
@@ -235,6 +245,7 @@ public class PMTilesWriterTests
         header.LeafDirectoryLength.Should().BeGreaterThan(0, "a root that cannot fit must use leaf directories");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_StreamsTileBlobsIndividually()
     {
@@ -250,6 +261,7 @@ public class PMTilesWriterTests
             options => options.WithStrictOrdering());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_DuplicatePayloads_CountEveryWrittenBlob()
     {
@@ -266,6 +278,7 @@ public class PMTilesWriterTests
         header.TileContentsCount.Should().Be(2, "the writer emits two blobs and does not deduplicate them");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_EmitsNameAndVectorLayerMetadata()
     {
@@ -299,6 +312,7 @@ public class PMTilesWriterTests
         layer.GetProperty("fields").GetProperty("name").GetString().Should().Be("string");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_LargeTileSection_WritesAllPayloadsWithoutStagingArchiveInOutputMemory()
     {
@@ -324,6 +338,7 @@ public class PMTilesWriterTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_CancellationToken_Throws()
     {
@@ -338,6 +353,7 @@ public class PMTilesWriterTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AddTile_NullData_ThrowsArgumentNullException()
     {
@@ -346,6 +362,7 @@ public class PMTilesWriterTests
         act.Should().Throw<ArgumentNullException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TileCount_ReflectsAddedTiles()
     {
@@ -364,6 +381,7 @@ public class PMTilesWriterTests
     /// not to the longitude range [-180, 180].  A swapped or out-of-range latitude (e.g.
     /// 91°) must be clamped to 90° before being encoded as an E7 integer.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_OutOfRangeLatitude_ClampsToLatitudeBounds()
     {
@@ -401,6 +419,7 @@ public class PMTilesWriterTests
     /// Regression test for BH-018 (negative case): a longitude of 181 must be clamped
     /// to 180, ensuring the longitude helper also enforces its own bounds.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_OutOfRangeLongitude_ClampsToLongitudeBounds()
     {

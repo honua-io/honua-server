@@ -18,6 +18,7 @@ public sealed class InMemoryMigrationPerformanceEvidenceStoreTests
     private static readonly DateTimeOffset BaseTime =
         DateTimeOffset.Parse("2026-05-19T12:00:00Z", CultureInfo.InvariantCulture);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SaveAndGetById_RoundTripsRecord()
     {
@@ -32,6 +33,7 @@ public sealed class InMemoryMigrationPerformanceEvidenceStoreTests
         loaded.Status.Should().Be("Pass");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SaveAsync_IsIdempotent_OnSameId()
     {
@@ -44,6 +46,7 @@ public sealed class InMemoryMigrationPerformanceEvidenceStoreTests
         history[0].Status.Should().Be("Warn");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetLatestPassing_ReturnsNewestPassRecord()
     {
@@ -58,6 +61,7 @@ public sealed class InMemoryMigrationPerformanceEvidenceStoreTests
         latest!.EvidenceId.Should().Be("sha256:c");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetLatestPassing_ReturnsNull_WhenNoPassRecords()
     {
@@ -67,6 +71,7 @@ public sealed class InMemoryMigrationPerformanceEvidenceStoreTests
         (await store.GetLatestPassingAsync()).Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetHistory_ReturnsNewestFirst_AndAppliesLimit()
     {
@@ -84,6 +89,7 @@ public sealed class InMemoryMigrationPerformanceEvidenceStoreTests
         history[2].EvidenceId.Should().Be("sha256:r2");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetHistory_FiltersBySourceFamilyAndSize()
     {
@@ -118,6 +124,7 @@ public sealed class InMemoryMigrationPerformanceEvidenceStoreTests
         geoServerSmall[0].EvidenceId.Should().Be("sha256:gs-s");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetHistory_ClampsExcessiveLimits()
     {
@@ -131,6 +138,7 @@ public sealed class InMemoryMigrationPerformanceEvidenceStoreTests
         history.Count.Should().BeLessThanOrEqualTo(200);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetById_ReturnsNull_ForUnknownId()
     {

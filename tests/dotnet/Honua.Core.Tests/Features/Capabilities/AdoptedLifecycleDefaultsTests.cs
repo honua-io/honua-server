@@ -23,6 +23,7 @@ public sealed class AdoptedLifecycleDefaultsTests
         { "admin.multi-tenancy", CapabilityMaturity.Internal },
     };
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(AdoptedDescriptors))]
     public void AdoptedDescriptor_HasLifecycleAndFourteenStateDenominator(
@@ -49,6 +50,7 @@ public sealed class AdoptedLifecycleDefaultsTests
         enabled.ReasonCode.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CustomerAlertingLifecycle_RemainsPreviewWithoutGaReceipts()
     {

@@ -35,6 +35,7 @@ public class ODataFilterParserTests
         ((Literal)arithmetic.Right).Value.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("properties/site/name")]
     [InlineData("Datastreams/Observations/FeatureOfInterest/id")]
@@ -45,6 +46,7 @@ public class ODataFilterParserTests
         ((PropertyReference)expression.Operand).PropertyName.Should().Be(path);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("properties//name eq 1")]
     [InlineData("properties/ eq 1")]
@@ -55,6 +57,7 @@ public class ODataFilterParserTests
         parse.Should().Throw<ODataFilterParseException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SubstringOf_SearchesFirstArgumentInsideSecond()
     {
@@ -67,6 +70,7 @@ public class ODataFilterParserTests
 
     #region Not Operator Precedence
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotPrecedence_BindsTighterThanOr()
     {
@@ -90,6 +94,7 @@ public class ODataFilterParserTests
         ((Literal)comparison.Right).Value.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotPrecedence_BindsTighterThanAnd()
     {
@@ -110,6 +115,7 @@ public class ODataFilterParserTests
         notExpr.Operand.Should().BeOfType<PropertyReference>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_DoubleNot_ParsesCorrectly()
     {
@@ -132,6 +138,7 @@ public class ODataFilterParserTests
         ((Literal)comparison.Right).Value.Should().Be(true);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotWithParentheses_AppliesToComparisonExpression()
     {
@@ -147,6 +154,7 @@ public class ODataFilterParserTests
 
     #region In Operator
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_InOperator_WithStrings_ProducesBinaryExpressionWithValueList()
     {
@@ -166,6 +174,7 @@ public class ODataFilterParserTests
         ((Literal)values.Values[1]).Value.Should().Be("pending");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_InOperator_WithIntegers_ProducesValueList()
     {
@@ -182,6 +191,7 @@ public class ODataFilterParserTests
         ((Literal)values.Values[2]).Value.Should().Be(3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_InOperator_EmptyList_ProducesEmptyValueList()
     {
@@ -195,6 +205,7 @@ public class ODataFilterParserTests
         values.Values.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_InOperator_CombinedWithAnd_ParsesCorrectly()
     {
@@ -213,6 +224,7 @@ public class ODataFilterParserTests
 
     #region Unary Negation
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_UnaryNegation_Property_ProducesNegateExpression()
     {
@@ -229,6 +241,7 @@ public class ODataFilterParserTests
         ((PropertyReference)negate.Operand).PropertyName.Should().Be("population");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_UnaryNegation_InArithmetic_ParsesCorrectly()
     {
@@ -248,6 +261,7 @@ public class ODataFilterParserTests
         ((PropertyReference)negate.Operand).PropertyName.Should().Be("discount");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeometryLiteral_WithTooManyVertices_ThrowsODataFilterParseException()
     {
@@ -260,6 +274,7 @@ public class ODataFilterParserTests
             .WithMessage("*maximum geometry complexity*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeographyLiteralLongerThanStringLiteralLimit_Parses()
     {
@@ -272,6 +287,7 @@ public class ODataFilterParserTests
         result.Should().BeOfType<SpatialPredicate>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_TextLiteralBeyondStringLiteralLimit_ThrowsODataFilterParseException()
     {
@@ -283,6 +299,7 @@ public class ODataFilterParserTests
             .WithMessage($"*maximum string literal length of {FilterParserGuard.MaxStringLiteralLength}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_QuotedLiteralBeyondGeometryTextLimit_ThrowsWhileLexing()
     {
@@ -294,6 +311,7 @@ public class ODataFilterParserTests
             .WithMessage($"*Quoted literal exceeds the maximum length of {FilterParserGuard.MaxGeometryTextBytes} characters*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_WithNestedParenthesesBeyondLimit_ThrowsODataFilterParseException()
     {
@@ -307,6 +325,7 @@ public class ODataFilterParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("and")]
     [InlineData("or")]
@@ -320,6 +339,7 @@ public class ODataFilterParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_FlatLogicalSequenceWithinDepthLimit_ReturnsLeftDeepChain()
     {
@@ -331,6 +351,7 @@ public class ODataFilterParserTests
         result.Should().BeOfType<BinaryExpression>().Which.Operator.Should().Be(BinaryOperator.And);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_FlatArithmeticSequenceBeyondDepthLimit_ThrowsODataFilterParseException()
     {
@@ -342,6 +363,7 @@ public class ODataFilterParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NestedNullSafeComparisonsBeyondNodeLimit_ThrowsODataFilterParseException()
     {
@@ -360,6 +382,7 @@ public class ODataFilterParserTests
             .WithMessage($"*maximum size of {FilterParserGuard.MaxExpressionNodes} nodes*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NestedNullSafeComparisonsWithinNodeLimit_Parses()
     {
@@ -372,6 +395,7 @@ public class ODataFilterParserTests
 
     #region Integer vs Double Literals
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_IntegerLiteral_StoredAsInt()
     {
@@ -384,6 +408,7 @@ public class ODataFilterParserTests
         literal.Type.Should().Be(LiteralType.Number);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_DecimalLiteral_StoredAsDecimal()
     {
@@ -398,6 +423,7 @@ public class ODataFilterParserTests
         literal.Type.Should().Be(LiteralType.Number);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ScientificNotation_StoredAsDouble()
     {
@@ -409,6 +435,7 @@ public class ODataFilterParserTests
         literal.Value.Should().Be(100000.0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_LargeInteger_StoredAsLong()
     {
@@ -420,6 +447,7 @@ public class ODataFilterParserTests
         literal.Value.Should().Be(3000000000L);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ZeroInteger_StoredAsInt()
     {
@@ -431,6 +459,7 @@ public class ODataFilterParserTests
         literal.Value.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NegativeNumberLiteral_StoredAsInt()
     {
@@ -447,6 +476,7 @@ public class ODataFilterParserTests
 
     #region Null Comparisons
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NullOnRight_ProducesIsNullExpression()
     {
@@ -459,6 +489,7 @@ public class ODataFilterParserTests
         ((PropertyReference)unary.Operand).PropertyName.Should().Be("name");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NullOnLeft_ProducesIsNullOnProperty()
     {
@@ -472,6 +503,7 @@ public class ODataFilterParserTests
         ((PropertyReference)unary.Operand).PropertyName.Should().Be("name");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_LiteralEqNull_ProducesIsNullOnLiteral()
     {
@@ -486,6 +518,7 @@ public class ODataFilterParserTests
         literal.Value.Should().Be("hello");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NullNeProperty_ProducesIsNotNull()
     {
@@ -501,6 +534,7 @@ public class ODataFilterParserTests
 
     #region OData 2VL eq/ne Rewrites
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotEqualStringLiteral_RewritesToNullSafeComparison()
     {
@@ -526,6 +560,7 @@ public class ODataFilterParserTests
         ((PropertyReference)isNull.Operand).PropertyName.Should().Be("state");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotEqualLiteralOnLeft_RewritesIsNullOnProperty()
     {
@@ -542,6 +577,7 @@ public class ODataFilterParserTests
         ((PropertyReference)isNull.Operand).PropertyName.Should().Be("state");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotEqualTwoProperties_RewritesToIsDistinctFromExpansion()
     {
@@ -568,6 +604,7 @@ public class ODataFilterParserTests
         ((UnaryExpression)rightNullArm.Right).Operator.Should().Be(UnaryOperator.IsNull);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_EqualNonNullLiteral_KeepsPlainEquality()
     {
@@ -582,6 +619,7 @@ public class ODataFilterParserTests
         binary.Right.Should().BeOfType<Literal>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_EqualTwoProperties_RewritesToNullSafeEquality()
     {
@@ -604,6 +642,7 @@ public class ODataFilterParserTests
 
     #region Geo Functions
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeoLength_MapsToGeoLengthFunction()
     {
@@ -620,6 +659,7 @@ public class ODataFilterParserTests
         function.Arguments[0].Should().BeOfType<PropertyReference>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeoLength_WrongArgumentCount_Throws()
     {
@@ -628,6 +668,7 @@ public class ODataFilterParserTests
         act.Should().Throw<ArgumentException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeoIntersects_MarksPredicateGeodesic()
     {
@@ -643,6 +684,7 @@ public class ODataFilterParserTests
         spatial.Right.Should().BeOfType<GeometryLiteral>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeoIntersectsWholeWorldEnvelope_FallsBackToPlanar()
     {
@@ -656,6 +698,7 @@ public class ODataFilterParserTests
         ((SpatialPredicate)result).Geodesic.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeoIntersectsAntimeridianPolygon_StaysGeodesic()
     {

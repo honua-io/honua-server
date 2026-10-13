@@ -65,6 +65,7 @@
          cluster depends only on Honua.Core's Redis abstractions (no Jobs/Server
          dependency, so no Hosting->Jobs cycle). -->
     <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" />
     <!-- Apache.Arrow + ParquetSharp back the shared GeoParquet feature writer
          (GeoParquetFeatureWriter), lifted here so both the GeoServices
          (f=parquet) and OData ($format=parquet) protocol adapters share a single
@@ -94,34 +95,61 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server" />
+    <InternalsVisibleTo Include="Honua.Protocols.Scene.ComponentTests" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.TestKit" />
     <InternalsVisibleTo Include="Honua.Aws" />
     <InternalsVisibleTo Include="Honua.Azure" />
     <InternalsVisibleTo Include="Honua.Ai" />
     <InternalsVisibleTo Include="Honua.Ai.Tests" />
+    <InternalsVisibleTo Include="Honua.Ai.UnitTests" />
     <InternalsVisibleTo Include="Honua.Io" />
     <InternalsVisibleTo Include="Honua.Import" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OData" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OData.UnitTests" />
     <InternalsVisibleTo Include="Honua.Protocols.Ogc.Shared" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi.UnitTests" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcClassic" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcClassic.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcClassic.UnitTests" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices.UnitTests" />
     <InternalsVisibleTo Include="Honua.Protocols.Scene" />
     <InternalsVisibleTo Include="Honua.Protocols.Scene.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Scene.UnitTests" />
     <InternalsVisibleTo Include="Honua.Protocols.Stac" />
     <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Stac.UnitTests" />
     <InternalsVisibleTo Include="Honua.Protocols.SensorThings" />
     <InternalsVisibleTo Include="Honua.Protocols.SensorThings.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.SensorThings.UnitTests" />
     <InternalsVisibleTo Include="Honua.Geoprocessing" />
     <InternalsVisibleTo Include="Honua.Worker.Gdal" />
     <InternalsVisibleTo Include="Honua.Scene" />
+    <InternalsVisibleTo Include="Honua.OData.TestHost" />
+    <InternalsVisibleTo Include="Honua.TestKit.Postgres.Hosting" />
+    <InternalsVisibleTo Include="Honua.Protocols.OData.ComponentTests" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Hosting.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Scene.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Ai.ComponentTests" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Geoprocessing.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Aws.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Azure.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Hosting.ComponentTests" />
+  </ItemGroup>
 </Project>

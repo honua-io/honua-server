@@ -15,6 +15,7 @@ namespace Honua.Core.Tests.Features.Geocoding;
 /// </summary>
 public sealed class BaseGeocodeProviderHealthTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task CheckHealthAsync_WhenCoreThrows_ReturnsUnhealthyWithExceptionDetail()
     {
@@ -28,6 +29,7 @@ public sealed class BaseGeocodeProviderHealthTests
         Assert.Contains("upstream timed out", health.ErrorMessage, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task CheckHealthAsync_WhenCoreSucceeds_ReturnsHealthyWithNoErrorMessage()
     {

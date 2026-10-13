@@ -19,6 +19,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class OgcMigrationEvidencePackBuilderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_ProducesDeterministicFingerprint_ForIdenticalInputs()
     {
@@ -47,6 +48,7 @@ public sealed class OgcMigrationEvidencePackBuilderTests
         second.RunId.Should().Be("nightly-20260601");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_FingerprintChanges_WhenWfsFeatureCountChanges()
     {
@@ -66,6 +68,7 @@ public sealed class OgcMigrationEvidencePackBuilderTests
             "any change to the bundle inputs must propagate to the fingerprint.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_FingerprintChanges_WhenRenderPlanEntryChanges()
     {
@@ -87,6 +90,7 @@ public sealed class OgcMigrationEvidencePackBuilderTests
         baseline.BundleFingerprint.Should().NotBe(changed.BundleFingerprint);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_FingerprintChanges_WhenTileCacheTilesPersistedChanges()
     {
@@ -105,6 +109,7 @@ public sealed class OgcMigrationEvidencePackBuilderTests
         baseline.BundleFingerprint.Should().NotBe(changed.BundleFingerprint);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_SummaryReflectsAggregateCounts_FromAllStages()
     {
@@ -134,6 +139,7 @@ public sealed class OgcMigrationEvidencePackBuilderTests
         summary.TileCacheTilesFailed.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_RenderStages_OrderEntriesAndDiagnosticsDeterministically()
     {
@@ -153,6 +159,7 @@ public sealed class OgcMigrationEvidencePackBuilderTests
             .Should().BeInAscendingOrder(StringComparer.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_RenderStage_IsEmpty_WhenNoPlanProvided()
     {
@@ -167,6 +174,7 @@ public sealed class OgcMigrationEvidencePackBuilderTests
         pack.Bundle.Summary.RenderManualReviewOrUnsupportedCount.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WfsAndTileCache_AreNull_WhenStagesAreSkipped()
     {
@@ -182,6 +190,7 @@ public sealed class OgcMigrationEvidencePackBuilderTests
         pack.Bundle.Summary.TileCacheTilesPersisted.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_RedactsCredentials_FromEveryEmbeddedSourceUrl()
     {
@@ -231,6 +240,7 @@ public sealed class OgcMigrationEvidencePackBuilderTests
         json.Should().NotContain("admin:hunter2");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Artifact_Shape_HasStableTopLevelFields()
     {

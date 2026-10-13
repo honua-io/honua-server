@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Features.FeatureStore;
 /// </summary>
 public sealed class ReplicaConflictClassifierTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Refine_AttributesAgreeAndGeometryDiffers_ReturnsGeometry()
     {
@@ -26,6 +27,7 @@ public sealed class ReplicaConflictClassifierTests
             .Should().Be(ReplicaConflictType.Geometry);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Refine_AttributesAgreeIgnoringFieldOrderAndGeometryDiffers_ReturnsGeometry()
     {
@@ -37,6 +39,7 @@ public sealed class ReplicaConflictClassifierTests
             .Should().Be(ReplicaConflictType.Geometry);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Refine_AttributesDiffer_KeepsAttribute()
     {
@@ -47,6 +50,7 @@ public sealed class ReplicaConflictClassifierTests
             .Should().Be(ReplicaConflictType.Attribute);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Refine_AttributesAgreeButGeometryEqual_KeepsAttribute()
     {
@@ -57,6 +61,7 @@ public sealed class ReplicaConflictClassifierTests
             .Should().Be(ReplicaConflictType.Attribute);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Refine_GeometryMissingOnOneSide_KeepsAttribute()
     {
@@ -67,6 +72,7 @@ public sealed class ReplicaConflictClassifierTests
             .Should().Be(ReplicaConflictType.Attribute);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(ReplicaConflictType.DeleteUpdate)]
     [InlineData(ReplicaConflictType.UpdateDelete)]
@@ -80,6 +86,7 @@ public sealed class ReplicaConflictClassifierTests
         ReplicaConflictClassifier.Refine(current, client, server).Should().Be(current);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null, null)]
     [InlineData("""{"attributes":{"name":"a"},"geometry":{"x":1,"y":2}}""", null)]
@@ -90,6 +97,7 @@ public sealed class ReplicaConflictClassifierTests
             .Should().Be(ReplicaConflictType.Attribute);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Refine_MalformedJson_KeepsAttribute()
     {
@@ -97,6 +105,7 @@ public sealed class ReplicaConflictClassifierTests
             .Should().Be(ReplicaConflictType.Attribute);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Refine_ServerHasUntouchedExtraFields_StillReturnsGeometry()
     {
@@ -109,6 +118,7 @@ public sealed class ReplicaConflictClassifierTests
             .Should().Be(ReplicaConflictType.Geometry);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Refine_ClientSuppliedOnlyObjectIdAndGeometry_ReturnsGeometry()
     {
@@ -119,6 +129,7 @@ public sealed class ReplicaConflictClassifierTests
             .Should().Be(ReplicaConflictType.Geometry);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Refine_FieldNameCasingDiffers_TreatedAsSameField()
     {

@@ -68,6 +68,7 @@ public sealed class GdalInfoCoverageEnricherTests
         enriched.YAxisAscending.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Enrich_PositivePixelHeight_RecordsAscendingYAxis()
     {

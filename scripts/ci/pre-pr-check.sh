@@ -48,7 +48,7 @@ set -euo pipefail
 # hits before you commit to a run.
 #
 # CLI flags (aliases for the escape-hatch env vars below): --full, --fast,
-# --dry-run, --base <ref>.
+# --dry-run, --base <ref>, --unit-only, --affected-tests (feedback only).
 #
 # Escape hatches:
 #   HONUA_PRE_PR_FULL=1     force the full suite (recommended before a release
@@ -85,10 +85,14 @@ BASE_REF="${HONUA_PRE_PR_BASE:-origin/trunk}"
 FULL="${HONUA_PRE_PR_FULL:-0}"
 FAST="${HONUA_PRE_PR_FAST:-0}"
 DRY_RUN="${HONUA_PRE_PR_DRY_RUN:-0}"
+UNIT_ONLY=0
+AFFECTED_TESTS=0
 PLAN_JSON=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --unit-only) UNIT_ONLY=1; shift ;;
+        --affected-tests) AFFECTED_TESTS=1; shift ;;
         --full) FULL=1; shift ;;
         --fast) FAST=1; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
@@ -120,6 +124,58 @@ done
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
 
+# Resolve an interpreter that actually runs. `command -v python3` alone is not
+# enough on Windows: the Microsoft Store ships a python3.exe App Execution
+# Alias stub that is present on PATH but exits non-zero with "Python was not
+# found", while the real interpreter installs as `python`/`py`. The old guard
+# therefore passed, the stub failed, and the script blamed the code —
+# reporting "architecture review found blocking issues" when Python was simply
+# absent (#2871). Probe each candidate by executing it, and require Python 3 so
+# a legacy `python` == python2 is not selected. On Linux `python3` matches
+# first, exactly as before. Resolved early (rather than only before the local
+# architecture review) because the capability-impact crosswalk validation and
+# select-local narrowing below also need it.
+PYTHON_BIN=""
+for candidate in python3 python py; do
+    if command -v "${candidate}" >/dev/null 2>&1 \
+        && "${candidate}" -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; then
+        PYTHON_BIN="${candidate}"
+        break
+    fi
+done
+
+if [[ "${AFFECTED_TESTS}" == "1" || "${UNIT_ONLY}" == "1" ]] && [[ -z "${PYTHON_BIN}" ]]; then
+    echo "Python 3 is required for affected-test or unit-only feedback" >&2
+    exit 2
+fi
+
+if [[ -n "${PLAN_JSON}" && ( "${AFFECTED_TESTS}" == "1" || "${UNIT_ONLY}" == "1" ) ]]; then
+    echo "--plan-json cannot be combined with feedback modes; feedback is not a PR validation plan" >&2
+    exit 2
+fi
+
+# Shared-router affected unit/component feedback, without the full collector.
+if [[ "${AFFECTED_TESTS}" == "1" ]]; then
+    if [[ "${FULL}" == "1" || "${FAST}" == "1" || "${UNIT_ONLY}" == "1" ]]; then
+        echo "--affected-tests cannot be combined with fast/full/unit-only modes" >&2
+        exit 2
+    fi
+    feedback_operation=run
+    [[ "${DRY_RUN}" != "1" ]] || feedback_operation=plan
+    exec "${PYTHON_BIN}" scripts/ci/local-test-feedback.py "${feedback_operation}" --base "${BASE_REF}"
+fi
+
+# Explicit developer feedback lane; never substitutes for fast/full PR gates.
+if [[ "${UNIT_ONLY}" == "1" ]]; then
+    if [[ "${FULL}" == "1" || "${FAST}" == "1" ]]; then
+        echo "--unit-only cannot be combined with fast/full modes" >&2
+        exit 2
+    fi
+    unit_operation=run
+    [[ "${DRY_RUN}" != "1" ]] || unit_operation=plan
+    exec "${PYTHON_BIN}" scripts/ci/test-projects.py "${unit_operation}" --base "${BASE_REF}"
+fi
+
 if ! command -v jq >/dev/null 2>&1; then
     # Hard requirement, not a soft one: jq reads .github/ci-shards.json and
     # composes the build set's solution filter, so there is no degraded mode
@@ -143,26 +199,6 @@ fi
 # `${var%${HONUA_CR}}` patches, which are now redundant. Sourced AFTER the presence
 # guard above so that guard still probes the real jq binary, not this function.
 source "$(dirname "${BASH_SOURCE[0]}")/lib/jq-cr-safe.sh"
-
-# Resolve an interpreter that actually runs. `command -v python3` alone is not
-# enough on Windows: the Microsoft Store ships a python3.exe App Execution
-# Alias stub that is present on PATH but exits non-zero with "Python was not
-# found", while the real interpreter installs as `python`/`py`. The old guard
-# therefore passed, the stub failed, and the script blamed the code —
-# reporting "architecture review found blocking issues" when Python was simply
-# absent (#2871). Probe each candidate by executing it, and require Python 3 so
-# a legacy `python` == python2 is not selected. On Linux `python3` matches
-# first, exactly as before. Resolved early (rather than only before the local
-# architecture review) because the capability-impact crosswalk validation and
-# select-local narrowing below also need it.
-PYTHON_BIN=""
-for candidate in python3 python py; do
-    if command -v "${candidate}" >/dev/null 2>&1 \
-        && "${candidate}" -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; then
-        PYTHON_BIN="${candidate}"
-        break
-    fi
-done
 
 # Unified cleanup: register scratch paths here (rather than a fresh `trap ...
 # EXIT` per section) so later traps do not silently clobber earlier ones.
@@ -292,6 +328,12 @@ if [[ "${FULL}" != "1" ]]; then
         'Directory.Build.props' \
         'Directory.Packages.props' \
         'tests/dotnet/Honua.TestKit/' \
+        'tests/dotnet/Honua.TestKit.Abstractions/' \
+        'tests/dotnet/Honua.TestKit.Postgres/' \
+        'tests/dotnet/Honua.TestKit.Core/' \
+        'tests/dotnet/Honua.TestKit.Redis/' \
+        'tests/dotnet/Honua.TestKit.Hosting/' \
+        'tests/dotnet/Honua.TestKit.Postgres.Hosting/' \
         '.github/ci-shards.json' \
         'scripts/ci/capability-impact.py' \
         'docs/gis/data/feature-catalog.json' \
@@ -392,7 +434,7 @@ UNIT_TEST_PROJECTS='tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
 tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj
 tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj
 tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
-tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj'
+tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj'
 ARCHITECTURE_TEST_PROJECT="tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
 MONOLITH_TEST_PROJECT="tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
 
@@ -629,6 +671,8 @@ else
     done <<< "${candidates}"
     # Architecture.Tests always runs, so it is always part of the build set.
     kept+="${ARCHITECTURE_TEST_PROJECT}"${HONUA_NL}
+    kept+="${MONOLITH_TEST_PROJECT}"${HONUA_NL}
+    kept+="$("${PYTHON_BIN}" scripts/ci/test-projects.py gate-fast-projects)"${HONUA_NL}
     projects_json="$(printf '%s' "${kept}" \
         | sed '/^$/d' \
         | while IFS= read -r proj; do sln_literal_path "${proj}"; printf '\n'; done \
@@ -676,29 +720,44 @@ unit_project_selected() {
 }
 
 if [[ -n "${PLAN_JSON}" ]]; then
+    plan_scratch="$(mktemp -d)"
+    CLEANUP_PATHS+=("${plan_scratch}")
     plan_projects='["ALL"]'
     [[ "${FULL}" == "1" ]] || plan_projects="$(jq '.solution.projects' "${SLNF}")"
-    plan_shards='[]'
+    : > "${plan_scratch}/actions.jsonl"
     while IFS= read -r shard_name; do
         [[ -z "${shard_name}" ]] && continue
         shard_action="$(resolved_shard_json "${shard_name}")"
         [[ -n "${shard_action}" ]] || { echo "Unknown selected shard: ${shard_name}" >&2; exit 1; }
-        plan_shards="$(jq --argjson action "${shard_action}" '. + [$action]' <<< "${plan_shards}")"
+        printf '%s\n' "${shard_action}" >> "${plan_scratch}/actions.jsonl"
     done <<< "${SELECTED_SHARDS}"
     plan_units='[]'
-    while IFS= read -r project; do
-        [[ -z "${project}" ]] && continue
-        [[ "${project}" == *Honua.Ai.Tests.csproj ]] && continue
+    planned_full_suites=()
+    for project in tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
+        tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj \
+        tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj \
+        tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj; do
         if unit_project_selected "${project}"; then
             plan_units="$(jq --arg project "${project}" '. + [{project:$project,filter:null,maxCpuCount:1}]' <<< "${plan_units}")"
+            case "${project}" in
+                tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj|tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj)
+                    planned_full_suites+=(--completed-full-suite "${project}") ;;
+            esac
         fi
-    done <<< "${UNIT_TEST_PROJECTS}"
-    plan_units="$(jq --arg filter "${MCP_GOVERNANCE_FILTER}" '. + [{project:"tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj",filter:$filter,maxCpuCount:1}]' <<< "${plan_units}")"
+    done
+    fast_actions="$("${PYTHON_BIN}" scripts/ci/test-projects.py gate-fast-actions "${planned_full_suites[@]}")"
+    plan_units="$(jq --argjson fast "${fast_actions}" '. + $fast + [{project:"tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj",filter:"Tier=Fast",maxCpuCount:1}]' <<< "${plan_units}")"
+    plan_units="$(jq --arg filter "${MCP_GOVERNANCE_FILTER}" '. + [{project:"tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj",filter:$filter,maxCpuCount:1}]' <<< "${plan_units}")"
+    printf '%s\n' "${plan_projects}" > "${plan_scratch}/projects.json"
+    printf '%s\n' "${TARGETED}" > "${plan_scratch}/routing.json"
+    printf '%s\n' "${plan_units}" > "${plan_scratch}/units.json"
+    printf '%s\n' "${CHANGED_CS:-}" > "${plan_scratch}/format.txt"
     jq -n --arg base "${BASE_REF}" --arg full "${FULL}" --arg fast "${FAST}" \
         --arg status "${PRE_PR_SCOPE}" --arg architecture "${ARCHITECTURE_TEST_PROJECT}" \
-        --argjson projects "${plan_projects}" --argjson routing "${TARGETED}" \
-        --argjson actions "${plan_shards}" --argjson units "${plan_units}" \
-        --rawfile files "${LOCAL_CHANGED_FILES}" --arg format "${CHANGED_CS:-}" '
+        --slurpfile projects "${plan_scratch}/projects.json" --slurpfile routing "${plan_scratch}/routing.json" \
+        --slurpfile actions "${plan_scratch}/actions.jsonl" --slurpfile units "${plan_scratch}/units.json" \
+        --rawfile files "${LOCAL_CHANGED_FILES}" --rawfile format "${plan_scratch}/format.txt" '
+        $projects[0] as $projects | $routing[0] as $routing | $units[0] as $units |
         {schemaVersion:1,base:$base,mode:(if $full=="1" then "full" else "smart" end),
           fast:($fast=="1"),changedFilesStatus:(if $status=="UNKNOWN" then "unknown" else "complete" end),
           changedFiles:(if $status=="UNKNOWN" then null else ($files|split("\n")|map(select(length>0))) end),
@@ -742,15 +801,17 @@ else
     # Diagnostic verbosity makes dotnet-format log every analyzed document —
     # on a 76-project solution that is minutes of pure console I/O. The
     # failure output at normal verbosity still names each unformatted file.
-    if ! dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --verify-no-changes; then
+    if ! dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --no-restore --verify-no-changes; then
         echo "❌ Format check failed. Running 'dotnet format' to fix..."
-        dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}"
+        dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --no-restore
         echo "✅ Code formatted. Please review changes and commit if needed."
         exit 1
     fi
 fi
 
-if [[ "${DRY_RUN}" == "1" ]]; then
+if [[ "${FAST}" == "1" ]] && ! affected_contains "Honua.Postgres.Tests.csproj" && ! affected_contains "Honua.LoadTests.csproj"; then
+    echo "5. No selected database suites in FAST mode; skipping PostGIS pre-pull."
+elif [[ "${DRY_RUN}" == "1" ]]; then
     echo "5. [dry-run] Would pre-pull Docker images and run .NET tests (see selection below)."
 else
     echo "5. Pre-pulling Docker images for faster tests..."
@@ -761,7 +822,7 @@ else
     # downloaded an image nothing used and then let Testcontainers pull the real
     # one cold anyway. Reading the fixture keeps the two from drifting again.
     PREPULL_IMAGE="$(grep -oE 'postgis/postgis:[0-9]+(\.[0-9]+)*-[0-9]+(\.[0-9]+)*' \
-        tests/dotnet/Honua.TestKit/PostgresFixture.cs 2>/dev/null | head -n 1 || true)"
+        tests/dotnet/Honua.TestKit.Postgres/PostgresFixture.cs 2>/dev/null | head -n 1 || true)"
     if [[ -z "${PREPULL_IMAGE}" ]]; then
         echo "   ⚠️ Could not resolve the PostGIS image from PostgresFixture.cs; skipping pre-pull"
     else
@@ -773,6 +834,7 @@ fi
 echo "6. Running .NET tests..."
 mkdir -p ./tests/TestResults
 
+COMPLETED_UNIT_FULL_SUITES=()
 run_unit_project() {
     local proj="$1"
     if unit_project_selected "${proj}"; then
@@ -788,6 +850,10 @@ run_unit_project() {
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
             -- RunConfiguration.MaxCpuCount=1
+        case "${proj}" in
+            tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj|tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj)
+                COMPLETED_UNIT_FULL_SUITES+=(--completed-full-suite "${proj}") ;;
+        esac
     else
         echo "   - skip ${proj} (not affected)"
     fi
@@ -798,13 +864,30 @@ run_unit_project tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Test
 run_unit_project tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj
 run_unit_project tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
 
+# Mirror the retained Server Fast smoke as well as the migrated unit smoke.
+if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "   - [dry-run] would run Honua.Server.Tests (Tier=Fast; no build/restore)"
+else
+    dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+        --no-build --no-restore --configuration Release --filter "Tier=Fast" \
+        --logger "console;verbosity=minimal" --results-directory ./tests/TestResults \
+        -- RunConfiguration.MaxCpuCount=1
+fi
+
+# Preserve migrated Fast coverage even when --fast skips integration shards.
+if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "   - [dry-run] would run catalogued isolated units (Tier=Fast; no build/restore)"
+else
+    "${PYTHON_BIN}" scripts/ci/test-projects.py gate-fast "${COMPLETED_UNIT_FULL_SUITES[@]}"
+fi
+
 # Service-free MCP registry/taxonomy governance mirrors the required lean gate.
 # Keep this class-level filter broad so new drift tests are covered automatically.
 if [[ "${DRY_RUN}" == "1" ]]; then
-    echo "   - [dry-run] would run tests/dotnet/Honua.Ai.Tests (MCP registry/taxonomy drift)"
+    echo "   - [dry-run] would run tests/dotnet/Honua.Ai.UnitTests (MCP registry/taxonomy drift)"
 else
-    echo "   - tests/dotnet/Honua.Ai.Tests (MCP registry/taxonomy drift)"
-    dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj \
+    echo "   - tests/dotnet/Honua.Ai.UnitTests (MCP registry/taxonomy drift)"
+    dotnet test tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj \
         --no-build \
         --no-restore \
         --configuration Release \

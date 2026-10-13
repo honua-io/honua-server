@@ -17,6 +17,7 @@ public sealed class SpecRoundTripTests
     private static readonly SpecParser _parser = new();
     private static readonly SpecCanonicalizer _canon = new();
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(RoundTripCases))]
     public void Roundtrip_JsonIsIdempotentAcrossParseAndEmit(string _, string source)
@@ -31,6 +32,7 @@ public sealed class SpecRoundTripTests
         second.Should().Be(first);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Roundtrip_PreservesSourceIdsInDeclarationOrder()
     {
@@ -48,6 +50,7 @@ public sealed class SpecRoundTripTests
         reparsed.Sources.Select(s => s.Id).Should().ContainInConsecutiveOrder("zeta", "alpha", "beta");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Roundtrip_PreservesUnitLiteralsInComputeParams()
     {
@@ -72,6 +75,7 @@ public sealed class SpecRoundTripTests
         literal.Number.Should().Be(500);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Roundtrip_PreservesReferenceWithCallSuffix()
     {
@@ -91,6 +95,7 @@ public sealed class SpecRoundTripTests
         reference.Call.Should().Be("count");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Roundtrip_PreservesCql2FilterAndScope()
     {
@@ -113,6 +118,7 @@ public sealed class SpecRoundTripTests
         cql.Cql2Text.Should().Be("state = 'CA' AND pop > 1000");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Roundtrip_PreservesCommentSidecar()
     {

@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.Geoprocessing;
 /// </summary>
 public sealed class WorkspacePathSanitizerTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sanitize_ReplacesWorkspacePath_WithStablePlaceholder()
     {
@@ -26,6 +27,7 @@ public sealed class WorkspacePathSanitizerTests
         Assert.Contains("No such file or directory", sanitized);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sanitize_HandlesEmptyAndBlankText_WithoutThrowing()
     {
@@ -33,12 +35,14 @@ public sealed class WorkspacePathSanitizerTests
         Assert.Equal(string.Empty, WorkspacePathSanitizer.Sanitize("   \n", "/scratch"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sanitize_PassesThrough_WhenWorkspaceIsAbsent()
     {
         Assert.Equal("ERROR 1: bad input", WorkspacePathSanitizer.Sanitize("ERROR 1: bad input", ""));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sanitize_TruncatesVeryLongText_WithEllipsis()
     {
@@ -48,6 +52,7 @@ public sealed class WorkspacePathSanitizerTests
         Assert.EndsWith("…", sanitized);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SanitizeForClient_RedactsKnownWorkspaceAndResidualAbsolutePaths()
     {
@@ -65,6 +70,7 @@ public sealed class WorkspacePathSanitizerTests
         Assert.Contains("gdalwarp", sanitized);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SanitizeForClient_RedactsAbsolutePath_WhenWorkspaceUnknown()
     {
@@ -78,6 +84,7 @@ public sealed class WorkspacePathSanitizerTests
         Assert.Contains("failed", sanitized);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SanitizeForClient_RedactsWindowsAbsolutePath()
     {
@@ -90,6 +97,7 @@ public sealed class WorkspacePathSanitizerTests
         Assert.Contains("<path>", sanitized);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TruncateForLog_PreservesPaths_OnlyLengthCaps()
     {

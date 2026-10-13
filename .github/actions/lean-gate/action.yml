@@ -251,6 +251,14 @@ runs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
+    # Migrated pure Fast cases retain the required smoke they had in Server.Tests.
+    # Their catalogued projects were included in the one combined build above.
+    - name: Run .NET Tests (Isolated Unit Fast Tier)
+      shell: bash
+      run: |
+        timeout "${{ inputs.server-fast-timeout-minutes }}m" \
+          python3 scripts/ci/test-projects.py gate-fast
+
     # Keep all architecture and authored-input validators strict against the
     # freshly generated projections, including byte equality/reproducibility.
     - name: Run .NET Tests (Architecture)
@@ -273,7 +281,7 @@ runs:
       shell: bash
       run: |
         timeout "${{ inputs.ai-governance-timeout-minutes }}m" \
-          dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \

@@ -82,6 +82,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
             && !descriptor.Id.StartsWith(CapabilityRegistry.McpResourceIdPrefix, StringComparison.Ordinal)
             && !descriptor.Id.StartsWith(CapabilityRegistry.DataFormatIdPrefix, StringComparison.Ordinal);
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("serve.geoservices-imageserver")]
     [InlineData("serve.wmts")]
@@ -94,6 +95,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         Registry.Resolve(id, CapabilityGateContext.Default).Enabled.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Registry_ManifestDescriptors_MatchFrozenRosterInOrder()
     {
@@ -144,6 +146,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "serve.ogc-api-coverages",
     ];
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Registry_ExperimentalManifestDescriptors_AreOmittedWhenFlagOff()
     {
@@ -172,6 +175,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "edit.geoservices-version-tokens",
     ];
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Registry_KnownGapManifestDescriptors_AreDeclaredAndAlwaysRefused()
     {
@@ -198,6 +202,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Registry_NonGapManifestDescriptors_AreAllServed()
     {
@@ -215,6 +220,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Registry_InReleaseManifestDescriptors_StayImplemented_AndAreNeverOmitted()
     {
@@ -245,6 +251,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("package.metadata-v2", MetadataV2Constants.SchemaVersion)]
     [InlineData("package.release-package", MetadataV2Constants.ApiVersion)]
@@ -262,6 +269,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         descriptor.PackageSchemaVersion.Should().Be(expectedSchemaVersion);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Registry_NonPackageManifestDescriptors_HaveNullPackageSchemaVersion()
     {
@@ -276,6 +284,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GateResolver_OmitMechanism_PresentWhenImplemented_AbsentWhenExperimentalFlagOff()
     {
@@ -293,6 +302,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         experimentalOff.ReasonCode.Should().Be(CapabilityReasonCodes.ExperimentalDisabled);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GateResolver_OmitMechanism_PresentWhenExperimentalFlagOn()
     {

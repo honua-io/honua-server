@@ -19,6 +19,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class OgcApiFeaturesImportServiceTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithPagedFixtureSource_WritesAllFeaturesIdempotently()
     {
@@ -52,6 +53,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         second.Success.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithMaxFeaturesCap_StopsImportAndMarksTruncated()
     {
@@ -74,6 +76,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.FeatureCountParity.Summary.ToLowerInvariant().Should().Contain("truncated");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithNonJsonItems_ReturnsUnsupportedItemsEncoding()
     {
@@ -90,6 +93,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.InvalidItemsDocument);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithJsonNonFeatureCollection_ReturnsUnsupportedItemsEncoding()
     {
@@ -106,6 +110,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.UnsupportedItemsEncoding);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithSinkFailure_ReturnsSinkFailureCode()
     {
@@ -120,6 +125,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.SinkFailure);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithInvalidServiceUrl_FailsBeforeContactingSource()
     {
@@ -136,6 +142,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         handler.RequestUris.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithUnreachableSource_ReturnsSourceUnreachable()
     {
@@ -150,6 +157,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.ErrorCode.Should().Be(OgcApiFeaturesImportErrorCodes.SourceUnreachable);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithInvalidIdentifierCharacters_FailsWithInvalidServiceUrlCode()
     {
@@ -165,6 +173,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         sink.EnsureTargetCalls.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithCql2Filter_AppendsFilterAndFilterLangQueryParameters()
     {
@@ -182,6 +191,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         firstItemsQuery.Should().Contain("filter-lang=cql2-text");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithBbox_AppendsBboxQueryParameter()
     {
@@ -198,6 +208,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         firstItemsQuery.Should().Contain("bbox=-158%2C21%2C-157%2C22");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithDatetimeInterval_AppendsDatetimeQueryParameter()
     {
@@ -214,6 +225,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         firstItemsQuery.Should().Contain("datetime=2024-01-01T00%3A00%3A00Z%2F2024-06-30T23%3A59%3A59Z");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithEmptyFilter_ReturnsInvalidFilter()
     {
@@ -230,6 +242,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         sink.EnsureTargetCalls.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(new[] { 1.0, 2.0, 3.0 })]
     [InlineData(new[] { 10.0, 20.0, 5.0, 15.0 })]
@@ -248,6 +261,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         handler.RequestUris.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("not-a-date")]
     [InlineData("../..")]
@@ -267,6 +281,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         handler.RequestUris.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithFilterChangeAcrossRuns_EmitsScopeDriftWarning()
     {
@@ -291,6 +306,7 @@ public sealed class OgcApiFeaturesImportServiceTests
             warning.Contains("scope", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WithCyclicPagination_StopsAndWarns()
     {
@@ -306,6 +322,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.Warnings.Should().Contain(warning => warning.Contains("paging cycle", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WhenSourceOmitsNumberMatched_ReportsParityProbeNotApplicable()
     {
@@ -326,6 +343,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.FeatureCountParity.Summary.Should().Contain("numberMatched");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WhenSourceCountMismatchesImportedCount_ReportsParityProbeFail()
     {
@@ -349,6 +367,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.FeatureCountParity.Observed.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ImportCollectionAsync_WhenSkippedFeaturesAccountForDifference_ReportsParityProbePass()
     {

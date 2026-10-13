@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable><NoWarn>$(NoWarn);CS1591</NoWarn></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+    <ProjectReference Include="../../../src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Postgres.Hosting/Honua.TestKit.Postgres.Hosting.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../Shared/RunnerConfig/component.xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

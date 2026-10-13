@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Features.Alerts;
 /// <summary>
 /// Shared test factory methods for alert delivery sink tests.
 /// </summary>
-internal static class AlertTestFixtures
+internal static partial class AlertTestFixtures
 {
     /// <summary>
     /// Base URL for delivery-sink tests whose expected outcome requires the outbound SSRF guard to
@@ -62,39 +62,6 @@ internal static class AlertTestFixtures
         var resolved = addresses.Select(IPAddress.Parse).ToArray();
         return new AlertDestinationGuard((_, _) => Task.FromResult(resolved));
     }
-
-    public static AlertDispatchItem CreateDispatchItem(
-        AlertChannelType channelType,
-        string? destination = null) => new()
-        {
-            DispatchId = 1,
-            EventId = 2,
-            ClaimToken = Guid.NewGuid(),
-            ChannelType = channelType,
-            Destination = destination,
-            Status = AlertDispatchStatus.Pending,
-            Attempts = 0,
-            MaxAttempts = 3,
-            NextAttemptAt = DateTimeOffset.UtcNow
-        };
-
-    public static AlertEventEnvelope CreateAlertEvent(
-        string dedupeKey = "evt-test-1",
-        AlertSeverity severity = AlertSeverity.Warning,
-        AlertIncidentStatus incidentStatus = AlertIncidentStatus.Started) => new()
-        {
-            DedupeKey = dedupeKey,
-            RuleId = 42,
-            ServiceId = "svc-1",
-            LayerId = 7,
-            ObjectId = 100,
-            TriggerType = AlertTriggerType.Enter,
-            Generation = 1,
-            Severity = severity,
-            OccurredAt = DateTimeOffset.UtcNow,
-            PayloadJson = "{\"test\":true}",
-            IncidentStatus = incidentStatus
-        };
 
     /// <summary>
     /// Builds an operations-notification envelope (source = ops) whose meaningful
@@ -184,72 +151,4 @@ internal sealed class CapturingHttpMessageHandler : HttpMessageHandler
         // it disposes the response after the caller finishes with it.
         return new HttpResponseMessage(_statusCode);
     }
-}
-
-internal sealed class FakeSnsPublisher : ISnsPublisher
-{
-    public string? LastTopicArn { get; private set; }
-
-    public Dictionary<string, string>? LastAttributes { get; private set; }
-
-    public Func<string, string, string?, Dictionary<string, string>, CancellationToken, Task<SnsPublishResult>>? PublishAsyncHandler { get; init; }
-
-    public Task<SnsPublishResult> PublishAsync(
-        string topicArn,
-        string message,
-        string? subject,
-        Dictionary<string, string> attributes,
-        CancellationToken cancellationToken)
-    {
-        LastTopicArn = topicArn;
-        LastAttributes = attributes;
-
-        return PublishAsyncHandler is null
-            ? Task.FromResult(new SnsPublishResult(true, false, null))
-            : PublishAsyncHandler(topicArn, message, subject, attributes, cancellationToken);
-    }
-}
-
-internal sealed class FakeSqsPublisher : ISqsPublisher
-{
-    public string? LastQueueUrl { get; private set; }
-
-    public Dictionary<string, string>? LastAttributes { get; private set; }
-
-    public Func<string, string, Dictionary<string, string>, CancellationToken, Task<SqsPublishResult>>? SendMessageAsyncHandler { get; init; }
-
-    public Task<SqsPublishResult> SendMessageAsync(
-        string queueUrl,
-        string messageBody,
-        Dictionary<string, string> attributes,
-        CancellationToken cancellationToken)
-    {
-        LastQueueUrl = queueUrl;
-        LastAttributes = attributes;
-
-        return SendMessageAsyncHandler is null
-            ? Task.FromResult(new SqsPublishResult(true, false, null))
-            : SendMessageAsyncHandler(queueUrl, messageBody, attributes, cancellationToken);
-    }
-}
-
-internal sealed class FakeEventHubPublisher : IEventHubPublisher
-{
-    public Dictionary<string, object>? LastProperties { get; private set; }
-
-    public Func<BinaryData, Dictionary<string, object>, CancellationToken, Task<EventHubPublishResult>>? SendAsyncHandler { get; init; }
-
-    public Task<EventHubPublishResult> SendAsync(
-        BinaryData body,
-        Dictionary<string, object> properties,
-        CancellationToken cancellationToken)
-    {
-        LastProperties = properties;
-
-        return SendAsyncHandler is null
-            ? Task.FromResult(new EventHubPublishResult(true, false, null))
-            : SendAsyncHandler(body, properties, cancellationToken);
-    }
-
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

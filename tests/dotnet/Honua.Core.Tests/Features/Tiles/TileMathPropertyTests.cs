@@ -22,6 +22,7 @@ public class TileMathPropertyTests
     /// <summary>
     /// Validates that tile bounds stay within the Web Mercator extent.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(ValidTileCoordinateArbs) })]
     public bool TileBoundsStayWithinExtent(TileCoordinate tile)
     {
@@ -45,6 +46,7 @@ public class TileMathPropertyTests
     /// <summary>
     /// Validates that adjacent tiles share boundaries.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(ValidTileCoordinateArbs) })]
     public bool AdjacentTilesTouch(TileCoordinate tile)
     {
@@ -65,6 +67,7 @@ public class TileMathPropertyTests
     /// <summary>
     /// Validates that valid tile coordinates are accepted.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(ValidTileCoordinateArbs) })]
     public bool ValidateTileCoordinatesAcceptsValidValues(TileCoordinate tile)
     {
@@ -75,6 +78,7 @@ public class TileMathPropertyTests
     /// <summary>
     /// Validates that invalid tile coordinates are rejected.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(InvalidTileCoordinateArbs) })]
     public bool ValidateTileCoordinatesRejectsInvalidValues(TileCoordinate tile)
     {
@@ -85,6 +89,7 @@ public class TileMathPropertyTests
     /// <summary>
     /// Validates that simplification tolerance does not increase with zoom.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(ZoomLevelArbs) })]
     public bool SimplificationToleranceIsNonIncreasing(int zoomA, int zoomB)
     {

@@ -15,6 +15,7 @@ namespace Honua.Core.Security.Tests;
 /// </summary>
 public sealed class DataConnectionTests
 {
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData(null, "postgis")]
@@ -30,6 +31,7 @@ public sealed class DataConnectionTests
         Assert.Equal(expected, connection.NormalizedProvider);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData(SslMode.Allow)]
@@ -52,6 +54,7 @@ public sealed class DataConnectionTests
         Assert.Equal("SSL mode must require encrypted transport when SslRequired is true", exception.Message);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData(SslMode.Require)]
@@ -75,6 +78,7 @@ public sealed class DataConnectionTests
         Assert.Equal("postgis", connection.NormalizedProvider);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Fact]
     public void Serialize_DoesNotEmitRawConnectionString()

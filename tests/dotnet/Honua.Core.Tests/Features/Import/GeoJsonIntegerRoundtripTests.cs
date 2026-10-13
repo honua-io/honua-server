@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class GeoJsonIntegerRoundtripTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(9007199254740993L)]
     [InlineData(9007199254740992L)]

@@ -63,6 +63,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.6" />
     <!-- Pin Microsoft.OpenApi to the patched 2.7.5: Microsoft.AspNetCore.OpenApi 10.0.6
          pulls Microsoft.OpenApi 2.0.0 transitively, which trips the NU1903 audit
@@ -104,6 +105,7 @@
     <PackageVersion Include="NetTopologySuite.IO.Esri.Shapefile" Version="1.2.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON" Version="4.0.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoPackage" Version="2.0.0" />
+    <PackageVersion Include="YamlDotNet" Version="16.3.0" />
     <PackageVersion Include="Npgsql" Version="10.0.1" />
     <PackageVersion Include="Newtonsoft.Json.Schema" Version="4.0.1" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />

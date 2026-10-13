@@ -19,6 +19,7 @@ public sealed class MigrationApplyPlanBuilderTests
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithSameManifest_ProducesStableReplayableOutput()
     {
@@ -52,6 +53,7 @@ public sealed class MigrationApplyPlanBuilderTests
             step.TargetServiceName == "pilot-migration");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithManualReviewAndUnsupportedItems_ClassifiesStepsAndReviewItems()
     {

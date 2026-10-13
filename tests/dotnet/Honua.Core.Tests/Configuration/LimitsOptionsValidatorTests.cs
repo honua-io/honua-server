@@ -246,6 +246,7 @@ public class LimitsOptionsValidatorTests
         Assert.Throws<ArgumentNullException>(() => _validator.Validate(null, null!));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("auto")]
     [InlineData("true")]
@@ -270,6 +271,7 @@ public class LimitsOptionsValidatorTests
             f => f.Contains("Connections.Multiplexing", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("fasle")]
     [InlineData("yes")]

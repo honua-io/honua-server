@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.ControlPlane;
 /// </summary>
 public sealed class MetadataReleaseFaultInjectionOptionsTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ShouldFailSmoke_DefaultOptions_IsInert()
     {
@@ -23,6 +24,7 @@ public sealed class MetadataReleaseFaultInjectionOptionsTests
         options.ShouldFailSmoke("production").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ShouldFailSmoke_EnabledButNotForced_DoesNotInject()
     {
@@ -31,6 +33,7 @@ public sealed class MetadataReleaseFaultInjectionOptionsTests
         options.ShouldFailSmoke("staging").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ShouldFailSmoke_EnabledAndForced_InjectsForAllowedEnvironmentOnly()
     {
@@ -52,6 +55,7 @@ public sealed class MetadataReleaseFaultInjectionOptionsTests
         options.ShouldFailSmoke("  ").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ShouldFailSmoke_EmptyAllowList_NeverInjects()
     {

@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${HONUA_PR_GATE_REPO_ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 cd "${REPO_ROOT}"
 
-IMAGE="${HONUA_PR_GATE_POSTGIS_IMAGE:-$(grep -oE 'postgis/postgis:[0-9]+(\.[0-9]+)*-[0-9]+(\.[0-9]+)*' tests/dotnet/Honua.TestKit/PostgresFixture.cs | head -n 1)}"
+IMAGE="${HONUA_PR_GATE_POSTGIS_IMAGE:-$(grep -oE 'postgis/postgis:[0-9]+(\.[0-9]+)*-[0-9]+(\.[0-9]+)*' tests/dotnet/Honua.TestKit.Postgres/PostgresFixture.cs | head -n 1)}"
 DB_CONTAINER="honua-pr-gate-postgis-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 SERVER_PORT="${HONUA_SERVER_BOOT_SMOKE_PORT:-5000}"
 DB_PORT="${HONUA_PR_GATE_POSTGRES_PORT:-5432}"

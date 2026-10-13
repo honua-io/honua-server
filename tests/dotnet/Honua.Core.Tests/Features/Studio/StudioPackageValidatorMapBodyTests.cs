@@ -36,6 +36,7 @@ public sealed class StudioPackageValidatorMapBodyTests
         "interactions": []
         """;
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData("\"sourceBindings\": []")]
@@ -67,6 +68,7 @@ public sealed class StudioPackageValidatorMapBodyTests
         Assert.Equal(StudioPackageValidationStatus.Valid, summary.Status);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("\"sourceBindings\": [{ \"sourceId\": \"parcels\", \"protocol\": \"ogc_features\" }]", "studio.map.member.required", "/body/sourceBindings/0/locator")]
     [InlineData("\"sourceBindings\": [{ \"protocol\": \"ogc_features\", \"locator\": {} }]", "studio.map.member.required", "/body/sourceBindings/0/sourceId")]

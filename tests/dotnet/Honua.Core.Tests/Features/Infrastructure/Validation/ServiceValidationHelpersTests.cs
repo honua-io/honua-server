@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Features.Infrastructure.Validation;
 
 public class ServiceValidationHelpersTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateServiceDependencies_WithValidParameters_ReturnsValidatedTuple()
     {
@@ -26,6 +27,7 @@ public class ServiceValidationHelpersTests
         Assert.Equal(logger, result.Item2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateServiceDependencies_WithNullConnectionProvider_ThrowsArgumentNullException()
     {
@@ -39,6 +41,7 @@ public class ServiceValidationHelpersTests
         Assert.Equal("connectionProvider", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateServiceDependencies_WithNullLogger_ThrowsArgumentNullException()
     {
@@ -52,6 +55,7 @@ public class ServiceValidationHelpersTests
         Assert.Equal("logger", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateServiceDependencies_WithOptions_ValidParameters_ReturnsValidatedTuple()
     {
@@ -70,6 +74,7 @@ public class ServiceValidationHelpersTests
         Assert.Equal("test", result.Item3.Value);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateCacheDecoratorDependencies_WithValidParameters_ReturnsValidatedTuple()
     {
@@ -88,6 +93,7 @@ public class ServiceValidationHelpersTests
         Assert.Equal("test", result.Item3.Value);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateCacheDecoratorDependencies_WithNullInnerService_ThrowsArgumentNullException()
     {
@@ -102,6 +108,7 @@ public class ServiceValidationHelpersTests
         Assert.Equal("innerService", exception.ParamName);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateHandlerDependencies_WithValidParameters_ReturnsValidatedTuple()
     {
@@ -123,6 +130,7 @@ public class ServiceValidationHelpersTests
         Assert.Equal(logger, result.Item4);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateBackgroundServiceDependencies_WithValidParameters_ReturnsValidatedTuple()
     {
@@ -142,6 +150,7 @@ public class ServiceValidationHelpersTests
         Assert.Equal("test", result.Item3.Value);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateRepositoryDependencies_WithValidParameters_ReturnsValidatedTuple()
     {
@@ -160,6 +169,7 @@ public class ServiceValidationHelpersTests
         Assert.Equal(logger, result.Item3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateComplexServiceDependencies_WithValidParameters_ReturnsValidatedTuple()
     {
@@ -184,6 +194,7 @@ public class ServiceValidationHelpersTests
         Assert.Equal(param6, result.Item6);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateEventServiceDependencies_WithValidParameters_ReturnsValidatedTuple()
     {
@@ -200,6 +211,7 @@ public class ServiceValidationHelpersTests
         Assert.Equal(logger, result.Item2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ValidateEventServiceDependencies_WithNullPublisher_ThrowsArgumentNullException()
     {

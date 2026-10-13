@@ -18,6 +18,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class EsriAttributeRuleParserTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CalculationAndConstraintRules_ProducesCanonicalRules()
     {
@@ -61,6 +62,7 @@ public sealed class EsriAttributeRuleParserTests
         constraint.TriggeringEvents.Should().ContainInOrder("insert");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_CalculationWithoutFieldName_IsDropped()
     {
@@ -78,6 +80,7 @@ public sealed class EsriAttributeRuleParserTests
         result.Rules.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NoAttributeRules_ReturnsNone()
     {
@@ -88,6 +91,7 @@ public sealed class EsriAttributeRuleParserTests
         result.Should().Be(EsriAttributeRuleParseResult.None);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_OverCap_ReportsTruncatedAndOmits()
     {

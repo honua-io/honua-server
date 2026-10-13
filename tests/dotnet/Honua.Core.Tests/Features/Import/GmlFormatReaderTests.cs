@@ -13,6 +13,7 @@ public sealed class GmlFormatReaderTests
     // ParseSrsNameToSrid
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("EPSG:4326", 4326)]
     [InlineData("urn:ogc:def:crs:EPSG::4326", 4326)]
@@ -35,6 +36,7 @@ public sealed class GmlFormatReaderTests
     // GML 3 FeatureCollection — basic geometry types
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_Gml3Point_ReturnsPointFeature()
     {
@@ -68,6 +70,7 @@ public sealed class GmlFormatReaderTests
         features[0].Attributes["name"].Should().Be("Main St");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_Gml3LineString_ReturnsLineStringFeature()
     {
@@ -99,6 +102,7 @@ public sealed class GmlFormatReaderTests
         features[0].Attributes["name"].Should().Be("Highway 1");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_Gml3Polygon_ReturnsPolygonFeature()
     {
@@ -132,6 +136,7 @@ public sealed class GmlFormatReaderTests
         features[0].Attributes["parcelId"].Should().Be("P-001");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_Gml3PolygonWithHole_PreservesInteriorRing()
     {
@@ -169,6 +174,7 @@ public sealed class GmlFormatReaderTests
         polygon.NumInteriorRings.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_MultipleFeatureMembers_ReturnsAllFeatures()
     {
@@ -208,6 +214,7 @@ public sealed class GmlFormatReaderTests
     // GML 2 coordinates element
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_Gml2Coordinates_ParsesTupleList()
     {
@@ -243,6 +250,7 @@ public sealed class GmlFormatReaderTests
     // SRS detection
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TryDetectSridAsync_SrsNameOnCollection_ReturnsEpsgCode()
     {
@@ -261,6 +269,7 @@ public sealed class GmlFormatReaderTests
         srid.Should().Be(25832);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TryDetectSridAsync_NoSrsName_ReturnsNull()
     {
@@ -282,6 +291,7 @@ public sealed class GmlFormatReaderTests
     // Multi-geometry types
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_MultiPoint_ReturnsMultiPoint()
     {
@@ -319,6 +329,7 @@ public sealed class GmlFormatReaderTests
     // CRS-dependent axis order (#2745)
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_UrnGeographicCrs_SwapsLatLonToLonLat()
     {
@@ -350,6 +361,7 @@ public sealed class GmlFormatReaderTests
         point.Y.Should().BeApproximately(37.5, 0.0001, "latitude must land on Y after the swap");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_ShortEpsgGeographicCrs_DoesNotSwap()
     {
@@ -381,6 +393,7 @@ public sealed class GmlFormatReaderTests
         point.Y.Should().BeApproximately(37.5, 0.0001);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_UrnProjectedCrs_DoesNotSwap()
     {
@@ -412,6 +425,7 @@ public sealed class GmlFormatReaderTests
         point.Y.Should().BeApproximately(5600000, 0.0001, "northing must stay on Y for a projected CRS");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_Crs84Urn_DoesNotSwap()
     {
@@ -442,6 +456,7 @@ public sealed class GmlFormatReaderTests
         point.Y.Should().BeApproximately(37.5, 0.0001);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_UrnGeographicCrs_SwapsPolygonRing()
     {
