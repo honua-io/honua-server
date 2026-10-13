@@ -541,7 +541,7 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         return new EditPrincipal(
-            httpContext.User!.Identity!.Name,
+            EditOwnerSubject.Resolve(httpContext.User),
             IsAuthenticated: true,
             IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(httpContext));
     }
@@ -1697,7 +1697,7 @@ internal sealed class FeatureServerEditsHandler(
             FieldNames.ObjectId,
             StringComparison.OrdinalIgnoreCase) != false;
 
-    private async Task<Feature> BuildFeatureFromGeoServicesAsync(
+    internal async Task<Feature> BuildFeatureFromGeoServicesAsync(
         GeoServicesFeature feature,
         long objectId,
         MetadataV2Resource resource,
@@ -1902,6 +1902,21 @@ internal sealed class FeatureServerEditsHandler(
                 OwnerEditPolicyEvaluator.ShouldStampOwnerOnInsert(ownerPolicy))
             {
                 attributes[ownerPolicy.OwnerField] = principal.Name;
+            }
+            else if (editEvent != AttributeRuleEditEvent.Insert && !principal.IsAdmin)
+            {
+                var ownerAttribute = attributes.FirstOrDefault(pair =>
+                    pair.Key.Equals(ownerPolicy.OwnerField, StringComparison.OrdinalIgnoreCase));
+                if ((ownerAttribute.Key is not null || feature.ReplaceAttributes) &&
+                    !string.Equals(
+                        Convert.ToString(ownerAttribute.Value, CultureInfo.InvariantCulture),
+                        Convert.ToString(updateSnapshot?.Owner, CultureInfo.InvariantCulture),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    // Reject reassignment without turning a full replacement into a partial update
+                    // or copying the unmasked owner snapshot into the response attribute bag.
+                    throw new EditNotPermittedException("Only an administrator can change the feature owner.");
+                }
             }
         }
 

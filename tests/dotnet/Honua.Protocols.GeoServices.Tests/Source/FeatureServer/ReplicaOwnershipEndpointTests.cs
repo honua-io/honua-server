@@ -302,9 +302,10 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
 
     private async Task<HttpClient> CreateScopedClientAsync(string keyName, string[] grants)
     {
-        // read and write grants authenticate as a non-admin principal whose identity name is the
-        // key name, which is what ResolveReplicaOwner stamps as the owner. createReplica's
-        // response carries feature data, so the Query gate refuses a write-only key (#5689).
+        // read and write grants authenticate as a non-admin principal. ResolveReplicaOwner stamps
+        // the stable subject (api_key_id when the key carries one), and IsReplicaOwnerOrAdmin
+        // compares that same subject. createReplica's response carries feature data, so the Query
+        // gate refuses a write-only key (#5689).
         var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var key = await apiKeyStore.CreateAsync(
             keyName,
