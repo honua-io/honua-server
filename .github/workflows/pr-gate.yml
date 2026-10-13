@@ -177,9 +177,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts/certification -p 'test_producer_context.py'
           python3 -m unittest discover -s scripts/certification -p 'test_generate_protocol_harness_fragment.py'
-          if [[ -f scripts/certification/test_harness_context.py ]]; then
-            python3 -m unittest discover -s scripts/certification -p 'test_harness_context.py'
-          fi
+          python3 -m unittest discover -s scripts/certification -p 'test_harness_context.py'
 
       - name: Verify CITE normalization and supplemental HTTP controls
         run: python3 -m unittest discover -s scripts/conformance/cite/tests -p 'test_*.py'

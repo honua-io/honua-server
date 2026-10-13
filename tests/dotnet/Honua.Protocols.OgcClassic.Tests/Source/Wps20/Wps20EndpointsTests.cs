@@ -426,6 +426,38 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Operation(Operations.JobStatus)]
     [Endpoint("GET /wps")]
     [InterfaceOperation(TestProtocols.Wps202, "GetStatus")]
+    public async Task GetStatus_CanonicalRunningJob_ReturnsIdentityAndProgress()
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        jobs.GetJobAsync("wps-running-job", Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(new ExecutionJobRecord
+            {
+                OperationId = "wps-running-job",
+                Status = ExecutionJobStatus.Running,
+                PercentComplete = 42,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Spec = new ExecutionJobSpec { TargetKind = default, Backend = "test", Kind = ExecutionJobKind.Geoprocessing, WorkloadName = "geometry.buffer" }
+            });
+        await using var fixture = new WebAppFixture().ReplaceService(jobs);
+        await fixture.InitializeAsync();
+
+        var response = await fixture.Client.GetAsync("/wps?service=WPS&request=GetStatus&version=2.0.0&jobId=wps-running-job");
+        var xml = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        var document = XDocument.Parse(xml);
+        XNamespace wps = "http://www.opengis.net/wps/2.0";
+        document.Root!.Name.Should().Be(wps + "StatusInfo");
+        document.Root.Element(wps + "JobID")?.Value.Should().Be("wps-running-job");
+        document.Root.Element(wps + "Status")?.Value.Should().Be("Running");
+        document.Root.Element(wps + "PercentCompleted")?.Value.Should().Be("42");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobStatus)]
+    [Endpoint("GET /wps")]
+    [InterfaceOperation(TestProtocols.Wps202, "GetStatus")]
     public async Task GetStatus_UnknownJob_ReturnsOwsExceptionReport()
     {
         var jobs = Substitute.For<IGeoprocessingJobService>();

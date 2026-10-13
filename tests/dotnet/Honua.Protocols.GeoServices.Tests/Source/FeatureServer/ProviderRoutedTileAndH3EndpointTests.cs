@@ -30,7 +30,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
-/// End-to-end regression coverage for provider-routed GeoServices MVT and H3 surfaces.
+/// HTTP adapter regression coverage for provider-routed GeoServices MVT and H3 surfaces.
 /// The fallback services return distinct bytes/data so a silent primary-provider fallback
 /// cannot satisfy these assertions.
 /// </summary>
@@ -54,11 +54,19 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
     [Endpoint("GET /ogc/features/collections/{collectionId}/h3")]
     public async Task OgcH3_SourceBackedLayer_UsesBindingScopedFeatureReader()
     {
+        _fixture.SecondaryReader.ClearReceivedCalls();
+        _fixture.FallbackReader.ClearReceivedCalls();
+
         var response = await _fixture.App.Client.GetAsync("/ogc/features/collections/0/h3?resolution=5");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("routed-cell").And.NotContain("fallback-cell");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        document.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(1);
+        AssertControlledCell(document.RootElement, "properties");
         await _fixture.SecondaryReader.Received().QueryH3Async(
-            41, Arg.Any<FeatureQuery>(), Arg.Any<H3AggregationQuery>(), Arg.Any<CancellationToken>());
+            41, Arg.Any<FeatureQuery>(), Arg.Is<H3AggregationQuery>(query => query.Resolution == 5), Arg.Any<CancellationToken>());
+        await _fixture.FallbackReader.DidNotReceive().QueryH3Async(
+            Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<H3AggregationQuery>(), Arg.Any<CancellationToken>());
     }
 
     [IntegrationTest]
@@ -114,15 +122,19 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryH3")]
     public async Task QueryH3_SourceBackedLayer_UsesBindingScopedFeatureReader()
     {
+        _fixture.SecondaryReader.ClearReceivedCalls();
+        _fixture.FallbackReader.ClearReceivedCalls();
+
         var response = await _fixture.App.Client.GetAsync(
             "/rest/services/routed/FeatureServer/0/queryH3?resolution=5&f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("routed-cell");
-        content.Should().NotContain("fallback-cell");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        AssertControlledCell(document.RootElement, "attributes");
         await _fixture.SecondaryReader.Received().QueryH3Async(
-            41, Arg.Any<FeatureQuery>(), Arg.Any<H3AggregationQuery>(), Arg.Any<CancellationToken>());
+            41, Arg.Any<FeatureQuery>(), Arg.Is<H3AggregationQuery>(query => query.Resolution == 5), Arg.Any<CancellationToken>());
+        await _fixture.FallbackReader.DidNotReceive().QueryH3Async(
+            Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<H3AggregationQuery>(), Arg.Any<CancellationToken>());
     }
 
     [IntegrationTest]
@@ -131,11 +143,19 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryH3")]
     public async Task QueryH3Post_SourceBackedLayer_UsesBindingScopedFeatureReader()
     {
+        _fixture.SecondaryReader.ClearReceivedCalls();
+        _fixture.FallbackReader.ClearReceivedCalls();
+
         var response = await _fixture.App.Client.PostAsJsonAsync(
             "/rest/services/routed/FeatureServer/0/queryH3", new { resolution = 5, f = "json" });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("routed-cell").And.NotContain("fallback-cell");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        AssertControlledCell(document.RootElement, "attributes");
+        await _fixture.SecondaryReader.Received().QueryH3Async(
+            41, Arg.Any<FeatureQuery>(), Arg.Is<H3AggregationQuery>(query => query.Resolution == 5), Arg.Any<CancellationToken>());
+        await _fixture.FallbackReader.DidNotReceive().QueryH3Async(
+            Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<H3AggregationQuery>(), Arg.Any<CancellationToken>());
     }
 
     [IntegrationTest]
@@ -201,6 +221,15 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
         response.Headers.Vary.Should().Contain("Authorization");
     }
 
+    private static void AssertControlledCell(JsonElement root, string attributesProperty)
+    {
+        var features = root.GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+        var attributes = features[0].GetProperty(attributesProperty);
+        attributes.GetProperty("cellIndex").GetString().Should().Be("routed-cell");
+        attributes.GetProperty("featureCount").GetInt64().Should().Be(1L);
+    }
+
     public sealed class Fixture : IAsyncLifetime
     {
         private readonly Guid _connectionId = Guid.NewGuid();
@@ -210,13 +239,13 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
         public ITileProvider SecondaryTileProvider { get; } = Substitute.For<ITileProvider>();
         public ITileProvider PrimaryTileProvider { get; } = Substitute.For<ITileProvider>();
         public IFeatureReader SecondaryReader { get; } = Substitute.For<IFeatureReader>();
+        public IFeatureReader FallbackReader { get; } = Substitute.For<IFeatureReader>();
 
         public Fixture()
         {
             ConfigureTileProviders();
 
-            var fallbackReader = Substitute.For<IFeatureReader>();
-            fallbackReader.QueryH3Async(
+            FallbackReader.QueryH3Async(
                     Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<H3AggregationQuery>(), Arg.Any<CancellationToken>())
                 .Returns(CreateH3Rows("fallback-cell"));
 
@@ -268,7 +297,7 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
             App = new WebAppFixture()
                 .WithTestLicense(HonuaEdition.Pro)
                 .ReplaceService<IH3CapabilityChecker>(new PrimaryH3UnavailableChecker())
-                .ReplaceService<IFeatureReader>(fallbackReader)
+                .ReplaceService<IFeatureReader>(FallbackReader)
                 .ReplaceService<ITileProvider>(FallbackTileProvider)
                 .ReplaceService<FeatureProviderQueryRouter>(router)
                 .ReplaceService<IOgcStyleProjection>(styleProjection)

@@ -1789,7 +1789,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PollLayerPublish_UnknownJob_ReturnsTypedNotFound"
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PollLayerPublish_UnknownJob_ReturnsTypedNotFound",
+        "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithLargeSingleRowGroup_ImportsFeatures"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -2325,6 +2326,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.GetJobStatus_AfterStartingJob_ReturnsProgress",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.GetJobStatus_WithNonExistentJob_ReturnsNotFound",
+        "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_OwnershipConflict_IsAcceptedThenReportsStableTerminalFailure",
         "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.LayerImport_DrivenThroughThePublishedAdminSdk_PreservesRecordsOrdinatesAndNulls",
         "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdkWithATableLeftOut_RoutesToReviewAsIncomplete",
         "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdk_LandsEveryRecordAndReportsWhatItCouldNotPublishOrVerify"
@@ -2355,6 +2357,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests.BackgroundSameKeyAcrossRoutes_ReplaysOneCompletedJobAndPersistedFeature",
         "Honua.Server.Tests.Import.ImportEndpointDurableRunnerIntegrationTests.BatchRunner_ExecutionWorkerComposition_RunsTheLaunchedImportAndReportsBatch",
         "Honua.Server.Tests.Import.ImportEndpointDurableRunnerIntegrationTests.LocalDurableRunner_InProcessWorkerLoop_CompletesImportAndReportsRunner",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_WithClientUploadId_ExposesAcceptedUploadAndImportJobResultFields",
@@ -8522,7 +8525,8 @@
         "Honua.Server.Tests.Features.Geocoding.Issue5536RootMountedGeocodeDiscoveryTests.RootMountedTree_MatchesInstancePathDiscovery",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetRestInfo_DefaultFormat_ReturnsRootInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetRestInfo_HttpsPublicBaseUrl_PublishesSecureSoapUrl",
-        "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.GeoServicesInfo_AdvertisesTokenAuthentication"
+        "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.GeoServicesInfo_AdvertisesTokenAuthentication",
+        "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.Info_Anonymous_UsesActualPortalRoot"
       ],
       "proof_ledger_surface": "geoservices-catalog",
       "maturity": "implemented",
@@ -10869,6 +10873,7 @@
         "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_ActualHttpReadMatchesSql_ThenMembershipAndUnshareRevoke",
         "Honua.Server.Tests.GeoParquetBudgetEndpointTests.Query_ExceedsInputOrOutputBudget_ReturnsCompleteErrorAndCanEncodeNextRequest",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithBoundedQueryWriterOutput_PreservesRowsAcrossRowGroupBoundaries",
+        "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithLargeSingleRowGroup_ImportsFeatures",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_DefaultOperationalSchema_CanDiscoverPublishAndQueryFeatureServer",
         "Honua.Server.Tests.LimitsEnforcementTests.QueryGet_NoRecordCount_UsesDefaultLimit",
         "Honua.Server.Tests.Seed.AdminSampleSeedFeatureServerTests.FeatureServerGeoJsonQuery_WithProjectedAdminRoute_ReturnsWgs84Coordinates",
@@ -11192,7 +11197,15 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.ServiceInfo_EveryAliasInTheContract_IsPublishedOnceAndResolves",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.ServiceInfo_PublishedToolIdentifiers_ArePythonSafeAndRoundTrip",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.ServiceInfo_TaskList_PublishesSafeIdAndEsriAliasWithoutDuplicates",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests.ServiceInfo_KeepsTheUtilityTasksOutOfTheCallableTaskList"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests.ServiceInfo_KeepsTheUtilityTasksOutOfTheCallableTaskList",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingUtilityServiceTests.ExistingPrivateRoutingService_RootTaskAndExecuteKeepItsAccessPolicy",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingUtilityServiceTests.ExistingPrivateRoutingStableId_RootTaskAndExecuteKeepItsAccessPolicy",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingUtilityServiceTests.ExistingProtocolDisabledRoutingService_RootTaskAndExecuteDoNotFallBackToProvider",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingUtilityServiceTests.ExistingProtocolDisabledRoutingStableId_RootTaskAndExecuteDoNotFallBackToProvider",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingUtilityServiceTests.OrdinaryUnknownService_DoesNotBecomeARoutingService",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingUtilityServiceTests.RoutingRoot_NoSynchronousCapabilities_DoesNotAdvertiseAnAvailableService",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingUtilityServiceTests.RoutingRoot_RouteUnsupported_OmitsToolAndRejectsItsMetadataAndExecution",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingUtilityServiceTests.RoutingRoot_WithoutCatalogPublication_ListsOnlySupportedSynchronousTools"
       ],
       "proof_ledger_surface": "gpserver-adapter",
       "maturity": "implemented",
@@ -13629,6 +13642,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Geocoding.Issue5536RootMountedGeocodeDiscoveryTests.RootMountedTree_MatchesInstancePathDiscovery",
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.Info_Anonymous_ReturnsAuthInfoShape",
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.Info_Anonymous_UsesActualPortalRoot",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
@@ -14943,6 +14957,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.GetCapabilities_KvpAcceptVersionsNegotiatesWithoutVersion",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.GetResult_ExposesEveryArtifactOutput",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.GetResult_MapsAdvertisedResultIdentifierAndLiteralMediaType",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.GetStatus_CanonicalRunningJob_ReturnsIdentityAndProgress",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.GetStatus_UnknownJob_ReturnsOwsExceptionReport",
         "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.Head_WpsGetCapabilities_MatchesGetStatusWithEmptyBodyAndContentLength"
       ],
@@ -16164,6 +16179,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_OnManagedStoreLayer_IsRefusedAndKeepsEdits",
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PostPublishLayer_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithLargeSingleRowGroup_ImportsFeatures",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_DefaultOperationalSchema_CanDiscoverPublishAndQueryFeatureServer",
         "Honua.Server.Tests.Seed.AdminSampleSeedPublishThroughAdminApiTests.AdminSampleSourceTables_PublishThroughAdminApi_ReturnFeatureServerCountsAndExtents"
       ],
@@ -16745,6 +16761,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.BackgroundWorker_WithUnsafeStoredServiceUrl_FailsJobBeforeImport",
+        "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_OwnershipConflict_IsAcceptedThenReportsStableTerminalFailure",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WhenDistributedCoordinationIsUnavailable_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WhenQueueBecomesUnavailable_RollsBackPersistedJobState",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithCredentialQueryParameter_ReturnsBadRequest",
@@ -16849,7 +16866,8 @@
         "Honua.Server.Tests.Import.OgcApiFeaturesImportEndpointTests.Collection_WithEmptyFilter_ReturnsBadRequest",
         "Honua.Server.Tests.Import.OgcApiFeaturesImportEndpointTests.Collection_WithInvalidBboxLength_ReturnsBadRequest",
         "Honua.Server.Tests.Import.OgcApiFeaturesImportEndpointTests.Collection_WithInvalidDatetime_ReturnsBadRequest",
-        "Honua.Server.Tests.Import.OgcApiFeaturesImportEndpointTests.Collection_WithMissingServiceUrl_ReturnsBadRequest"
+        "Honua.Server.Tests.Import.OgcApiFeaturesImportEndpointTests.Collection_WithMissingServiceUrl_ReturnsBadRequest",
+        "Honua.Server.Tests.Import.OgcApiFeaturesImportEndpointTests.Import_UnownedTarget_Returns409AfterValidation"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -16893,6 +16911,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.OgcWfsImportEndpointTests.Import_UnownedTarget_Returns409AfterValidation",
         "Honua.Server.Tests.Import.OgcWfsImportEndpointTests.Start_WithMissingServiceUrl_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -17169,6 +17188,7 @@
         "Honua.Server.Tests.Import.CloudStorageImportTests.UploadUrl_GeoJsonFromS3_ImportsData",
         "Honua.Server.Tests.Import.CloudStorageImportTests.UploadUrl_MultiLayerFileGdbFromS3_FailsWithoutMergingLayers",
         "Honua.Server.Tests.Import.CloudStorageImportTests.UploadUrl_ShapefileFromS3_ImportsData",
+        "Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests.BackgroundSameKeyAcrossRoutes_ReplaysOneCompletedJobAndPersistedFeature",
         "Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests.SameKeyAcrossRoutes_DownloadsAndPersistsOnlyOnce",
         "Honua.Server.Tests.Import.ImportAuthorizationParityTests.UrlImport_ReadScopedAdminBearer_IsDeniedBeforeDownload",
         "Honua.Server.Tests.Import.ImportUrlEndpointTests.UploadUrl_WithIdempotencyKey_RoutesThroughCanonicalOperation",
@@ -17228,6 +17248,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests.BackgroundSameKeyAcrossRoutes_ReplaysOneCompletedJobAndPersistedFeature",
         "Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests.SameKeyAcrossRoutes_DownloadsAndPersistsOnlyOnce",
         "Honua.Server.Tests.Import.ImportAuthorizationParityTests.UrlImport_ReadScopedAdminBearer_IsDeniedBeforeDownload",
         "Honua.Server.Tests.Import.ImportUrlEndpointTests.CompatibilityPluralImportRoute_WithSupportedPublicS3Source_ImportsData",
@@ -18009,6 +18030,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests.DeadLetterStorm_ProposeApproveRedrive_ClearsFindingAndAuditsChain",
+        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_LegacyRollback_RequiresRollbackScope",
+        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_SignedAdminWithPublishScope_ReachesResolution",
+        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_SignedAdminWithoutRequiredScope_LeavesProposalUnchanged",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.ApproveAndRejectProposal_WithRedisConfiguredButUnentitled_ReportsLicenseNotMissingRedis",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.ApproveProposal_WithoutDurableControlPlane_ReturnsTypedCapabilityUnavailableRefusal",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AlreadyResolved_ReturnsConflict",
@@ -18037,6 +18061,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_LegacyRollback_RequiresRollbackScope",
+        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_SignedAdminWithPublishScope_ReachesResolution",
+        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.ProposalDecision_SignedAdminWithoutRequiredScope_LeavesProposalUnchanged",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.ApproveAndRejectProposal_WithRedisConfiguredButUnentitled_ReportsLicenseNotMissingRedis",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.RejectProposal_WithoutDurableControlPlane_ReturnsTypedCapabilityUnavailableRefusal",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces",
@@ -22150,7 +22177,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ServiceInfo_PostWithUnsupportedContentType_ReturnsUnsupportedMediaType",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ServiceInfo_PostWithUnsupportedFormat_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ServiceInfo_Post_ReturnsGPServerMetadata"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ServiceInfo_Post_ReturnsGPServerMetadata",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.RoutingUtilityServiceTests.RoutingRoot_PostAndAlias_ReturnsTheSameDescriptor"
       ],
       "proof_ledger_surface": "gpserver-adapter",
       "maturity": "implemented",
@@ -23812,11 +23840,14 @@
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_ExchangePresentedFromAnotherIp_Returns498_Issue5491",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_ExchangePresentedFromAnotherReferer_Returns498_Issue5491",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_ExchangedTokenFromManagedKey_StopsWhenKeyIsRevoked_Issue5491",
+        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_FederatedExchangeWithoutClientOrReferer_InheritsPortalBinding",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_HttpsOnlyEnforced_Returns403WhenInsecure",
+        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_InvalidFederatedExchangeWithoutBinding_Returns498",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_PasswordShapeValidation_RemainsEnforced",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_RefererBindingWithoutReferer_Returns400",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_RespectsMaxExpirationClamp",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_SqlInspectionExemption_IsLimitedToPassword",
+        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_StrictRefererInheritedExchange_RejectsMissingOrForeignHeader",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_UnsupportedFormat_Returns400",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_VerifierWithoutSource_ReturnsUsableToken",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WhenDisabled_Returns404",
