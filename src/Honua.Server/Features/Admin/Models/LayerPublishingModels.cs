@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
@@ -12,6 +13,25 @@ namespace Honua.Server.Features.Admin.Models;
 /// </summary>
 public sealed class PublishLayerRequest
 {
+    /// <summary>
+    /// Creates a publication request with the default serving behavior.
+    /// </summary>
+    public PublishLayerRequest()
+    {
+    }
+
+    /// <summary>
+    /// Creates a request from JSON, preserving the enabled default when omitted.
+    /// </summary>
+    /// <param name="enabled">Whether to enable the published layer; defaults to true.</param>
+    [JsonConstructor]
+    public PublishLayerRequest(bool enabled = true)
+    {
+        // .NET 10 source generation overwrites omitted init-only initializers.
+        // A constructor parameter retains the wire default without losing explicit false.
+        Enabled = enabled;
+    }
+
     /// <summary>
     /// Create an independent editable managed copy. The connection must resolve
     /// to this server's managed database. Source IDs remain in honua_source_id;
