@@ -29,8 +29,8 @@ The exact digest is in the release's `customer-install-manifest.json`
 Docker Desktop runs Linux containers; this journey selects `linux/amd64`.
 Set `$Image` and `HONUA_IMAGE` to that digest to pin an installation exactly; `docker pull` below
 resolves the tag, and the support step records the digest that ran. The control-plane package is
-[honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/); the data-plane
-package is [honua-sdk 0.1.13](https://pypi.org/project/honua-sdk/0.1.13/).
+[honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/); the data-plane
+package is [honua-sdk 0.1.15](https://pypi.org/project/honua-sdk/0.1.15/).
 The import step invokes Honua's `honua_ingest_dataset` MCP tool using the
 published [MCP transport client 2.1.1](https://pypi.org/project/mcp/2.1.1/).
 
@@ -197,7 +197,7 @@ needed. Do not substitute `git+https` installs or local source packages.
 python -m venv .venv
 if ($LASTEXITCODE -ne 0) { throw 'Python virtual environment creation failed' }
 $Python = Join-Path $Install '.venv\Scripts\python.exe'
-& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.10' 'honua-sdk==0.1.13' 'mcp==2.1.1'
+& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.12' 'honua-sdk==0.1.15' 'mcp==2.1.1'
 if ($LASTEXITCODE -ne 0) { throw 'Registry package installation failed' }
 & $Python -m pip freeze | Set-Content -LiteralPath installed-packages.txt -Encoding Ascii
 $values = @{}
