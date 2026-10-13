@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
 
@@ -14,6 +15,17 @@ namespace Honua.Db.Databricks.Tests;
 public class DatabricksFeatureQueryBuilderTests
 {
     private static readonly DatabricksFeatureQueryBuilder Builder = new();
+
+    private static SpatialFilter Envelope(SpatialRelationship relationship) => SpatialFilter.Create(
+        geometry: [1, 2, 3, 4],
+        spatialRelationship: relationship,
+        srid: 4326,
+        isSimpleEnvelope: true,
+        allowEnvelopeOnly: true,
+        envelopeMinX: -10,
+        envelopeMinY: -5,
+        envelopeMaxX: 10,
+        envelopeMaxY: 5);
 
     private static DatabricksLayerMapping Mapping(params string[] attributes) => new()
     {
@@ -248,20 +260,76 @@ public class DatabricksFeatureQueryBuilderTests
     [Fact]
     public void BuildSelect_EnvelopeSpatialFilter_EmitsStIntersects()
     {
-        var spatial = SpatialFilter.Create(
-            geometry: [1, 2, 3, 4],
-            spatialRelationship: SpatialRelationship.Intersects,
-            srid: 4326,
-            isSimpleEnvelope: true,
-            allowEnvelopeOnly: true,
-            envelopeMinX: -10,
-            envelopeMinY: -5,
-            envelopeMaxX: 10,
-            envelopeMaxY: 5);
-
-        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { SpatialFilter = spatial });
+        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { SpatialFilter = Envelope(SpatialRelationship.Intersects) });
 
         Assert.Contains("st_intersects(`geom`, st_geomfromtext('POLYGON((", statement.Sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(SpatialRelationship.Contains, "st_contains(st_geomfromtext('POLYGON((")]
+    [InlineData(SpatialRelationship.Within, "st_within(st_geomfromtext('POLYGON((")]
+    [InlineData(SpatialRelationship.Disjoint, "st_disjoint(`geom`, st_geomfromtext('POLYGON((")]
+    [InlineData(SpatialRelationship.Crosses, "st_crosses(`geom`, st_geomfromtext('POLYGON((")]
+    [InlineData(SpatialRelationship.Touches, "st_touches(`geom`, st_geomfromtext('POLYGON((")]
+    [InlineData(SpatialRelationship.Overlaps, "st_overlaps(`geom`, st_geomfromtext('POLYGON((")]
+    [InlineData(SpatialRelationship.Equals, "st_equals(`geom`, st_geomfromtext('POLYGON((")]
+    public void BuildSelect_EnvelopeSpatialFilter_UsesMappedRelationship(SpatialRelationship relationship, string expected)
+    {
+        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { SpatialFilter = Envelope(relationship) });
+
+        Assert.Contains(expected, statement.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("st_intersects(", statement.Sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(SpatialRelationship.EnvelopeIntersects)]
+    [InlineData(SpatialRelationship.WithinDistance)]
+    [InlineData(SpatialRelationship.BeyondDistance)]
+    [InlineData(SpatialRelationship.NearestNeighbor)]
+    public void BuildSelect_UnsupportedEnvelopeRelationship_Throws(SpatialRelationship relationship)
+    {
+        var withCoordinates = new FeatureQuery { SpatialFilter = Envelope(relationship) };
+        Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(Mapping(), withCoordinates));
+
+        var withoutCoordinates = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(
+                geometry: [1, 2, 3, 4],
+                spatialRelationship: relationship,
+                srid: 4326,
+                isSimpleEnvelope: true,
+                allowEnvelopeOnly: true)
+        };
+        Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(Mapping(), withoutCoordinates));
+    }
+
+    [Fact]
+    public void BuildSelect_SupplementalSqlFilter_DoesNotEmitWhereThatIgnoresIt()
+    {
+        var query = new FeatureQuery
+        {
+            Where = "owner = 'acme'",
+            SqlFilter = new SqlFragment("(attributes->>'owner') = @p0 AND observed_at > @p1", new object?[] { "acme", 1 }),
+            SqlFilterSupplementsWhere = true
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(() => Builder.BuildSelect(Mapping(), query));
+        Assert.Contains("supplemental", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildSelect_WhereWithTranslatedSqlFilter_StillUsesWhere()
+    {
+        var query = new FeatureQuery
+        {
+            Where = "owner = 'acme'",
+            SqlFilter = new SqlFragment("(attributes->>'owner') = @p0", new object?[] { "acme" })
+        };
+
+        var statement = Builder.BuildSelect(Mapping(), query);
+
+        Assert.Contains("WHERE (`owner` = :f0)", statement.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("->>", statement.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

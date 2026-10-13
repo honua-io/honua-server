@@ -222,9 +222,10 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
             && spatial.EnvelopeMaxX is double maxX
             && spatial.EnvelopeMaxY is double maxY)
         {
-            var geom = Dialect.QuoteIdentifier(mapping.GeometryColumn);
-            predicates.Add(
-                $"st_intersects({geom}, st_geomfromtext('POLYGON(({F(minX)} {F(minY)}, {F(maxX)} {F(minY)}, {F(maxX)} {F(maxY)}, {F(minX)} {F(maxY)}, {F(minX)} {F(minY)}))'))");
+            var feature = Dialect.QuoteIdentifier(mapping.GeometryColumn);
+            var filter =
+                $"st_geomfromtext('POLYGON(({F(minX)} {F(minY)}, {F(maxX)} {F(minY)}, {F(maxX)} {F(maxY)}, {F(minX)} {F(maxY)}, {F(minX)} {F(minY)}))')";
+            predicates.Add(FormatEnvelopePredicate(spatial.SpatialRelationship, feature, filter));
         }
 
         if (predicates.Count > 0)
@@ -440,8 +441,17 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
         }
 
         // The shared filter pipeline emits a Postgres-flavored SqlFilter alongside the canonical
-        // Where text. We re-parse Where ourselves into Spark SQL, so a translated SqlFilter is only
-        // a problem when there is no Where to fall back to (it cannot be executed against DBSQL).
+        // Where text. Re-parsing Where is valid only when SqlFilter is that translation. A
+        // supplemental fragment carries predicates Where does not (time, or object ids that were
+        // not forwarded) and must not be dropped.
+        if (query.SqlFilterSupplementsWhere)
+        {
+            throw new NotSupportedException(
+                "Databricks provider cannot execute supplemental SqlFilter predicates. "
+                + "The shared translator emits Postgres-flavored SQL; a time filter or object-id "
+                + "predicate that is not represented by Where would be dropped.");
+        }
+
         if (query.SqlFilter is not null && string.IsNullOrWhiteSpace(query.Where))
         {
             throw new NotSupportedException(
@@ -456,13 +466,49 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
                 "Databricks provider does not support TemporalFilter in this slice.");
         }
 
-        if (query.SpatialFilter is { IsSimpleEnvelope: false } spatial)
+        if (query.SpatialFilter is { } spatial)
         {
-            throw new NotSupportedException(
-                $"Databricks provider does not support '{spatial.SpatialRelationship}' with a non-envelope geometry. "
-                + "Only axis-aligned envelope filters (IsSimpleEnvelope=true) are translated in this slice.");
+            if (!spatial.IsSimpleEnvelope)
+            {
+                throw new NotSupportedException(
+                    $"Databricks provider does not support '{spatial.SpatialRelationship}' with a non-envelope geometry. "
+                    + "Only axis-aligned envelope filters (IsSimpleEnvelope=true) are translated in this slice.");
+            }
+
+            if (!IsSupportedEnvelopeRelationship(spatial.SpatialRelationship))
+            {
+                throw new NotSupportedException(
+                    $"Databricks provider does not support spatial relationship '{spatial.SpatialRelationship}'.");
+            }
         }
     }
+
+    // Esri spatialRel is evaluated from the filter geometry: Within and Contains lead with the
+    // filter operand (issue #2068). Symmetric relationships lead with the feature geometry.
+    private static string FormatEnvelopePredicate(SpatialRelationship relationship, string feature, string filter)
+        => relationship switch
+        {
+            SpatialRelationship.Intersects => $"st_intersects({feature}, {filter})",
+            SpatialRelationship.Contains => $"st_contains({filter}, {feature})",
+            SpatialRelationship.Within => $"st_within({filter}, {feature})",
+            SpatialRelationship.Crosses => $"st_crosses({feature}, {filter})",
+            SpatialRelationship.Touches => $"st_touches({feature}, {filter})",
+            SpatialRelationship.Overlaps => $"st_overlaps({feature}, {filter})",
+            SpatialRelationship.Disjoint => $"st_disjoint({feature}, {filter})",
+            SpatialRelationship.Equals => $"st_equals({feature}, {filter})",
+            _ => throw new NotSupportedException(
+                $"Databricks provider does not support spatial relationship '{relationship}'."),
+        };
+
+    private static bool IsSupportedEnvelopeRelationship(SpatialRelationship relationship)
+        => relationship is SpatialRelationship.Intersects
+            or SpatialRelationship.Contains
+            or SpatialRelationship.Within
+            or SpatialRelationship.Crosses
+            or SpatialRelationship.Touches
+            or SpatialRelationship.Overlaps
+            or SpatialRelationship.Disjoint
+            or SpatialRelationship.Equals;
 
     private static string F(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 }

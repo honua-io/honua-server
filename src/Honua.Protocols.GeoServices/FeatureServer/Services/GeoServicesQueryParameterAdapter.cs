@@ -248,11 +248,11 @@ internal sealed class GeoServicesQueryParameterAdapter(
             .Select(static field => field.Trim())
             .Where(static field => field.Length > 0)
             .ToList();
+        CanonicalizeOutFieldNames(fields, resource);
 
         // returnDistinctValues yields aggregate rows with no stable object identifier;
         // force-appending the OID would defeat the distinct contract (every row would
-        // carry a unique OID, suppressing de-duplication). Honor the caller's outFields
-        // verbatim in that case.
+        // carry a unique OID, suppressing de-duplication). Do not append the object id.
         if (queryParams.ReturnDistinctValues)
         {
             return fields.ToImmutableArray();
@@ -265,6 +265,41 @@ internal sealed class GeoServicesQueryParameterAdapter(
         }
 
         return fields.ToImmutableArray();
+    }
+
+    private static void CanonicalizeOutFieldNames(List<string> fields, MetadataV2Resource resource)
+    {
+        Dictionary<string, string>? canonical = null;
+        for (var i = 0; i < fields.Count; i++)
+        {
+            var requested = fields[i];
+            if (requested == "*")
+            {
+                continue;
+            }
+
+            canonical ??= BuildCanonicalFieldNames(resource);
+            if (canonical.TryGetValue(requested, out var name))
+            {
+                fields[i] = name;
+            }
+        }
+    }
+
+    private static Dictionary<string, string> BuildCanonicalFieldNames(MetadataV2Resource resource)
+    {
+        var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in resource.SchemaFields)
+        {
+            if (field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
+            {
+                continue;
+            }
+
+            names[field.Name] = field.Name;
+        }
+
+        return names;
     }
 
     private static SpatialFilter? ResolveSpatialFilter(

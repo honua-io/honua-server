@@ -201,6 +201,40 @@ public class RedshiftFeatureQueryBuilderTests
         Assert.Contains("PostGIS-flavored", ex.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BuildSelectQuery_SupplementalSqlFilter_DoesNotEmitWhereThatIgnoresIt()
+    {
+        var query = new FeatureQuery
+        {
+            Where = "name = 'Acme'",
+            SqlFilter = new Honua.Core.Queries.Filters.SqlFragment(
+                "(attributes->>'name') = @p0 AND observed_at > @p1",
+                new object?[] { "Acme", 1 }),
+            SqlFilterSupplementsWhere = true
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(
+            () => RedshiftFeatureQueryBuilder.BuildSelectQuery(Mapping(), query, _attributes));
+        Assert.Contains("PostGIS-flavored", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WhereWithTranslatedSqlFilter_StillUsesWhere()
+    {
+        var query = new FeatureQuery
+        {
+            Where = "type = 'commercial'",
+            SqlFilter = new Honua.Core.Queries.Filters.SqlFragment(
+                "(attributes->>'type') = @p0",
+                new object?[] { "commercial" })
+        };
+
+        var result = RedshiftFeatureQueryBuilder.BuildSelectQuery(Mapping(), query, _attributes);
+
+        Assert.Contains("AND (\"type\" = @p0)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("->>", result.Sql, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("start_and_end = 1")]
     [InlineData("and_flag = 1")]

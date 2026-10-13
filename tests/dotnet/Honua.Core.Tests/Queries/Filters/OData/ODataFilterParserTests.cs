@@ -144,10 +144,7 @@ public class ODataFilterParserTests
     {
         var result = _parser.Parse("not (A eq 1)");
 
-        result.Should().BeOfType<UnaryExpression>();
-        var notExpr = (UnaryExpression)result;
-        notExpr.Operator.Should().Be(UnaryOperator.Not);
-        notExpr.Operand.Should().BeOfType<BinaryExpression>();
+        result.Should().Be(_parser.Parse("A ne 1"));
     }
 
     #endregion
@@ -637,6 +634,67 @@ public class ODataFilterParserTests
         ((UnaryExpression)bothNull.Left).Operator.Should().Be(UnaryOperator.IsNull);
         ((UnaryExpression)bothNull.Right).Operator.Should().Be(UnaryOperator.IsNull);
     }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_NotEq_MatchesBareNeIncludingNullAttribute()
+    {
+        _parser.Parse("not (state eq 'California')")
+            .Should().Be(_parser.Parse("state ne 'California'"));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_NotEqTwoProperties_MatchesBareNeIncludingNulls()
+    {
+        _parser.Parse("not (state eq country)")
+            .Should().Be(_parser.Parse("state ne country"));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("eq")]
+    [InlineData("gt")]
+    [InlineData("ge")]
+    [InlineData("lt")]
+    [InlineData("le")]
+    public void Parse_NotComparison_KeepsNullAttribute(string op)
+    {
+        var result = _parser.Parse($"not (state {op} 'California')");
+
+        ContainsIsNull(result, "state").Should().BeTrue();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_NotIn_KeepsNullAttribute()
+    {
+        var result = _parser.Parse("not (state in ('California', 'Nevada'))");
+
+        ContainsIsNull(result, "state").Should().BeTrue();
+        result.Should().BeOfType<BinaryExpression>();
+        ((BinaryExpression)result).Operator.Should().Be(BinaryOperator.And);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_NotEmptyIn_StaysBooleanNegation()
+    {
+        var result = _parser.Parse("not (status in ())");
+
+        result.Should().BeOfType<UnaryExpression>();
+        ((UnaryExpression)result).Operator.Should().Be(UnaryOperator.Not);
+    }
+
+    private static bool ContainsIsNull(FilterExpression expression, string property)
+        => expression switch
+        {
+            UnaryExpression { Operator: UnaryOperator.IsNull, Operand: PropertyReference { PropertyName: var name } }
+                => name == property,
+            UnaryExpression unary => ContainsIsNull(unary.Operand, property),
+            BinaryExpression binary => ContainsIsNull(binary.Left, property) || ContainsIsNull(binary.Right, property),
+            _ => false
+        };
 
     #endregion
 

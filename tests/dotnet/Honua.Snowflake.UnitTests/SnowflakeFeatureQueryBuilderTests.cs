@@ -206,6 +206,36 @@ public class SnowflakeFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_SupplementalSqlFilter_DoesNotEmitWhereThatIgnoresIt()
+    {
+        var query = new FeatureQuery
+        {
+            Where = "NAME = 'Alpha'",
+            SqlFilter = new SqlFragment("(attributes->>'NAME') = @p0 AND observed_at > @p1", new object?[] { "Alpha", 1 }),
+            SqlFilterSupplementsWhere = true
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(
+            () => SnowflakeFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns));
+        Assert.Contains("Postgres-flavored", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WhereWithTranslatedSqlFilter_StillUsesWhere()
+    {
+        var query = new FeatureQuery
+        {
+            Where = "NAME = 'Alpha'",
+            SqlFilter = new SqlFragment("(attributes->>'NAME') = @p0", new object?[] { "Alpha" })
+        };
+
+        var result = SnowflakeFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("\"NAME\" = ?", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("->>", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSelectQuery_ObjectIdsFilter_GeneratesInClause()
     {
         var mapping = BuildMapping();

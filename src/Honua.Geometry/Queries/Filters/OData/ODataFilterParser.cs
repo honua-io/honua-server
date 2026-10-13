@@ -197,7 +197,7 @@ public sealed class ODataFilterParser
             if (Match(ODataFilterTokenType.Not))
             {
                 var operand = ParseUnaryExpression();
-                return new UnaryExpression(UnaryOperator.Not, operand);
+                return RewriteNegatedComparison(operand);
             }
 
             if (Match(ODataFilterTokenType.Minus))
@@ -790,6 +790,100 @@ public sealed class ODataFilterParser
         }
 
         return new BinaryExpression(start, BinaryOperator.Add, new Literal(1, LiteralType.Number));
+    }
+
+    // `not (x eq v)` must match bare `x ne v`, including rows whose attribute is null.
+    // Relational comparisons are false when either operand is null, so their negation
+    // must keep those rows. `in` uses the same equality as eq.
+    private static FilterExpression RewriteNegatedComparison(FilterExpression operand)
+    {
+        if (operand is not BinaryExpression binary)
+        {
+            return new UnaryExpression(UnaryOperator.Not, operand);
+        }
+
+        switch (binary.Operator)
+        {
+            case BinaryOperator.Equal:
+                return BuildNullSafeNotEqual(binary.Left, binary.Right);
+            case BinaryOperator.GreaterThan:
+            case BinaryOperator.GreaterThanOrEqual:
+            case BinaryOperator.LessThan:
+            case BinaryOperator.LessThanOrEqual:
+                return BuildNullSafeNegatedRelational(binary);
+            case BinaryOperator.In:
+                return RewriteNegatedIn(binary);
+            case BinaryOperator.Or when IsNullSafeEquality(binary):
+                var equal = (BinaryExpression)binary.Left;
+                return BuildNullSafeNotEqual(equal.Left, equal.Right);
+            default:
+                return new UnaryExpression(UnaryOperator.Not, operand);
+        }
+    }
+
+    private static bool IsNullSafeEquality(BinaryExpression or)
+    {
+        if (or.Left is not BinaryExpression equal || equal.Operator != BinaryOperator.Equal)
+        {
+            return false;
+        }
+
+        if (or.Right is not BinaryExpression bothNull || bothNull.Operator != BinaryOperator.And)
+        {
+            return false;
+        }
+
+        if (bothNull.Left is not UnaryExpression leftNull || leftNull.Operator != UnaryOperator.IsNull
+            || bothNull.Right is not UnaryExpression rightNull || rightNull.Operator != UnaryOperator.IsNull)
+        {
+            return false;
+        }
+
+        return ReferenceEquals(leftNull.Operand, equal.Left)
+            && ReferenceEquals(rightNull.Operand, equal.Right);
+    }
+
+    private static FilterExpression BuildNullSafeNegatedRelational(BinaryExpression comparison)
+    {
+        FilterExpression result = new UnaryExpression(UnaryOperator.Not, comparison);
+        if (!IsNonNullValue(comparison.Left))
+        {
+            result = new BinaryExpression(
+                result,
+                BinaryOperator.Or,
+                new UnaryExpression(UnaryOperator.IsNull, comparison.Left));
+        }
+
+        if (!IsNonNullValue(comparison.Right))
+        {
+            result = new BinaryExpression(
+                result,
+                BinaryOperator.Or,
+                new UnaryExpression(UnaryOperator.IsNull, comparison.Right));
+        }
+
+        return result;
+    }
+
+    private static FilterExpression RewriteNegatedIn(BinaryExpression membership)
+    {
+        if (membership.Right is not ValueList values || values.Values.Count == 0)
+        {
+            return new UnaryExpression(UnaryOperator.Not, membership);
+        }
+
+        FilterExpression? combined = null;
+        foreach (var value in values.Values)
+        {
+            FilterExpression term = value is Literal { Type: LiteralType.Null }
+                ? new UnaryExpression(UnaryOperator.IsNotNull, membership.Left)
+                : BuildNullSafeNotEqual(membership.Left, value);
+            combined = combined is null
+                ? term
+                : new BinaryExpression(combined, BinaryOperator.And, term);
+        }
+
+        return combined!;
     }
 
     private static FilterExpression NormalizeComparison(FilterExpression left, BinaryOperator op, FilterExpression right, int position)
