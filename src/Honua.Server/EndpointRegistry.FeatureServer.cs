@@ -43,6 +43,7 @@ public static partial class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/create"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/delete"),
+        new("POST", "/rest/services/{serviceId}/VersionManagementServer/delete"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/alter"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/startReading"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/stopReading"),
