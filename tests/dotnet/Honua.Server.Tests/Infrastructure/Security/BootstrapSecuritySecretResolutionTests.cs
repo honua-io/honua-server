@@ -9,6 +9,10 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
@@ -19,14 +23,127 @@ public sealed class BootstrapSecuritySecretResolutionTests
     private const string AdminKey = "HONUA_ADMIN_PASSWORD";
     private const string MasterKey = "Security:ConnectionEncryption:MasterKey";
     private const string AuditChainKey = "AuditLog:ChainVerification:Key";
+    private const string OidcSigningKey = "Oidc:TokenValidation:SymmetricSigningKey";
 
     [UnitTest]
-    public void SecuritySecretReferenceKeys_IncludeTheAuditChainKey()
+    public void SecuritySecretReferenceKeys_IncludeTheStartupSigningKeys()
     {
         // Lambda carries the audit-chain key as an aws:secretsmanager: reference; without bootstrap
         // resolution AuditChainKeyMaterial would reject the reference text as non-base64.
         StartupConfigurationHelpers.SecuritySecretReferenceKeys
-            .Should().BeEquivalentTo([AdminKey, MasterKey, AuditChainKey]);
+            .Should().BeEquivalentTo([AdminKey, MasterKey, AuditChainKey, OidcSigningKey]);
+    }
+
+    [Theory]
+    [InlineData("valid")]
+    [InlineData("signature")]
+    [InlineData("issuer")]
+    [InlineData("audience")]
+    [InlineData("expired")]
+    [Trait("Tier", "Fast")]
+    public async Task ResolvedOidcKey_PreservesSignedTokenValidation(string control)
+    {
+        const string reference = "aws:secretsmanager:fixture/oidc-signing-key";
+        const string signingKey = "Run-owned-signing-key-with-at-least-32-bytes";
+        const string issuer = "https://terminal-journey.invalid";
+        const string audience = "terminal-journey";
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            [OidcSigningKey] = reference,
+            ["Oidc:Enabled"] = "true",
+            ["Oidc:Generic:Enabled"] = "true",
+            ["Oidc:Generic:Authority"] = issuer,
+            ["Oidc:Generic:ClientId"] = audience
+        });
+        var resolver = new StubSecretResolver(new Dictionary<string, string> { [reference] = signingKey });
+
+        await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
+            configuration, resolver, StartupConfigurationHelpers.SecuritySecretReferenceKeys, isProduction: true);
+
+        var options = configuration.GetSection("Oidc").Get<OidcAuthenticationOptions>();
+        options.Should().NotBeNull();
+        var validation = OidcTokenValidationParametersFactory.Build(options!).Parameters;
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
+            control == "signature" ? "Different-signing-key-with-at-least-32-bytes" : signingKey));
+        var now = DateTime.UtcNow;
+        var token = new JwtSecurityToken(
+            issuer: control == "issuer" ? "https://untrusted.invalid" : issuer,
+            audience: control == "audience" ? "another-audience" : audience,
+            claims: [new Claim("sub", "fixture-author"), new Claim("tenant_id", "tenant-a")],
+            notBefore: now.AddHours(-1),
+            expires: control == "expired" ? now.AddMinutes(-30) : now.AddMinutes(5),
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
+        var handler = new JwtSecurityTokenHandler();
+        var encoded = handler.WriteToken(token);
+
+        if (control == "valid")
+        {
+            var principal = handler.ValidateToken(encoded, validation, out _);
+            principal.FindFirst("tenant_id")?.Value.Should().Be("tenant-a");
+        }
+        else
+        {
+            var validate = () => handler.ValidateToken(encoded, validation, out _);
+            validate.Should().Throw<SecurityTokenException>();
+        }
+
+        configuration[OidcSigningKey].Should().Be(signingKey);
+        resolver.ResolvedReferences.Should().Equal(reference);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("Existing-static-signing-key-with-32-bytes")]
+    [Trait("Tier", "Fast")]
+    public async Task ResolveSecuritySecretReferences_LeavesUnconfiguredOrLiteralOidcKeysUntouched(string? value)
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?> { [OidcSigningKey] = value });
+        var resolver = new StubSecretResolver(new Dictionary<string, string>());
+
+        await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
+            configuration, resolver, StartupConfigurationHelpers.SecuritySecretReferenceKeys, isProduction: true);
+
+        configuration[OidcSigningKey].Should().Be(value);
+        resolver.ResolvedReferences.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [Trait("Tier", "Fast")]
+    public async Task ResolveSecuritySecretReferences_RejectsEmptyReferencedOidcKey(string value)
+    {
+        const string reference = "aws:secretsmanager:private-fixture-signing-key";
+        var configuration = BuildConfiguration(new Dictionary<string, string?> { [OidcSigningKey] = reference });
+        var resolver = new StubSecretResolver(new Dictionary<string, string> { [reference] = value });
+
+        var action = () => StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
+            configuration, resolver, StartupConfigurationHelpers.SecuritySecretReferenceKeys, isProduction: true);
+
+        var failure = await action.Should().ThrowAsync<InvalidOperationException>();
+        failure.Which.ToString().Should().NotContain(reference);
+        configuration[OidcSigningKey].Should().Be(reference);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    public async Task ResolveSecuritySecretReferences_RefusesUnresolvableOidcKeyWithoutProviderDetails(bool throws)
+    {
+        const string reference = "aws:secretsmanager:private-fixture-signing-key";
+        var configuration = BuildConfiguration(new Dictionary<string, string?> { [OidcSigningKey] = reference });
+        IConnectionSecretResolver resolver = throws
+            ? new ThrowingSecretResolver()
+            : new StubSecretResolver(new Dictionary<string, string>());
+
+        var action = () => StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
+            configuration, resolver, StartupConfigurationHelpers.SecuritySecretReferenceKeys, isProduction: true);
+
+        var failure = await action.Should().ThrowAsync<InvalidOperationException>();
+        failure.Which.ToString().Should().NotContain(reference).And.NotContain("secret provider unavailable");
+        configuration[OidcSigningKey].Should().Be(reference);
     }
 
     [UnitTest]
@@ -48,19 +165,22 @@ public sealed class BootstrapSecuritySecretResolutionTests
             .Length.Should().Be(32);
     }
 
-    [UnitTest]
-    public void ResolveEnvironmentSecretReferences_ResolvesAnEnvironmentAuditChainKey()
+    [Theory]
+    [InlineData(AuditChainKey)]
+    [InlineData(OidcSigningKey)]
+    [Trait("Tier", "Fast")]
+    public void ResolveEnvironmentSecretReferences_ResolvesAnEnvironmentSigningKey(string configurationKey)
     {
         const string variable = "HONUA_TEST_AUDIT_CHAIN_KEY_5F2C";
         var key = Convert.ToBase64String(new byte[32]);
         Environment.SetEnvironmentVariable(variable, key);
         try
         {
-            var configuration = BuildConfiguration(new Dictionary<string, string?> { [AuditChainKey] = $"env:{variable}" });
+            var configuration = BuildConfiguration(new Dictionary<string, string?> { [configurationKey] = $"env:{variable}" });
 
             StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(configuration);
 
-            configuration[AuditChainKey].Should().Be(key);
+            configuration[configurationKey].Should().Be(key);
         }
         finally
         {
