@@ -1,0 +1,61 @@
+name: Managed test artifacts
+description: Sequential same-run verified test outputs; unrestored projects remain caller-owned build fallbacks.
+inputs:
+  mode:
+    description: publish or consume
+    required: true
+  projects-file:
+    description: JSON array of registered csproj paths
+    required: true
+  enabled:
+    description: Set false to bypass artifact publication and restoration
+    default: 'true'
+  producer-attempt:
+    description: Producer workflow attempt; defaults to current attempt
+    default: ''
+  configuration:
+    description: Build configuration identity
+    default: Release
+  build-properties:
+    description: Exact producer and consumer build property identity
+    default: 'TreatWarningsAsErrors=true;RunAnalyzers=true;UseSharedCompilation=false'
+outputs:
+  restored-projects-file:
+    description: JSON array of successfully restored project paths
+    value: ${{ steps.transport.outputs.restored-projects-file }}
+  receipt-file:
+    description: Per-project status and immutable source/hash receipt
+    value: ${{ steps.transport.outputs.receipt-file }}
+  producer-attempt:
+    description: Artifact producer attempt for downstream jobs and reruns
+    value: ${{ steps.transport.outputs.producer-attempt }}
+runs:
+  using: composite
+  steps:
+    - name: Install pinned artifact SDK
+      if: inputs.enabled != 'false'
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm ci --ignore-scripts --no-audit --no-fund
+    - name: Transport verified outputs sequentially
+      id: transport
+      uses: actions/github-script@v9
+      env:
+        HONUA_MANAGED_ACTION_PATH: ${{ github.action_path }}
+        HONUA_MANAGED_MODE: ${{ inputs.mode }}
+        HONUA_MANAGED_PROJECTS: ${{ inputs.projects-file }}
+        HONUA_MANAGED_ENABLED: ${{ inputs.enabled }}
+        HONUA_MANAGED_ATTEMPT: ${{ inputs.producer-attempt }}
+        HONUA_MANAGED_CONFIGURATION: ${{ inputs.configuration }}
+        HONUA_MANAGED_PROPERTIES: ${{ inputs.build-properties }}
+      with:
+        script: |
+          const {pathToFileURL} = await import('node:url');
+          const {execute} = await import(pathToFileURL(`${process.env.HONUA_MANAGED_ACTION_PATH}/client.mjs`).href);
+          const result = await execute({mode: process.env.HONUA_MANAGED_MODE,
+            projectsFile: process.env.HONUA_MANAGED_PROJECTS, enabled: process.env.HONUA_MANAGED_ENABLED,
+            producerAttempt: process.env.HONUA_MANAGED_ATTEMPT, configuration: process.env.HONUA_MANAGED_CONFIGURATION,
+            buildProperties: process.env.HONUA_MANAGED_PROPERTIES});
+          core.setOutput('restored-projects-file', result.restoredProjectsFile);
+          core.setOutput('receipt-file', result.receiptFile);
+          core.setOutput('producer-attempt', result.producerAttempt);
