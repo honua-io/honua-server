@@ -207,7 +207,19 @@ internal static class StartupConfigurationHelpers
     private static void ResolveEnvironmentSecretReference(ConfigurationManager configuration, string key)
     {
         var value = configuration[key];
-        var resolved = SecretReferenceResolver.ResolveEnvironmentReference(value, key);
+        string? resolved;
+        try
+        {
+            resolved = SecretReferenceResolver.ResolveEnvironmentReference(value, key);
+        }
+        catch (InvalidOperationException) when (string.Equals(key, OidcSigningKeyConfigurationKey, StringComparison.OrdinalIgnoreCase))
+        {
+            // Startup exceptions are logged. Keep the signing-key reference out of the
+            // diagnostic and its inner exceptions, as with AWS resolution failures.
+            throw new InvalidOperationException(
+                $"Failed to resolve the security setting '{key}' from the environment.");
+        }
+
         if (!string.Equals(value, resolved, StringComparison.Ordinal))
         {
             SetResolvedSecretValue(configuration, key, resolved);

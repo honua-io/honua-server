@@ -188,6 +188,47 @@ public sealed class BootstrapSecuritySecretResolutionTests
         }
     }
 
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData(" ", false)]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData(" ", true)]
+    [Trait("Tier", "Fast")]
+    public async Task ResolveEnvironmentSigningKey_RejectsMissingOrBlankValueWithoutReferenceDetails(
+        string? value, bool securityEntryPoint)
+    {
+        var variable = $"HONUA_TEST_PRIVATE_OIDC_KEY_{Guid.NewGuid():N}";
+        var reference = $"env:{variable}";
+        Environment.SetEnvironmentVariable(variable, value);
+        try
+        {
+            var configuration = BuildConfiguration(new Dictionary<string, string?> { [OidcSigningKey] = reference });
+
+            Func<Task> action = async () =>
+            {
+                if (securityEntryPoint)
+                {
+                    await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(configuration, isProduction: true);
+                }
+                else
+                {
+                    StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(configuration);
+                }
+            };
+
+            var failure = await action.Should().ThrowAsync<InvalidOperationException>();
+            failure.Which.ToString().Should().Contain(OidcSigningKey).And.NotContain(reference).And.NotContain(variable);
+            failure.Which.InnerException.Should().BeNull();
+            configuration[OidcSigningKey].Should().Be(reference);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, null);
+        }
+    }
+
     [UnitTest]
     public async Task ResolveSecuritySecretReferences_PreservesRefreshableAdminReferenceAndSnapshotsMasterKey()
     {
