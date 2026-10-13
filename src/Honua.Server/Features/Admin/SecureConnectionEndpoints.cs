@@ -180,7 +180,7 @@ internal static partial class SecureConnectionEndpoints
                         {
                             Name = request.Name,
                             Host = request.Host,
-                            Port = request.Port,
+                            Port = request.GetEffectivePort(),
                             Provider = request.Provider,
                             UsesSecretReference = draftUsesSecretReference,
                             Reason = hostDecision.Reason
@@ -222,14 +222,14 @@ internal static partial class SecureConnectionEndpoints
                 connectionString = driver is not null
                     ? driver.BuildConnectionString(new ConnectionTarget(
                         request.Host!,
-                        request.Port,
+                        request.GetEffectivePort(),
                         request.DatabaseName!,
                         request.Username!,
                         request.Password,
                         parsedSslMode))
                     : connectionStringBuilder.BuildConnectionString(
                         request.Host!,
-                        request.Port,
+                        request.GetEffectivePort(),
                         request.DatabaseName!,
                         request.Username!,
                         request.Password,
@@ -244,7 +244,7 @@ internal static partial class SecureConnectionEndpoints
                     Name = request.Name,
                     Provider = request.Provider,
                     Host = request.Host ?? DataConnection.SecretReferenceMetadataPlaceholder,
-                    Port = request.Port,
+                    Port = request.GetEffectivePort(),
                     SslRequired = request.SslRequired
                 }, connectionString, context.RequestAborted).ConfigureAwait(false);
             }
@@ -260,7 +260,7 @@ internal static partial class SecureConnectionEndpoints
                     {
                         Name = request.Name,
                         Host = request.Host,
-                        Port = request.Port,
+                        Port = request.GetEffectivePort(),
                         Provider = request.Provider,
                         UsesSecretReference = draftUsesSecretReference,
                         Reason = refusal
@@ -466,7 +466,7 @@ internal static partial class SecureConnectionEndpoints
                         {
                             Name = request.Name,
                             Host = request.Host,
-                            Port = request.Port,
+                            Port = request.GetEffectivePort(),
                             Provider = request.Provider,
                             UsesSecretReference = usesSecretReference,
                             Reason = hostDecision.Reason
@@ -491,7 +491,7 @@ internal static partial class SecureConnectionEndpoints
                 connection = DataConnection.CreateWithSecretReference(
                     request.Name,
                     string.IsNullOrWhiteSpace(request.Host) ? secretMetadataPlaceholder : request.Host,
-                    request.Port,
+                    request.GetEffectivePort(),
                     string.IsNullOrWhiteSpace(request.DatabaseName) ? secretMetadataPlaceholder : request.DatabaseName,
                     string.IsNullOrWhiteSpace(request.Username) ? secretMetadataPlaceholder : request.Username,
                     request.SecretReference,
@@ -517,14 +517,14 @@ internal static partial class SecureConnectionEndpoints
                 var connectionString = createDriver is not null
                     ? createDriver.BuildConnectionString(new ConnectionTarget(
                         request.Host!,
-                        request.Port,
+                        request.GetEffectivePort(),
                         request.DatabaseName!,
                         request.Username!,
                         request.Password,
                         parsedSslMode))
                     : connectionStringBuilder.BuildConnectionString(
                         request.Host!,
-                        request.Port,
+                        request.GetEffectivePort(),
                         request.DatabaseName!,
                         request.Username!,
                         request.Password,
@@ -536,7 +536,7 @@ internal static partial class SecureConnectionEndpoints
                 connection = DataConnection.CreateWithEncryptedCredentials(
                     request.Name,
                     request.Host!,
-                    request.Port,
+                    request.GetEffectivePort(),
                     request.DatabaseName!,
                     request.Username!,
                     encryptedData,

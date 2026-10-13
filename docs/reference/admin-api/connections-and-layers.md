@@ -26,6 +26,13 @@ All endpoints require admin authentication — see [Authentication](../../guides
 
 Validation rules: supply either `password` or `secretReference` (+ `secretType`), not both. `secretReference` must be a whole `provider:identifier` value permitted by the operator's `Security__RequestSecretReferences__*` allowlist ([References supplied in a request](../../guides/deploy/configuration.md#references-supplied-in-a-request)); placeholders and literal connection strings are rejected, and no reference is permitted while the allowlist is empty. `sslMode` accepts `Disable`, `Allow`, `Prefer`, `Require`, `VerifyCA`, `VerifyFull`; `sslMode=Disable` is rejected when `sslRequired=true`.
 
+For create and draft-test requests, an omitted or null `port` defaults to 5432
+with inline credentials. With a full `secretReference`, it leaves the port
+undeclared and uses the resolved connection string instead; stored metadata
+uses `0` for that undeclared port. An explicit port must be between 1 and 65535
+and must match the resolved secret. Explicit `0` is invalid in requests.
+Existing connections and explicitly supplied ports retain their behavior.
+
 When a PostgreSQL connection is used, its stored or secret-referenced connection string may carry only the endpoint and credential keywords (`Host`, `Port`, `Database`, `Username`, `Password`), `SSL Mode`, `SSL Negotiation`, `Channel Binding`, `Require Auth`, and connection, pool, keepalive, multi-host and session tuning keywords (for example `Timeout`, `Command Timeout`, `Maximum Pool Size`, `Keepalive`, `Target Session Attributes`, `Application Name`, `Search Path`). Any other keyword — including `Options`, `Passfile`, `Root Certificate`, `SSL Certificate`, `SSL Key` and `Trust Server Certificate=true` — makes the connection fail to resolve. `Trust Server Certificate=false` is accepted. To verify a server against a private CA, add the CA to the server host's trust store and use `SSL Mode=VerifyFull`. While a connection host policy (`Security__ConnectionAllowlist__*`) is enforced, every host the resolved string names must satisfy it.
 
 `Search Path` is restricted to literal schemas configured through
