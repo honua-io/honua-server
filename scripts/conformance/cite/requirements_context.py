@@ -25,6 +25,8 @@ def load_context(path, source_sha, producer_sha, image_digest, cut_at, surfaces,
             suite = cite['suite']
             surface = re.sub(r'[^a-z0-9]+', '-', suite.lower()).strip('-')
             if surface in surfaces:
+                if surface in expected:
+                    raise ValueError('source-owned CITE suite surface is duplicated')
                 expected[surface] = (capability['key'], suite)
     rows = value['requirements']
     if not isinstance(rows, list) or not rows:

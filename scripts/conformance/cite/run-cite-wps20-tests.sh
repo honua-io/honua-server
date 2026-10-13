@@ -202,7 +202,7 @@ set -e
 
 # Supplemental adapter evidence stays separate from all upstream ETS counts.
 set +e
-python3 scripts/conformance/cite/wps20_axis_probe.py \
+timeout 25s python3 scripts/conformance/cite/wps20_axis_probe.py \
     --base-url "$HONUA_BASE_URL" --output "$CITE_RESULTS_DIR"
 axis_exit_code=$?
 set -e

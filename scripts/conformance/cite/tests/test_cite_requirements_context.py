@@ -66,6 +66,20 @@ class ContextTests(unittest.TestCase):
             else: row['test_ids'] = ['invented']
             with self.subTest(mutation=mutation), self.assertRaises(ValueError): self.load(value)
 
+    def test_duplicate_local_suite_refuses_and_cite_roster_does_not_infer_status_filter(self):
+        value = valid_context()
+        matrix = json.loads((ROOT / 'docs/gis/data/capability-matrix.v1.json').read_text())
+        owner = next(cap for cap in matrix['capabilities'] if cap.get('cite'))
+        # The canonical generator emits every declared CITE suite, independently
+        # of the status filter used for SDK/harness assignments.
+        owner['status'] = 'preview'
+        with patch('requirements_context.Path.read_text', return_value=json.dumps(matrix)):
+            self.assertEqual(len(self.load(value)['requirements']), len(value['requirements']))
+        owner['cite'].append(copy.deepcopy(owner['cite'][0]))
+        with patch('requirements_context.Path.read_text', return_value=json.dumps(matrix)):
+            with self.assertRaisesRegex(ValueError, 'surface is duplicated'):
+                self.load(value)
+
     def test_environment_identity_requires_actual_workflow_ref(self):
         env = {'GITHUB_REPOSITORY': 'honua-io/honua-server', 'GITHUB_SHA': SHA,
                'GITHUB_REF': 'refs/tags/nightly-candidate/' + SHA,
