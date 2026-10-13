@@ -1,0 +1,385 @@
+{
+  "schema": "honua.architecture-source-moves/v1",
+  "originalAssembly": "Honua.Architecture.Tests",
+  "currentAssembly": "Honua.Architecture.SourceTests",
+  "files": [
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/GettingStartedArtifactPinTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/GettingStartedArtifactPinTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "GettingStartedArtifactPinTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/HandParsedConfigurationSectionTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/HandParsedConfigurationSectionTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "HandParsedConfigurationSectionTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/ErrorHandlingPolicyTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/ErrorHandlingPolicyTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "ErrorHandlingPolicyTests"
+      ],
+      "testAttributes": 4
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/StudioDraftMutationArchitectureTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/StudioDraftMutationArchitectureTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "StudioDraftMutationArchitectureTests"
+      ],
+      "testAttributes": 3
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/DocumentationMatrixDriftTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/DocumentationMatrixDriftTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "DocumentationMatrixDriftTests"
+      ],
+      "testAttributes": 4
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/AuditCoverageMatrixDriftTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/AuditCoverageMatrixDriftTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "AuditCoverageMatrixDriftTests"
+      ],
+      "testAttributes": 3
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/ConfigurationBindingShapeTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/ConfigurationBindingShapeTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "ConfigurationBindingShapeTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/MigrationScriptDbUpSafetyTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/MigrationScriptDbUpSafetyTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "MigrationScriptDbUpSafetyTests"
+      ],
+      "testAttributes": 3
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/CrossProtocolIsolationTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/CrossProtocolIsolationTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "CrossProtocolIsolationTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/LambdaAotDockerfileTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/LambdaAotDockerfileTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "LambdaAotDockerfileTests"
+      ],
+      "testAttributes": 3
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/SceneIsolationTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/SceneIsolationTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "SceneIsolationTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/ThrowingDefaultInterfaceMethodRatchetTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/ThrowingDefaultInterfaceMethodRatchetTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "ThrowingDefaultInterfaceMethodRatchetTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/CanonicalFixtureManifestTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/CanonicalFixtureManifestTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "CanonicalFixtureManifestTests"
+      ],
+      "testAttributes": 7
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/McpAuthenticationBoundaryGuardTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/McpAuthenticationBoundaryGuardTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "McpAuthenticationBoundaryGuardTests"
+      ],
+      "testAttributes": 5
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/FunctionsAotDockerfileTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/FunctionsAotDockerfileTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "FunctionsAotDockerfileTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/DockerfileWritableStorageDirectoryTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/DockerfileWritableStorageDirectoryTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "DockerfileWritableStorageDirectoryTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/HonuaAiIsolationTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/HonuaAiIsolationTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "HonuaAiIsolationTests"
+      ],
+      "testAttributes": 2
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/CloudDeploymentLambdaArchitectureTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/CloudDeploymentLambdaArchitectureTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "CloudDeploymentLambdaArchitectureTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/BasicArchitectureTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/BasicArchitectureTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "BasicArchitectureTests"
+      ],
+      "testAttributes": 2
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/EndpointAuthorizationGuardTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/EndpointAuthorizationGuardTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "EndpointAuthorizationGuardTests"
+      ],
+      "testAttributes": 3
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/ClientCertificationEvidenceCorrectnessTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/ClientCertificationEvidenceCorrectnessTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "ClientCertificationEvidenceCorrectnessTests"
+      ],
+      "testAttributes": 4
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/ModuleDependencyPolicyTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/ModuleDependencyPolicyTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "ModuleDependencyPolicyTests"
+      ],
+      "testAttributes": 2
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/InfrastructureProtocolBackEdgeRatchetTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/InfrastructureProtocolBackEdgeRatchetTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "InfrastructureProtocolBackEdgeRatchetTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/ODataComponentIsolationTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/ODataComponentIsolationTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "ODataComponentIsolationTests"
+      ],
+      "testAttributes": 3
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/OpsAutonomyProposalMigrationParityTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/OpsAutonomyProposalMigrationParityTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "OpsAutonomyProposalMigrationParityTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/RuntimeDdlGovernanceTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/RuntimeDdlGovernanceTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "RuntimeDdlGovernanceTests"
+      ],
+      "testAttributes": 2
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/AotNativeLibraryRuntimeTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/AotNativeLibraryRuntimeTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "AotNativeLibraryRuntimeTests"
+      ],
+      "testAttributes": 5
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/ReportingOfflineGuaranteeTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/ReportingOfflineGuaranteeTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "ReportingOfflineGuaranteeTests"
+      ],
+      "testAttributes": 2
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/PackageGovernanceTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/PackageGovernanceTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "PackageGovernanceTests"
+      ],
+      "testAttributes": 2
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/LambdaJitDockerfileTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/LambdaJitDockerfileTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "LambdaJitDockerfileTests"
+      ],
+      "testAttributes": 2
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/ClientCertificationRosterTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/ClientCertificationRosterTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "ClientCertificationRosterTests"
+      ],
+      "testAttributes": 9
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/ProtocolJobLifecycleIsolationTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/ProtocolJobLifecycleIsolationTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "ProtocolJobLifecycleIsolationTests"
+      ],
+      "testAttributes": 2
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/SeedRbacTableParityTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/SeedRbacTableParityTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "SeedRbacTableParityTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/ImportAuthorizationArchitectureTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/ImportAuthorizationArchitectureTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "ImportAuthorizationArchitectureTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/StudioMcpOwnershipAuthorizationGuardTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/StudioMcpOwnershipAuthorizationGuardTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "StudioMcpOwnershipAuthorizationGuardTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/CloudSdkIsolationTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/CloudSdkIsolationTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "CloudSdkIsolationTests"
+      ],
+      "testAttributes": 2
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/HonuaIoIsolationTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/HonuaIoIsolationTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "HonuaIoIsolationTests"
+      ],
+      "testAttributes": 2
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/HonuaImportIsolationTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/HonuaImportIsolationTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "HonuaImportIsolationTests"
+      ],
+      "testAttributes": 2
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/ReleaseTrainManifestTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/ReleaseTrainManifestTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "ReleaseTrainManifestTests"
+      ],
+      "testAttributes": 5
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/GeoprocessingIsolationTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/GeoprocessingIsolationTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "GeoprocessingIsolationTests"
+      ],
+      "testAttributes": 1
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/ServingImageBoundaryTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/ServingImageBoundaryTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "ServingImageBoundaryTests"
+      ],
+      "testAttributes": 11
+    },
+    {
+      "original": "tests/dotnet/Honua.Architecture.Tests/EndpointOutputCacheDecisionGuardTests.cs",
+      "current": "tests/dotnet/Honua.Architecture.SourceTests/EndpointOutputCacheDecisionGuardTests.cs",
+      "namespace": "Honua.Architecture.Tests",
+      "classes": [
+        "EndpointOutputCacheDecisionGuardTests"
+      ],
+      "testAttributes": 1
+    }
+  ]
+}

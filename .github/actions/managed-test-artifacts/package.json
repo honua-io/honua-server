@@ -1,0 +1,1 @@
+{"name":"honua-managed-test-artifacts","private":true,"type":"module","engines":{"node":">=24"},"dependencies":{"@actions/artifact":"6.3.1"},"scripts":{"test":"node --test client.test.mjs"}}

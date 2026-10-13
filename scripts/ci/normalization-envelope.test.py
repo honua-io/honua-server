@@ -182,6 +182,7 @@ class EnvelopeTests(unittest.TestCase):
     def test_generator_allowlist_is_exact(self) -> None:
         required_implementations = {
             "Directory.Build.targets",
+            "tests/dotnet/Honua.Architecture.SourceTests/ArchitectureTestHelpers.Source.cs",
             "scripts/generate-admin-operation-parity-exports.sh",
             "scripts/ci/verify-admin-operation-parity.py",
             "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogEmitter.cs",
@@ -247,6 +248,20 @@ class EnvelopeTests(unittest.TestCase):
             )
             validated = MODULE.validate_envelope(raw(built), **expected())
             self.assertEqual(len(MODULE.OUTPUT_LIMITS), len(validated["outputs"]))
+
+            source_helper = "tests/dotnet/Honua.Architecture.SourceTests/ArchitectureTestHelpers.Source.cs"
+            original_digest = next(entry["sha256"] for entry in built["generators"] if entry["path"] == source_helper)
+            (root / source_helper).write_text("changed executable helper\n", encoding="utf-8")
+            changed = MODULE.build_envelope(
+                root, root, REPOSITORY, PR, HEAD, TREE, BASE, RUN_ID, ATTEMPT
+            )
+            changed_digest = next(entry["sha256"] for entry in changed["generators"] if entry["path"] == source_helper)
+            self.assertNotEqual(original_digest, changed_digest)
+
+            omitted = envelope()
+            omitted["generators"] = [entry for entry in omitted["generators"] if entry["path"] != source_helper]
+            with self.assertRaisesRegex(MODULE.EnvelopeError, "generator evidence count"):
+                MODULE.validate_envelope(raw(omitted), **expected())
 
 
 if __name__ == "__main__":

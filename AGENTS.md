@@ -41,7 +41,10 @@ dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
 # Integration tests (Testcontainers + PostGIS; Docker required)
 dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter "Tier=Fast"
 
-# Architecture enforcement tests
+# Source/file architecture guards (no server/provider build closure)
+dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj
+
+# Complete architecture enforcement and reflection coverage (also required)
 dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj
 
 # Tier filters: Tier=Fast, Tier!=Slow, Category=Scale (scale stack required)
@@ -731,7 +734,8 @@ tests/dotnet/
 ├── Honua.Server.Tests/    # Integration tests
 ├── Honua.Db.DuckDB.Tests/ # DuckDB provider tests
 ├── Honua.Db.MySql.Tests/  # MySQL/MariaDB provider tests (Testcontainers gated)
-└── Honua.Architecture.Tests/  # Architecture enforcement
+├── Honua.Architecture.SourceTests/ # Source/file architecture guards
+└── Honua.Architecture.Tests/  # Complete architecture and reflection coverage
 ```
 
 ### Follow-ups

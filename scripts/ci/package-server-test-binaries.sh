@@ -15,6 +15,19 @@ MAX_UNPACKED_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_UNPACKED_BYTES:-805306368}"
 MAX_PACKAGE_MILLISECONDS="${HONUA_SERVER_TEST_ARTIFACT_MAX_PACKAGE_MILLISECONDS:-120000}"
 EVIDENCE_TTL_SECONDS="${HONUA_SERVER_TEST_ARTIFACT_TTL_SECONDS:-86400}"
 CONTRACT="honua.server-test-binaries.v1"
+# Explicit opt-in keeps rerun-cache v1 readable while build-once requires same-run proof.
+workflow_run_id="${HONUA_SERVER_TEST_ARTIFACT_WORKFLOW_RUN_ID:-}"
+build_properties="${HONUA_SERVER_TEST_ARTIFACT_BUILD_PROPERTIES:-}"
+if [[ -n "${workflow_run_id}" ]]; then
+  [[ "${workflow_run_id}" =~ ^[1-9][0-9]*$ && -n "${build_properties}" ]] || {
+    echo "::error::Strict artifacts require a positive workflow run id and explicit build properties." >&2; exit 2;
+  }
+  [[ "$(uname -s)/$(uname -m)" == Linux/x86_64 ]] || {
+    echo "::error::Artifact native payload supports Linux/x86_64 only." >&2; exit 2;
+  }
+  CONTRACT="honua.server-test-binaries.v2"
+fi
+
 
 project=""
 output_dir=""
@@ -108,7 +121,7 @@ while IFS= read -r -d '' swa_manifest; do
   }
   # Blank lines between manifests are skipped by the classification loop below.
   referenced_roots="$(printf '%s\n%s' "${referenced_roots}" "${roots}")"
-done < <(find "${bin_dir}" -type f -name '*.staticwebassets.runtime.json' -print0 | LC_ALL=C sort -z)
+done < <(find "${stage_root}" -type f -name '*.staticwebassets.runtime.json' -print0 | LC_ALL=C sort -z)
 
 payload_roots=()
 checkout_roots=()
@@ -226,6 +239,10 @@ if [[ -z "${dotnet_sdk}" ]]; then
   command -v dotnet >/dev/null || { echo "::error::Required command 'dotnet' is unavailable." >&2; exit 2; }
   dotnet_sdk="$(dotnet --version)"
 fi
+if [[ -n "${workflow_run_id}" && ! "${dotnet_sdk}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
+  echo "::error::Strict artifacts require a valid SDK version." >&2; exit 2
+fi
+
 created_at_epoch="${HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH:-$(date +%s)}"
 if [[ ! "${created_at_epoch}" =~ ^[0-9]+$ ]] || (( created_at_epoch < 1 )); then
   echo "::error::Evidence creation time must be a positive Unix epoch." >&2
@@ -235,7 +252,15 @@ expires_at_epoch="$(( created_at_epoch + EVIDENCE_TTL_SECONDS ))"
 json_array() {
   if (( $# == 0 )); then printf '[]'; else printf '%s\n' "$@" | jq -R . | jq -sc .; fi
 }
+registry_sha256=""
+if [[ -n "${workflow_run_id}" ]]; then
+  registry_sha256="$(sha256sum "${REGISTRY}" | cut -d' ' -f1)"
+fi
 jq -nS \
+  --arg registry_sha256 "${registry_sha256}" \
+  --arg workflow_run_id "${workflow_run_id}" \
+  --arg build_properties "${build_properties}" \
+  --arg configuration "${CONFIGURATION}" \
   --arg repo_root "${REPO_ROOT}" \
   --argjson payload_roots "$(json_array "${payload_roots[@]}")" \
   --argjson checkout_roots "$(json_array "${checkout_roots[@]}")" \
@@ -256,6 +281,8 @@ jq -nS \
   --argjson expires_at_epoch "${expires_at_epoch}" \
   '{
     contract: $contract,
+    build_identity: {workflow_run_id:$workflow_run_id,build_properties:$build_properties,
+      configuration:$configuration,os:"Linux",architecture:"x86_64",registry_sha256:$registry_sha256},
     source_sha: $source_sha,
     dotnet_sdk: $dotnet_sdk,
     project: $project,

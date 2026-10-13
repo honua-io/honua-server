@@ -88,6 +88,14 @@
       "isolated": true,
       "coverageRequired": true
     },
+    "tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj": {
+      "role": "architecture",
+      "shardRouted": false,
+      "runtimeOwners": [],
+      "resources": [],
+      "isolated": false,
+      "coverageRequired": false
+    },
     "tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj": {
       "role": "architecture",
       "runtimeOwners": [

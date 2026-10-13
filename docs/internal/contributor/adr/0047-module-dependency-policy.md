@@ -24,7 +24,7 @@ each individual carve. When the matrix here disagrees with one of those ADRs,
 this ADR wins — but the disagreement should be reconciled in the same PR.
 
 The ADR is enforced mechanically by
-`tests/dotnet/Honua.Architecture.Tests/ModuleDependencyPolicyTests.cs`. The
+`tests/dotnet/Honua.Architecture.SourceTests/ModuleDependencyPolicyTests.cs`. The
 matrix below and the test must be edited together.
 
 ## Decision
@@ -265,7 +265,7 @@ The policy does not change shape — only the granularity tightens.
 ### Enforcement
 
 The matrix is enforced by
-`tests/dotnet/Honua.Architecture.Tests/ModuleDependencyPolicyTests.cs`,
+`tests/dotnet/Honua.Architecture.SourceTests/ModuleDependencyPolicyTests.cs`,
 which:
 
 1. Enumerates every `.csproj` under `src/`, `tests/`, `samples/`, and

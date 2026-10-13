@@ -11,7 +11,7 @@ namespace Honua.Architecture.Tests;
 /// Marks a test as an architecture test (validates code structure and dependencies).
 /// Architecture tests enforce design rules and prevent regressions.
 /// </summary>
-[TraitDiscoverer("Honua.Architecture.Tests.ArchitectureTestDiscoverer", "Honua.Architecture.Tests")]
+[TraitDiscoverer("Honua.Architecture.Tests.ArchitectureTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class ArchitectureTestAttribute : FactAttribute, ITraitAttribute
 {
 }

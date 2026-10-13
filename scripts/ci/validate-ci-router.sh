@@ -113,6 +113,16 @@ scripts/ci/validate-server-test-shard-cache.sh
 scripts/ci/validate-server-test-reuse-benchmark.sh
 scripts/ci/validate-server-test-prebuild.sh
 
+echo "Validating managed build producer and consumer contracts..."
+if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-scoped-restore.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-test-build.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-artifact-install-cancellation.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-ci-workflow.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-managed-build.py
+fi
+node --test .github/actions/managed-test-artifacts/client.test.mjs
+
 # #3054: the OUTER GitHub job cap must clear the INNER dotnet-test cap by enough
 # room for the non-test part of the job (checkout, setup-dotnet, restore or
 # binary materialization, artifact uploads). If it does not, the runner cancels
@@ -1889,6 +1899,11 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyServiceTests" \
     "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
     "Ai Units" \
+  `# Edit-owner coverage belongs to the GeoServices assembly, not Server.Tests.` \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.EditOwnerSubjectTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "FeatureServer Endpoints Query Services and Replication" \
   `# Honua.Protocols.GeoServices.Tests assembly: two classes use the` \
   `# Honua.Protocols.GeoServices.Tests.Source.* namespace root instead of the` \
   `# Honua.Server.Tests.Features.Protocols.GeoServices.* root every filter used.` \
