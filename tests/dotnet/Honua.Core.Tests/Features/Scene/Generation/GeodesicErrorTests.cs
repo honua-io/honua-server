@@ -8,6 +8,7 @@ namespace Honua.Core.Tests.Features.Scene.Generation;
 
 public sealed class GeodesicErrorTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RootGeometricError_AntimeridianSpan_UsesTheShortArc()
     {
@@ -16,6 +17,7 @@ public sealed class GeodesicErrorTests
         error.Should().BeApproximately(2_226_389.816d, 1d);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RootGeometricError_EquatorLatitudeSpan_UsesMeridionalRadius()
     {

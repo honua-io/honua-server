@@ -10,6 +10,7 @@ namespace Honua.Core.Tests.Features.Geocoding.Providers;
 
 public sealed class NominatimGeocodeProviderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_AllowsStringEncodedCoordinates()
     {
@@ -40,6 +41,7 @@ public sealed class NominatimGeocodeProviderTests
         Assert.Equal("101", candidate.ProviderId);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReverseGeocodeAsync_ValidResponse_ReturnsMatch()
     {
@@ -70,6 +72,7 @@ public sealed class NominatimGeocodeProviderTests
         Assert.Equal("101", result.ProviderId);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_WithLoopbackHostname_ThrowsBeforeSending()
     {
@@ -98,6 +101,7 @@ public sealed class NominatimGeocodeProviderTests
         Assert.Equal(0, handler.SendCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_WithPrivateLiteralAddress_ThrowsBeforeSending()
     {
@@ -126,6 +130,7 @@ public sealed class NominatimGeocodeProviderTests
         Assert.Equal(0, handler.SendCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReverseGeocodeAsync_WithLoopbackHostname_ThrowsBeforeSending()
     {
@@ -154,6 +159,7 @@ public sealed class NominatimGeocodeProviderTests
         Assert.Equal(0, handler.SendCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Capabilities_DefaultConfiguration_AdvertisesSuggestAndBatch()
     {
@@ -175,6 +181,7 @@ public sealed class NominatimGeocodeProviderTests
         Assert.True(provider.Capabilities.MaxBatchSize > 0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SuggestAsync_DefaultConfiguration_ReturnsSuggestionsFromSearch()
     {
@@ -200,6 +207,7 @@ public sealed class NominatimGeocodeProviderTests
         Assert.False(string.IsNullOrWhiteSpace(suggestion.MagicKey));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task BatchGeocodeAsync_FansOutToForwardGeocode_ReturnsCandidatePerInput()
     {
@@ -226,6 +234,7 @@ public sealed class NominatimGeocodeProviderTests
         Assert.All(results, candidate => Assert.Equal("10 Downing St, London", candidate.Address));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Constructor_DoesNotMutateInjectedHttpClient_AllowsSharingAcrossProviders()
     {
@@ -254,6 +263,7 @@ public sealed class NominatimGeocodeProviderTests
         Assert.Equal("Existing/1.0", sharedClient.DefaultRequestHeaders.UserAgent.ToString());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_AppliesUserAgentAndContactHeaderPerRequest()
     {
@@ -283,6 +293,7 @@ public sealed class NominatimGeocodeProviderTests
     // #2148: a forward-geocode proximity bias (location, no SearchBounds) is expressed as an
     // UNbounded viewbox centred on the bias point — results inside are preferred but outside
     // results are still returned (no &bounded=1).
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ForwardGeocodeAsync_WithBiasLocation_EmitsUnboundedViewboxAroundBiasPoint()
     {

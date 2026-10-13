@@ -44,7 +44,7 @@
 # Usage:
 #   honua-server-targeted-tests.sh                    # auto-detect base ref
 #   honua-server-targeted-tests.sh --base origin/trunk
-#   git diff --name-only HEAD~1 HEAD | honua-server-targeted-tests.sh --stdin
+#   git diff --no-renames --name-only HEAD~1 HEAD | honua-server-targeted-tests.sh --stdin
 #
 # Exit codes:
 #   0  — JSON descriptor written to stdout.
@@ -134,7 +134,7 @@ else
     echo "base ref not found: ${BASE_REF}" >&2
     exit 2
   fi
-  CHANGED_FILES="$(git -C "${REPO_ROOT}" diff --name-only "${BASE_REF}"...HEAD || true)"
+  CHANGED_FILES="$(git -C "${REPO_ROOT}" diff --no-renames --name-only "${BASE_REF}"...HEAD || true)"
 fi
 
 # Strip blank lines and trim.
@@ -237,7 +237,10 @@ UNMAPPED_SOURCE_HIT="$(
         split("\n")
         | map(select(length > 0)) as $files
         | ($cfg[0].unmapped_source_run_all_prefixes // []) as $watched
-        | ($cfg[0].shards | map(.paths) | flatten) as $known_paths
+        # Modular forward-dependency paths add test coverage; they do not
+        # establish complete ownership of previously unmapped runtime areas.
+        | ($cfg[0].shards | map(. as $s | .paths[]
+            | select(($s.supplemental_source_paths != true) or (startswith("src/") | not)))) as $known_paths
         | ($cfg[0].targeted_override_prefixes // []) as $overrides
         | $files
         | any(

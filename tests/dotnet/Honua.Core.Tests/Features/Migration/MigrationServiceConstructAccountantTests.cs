@@ -24,6 +24,7 @@ public sealed class MigrationServiceConstructAccountantTests
     private const string Table = "resource:Inspections:table:1";
     private const string Renderer = "renderer:Inspections:layer:0";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Account_FullSelectionOfAutomatedConstructs_AccountsEveryConstructWithNoDifference()
     {
@@ -68,6 +69,7 @@ public sealed class MigrationServiceConstructAccountantTests
         report.Entries.Single(entry => entry.Construct == "service.type").Codes.Should().Equal("FeatureServer");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Account_DiscoveredTableLeftOutOfTheSelection_BlocksWithTheUnselectedTable()
     {
@@ -86,6 +88,7 @@ public sealed class MigrationServiceConstructAccountantTests
             .Should().OnlyContain(entry => entry.Disposition == MigrationConstructDispositions.Migrated);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Account_SelectedLayerWithUnsupportedGeometry_BlocksOnceWithTheSourceCode()
     {
@@ -125,6 +128,7 @@ public sealed class MigrationServiceConstructAccountantTests
             (MigrationFidelityDifferenceCodes.ServiceResourceUnselected, curves));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Account_LayerWithoutSpatialReference_ReviewsItsGeometry()
     {
@@ -148,6 +152,7 @@ public sealed class MigrationServiceConstructAccountantTests
         difference.Actual.Should().Be("manual-review (ARCGIS_MISSING_SPATIAL_REF)");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("ImageServer", "https://example.com/arcgis/rest/services/Elevation/ImageServer", "ImageServer")]
     [InlineData(null, "https://example.com/arcgis/rest/services/Locators/GeocodeServer", "GeocodeServer")]
@@ -170,6 +175,7 @@ public sealed class MigrationServiceConstructAccountantTests
             .Should().Be(MigrationConstructDispositions.Blocker);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Account_MapServerFromItsUrl_IsSupported()
     {
@@ -185,6 +191,7 @@ public sealed class MigrationServiceConstructAccountantTests
         MigrationServiceConstructAccountant.Account(manifest, FullSelection()).Differences.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Account_SelectionTheManifestNeverDiscovered_BlocksWithoutInventingConstructs()
     {
@@ -203,6 +210,7 @@ public sealed class MigrationServiceConstructAccountantTests
         report.SelectedResourceCount.Should().Be(3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Account_ReviewedConstructs_AreUnverifiedPerConstructAndFollowTheirOwningLayer()
     {
@@ -262,6 +270,7 @@ public sealed class MigrationServiceConstructAccountantTests
             .Should().Be(MigrationConstructDispositions.Unselected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Account_CategoryWithoutAMatrixRow_IsAccountedForReviewNotDropped()
     {
@@ -283,6 +292,7 @@ public sealed class MigrationServiceConstructAccountantTests
         report.Differences.Should().ContainSingle().Which.Code.Should().Be(MigrationFidelityDifferenceCodes.ConstructReviewRequired);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Account_EditableSourceLayer_ReviewsItsPublishedEditBehavior()
     {
@@ -306,6 +316,7 @@ public sealed class MigrationServiceConstructAccountantTests
         difference.Actual.Should().Be("manual-review (Create, Update)");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Account_UnsupportedLabelClass_BlocksWithTheLabelClass()
     {
@@ -341,6 +352,7 @@ public sealed class MigrationServiceConstructAccountantTests
         difference.Actual.Should().Be("unsupported (expression-engine:VBScript)");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("arcgis-geoservices-rest", null, "no source manifest was supplied")]
     [InlineData("arcgis-geoservices-rest", "{ not json", "the source manifest could not be parsed")]
@@ -365,6 +377,7 @@ public sealed class MigrationServiceConstructAccountantTests
         difference.Summary.Should().Contain(expectedReason);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Account_PersistedManifestBody_ReplaysTheSameAccounting()
     {
@@ -377,6 +390,7 @@ public sealed class MigrationServiceConstructAccountantTests
         fromBody.Differences.Should().ContainSingle().Which.Subject.Should().Be(Table);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Matrix_MapsEveryClassifierCategoryOntoARowWithAKnownVerification()
     {
@@ -410,6 +424,7 @@ public sealed class MigrationServiceConstructAccountantTests
         rows.Keys.Should().Contain(["service.type", "service.resource", "resource.geometry", "resource.edit-behavior"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BatchEvaluator_WithoutConstructAccounting_CannotReportFullFidelity()
     {

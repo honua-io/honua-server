@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Preserve the analyzer baseline of the source Server.Tests project. -->
+    <NoWarn>$(NoWarn);CS1591;CA1861;CA1001</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+    <!-- Rendering tests previously received these runtime assets through Honua.Server.
+         Preserve the host's JIT/AOT asset selection for actual in-process rendering. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux"
+                      Condition="'$(HonuaUseSkiaNoDependencies)' != 'true'" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies"
+                      Condition="'$(HonuaUseSkiaNoDependencies)' == 'true'" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs" Link="Shared/TestMetadataV2GraphProvider.cs" />
+  </ItemGroup>
+</Project>

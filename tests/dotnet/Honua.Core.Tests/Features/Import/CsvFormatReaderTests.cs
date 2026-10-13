@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class CsvFormatReaderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_PostgisEwktExport_ImportsWithGeometry()
     {
@@ -34,6 +35,7 @@ public sealed class CsvFormatReaderTests
         features[0].Attributes.Exists("geom").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_PostgisEwkbHexExport_ImportsWithGeometry()
     {
@@ -52,6 +54,7 @@ public sealed class CsvFormatReaderTests
         point.X.Should().BeApproximately(-122.4194, 1e-6);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_UnparseableGeometry_WarnsAndPreservesRawValueInsteadOfSilentNull()
     {
@@ -72,6 +75,7 @@ public sealed class CsvFormatReaderTests
         features[0].Attributes["name"].Should().Be("Broken");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_ValidWkt_DoesNotReportUnparseableGeometry()
     {
@@ -92,6 +96,7 @@ public sealed class CsvFormatReaderTests
     // honua_ingest_dataset options ride through these on the shared pipeline.
     // -------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_ExplicitCoordinateColumns_OverrideHeuristics()
     {
@@ -118,6 +123,7 @@ public sealed class CsvFormatReaderTests
         features[0].Attributes.Exists("northing").Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_ExplicitCoordinateColumns_UnparseableValues_AreRecorded()
     {
@@ -137,6 +143,7 @@ public sealed class CsvFormatReaderTests
         diagnostics.UnparseableGeometryRows.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_ExplicitCoordinateColumn_Missing_ThrowsCsvImportOptionsException()
     {
@@ -155,6 +162,7 @@ public sealed class CsvFormatReaderTests
             .Which.Message.Should().Contain("no_such_column").And.Contain("Available columns");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_AddressColumn_GeocodesRowsAndKeepsAddressAttribute()
     {
@@ -190,6 +198,7 @@ public sealed class CsvFormatReaderTests
         geocoded.Should().Equal("1100 Congress Ave, Austin, TX", "nowhere at all");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_AddressColumn_RowCapExceeded_ThrowsCsvImportOptionsException()
     {
@@ -210,6 +219,7 @@ public sealed class CsvFormatReaderTests
             .Which.Message.Should().Contain("capped at 2");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_AddressAndCoordinateColumns_ThrowsCsvImportOptionsException()
     {

@@ -148,7 +148,7 @@ internal sealed record CommunitySelfResponse
 
     /// <summary>Groups visible through this minimal portal facade.</summary>
     [JsonPropertyName("groups")]
-    public IReadOnlyList<object> Groups { get; init; } = Array.Empty<object>();
+    public IReadOnlyList<GroupResponse> Groups { get; init; } = Array.Empty<GroupResponse>();
 }
 
 /// <summary>Content collection for an authenticated portal user.</summary>

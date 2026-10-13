@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class MigrationFidelityMatrixBuilderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WithClassifications_GroupsCellsAndEnrichesTargetIds()
     {

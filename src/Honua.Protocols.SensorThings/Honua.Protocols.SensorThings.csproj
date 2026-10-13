@@ -27,8 +27,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server" />
+    <InternalsVisibleTo Include="Honua.Protocols.SensorThings.ComponentTests" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.SensorThings.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.SensorThings.UnitTests" />
     <InternalsVisibleTo Include="Honua.TestKit" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>

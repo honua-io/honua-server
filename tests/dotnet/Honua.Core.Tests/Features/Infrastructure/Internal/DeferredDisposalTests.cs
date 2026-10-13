@@ -9,6 +9,7 @@ namespace Honua.Core.Tests.Features.Infrastructure.Internal;
 
 public sealed class DeferredDisposalTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Dispose_NullResource_DoesNotThrow()
     {
@@ -17,6 +18,7 @@ public sealed class DeferredDisposalTests
         act.Should().NotThrow();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Dispose_Resource_DisposesOnce()
     {
@@ -28,6 +30,7 @@ public sealed class DeferredDisposalTests
         disposalCount.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Dispose_ResourceThrows_PropagatesSameException()
     {
@@ -39,6 +42,7 @@ public sealed class DeferredDisposalTests
         act.Should().Throw<InvalidOperationException>().Which.Should().BeSameAs(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DisposeAll_Resources_DisposesInEnumerationOrder()
     {
@@ -55,6 +59,7 @@ public sealed class DeferredDisposalTests
         disposalOrder.Should().Equal(1, 2, 3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DisposeAll_NullResources_ThrowsArgumentNullException()
     {
@@ -64,6 +69,7 @@ public sealed class DeferredDisposalTests
             .Which.ParamName.Should().Be("resources");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DisposeAll_ResourceThrows_StopsAndPropagatesSameException()
     {
@@ -86,6 +92,7 @@ public sealed class DeferredDisposalTests
         disposalOrder.Should().Equal(1, 2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DisposeAsync_NullResource_Completes()
     {
@@ -94,6 +101,7 @@ public sealed class DeferredDisposalTests
         await act.Should().NotThrowAsync();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DisposeAsync_Resource_AwaitsDisposal()
     {
@@ -109,6 +117,7 @@ public sealed class DeferredDisposalTests
         disposed.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DisposeAsync_ResourceThrows_PropagatesSameException()
     {

@@ -21,6 +21,7 @@ public sealed class EsriSubtypeFidelityClassifierTests
         new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors)
             .ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceSubtypes);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Classify_MultipleEditingTemplates_NamesTheConstructAndTheType()
     {
@@ -42,6 +43,7 @@ public sealed class EsriSubtypeFidelityClassifierTests
             .Should().Contain("Flooding");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Classify_ExplicitDomainClearing_NamesTheConstructAndTheField()
     {
@@ -59,6 +61,7 @@ public sealed class EsriSubtypeFidelityClassifierTests
             .Should().Contain("priority");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Classify_UnusableTypeIdentity_NamesTheConstruct()
     {
@@ -72,6 +75,7 @@ public sealed class EsriSubtypeFidelityClassifierTests
         finding.AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.Unsupported);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Classify_CapturedFeatureTypes_KeepsTheRegistryTier()
     {
@@ -88,6 +92,7 @@ public sealed class EsriSubtypeFidelityClassifierTests
         finding.Metadata.Should().BeEmpty("a captured construct carries no unsupported-construct metadata");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Classify_CapturedSubtypeEncoding_KeepsTheRegistryTier()
     {

@@ -17,6 +17,7 @@ public sealed class GmlFormatDetectionTests
     // Extension-based detection
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("rivers.gml")]
     [InlineData("RIVERS.GML")]
@@ -26,6 +27,7 @@ public sealed class GmlFormatDetectionTests
         _service.DetectFormat(fileName).Should().Be(SupportedFileFormat.Gml);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetSupportedExtensions_IncludesGml()
     {
@@ -36,6 +38,7 @@ public sealed class GmlFormatDetectionTests
     // Content-based detection
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DetectFormatFromContent_GmlFeatureCollection_ReturnsGml()
     {
@@ -50,6 +53,7 @@ public sealed class GmlFormatDetectionTests
         _service.DetectFormatFromContent(content, "unknown.xml").Should().Be(SupportedFileFormat.Gml);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DetectFormatFromContent_Gml32Namespace_ReturnsGml()
     {

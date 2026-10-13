@@ -27,7 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${REPO_ROOT}"
 
-FIXTURE="tests/dotnet/Honua.TestKit/PostgresFixture.cs"
+FIXTURE="tests/dotnet/Honua.TestKit.Postgres/PostgresFixture.cs"
 STATE_DIR="${RUNNER_TEMP:-/tmp}"
 PID_FILE="${STATE_DIR}/prepull-postgis.pid"
 LOG_FILE="${STATE_DIR}/prepull-postgis.log"

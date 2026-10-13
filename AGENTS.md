@@ -49,6 +49,34 @@ dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.cspro
 
 Test projects live under `tests/dotnet/` (`Honua.Core.Tests`, `Honua.Server.Tests`, `Honua.Architecture.Tests`, provider `*.Tests`, `Honua.LoadTests`, `Honua.TestKit`). Do NOT run `dotnet build`/test as part of documentation tasks unless asked.
 
+### Efficient local iteration
+
+Use the admitted PATH tools and inspect the selection before starting a build:
+
+```bash
+# Pure unit feedback; no Docker or full architecture collector
+scripts/ci/pre-pr-check.sh --unit-only --dry-run
+scripts/ci/pre-pr-check.sh --unit-only
+
+# Affected units plus component/integration shards from the shared CI router
+scripts/ci/pre-pr-check.sh --affected-tests --dry-run
+scripts/ci/pre-pr-check.sh --affected-tests
+```
+
+Choose unit feedback for an in-process change and affected-test feedback when
+provider or HTTP behavior needs testing. Both modes build their selected project
+union once and reuse outputs for tests. Do not manually rebuild the solution or
+launch parallel test processes alongside them. Keep source files and HEAD fixed
+until the command exits; coordinate worker edits and commits between runs.
+Shared or unaccounted inputs can
+broaden selection; inspect the dry run rather than removing safety fallbacks.
+These are iteration tools, **not PR validation receipts**: run the normal
+pre-PR gate before publication and retain full architecture, native and hosted
+gates. Affected-test logs, TRX and selection details are retained in unique
+directories under `tests/TestResults/local-feedback/`. See
+[`docs/internal/ci/modular-test-feedback.md`](docs/internal/ci/modular-test-feedback.md)
+for resource ownership and cleanup.
+
 ## OGC CITE Compliance
 
 **Latest recorded trunk evidence: 1138/1138 (100%) across 14 OGC CITE conformance suites.**

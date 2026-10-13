@@ -71,7 +71,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Redis/Honua.TestKit.Redis.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Postgres/Honua.TestKit.Postgres.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Db\Postgres\Honua.Postgres.csproj" />
   </ItemGroup>

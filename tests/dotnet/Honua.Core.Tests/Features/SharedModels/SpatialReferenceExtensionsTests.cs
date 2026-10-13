@@ -14,6 +14,7 @@ namespace Honua.Core.Tests.Features.SharedModels;
 /// </summary>
 public sealed class SpatialReferenceExtensionsTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(102100)]
     [InlineData(102113)]
@@ -25,6 +26,7 @@ public sealed class SpatialReferenceExtensionsTests
         SpatialReferenceExtensions.NormalizeWebMercatorSrid(srid).Should().Be(3857);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(4326)]
     [InlineData(4269)]
@@ -35,6 +37,7 @@ public sealed class SpatialReferenceExtensionsTests
         SpatialReferenceExtensions.NormalizeWebMercatorSrid(srid).Should().Be(srid);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(3857)]
     [InlineData(102100)]
@@ -46,6 +49,7 @@ public sealed class SpatialReferenceExtensionsTests
         SpatialReferenceExtensions.IsWebMercatorSrid(srid).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(4326)]
     [InlineData(4269)]
@@ -60,6 +64,7 @@ public sealed class SpatialReferenceExtensionsTests
     // PA-024: GetAuthorityName and GetAuthorityCode must return the OGC-defined values for WKID 4326
     // (CRS84) so that WFS 2.0 / OGC API conformance URNs are formed correctly.
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetAuthorityName_Wkid4326_ReturnsOgc()
     {
@@ -67,6 +72,7 @@ public sealed class SpatialReferenceExtensionsTests
         sr.GetAuthorityName().Should().Be("OGC");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(3857)]
     [InlineData(4269)]
@@ -77,6 +83,7 @@ public sealed class SpatialReferenceExtensionsTests
         sr.GetAuthorityName().Should().Be("EPSG");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetAuthorityCode_Wkid4326_ReturnsCrs84Fragment()
     {
@@ -84,6 +91,7 @@ public sealed class SpatialReferenceExtensionsTests
         sr.GetAuthorityCode().Should().Be("1.3:CRS84");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(3857, "3857")]
     [InlineData(4269, "4269")]
@@ -94,6 +102,7 @@ public sealed class SpatialReferenceExtensionsTests
     }
 
     // PA-022: WGS84 layers must advertise both CRS84 (EastNorth) and EPSG:4326 (NorthEast).
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetSupportedCrsUris_Wgs84Layer_IncludesBothCrs84AndEpsg4326()
     {
@@ -105,6 +114,7 @@ public sealed class SpatialReferenceExtensionsTests
     }
 
     // PA-023: Non-WGS84, non-WebMercator layers must NOT advertise EPSG:3857.
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetSupportedCrsUris_NonWgs84NonWebMercator_DoesNotInclude3857()
     {
@@ -115,6 +125,7 @@ public sealed class SpatialReferenceExtensionsTests
     }
 
     // PA-028: https:// CRS84 URI must be normalised to the canonical http:// form.
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FromOgcCrsUri_HttpsCrs84Uri_ReturnsWgs84()
     {
@@ -125,6 +136,7 @@ public sealed class SpatialReferenceExtensionsTests
     }
 
     // PA-028: https:// EPSG URI must resolve to the correct SRID.
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FromOgcCrsUri_HttpsEpsgUri_ReturnsCorrectSrid()
     {

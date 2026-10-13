@@ -10,6 +10,7 @@ namespace Honua.Core.Tests.Features.Geocoding;
 /// </summary>
 public sealed class GeocoderReferenceCsvTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadRecordsAsync_PlainRecords_ParsesFieldsAndSkipsBlankLines()
     {
@@ -21,6 +22,7 @@ public sealed class GeocoderReferenceCsvTests
         Assert.Equal(["4", "5", "6"], records[2]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadRecordsAsync_QuotedFields_HandlesCommasNewlinesAndEscapedQuotes()
     {
@@ -31,6 +33,7 @@ public sealed class GeocoderReferenceCsvTests
         Assert.Equal(["say \"hi\"", "x"], records[2]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadRecordsAsync_NoTrailingNewline_ReturnsFinalRecord()
     {
@@ -40,6 +43,7 @@ public sealed class GeocoderReferenceCsvTests
         Assert.Equal(["1", "2"], records[1]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadRecordsAsync_EmptyTrailingField_Preserved()
     {
@@ -48,6 +52,7 @@ public sealed class GeocoderReferenceCsvTests
         Assert.Equal(["1", ""], records[1]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadRecordsAsync_TextAfterClosingQuote_Throws()
     {
@@ -55,6 +60,7 @@ public sealed class GeocoderReferenceCsvTests
             () => ReadAllAsync("a,b\n\"380 Main\"oops,-117\n"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadRecordsAsync_UnterminatedQuote_Throws()
     {

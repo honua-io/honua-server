@@ -31,6 +31,7 @@ public class ExecutionQualificationBarrierTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WaitAsync_Released_WritesReadyAndReleasedReceiptsWithStableFields()
     {
@@ -75,6 +76,7 @@ public class ExecutionQualificationBarrierTests : IDisposable
         Assert.True(released.RootElement.GetProperty("releasedAt").TryGetDateTimeOffset(out _));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WaitAsync_Cancelled_WritesSignalObservedReceiptWithNullChildProcessId()
     {

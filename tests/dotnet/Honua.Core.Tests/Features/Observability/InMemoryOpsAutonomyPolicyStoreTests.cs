@@ -12,6 +12,7 @@ public sealed class InMemoryOpsAutonomyPolicyStoreTests
 {
     private const string Rule = "alert-dispatch-backlog";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RecordAutoActionOutcome_IndeterminateAndCanceled_CountAsFailedNotAutoApplied()
     {

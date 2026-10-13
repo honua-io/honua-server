@@ -20,6 +20,7 @@ namespace Honua.Core.Tests.Features.Compliance;
 /// </summary>
 public sealed class ComplianceDependencyGateTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sso_DefaultsToNotSatisfied_WhenOidcConfigAbsent()
     {
@@ -29,6 +30,7 @@ public sealed class ComplianceDependencyGateTests
         gate.DescribeStatus(ComplianceDependency.Sso).Should().Contain("OIDC is not enabled");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sso_NotSatisfied_WhenOidcEnabledButNoProviderHasClientId()
     {
@@ -44,6 +46,7 @@ public sealed class ComplianceDependencyGateTests
         gate.IsSatisfied(ComplianceDependency.Sso).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sso_Satisfied_WhenOidcEnabledAndProviderHasClientId()
     {
@@ -60,6 +63,7 @@ public sealed class ComplianceDependencyGateTests
         gate.DescribeStatus(ComplianceDependency.Sso).Should().Contain("OIDC enabled");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sso_OverrideForcesNotSatisfied_EvenWhenOidcLooksEnabled()
     {
@@ -80,6 +84,7 @@ public sealed class ComplianceDependencyGateTests
         gate.IsSatisfied(ComplianceDependency.Sso).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Rbac_DefaultsToNotSatisfied_NoAutoDetectFromInMemoryStore()
     {
@@ -89,6 +94,7 @@ public sealed class ComplianceDependencyGateTests
         gate.DescribeStatus(ComplianceDependency.Rbac).Should().Contain("RbacConfigured");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Rbac_OverrideTrue_ReportsSatisfied()
     {
@@ -102,6 +108,7 @@ public sealed class ComplianceDependencyGateTests
         gate.IsSatisfied(ComplianceDependency.Rbac).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DataResidency_NotSatisfied_WhenOnlyEnforcedFlagIsSet()
     {
@@ -118,6 +125,7 @@ public sealed class ComplianceDependencyGateTests
         gate.DescribeStatus(ComplianceDependency.DataResidency).Should().Contain("DataResidencyAttested");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void DataResidency_Satisfied_WhenAttested()
     {
@@ -132,6 +140,7 @@ public sealed class ComplianceDependencyGateTests
         gate.IsSatisfied(ComplianceDependency.DataResidency).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EncryptionAtRest_ProbeThrows_ReportsUnsatisfiedInsteadOfPropagating()
     {
@@ -153,6 +162,7 @@ public sealed class ComplianceDependencyGateTests
         description.Should().NotContain("Master key not configured", "raw exception messages must not leak");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AuditLog_ProbeThrows_ReportsUnsatisfiedInsteadOfPropagating()
     {
@@ -171,6 +181,7 @@ public sealed class ComplianceDependencyGateTests
         description.Should().NotContain("misconfigured", "raw exception messages must not leak");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AuditLog_OverrideTrue_DescribesAttestationEvenWhenProbeSaysNullSink()
     {
@@ -192,6 +203,7 @@ public sealed class ComplianceDependencyGateTests
         description.Should().NotContain("NullAuditLog", "the override source must be the authoritative description");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void AuditLog_OverrideFalse_DescribesOperatorForcedUnsatisfied()
     {
@@ -208,6 +220,7 @@ public sealed class ComplianceDependencyGateTests
         description.Should().Contain("AuditLogConfigured=false");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sso_OverrideTrue_DescribesAttestationEvenWhenOidcDisabled()
     {
@@ -229,6 +242,7 @@ public sealed class ComplianceDependencyGateTests
             "override-attested SSO must not claim live OIDC config");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sso_OverrideFalse_DescribesOperatorForcedUnsatisfied()
     {

@@ -31,6 +31,7 @@ public sealed class SpecCanonicalizerTests
         return JsonDocument.Parse(json);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Canonicalize_EmitsSchemaAndCapabilitiesAtTop()
     {
@@ -48,6 +49,7 @@ public sealed class SpecCanonicalizerTests
         doc.RootElement.GetProperty("grammar").GetString().Should().Be("v1.0");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Canonicalize_RootKeysAreAlphabeticallySorted()
     {
@@ -65,6 +67,7 @@ public sealed class SpecCanonicalizerTests
         keys.Should().StartWith("$schema");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Canonicalize_ObjectFieldsAreAlphabeticallySortedWithinObjects()
     {
@@ -83,6 +86,7 @@ public sealed class SpecCanonicalizerTests
             .Should().ContainInConsecutiveOrder("id", "ref", "type");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Canonicalize_ComputeEmittedAsArrayPreservingDeclarationOrder()
     {
@@ -99,6 +103,7 @@ public sealed class SpecCanonicalizerTests
         compute[1].GetProperty("id").GetString().Should().Be("a1");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Canonicalize_SourcesPreserveDeclarationOrder()
     {
@@ -113,6 +118,7 @@ public sealed class SpecCanonicalizerTests
         sources[1].GetProperty("id").GetString().Should().Be("alpha");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Canonicalize_ArrayLiteralPreservesOrder()
     {
@@ -127,6 +133,7 @@ public sealed class SpecCanonicalizerTests
             .Should().ContainInConsecutiveOrder("c", "a", "b");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Canonicalize_CommentsAreStrippedFromBodyButPreservedInMeta()
     {
@@ -154,6 +161,7 @@ public sealed class SpecCanonicalizerTests
             .Should().Contain(v => v!.Contains("describes hospitals", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Canonicalize_UnitLiteralEncodedAsStructuredObject()
     {
@@ -175,6 +183,7 @@ public sealed class SpecCanonicalizerTests
         distance.GetProperty("value").GetDouble().Should().Be(500);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Canonicalize_ReferenceEmittedAsString()
     {
@@ -188,6 +197,7 @@ public sealed class SpecCanonicalizerTests
             .GetProperty("expr").GetString().Should().Be("@a");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Canonicalize_Cql2EmittedAsFilterExpressionObject()
     {
@@ -205,6 +215,7 @@ public sealed class SpecCanonicalizerTests
         where.GetProperty("cql2").GetString().Should().Be("state = 'CA'");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Canonicalize_IsDeterministic_SameDocumentProducesIdenticalBytes()
     {
@@ -226,6 +237,7 @@ public sealed class SpecCanonicalizerTests
         first.Should().BeEquivalentTo(second);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Canonicalize_ToUtf8MatchesToJsonEncoding()
     {

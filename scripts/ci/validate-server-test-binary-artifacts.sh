@@ -14,7 +14,7 @@ SHARDS="${REPO_ROOT}/.github/ci-shards.json"
 echo "Validating server-test artifact project registry..."
 jq -e '
   .contract_version == 1 and
-  (.projects | length == 10) and
+  (.projects | type == "array" and length > 0) and
   (all(.projects[];
     (.artifact_suffix | type == "string" and test("^[a-z0-9-]+$")) and
     (.csproj | type == "string" and endswith(".csproj")) and
@@ -253,4 +253,5 @@ if swa_package >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Server-test binary artifact contract validation passed (10 projects + fixture integrity + static web asset content roots)."
+project_count="$(jq ' .projects | length ' "${REGISTRY}")"
+echo "Server-test binary artifact contract validation passed (${project_count} projects + fixture integrity + static web asset content roots)."

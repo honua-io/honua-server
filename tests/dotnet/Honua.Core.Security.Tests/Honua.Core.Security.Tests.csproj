@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../../src/Honua.Core/Honua.Core.csproj" />
-    <ProjectReference Include="../Honua.TestKit/Honua.TestKit.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

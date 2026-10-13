@@ -15,6 +15,7 @@ public sealed class ImportTargetSchemaPolicyTests
 {
     private static readonly string[] OperationalSchemas = ["honua_data", "public", "ops"];
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("honua")]
     [InlineData("HONUA")]
@@ -28,6 +29,7 @@ public sealed class ImportTargetSchemaPolicyTests
         ImportTargetSchemaPolicy.IsReserved(schema, metadataSchemas: null).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("honua_data")]
     [InlineData("public")]
@@ -37,6 +39,7 @@ public sealed class ImportTargetSchemaPolicyTests
         ImportTargetSchemaPolicy.IsReserved(schema, metadataSchemas: null).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("honua_data")]
     [InlineData("public")]
@@ -47,6 +50,7 @@ public sealed class ImportTargetSchemaPolicyTests
         ImportTargetSchemaPolicy.IsAllowed(schema, OperationalSchemas, metadataSchemas: null).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("staging")]
     [InlineData("_scratch")]
@@ -58,6 +62,7 @@ public sealed class ImportTargetSchemaPolicyTests
         ImportTargetSchemaPolicy.IsAllowed(schema, OperationalSchemas, metadataSchemas: null).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -68,6 +73,7 @@ public sealed class ImportTargetSchemaPolicyTests
         ImportTargetSchemaPolicy.IsAllowed(schema, OperationalSchemas, metadataSchemas: null).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsAllowed_ReservedSchemaListedAsOperational_ReturnsFalse()
     {
@@ -75,6 +81,7 @@ public sealed class ImportTargetSchemaPolicyTests
         ImportTargetSchemaPolicy.IsAllowed("catalog_meta", ["honua_data", "catalog_meta"], ["catalog_meta"]).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsAllowed_ReadsSchemasFromConfiguration()
     {
@@ -95,6 +102,7 @@ public sealed class ImportTargetSchemaPolicyTests
         ImportTargetSchemaPolicy.IsAllowed("catalog_meta", configuration).Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void IsAllowed_WithoutConfiguration_UsesProviderDefaults()
     {

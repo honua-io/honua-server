@@ -49,6 +49,7 @@ public class ZarrTileRendererTests
     /// the slice's finite range, so every pixel's grey level is computable from the fixture:
     /// <c>round(Sample(r, c) / 77 * 255)</c>.
     /// </remarks>
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Render_GeoreferencedSlice_ProducesGrayscalePixelsMatchingTheCellValues()
     {
@@ -83,6 +84,7 @@ public class ZarrTileRendererTests
         image.Pixel(GridSize - 1, GridSize - 1).Should().Be(((byte)255, (byte)255, (byte)255, (byte)255));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Render_WithColormap_MapsValuesToColours()
     {

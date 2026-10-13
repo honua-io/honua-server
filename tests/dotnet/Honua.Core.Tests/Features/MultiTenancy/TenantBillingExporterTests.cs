@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Features.MultiTenancy;
 /// </summary>
 public sealed class TenantBillingExporterTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_AttributesUsageToTheCorrectTenant()
     {
@@ -32,6 +33,7 @@ public sealed class TenantBillingExporterTests
         sink.Published[0].Should().BeEquivalentTo(records);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ExportAsync_NoUsage_PublishesEmptyBatch()
     {

@@ -15,6 +15,7 @@ public sealed class MigrationReconciliationScorecardBuilderTests
 {
     private static readonly DateTimeOffset GeneratedAt = new(2026, 6, 4, 12, 0, 0, TimeSpan.Zero);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_AggregatesPerLayerOutcomes_AndDerivesVerdictFromDataReconciliation()
     {
@@ -46,6 +47,7 @@ public sealed class MigrationReconciliationScorecardBuilderTests
         scorecard.DataReconciliation.Reasons.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_KeepsCapabilityParityDistinctFromDataReconciliation()
     {
@@ -73,6 +75,7 @@ public sealed class MigrationReconciliationScorecardBuilderTests
         scorecard.CapabilityParity.ParityRatio.Should().Be(0.5);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WhenCatalogReportHasFailFinding_EscalatesDataClassificationToFail()
     {
@@ -121,6 +124,7 @@ public sealed class MigrationReconciliationScorecardBuilderTests
         scorecard.DataReconciliation.Reasons.Should().Contain("Published subtype set is missing.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_SetsDeterministicFingerprint_ThatRecomputesOverUnsignedBody()
     {
@@ -143,6 +147,7 @@ public sealed class MigrationReconciliationScorecardBuilderTests
         MigrationReconciliationScorecardBuilder.ComputeFingerprint(first).Should().Be(first.Fingerprint);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_WhenNoConstructsAssessed_ReportsFullCapabilityParity()
     {

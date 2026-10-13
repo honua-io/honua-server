@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class ImportRequestTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_WhenCloudFileIdIsWhitespaceAndNoFileStream_Throws()
     {
@@ -29,6 +30,7 @@ public sealed class ImportRequestTests
             .WithMessage("*Either FileStream, CloudFileId, or LocalFilePath must be provided*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_WhenFileStreamProvidedAndCloudFileIdWhitespace_DoesNotThrow()
     {
@@ -46,6 +48,7 @@ public sealed class ImportRequestTests
         act.Should().NotThrow();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_WhenFileStreamAndCloudFileIdProvided_Throws()
     {
@@ -64,6 +67,7 @@ public sealed class ImportRequestTests
             .WithMessage("*Only one of FileStream, CloudFileId, or LocalFilePath should be provided*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void UsesCloudStorage_WhenCloudFileIdWhitespace_ReturnsFalse()
     {
@@ -77,6 +81,7 @@ public sealed class ImportRequestTests
         request.UsesCloudStorage.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_WhenLocalFilePathProvided_DoesNotThrow()
     {
@@ -92,6 +97,7 @@ public sealed class ImportRequestTests
         act.Should().NotThrow();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void UsesLocalFile_WhenLocalFilePathWhitespace_ReturnsFalse()
     {
@@ -105,6 +111,7 @@ public sealed class ImportRequestTests
         request.UsesLocalFile.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void LoadMode_DefaultsToReplace_ButLegacyFalseFlagResolvesToAppend()
     {
@@ -118,6 +125,7 @@ public sealed class ImportRequestTests
         request.EffectiveLoadMode.Should().Be(ImportLoadMode.Append);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(ImportLoadMode.Append)]
     [InlineData(ImportLoadMode.Upsert)]
@@ -134,6 +142,7 @@ public sealed class ImportRequestTests
         request.EffectiveLoadMode.Should().Be(mode);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EffectiveLoadMode_WhenOverwriteIsFalse_AppendsInsteadOfReplacing()
     {
@@ -147,6 +156,7 @@ public sealed class ImportRequestTests
         request.EffectiveLoadMode.Should().Be(ImportLoadMode.Append);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_WhenUpsertWithoutKeyColumns_Throws()
     {
@@ -165,6 +175,7 @@ public sealed class ImportRequestTests
             .WithMessage("*Upsert load mode requires at least one key column*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_WhenUpsertWithKeyColumns_DoesNotThrow()
     {
@@ -183,6 +194,7 @@ public sealed class ImportRequestTests
         act.Should().NotThrow();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_WhenAppendWithoutKeyColumns_DoesNotThrow()
     {

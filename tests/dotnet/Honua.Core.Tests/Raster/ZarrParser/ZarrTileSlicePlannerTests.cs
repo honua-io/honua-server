@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Raster.ZarrParser;
 
 public class ZarrTileSlicePlannerTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TryPlan_TileWithinExtent_ResolvesSpatialWindow()
     {
@@ -50,6 +51,7 @@ public class ZarrTileSlicePlannerTests
         request.Stop[0].Should().Be(8);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TryPlan_AscendingYAxis_UsesSouthToNorthStorageRows()
     {
@@ -75,6 +77,7 @@ public class ZarrTileSlicePlannerTests
         slice.YAxisAscending.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TryPlan_TileOutsideExtent_ReportsNoIntersection()
     {
@@ -103,6 +106,7 @@ public class ZarrTileSlicePlannerTests
         error.Should().Contain("does not intersect");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TryPlan_NotGeoreferenced_Rejected()
     {
@@ -125,6 +129,7 @@ public class ZarrTileSlicePlannerTests
         error.Should().Contain("georeferenced");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task TryPlan_TimeAxis_ResolvesSingleTimeIndex()
     {

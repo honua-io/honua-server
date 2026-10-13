@@ -23,6 +23,7 @@ public sealed class PlatformReleaseProjectionTests
         ]
     };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ResolveServingArtifact_ExplicitPin_Wins()
     {
@@ -30,6 +31,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Equal("pinned:image", result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ResolveServingArtifact_NoExplicit_UsesRelease()
     {
@@ -37,12 +39,14 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Equal("ghcr.io/honua/server:2026.07.0", result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ResolveServingArtifact_NoRelease_ReturnsNull()
     {
         Assert.Null(PlatformReleaseProjection.ResolveServingArtifact(null, release: null));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ResolveWorkerArtifact_MatchesRuntimeProfile()
     {
@@ -50,6 +54,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Equal("ghcr.io/honua/worker-gdal:2026.07.0", result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ResolveWorkerArtifact_UnmatchedProfile_FallsBackToDefaultImage()
     {
@@ -57,6 +62,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Equal("ghcr.io/honua/worker:2026.07.0", result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ResolveWorkerArtifact_ExplicitPin_Wins()
     {
@@ -64,6 +70,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Equal("pinned:worker", result);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ResolveWorker_ProfileMatchIsCaseInsensitive()
     {
@@ -72,6 +79,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Equal("ghcr.io/honua/worker-gdal:2026.07.0", worker!.ArtifactReference);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ResolveWorker_NoDefaultImage_UnmatchedProfileReturnsNull()
     {
@@ -85,6 +93,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Null(release.ResolveWorker("python"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildSkewSnapshot_AllProjectedFromRelease_IsCoVersioned()
     {
@@ -107,6 +116,7 @@ public sealed class PlatformReleaseProjectionTests
             snapshot.Execution.Single(p => p.Id == "gp-gdal").EffectiveArtifactReference);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildSkewSnapshot_ExplicitDivergentPin_IsSkew()
     {
@@ -126,6 +136,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Equal("ghcr.io/honua/server:old", servingProjection.EffectiveArtifactReference);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildSkewSnapshot_ExplicitPinMatchingRelease_IsNotSkew()
     {
@@ -143,6 +154,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Empty(snapshot.SkewedIds);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildSkewSnapshot_NoRelease_IsNotCoVersioned()
     {
@@ -156,6 +168,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Empty(snapshot.SkewedIds);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_CoVersionedRelease_HasNoFailures()
     {
@@ -164,6 +177,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Empty(failures);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_NullRelease_HasNoFailures()
     {
@@ -172,6 +186,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Empty(failures);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ServingWithoutWorkers_Fails()
     {
@@ -187,6 +202,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Contains(failures, f => f.Contains("co-version", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_MissingVersion_Fails()
     {
@@ -203,6 +219,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Contains(failures, f => f.Contains("Version"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_DuplicateRuntimeProfiles_Fails()
     {
@@ -223,6 +240,7 @@ public sealed class PlatformReleaseProjectionTests
         Assert.Contains(failures, f => f.Contains("unique", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_EmptyWorkerArtifact_Fails()
     {

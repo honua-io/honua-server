@@ -21,6 +21,9 @@ namespace Honua.Infrastructure.Authentication;
 /// </remarks>
 internal interface IPortalGroupStore
 {
+    /// <summary>Reads current membership without caching or blocking asynchronous I/O.</summary>
+    IReadOnlyList<string> GetGroupIdsForUser(string username, string? tenantId = null);
+
     /// <summary>Lists every group (used by group search / admin surfaces).</summary>
     Task<IReadOnlyList<PortalGroupRecord>> ListAsync(CancellationToken cancellationToken);
 
@@ -61,7 +64,8 @@ internal sealed record PortalGroupRegistration(
     string Title,
     string? Description,
     string Access,
-    IReadOnlyList<string> Tags);
+    IReadOnlyList<string> Tags,
+    string? TenantId = null);
 
 /// <summary>A community group and its membership.</summary>
 internal sealed record PortalGroupRecord(
@@ -73,7 +77,8 @@ internal sealed record PortalGroupRecord(
     IReadOnlyList<string> Tags,
     IReadOnlyList<string> Members,
     DateTimeOffset Created,
-    DateTimeOffset Modified);
+    DateTimeOffset Modified,
+    string? TenantId = null);
 
 internal sealed class InMemoryPortalGroupStore(TimeProvider? timeProvider = null) : IPortalGroupStore
 {
@@ -121,7 +126,8 @@ internal sealed class InMemoryPortalGroupStore(TimeProvider? timeProvider = null
             // The owner is implicitly a member so they can see group-shared content.
             Members: [owner],
             Created: now,
-            Modified: now);
+            Modified: now,
+            TenantId: registration.TenantId);
 
         if (!_groups.TryAdd(id, record))
         {
@@ -152,17 +158,23 @@ internal sealed class InMemoryPortalGroupStore(TimeProvider? timeProvider = null
     public Task<IReadOnlyList<string>> GetGroupIdsForUserAsync(string username, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(GetGroupIdsForUser(username));
+    }
+
+    public IReadOnlyList<string> GetGroupIdsForUser(string username, string? tenantId = null)
+    {
         if (string.IsNullOrWhiteSpace(username))
         {
-            return Task.FromResult<IReadOnlyList<string>>([]);
+            return [];
         }
 
-        IReadOnlyList<string> result = _groups.Values
-            .Where(g => g.Members.Contains(username, StringComparer.OrdinalIgnoreCase))
+        return _groups.Values
+            .Where(g => string.Equals(g.TenantId, tenantId, StringComparison.Ordinal)
+                && (string.Equals(g.Owner, username, StringComparison.OrdinalIgnoreCase)
+                    || g.Members.Contains(username, StringComparer.OrdinalIgnoreCase)))
             .Select(g => g.Id)
             .ToList()
             .AsReadOnly();
-        return Task.FromResult(result);
     }
 
     private Task<PortalGroupRecord?> MutateMembersAsync(

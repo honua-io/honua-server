@@ -39,6 +39,7 @@ public sealed class LayerStorageMappingTests
         mapping.Validate().Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
@@ -50,6 +51,7 @@ public sealed class LayerStorageMappingTests
         mapping.Validate().Should().Contain(e => e.Contains("table", System.StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData("   ")]

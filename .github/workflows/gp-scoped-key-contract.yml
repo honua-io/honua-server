@@ -10,6 +10,7 @@ on:
       - 'src/Honua.Hosting/Features/Authentication/ApiKeyAuthenticationHandler.cs'
       - 'src/Honua.Protocols.GeoServices/GPServer/**'
       - 'tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/**'
+      - 'tests/dotnet/Honua.Geoprocessing.UnitTests/**'
       - 'tests/dotnet/Honua.Server.Tests/Features/Eval/EvalHarnessTests.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/**'
       - '.github/workflows/gp-scoped-key-contract.yml'
@@ -31,11 +32,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: shared-authorization
-            project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
-            filter: FullyQualifiedName~GeoprocessingJobServiceTests|FullyQualifiedName~GeoprocessingJobTerminalServiceTests|FullyQualifiedName~AdminApiKeyEndpointsTests|FullyQualifiedName~Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario
-            source: tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.GPServerKeys.cs
+          - name: shared-service-unit-authorization
+            needs_postgres: false
+            project: tests/dotnet/Honua.Geoprocessing.UnitTests/Honua.Geoprocessing.UnitTests.csproj
+            filter: FullyQualifiedName~GeoprocessingJobServiceTests
+            source: tests/dotnet/Honua.Geoprocessing.UnitTests/Source/Features/Geoprocessing/GeoprocessingJobServiceTests.GPServerKeys.cs
             prefix: GPScopedKey_
+          - name: shared-full-host-authorization
+            project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+            filter: FullyQualifiedName~GeoprocessingJobTerminalServiceTests|FullyQualifiedName~AdminApiKeyEndpointsTests|FullyQualifiedName~Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario
+            required_classes: GeoprocessingJobTerminalServiceTests,AdminApiKeyEndpointsTests
             additional_method: Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario
           - name: soap-durable-runtime
             project: tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj
@@ -44,10 +50,10 @@ jobs:
             prefix: SoapScopedAPIKey_
     env:
       HONUA_TEST_CONFIGURATION: Release
-      HONUA_TEST_DB_URL: 'Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-${{ github.run_id }}-${{ github.run_attempt }}'
+      HONUA_TEST_DB_URL: ${{ toJSON(matrix.needs_postgres) != 'false' && format('Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-{0}-{1}', github.run_id, github.run_attempt) || '' }}
     services:
       postgres:
-        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+        image: ${{ toJSON(matrix.needs_postgres) != 'false' && 'mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5' || '' }}
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -67,7 +73,6 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-dotnet-ci
         with:
-          optimize-disk: 'true'
           nuget-cache-read-only: 'true'
       - name: Run the actual shared gates and GP HTTP runtime
         env:
@@ -81,15 +86,16 @@ jobs:
           CASE_SOURCE: ${{ matrix.source }}
           CASE_PREFIX: ${{ matrix.prefix }}
           ADDITIONAL_METHOD: ${{ matrix.additional_method }}
+          REQUIRED_CLASSES: ${{ matrix.required_classes }}
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import os
           import re
           import xml.etree.ElementTree as ET
-          source = Path(os.environ['CASE_SOURCE']).read_text()
+          source = Path(os.environ['CASE_SOURCE']).read_text() if os.environ['CASE_SOURCE'] else ''
           cases = re.findall(r'\[((?:Unit|Integration)(?:Test|Theory))\](.*?)public async Task (\w+)\(', source, re.S)
-          assert cases, 'No source cases found'
+          assert cases or os.environ['REQUIRED_CLASSES'], 'No source cases or required classes configured'
           root = ET.parse('key-results/gp-key-contract.trx').getroot()
           ns = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
           counters = root.find('t:ResultSummary/t:Counters', ns).attrib
@@ -97,6 +103,11 @@ jobs:
           methods = {test.attrib['id']: test.find('t:TestMethod', ns).attrib['name']
                      for test in root.findall('t:TestDefinitions/t:UnitTest', ns)}
           results = root.findall('t:Results/t:UnitTestResult', ns)
+          for class_name in filter(None, os.environ['REQUIRED_CLASSES'].split(',')):
+              ids = {test.attrib['id'] for test in root.findall('t:TestDefinitions/t:UnitTest', ns)
+                     if test.find('t:TestMethod', ns).attrib['className'].split('.')[-1] == class_name}
+              actual = [result for result in results if result.attrib['testId'] in ids]
+              assert actual and all(result.attrib['outcome'] == 'Passed' for result in actual), (class_name, actual)
           for kind, attributes, method in cases:
               assert method.startswith(os.environ['CASE_PREFIX']), method
               expected = len(re.findall(r'\[InlineData\(', attributes)) if kind.endswith('Theory') else 1

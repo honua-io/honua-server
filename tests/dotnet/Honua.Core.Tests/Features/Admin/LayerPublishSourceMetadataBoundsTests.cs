@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Features.Admin;
 /// </summary>
 public sealed class LayerPublishSourceMetadataBoundsTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryValidate_WithNoSourceMetadata_Accepts()
     {
@@ -27,6 +28,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
         error.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Bounds_MatchImportCaptureCaps()
     {
@@ -35,6 +37,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
         LayerPublishSourceMetadataBounds.MaxAttributeRules.Should().Be(EsriAttributeRuleParser.AttributeRuleCap);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryValidate_WithImportParserOutputAtEveryCap_Accepts()
     {
@@ -60,6 +63,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
         accepted.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("codedValue")]
     [InlineData("CODEDVALUE")]
@@ -81,6 +85,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
             "fieldDomains coded-value domains are limited to 100 coded values.");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("codedValue")]
     [InlineData("CODEDVALUE")]
@@ -111,6 +116,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
             "subtypes fieldOverrides coded-value domains are limited to 100 coded values.");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("range")]
     [InlineData("codedValue")]
@@ -124,6 +130,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
         }), null, null, "fieldDomains range domains must declare exactly [min, max].");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("range")]
     [InlineData("futureDomain")]
@@ -138,6 +145,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
         error.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryValidate_WithSubtypesOverCap_Rejects()
     {
@@ -152,6 +160,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
         AssertRejected(null, subtypes, null, "subtypes are limited to 100 per layer.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryValidate_WithAttributeRulesOverCap_Rejects()
     {
@@ -183,6 +192,7 @@ public sealed class LayerPublishSourceMetadataBoundsTests
         { "rule-undefined-type", "attributeRules type is not supported." },
     };
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(MalformedMetadata))]
     public void TryValidate_WithMalformedMetadata_RejectsWithSpecificReason(string shape, string expected)
