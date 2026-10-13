@@ -119,6 +119,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         payload.RootElement.GetProperty("currentVersion").GetDouble().Should().Be(10.8);
         payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
         payload.RootElement.GetProperty("soapUrl").GetString().Should().Be("http://localhost/arcgis/services");
+        payload.RootElement.GetProperty("owningSystemUrl").GetString().Should().Be("http://localhost");
         payload.RootElement.GetProperty("secureSoapUrl").ValueKind.Should().Be(JsonValueKind.Null);
         payload.RootElement.TryGetProperty("authInfo", out var authInfo).Should().BeTrue();
         authInfo.TryGetProperty("isTokenBasedSecurity", out _).Should().BeTrue();

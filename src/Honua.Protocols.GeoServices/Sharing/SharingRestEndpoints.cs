@@ -495,7 +495,7 @@ public static class SharingRestEndpoints
             return gate;
         }
 
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        var baseUrl = GeoServicesPortalUrlResolver.GetBaseUrl(context);
         var response = new SharingInfoResponse
         {
             OwningSystemUrl = baseUrl.TrimEnd('/'),
