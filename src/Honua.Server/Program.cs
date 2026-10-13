@@ -1266,6 +1266,9 @@ if (activeDbConnectionTracker != null)
 // client actually sent. See UseHonuaHeadRequestGetSemantics below for the handler side (#3389).
 app.UseHonuaHeadRequestMethod();
 
+// Data-plane writes stay closed until degraded startup has a database (#6008).
+app.UseDegradedStartupMutationFence();
+
 // Control-plane event-handler Lambdas (reconcile, backstop, scheduled tick) close their pooled
 // database connections at the end of every invocation, because a frozen Lambda instance never
 // prunes its pool. Off for the API host. Ahead of host validation so rejected requests release too.
