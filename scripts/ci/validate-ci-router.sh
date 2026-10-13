@@ -1899,6 +1899,11 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyServiceTests" \
     "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
     "Ai Units" \
+  `# Edit-owner coverage belongs to the GeoServices assembly, not Server.Tests.` \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.EditOwnerSubjectTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "FeatureServer Endpoints Query Services and Replication" \
   `# Honua.Protocols.GeoServices.Tests assembly: two classes use the` \
   `# Honua.Protocols.GeoServices.Tests.Source.* namespace root instead of the` \
   `# Honua.Server.Tests.Features.Protocols.GeoServices.* root every filter used.` \
