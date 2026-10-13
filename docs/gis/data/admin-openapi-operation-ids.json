@@ -927,6 +927,12 @@
       "path": "/migration/performance-evidence/latest"
     },
     {
+      "operationId": "getLayerPublishJobStatus",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/connections/{id}/layers/jobs/{jobId}"
+    },
+    {
       "operationId": "getLayerShareTrafficSeries",
       "catalogOperationId": null,
       "method": "GET",

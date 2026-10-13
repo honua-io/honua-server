@@ -30,6 +30,42 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
     private const string DefaultServiceUrl = "https://example.com/geoserver/wfs";
     private const string DefaultFeatureType = "demo:cities";
 
+    [Theory]
+    [InlineData("wfs_cities")]
+    [InlineData("__honua_wfs_stage_wfs_cities")]
+    public async Task ImportFeaturesAsync_UnownedTargetOrStaging_RefusesAndPreservesRows(string table)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("wfs_unowned");
+        try
+        {
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using (var create = new NpgsqlCommand($"CREATE TABLE {QuoteIdentifier(schema)}.{QuoteIdentifier(table)} (sentinel text); INSERT INTO {QuoteIdentifier(schema)}.{QuoteIdentifier(table)} VALUES ('keep me')", connection))
+            {
+                await create.ExecuteNonQueryAsync();
+            }
+            using var http = new HttpClient(new FakeWfsHandler(BuildPointFeatureCollection(("Replacement", 1, 1, 1))));
+            var service = CreateService(http, BuildPointInventory(), targetSchema: schema);
+            var result = await service.ImportFeaturesAsync(new OgcWfsImportRequest
+            {
+                ServiceUrl = DefaultServiceUrl,
+                TargetSchema = schema,
+                ApplyMode = true,
+                AllowUnsafeLocalUrls = true,
+                OverwriteExisting = true
+            });
+            result.Success.Should().BeFalse();
+            result.FeatureTypesImported.Should().Be(0);
+            result.FeatureTypes.Should().ContainSingle().Which.Warnings.Should()
+                .Contain(w => w.Contains("IMPORT_TARGET_NOT_OWNED", StringComparison.Ordinal));
+            await using var verify = new NpgsqlCommand($"SELECT sentinel FROM {QuoteIdentifier(schema)}.{QuoteIdentifier(table)}", connection);
+            (await verify.ExecuteScalarAsync()).Should().Be("keep me");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [Fact]
     public async Task ImportFeaturesAsync_HappyPath_CreatesTableAndCopiesFeatures()
     {
@@ -455,7 +491,8 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
             await using (var connection = await fixture.GetConnectionAsync())
             await using (var command = connection.CreateCommand())
             {
-                command.CommandText = $"CREATE TABLE {QuoteIdentifier(schemaName)}.\"__honua_wfs_stage_wfs_cities\" (obsolete text)";
+                command.CommandText = $"CREATE TABLE {QuoteIdentifier(schemaName)}.\"__honua_wfs_stage_wfs_cities\" (obsolete text); "
+                    + ImportTableOwnership.MarkSql(schemaName, "__honua_wfs_stage_wfs_cities");
                 await command.ExecuteNonQueryAsync();
             }
 

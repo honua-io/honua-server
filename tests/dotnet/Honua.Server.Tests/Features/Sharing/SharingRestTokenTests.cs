@@ -554,6 +554,64 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_FederatedExchangeWithoutClientOrReferer_InheritsPortalBinding()
+    {
+        using var client = _fixture.CreateClient();
+        client.DefaultRequestHeaders.Referrer.Should().BeNull();
+        var portalToken = await IssueTokenAsync(client, ("client", "referer"), ("referer", SecureRefererA));
+        using var response = await PostFormAsync(client,
+            ("token", portalToken), ("serverUrl", "https://server.example.com/services"), ("f", "json"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var serverToken = await ReadTokenPayloadAsync(response);
+        var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
+        (await issuer.ValidateAsync(serverToken.Token, new PortalTokenBinding(SecureRefererA, null),
+            CancellationToken.None)).Should().NotBeNull();
+        (await issuer.ValidateAsync(serverToken.Token, new PortalTokenBinding(OtherReferer, null),
+            CancellationToken.None)).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_InvalidFederatedExchangeWithoutBinding_Returns498()
+    {
+        using var client = _fixture.CreateClient();
+        using var response = await PostFormAsync(client,
+            ("token", "invalid-portal-token"), ("serverUrl", "https://server.example.com/services"), ("f", "json"));
+        await response.AssertGeoServicesErrorAsync(498);
+    }
+
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData(OtherReferer)]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_StrictRefererInheritedExchange_RejectsMissingOrForeignHeader(string? referer)
+    {
+        var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
+        var portal = await issuer.IssueAsync(new PortalTokenIssueRequest(
+            PrincipalId: "admin", DisplayName: null, TenantId: null, Roles: ["admin"],
+            ClientType: PortalTokenClientType.Referer, BindingValue: SecureRefererA,
+            ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10), AcceptMissingReferer: false), CancellationToken.None);
+        using var client = _fixture.CreateClient();
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["token"] = portal.Token,
+            ["serverUrl"] = "https://server.example.com/services",
+            ["f"] = "json",
+        });
+        using var request = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint) { Content = content };
+        if (referer is not null)
+        {
+            request.Headers.Referrer = new Uri(referer);
+        }
+        using var response = await client.SendAsync(request);
+        await response.AssertGeoServicesErrorAsync(498);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
     public async Task GenerateToken_ExchangePresentedFromAnotherReferer_Returns498_Issue5491()
     {
         // The exchange authenticates with the presented token, so the token must be usable

@@ -113,6 +113,7 @@ public sealed class SharingRestReadTests : IAsyncLifetime
     [InlineData("https", "/arcgis")]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /sharing/rest/info")]
+    [Endpoint("GET /rest/info")]
     public async Task Info_Anonymous_UsesActualPortalRoot(string scheme, string prefix)
     {
         using var client = _fixture.CreateClient();
@@ -126,6 +127,13 @@ public sealed class SharingRestReadTests : IAsyncLifetime
             .GetString().Should().Be(expectedRoot + "/sharing/rest/generateToken");
         document.RootElement.TryGetProperty("currentVersion", out _).Should().BeFalse();
         document.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
+
+        using var serverResponse = await client.GetAsync(prefix + "/rest/info?f=json");
+        serverResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var serverDocument = JsonDocument.Parse(await serverResponse.Content.ReadAsStringAsync());
+        serverDocument.RootElement.GetProperty("owningSystemUrl").GetString().Should().Be(expectedRoot);
+        serverDocument.RootElement.GetProperty("authInfo").GetProperty("tokenServicesUrl")
+            .GetString().Should().Be(expectedRoot + "/sharing/rest/generateToken");
     }
 
     [IntegrationTheory]
@@ -196,10 +204,10 @@ public sealed class SharingRestReadTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        // An origin-only base advertises the conventional /arcgis application prefix, and
-        // owningSystemUrl agrees with tokenServicesUrl (docs/gis/ARCGIS_PATH_PREFIX.md).
+        // Portal discovery uses the actual public root, and owningSystemUrl agrees
+        // with tokenServicesUrl (docs/gis/ARCGIS_PATH_PREFIX.md).
         var owningSystemUrl = doc.RootElement.GetProperty("owningSystemUrl").GetString();
-        owningSystemUrl.Should().Be("http://localhost/arcgis");
+        owningSystemUrl.Should().Be("http://localhost");
         var authInfo = doc.RootElement.GetProperty("authInfo");
         authInfo.GetProperty("isTokenBasedSecurity").GetBoolean().Should().BeTrue();
         var tokenServicesUrl = authInfo.GetProperty("tokenServicesUrl").GetString();

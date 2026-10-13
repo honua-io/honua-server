@@ -231,6 +231,7 @@ internal static class ImportExportTileOperationsRegistration
         }
 
         Honua.Server.Features.Import.DurableImportServiceCollectionExtensions.AddDurableBackgroundImports(services);
+        Honua.Server.Features.Admin.LayerPublishServiceCollectionExtensions.AddLayerPublishJobs(services);
         return services;
     }
 }

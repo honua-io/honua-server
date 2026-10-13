@@ -296,8 +296,9 @@ public static class SharingRestEndpoints
             return entitlementFailure;
         }
 
-        var (username, password, portalToken, serverUrl, clientType, refererInput, expirationMinutes, _, formatValid) =
+        var (username, password, portalToken, serverUrl, requestedClientType, refererInput, expirationMinutes, _, formatValid) =
             await ReadParametersAsync(context).ConfigureAwait(false);
+        var clientType = requestedClientType ?? PortalTokenClientType.Referer;
 
         // Detect whether credentials arrived via query string (GET or non-form POST). This is
         // used both for the HTTPS enforcement message and for the per-request audit log entry.
@@ -361,8 +362,11 @@ public static class SharingRestEndpoints
                 "Username and password are required.");
         }
 
-        var binding = ResolveBinding(context, clientType, refererInput);
-        if (binding is null)
+        // A federated exchange without client/referer inherits the validated portal
+        // token's stored binding. Credential issuance still requires its own binding.
+        var inheritBinding = exchangeRequested && requestedClientType is null;
+        var binding = inheritBinding ? null : ResolveBinding(context, clientType, refererInput);
+        if (!inheritBinding && binding is null)
         {
             PortalTokenLog.TokenIssuanceRejected(logger, "missing binding");
             return StandardErrorHelpers.CreateBadRequest(
@@ -386,7 +390,7 @@ public static class SharingRestEndpoints
                     PresentedBinding: new PortalTokenBinding(
                         Referer: context.Request.Headers.Referer.FirstOrDefault(),
                         ClientIp: context.Connection.RemoteIpAddress?.ToString()),
-                    ClientType: clientType,
+                    ClientType: inheritBinding ? null : clientType,
                     BindingValue: binding,
                     ExpiresAt: expiresAt),
                 context.RequestAborted).ConfigureAwait(false);
@@ -401,7 +405,7 @@ public static class SharingRestEndpoints
                 logger,
                 exchange.PrincipalId,
                 exchange.TenantId,
-                clientType,
+                exchange.ClientType,
                 exchange.Issuance);
         }
 
@@ -423,7 +427,7 @@ public static class SharingRestEndpoints
                 TenantId: verified.TenantId ?? tenantContext.TenantId,
                 Roles: verified.Roles,
                 ClientType: clientType,
-                BindingValue: binding,
+                BindingValue: binding!,
                 ExpiresAt: expiresAt,
                 // Carry the verifier's provenance so the issued token's roles are revalidated
                 // against the live claims-mapping entitlement on every restore, rather than
@@ -491,7 +495,7 @@ public static class SharingRestEndpoints
             return gate;
         }
 
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        var baseUrl = GeoServicesPortalUrlResolver.GetBaseUrl(context);
         var response = new SharingInfoResponse
         {
             OwningSystemUrl = baseUrl.TrimEnd('/'),
@@ -1025,7 +1029,7 @@ public static class SharingRestEndpoints
             format = ReadFirst(context.Request.Query["f"]);
         }
 
-        var clientType = ParseClientType(clientRaw);
+        PortalTokenClientType? clientType = clientRaw is null ? null : ParseClientType(clientRaw);
 
         int? expirationMinutes = null;
         if (!string.IsNullOrWhiteSpace(expirationRaw) &&
@@ -1135,7 +1139,7 @@ public static class SharingRestEndpoints
         string? Password,
         string? PortalToken,
         string? ServerUrl,
-        PortalTokenClientType ClientType,
+        PortalTokenClientType? ClientType,
         string? RefererInput,
         int? ExpirationMinutes,
         string? Format,

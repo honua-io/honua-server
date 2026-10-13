@@ -14,14 +14,14 @@ records the pins and where each comes from.
 
 | Registry | Manifest pin | Role | Package-read credentials |
 | --- | --- | --- | --- |
-| PyPI | `honua-admin==0.1.10` | Control plane used by this journey | None |
-| PyPI | `honua-sdk==0.1.13` | Data plane used by this journey | None |
+| PyPI | `honua-admin==0.1.12` | Control plane used by this journey | None |
+| PyPI | `honua-sdk==0.1.16` | Data plane used by this journey | None |
 | PyPI | `mcp==2.1.1` | Only if you drive the server over MCP | None |
-| npm | `@honua/sdk-js@0.1.13` | Alternative JS SDK and CLI | None |
-| npm | `create-honua-app@0.1.6` | Application scaffolding CLI | None |
-| npm | `@honua/mcp-server@0.1.13` | Alternative MCP proxy | None |
-| NuGet | `Honua.Sdk` `1.10.3` | Alternative .NET SDK | None |
-| NuGet | `Honua.Sdk.Admin` `1.10.3` | Dedicated .NET control-plane SDK | None |
+| npm | `@honua/sdk-js@0.1.16` | Alternative JS SDK and CLI | None |
+| npm | `create-honua-app@0.1.9` | Application scaffolding CLI | None |
+| npm | `@honua/mcp-server@0.1.16` | Alternative MCP proxy | None |
+| NuGet | `Honua.Sdk` `1.11.0` | Alternative .NET SDK | None |
+| NuGet | `Honua.Sdk.Admin` `1.11.0` | Dedicated .NET control-plane SDK | None |
 
 Pick the one for your language; you do not need the others. The npm and NuGet
 pins are the release manifest's, not a claim that the Python quickstart exercised
@@ -35,7 +35,7 @@ anonymously:
 
 ```bash
 dotnet new console
-dotnet add package Honua.Sdk --version 1.10.3
+dotnet add package Honua.Sdk --version 1.11.0
 ```
 
 No feed to add, no token, no package-source mapping. The same builds are also

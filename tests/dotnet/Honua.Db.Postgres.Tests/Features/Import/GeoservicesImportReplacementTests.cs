@@ -36,6 +36,30 @@ public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
     private const string TableName = "geoservices_replace_target";
 
     [Fact]
+    public async Task ImportLayerAsync_UnownedExistingTarget_RefusesWithoutChangingRows()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("UnownedImport");
+        try
+        {
+            await SeedPriorTargetAsync(schema);
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = new NpgsqlCommand($"COMMENT ON TABLE \"{schema}\".\"{TableName}\" IS NULL", connection))
+            {
+                await command.ExecuteNonQueryAsync();
+            }
+            var service = CreateService(new ReplacementFeatureServerHandler(["CCC"]), targetSchema: schema);
+            var result = await service.ImportLayerAsync(BuildRequest(schema, overwrite: true));
+            result.Success.Should().BeFalse();
+            result.ErrorMessage.Should().Contain("IMPORT_TARGET_NOT_OWNED").And.Contain(TableName);
+            (await ReadCodesAsync(schema)).Should().Equal("AAA", "BBB");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [Fact]
     public async Task ImportLayerAsync_ReplacingExistingTargetWhenARecordFailsToLoad_RetainsPriorTargetAndFails()
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync("ImportReplacementRefused");
@@ -210,6 +234,7 @@ public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
                 objectid BIGSERIAL PRIMARY KEY,
                 code VARCHAR(3),
                 geom geometry(Point, 4326));
+            COMMENT ON TABLE "{schemaName}"."{TableName}" IS 'honua:import-owned:v1';
             INSERT INTO "{schemaName}"."{TableName}" (code, geom) VALUES
                 ('AAA', ST_SetSRID(ST_MakePoint(-157.0, 21.0), 4326)),
                 ('BBB', ST_SetSRID(ST_MakePoint(-157.5, 21.5), 4326));

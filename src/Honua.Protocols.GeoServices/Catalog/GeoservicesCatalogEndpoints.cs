@@ -1127,7 +1127,8 @@ internal static class GeoservicesCatalogEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        var baseUrl = WithConventionalInstancePath(BaseUrlResolver.GetBaseUrl(context).TrimEnd('/'));
+        var portalBaseUrl = GeoServicesPortalUrlResolver.GetBaseUrl(context);
+        var baseUrl = WithConventionalInstancePath(portalBaseUrl);
         var soapUrl = $"{baseUrl}/services";
 
         // secureSoapUrl must follow the scheme of the SAME resolved public URL that produced
@@ -1137,14 +1138,14 @@ internal static class GeoservicesCatalogEndpoints
         // and left a client that selects the secure field unable to find the SOAP endpoint.
         var response = new RestInfoResponse
         {
-            OwningSystemUrl = baseUrl,
+            OwningSystemUrl = portalBaseUrl,
             SoapUrl = soapUrl,
             SecureSoapUrl = IsHttpsBaseUrl(baseUrl, context) ? soapUrl : null,
             AuthInfo = new RestAuthInfo
             {
                 IsTokenBasedSecurity = tokenOptions.Value.Enabled,
                 TokenServicesUrl = tokenOptions.Value.Enabled
-                    ? $"{baseUrl}/sharing/rest/generateToken"
+                    ? $"{portalBaseUrl}/sharing/rest/generateToken"
                     : null
             }
         };

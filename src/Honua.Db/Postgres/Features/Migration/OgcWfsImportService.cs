@@ -160,6 +160,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         var featuresFailed = 0;
         var imported = 0;
         var skipped = 0;
+        string? ownershipFailure = null;
 
         foreach (var resource in selectedResources)
         {
@@ -227,6 +228,10 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
                 // failure is recorded as manual-review so the rest of the selected resources continue
                 // importing instead of aborting the whole run.
                 Log.FeatureTypeImportFailed(_logger, resource.Name, ex);
+                if (ex is ImportTableOwnershipException)
+                {
+                    ownershipFailure = ex.Message;
+                }
                 perFeatureType.Add(new OgcWfsImportedFeatureType
                 {
                     SourceName = resource.Name,
@@ -249,7 +254,8 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         return new OgcWfsImportResult
         {
-            Success = true,
+            Success = ownershipFailure is null,
+            ErrorMessage = ownershipFailure,
             WasDryRun = request.DryRun,
             SourceServiceUrl = safeSourceUrl,
             SourceVersion = version,
@@ -312,7 +318,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         var stagingPromoted = false;
         var overwriteLockAcquired = false;
-        var tableIsPartial = true;
+        var tableIsPartial = false;
 
         async Task RemovePartialTableAsync()
         {
@@ -333,6 +339,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             }
 
             await CreateTableAsync(connection, targetSchema, loadTableName, fields, resource.GeometryType, srid, cancellationToken).ConfigureAwait(false);
+            tableIsPartial = true;
 
             var inserted = 0;
             var failed = 0;
@@ -738,7 +745,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         CancellationToken cancellationToken)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE IF NOT EXISTS {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} (");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} (");
         sb.AppendLine("    honua_objectid BIGSERIAL PRIMARY KEY");
 
         foreach (var field in fields)
@@ -755,9 +762,11 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         sb.AppendLine(");");
 
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = sb.ToString();
+        cmd.CommandText = sb.ToString() + ImportTableOwnership.MarkSql(schemaName, tableName);
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         Log.TableCreated(_logger, schemaName, tableName);
     }
 
@@ -770,9 +779,14 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
     private static async Task DropTableAsync(NpgsqlConnection connection, string schemaName, string tableName, CancellationToken cancellationToken)
     {
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"DROP TABLE IF EXISTS {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} CASCADE";
-        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        if (await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, tableName, cancellationToken).ConfigureAwait(false))
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = $"DROP TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)}";
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static string BuildStagingTableName(string tableName)
@@ -827,7 +841,9 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         {
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
-            command.CommandText = $"DROP TABLE IF EXISTS {QuoteIdentifier(schemaName)}.{QuoteIdentifier(targetTableName)} CASCADE; " +
+            var targetExists = await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, targetTableName, cancellationToken).ConfigureAwait(false);
+            await ImportTableOwnership.AssertExistingOwnedAsync(connection, schemaName, stagingTableName, cancellationToken).ConfigureAwait(false);
+            command.CommandText = (targetExists ? $"DROP TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(targetTableName)} CASCADE; " : string.Empty) +
                                   $"ALTER TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)} RENAME TO {QuoteIdentifier(targetTableName)}; " +
                                   $"ALTER INDEX {QuoteIdentifier(schemaName)}.{QuoteIdentifier(BuildSpatialIndexName(stagingTableName))} RENAME TO {QuoteIdentifier(BuildSpatialIndexName(targetTableName))}";
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -1115,6 +1131,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     private static string ToSafeFailureReason(Exception ex)
         => ex switch
         {
+            ImportTableOwnershipException => ex.Message,
             HttpRequestException => "WFS endpoint could not be reached or returned an unsupported response.",
             TaskCanceledException => "WFS request timed out.",
             JsonException => "WFS response could not be parsed.",
