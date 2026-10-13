@@ -3646,19 +3646,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // error, carrying code 409 in the standard envelope.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var store = _fixture.Services.GetRequiredService<IApplyEditsIdempotencyStore>();
-        // The store scopes a key to the resolved edit principal. This fixture's client is
-        // unauthenticated, so the handler resolves EditPrincipal.Anonymous and scopes to
-        // "anonymous"; "admin" (the ClaimTypes.Name an admin API key stamps) is reserved as well so
-        // the test does not silently depend on the fixture's auth posture. A principal outside both
-        // cannot make this test pass by accident — the reservation would miss, the edit would apply,
-        // and the assertions below would fail on a success body.
-        var heldScopes = new[] { "anonymous", "admin" }
-            .Select(principal => new ApplyEditsIdempotencyScope(TestServiceId, TestLayerId, principal, idempotencyKey))
-            .ToArray();
-        foreach (var heldScope in heldScopes)
-        {
-            (await store.TryReserveAsync(heldScope)).Should().NotBeNull();
-        }
+        // This fixture explicitly enables development authentication. The HTTP request's
+        // resolved edit principal is its stable api_key_id, not the shared "admin" display name.
+        // Hold that exact scope so the real request contends with the in-flight reservation.
+        var heldScope = new ApplyEditsIdempotencyScope(
+            TestServiceId, TestLayerId, WebAppFixture.DevelopmentBypassActorId, idempotencyKey);
+        (await store.TryReserveAsync(heldScope)).Should().NotBeNull();
 
         var editsRequest = new ApplyEditsRequest
         {
@@ -3688,11 +3681,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // The loser must not release a reservation it never owned: the in-flight request's key is
         // still held after the conflict, so a third request would still be rejected rather than
         // racing the owner into a duplicate edit.
-        foreach (var heldScope in heldScopes)
-        {
-            (await store.TryReserveAsync(heldScope)).Should().BeNull(
-                "the rejected request must leave the owner's reservation untouched");
-        }
+        (await store.TryReserveAsync(heldScope)).Should().BeNull(
+            "the rejected request must leave the owner's reservation untouched");
 
         // Nothing was written by the rejected request.
         var countResponse = await _fixture.Client.GetAsync(
