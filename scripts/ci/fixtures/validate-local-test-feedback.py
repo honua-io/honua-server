@@ -40,16 +40,23 @@ class FeedbackTests(unittest.TestCase):
     def test_timing_order_preserves_exact_selected_entries(self):
         root = SCRIPT.parents[2]
         config = json.loads((root / '.github/ci-shards.json').read_text())
-        selected = config['shards'][:2]
+        catalog = json.loads((root / '.github/test-projects.json').read_text())['projects']
+        monolith = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
+        selected = [next(shard for shard in config['shards']
+                         if catalog[shard.get('csproj') or monolith]['role'] == role)
+                    for role in ('unit', 'component', 'mixed')]
         original = [{'name': s['shard_name'], 'effectiveFilter': s['filter'], 'marker': i}
                     for i, s in enumerate(selected)]
         with tempfile.TemporaryDirectory() as directory:
             timings = Path(directory)
             for i, shard in enumerate(selected):
+                expected_filter = '(' + shard['filter'] + ')&Tier!=Slow'
+                if i == 2:  # Only the legacy/mixed role excludes Fast cases.
+                    expected_filter = '(' + expected_filter + ')&Tier!=Fast'
                 (timings / f'{i}.timing.json').write_text(json.dumps({
                     'shard': shard['shard_name'], 'status': 'passed', 'duration_seconds': (i + 1) * 10,
                     'started_at': datetime.now(timezone.utc).isoformat(),
-                    'filter': '((' + shard['filter'] + ')&Tier!=Slow)&Tier!=Fast'}))
+                    'filter': expected_filter}))
             plan = {'shards': original.copy(), 'projects': ['keep'], 'resources': ['postgres']}
             feedback.order_shards(root, plan, timings)
             self.assertEqual(plan['shards'], original[::-1])

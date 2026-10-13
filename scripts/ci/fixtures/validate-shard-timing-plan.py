@@ -92,6 +92,56 @@ class SchedulingTests(unittest.TestCase):
             self.assertEqual(len(plan.observations(config(), root, now=NOW)['A']), 1)
             self.assertEqual(dict(plan.observations(config(), root / 'missing', now=NOW)), {})
 
+    def test_real_unit_component_and_legacy_full_selection_can_reorder(self):
+        registry = json.loads((ROOT / '.github/ci-shards.json').read_text())
+        catalog = json.loads((ROOT / '.github/test-projects.json').read_text())
+        selected = [next(shard for shard in registry['shards']
+                         if catalog['projects'][shard.get('csproj') or plan.MONOLITH]['role'] == role)
+                    for role in ('unit', 'component', 'mixed')]
+        cfg = {'shards': selected}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for index, shard in enumerate(selected):
+                effective = '(' + shard['filter'] + ')&Tier!=Slow'
+                if index == 2:
+                    effective = '(' + effective + ')&Tier!=Fast'
+                record = timing('A', seconds=(index + 1) * 10, filter=effective,
+                                started_at=datetime.now(timezone.utc).isoformat(),
+                                project=shard.get('csproj') or plan.MONOLITH)
+                record['shard'] = shard['shard_name']
+                (root / f'{index}.timing.json').write_text(json.dumps(record))
+            samples = plan.observations(cfg, root)
+            names = [shard['shard_name'] for shard in selected]
+            self.assertEqual(set(samples), set(names))
+            self.assertEqual(plan.order_names(names, cfg, samples), names[::-1])
+            # Exact CLI behavior also consumes the real catalog; a unit receipt
+            # must not be silently discarded before ordering the full selection.
+            file = root / 'shards.json'
+            file.write_text(json.dumps(cfg))
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/ci/shard-timing-plan.py'),
+                                     'order', '--config', str(file), '--timings-dir', str(root)],
+                                    input='\n'.join(names) + '\n', capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), names[::-1])
+
+    def test_role_specific_bad_filters_rejected_and_unknown_role_is_legacy(self):
+        for role in ('unit', 'component', 'mixed', 'unknown', None):
+            catalog = {'projects': {PROJECT: {'role': role}}} if role else {'projects': {}}
+            include_fast = role in ('unit', 'component')
+            correct = 'FullyQualifiedName~Example.Heavy&Tier!=Slow'
+            incorrect = correct + '&Tier!=Fast'
+            if not include_fast:
+                correct, incorrect = incorrect, correct
+            with self.subTest(role=role), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'good.timing.json').write_text(json.dumps(timing('A', filter=correct)))
+                (root / 'wrong-tier.timing.json').write_text(json.dumps(timing('A', index=1, filter=incorrect)))
+                (root / 'wrong-selection.timing.json').write_text(json.dumps(timing('A', index=2, filter=correct + '&FullyQualifiedName~Foreign')))
+                (root / 'wrong-slow.timing.json').write_text(json.dumps(timing('A', index=3, filter=correct.replace('Tier!=Slow', 'Tier=Fast'))))
+                samples = plan.observations(config(), root, now=NOW, catalog=catalog)
+                self.assertEqual(len(samples['A']), 1)
+                self.assertTrue(samples['A'][0]['timing'].endswith('good.timing.json'))
+
     def test_cli_fallback_and_reject_unknown(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

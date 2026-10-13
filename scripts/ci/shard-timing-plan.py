@@ -51,13 +51,27 @@ def fingerprint(config):
     return hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
-def observations(config, directory, *, now=None, max_age_days=30):
+def effective_filter(shard, catalog):
+    """Mirror run-server-test-shard.sh's default tier policy by project role."""
+    project = shard.get('csproj') or MONOLITH
+    role = catalog.get('projects', {}).get(project, {}).get('role')
+    result = '(' + shard['filter'] + ')&Tier!=Slow'
+    # Unit/component projects own their Fast cases; unknown roles retain the
+    # conservative legacy exclusion rather than accepting broader timing data.
+    if role not in ('unit', 'component'):
+        result = '(' + result + ')&Tier!=Fast'
+    return result
+
+
+def observations(config, directory, *, now=None, max_age_days=30, catalog=None):
     """Deduplicate copies and reject incomplete, old or differently filtered runs."""
     parser = filter_parser()
     now = now or datetime.now(timezone.utc)
     known = {s['shard_name']: s for s in config['shards']}
-    expected = {name: canonical_filter('((' + s['filter'] + ')&Tier!=Slow)&Tier!=Fast', parser)
-                for name, s in known.items()}
+    if catalog is None:
+        catalog = json.loads((ROOT / '.github/test-projects.json').read_text())
+    expected = {name: canonical_filter(effective_filter(shard, catalog), parser)
+                for name, shard in known.items()}
     result, seen = defaultdict(list), set()
     if not directory.is_dir():
         return result
