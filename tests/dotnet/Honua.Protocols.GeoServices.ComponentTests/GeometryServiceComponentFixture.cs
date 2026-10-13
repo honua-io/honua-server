@@ -103,5 +103,7 @@ public sealed class GeometryServiceComponentFixture : IAsyncLifetime, IAsyncDisp
     }
 }
 
+// Geometry requests only transform supplied values; the serial collection owns one
+// provisioned database and HTTP host for all seven classes.
 [CollectionDefinition("Database.GeoServicesRaster")]
-public sealed class GeometryServiceComponentCollectionDefinition;
+public sealed class GeometryServiceComponentCollectionDefinition : ICollectionFixture<GeometryServiceComponentFixture>;
