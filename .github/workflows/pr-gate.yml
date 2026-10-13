@@ -174,7 +174,9 @@ jobs:
             scripts.certification.test_verify_mcp_live_certification
 
       - name: Verify certification producer context and harness controls
-        run: python3 -m unittest discover -s scripts/certification -p 'test_*.py'
+        run: |
+          python3 -m unittest discover -s scripts/certification -p 'test_producer_context.py'
+          python3 -m unittest discover -s scripts/certification -p 'test_generate_protocol_harness_fragment.py'
 
       - name: Verify CITE normalization and supplemental HTTP controls
         run: python3 -m unittest discover -s scripts/conformance/cite/tests -p 'test_*.py'
