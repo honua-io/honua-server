@@ -83,8 +83,9 @@ repository per hour. The 50-page catalog bound (5,000 artifacts) keeps at least
 the complete count must fit the page bound, and the selected receipt count must
 fit the download bound. Any inconsistency or exhausted bound fails closed.
 
-The three-day collection window resolves #5364 without sampling an incomplete
-window or granting a stronger credential. On 2026-10-13 the catalog held 181
+The three-day collection window addresses the observed #5364 download-budget
+failure without sampling an incomplete window or granting a stronger credential.
+A successful default-branch collection remains required. On 2026-10-13 the catalog held 181
 unexpired receipts created in three days, versus 437 in seven days and 1,187 in
 30 days. Every indexed receipt in the configured window is still required;
 growth beyond 300 fails collection rather than silently dropping the tail.
