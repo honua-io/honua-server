@@ -32,6 +32,27 @@ class ScopedRestoreTests(unittest.TestCase):
             (root / 'selected.slnf').unlink()
             self.assertNotEqual(subprocess.run(['bash','-e','-c',restore_run],cwd=root,env=dict(os.environ,GATE_BUILD_MODE='affected',GATE_RUN_FORMAT='false',GATE_BUILD_FILTER='selected.slnf'),capture_output=True).returncode, 0)
 
+    def test_phase_validation_and_producer_union(self):
+        action = (ROOT / '.github/actions/lean-gate/action.yml').read_text()
+        phase = action.split('    - name: Validate gate phase\n', 1)[1].split('    #', 1)[0]
+        phase_run = textwrap.dedent(phase.split('      run: |\n', 1)[1]).rstrip()
+        for value in ['all', 'build', 'test', 'invalid']:
+            result = subprocess.run(['bash', '-e', '-c', phase_run], env=dict(os.environ, GATE_PHASE=value), capture_output=True)
+            self.assertEqual(result.returncode == 0, value != 'invalid')
+        section = action.split('    - name: Union producer test roots\n', 1)[1].split('    - name:', 1)[0]
+        script = textwrap.dedent(section.split('      run: |\n', 1)[1]).rstrip()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'scripts/ci').mkdir(parents=True)
+            (root / 'scripts/ci/managed-test-build.py').write_text('import sys, json\nopen("union-call", "w").write(json.dumps(sys.argv[1:]))\n')
+            env = dict(os.environ, GATE_BUILD_MODE='affected', GATE_BUILD_FILTER='selected.slnf', PRODUCER_PROJECTS_FILE='roots.json', GITHUB_OUTPUT=str(root / 'output'))
+            subprocess.run(['bash', '-e', '-c', script], cwd=root, env=env, check=True)
+            self.assertEqual(json.loads((root / 'union-call').read_text()), ['filter', '--projects-file', 'roots.json', '--base-filter', 'selected.slnf', '--output', 'selected.slnf'])
+            self.assertIn('filter=selected.slnf', (root / 'output').read_text())
+            (root / 'union-call').unlink()
+            subprocess.run(['bash', '-e', '-c', script], cwd=root, env=dict(env, GATE_BUILD_MODE='full', GATE_BUILD_FILTER=''), check=True)
+            self.assertFalse((root / 'union-call').exists())
+
     def test_foundation_same_filter_and_advisory_restore_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

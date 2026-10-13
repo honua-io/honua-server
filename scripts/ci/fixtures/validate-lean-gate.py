@@ -95,6 +95,24 @@ for changed in (
     else:
         raise AssertionError("local MCP filter checker accepted an incomplete or unbound filter")
 
+# Every test/generator step must be excluded from build-only production, and
+# restoration/compilation/format must be excluded from consumption-only testing.
+steps = re.split(r"(?=^    - name: )", TEXT, flags=re.M)[1:]
+for step in steps:
+    name = step.splitlines()[0]
+    if ('dotnet test ' in step or 'test-projects.py gate-fast' in step or 'Regenerate projections' in name):
+        assert "if: inputs.phase != 'build'" in step, name
+    if any(label in name for label in ['Compute gate build scope', 'Union producer test roots', 'Restore selected build scope', 'Build (warnings as errors)', 'Format Check']):
+        assert "if: inputs.phase != 'test'" in step, name
+assert steps[0].startswith('    - name: Validate gate phase')
+assert steps[1].startswith('    - name: Pre-pull Testcontainers PostGIS image')
+assert TEXT.index('Regenerate projections') < TEXT.index('Run .NET Tests (Architecture Source)')
+assert "default: 'all'" in TEXT and 'all|build|test)' in TEXT
+assert TEXT.count('/p:RunAnalyzers=true') == 2
+assert TEXT.count('/p:UseSharedCompilation=false') == 2
+assert '--projects-file "${PRODUCER_PROJECTS_FILE}"' in TEXT
+assert '--base-filter "${GATE_BUILD_FILTER}" --output "${GATE_BUILD_FILTER}"' in TEXT
+
 # ---------------------------------------------------------------------------
 # Affected-scope build contract (epic #3213).
 #
@@ -184,13 +202,20 @@ seeded = set(re.findall(r'"([^"]+\.csproj)"', required_block.group(1)))
 # Every project the gate's own `dotnet test` steps execute must be compiled by a
 # narrowed build, because all of them run --no-build.
 executed = set(re.findall(r"dotnet test (\S+\.csproj)", TEXT))
+# Projection generation consumes Ai.Tests; native capability discovery also
+# requires the GDAL test output. These are producer roots, not extra test runs.
+generation_inputs = {
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj",
+    "tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj",
+}
+executed |= generation_inputs
 
 if seeded != executed:
     missing = sorted(executed - seeded)
     extra = sorted(seeded - executed)
     raise AssertionError(
         "compute-lean-gate-build-scope.sh REQUIRED_TEST_PROJECTS must be exactly the "
-        "projects the lean gate's --no-build test steps execute; "
+        "projects the lean gate's --no-build verification and generation require; "
         f"missing={missing} unexpected={extra}"
     )
 
@@ -303,15 +328,14 @@ PREPULL_TEXT = PREPULL_SCRIPT.read_text(encoding="utf-8")
 # of the concurrency contract: start the best-effort image pull before restore
 # and build, then await it immediately before the Testcontainers-backed test.
 require(
-    r"steps:\n(?:\s*(?:#.*)?\n)*"
     r"\s+- name: Pre-pull Testcontainers PostGIS image \(background\)\n"
-    r"\s+if: inputs\.prepull-postgis == 'true'\n"
+    r"\s+if: inputs\.phase != 'build' && inputs\.prepull-postgis == 'true'\n"
     r"\s+shell: bash\n\s+run: scripts/ci/prepull-testcontainers-postgis\.sh",
-    "start the Testcontainers PostGIS pre-pull as the first composite step",
+    "start the Testcontainers PostGIS pre-pull only for verification phases",
 )
 require(
     r"- name: Await Testcontainers PostGIS pre-pull\n"
-    r"\s+if: inputs\.prepull-postgis == 'true'\n"
+    r"\s+if: inputs\.phase != 'build' && inputs\.prepull-postgis == 'true'\n"
     r"\s+shell: bash\n"
     r"\s+run: scripts/ci/prepull-testcontainers-postgis\.sh --await\n\n"
     r"\s+- name: Run \.NET Tests \(Server Governance/Drift\)",
