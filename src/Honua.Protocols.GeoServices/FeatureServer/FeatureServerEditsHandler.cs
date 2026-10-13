@@ -1883,7 +1883,6 @@ internal sealed class FeatureServerEditsHandler(
         // unmasked owner read and stamp the owner on insert. That read is not copied into
         // attributes. When the owner was masked, the writer keeps the stored value via
         // PreserveOmittedMaskedAttributes, so the response still omits it.
-        var restoreStoredOwner = false;
         if (resource.OwnerEditPolicy is { Enabled: true } ownerPolicy)
         {
             var updateSnapshot = editEvent == AttributeRuleEditEvent.Insert || existingFeature is not { } existing
@@ -1904,14 +1903,20 @@ internal sealed class FeatureServerEditsHandler(
             {
                 attributes[ownerPolicy.OwnerField] = principal.Name;
             }
-            else if (editEvent != AttributeRuleEditEvent.Insert &&
-                     !principal.IsAdmin &&
-                     CallerSuppliedOwner(feature.Attributes, ownerPolicy.OwnerField) &&
-                     RemoveOwnerAttribute(attributes, ownerPolicy.OwnerField))
+            else if (editEvent != AttributeRuleEditEvent.Insert && !principal.IsAdmin)
             {
-                // A non-admin cannot reassign the row. Drop the supplied key and keep
-                // PreserveOmittedMaskedAttributes so the locked row restores the stored owner.
-                restoreStoredOwner = true;
+                var ownerAttribute = attributes.FirstOrDefault(pair =>
+                    pair.Key.Equals(ownerPolicy.OwnerField, StringComparison.OrdinalIgnoreCase));
+                if ((ownerAttribute.Key is not null || feature.ReplaceAttributes) &&
+                    !string.Equals(
+                        Convert.ToString(ownerAttribute.Value, CultureInfo.InvariantCulture),
+                        Convert.ToString(updateSnapshot?.Owner, CultureInfo.InvariantCulture),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    // Reject reassignment without turning a full replacement into a partial update
+                    // or copying the unmasked owner snapshot into the response attribute bag.
+                    throw new EditNotPermittedException("Only an administrator can change the feature owner.");
+                }
             }
         }
 
@@ -1928,52 +1933,16 @@ internal sealed class FeatureServerEditsHandler(
         var edited = Feature.Create(objectId, geometry, attributes.ToImmutable());
         var isPartialUpdate = existingFeature is not null && !feature.ReplaceAttributes;
         edited = MarkPartialGeoServicesUpdate(edited, isPartialUpdate);
-        if (restoreStoredOwner ||
-            (!edited.PreserveOmittedMaskedAttributes &&
-             OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(
-                 resource.OwnerEditPolicy,
-                 isPartialUpdate,
-                 attributes.Keys)))
+        if (!edited.PreserveOmittedMaskedAttributes &&
+            OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(
+                resource.OwnerEditPolicy,
+                isPartialUpdate,
+                attributes.Keys))
         {
             edited = edited with { PreserveOmittedMaskedAttributes = true };
         }
 
         return edited;
-    }
-
-    private static bool CallerSuppliedOwner(IReadOnlyDictionary<string, object?>? attributes, string ownerField)
-    {
-        if (attributes is null || string.IsNullOrWhiteSpace(ownerField))
-        {
-            return false;
-        }
-
-        foreach (var key in attributes.Keys)
-        {
-            if (key.Equals(ownerField, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool RemoveOwnerAttribute(
-        ImmutableDictionary<string, object?>.Builder attributes,
-        string ownerField)
-    {
-        string? match = null;
-        foreach (var key in attributes.Keys)
-        {
-            if (key.Equals(ownerField, StringComparison.OrdinalIgnoreCase))
-            {
-                match = key;
-                break;
-            }
-        }
-
-        return match is not null && attributes.Remove(match);
     }
 
     /// <summary>

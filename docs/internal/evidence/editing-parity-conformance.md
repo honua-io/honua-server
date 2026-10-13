@@ -72,6 +72,8 @@ never by parsing the message.
   only then the display name when none of those claims exist. Rows already stamped with a
   display name or key name will not match until an administrator reassigns them. Stored owner
   values are not rewritten.
+- Non-admin edits that change the owner are rejected. Full replacements must retain the same
+  owner; they still remove other omitted editable attributes. Administrators may reassign owners.
 
 ## Status summary
 

@@ -55,7 +55,7 @@ public sealed class EditOwnerSubjectTests
     }
 
     [UnitTest]
-    public async Task NonAdminUpdate_SuppliedOwner_KeepsStoredOwner()
+    public async Task NonAdminUpdate_ChangedOwner_IsRejected_AndOmittedOwnerIsPreserved()
     {
         var handler = CreateHandler();
         var resource = OwnerResource();
@@ -73,7 +73,7 @@ public sealed class EditOwnerSubjectTests
             [7] = new(true, "subject-a"),
         };
 
-        var reassigned = await handler.BuildFeatureFromGeoServicesAsync(
+        Func<Task> reassigned = () => handler.BuildFeatureFromGeoServicesAsync(
             FeatureWith("after", "subject-b"),
             7,
             resource,
@@ -82,13 +82,8 @@ public sealed class EditOwnerSubjectTests
             CancellationToken.None,
             existing,
             snapshots);
-
-        reassigned.Attributes.Values.Should().NotContain("subject-b");
-        reassigned.PreserveOmittedMaskedAttributes.Should().BeTrue();
-        var kept = FeatureDataAccess.PreserveOmittedAttributes(reassigned, stored);
-        kept.Attributes["name"].Should().Be("after");
-        kept.Attributes["owner"].Should().Be("subject-a");
-        kept.Attributes["secret"].Should().Be("keep");
+        await reassigned.Should().ThrowAsync<Exception>()
+            .WithMessage("Only an administrator can change the feature owner.");
 
         var omitted = await handler.BuildFeatureFromGeoServicesAsync(
             FeatureWith("after", owner: null),
@@ -123,6 +118,49 @@ public sealed class EditOwnerSubjectTests
         inserted.Attributes["owner"].Should().Be("subject-a");
     }
 
+    [UnitTest]
+    public async Task NonAdminReplacement_ChangedOrOmittedOwner_IsRejected()
+    {
+        var feature = FeatureWith("after", "subject-b", replaceAttributes: true);
+        var existing = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty.Add("name", "before"));
+        var snapshots = new Dictionary<long, OwnerFieldSnapshot> { [7] = new(true, "subject-a") };
+
+        Func<Task> edit = () => CreateHandler().BuildFeatureFromGeoServicesAsync(
+            feature, 7, OwnerResource(), AttributeRuleEditEvent.Update,
+            new EditPrincipal("subject-a", IsAuthenticated: true, IsAdmin: false),
+            CancellationToken.None, existing, snapshots);
+
+        await edit.Should().ThrowAsync<Exception>()
+            .WithMessage("Only an administrator can change the feature owner.");
+
+        Func<Task> omitted = () => CreateHandler().BuildFeatureFromGeoServicesAsync(
+            FeatureWith("after", owner: null, replaceAttributes: true),
+            7, OwnerResource(), AttributeRuleEditEvent.Update,
+            new EditPrincipal("subject-a", IsAuthenticated: true, IsAdmin: false),
+            CancellationToken.None, existing, snapshots);
+        await omitted.Should().ThrowAsync<Exception>()
+            .WithMessage("Only an administrator can change the feature owner.");
+    }
+
+    [UnitTest]
+    public async Task NonAdminReplacement_UnchangedOwner_DropsOtherOmittedAttributes()
+    {
+        var feature = FeatureWith("after", "subject-a", replaceAttributes: true);
+        var stored = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
+            .Add("owner", "subject-a").Add("secret", "remove"));
+        var snapshots = new Dictionary<long, OwnerFieldSnapshot> { [7] = new(true, "subject-a") };
+
+        var edited = await CreateHandler().BuildFeatureFromGeoServicesAsync(
+            feature, 7, OwnerResource(), AttributeRuleEditEvent.Update,
+            new EditPrincipal("subject-a", IsAuthenticated: true, IsAdmin: false),
+            CancellationToken.None, stored, snapshots);
+
+        edited.PreserveOmittedMaskedAttributes.Should().BeFalse();
+        var replacement = FeatureDataAccess.PreserveOmittedAttributes(edited, stored);
+        replacement.Attributes["owner"].Should().Be("subject-a");
+        replacement.Attributes.ContainsKey("secret").Should().BeFalse();
+    }
+
     private static ClaimsPrincipal Principal(string subjectType, string subject, string displayName)
         => new(new ClaimsIdentity(
             [
@@ -131,7 +169,7 @@ public sealed class EditOwnerSubjectTests
             ],
             authenticationType: "Bearer"));
 
-    private static GeoServicesFeature FeatureWith(string name, string? owner)
+    private static GeoServicesFeature FeatureWith(string name, string? owner, bool replaceAttributes = false)
     {
         var attributes = new Dictionary<string, object?> { ["name"] = name };
         if (owner is not null)
@@ -139,7 +177,7 @@ public sealed class EditOwnerSubjectTests
             attributes["owner"] = owner;
         }
 
-        return new GeoServicesFeature { Attributes = attributes };
+        return new GeoServicesFeature { Attributes = attributes, ReplaceAttributes = replaceAttributes };
     }
 
     private static MetadataV2Resource OwnerResource()
