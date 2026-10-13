@@ -152,7 +152,8 @@ public sealed class CreateSecureConnectionRequest
 
     /// <summary>
     /// Optional database server port. When omitted, inline credentials use 5432 and a secret reference
-    /// uses the port in its resolved connection string. An explicit port must match the resolved secret.
+    /// uses the port in its resolved connection string. For PostgreSQL-family providers, an explicit port
+    /// must match the resolved secret; other providers retain their existing connection-string policies.
     /// </summary>
     [Range(1, 65535)]
     public int? Port { get; init; }
