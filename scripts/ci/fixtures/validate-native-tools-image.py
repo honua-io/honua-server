@@ -55,11 +55,15 @@ class NativeToolsTests(unittest.TestCase):
                 raise RuntimeError('Wrong publisher signature/ref/source/issuer')
             self.assertIn(f'oci://{native.IMAGE}@{DIGEST}', argv)
             self.assertIn('--bundle-from-oci', argv)
+            self.assertIn('--deny-self-hosted-runners', argv)
+            # gh treats these identity selectors as mutually exclusive. The exact
+            # certificate identity already pins both the workflow and trunk ref.
+            selectors = {'--cert-identity', '--cert-identity-regex', '--signer-repo', '--signer-workflow'}
+            self.assertEqual(selectors.intersection(argv), {'--cert-identity'})
             for flag, value in [('--repo', 'honua-io/honua-server'),
                                 ('--source-ref', 'refs/heads/trunk'),
                                 ('--source-digest', SOURCE),
                                 ('--cert-oidc-issuer', 'https://token.actions.githubusercontent.com'),
-                                ('--signer-workflow', f'honua-io/honua-server/{native.WORKFLOW}'),
                                 ('--cert-identity', f'https://github.com/honua-io/honua-server/{native.WORKFLOW}@refs/heads/trunk')]:
                 self.assertEqual(argv[argv.index(flag) + 1], value)
             return 'VERIFIED'
