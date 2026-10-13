@@ -2681,9 +2681,10 @@
           "status": "implemented",
           "esriPaths": [
             "/VersionManagementServer/versions/{versionGuid}/alter",
-            "/VersionManagementServer/versions/{versionGuid}/delete"
+            "/VersionManagementServer/versions/{versionGuid}/delete",
+            "/VersionManagementServer/delete"
           ],
-          "notes": "Alter updates name/access/description; delete removes the version and returns 409 rather than deleting mid-reconcile/post. Both are owner-or-admin gated. The returned moment is wall-clock time, not a branch generation."
+          "notes": "Alter updates name/access/description; delete removes the version and returns 409 rather than deleting mid-reconcile/post. Both are owner-or-admin gated. The returned moment is wall-clock time, not a branch generation. The service-level delete route resolves an owner-qualified versionName, or an unqualified name only under the authenticated owner, inside the served service; DEFAULT, malformed or ambiguous names and non-owner deletion remain rejected. It delegates to the same transactional GUID delete and overlay cascade; the stateless read/edit session limitation still applies."
         },
         {
           "name": "Reconcile; post; resolveConflicts; inspectConflicts",
