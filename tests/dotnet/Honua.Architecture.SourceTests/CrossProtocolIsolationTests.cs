@@ -15,7 +15,7 @@ namespace Honua.Architecture.Tests;
 /// another protocol adapter's implementation. Shared behavior must be extracted into a
 /// neutral Core/Infrastructure service that both protocols adapt to. Previously only the
 /// single pair <c>Ogc.Classic -&gt; GeoServices</c> was guarded (see
-/// <see cref="DependencyRulesTests.ClassicOgcProtocols_ShouldNotDependOn_GeoServicesProtocols"/>),
+/// <c>DependencyRulesTests.ClassicOgcProtocols_ShouldNotDependOn_GeoServicesProtocols</c>),
 /// leaving 12 of 14 adapter families unchecked. This test asserts the full matrix:
 /// source under <c>Features/Protocols/{Family}</c> must not reference any <em>other</em>
 /// protocol family's namespace, except for the explicitly documented allow-list below.

@@ -33,6 +33,10 @@
     </PackageReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../Honua.Architecture.SourceTests/ArchitectureTestHelpers.Source.cs" Link="ArchitectureTestHelpers.Source.cs" />
+  </ItemGroup>
+
   <Import Project="../../../.github/test-coverage-projects.props" />
   <ItemGroup>
     <None Include="../../../.github/test-coverage-assemblies.txt" Link="test-coverage-assemblies.txt" CopyToOutputDirectory="PreserveNewest" />

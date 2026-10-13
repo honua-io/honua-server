@@ -102,7 +102,7 @@ def proposed(root, project):
     name = Path(project).stem
     tree = ET.parse(root / project)
     test = any(e.text == 'true' for e in tree.findall('.//IsTestProject')) or any(e.get('Include') == 'Microsoft.NET.Test.Sdk' for e in tree.findall('.//PackageReference'))
-    role = 'unit' if name.endswith('.UnitTests') else 'component' if name.endswith('.ComponentTests') else 'architecture' if name == 'Honua.Architecture.Tests' else 'mixed' if test else 'support' if 'TestKit' in name else 'host'
+    role = 'unit' if name.endswith('.UnitTests') else 'component' if name.endswith('.ComponentTests') else 'architecture' if name in {'Honua.Architecture.Tests', 'Honua.Architecture.SourceTests'} else 'mixed' if test else 'support' if 'TestKit' in name else 'host'
     refs = closure(root, project)
     owners = sorted(p for p in refs if p.startswith('src/') and 'Analyzers' not in p)
     text = '\n'.join((root / p).read_text(errors='replace') for p in sources(root, project))
@@ -112,6 +112,9 @@ def proposed(root, project):
     for token, resource in [('PostgresFixture', 'postgres'), ('RedisFixture', 'redis'), ('GdalCli', 'native-gdal')]:
         if token in text:
             resources.append(resource)
+    if name == 'Honua.Architecture.SourceTests':
+        # Guards inspect fixture names in source text; they do not provision those resources.
+        resources = []
     if role == 'unit' and (resources or any('/Honua.Server/' in p or '/Honua.TestKit/' in p for p in refs) or any(token in text for token in ('WebApplicationFactory<', '[IntegrationTest', '[IntegrationTheory'))):
         role = 'mixed'
     return dict(role=role, shardRouted=name.endswith('.UnitTests') or name in {'Honua.Server.Tests', 'Honua.Ai.Tests', 'Honua.Geoprocessing.Cli.Tests'} or (name.startswith('Honua.Protocols.') and name.endswith('.Tests')), runtimeOwners=owners, resources=resources, isolated=role == 'unit',
@@ -180,6 +183,12 @@ def validate(root, catalog):
         if entry['role'] not in ROLES or not isinstance(entry['isolated'], bool) or not isinstance(entry['coverageRequired'], bool):
             raise ValueError(f'{project}: invalid role or flags')
         refs = closure(root, project)
+        if project == 'tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj':
+            allowed = {project, 'tests/dotnet/Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj', 'src/Honua.Analyzers/Honua.Analyzers.csproj'}
+            if entry['role'] != 'architecture' or entry['coverageRequired'] or entry['runtimeOwners'] or entry['resources'] or entry['isolated']:
+                raise ValueError(f'{project}: source architecture guards must remain resource-free architecture checks')
+            if not refs <= allowed:
+                raise ValueError(f'{project}: source architecture guards reference runtime or executable test projects')
         # Only the canonical full-coverage collector may load executable test assemblies.
         collector = project == 'tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj' and entry['role'] == 'architecture'
         if not collector:

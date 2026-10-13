@@ -255,6 +255,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.ReleaseWorkflows.Test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.StaleAttemptWorker", "tests\dotnet\Honua.StaleAttemptWorker\Honua.StaleAttemptWorker.csproj", "{F61F5372-7EDF-53DD-B017-8D9A35478D87}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Architecture.SourceTests", "tests\dotnet\Honua.Architecture.SourceTests\Honua.Architecture.SourceTests.csproj", "{A62D53A1-E364-5D36-A7B9-388FFE3DF589}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -1645,6 +1647,18 @@ Global
 		{012A76CC-7E8E-4735-8C0D-E8CDBC9396B4}.Release|x64.Build.0 = Release|Any CPU
 		{012A76CC-7E8E-4735-8C0D-E8CDBC9396B4}.Release|x86.ActiveCfg = Release|Any CPU
 		{012A76CC-7E8E-4735-8C0D-E8CDBC9396B4}.Release|x86.Build.0 = Release|Any CPU
+		{A62D53A1-E364-5D36-A7B9-388FFE3DF589}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A62D53A1-E364-5D36-A7B9-388FFE3DF589}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A62D53A1-E364-5D36-A7B9-388FFE3DF589}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A62D53A1-E364-5D36-A7B9-388FFE3DF589}.Debug|x64.Build.0 = Debug|Any CPU
+		{A62D53A1-E364-5D36-A7B9-388FFE3DF589}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A62D53A1-E364-5D36-A7B9-388FFE3DF589}.Debug|x86.Build.0 = Debug|Any CPU
+		{A62D53A1-E364-5D36-A7B9-388FFE3DF589}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A62D53A1-E364-5D36-A7B9-388FFE3DF589}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A62D53A1-E364-5D36-A7B9-388FFE3DF589}.Release|x64.ActiveCfg = Release|Any CPU
+		{A62D53A1-E364-5D36-A7B9-388FFE3DF589}.Release|x64.Build.0 = Release|Any CPU
+		{A62D53A1-E364-5D36-A7B9-388FFE3DF589}.Release|x86.ActiveCfg = Release|Any CPU
+		{A62D53A1-E364-5D36-A7B9-388FFE3DF589}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
