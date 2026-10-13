@@ -1,0 +1,592 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using FluentAssertions;
+using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
+using Honua.Db.Postgres.Features.Migration;
+using Honua.Db.Postgres.Features.FileImport;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+
+namespace Honua.Db.Postgres.Tests.Features.Import;
+
+[global::Xunit.Trait("Tier", "Fast")]
+public sealed class GeoservicesImportServiceScanTests
+{
+    [Fact]
+    public async Task ScanSourceAsync_ArcGisWebMercatorAlias_NormalizesToEpsg3857()
+    {
+        var service = CreateService(
+            new GeoservicesScanHandler(
+                serviceDescription: "Parcel Viewer",
+                spatialReferenceJson: """{"wkid":102100}"""));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var spatialReference = artifact.Resources.Should().ContainSingle().Subject.SpatialReferences.Should().ContainSingle().Subject;
+        spatialReference.SourceValue.Should().Be("WKID:102100");
+        spatialReference.Srid.Should().Be(3857);
+        spatialReference.CrsUri.Should().Be("http://www.opengis.net/def/crs/EPSG/0/3857");
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_UnknownArcGisWkid_DoesNotInventEpsgUri()
+    {
+        var service = CreateService(
+            new GeoservicesScanHandler(
+                serviceDescription: "Parcel Viewer",
+                spatialReferenceJson: """{"wkid":54004}"""));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var spatialReference = artifact.Resources.Should().ContainSingle().Subject.SpatialReferences.Should().ContainSingle().Subject;
+        spatialReference.SourceValue.Should().Be("WKID:54004");
+        spatialReference.CrsUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_ServiceDescriptionChanges_DoNotChurnArtifactIds()
+    {
+        const string rendererUrl = "https://user:secret@example.com/assets/symbol.png?token=abc#frag";
+
+        var firstService = CreateService(
+            new GeoservicesScanHandler(
+                serviceDescription: "Parcel Viewer A",
+                spatialReferenceJson: """{"wkid":3857}""",
+                rendererUrl: rendererUrl));
+        var secondService = CreateService(
+            new GeoservicesScanHandler(
+                serviceDescription: "Parcel Viewer B",
+                spatialReferenceJson: """{"wkid":3857}""",
+                rendererUrl: rendererUrl));
+
+        var firstArtifact = await firstService.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+        var secondArtifact = await secondService.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        firstArtifact.Source.DisplayName.Should().Be("Parcel Viewer A");
+        secondArtifact.Source.DisplayName.Should().Be("Parcel Viewer B");
+        firstArtifact.Containers.Should().ContainSingle().Which.Title.Should().Be("Parcel Viewer A");
+        secondArtifact.Containers.Should().ContainSingle().Which.Title.Should().Be("Parcel Viewer B");
+
+        firstArtifact.Containers.Should().ContainSingle().Which.Id.Should().Be("service:Parcels");
+        secondArtifact.Containers.Should().ContainSingle().Which.Id.Should().Be("service:Parcels");
+        firstArtifact.Resources.Should().ContainSingle().Which.Id.Should().Be(secondArtifact.Resources.Single().Id);
+        firstArtifact.Styles.Should().ContainSingle().Which.Id.Should().Be(secondArtifact.Styles.Single().Id);
+        firstArtifact.ExternalDependencies.Should().ContainSingle().Which.Id.Should().Be(secondArtifact.ExternalDependencies.Single().Id);
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_RendererExternalUrls_AreSanitizedAndHashed()
+    {
+        var service = CreateService(
+            new GeoservicesScanHandler(
+                serviceDescription: "Parcel Viewer",
+                spatialReferenceJson: """{"wkid":3857}""",
+                rendererUrl: "https://user:secret@example.com/assets/symbol.png?token=abc#frag"));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var dependency = artifact.ExternalDependencies.Should().ContainSingle().Subject;
+        dependency.Kind.Should().Be("external-symbol");
+        dependency.Address.Should().Be("https://example.com/assets/symbol.png");
+        dependency.Id.Should().MatchRegex("^renderer:Parcels:0:external:[0-9a-f]{16}$");
+        dependency.Id.Should().NotContain("https://");
+        dependency.Id.Should().NotContain("secret");
+        dependency.Id.Should().NotContain("token");
+        artifact.Styles.Should().ContainSingle().Which.ExternalDependencyIds.Should().ContainSingle(dependency.Id);
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_WithResolvedToken_AppendsTokenAndReportsTokenPosture()
+    {
+        const string accessToken = "resolved-arcgis-token";
+        var handler = new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: """{"wkid":3857}""",
+            expectedToken: accessToken);
+        var service = CreateService(handler);
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5,
+            Credentials = new GeoservicesCredentialDescriptor
+            {
+                Mode = GeoservicesAuthenticationModes.Token,
+                AccessToken = accessToken,
+                AccessTokenSecretReference = "env:ARCGIS_TOKEN"
+            }
+        });
+
+        handler.RequestCount.Should().Be(3);
+        artifact.AuthPosture.Mode.Should().Be(GeoservicesAuthenticationModes.Token);
+        artifact.AuthPosture.CredentialsSupplied.Should().BeTrue();
+        artifact.AuthPosture.AccessConfirmed.Should().BeTrue();
+
+        var artifactJson = JsonSerializer.Serialize(artifact);
+        artifactJson.Should().NotContain(accessToken);
+        artifactJson.Should().NotContain("env:ARCGIS_TOKEN");
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_WithExpiredTokenError_ReportsExpiredTokenPostureWithoutSecretValues()
+    {
+        const string accessToken = "expired-arcgis-token";
+        var service = CreateService(new ArcGisErrorHandler(498, $"Invalid token: {accessToken}."));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5,
+            Credentials = new GeoservicesCredentialDescriptor
+            {
+                Mode = GeoservicesAuthenticationModes.Token,
+                AccessToken = accessToken,
+                AccessTokenSecretReference = "env:ARCGIS_TOKEN"
+            }
+        });
+
+        artifact.AuthPosture.Mode.Should().Be(GeoservicesAuthenticationModes.ExpiredToken);
+        artifact.AuthPosture.CredentialsSupplied.Should().BeTrue();
+        artifact.AuthPosture.AccessConfirmed.Should().BeFalse();
+        artifact.OverallCompatibility.Code.Should().Be(ImportCompatibilityCodes.ArcGisTokenExpired);
+
+        var artifactJson = JsonSerializer.Serialize(artifact);
+        artifactJson.Should().NotContain(accessToken);
+        artifactJson.Should().NotContain("env:ARCGIS_TOKEN");
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_WithForbiddenError_ReportsDeniedPosture()
+    {
+        var service = CreateService(new ArcGisErrorHandler(403, "Forbidden."));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5,
+            Credentials = new GeoservicesCredentialDescriptor
+            {
+                Mode = GeoservicesAuthenticationModes.Basic,
+                Username = "scanner",
+                Password = "resolved-basic-secret",
+                PasswordSecretReference = "env:ARCGIS_PASSWORD"
+            }
+        });
+
+        artifact.AuthPosture.Mode.Should().Be(GeoservicesAuthenticationModes.Denied);
+        artifact.AuthPosture.CredentialsSupplied.Should().BeTrue();
+        artifact.AuthPosture.AccessConfirmed.Should().BeFalse();
+        artifact.OverallCompatibility.Code.Should().Be(ImportCompatibilityCodes.ArcGisAccessDenied);
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_MissingAttachmentMetadata_PreservesUnknownState()
+    {
+        var service = CreateService(
+            new GeoservicesScanHandler(
+                serviceDescription: "Parcel Viewer",
+                spatialReferenceJson: """{"wkid":3857}"""));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var resource = artifact.Resources.Should().ContainSingle().Subject;
+        resource.HasAttachments.Should().BeNull();
+        resource.Compatibility.Warnings.Should().NotContain(warning => warning.Contains("Attachments", StringComparison.Ordinal));
+        artifact.ExternalDependencies.Should().NotContain(dependency => dependency.Kind == "attachments");
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_PublishedSdkMetadata_PreservesUnknownAndExplicitFieldNullability()
+    {
+        var service = CreateService(new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: JsonSerializer.Serialize(new { wkt = SpatialReference.WebMercator.Wkt }),
+            fieldsJson: """
+                [{"name":"OMITTED","type":"esriFieldTypeString"},
+                 {"name":"REQUIRED","type":"esriFieldTypeString","nullable":false},
+                 {"name":"OPTIONAL","type":"esriFieldTypeString","nullable":true},
+                 {"name":"NULL","type":"esriFieldTypeString","nullable":null}]
+                """));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var resource = artifact.Resources.Should().ContainSingle().Subject;
+        resource.Fields.ToDictionary(static field => field.Name, static field => field.Nullable)
+            .Should().BeEquivalentTo(new Dictionary<string, bool?>
+            {
+                ["OMITTED"] = null,
+                ["REQUIRED"] = false,
+                ["OPTIONAL"] = true,
+                ["NULL"] = null
+            });
+        resource.HasAttachments.Should().BeNull();
+        resource.FeatureCount.Should().Be(42);
+        var spatialReference = resource.SpatialReferences.Should().ContainSingle().Subject;
+        spatialReference.SourceValue.Should().Be(SpatialReference.WebMercator.Wkt);
+        artifact.Source.Version.Should().Be("11.2");
+    }
+
+    [Theory]
+    [InlineData("{}", null)]
+    [InlineData("{\"count\":null}", null)]
+    [InlineData("{\"count\":0}", 0)]
+    public async Task ScanSourceAsync_UnavailableCount_IsDistinctFromEmptySource(string countJson, int? expectedCount)
+    {
+        var handler = new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: """{"wkid":3857}""",
+            countJson: countJson);
+        var service = CreateService(handler);
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        handler.CountRequestCount.Should().Be(1, "the configured count response must actually be consumed");
+        artifact.Resources.Should().ContainSingle().Subject.FeatureCount.Should().Be(expectedCount);
+        var countWarnings = artifact.ScanCompleteness.Warnings.Where(static warning =>
+            warning.Contains("Feature count was unavailable", StringComparison.Ordinal));
+        if (expectedCount.HasValue)
+        {
+            countWarnings.Should().BeEmpty();
+        }
+        else
+        {
+            countWarnings.Should().ContainSingle();
+        }
+    }
+
+    [Theory]
+    [InlineData("wkt")]
+    [InlineData("latestWkt")]
+    public async Task ScanSourceAsync_ProjectedWkt_UsesProjectedLengthUnit(string wktProperty)
+    {
+        var service = CreateService(
+            new GeoservicesScanHandler(
+                serviceDescription: "Parcel Viewer",
+                spatialReferenceJson: JsonSerializer.Serialize(new Dictionary<string, string?>
+                {
+                    [wktProperty] = SpatialReference.WebMercator.Wkt
+                })));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var spatialReference = artifact.Resources.Should().ContainSingle().Subject.SpatialReferences.Should().ContainSingle().Subject;
+        spatialReference.SourceValue.Should().Be(SpatialReference.WebMercator.Wkt);
+        spatialReference.Unit.Should().Be("metre");
+        spatialReference.IsGeographic.Should().BeFalse();
+    }
+
+    private static GeoservicesImportService CreateService(HttpMessageHandler handler)
+    {
+        var httpClient = new HttpClient(handler);
+        var restClient = new ArcGisRestClient(
+            httpClient,
+            NullLogger<ArcGisRestClient>.Instance,
+            (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var connectionProvider = new Mock<IAdoNetDatabaseConnectionProvider>(MockBehavior.Strict);
+        var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
+
+        crsRegistry.Setup(registry => registry.ResolveBySridAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns((int srid, CancellationToken _) => new ValueTask<CrsDefinition?>(
+                srid switch
+                {
+                    3857 => new CrsDefinition("http://www.opengis.net/def/crs/EPSG/0/3857", 3857, AxisOrder.EastNorth, false),
+                    _ => null
+                }));
+
+        return new GeoservicesImportService(
+            restClient,
+            connectionProvider.Object,
+            crsRegistry.Object,
+            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            NullLogger<GeoservicesImportService>.Instance,
+            new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
+    }
+
+    /// <summary>
+    /// #4600 (acceptance criterion 4): imported coded-value and range domains are persisted, served,
+    /// enforced on edit and verified by catalog reconciliation, so the classifier reports them as
+    /// automated instead of "assisted / enforcement not automated".
+    /// </summary>
+    [Fact]
+    public async Task ScanSourceAsync_CapturedDomains_ClassifiesDomainsAsAutomated()
+    {
+        var service = CreateService(new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: """{"wkid":3857}""",
+            fieldsJson: FieldsWithCodedValueDomain(entryCount: 3)));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var domains = artifact.FidelityClassifications.Should().ContainSingle(c => c.Category == "domains").Subject;
+        domains.AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.Automated);
+        domains.Code.Should().Be(ImportCompatibilityCodes.Compatible);
+        domains.ManualSteps.Should().BeEmpty();
+        domains.Metadata.Should().Contain("domainFieldCount", "2").And.NotContainKey("truncatedDomainCount");
+    }
+
+    /// <summary>
+    /// #4600: a coded-value domain over the capture cap is not persisted, so the field migrates without
+    /// its domain. The classifier must not claim that construct is automated.
+    /// </summary>
+    [Fact]
+    public async Task ScanSourceAsync_CodedValueDomainOverTheCaptureCap_ClassifiesDomainsAsManualReview()
+    {
+        var service = CreateService(new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: """{"wkid":3857}""",
+            fieldsJson: FieldsWithCodedValueDomain(entryCount: EsriFieldDomainParser.CodedValueDomainCap + 1)));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var domains = artifact.FidelityClassifications.Should().ContainSingle(c => c.Category == "domains").Subject;
+        domains.AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.ManualReview);
+        domains.Code.Should().Be(ImportCompatibilityCodes.ArcGisDomainTruncated);
+        domains.ManualSteps.Should().ContainSingle();
+        domains.Metadata.Should().Contain("domainFieldCount", "2").And.Contain("truncatedDomainCount", "1");
+    }
+
+    /// <summary>
+    /// #4600 review: a domain the edit validator cannot enforce (unknown type, no coded values, or no
+    /// numeric range bounds) is persisted but accepts every value, so it must not count as automated.
+    /// </summary>
+    [Theory]
+    [InlineData("""{ "type": "codedValue", "name": "EmptyCodes", "codedValues": [] }""")]
+    [InlineData("""{ "type": "mysteryDomain", "name": "Unknown" }""")]
+    [InlineData("""{ "type": "range", "name": "OneBound", "range": [5] }""")]
+    [InlineData("""{ "type": "range", "name": "WordBounds", "range": ["low", "high"] }""")]
+    public async Task ScanSourceAsync_UnenforceableDomain_ClassifiesDomainsAsManualReview(string domainJson)
+    {
+        var fieldsJson = $$"""
+            [
+              { "name": "OBJECTID", "type": "esriFieldTypeOID" },
+              { "name": "zone", "type": "esriFieldTypeString",
+                "domain": { "type": "codedValue", "name": "ZoneDomain", "codedValues": [{ "code": "R1", "name": "Residential" }] } },
+              { "name": "odd", "type": "esriFieldTypeInteger", "domain": {{domainJson}} }
+            ]
+            """;
+        var service = CreateService(new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: """{"wkid":3857}""",
+            fieldsJson: fieldsJson));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var domains = artifact.FidelityClassifications.Should().ContainSingle(c => c.Category == "domains").Subject;
+        domains.AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.ManualReview);
+        domains.Code.Should().Be(ImportCompatibilityCodes.ManualReview);
+        domains.ManualSteps.Should().ContainSingle();
+        domains.Metadata.Should().Contain("unenforceableDomainCount", "1").And.NotContainKey("truncatedDomainCount");
+    }
+
+    /// <summary>
+    /// Two domain fields: <c>zone</c> carries a coded-value domain with <paramref name="entryCount"/>
+    /// entries and <c>score</c> a range domain, so the domain field count is 2 either way.
+    /// </summary>
+    private static string FieldsWithCodedValueDomain(int entryCount)
+    {
+        var codes = string.Join(",", Enumerable.Range(0, entryCount)
+            .Select(static i => $$"""{ "code": "Z{{i}}", "name": "Zone {{i}}" }"""));
+        return $$"""
+            [
+              { "name": "OBJECTID", "type": "esriFieldTypeOID" },
+              { "name": "zone", "type": "esriFieldTypeString",
+                "domain": { "type": "codedValue", "name": "ZoneDomain", "codedValues": [{{codes}}] } },
+              { "name": "score", "type": "esriFieldTypeInteger",
+                "domain": { "type": "range", "name": "ScoreRange", "range": [0, 100] } }
+            ]
+            """;
+    }
+
+    private sealed class GeoservicesScanHandler : HttpMessageHandler
+    {
+        private readonly string _serviceDescription;
+        private readonly string? _rendererUrl;
+        private readonly string? _expectedToken;
+        private readonly JsonElement _spatialReference;
+        private readonly string? _fieldsJson;
+        private readonly string _countJson;
+
+        public GeoservicesScanHandler(
+            string serviceDescription,
+            string spatialReferenceJson,
+            string? rendererUrl = null,
+            string? expectedToken = null,
+            string? fieldsJson = null,
+            string countJson = "{\"count\":42}")
+        {
+            _serviceDescription = serviceDescription;
+            _rendererUrl = rendererUrl;
+            _expectedToken = expectedToken;
+            _fieldsJson = fieldsJson;
+            _countJson = countJson;
+            _spatialReference = JsonDocument.Parse(spatialReferenceJson).RootElement.Clone();
+        }
+
+        public int RequestCount { get; private set; }
+        public int CountRequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(_expectedToken))
+            {
+                request.Headers.TryGetValues("X-Esri-Authorization", out var values).Should().BeTrue();
+                values!.Single().Should().Be($"Bearer {_expectedToken}");
+                pathAndQuery.Should().NotContain(_expectedToken);
+            }
+
+            var rendererJson = _rendererUrl == null
+                ? JsonSerializer.Serialize(new { type = "simple" })
+                : JsonSerializer.Serialize(new
+                {
+                    type = "simple",
+                    symbol = new
+                    {
+                        type = "esriPMS",
+                        url = _rendererUrl
+                    }
+                });
+            var payload = pathAndQuery switch
+            {
+                "/arcgis/rest/services/Parcels/FeatureServer?f=json" => JsonSerializer.Serialize(new
+                {
+                    currentVersion = 11.2,
+                    serviceDescription = _serviceDescription,
+                    capabilities = "Query",
+                    layers = new[]
+                    {
+                        new
+                        {
+                            id = 0,
+                            name = "Parcels"
+                        }
+                    }
+                }),
+                "/arcgis/rest/services/Parcels/FeatureServer/0?f=json" => $$"""
+                    {
+                      "id": 0,
+                      "name": "Parcels",
+                      "description": "Parcel polygons",
+                      "geometryType": "esriGeometryPolygon",
+                      "capabilities": "Query",
+                      {{(_fieldsJson is null ? string.Empty : "\"fields\": " + _fieldsJson + ",")}}
+                      "spatialReference": {{_spatialReference.GetRawText()}},
+                      "drawingInfo": {
+                        "renderer": {{rendererJson}}
+                      }
+                    }
+                    """,
+                _ when request.RequestUri?.AbsolutePath == "/arcgis/rest/services/Parcels/FeatureServer/0/query"
+                    => CountResponse(request),
+                _ => throw new InvalidOperationException($"Unexpected ArcGIS request path: {pathAndQuery}")
+            };
+
+            // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
+            // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            });
+        }
+
+        private string CountResponse(HttpRequestMessage request)
+        {
+            request.Method.Should().Be(HttpMethod.Get);
+            // Query parameter order is not part of the ArcGIS protocol contract.
+            var parameters = request.RequestUri!.Query.TrimStart('?')
+                .Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Select(static parameter => parameter.Split('=', 2))
+                .ToDictionary(static pair => Uri.UnescapeDataString(pair[0]),
+                    static pair => Uri.UnescapeDataString(pair[1]), StringComparer.Ordinal);
+            parameters.Should().BeEquivalentTo(new Dictionary<string, string>
+            {
+                ["where"] = "1=1",
+                ["f"] = "json",
+                ["returnCountOnly"] = "true"
+            });
+            CountRequestCount++;
+            return _countJson;
+        }
+    }
+
+    private sealed class ArcGisErrorHandler(int code, string message) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                error = new
+                {
+                    code,
+                    message
+                }
+            });
+
+            // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
+            // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+}

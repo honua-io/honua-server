@@ -15,6 +15,7 @@ namespace Honua.Core.Tests.Features.FeatureStore;
 
 public sealed class FeatureProviderQueryRouterTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveReaderAsync_MetadataConnectionAndStorageBinding_ReturnsConnectionProviderReader()
     {
@@ -35,6 +36,7 @@ public sealed class FeatureProviderQueryRouterTests
         resolved.Should().BeSameAs(reader);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveReaderAsync_EmitsSpanTaggedWithServiceResourcePublicationAndProvider()
     {
@@ -71,6 +73,7 @@ public sealed class FeatureProviderQueryRouterTests
             activity.TagObjects.Any(tag => tag.Key == "provider.name" && Equals(tag.Value, DataProviderNames.DuckDb)));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveReaderAsync_UnsupportedStatisticsOperation_SetsErrorStatusOnSpan()
     {
@@ -105,6 +108,7 @@ public sealed class FeatureProviderQueryRouterTests
         activities.Should().ContainSingle(activity => activity.Status == ActivityStatusCode.Error);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveReaderAsync_UnsupportedStatisticsOperation_ThrowsClearError()
     {
@@ -130,6 +134,7 @@ public sealed class FeatureProviderQueryRouterTests
         exception.Which.Message.Should().Contain("does not support statistics operations");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ResolveReaderAsync_BindableProvider_ReceivesMetadataV2Binding()
     {

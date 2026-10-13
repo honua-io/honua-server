@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class ArcGisRestClientTableDiscoveryTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("FeatureServer")]
     [InlineData("MapServer")]
@@ -33,6 +34,7 @@ public sealed class ArcGisRestClientTableDiscoveryTests
         handler.MetadataRequests.Should().Equal(0, 1);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData("\"layers\":null,")]
@@ -49,6 +51,7 @@ public sealed class ArcGisRestClientTableDiscoveryTests
         handler.MetadataRequests.Should().Equal(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("")]
     [InlineData("\"tables\":null,")]
@@ -65,6 +68,7 @@ public sealed class ArcGisRestClientTableDiscoveryTests
         handler.MetadataRequests.Should().Equal(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_DoesNotDuplicateResourceListedInBothCollections()
     {
@@ -78,6 +82,7 @@ public sealed class ArcGisRestClientTableDiscoveryTests
         handler.MetadataRequests.Should().Equal(0, 1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_ContinuesToTableAfterLayerMetadataFailure()
     {
@@ -91,6 +96,7 @@ public sealed class ArcGisRestClientTableDiscoveryTests
         handler.MetadataRequests.Should().Equal(2, 1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_PropagatesCancellationDuringTableDiscovery()
     {

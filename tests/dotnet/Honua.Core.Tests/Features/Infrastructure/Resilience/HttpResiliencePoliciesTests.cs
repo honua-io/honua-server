@@ -10,6 +10,7 @@ namespace Honua.Core.Tests.Features.Infrastructure.Resilience;
 /// </summary>
 public sealed class HttpResiliencePoliciesTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void GetHttpPolicy_WithEquivalentOptions_ReusesCachedPolicy()
     {

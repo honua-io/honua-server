@@ -23,6 +23,7 @@ public sealed class EsriTileCachePackageReaderTests
     private const int CompactV2IndexEntries = 128 * 128;
     private const int CompactV2IndexSize = CompactV2IndexEntries * 8;
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("basemap.tpk", true)]
     [InlineData("basemap.tpkx", true)]
@@ -36,6 +37,7 @@ public sealed class EsriTileCachePackageReaderTests
         reader.CanRead(fileName).Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadDescriptor_CompactV2Tpkx_ParsesRasterScheme()
     {
@@ -52,6 +54,7 @@ public sealed class EsriTileCachePackageReaderTests
         descriptor.TileBundlesPath.Should().Be("tile");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadDescriptor_CompactV2Vtpk_ParsesVectorSchemeUnderP12Prefix()
     {
@@ -66,6 +69,7 @@ public sealed class EsriTileCachePackageReaderTests
         descriptor.TileBundlesPath.Should().Be("p12/tile");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadTiles_CompactV2_DecodesIndexedTilesAtCorrectCoordinates()
     {
@@ -93,6 +97,7 @@ public sealed class EsriTileCachePackageReaderTests
             .Which.Content.Should().Equal(Encoding.ASCII.GetBytes("TILE-BBBB"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadTiles_CompactV2_HonorsZoomRange()
     {
@@ -110,6 +115,7 @@ public sealed class EsriTileCachePackageReaderTests
         read.Should().BeEmpty("the only bundle is at level 3 which is outside the requested 4-24 range");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadDescriptor_ExplodedTpk_ParsesFromConfXml()
     {
@@ -162,6 +168,7 @@ public sealed class EsriTileCachePackageReaderTests
             .WithMessage("*missing an origin*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadTiles_ExplodedTpk_DecodesHexCoordinates()
     {
@@ -186,6 +193,7 @@ public sealed class EsriTileCachePackageReaderTests
     /// extended negative Int64s into negative Int32 sizes, triggering the size-&lt;=0
     /// guard and skipping the tile.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadTiles_CompactV2_TilesLargerThan8MB_AreNotSilentlyDropped()
     {
@@ -304,6 +312,7 @@ public sealed class EsriTileCachePackageReaderTests
         act.Should().Throw<NotSupportedException>().WithMessage("*27700*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadDescriptor_MissingDescriptor_Throws()
     {

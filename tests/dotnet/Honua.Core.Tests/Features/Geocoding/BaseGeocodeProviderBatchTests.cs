@@ -8,6 +8,7 @@ namespace Honua.Core.Tests.Features.Geocoding;
 
 public sealed class BaseGeocodeProviderBatchTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task BatchGeocodeAsync_ReturnsOneSlotPerInput_PreservingPositionalAlignment()
     {
@@ -33,6 +34,7 @@ public sealed class BaseGeocodeProviderBatchTests
         Assert.Equal(2, provider.ForwardCalls.Count);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task BatchGeocodeAsync_FanOutHonorsMaxResultsPerQuery()
     {
@@ -51,6 +53,7 @@ public sealed class BaseGeocodeProviderBatchTests
         Assert.All(provider.ForwardCalls, forward => Assert.Equal(5, forward.MaxResults));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task BatchGeocodeAsync_EmitsEveryCandidatePerInput_SharingResultId()
     {

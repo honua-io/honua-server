@@ -1,0 +1,728 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Reflection;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Queries.Filters;
+using Microsoft.Extensions.ObjectPool;
+using NSubstitute;
+using Honua.TestKit.Attributes;
+
+namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
+
+public sealed class PostgresStorageMappedFeatureReaderSqlTests
+{
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void SRV_DB_005_PagedCallerOrdering_AppendsPrimaryKeyTiebreaker()
+    {
+        var reader = CreateReader(CreateResource());
+        var query = new FeatureQuery
+        {
+            OrderBy = [new OrderByClause("name", ascending: false)],
+            Limit = 25,
+            Offset = 50
+        };
+
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [query, false])!.ToString()!;
+
+        sql.Should().Contain("ORDER BY \"__honua_page_order_0\" DESC, \"__honua_page_order_1\"");
+        sql.Should().Contain("ORDER BY page_source.\"__honua_page_order_0\" DESC, page_source.\"__honua_page_order_1\"");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void SRV_DB_006_SourceTemporalFilterConvertsTypedColumnToTextBeforeEpochDetection()
+    {
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "WrapEpochAwareTimestamp", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var expression = (string)method.Invoke(null, ["\"observed_at\""])!;
+
+        expression.Should().Contain("NULLIF((\"observed_at\")::text, '')");
+        expression.Should().NotContain("NULLIF(\"observed_at\", '')");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void SRV_DB_020_JsonbNumericSortTreatsEmptyStringAsNull()
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "measurement", Type = MetadataV2FieldType.Integer }],
+        };
+        var query = new FeatureQuery { OrderBy = [new OrderByClause("measurement", ascending: true)] };
+
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(CreateReader(resource, attributesColumn: "attributes"), [query, false])!.ToString()!;
+
+        sql.Should().Contain("NULLIF(((\"attributes\" ->> $2::text))::text, '')::bigint");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(MetadataV2FieldType.Integer)]
+    [InlineData(MetadataV2FieldType.BigInteger)]
+    [InlineData(MetadataV2FieldType.Float)]
+    [InlineData(MetadataV2FieldType.Double)]
+    public void BuildFeatureSelect_CanonicalNumericFilter_UsesTypedPhysicalColumn(MetadataV2FieldType type)
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "measurement", Type = type }]
+        };
+        var filter = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new BinaryExpression(new PropertyReference("measurement"), BinaryOperator.GreaterThanOrEqual,
+                new Literal(25, LiteralType.Number)), resource);
+        var reader = CreateReader(resource);
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [new FeatureQuery { SqlFilter = filter }, false])!.ToString()!;
+
+        sql.Should().Contain("WHERE ((\"measurement\")::");
+        sql.Should().NotContain("NULLIF");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(MetadataV2FieldType.Integer)]
+    [InlineData(MetadataV2FieldType.BigInteger)]
+    [InlineData(MetadataV2FieldType.Float)]
+    [InlineData(MetadataV2FieldType.Double)]
+    public void BuildFeatureSelect_CanonicalNumericFilter_JsonbRetainsNumericConversion(MetadataV2FieldType type)
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "measurement", Type = type }]
+        };
+        var filter = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new BinaryExpression(new PropertyReference("measurement"), BinaryOperator.GreaterThanOrEqual,
+                new Literal(25, LiteralType.Number)), resource);
+        var reader = CreateReader(resource, attributesColumn: "attributes");
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [new FeatureQuery { SqlFilter = filter }, false])!.ToString()!;
+
+        sql.Should().Contain("NULLIF").And.Contain("->>");
+        sql.Should().NotContain("WHERE (\"measurement\" >=");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(MetadataV2FieldType.Double, "integer")]
+    [InlineData(MetadataV2FieldType.Integer, "double precision")]
+    [InlineData(MetadataV2FieldType.String, "integer")]
+    public void BuildFeatureSelect_NumericFilterWithDifferentDeclaredType_RetainsExplicitCast(
+        MetadataV2FieldType type, string cast)
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "measurement", Type = type }]
+        };
+        var filter = new SqlFragment($"NULLIF(\"attributes\" ->> 'measurement', '')::{cast} >= @p0", [25]);
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(CreateReader(resource), [new FeatureQuery { SqlFilter = filter }, false])!.ToString()!;
+
+        sql.Should().Contain("NULLIF").And.Contain($"::{cast} >= $");
+    }
+
+
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildFeatureSelect_TextSearch_UsesMappedColumns()
+    {
+        var reader = CreateReader(CreateResource());
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance);
+        var sql = method!.Invoke(reader,
+            [new FeatureQuery
+            {
+                TextSearch = new FeatureTextSearch(["name"],
+                    [new FeatureSearchTerm[] { new("Harbor%_'", false) }])
+            }, false])!.ToString();
+
+        sql.Should().Contain("STRPOS(LOWER(\"name\")");
+        sql.Should().NotContain("Harbor");
+        sql.Should().NotContain("attributes->>");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public async Task QueryPageAsync_TextSearchOnMaskedField_RejectsBeforeDatabaseAccess()
+    {
+        var resource = CreateResource();
+        var masks = Substitute.For<IFieldMaskSource>();
+        masks.ResolveAsync(resource, Arg.Any<CancellationToken>()).Returns(["secret"]);
+        var reader = CreateReader(resource, fieldMaskSource: masks);
+        var query = new FeatureQuery
+        {
+            TextSearch = new FeatureTextSearch(["secret"],
+                [new FeatureSearchTerm[] { new("guess", false) }])
+        };
+
+        var act = () => reader.QueryPageAsync(5, query, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<ArgumentException>())
+            .Which.Message.Should().Contain("secret");
+    }
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ApplyReadSecurityAsync_WithRlsAndFieldMask_EnforcesBothOnTileQuery()
+    {
+        var resource = CreateResource();
+        var rlsSource = Substitute.For<IRowLevelSecurityFilterSource>();
+        rlsSource.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(new SqlFragment("\"tenant_id\" = @p0", ["tenant-a"]));
+        var fieldMaskSource = Substitute.For<IFieldMaskSource>();
+        fieldMaskSource.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(["secret"]);
+        var reader = CreateReader(resource, rlsSource, fieldMaskSource);
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "ApplyReadSecurityAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        method.Should().NotBeNull();
+        var task = (Task<FeatureQuery>)method!.Invoke(
+            reader,
+            [new FeatureQuery(), CancellationToken.None])!;
+        var securedQuery = await task;
+
+        securedQuery.EnforcedSqlFilter.Should().NotBeNull();
+        securedQuery.EnforcedSqlFilter!.Sql.Should().Be("\"tenant_id\" = @p0");
+        securedQuery.EnforcedSqlFilter.Parameters.Should().Equal("tenant-a");
+        securedQuery.EnforcedMaskedFields.Should().ContainSingle().Which.Should().Be("secret");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public async Task QueryPageAsync_WithSecurityPolicies_ValidatesBeforeThePagedProbe()
+    {
+        // OGC NumberMatchedPolicy=OmitWhenExpensive uses this IPagedFeatureReader
+        // path. The security seam must run before the LIMIT+1 probe can evaluate an
+        // OGC filter over a masked value (#4166, #4154).
+        var resource = CreateResource();
+        var rlsSource = Substitute.For<IRowLevelSecurityFilterSource>();
+        rlsSource.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(new SqlFragment("\"tenant_id\" = @p0", ["tenant-a"]));
+        var fieldMaskSource = Substitute.For<IFieldMaskSource>();
+        fieldMaskSource.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(["secret"]);
+        var reader = CreateReader(resource, rlsSource, fieldMaskSource, attributesColumn: "attributes");
+        var query = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("\"attributes\" ->> 'secret' LIKE @p0", ["1%"]),
+            Limit = 1
+        };
+
+        var act = () => reader.QueryPageAsync(5, query, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<ArgumentException>())
+            .Which.Message.Should().Contain("secret");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void ResolveAttributeFields_WithEnforcedMask_DropsMaskedTileAttribute()
+    {
+        var resource = CreateResource();
+        var reader = CreateReader(resource);
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "ResolveAttributeFields",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        method.Should().NotBeNull();
+        var fields = (MetadataV2Field[])method!.Invoke(
+            reader,
+            [new FeatureQuery { EnforcedMaskedFields = ["secret"] }])!;
+
+        fields.Select(static field => field.Name).Should().Equal("tenant_id", "name");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void RewriteAttributeTextAccessExpressions_WithCanonicalAttributeFilter_UsesMappedSourceColumn()
+    {
+        var rewritten = PostgresStorageMappedFeatureReader.RewriteAttributeTextAccessExpressions(
+            "\"attributes\" ->> 'dam_name' IN ($1, $2)",
+            field =>
+            {
+                field.Should().Be("dam_name");
+                return "\"dam_name\"";
+            });
+
+        rewritten.Should().Be("NULLIF((\"dam_name\")::text, '') IN ($1, $2)");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void RewriteAttributeTextAccessExpressions_WithStringField_PreservesEmptyStringForIsNotNull()
+    {
+        // Esri/PostgreSQL treat an empty string as a non-NULL value. The storage-mapped
+        // reader must not wrap a text/string column in NULLIF(..., '') when translating an
+        // IS NOT NULL filter, or empty-string rows would be silently dropped (#1703).
+        var rewritten = PostgresStorageMappedFeatureReader.RewriteAttributeTextAccessExpressions(
+            "\"attributes\" ->> 'uniquedesignation' IS NOT NULL",
+            field =>
+            {
+                field.Should().Be("uniquedesignation");
+                return "\"uniquedesignation\"";
+            },
+            _ => MetadataV2FieldType.String);
+
+        rewritten.Should().Be("(\"uniquedesignation\")::text IS NOT NULL");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void RewriteAttributeTextAccessExpressions_WithNumericField_KeepsEmptyStringCoercion()
+    {
+        // Numeric/temporal fields keep NULLIF(..., '') so empty text does not break a
+        // downstream ::numeric/::timestamptz cast and Esri's "empty numeric == null"
+        // semantics still hold.
+        var rewritten = PostgresStorageMappedFeatureReader.RewriteAttributeTextAccessExpressions(
+            "\"attributes\" ->> 'shape__length' IS NOT NULL",
+            _ => "\"shape__length\"",
+            _ => MetadataV2FieldType.Double);
+
+        rewritten.Should().Be("NULLIF((\"shape__length\")::text, '') IS NOT NULL");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildDistancePredicateSql_WithProjectedStorage_ReprojectsBothOperandsToWgs84Geography()
+    {
+        // Projected-storage layer (EPSG:3857). A bare ::geography cast requires lon/lat and would
+        // throw at execution (500); the predicate must reproject both operands to WGS84 geography
+        // via ST_Transform(...,4326)::geography so ST_Distance returns metres (#2740).
+        // Seed the filter-geometry parameter ($1) so the distance parameter realistically becomes $2.
+        var parameters = new List<object?> { new byte[] { 1, 2, 3, 4 } };
+
+        var predicate = PostgresStorageMappedFeatureReader.BuildDistancePredicateSql(
+            geometryColumn: "\"geom\"::geometry",
+            filterGeometry: "$1",
+            storageSrid: 3857,
+            distanceInMeters: 1000d,
+            beyond: false,
+            addParameter: value =>
+            {
+                parameters.Add(value);
+                return "$" + parameters.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            });
+
+        predicate.Should().Contain("ST_Transform(\"geom\"::geometry, 4326)::geography");
+        predicate.Should().Contain("ST_Transform($1, 4326)::geography");
+        predicate.Should().StartWith("ST_Distance(");
+        predicate.Should().Contain("<= $2");
+        parameters.Last().Should().Be(1000d);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildDistancePredicateSql_WithWgs84Storage_CastsDirectlyToGeography()
+    {
+        // Geographic (EPSG:4326) storage is already lon/lat, so no ST_Transform is required —
+        // a direct ::geography cast is correct and cheaper.
+        var parameters = new List<object?>();
+
+        var predicate = PostgresStorageMappedFeatureReader.BuildDistancePredicateSql(
+            geometryColumn: "\"geom\"::geometry",
+            filterGeometry: "$1",
+            storageSrid: 4326,
+            distanceInMeters: 500d,
+            beyond: true,
+            addParameter: value =>
+            {
+                parameters.Add(value);
+                return "$" + parameters.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            });
+
+        predicate.Should().Contain("\"geom\"::geometry::geography");
+        predicate.Should().NotContain("ST_Transform");
+        predicate.Should().Contain("> $1");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildStatisticsAggregateExpression_WithNumericAggregate_CastsMappedSourceColumn()
+    {
+        var expression = PostgresStorageMappedFeatureReader.BuildStatisticsAggregateExpression(
+            StatisticType.Avg,
+            "\"longitude\"",
+            Honua.Core.Features.Metadata.Domain.V2.MetadataV2FieldType.Double);
+
+        expression.Should().Be("AVG(NULLIF((\"longitude\")::text, '')::numeric)");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildStatisticsAggregateExpression_WithDateTimeMinMax_OrdersChronologically()
+    {
+        var expression = PostgresStorageMappedFeatureReader.BuildStatisticsAggregateExpression(
+            StatisticType.Max,
+            "(\"attributes\" ->> 'created_at')",
+            MetadataV2FieldType.DateTime);
+
+        expression.Should().Contain("MAX(CASE WHEN NULLIF(((\"attributes\" ->> 'created_at'))::text, '') ~ '^-?[0-9]+$'");
+        expression.Should().Contain("to_timestamp");
+        expression.Should().Contain("::timestamptz END)");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSourceMappedStatisticsSql_PreservesHavingOrderByAndPagination()
+    {
+        var reader = CreateReader(CreateResource());
+        var sqlBuilderType = typeof(PostgresStorageMappedFeatureReader).GetNestedType(
+            "SqlBuilder",
+            BindingFlags.NonPublic);
+        var sqlBuilder = Activator.CreateInstance(sqlBuilderType!);
+        sqlBuilder.Should().NotBeNull();
+        var query = new FeatureQuery
+        {
+            OutStatistics = [new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "objectid",
+                OutStatisticFieldName = "feature_count"
+            }],
+            GroupByFields = ["name"],
+            Having = [new HavingCondition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "objectid",
+                Operator = HavingComparisonOperator.GreaterThan,
+                Value = 0
+            }],
+            OrderBy = [new OrderByClause("feature_count", ascending: false)],
+            Limit = 10,
+            Offset = 20
+        };
+
+        typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("AppendStatisticsHaving", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [sqlBuilder, query]);
+        typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("AppendStatisticsOrderBy", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [sqlBuilder, query]);
+        typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("AppendPagination", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, [sqlBuilder, query, false]);
+
+        var sql = sqlBuilder!.ToString();
+        sql.Should().Contain("HAVING COUNT(NULLIF((\"objectid\")::text, '')::numeric) > $1");
+        sql.Should().Contain("ORDER BY COUNT(NULLIF((\"objectid\")::text, '')::numeric) DESC");
+        sql.Should().Contain("LIMIT $2 OFFSET $3");
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildFeatureSelect_AttributesUseJsonbExceptDistinctTextBoundary(bool distinct)
+    {
+        var query = new FeatureQuery { OutFields = ["name"], Distinct = distinct };
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(CreateReader(CreateResource()), [query, false])!.ToString()!;
+
+        if (distinct)
+        {
+            sql.Should().Contain("(jsonb_build_object($1::text, \"name\"))::text AS attributes")
+                .And.NotContain("__honua_native_attribute_");
+        }
+        else
+        {
+            sql.Should().Contain(" AS attributes").And.NotContain(")::text AS attributes");
+        }
+    }
+
+    [UnitTest]
+    public void BuildAttributesJsonbExpression_WithWideOutFields_ChunksJsonbBuildObjectCalls()
+    {
+        var fields = Enumerable.Range(1, 51)
+            .Select(index => new MetadataV2Field { Name = $"field_{index}", Type = MetadataV2FieldType.String })
+            .ToArray();
+
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "BuildAttributesJsonbExpression",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
+            modifiers: null);
+
+        method.Should().NotBeNull();
+
+        var parameters = new List<object?>();
+        string AddParameter(object? value)
+        {
+            parameters.Add(value);
+            return $"${parameters.Count}";
+        }
+
+        var expression = (string)method!.Invoke(null, [fields, null, (Func<object?, string>)AddParameter, null])!;
+
+        expression.Split("jsonb_build_object", StringSplitOptions.None).Length.Should().Be(3);
+        expression.Should().StartWith("(");
+        expression.Should().EndWith(")");
+        expression.Should().Contain(" || ");
+        expression.Should().Contain("$1::text, \"field_1\"");
+        expression.Should().Contain("$51::text, \"field_51\"");
+        parameters.Should().Equal(fields.Select(static field => field.Name));
+    }
+
+    [UnitTest]
+    public void BuildAttributesJsonbExpression_WithJsonbColumn_PreservesNumericTypeButStringifiesText()
+    {
+        var fields = new[]
+        {
+            new MetadataV2Field { Name = "site_name", Type = MetadataV2FieldType.String },
+            new MetadataV2Field { Name = "sync_version", Type = MetadataV2FieldType.Integer },
+            new MetadataV2Field { Name = "elevation", Type = MetadataV2FieldType.Double },
+            new MetadataV2Field { Name = "serviceable", Type = MetadataV2FieldType.Boolean },
+            new MetadataV2Field { Name = "inspected", Type = MetadataV2FieldType.Date },
+        };
+
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "BuildAttributesJsonbExpression",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
+            modifiers: null);
+
+        method.Should().NotBeNull();
+
+        var parameters = new List<object?>();
+        string AddParameter(object? value)
+        {
+            parameters.Add(value);
+            return $"${parameters.Count}";
+        }
+
+        var expression = (string)method!.Invoke(null, [fields, "attributes", (Func<object?, string>)AddParameter, null])!;
+
+        // Numeric/boolean fields use the jsonb-preserving accessor (->) so they
+        // round-trip as JSON numbers/booleans, not strings.
+        expression.Should().Contain("$2::text, \"attributes\" -> $2::text");
+        expression.Should().Contain("$3::text, \"attributes\" -> $3::text");
+        expression.Should().Contain("$4::text, \"attributes\" -> $4::text");
+
+        // Text/date fields keep the text accessor (->>) — formatting unchanged.
+        expression.Should().Contain("$1::text, \"attributes\" ->> $1::text");
+        expression.Should().Contain("$5::text, \"attributes\" ->> $5::text");
+        parameters.Should().Equal(fields.Select(static field => field.Name));
+    }
+
+    [UnitTest]
+    public void BuildAttributesJsonbExpression_WithQuotedJsonbKey_BindsKeyWithoutChangingStatement()
+    {
+        const string fieldName = "owner's key ->> 'x'; SELECT pg_sleep(1); --";
+        var field = new MetadataV2Field { Name = fieldName, Type = MetadataV2FieldType.String };
+        var resource = CreatePrefixedFieldResource(field);
+        var reader = CreateReader(resource, attributesColumn: "attributes");
+        var resolveMethod = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "ResolveAttributeFields",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        resolveMethod.Should().NotBeNull();
+        var resolved = (MetadataV2Field[])resolveMethod!.Invoke(reader, [new FeatureQuery()])!;
+        resolved.Should().NotContain(candidate => candidate.Name == fieldName,
+            "the existing JSON attribute-key allow-list remains the first gate");
+
+        var buildMethod = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "BuildAttributesJsonbExpression",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
+            modifiers: null);
+        var parameters = new List<object?>();
+        string AddParameter(object? value)
+        {
+            parameters.Add(value);
+            return $"${parameters.Count}";
+        }
+
+        buildMethod.Should().NotBeNull();
+        var expression = (string)buildMethod!.Invoke(
+            null,
+            [new[] { field }, "attributes", (Func<object?, string>)AddParameter, null])!;
+
+        expression.Should().Be("(jsonb_build_object($1::text, \"attributes\" ->> $1::text))");
+        expression.Should().NotContain(fieldName);
+        parameters.Should().ContainSingle().Which.Should().Be(fieldName);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildEncodedBinarySelect_WithPrefixedSchemaFieldAndJsonbColumn_AliasesInsteadOfThrowing()
+    {
+        // A STAC extension queryable such as `eo:cloud_cover` is a declared, filterable field
+        // whose name is not a bare SQL identifier. Admitting it to the projection (so it stops
+        // being silently dropped) made the FlatGeobuf/Geobuf builder alias it, and that alias
+        // site validated the name as a PostGIS identifier -- turning a missing field into an
+        // InvalidOperationException and an HTTP 500 (review finding on honua-server#3489).
+        var resource = CreatePrefixedFieldResource();
+        var reader = CreateReader(resource, attributesColumn: "attributes");
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "BuildEncodedBinarySelect",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        method.Should().NotBeNull();
+
+        var build = () => method!.Invoke(reader, ["ST_AsFlatGeobuf", true, new FeatureQuery()]);
+
+        var sql = build.Should().NotThrow(
+            "the default all-fields projection must not 500 on a field the schema declares")
+            .Which!.ToString();
+
+        sql.Should().Contain(
+            "AS \"eo:cloud_cover\"",
+            "the alias is quoted, not identifier-validated, exactly as the native builder does");
+        sql.Should().Contain(
+            "\"attributes\" ->> $1::text",
+            "the value still comes from the JSONB accessor with a bound key");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildEncodedBinarySelect_WithPrefixedSchemaFieldAndNoJsonbColumn_OmitsTheField()
+    {
+        // Without an attributes column each field must be a real column, so a name that cannot
+        // be a column stays out of the projection rather than emitting unresolvable SQL.
+        var resource = CreatePrefixedFieldResource();
+        var reader = CreateReader(resource);
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "BuildEncodedBinarySelect",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        method.Should().NotBeNull();
+
+        var sql = method!.Invoke(reader, ["ST_AsFlatGeobuf", true, new FeatureQuery()])!.ToString();
+
+        sql.Should().NotContain("eo:cloud_cover");
+        sql.Should().Contain("\"plain_field\"");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildEncodedBinarySelect_WithOverlongJsonbAlias_RejectsInsteadOfTruncating()
+    {
+        var resource = CreatePrefixedFieldResource(
+            new MetadataV2Field { Name = new string('a', 64), Type = MetadataV2FieldType.String });
+        var reader = CreateReader(resource, attributesColumn: "attributes");
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "BuildEncodedBinarySelect",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        method.Should().NotBeNull();
+
+        var build = () => method!.Invoke(reader, ["ST_AsFlatGeobuf", true, new FeatureQuery()]);
+
+        build.Should().Throw<TargetInvocationException>()
+            .Which.InnerException.Should().BeOfType<ArgumentException>()
+            .Which.Message.Should().Contain("Invalid PostGIS encoded projection alias");
+    }
+
+    private static MetadataV2Resource CreatePrefixedFieldResource(params MetadataV2Field[] additionalFields)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-stac", Name = "Stac" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "plain_field", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "eo:cloud_cover", Type = MetadataV2FieldType.Double },
+                .. additionalFields,
+            ],
+        };
+
+    private static MetadataV2Resource CreateResource()
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-secure", Name = "Secure" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "tenant_id", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "secret", Type = MetadataV2FieldType.String },
+            ],
+        };
+
+    [UnitTest]
+    public void BuildFeatureSelect_GeographicStorageToWebMercator_ClampsBeforeTransform()
+    {
+        var sql = BuildFeatureSelect(new FeatureQuery { OutputSrid = 102100 }, storageSrid: 4326);
+
+        sql.Should().Contain("WHEN 'ST_Point' THEN");
+        sql.Should().Contain("LEAST(GREATEST(ST_Y(\"geom\"::geometry), -85.0511287798066), 85.0511287798066)");
+        sql.Should().Contain("ELSE ST_ClipByBox2D(\"geom\"::geometry, ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, 4326))");
+        sql.Should().Contain(", 102100)");
+    }
+
+    [UnitTest]
+    public void BuildFeatureSelect_GeographicStorageToNonMercator_DoesNotClamp()
+    {
+        var sql = BuildFeatureSelect(new FeatureQuery { OutputSrid = 4269 }, storageSrid: 4326);
+
+        sql.Should().Contain("ST_Transform(\"geom\"::geometry, 4269)");
+        sql.Should().NotContain("ST_ClipByBox2D");
+    }
+
+    [UnitTest]
+    public void BuildFeatureSelect_GeographicFilterIntoWebMercatorStorage_ClampsBeforeTransform()
+    {
+        var sql = BuildFeatureSelect(
+            new FeatureQuery
+            {
+                SpatialFilter = SpatialFilter.Create([1, 2, 3], SpatialRelationship.Intersects, srid: 4326)
+            },
+            storageSrid: 3857);
+
+        sql.Should().Contain("WHEN 'ST_Point' THEN");
+        sql.Should().Contain("LEAST(GREATEST(ST_Y(");
+        sql.Should().Contain("ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, 4326)");
+        sql.Should().Contain(", 3857)");
+    }
+
+    private static string BuildFeatureSelect(FeatureQuery query, int? storageSrid = null)
+    {
+        var reader = CreateReader(CreateResource(), storageSrid: storageSrid);
+        return typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [query, false])!
+            .ToString()!;
+    }
+
+    private static PostgresStorageMappedFeatureReader CreateReader(
+        MetadataV2Resource resource,
+        IRowLevelSecurityFilterSource? rlsSource = null,
+        IFieldMaskSource? fieldMaskSource = null,
+        string? attributesColumn = null,
+        int? storageSrid = null)
+        => new(
+            Substitute.For<IAdoNetDatabaseConnectionProvider>(),
+            new DefaultObjectPoolProvider().Create(
+                new DefaultPooledObjectPolicy<Dictionary<string, object?>>()),
+            resource,
+            new FeatureStorageMapping(
+                TableName: "secure_features",
+                PrimaryKeyColumn: "objectid",
+                GeometryColumn: "geom",
+                AttributesColumn: attributesColumn,
+                StorageSrid: storageSrid),
+            connection: null,
+            connectionEncryptionService: null,
+            rlsFilterSource: rlsSource,
+            fieldMaskSource: fieldMaskSource);
+}

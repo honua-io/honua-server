@@ -152,6 +152,11 @@ jobs:
           python3 scripts/ci/validate-tracked-file-encoding.py
           python3 scripts/ci/validate-tracked-file-encoding.test.py
 
+      - name: Validate modular test inventory and isolation
+        run: |
+          python3 scripts/ci/test-projects.py validate
+          python3 scripts/ci/test-test-projects.py
+
       - name: Verify terminal error receipt contract
         run: python3 scripts/certification/verify-terminal-error-receipts.py
 
@@ -869,6 +874,7 @@ jobs:
         run: |
           python3 scripts/ci/compute-affected-shards.py \
             --cap "${CAP}" \
+            --annotate-resources \
             --github-output \
             --json "${RUNNER_TEMP}/affected-shards.json" \
             --summary "${RUNNER_TEMP}/affected-shards.md"
@@ -907,12 +913,12 @@ jobs:
       TESTCONTAINERS_RYUK_DISABLED: false
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
-      HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-${{ github.run_id }}-${{ github.run_attempt }}"
+      HONUA_TEST_DB_URL: ${{ toJSON(matrix.needs_postgres) != 'false' && format('Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-{0}-{1}', github.run_id, github.run_attempt) || '' }}
     services:
       postgres:
         # Service images pull before checkout; use the verified linux/amd64
         # Docker Hub manifest from its mirror without changing PostGIS bytes.
-        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+        image: ${{ toJSON(matrix.needs_postgres) != 'false' && 'mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5' || '' }}
         env:
           POSTGRES_USER: honua
           POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -939,13 +945,12 @@ jobs:
       - name: Wait for free disk space
         run: scripts/ci/server-test-shard-free-disk.sh --await
 
-      # Deliberately NOT wired to the exact-head shard cache
-      # (scripts/ci/server-test-shard-cache.sh). That cache designates the
-      # highest-dispatch_rank shard of a project as the writer and has every
-      # sibling materialize its payload; on a hit the payload is missing another
-      # project's build outputs, which is the open #4453 defect. A detector lane
-      # whose job is to make a red mean something must not import a known source
-      # of false reds. Each shard here restores and builds its own project.
+      # Keep this per-PR detector independent of the exact-head shard cache
+      # pending separate qualification of cache reuse here. The trailing CI cache
+      # elects the first selected shard for each exact project as its writer and
+      # validates restored payloads, including static assets, before consumption.
+      # This lane continues to restore and build each project independently;
+      # resource annotation does not enable caching or adjudicate #4453.
       - name: Restore
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}

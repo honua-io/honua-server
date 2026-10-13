@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591;CS8604;xUnit2012;CA1861</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Honua.Db\Postgres\Honua.Postgres.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Scene\Honua.Scene.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FlatGeobuf" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Moq" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../Honua.Db.Postgres.Tests/Shared/SpatialAnalyticsReadPolicyTestData.cs" Link="Shared/SpatialAnalyticsReadPolicyTestData.cs" />
+    <Compile Include="../Honua.Db.Postgres.Tests/TestCoreSchemaMigrations.cs" Link="Shared/TestCoreSchemaMigrations.cs" />
+    <Compile Include="../Honua.Db.Postgres.Tests/Features/Import/ImportTestSchemaConfiguration.cs" Link="Shared/ImportTestSchemaConfiguration.cs" />
+    <Compile Include="../Honua.Db.Postgres.Tests/Features/Import/GeoPackageTestFiles.cs" Link="Shared/GeoPackageTestFiles.cs" />
+    <Compile Include="../Honua.TestKit/Infrastructure/ImportPreviewTestFakes.cs" Link="Shared/ImportPreviewTestFakes.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../Shared/RunnerConfig/unit.xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Fixtures/ArcGis/*.json" Link="Features/Import/Fixtures/ArcGis/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Baselines/ArcGis/*.json" Link="Features/Import/Baselines/ArcGis/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Fixtures/GeoServer/*.json" Link="Features/Import/Fixtures/GeoServer/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Baselines/GeoServer/*.json" Link="Features/Import/Baselines/GeoServer/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Fixtures/RetryResume/*.json" Link="Features/Import/Fixtures/RetryResume/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Fixtures/LoadMode/*.geojson" Link="Features/Import/Fixtures/LoadMode/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

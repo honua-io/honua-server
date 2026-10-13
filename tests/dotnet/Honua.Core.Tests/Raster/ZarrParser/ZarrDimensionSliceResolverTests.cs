@@ -39,6 +39,7 @@ public class ZarrDimensionSliceResolverTests
             Temporal: null,
             Axes: [new ZarrAxis("elevation", 5, Coordinates: null, 0, 1000)]);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ResolvesVerticalCoordinateToIndex()
     {
@@ -49,6 +50,7 @@ public class ZarrDimensionSliceResolverTests
         index.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void UnknownAxis_IsRejectedWithAvailableAxes()
     {
@@ -59,6 +61,7 @@ public class ZarrDimensionSliceResolverTests
         error.Should().Contain("elevation");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OutOfRangeCoordinate_IsRejected()
     {
@@ -69,6 +72,7 @@ public class ZarrDimensionSliceResolverTests
         error.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ResolvesTimeAxisFromEpochMillis()
     {
@@ -92,6 +96,7 @@ public class ZarrDimensionSliceResolverTests
         index.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TimeCoordinateOutsideDateTimeRange_IsRejectedWithoutThrowing()
     {
@@ -118,6 +123,7 @@ public class ZarrDimensionSliceResolverTests
         error.Should().Contain("supported instant range");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryFindArrayDimension_LocatesNamedDimension()
     {

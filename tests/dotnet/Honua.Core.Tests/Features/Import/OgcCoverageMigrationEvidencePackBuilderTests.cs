@@ -20,6 +20,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class OgcCoverageMigrationEvidencePackBuilderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_ProducesDeterministicFingerprint_ForIdenticalInputs()
     {
@@ -48,6 +49,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
         second.RunId.Should().Be("nightly-20260601");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_FingerprintChanges_WhenACoverageRecordChanges()
     {
@@ -71,6 +73,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
             "any change to the bundle inputs must propagate to the fingerprint.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_FingerprintChanges_WhenAStyleDiagnosticChanges()
     {
@@ -99,6 +102,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
             "style-diagnostic changes must propagate to the fingerprint.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_GroupsChannelsInCanonicalOrder_RegardlessOfCallerOrder()
     {
@@ -112,6 +116,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
             OgcCoverageMigrationEvidencePackChannelIds.Wcs);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_EmitsOnlyOgcApiCoveragesChannel_WhenWcsResultMissing()
     {
@@ -123,6 +128,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
         pack.Bundle.Channels[0].Id.Should().Be(OgcCoverageMigrationEvidencePackChannelIds.OgcApiCoverages);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_EmitsOnlyWcsChannel_WhenOgcApiCoveragesResultMissing()
     {
@@ -136,6 +142,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
         pack.Bundle.Channels[0].RequestedOutputFormat.Should().Be("image/tiff");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_Throws_WhenBothImportResultsMissing()
     {
@@ -151,6 +158,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
             .WithMessage("*OgcApiCoveragesImport*WcsImport*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_RollsUpSummary_AcrossBothChannels()
     {
@@ -172,6 +180,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
             pack.Bundle.StyleDiagnostics.Count(d => d.Classification == "manual-review"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_AggregatesStyleDiagnostics_AndDeduplicatesAcrossChannels()
     {
@@ -216,6 +225,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
             "slice-4 manual-review style diagnostics must be surfaced so the pack does not claim visual parity for them.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_RedactsCredentials_FromSourceUrls()
     {
@@ -268,6 +278,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
         json.Should().NotContain("admin:hunter2");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_CapturesCoverageScope_WhenOperatorRestrictsRun()
     {
@@ -282,6 +293,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
         pack.Bundle.CoverageScope.CoverageIds.Should().Equal("coverages/dem", "coverages/orthomosaic");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_CapturesCoverageScope_AsUnrestricted_WhenNoIdsProvided()
     {
@@ -293,6 +305,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
         pack.Bundle.CoverageScope.CoverageIds.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_OrdersRecordsBySourceCoverageId_WithinEachChannel()
     {
@@ -313,6 +326,7 @@ public sealed class OgcCoverageMigrationEvidencePackBuilderTests
             .Should().BeInAscendingOrder(StringComparer.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Artifact_Shape_HasStableTopLevelFields()
     {

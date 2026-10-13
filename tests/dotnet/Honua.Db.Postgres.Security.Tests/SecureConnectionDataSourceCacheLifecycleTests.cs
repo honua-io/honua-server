@@ -91,6 +91,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         await AssertDisposedAsync(lease.DataSource);
     }
 
+    [Trait("Tier", "Fast")]
     [SecurityTest]
     [Theory]
     [InlineData(false)]

@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.ControlPlane;
 /// </summary>
 public sealed class PlatformReleaseVersionTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("2026.1-rc.3", "2026.1-rc.3")]
     [InlineData("2026.1.0-rc.3", "2026.1-rc.3")]
@@ -27,6 +28,7 @@ public sealed class PlatformReleaseVersionTests
     public void Normalize_StripsPrefixesAndZeroPatch(string input, string expected)
         => Assert.Equal(expected, PlatformReleaseVersion.Normalize(input));
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -34,10 +36,12 @@ public sealed class PlatformReleaseVersionTests
     public void Normalize_Empty_ReturnsNull(string? input)
         => Assert.Null(PlatformReleaseVersion.Normalize(input));
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Normalize_LoneVIsNotAPrefix()
         => Assert.Equal("vnext", PlatformReleaseVersion.Normalize("vnext"));
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("2026.1-rc.3", "2026.1-rc.3")]
     [InlineData("2026.1-rc.3", "honua-2026.1-rc.3")]
@@ -46,6 +50,7 @@ public sealed class PlatformReleaseVersionTests
     public void Matches_EquivalentForms_AreTheSameRelease(string declared, string target)
         => Assert.True(PlatformReleaseVersion.Matches(declared, target));
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("2026.1-rc.3", "2026.1-rc.4")]
     [InlineData("2026.1-rc.3", "2026.1")]

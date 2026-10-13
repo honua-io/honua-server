@@ -15,6 +15,7 @@ namespace Honua.Core.Tests.Features.Spec.Domain;
 /// </summary>
 public sealed class SpecGrammarVersionTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("v1.0", 1, 0)]
     [InlineData("v2.3", 2, 3)]
@@ -39,6 +40,7 @@ public sealed class SpecGrammarVersionTests
         minor.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -50,6 +52,7 @@ public sealed class SpecGrammarVersionTests
         minor.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("1.0")]      // missing v prefix
     [InlineData("ver1.0")]   // wrong prefix

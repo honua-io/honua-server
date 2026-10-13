@@ -21,6 +21,7 @@ public sealed class ArcGisMigrationParityRunnerTests
     private const string SourceResourceId = "resource:Inspections:layer:0";
     private const string TargetResourceId = "target:resource:inspections:inspection-points";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_AllProbesWithinPassBands_ClassifiesPass()
     {
@@ -61,6 +62,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         probe.RelationshipCoverage.Classification.Should().Be(ArcGisMigrationParityClassifications.Pass);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(100, 103, ArcGisMigrationParityClassifications.Pass)] // 3% delta within 5%
     [InlineData(100, 105, ArcGisMigrationParityClassifications.Pass)] // exactly 5% delta -> pass
@@ -89,6 +91,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         artifact.ResourceProbes[0].FeatureCount.Delta.Should().Be(targetCount - sourceCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_FeatureCountProbe_MissingSourceCount_RecordsWarn()
     {
@@ -107,6 +110,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         artifact.ResourceProbes[0].FeatureCount.Reason.Should().Contain("did not advertise");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_FeatureCountProbe_TargetNotFound_RecordsFail()
     {
@@ -126,6 +130,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         artifact.Classification.Should().Be(ArcGisMigrationParityClassifications.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_SchemaProbe_AllExpectedFieldsPresent_ClassifiesPass()
     {
@@ -145,6 +150,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         schema.MissingFieldNames.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_SchemaProbe_MissingField_ClassifiesFail()
     {
@@ -165,6 +171,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         artifact.Classification.Should().Be(ArcGisMigrationParityClassifications.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_AttachmentCoverageProbe_PartialCoverage_ClassifiesWarn()
     {
@@ -194,6 +201,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         artifact.Classification.Should().Be(ArcGisMigrationParityClassifications.Warn);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_AttachmentCoverageProbe_BelowWarnBand_ClassifiesFail()
     {
@@ -218,6 +226,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         coverage.Coverage.Should().BeApproximately(0.25, 1e-9);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_AttachmentCoverageProbe_OnlyConsidersAutomatedClassification()
     {
@@ -243,6 +252,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         coverage.Classification.Should().Be(ArcGisMigrationParityClassifications.Pass);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_RelationshipCoverageProbe_ConsidersAutomatedAndAssistedOnly()
     {
@@ -272,6 +282,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         coverage.MissingIds.Should().Equal(["rel-2"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_IdentityCoverageProbe_IncludesAttachmentAndRelationshipBindings()
     {
@@ -299,6 +310,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         coverage.Classification.Should().Be(ArcGisMigrationParityClassifications.Pass);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_CoverageProbe_NoExpectedItems_ClassifiesPass()
     {
@@ -315,6 +327,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         probe.RelationshipCoverage.Classification.Should().Be(ArcGisMigrationParityClassifications.Pass);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_AggregateClassification_FailDominatesWarnAndPass()
     {
@@ -332,6 +345,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         artifact.Reasons.Should().BeInAscendingOrder(StringComparer.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_RejectsNonArcGisManifest()
     {
@@ -344,6 +358,7 @@ public sealed class ArcGisMigrationParityRunnerTests
         await act.Should().ThrowAsync<ArgumentException>().WithMessage("*arcgis-geoservices-rest*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task RunAsync_Artifact_RoundTripsThroughSystemTextJson()
     {

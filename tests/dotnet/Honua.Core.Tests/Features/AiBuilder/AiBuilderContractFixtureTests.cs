@@ -14,6 +14,7 @@ public sealed class AiBuilderContractFixtureTests
     private const string OperationsDashboardProofPrompt =
         "Build an operations dashboard for this saved map showing a map, incident list, incident count, incidents by type chart, and district filter.";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SpatialQueryFixture_CoversRequiredOutcomeCases()
     {
@@ -38,6 +39,7 @@ public sealed class AiBuilderContractFixtureTests
             "apply-failure");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task CapabilityDiscovery_AdvertisesMetadataPredicatesTemplatesAndMcpInspection()
     {
@@ -93,6 +95,7 @@ public sealed class AiBuilderContractFixtureTests
             .Should().Contain(["honua://jobs/{jobId}/results", "honua://map-packages/{packageId}", "honua://app-packages/{packageId}"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SuccessAndCacheHitScenarios_SurfaceDraftPlanWarningsCacheAndPackageArtifacts()
     {
@@ -118,6 +121,7 @@ public sealed class AiBuilderContractFixtureTests
         AssertPackageArtifacts(cacheHit.GetProperty("apply"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task OperationsDashboardFixture_RunsWithoutModelCallsAndCoversRequiredOutcomeCases()
     {
@@ -145,6 +149,7 @@ public sealed class AiBuilderContractFixtureTests
             "apply-failure");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task OperationsDashboardSuccess_ReturnsDraftSpecPlanProgressAndManifestPackageArtifacts()
     {
@@ -199,6 +204,7 @@ public sealed class AiBuilderContractFixtureTests
         AssertOperationsDashboardAppPackage(apply);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task OperationsDashboardEdgeScenarios_UseStructuredRecoverableShapes()
     {
@@ -246,6 +252,7 @@ public sealed class AiBuilderContractFixtureTests
                 warning.GetProperty("retryable").GetBoolean());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task OperationsDashboardMcpInspection_CoversBuilderResourceCategoriesAndSchemaRefs()
     {
@@ -293,6 +300,7 @@ public sealed class AiBuilderContractFixtureTests
             "honua://deployments/deploy-ops-dashboard"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task FailureAndClarificationScenarios_UseStructuredRecoverableShapes()
     {

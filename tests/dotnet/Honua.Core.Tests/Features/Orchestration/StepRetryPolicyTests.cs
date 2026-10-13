@@ -7,6 +7,7 @@ namespace Honua.Core.Tests.Features.Orchestration;
 
 public sealed class StepRetryPolicyTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ComputeDelay_ReturnsZero_ForInitialAttempt()
     {
@@ -15,6 +16,7 @@ public sealed class StepRetryPolicyTests
         Assert.Equal(TimeSpan.Zero, policy.ComputeDelay(0));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ComputeDelay_AppliesExponentialBackoff()
     {
@@ -30,6 +32,7 @@ public sealed class StepRetryPolicyTests
         Assert.Equal(TimeSpan.FromSeconds(40), policy.ComputeDelay(3));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ComputeDelay_ClampsToMaxDelay()
     {

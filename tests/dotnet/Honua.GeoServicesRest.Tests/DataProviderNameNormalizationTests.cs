@@ -7,6 +7,7 @@ namespace Honua.GeoServicesRest.Tests;
 
 public class DataProviderNameNormalizationTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("arcgis-rest")]
     [InlineData("arcgis_rest")]
@@ -22,6 +23,7 @@ public class DataProviderNameNormalizationTests
         Assert.Equal(DataProviderNames.ArcGisRest, DataProviderNames.Normalize(provider));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Normalize_UnknownString_PassesThroughLowercased()
     {

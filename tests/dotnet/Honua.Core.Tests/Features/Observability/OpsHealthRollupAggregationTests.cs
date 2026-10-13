@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.Observability;
 /// </summary>
 public class OpsHealthRollupAggregationTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MergeAcrossReplicas_Singlepoint_ReturnsSamePointWithProtocol()
     {
@@ -31,6 +32,7 @@ public class OpsHealthRollupAggregationTests
         merged.Should().Be(point);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MergeAcrossReplicas_SumsCountsAndWeightsPercentilesByRequestCount()
     {
@@ -70,6 +72,7 @@ public class OpsHealthRollupAggregationTests
         merged.ErrorRate.Should().BeApproximately(20d / 400d, 1e-9);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MergeAcrossReplicas_WithDistributions_SickReplicaSurfacesInClusterTail()
     {
@@ -115,6 +118,7 @@ public class OpsHealthRollupAggregationTests
         merged.Distribution!.TotalCount.Should().Be(1000);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MergeAcrossReplicas_WithMissingDistributionOnOnePoint_FallsBackToWeightedMean()
     {
@@ -149,6 +153,7 @@ public class OpsHealthRollupAggregationTests
         merged.P99Ms.Should().BeApproximately(350, 1e-9);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MergeAcrossReplicas_WithZeroRequests_FallsBackToMaxPercentiles()
     {
@@ -165,6 +170,7 @@ public class OpsHealthRollupAggregationTests
         merged.ErrorRate.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MergeVitalsAcrossReplicas_TakesWorstStatusPeakBacklogAndAveragedRatios()
     {
@@ -203,6 +209,7 @@ public class OpsHealthRollupAggregationTests
         merged.ErrorRate.Should().BeApproximately(0.02, 1e-9);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MergeVitalsAcrossReplicas_DedupsGpQueueBreakdownWithPerKeyMax()
     {
@@ -248,6 +255,7 @@ public class OpsHealthRollupAggregationTests
         merged.GpQueueBreakdown["Running|aws-batch"].Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("Unhealthy", 3)]
     [InlineData("Degraded", 2)]

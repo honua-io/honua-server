@@ -23,6 +23,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class LayerReconciliationServiceTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false, 100, true, "pass")]
     [InlineData(false, 10, true, "fail")]
@@ -64,6 +65,7 @@ public sealed class LayerReconciliationServiceTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_WhenTargetMatchesSourceSnapshot_ClassifiesPass()
     {
@@ -85,6 +87,7 @@ public sealed class LayerReconciliationServiceTests
         artifact.Layers.Should().ContainSingle();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_WhenTargetCountFarBelowSource_ClassifiesFail()
     {
@@ -107,6 +110,7 @@ public sealed class LayerReconciliationServiceTests
         artifact.Reasons.Should().NotBeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_WhenSourceFieldMissingOnTarget_ClassifiesFail()
     {
@@ -128,6 +132,7 @@ public sealed class LayerReconciliationServiceTests
         artifact.Layers[0].Content.MissingOnTarget.Should().Contain("NAME");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_WhenNoTargetLayerPublished_ClassifiesSkipped()
     {
@@ -155,6 +160,7 @@ public sealed class LayerReconciliationServiceTests
     private static LayerReconciliationService NewService(IFeatureReader reader)
         => new(reader, TimeProvider.System, NullLogger<LayerReconciliationService>.Instance);
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(99, "fail")]
     [InlineData(100, "pass")]
@@ -185,6 +191,7 @@ public sealed class LayerReconciliationServiceTests
         reader.SampleQueries.Should().ContainSingle().Which.Where.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_InheritedNullGeometry_IsNotTransferLoss()
     {
@@ -218,6 +225,7 @@ public sealed class LayerReconciliationServiceTests
         geometry.Reason.Should().Contain("inherited a null source geometry");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_UnconvertedSourceGeometry_IsTransferLoss()
     {
@@ -252,6 +260,7 @@ public sealed class LayerReconciliationServiceTests
         result.Classification.Should().Be("fail");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_NewlyNullTargetGeometry_IsTransferLossBesideInheritedNulls()
     {
@@ -284,6 +293,7 @@ public sealed class LayerReconciliationServiceTests
         geometry.Reason.Should().Contain("lost in transfer").And.Contain("inherited");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_StaleAdvertisedExtent_ComparesTargetWithQueriedExtent()
     {
@@ -315,6 +325,7 @@ public sealed class LayerReconciliationServiceTests
         extent.MaxDimensionDelta.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_StaleAdvertisedExtent_StillFailsWhenTargetMissesQueriedExtent()
     {
@@ -343,6 +354,7 @@ public sealed class LayerReconciliationServiceTests
         extent.Reason.Should().Contain("queried extent");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_SharedTarget_RewritesFilterFieldsAndPreservesLiterals()
     {
@@ -382,6 +394,7 @@ public sealed class LayerReconciliationServiceTests
         reader.SampleQueries.Should().ContainSingle().Which.SqlFilter.Should().BeSameAs(reader.CountQueries[0].SqlFilter);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_SharedTargetWithFilterMirror_KeepsMirroredPredicateAndTolerance()
     {
@@ -403,6 +416,7 @@ public sealed class LayerReconciliationServiceTests
         reader.SampleQueries.Should().ContainSingle().Which.SqlFilter.Should().BeSameAs(reader.CountQueries[0].SqlFilter);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Reconcile_SharedFilterWithoutCompiler_FailsWithoutReadingUnfilteredRows()
     {
@@ -417,6 +431,7 @@ public sealed class LayerReconciliationServiceTests
         reader.SampleQueries.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false, null, false)]
     [InlineData(true, "STATUS = 'open'", false)]
@@ -517,6 +532,7 @@ public sealed class LayerReconciliationServiceTests
         return QueryResult<Feature>.Create(rows, items);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0, "pass")]
     [InlineData(5000, "fail")]
@@ -543,6 +559,7 @@ public sealed class LayerReconciliationServiceTests
         reader.ExtentQueries[1]!.Value.OutputSrid.Should().Be(26911);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(4326, 0, "warn")]
     [InlineData(3857, 0, "warn")]
@@ -585,6 +602,7 @@ public sealed class LayerReconciliationServiceTests
         reader.ExtentQueries[1]!.Value.OutputSrid.Should().Be(26911);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(null, null)]
     [InlineData(4326, null)]

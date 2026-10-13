@@ -45,6 +45,7 @@ public sealed class StudioCompositionControlsTests
         Assert.Equal("basemap-picker", body.Controls[1].Id);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("navigation")]
     [InlineData("scale")]
@@ -67,6 +68,7 @@ public sealed class StudioCompositionControlsTests
         Assert.Equal(kind, Assert.Single(body.Controls!).Kind);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("draw")]
     [InlineData("edit")]

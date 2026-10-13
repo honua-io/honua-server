@@ -42,6 +42,7 @@
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices" />
     <InternalsVisibleTo Include="Honua.Protocols.OData" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OData.UnitTests" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcClassic" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi" />
     <InternalsVisibleTo Include="Honua.Server" />
@@ -54,6 +55,16 @@
     <InternalsVisibleTo Include="Honua.SqlServer" />
     <InternalsVisibleTo Include="Honua.SqlServer.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Databricks.UnitTests" />
+    <InternalsVisibleTo Include="Honua.MySql.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Oracle.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Redshift.UnitTests" />
+    <InternalsVisibleTo Include="Honua.SqlServer.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Postgres.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Snowflake.UnitTests" />
   </ItemGroup>
 
 </Project>

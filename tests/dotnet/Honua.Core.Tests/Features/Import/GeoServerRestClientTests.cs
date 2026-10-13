@@ -13,6 +13,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class GeoServerRestClientTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_WithVersionXml_ParsesGeoServerVersionMetadata()
     {
@@ -35,6 +36,7 @@ public sealed class GeoServerRestClientTests
         result.GitRevision.Should().Be("16064e8d72a06ac36b373d8cd7cf328bde2be7cd");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_ConcurrentCallsWithDifferentCredentials_UsesPerRequestAuthorizationHeaders()
     {
@@ -72,6 +74,7 @@ public sealed class GeoServerRestClientTests
         handler.GetAuthorizations("beta.example").Should().OnlyContain(value => value == CreateBasicAuthorization("beta-user", "beta-pass"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_WithLayerGroupStylesAndBounds_ParsesLayerGroupMetadata()
     {
@@ -98,6 +101,7 @@ public sealed class GeoServerRestClientTests
         layerGroup.Bounds.MaxY.Should().Be(45.75);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_WithLayerBounds_ParsesLayerBoundingBoxes()
     {
@@ -127,6 +131,7 @@ public sealed class GeoServerRestClientTests
         layer.NativeBoundingBox.MaxX.Should().Be(4000);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task DiscoverServiceAsync_WithAlreadyQualifiedDefaultStyle_DoesNotDoublePrefixWorkspace()
     {

@@ -44,6 +44,7 @@ public sealed class DistanceConversionsTests
             .Should().BeApproximately(SpatialConstants.MilesToMeters, Tolerance);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("meters")]
     [InlineData("m")]
@@ -55,6 +56,7 @@ public sealed class DistanceConversionsTests
         DistanceConversions.ToMeters(7.0, unit).Should().Be(7.0);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("feet")]
     [InlineData("ft")]
@@ -66,6 +68,7 @@ public sealed class DistanceConversionsTests
             .Should().BeApproximately(10.0 * SpatialConstants.FeetToMeters, Tolerance);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("kilometers")]
     [InlineData("km")]
@@ -76,6 +79,7 @@ public sealed class DistanceConversionsTests
             .Should().BeApproximately(3000.0, Tolerance);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("miles")]
     [InlineData("mi")]

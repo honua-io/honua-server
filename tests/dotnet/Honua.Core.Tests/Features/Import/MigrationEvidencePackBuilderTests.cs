@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class MigrationEvidencePackBuilderTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_ProducesDeterministicFingerprint_ForIdenticalInputs()
     {
@@ -44,6 +45,7 @@ public sealed class MigrationEvidencePackBuilderTests
         second.RunId.Should().Be("nightly-20260601");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_FingerprintChanges_WhenAStepResultChanges()
     {
@@ -67,6 +69,7 @@ public sealed class MigrationEvidencePackBuilderTests
             "any change to the bundle inputs must propagate to the fingerprint.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_GroupsStepResultsIntoCanonicalStages()
     {
@@ -94,6 +97,7 @@ public sealed class MigrationEvidencePackBuilderTests
         style.ManualReviewCount.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_AggregatesStyleDiagnostics_FromManualReviewSteps()
     {
@@ -111,6 +115,7 @@ public sealed class MigrationEvidencePackBuilderTests
             "slice-3 manual-review style outcomes must be surfaced so the pack does not claim visual parity for them.");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_RedactsCredentials_FromSourceUrls()
     {
@@ -160,6 +165,7 @@ public sealed class MigrationEvidencePackBuilderTests
         json.Should().NotContain("admin:hunter2");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_CapturesWorkspaceScope_WhenOperatorRestrictsRun()
     {
@@ -171,6 +177,7 @@ public sealed class MigrationEvidencePackBuilderTests
         pack.Bundle.WorkspaceScope.WorkspaceNames.Should().Equal("ops");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Build_CapturesWorkspaceScope_AsUnrestricted_WhenNoNamesProvided()
     {
@@ -191,6 +198,7 @@ public sealed class MigrationEvidencePackBuilderTests
     /// always produces the same fingerprint — so workflow consumers can diff
     /// or pin the artifact across runs.
     /// </summary>
+    [Trait("Tier", "Fast")]
     [Fact]
     public void EmitNightlyEvidencePack_WhenEnvVarSet_WritesDeterministicArtifact()
     {
@@ -240,6 +248,7 @@ public sealed class MigrationEvidencePackBuilderTests
         File.WriteAllText(outputPath, json);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Artifact_Shape_HasStableTopLevelFields()
     {

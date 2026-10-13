@@ -8,6 +8,7 @@ namespace Honua.Core.Tests.Features.Caching;
 
 public sealed class MetadataCachePrimitivesTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildKey_NormalizesComponents_AndBuildsDeterministicRedisSafeKey()
     {
@@ -62,6 +63,7 @@ public sealed class MetadataCachePrimitivesTests
         Regex.IsMatch(first.Value, "^[a-z0-9:._-]+$", RegexOptions.CultureInvariant).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildKey_DistinguishesMissingScopesFromLiteralScopeIds()
     {
@@ -92,6 +94,7 @@ public sealed class MetadataCachePrimitivesTests
         literalScopes.Value.Should().Contain(":resource:id-root:");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildKey_FingerprintsCredentialBearingInputs_WithoutPuttingSecretsOrSourceAddressesInKey()
     {
@@ -117,6 +120,7 @@ public sealed class MetadataCachePrimitivesTests
         built.AuthScopeFingerprint.Should().HaveLength(32);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FingerprintSource_IgnoresCredentialRotation_ButKeepsBehaviorChangingQueryParameters()
     {
@@ -131,6 +135,7 @@ public sealed class MetadataCachePrimitivesTests
         changedFormat.Should().NotBe(first);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FingerprintSource_PreservesCaseSensitivePathAndQueryValues()
     {
@@ -148,6 +153,7 @@ public sealed class MetadataCachePrimitivesTests
         queryValueCaseChanged.Should().NotBe(canonical);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void For_KnownMetadataClasses_ReturnsTtlAndStaleIfErrorWindows()
     {
@@ -203,6 +209,7 @@ public sealed class MetadataCachePrimitivesTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void For_AdHocFeatureQueryAndResultClasses_ReturnsNoCachePolicy()
     {
@@ -227,6 +234,7 @@ public sealed class MetadataCachePrimitivesTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void MetadataCacheState_CapturesValidatorsRevalidationAndFailureShape()
     {
@@ -267,6 +275,7 @@ public sealed class MetadataCachePrimitivesTests
         }.HasUsableEntry.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void InvalidationEvent_MatchesTargetedRequestUsingNormalizedComponentsAndSourceFingerprint()
     {
@@ -312,6 +321,7 @@ public sealed class MetadataCachePrimitivesTests
         tenantWide.Matches(request).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void InvalidationEvent_DoesNotTreatLiteralScopeIdsAsMissingScopeWildcards()
     {

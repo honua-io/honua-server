@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Raster.CogParser;
 
 public sealed class CogRasterHeaderProbeTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_BigTiffWithExternalBitsArray_UsesOnlyBoundedConditionalRanges()
     {
@@ -34,6 +35,7 @@ public sealed class CogRasterHeaderProbeTests
         Assert.All(reader.Requests, request => Assert.Equal(etag, request.ExpectedETag));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_BigEndianClassicTiff_DecodesInlineUnsignedScalars()
     {
@@ -53,6 +55,7 @@ public sealed class CogRasterHeaderProbeTests
         Assert.Equal(0, reader.UnconditionalReadCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_ModelPixelScale_IsReadThroughConditionalBoundedRange()
     {
@@ -70,6 +73,7 @@ public sealed class CogRasterHeaderProbeTests
         Assert.All(reader.Requests, request => Assert.Equal(etag, request.ExpectedETag));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_ModelPixelScaleWithoutTiepoint_FailsClosed()
     {
@@ -83,6 +87,7 @@ public sealed class CogRasterHeaderProbeTests
         Assert.Equal(0, reader.UnconditionalReadCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_ModelTransformationWithoutPixelScale_FailsClosed()
     {
@@ -96,6 +101,7 @@ public sealed class CogRasterHeaderProbeTests
         Assert.Equal(0, reader.UnconditionalReadCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_ModelTransformationWithPixelScale_FailsClosed()
     {
@@ -109,6 +115,7 @@ public sealed class CogRasterHeaderProbeTests
         Assert.Equal(0, reader.UnconditionalReadCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_ModelTiepointWithoutPixelScale_FailsClosed()
     {
@@ -122,6 +129,7 @@ public sealed class CogRasterHeaderProbeTests
         Assert.Equal(0, reader.UnconditionalReadCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_UnsupportedDimensionFieldType_FailsClosed()
     {
@@ -134,6 +142,7 @@ public sealed class CogRasterHeaderProbeTests
         Assert.Equal(0, reader.UnconditionalReadCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_ChangedObjectIdentity_IsRejectedByConditionalReader()
     {
@@ -150,6 +159,7 @@ public sealed class CogRasterHeaderProbeTests
         Assert.Equal(0, reader.UnconditionalReadCount);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadAsync_OverflowingBigTiffIfdOffset_FailsBeforeSecondRangeRead()
     {

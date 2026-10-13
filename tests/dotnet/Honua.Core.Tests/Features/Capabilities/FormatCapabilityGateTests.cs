@@ -43,6 +43,7 @@ public sealed class FormatCapabilityGateTests
             => CapabilityGateResolver.Resolve(Find(id), context);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_RegisteredImplementedFormat_IsEnabled()
     {
@@ -55,6 +56,7 @@ public sealed class FormatCapabilityGateTests
         decision.ReasonCode.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_IsCaseInsensitiveOnFormatName()
     {
@@ -62,6 +64,7 @@ public sealed class FormatCapabilityGateTests
         FormatCapabilityGate.Evaluate("ESRIJSON").IsEnabled.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_UnknownFormat_IsUnknown_AndNotBlocked()
     {
@@ -75,6 +78,7 @@ public sealed class FormatCapabilityGateTests
         decision.ReasonCode.Should().Be(FormatCapabilityReasonCodes.Unknown);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_ExperimentalFormatWithFlagsOff_IsExperimentalDisabled_AndBlocked()
     {
@@ -88,6 +92,7 @@ public sealed class FormatCapabilityGateTests
         decision.ReasonCode.Should().Be(FormatCapabilityReasonCodes.ExperimentalDisabled);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_ExperimentalFormatWithGlobalFlagOn_IsEnabled()
     {
@@ -104,6 +109,7 @@ public sealed class FormatCapabilityGateTests
         decision.ReasonCode.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_ExperimentalFormatWithPerCapabilityFlagOn_IsEnabled()
     {
@@ -116,6 +122,7 @@ public sealed class FormatCapabilityGateTests
         FormatCapabilityGate.Evaluate("geoparquet", context, registry).IsEnabled.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Evaluate_NullOrWhitespaceFormat_Throws()
     {
@@ -126,6 +133,7 @@ public sealed class FormatCapabilityGateTests
         evaluateBlank.Should().Throw<System.ArgumentException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FilterAdvertised_KeepsEnabledAndUnknown_DropsBlocked()
     {
@@ -143,6 +151,7 @@ public sealed class FormatCapabilityGateTests
         kept.Should().Equal("geojson", "pbf");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void FilterAdvertised_DefaultRegistry_KeepsAllRealFormats()
     {

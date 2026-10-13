@@ -18,6 +18,7 @@ public class CfCoordinateAxisIndexerTests
 
     // ---- Evenly spaced, ascending: 0, 250, 500, 750, 1000 (5 samples) ----
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0, 0)]
     [InlineData(500, 2)]
@@ -34,6 +35,7 @@ public class CfCoordinateAxisIndexerTests
         high.Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Interval_EvenlySpaced_UsesCeilForLowFloorForHigh()
     {
@@ -46,6 +48,7 @@ public class CfCoordinateAxisIndexerTests
         high.Should().Be(3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Interval_ExactBounds_SelectsFullRange()
     {
@@ -57,6 +60,7 @@ public class CfCoordinateAxisIndexerTests
         high.Should().Be(4);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void OpenEnded_Low_SelectsFromStart()
     {
@@ -68,6 +72,7 @@ public class CfCoordinateAxisIndexerTests
         high.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Instant_OutsideAxis_IsRejected()
     {
@@ -80,6 +85,7 @@ public class CfCoordinateAxisIndexerTests
 
     // ---- Evenly spaced, descending: pressure 1000, 850, 700, 500 (hPa) ----
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(1000, 0)]
     [InlineData(850, 1)]
@@ -94,6 +100,7 @@ public class CfCoordinateAxisIndexerTests
         high.Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Interval_DescendingAxis_SelectsContiguousIndices()
     {
@@ -109,6 +116,7 @@ public class CfCoordinateAxisIndexerTests
 
     // ---- Explicit (irregular) coordinate array ----
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(2, 0)]
     [InlineData(10, 1)]
@@ -124,6 +132,7 @@ public class CfCoordinateAxisIndexerTests
         high.Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Interval_Explicit_SelectsCoveredSpan()
     {
@@ -136,6 +145,7 @@ public class CfCoordinateAxisIndexerTests
         high.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Interval_Explicit_NoIntersection_IsRejected()
     {
@@ -146,6 +156,7 @@ public class CfCoordinateAxisIndexerTests
         error.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void NonMonotonic_Explicit_IsRejected()
     {
@@ -156,6 +167,7 @@ public class CfCoordinateAxisIndexerTests
         error.Should().Contain("monotonic");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void InvertedBounds_AreRejected()
     {
@@ -166,6 +178,7 @@ public class CfCoordinateAxisIndexerTests
         error.Should().Contain("low <= high");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SingleSampleAxis_InstantOnSample_IsAccepted()
     {
@@ -177,6 +190,7 @@ public class CfCoordinateAxisIndexerTests
         high.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SingleSampleAxis_InstantOffSample_IsRejected()
     {

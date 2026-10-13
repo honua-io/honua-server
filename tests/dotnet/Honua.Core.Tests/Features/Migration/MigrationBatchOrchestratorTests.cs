@@ -21,6 +21,7 @@ namespace Honua.Core.Tests.Features.Migration;
 /// </summary>
 public sealed class MigrationBatchOrchestratorTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -38,6 +39,7 @@ public sealed class MigrationBatchOrchestratorTests
         request!.DeferRelationshipApplyToBatch.Should().Be(applyRelationships);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task StartAsync_OrdersDependenciesBeforeDependents_AndQueuesFirstChild()
     {
@@ -81,6 +83,7 @@ public sealed class MigrationBatchOrchestratorTests
         jobManager.Queue.Should().HaveCount(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_WhenChildSucceeds_QueuesNextAndRollsUp()
     {
@@ -101,6 +104,7 @@ public sealed class MigrationBatchOrchestratorTests
         children[1].Status.Should().Be(MigrationBatchChildStatus.Running);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_WhenAllSucceed_MarksBatchSucceeded()
     {
@@ -115,6 +119,7 @@ public sealed class MigrationBatchOrchestratorTests
         final.CompletedAt.Should().NotBeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_WhenChildFails_MarksBatchFailed_AndStopsQueueing()
     {
@@ -133,6 +138,7 @@ public sealed class MigrationBatchOrchestratorTests
         children[1].Status.Should().Be(MigrationBatchChildStatus.Pending);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_AppliesRelationships_WhenAllChildrenPublishAndRequested()
     {
@@ -157,6 +163,7 @@ public sealed class MigrationBatchOrchestratorTests
     // relationship reached the target; a deferred relationship, an apply that never ran, or a layer
     // that did not complete is blocking; a layer that completed without proving parity is unverified.
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_WhenEveryLayerIsFullFidelityAndRelationshipsPersist_ReportsFullFidelity()
     {
@@ -184,6 +191,7 @@ public sealed class MigrationBatchOrchestratorTests
             "each child's per-layer verdict is copied onto the durable child row");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_WhenRelationshipApplyDefersARelationship_RoutesBatchToNeedsReview()
     {
@@ -216,6 +224,7 @@ public sealed class MigrationBatchOrchestratorTests
         final.StatusNote.Should().Contain("resource:x:layer:0:relationship:7");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_WhenRelationshipManifestCannotBeParsed_RoutesBatchToNeedsReview()
     {
@@ -235,6 +244,7 @@ public sealed class MigrationBatchOrchestratorTests
         final.FidelityDifferences.Should().OnlyContain(d => d.Summary.Contains("could not be parsed"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_WhenALayerCompletesUnverified_SucceedsWithoutClaimingFullFidelity()
     {
@@ -258,6 +268,7 @@ public sealed class MigrationBatchOrchestratorTests
         difference.Actual.Should().Be(MigrationFidelityVerdicts.Unverified);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_WhenALayerIsRoutedToReview_ReportsIncompleteServiceWithThatLayer()
     {
@@ -285,6 +296,7 @@ public sealed class MigrationBatchOrchestratorTests
         difference.Actual.Should().Be("needs-review (incomplete)");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_WhenALayerFails_RecordsEveryUnmigratedLayerAndTheSkippedRelationshipApply()
     {
@@ -305,6 +317,7 @@ public sealed class MigrationBatchOrchestratorTests
             (MigrationFidelityDifferenceCodes.ServiceLayerIncomplete, "resource:x:layer:1", "pending"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_WhenTheQueuedJobIdNeverReachedTheChildRow_DoesNotQueueASecondImportOfTheLayer()
     {
@@ -332,6 +345,7 @@ public sealed class MigrationBatchOrchestratorTests
             .Should().Be(GeoservicesImportStatus.InsertingFeatures, "the in-flight job's progress must not be reset");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_WhenTheQueuedJobWasNeverPickedUp_QueuesTheSameJobIdentityAgain()
     {
@@ -349,6 +363,7 @@ public sealed class MigrationBatchOrchestratorTests
         (await catalog.GetChildrenAsync(batch.BatchId))[0].JobId.Should().Be(queuedJobId);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task StartAsync_GivesEveryChildOfEveryBatchItsOwnJobIdentity()
     {
@@ -365,6 +380,7 @@ public sealed class MigrationBatchOrchestratorTests
     // A service migration is full fidelity only when every layer the source scan discovered is selected.
     // The expected differences follow from the manifests below: layer 2 is discovered but never selected.
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task AdvanceAsync_WhenTheSelectionLeavesOutADiscoveredLayer_RoutesTheServiceToNeedsReview()
     {
@@ -388,6 +404,7 @@ public sealed class MigrationBatchOrchestratorTests
         final.StatusNote.Should().Contain(surveys);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task StartAsync_WhenFullFidelityIsRequiredAndAConstructBlocks_RefusesBeforeAnythingIsQueued()
     {
@@ -408,6 +425,7 @@ public sealed class MigrationBatchOrchestratorTests
         ((InMemoryBatchCatalog)catalog).BatchCount.Should().Be(0, "a refused selection creates no batch");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task StartAsync_WhenFullFidelityIsRequiredWithoutAManifest_RefusesBecauseNothingWasAccounted()
     {
@@ -422,6 +440,7 @@ public sealed class MigrationBatchOrchestratorTests
         ((InMemoryBatchCatalog)catalog).BatchCount.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task StartAsync_WhenFullFidelityIsRequiredAndEverySelectedConstructIsAccounted_StartsTheBatch()
     {

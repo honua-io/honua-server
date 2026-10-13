@@ -15,6 +15,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class MigrationCatalogReconcilerTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(MetadataV2FieldType.Date, false)]
     [InlineData(MetadataV2FieldType.String, true)]
@@ -36,6 +37,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Should().Be(mismatch);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenPublishedCatalogMatchesInventory_ReportsPassWithNoFindings()
     {
@@ -49,6 +51,7 @@ public sealed class MigrationCatalogReconcilerTests
         outcome.TargetResourceId.Should().Be("svc.parcels");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenPublishedResourceMissing_ReportsNotApplicableAndResourceMissingFinding()
     {
@@ -61,6 +64,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Which.Code.Should().Be(MigrationCatalogReconciliationCodes.ResourceMissing);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenPublishedFieldMissing_EmitsFieldMissingFailFinding()
     {
@@ -79,6 +83,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Which.Subject.Should().Be("TYPE");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenPublishedFieldTypeDiffers_EmitsFieldTypeMismatchFinding()
     {
@@ -98,6 +103,7 @@ public sealed class MigrationCatalogReconcilerTests
         finding.Actual.Should().Be("Integer");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenSourceIntegerWidensToBigIntegerOnTarget_DoesNotEmitTypeMismatch()
     {
@@ -114,6 +120,7 @@ public sealed class MigrationCatalogReconcilerTests
         outcome.Findings.Should().NotContain(finding => finding.Code == MigrationCatalogReconciliationCodes.FieldTypeMismatch);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenPublishedFieldMissesInventoryDomain_EmitsDomainMissingFinding()
     {
@@ -131,6 +138,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Which.Subject.Should().Be("TYPE");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenPublishedDomainNameDiffers_EmitsWarnSeverityDomainNameMismatch()
     {
@@ -153,6 +161,7 @@ public sealed class MigrationCatalogReconcilerTests
         outcome.Classification.Should().Be(MigrationCatalogReconciliationClassifications.Warn);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenInventoryCodedValuesAbsentOnPublishedDomain_EmitsDomainValuesMismatch()
     {
@@ -182,6 +191,7 @@ public sealed class MigrationCatalogReconcilerTests
         finding.Summary.Should().Contain("C");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenGeometryTypeDiffers_EmitsGeometryTypeMismatch()
     {
@@ -197,6 +207,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Which.Subject.Should().Be("spatial");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenSridDiffers_EmitsSridMismatch()
     {
@@ -216,6 +227,7 @@ public sealed class MigrationCatalogReconcilerTests
         finding.Actual.Should().Be("3857");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenPublishedHasNoBboxButSourceDoes_EmitsExtentMissingWarn()
     {
@@ -234,6 +246,7 @@ public sealed class MigrationCatalogReconcilerTests
         finding.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Warn);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenPublishedBboxDisjointFromSource_EmitsExtentMismatchWarn()
     {
@@ -249,6 +262,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Which.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Warn);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenInventoryHasObjectIdButPublishedHasNoPrimaryIdentifier_EmitsObjectIdMissing()
     {
@@ -268,6 +282,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Which.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenInventoryHasGlobalIdButPublishedHasNoGlobalIdBinding_EmitsGlobalIdMissingWarn()
     {
@@ -280,6 +295,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Which.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Warn);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenExpectedRelationshipMissingFromPublished_EmitsRelationshipMissing()
     {
@@ -303,6 +319,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Which.Subject.Should().Be("rel:0");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenExpectedRelationshipIsManualReview_DoesNotEmitRelationshipMissing()
     {
@@ -325,6 +342,7 @@ public sealed class MigrationCatalogReconcilerTests
         outcome.Findings.Should().NotContain(finding => finding.Code == MigrationCatalogReconciliationCodes.RelationshipMissing);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void BuildReport_OrdersResourcesAndRollsUpSummaryDeterministically()
     {
@@ -459,6 +477,7 @@ public sealed class MigrationCatalogReconcilerTests
             Editing = new MetadataV2ResourceEditing { GlobalIdField = "GLOBALID" }
         };
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenSourceAdvertisesAttachmentsButPublishedDoesNot_EmitsAttachmentMissingFinding()
     {
@@ -475,6 +494,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Which.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Fail);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenSourceAndPublishedBothSupportAttachments_EmitsNoAttachmentFinding()
     {
@@ -489,6 +509,7 @@ public sealed class MigrationCatalogReconcilerTests
         outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.AttachmentMissing);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenSourceDidNotAdvertiseAttachments_DoesNotFalseFailOnMissingAttachmentSupport()
     {
@@ -501,6 +522,7 @@ public sealed class MigrationCatalogReconcilerTests
         outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.AttachmentMissing);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenSourceSubtypesMissingFromPublished_EmitsSubtypeMissingFinding()
     {
@@ -516,6 +538,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Which.Expected.Should().Be("STATUS");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenPublishedSubtypeFieldDiffers_EmitsSubtypeFieldMismatchFinding()
     {
@@ -533,6 +556,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Which.Actual.Should().Be("KIND");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenPublishedMissingSubtypeCode_EmitsSubtypeCodeMissingFinding()
     {
@@ -550,6 +574,7 @@ public sealed class MigrationCatalogReconcilerTests
             .Which.Summary.Should().Contain("2");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenSubtypesMatch_EmitsNoSubtypeFindings()
     {
@@ -566,6 +591,7 @@ public sealed class MigrationCatalogReconcilerTests
             f.Code == MigrationCatalogReconciliationCodes.SubtypeCodeMissing);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenCappedCodedValueDomainHasNoCapturedValuesAndPublishedOmitsDomain_DoesNotFalseFail()
     {
@@ -606,6 +632,7 @@ public sealed class MigrationCatalogReconcilerTests
         outcome.Classification.Should().Be(MigrationCatalogReconciliationClassifications.Pass);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_WhenCappedCodedValueDomainButPublishedRetainsDomain_StillChecksDomainName()
     {
@@ -647,6 +674,7 @@ public sealed class MigrationCatalogReconcilerTests
         outcome.Findings.Should().ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.DomainNameMismatch);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Reconcile_NonspatialTable_IgnoresDefaultImportTargetCrs()
     {
@@ -664,6 +692,7 @@ public sealed class MigrationCatalogReconcilerTests
         report.Resources.Single().Findings.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(4326, 4326, "pass")]
     [InlineData(null, null, "fail")]

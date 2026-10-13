@@ -67,9 +67,10 @@ script's --fast skips heavy lanes; it is distinct from the supervisor's
 incident-bound fix-forward mode.
 
 For protocol-only iteration, the OData pilot compiles its dependency closure
-without Honua.Server or Honua.TestKit:
+without Honua.Server or full Honua.TestKit. The lightweight
+Honua.TestKit.Abstractions project supplies shared test traits:
 
-    dotnet test tests/dotnet/Honua.Protocols.OData.Unit.Tests/Honua.Protocols.OData.Unit.Tests.csproj --configuration Release
+    dotnet test tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj --configuration Release
 
 Run this through the shared host reservation. Full-server integration coverage
 remains in the existing OData test project.

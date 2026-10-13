@@ -8,6 +8,7 @@ namespace Honua.Core.Tests.Features.Tiles.PMTiles;
 
 public class PMTilesDirectoryTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeDeserialize_SingleEntry_RoundTrips()
     {
@@ -26,6 +27,7 @@ public class PMTilesDirectoryTests
         result[0].RunLength.Should().Be(1U);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeDeserialize_ContiguousEntries_RoundTrips()
     {
@@ -50,6 +52,7 @@ public class PMTilesDirectoryTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeDeserialize_NonContiguousEntries_RoundTrips()
     {
@@ -74,6 +77,7 @@ public class PMTilesDirectoryTests
         }
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeDeserialize_ContiguousOffsets_EncodedAsZero()
     {
@@ -93,6 +97,7 @@ public class PMTilesDirectoryTests
         result[1].Offset.Should().Be(50UL);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeDeserialize_LeafEntries_RoundTrips()
     {
@@ -115,6 +120,7 @@ public class PMTilesDirectoryTests
         result[1].Offset.Should().Be(512UL);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeEntries_IncludesNumEntriesPrefix()
     {
@@ -129,6 +135,7 @@ public class PMTilesDirectoryTests
         bytes[0].Should().Be(1, "first byte should be num_entries varint for 1 entry");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SerializeEntries_ManyEntries_NumEntriesPrefixIsCorrect()
     {
@@ -152,6 +159,7 @@ public class PMTilesDirectoryTests
         result[199].TileId.Should().Be(199UL);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task WriteAsync_DirectoryEntriesLocateTileData()
     {

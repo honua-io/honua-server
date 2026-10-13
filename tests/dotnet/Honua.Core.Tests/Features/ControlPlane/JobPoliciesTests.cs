@@ -15,6 +15,7 @@ public class JobPoliciesTests
     // JobRetryPolicy
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RetryPolicy_Default_HasReasonableDefaults()
     {
@@ -25,6 +26,7 @@ public class JobPoliciesTests
         Assert.Equal(TimeSpan.FromMinutes(10), policy.MaxDelay);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RetryPolicy_None_DoesNotRetry()
     {
@@ -33,6 +35,7 @@ public class JobPoliciesTests
         Assert.False(policy.ShouldRetry(1));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0, true)]
     [InlineData(1, true)]
@@ -45,6 +48,7 @@ public class JobPoliciesTests
         Assert.Equal(expected, policy.ShouldRetry(attemptCount));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RetryPolicy_ComputeDelay_FirstAttemptIsZero()
     {
@@ -52,6 +56,7 @@ public class JobPoliciesTests
         Assert.Equal(TimeSpan.Zero, policy.ComputeDelay(1));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RetryPolicy_ComputeDelay_FixedStrategy_ReturnsSameDelay()
     {
@@ -68,6 +73,7 @@ public class JobPoliciesTests
         Assert.Equal(TimeSpan.FromSeconds(10), policy.ComputeDelay(4));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RetryPolicy_ComputeDelay_LinearStrategy_ScalesLinearly()
     {
@@ -84,6 +90,7 @@ public class JobPoliciesTests
         Assert.Equal(TimeSpan.FromSeconds(30), policy.ComputeDelay(4));  // retryIndex=2: 10*(2+1)
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RetryPolicy_ComputeDelay_ExponentialStrategy_DoublesEachTime()
     {
@@ -100,6 +107,7 @@ public class JobPoliciesTests
         Assert.Equal(TimeSpan.FromSeconds(40), policy.ComputeDelay(4));  // 10 * 2^2
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void RetryPolicy_ComputeDelay_CapsAtMaxDelay()
     {
@@ -120,6 +128,7 @@ public class JobPoliciesTests
     // JobHeartbeatPolicy
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void HeartbeatPolicy_Default_TimeoutExceedsInterval()
     {
@@ -127,6 +136,7 @@ public class JobPoliciesTests
         Assert.True(policy.Timeout > policy.Interval);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void HeartbeatPolicy_IsExpired_ReturnsFalse_WhenWithinTimeout()
     {
@@ -137,6 +147,7 @@ public class JobPoliciesTests
         Assert.False(policy.IsExpired(lastHeartbeat, now));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void HeartbeatPolicy_IsExpired_ReturnsTrue_WhenBeyondTimeout()
     {
@@ -147,6 +158,7 @@ public class JobPoliciesTests
         Assert.True(policy.IsExpired(lastHeartbeat, now));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void HeartbeatPolicy_IsExpired_ReturnsTrue_WhenExactlyAtTimeout()
     {
@@ -165,18 +177,21 @@ public class JobPoliciesTests
     // JobTimeoutPolicy
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TimeoutPolicy_Default_IsOneHour()
     {
         Assert.Equal(TimeSpan.FromHours(1), JobTimeoutPolicy.Default.MaxDuration);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TimeoutPolicy_LongRunning_Is24Hours()
     {
         Assert.Equal(TimeSpan.FromHours(24), JobTimeoutPolicy.LongRunning.MaxDuration);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TimeoutPolicy_IsExpired_ReturnsFalse_WhenWithinDuration()
     {
@@ -187,6 +202,7 @@ public class JobPoliciesTests
         Assert.False(policy.IsExpired(startedAt, now));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TimeoutPolicy_IsExpired_ReturnsTrue_WhenBeyondDuration()
     {
@@ -201,6 +217,7 @@ public class JobPoliciesTests
     // ExecutionJobRecord with new fields
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExecutionJobRecord_NewFields_HaveSaneDefaults()
     {
@@ -230,6 +247,7 @@ public class JobPoliciesTests
         Assert.Empty(record.ArtifactReferences);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExecutionJobRecord_WithClaimFields_PreservesValues()
     {
@@ -271,6 +289,7 @@ public class JobPoliciesTests
     // JobExecutionResult
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void JobExecutionResult_Succeeded_SetsCorrectStatus()
     {
@@ -280,6 +299,7 @@ public class JobPoliciesTests
         Assert.Empty(result.Warnings);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void JobExecutionResult_Failed_SetsErrorMessage()
     {
@@ -293,6 +313,7 @@ public class JobPoliciesTests
     // ExecutionLogEntry
     // -----------------------------------------------------------------------
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExecutionLogEntry_CanBeConstructed_WithMinimalFields()
     {
@@ -308,6 +329,7 @@ public class JobPoliciesTests
         Assert.Null(entry.Metadata);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ExecutionLogEntry_CanInclude_PhaseAndMetadata()
     {

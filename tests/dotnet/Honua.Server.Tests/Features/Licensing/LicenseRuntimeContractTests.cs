@@ -22,7 +22,7 @@ public sealed class LicenseRuntimeContractTests
     [UnitTest]
     public async Task WarningSchedule_EmitsThirtyFourteenSevenOneDayThresholdsOnce()
     {
-        var clock = new LicenseFailureContractTests.TransitionClock();
+        var clock = new TransitionClock();
         var license = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro, clock.GetUtcNow().AddDays(31));
         var logger = new WarningLogger();
         using var service = new FileBackedLicenseService(Options.Create(new LicenseOptions
@@ -51,7 +51,7 @@ public sealed class LicenseRuntimeContractTests
     [Trait("Tier", "Fast")]
     public async Task Expiry_InFlightJob_CancelsAndFailsWithoutCompletedPartialOutputs(bool ignoreCancellation)
     {
-        var clock = new LicenseFailureContractTests.TransitionClock();
+        var clock = new TransitionClock();
         var license = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro, clock.GetUtcNow().AddMinutes(2));
         using var policy = CreateService(license, clock);
         await policy.StartAsync(CancellationToken.None);
@@ -116,7 +116,7 @@ public sealed class LicenseRuntimeContractTests
     [UnitTest]
     public async Task Renewal_ChangedSource_RevalidatesOnIntervalAndSurvivesRestart()
     {
-        var clock = new LicenseFailureContractTests.TransitionClock();
+        var clock = new TransitionClock();
         var old = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro, clock.GetUtcNow().AddMinutes(2));
         var renewed = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro, clock.GetUtcNow().AddDays(60));
         var directory = Directory.CreateTempSubdirectory();

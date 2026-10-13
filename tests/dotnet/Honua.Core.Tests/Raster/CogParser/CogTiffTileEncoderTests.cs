@@ -11,6 +11,7 @@ namespace Honua.Core.Tests.Raster.CogParser;
 
 public sealed class CogTiffTileEncoderTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

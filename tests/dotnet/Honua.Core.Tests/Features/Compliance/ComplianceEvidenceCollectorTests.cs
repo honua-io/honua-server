@@ -19,6 +19,7 @@ namespace Honua.Core.Tests.Features.Compliance;
 /// </summary>
 public sealed class ComplianceEvidenceCollectorTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Snapshot_ContainsBothFrameworks()
     {
@@ -30,6 +31,7 @@ public sealed class ComplianceEvidenceCollectorTests
             new[] { ComplianceFramework.Soc2, ComplianceFramework.FedRamp });
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Snapshot_WhenNoDependenciesSatisfied_ReportsGaps()
     {
@@ -43,6 +45,7 @@ public sealed class ComplianceEvidenceCollectorTests
         soc2cc61.Evidence.Should().Contain(e => e.Source == "dependency-gate");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Snapshot_WhenFrameworkReadinessNotClaimed_MarksControlsNotApplicable()
     {
@@ -58,6 +61,7 @@ public sealed class ComplianceEvidenceCollectorTests
         soc2Controls.Should().AllSatisfy(c => c.Status.Should().Be(ComplianceControlStatus.NotApplicable));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Snapshot_ContainsEncryptionEvidence()
     {
@@ -71,6 +75,7 @@ public sealed class ComplianceEvidenceCollectorTests
         sc28.Evidence.Should().Contain(e => e.Source == "encryption-posture");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Snapshot_Summary_ReflectsControlStatuses()
     {
@@ -87,6 +92,7 @@ public sealed class ComplianceEvidenceCollectorTests
         snapshot.Summary.ReadinessPercent.Should().BeGreaterThanOrEqualTo(0).And.BeLessThanOrEqualTo(100);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Snapshot_AllDependenciesUnsatisfied_DowngradesToNotImplementedEvenWithFrameworkGaps()
     {
@@ -120,6 +126,7 @@ public sealed class ComplianceEvidenceCollectorTests
             "the only dependency is unsatisfied — the framework-specific FIPS gap must not mask the downgrade");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Snapshot_DependenciesSatisfied_ButResidencyInformational_SurfacesGap()
     {
@@ -166,6 +173,7 @@ public sealed class ComplianceEvidenceCollectorTests
         cc67.Gaps.Should().Contain(g => g.Contains("residency", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Snapshot_AllDependenciesSatisfied_MarksControlsImplemented()
     {

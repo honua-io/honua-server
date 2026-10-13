@@ -593,8 +593,11 @@ public sealed class ModuleDependencyPolicyTests
         // (issues #2123 / #2180) that the lean server never references. Unclassified
         // consumers may reference anything.
         if (projectName.EndsWith(".Tests", StringComparison.Ordinal) ||
+            projectName.EndsWith(".UnitTests", StringComparison.Ordinal) ||
+            projectName.EndsWith(".ComponentTests", StringComparison.Ordinal) ||
             projectName.EndsWith(".Cli", StringComparison.Ordinal) ||
-            projectName.Equals("Honua.TestKit", StringComparison.Ordinal))
+            projectName.Equals("Honua.TestKit", StringComparison.Ordinal) ||
+            projectName.Equals("Honua.TestKit.Abstractions", StringComparison.Ordinal))
         {
             return ModuleRole.Unclassified;
         }

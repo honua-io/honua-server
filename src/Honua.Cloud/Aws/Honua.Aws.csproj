@@ -49,4 +49,7 @@
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Aws.UnitTests" />
+  </ItemGroup>
 </Project>
