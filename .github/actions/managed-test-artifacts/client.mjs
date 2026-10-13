@@ -76,6 +76,9 @@ export async function run(options, deps = {}) {
           // Transport zip includes the tar and a small manifest; reject before download.
           if (!Number.isFinite(found.size) || found.size > maxBytes + 1048576) throw Error('Artifact transport size exceeds limit');
           await artifact.downloadArtifact(found.id, {path: temp});
+          // Truncated/missing JSON is transport corruption, not a valid but
+          // incompatible identity. Keep that distinction before the shell gate.
+          JSON.parse(await readFile(manifest, 'utf8'));
           try {
             await runner('bash', [path.join(root, 'scripts/ci/restore-server-test-binaries.sh'), '--manifest', manifest,
               '--destination', root, '--project', project, '--source-sha', sourceSha], identity);
@@ -91,9 +94,13 @@ export async function run(options, deps = {}) {
           record.status = 'restored'; record.artifactId = found.id;
         }
       } catch (error) {
-        record.reason = error.identityFailure ? 'identity-mismatch' :
-          (error.code === 'ETIMEDOUT' ? 'timeout' : 'artifact-unavailable-or-invalid');
-        if (error.identityFailure || packaging) throw error;
+        const timedOut = error.code === 'ETIMEDOUT' || error.code === 124 || (error.killed && error.signal === 'SIGTERM');
+        const packageBudget = packaging && (timedOut ||
+          /Staged payload.*exceeds|Archive.*exceeds|Packaging.*exceeds|Packaged archive exceeds limit/.test(
+            `${error.stderr ?? ''} ${error.message ?? ''}`));
+        record.reason = error.identityFailure ? 'identity-mismatch' : packageBudget ? 'package-budget-exceeded' :
+          timedOut ? 'timeout' : 'artifact-unavailable-or-invalid';
+        if (error.identityFailure || (packaging && !packageBudget)) throw error;
       } finally {
         receipts.push(record);
         await rm(temp, {recursive: true, force: true});

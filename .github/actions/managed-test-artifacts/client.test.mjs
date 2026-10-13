@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, mkdir, writeFile, readFile, readdir, rm} from 'node:fs/promises';
+import {mkdtemp, mkdir, writeFile, readFile, readdir, rm, truncate} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {run} from './client.mjs';
@@ -90,4 +90,32 @@ test('projects transfer sequentially and never overlap payload directories',asyn
 test('packaging contract error is fatal rather than silently publishing nothing',async t=>{
  const f=await fixture(t);f.deps.runner=async(file,...args)=>{if(file==='git')return f.runner(file,...args);throw Error('missing built output');};
  await assert.rejects(run({...f.opts,mode:'publish'},f.deps),/missing built output/);await cleaned(f.root);
+});
+
+test('truncated downloaded JSON falls back while valid wrong identity remains fatal',async t=>{
+ const f=await fixture(t);f.artifact.downloadArtifact=async(id,{path:temp})=>writeFile(path.join(temp,'server-test-binaries-fixture.manifest.json'),'{broken');
+ const r=await run(f.opts,f.deps);assert.deepEqual(JSON.parse(await readFile(r.restoredProjectsFile,'utf8')),[]);
+ assert.equal((await receipt(r)).projects[0].reason,'artifact-unavailable-or-invalid');await cleaned(f.root);
+});
+for(const failure of ['archive-size','package-size','timeout'])test(`publish ${failure} cleans and continues next project`,async t=>{
+ const f=await fixture(t);const other='tests/dotnet/Other.Tests/Other.Tests.csproj';
+ await writeFile(f.opts.projectsFile,JSON.stringify([project,other]));
+ await writeFile(path.join(f.root,'.github/server-test-artifact-projects.json'),JSON.stringify({projects:[{csproj:project,artifact_suffix:'fixture'},{csproj:other,artifact_suffix:'other'}]}));
+ const uploaded=[];
+ f.deps.runner=async(file,args,identity)=>{
+   if(file==='git')return f.runner(file,args,identity);
+   const current=args[args.indexOf('--project')+1],temp=args[args.indexOf('--output')+1];
+   assert.equal((await readdir(f.root)).filter(n=>n.startsWith('managed-test-payload-')).length,1);
+   if(current===project && failure==='package-size')throw Object.assign(Error('bound'),{stderr:'Staged payload 999999999 bytes exceeds 805306368.'});
+   if(current===project && failure==='timeout')throw Object.assign(Error('deadline'),{killed:true,signal:'SIGTERM'});
+   const suffix=current===project?'fixture':'other';
+   await writeFile(path.join(temp,`server-test-binaries-${suffix}.manifest.json`),JSON.stringify({archive_sha256:'b'.repeat(64)}));
+   const archive=path.join(temp,`server-test-binaries-${suffix}.tar.gz`);await writeFile(archive,'payload');
+   if(current===project)await truncate(archive,335544321);
+   return {stdout:''};
+ };
+ f.artifact.uploadArtifact=async name=>{uploaded.push(name);return {id:42};};
+ const r=await run({...f.opts,mode:'publish'},f.deps);const rows=(await receipt(r)).projects;
+ assert.deepEqual(uploaded,['managed-tests-2-other']);assert.equal(rows[0].reason,'package-budget-exceeded');
+ assert.equal(rows[0].status,'unrestored');assert.equal(rows[1].status,'published');await cleaned(f.root);
 });
