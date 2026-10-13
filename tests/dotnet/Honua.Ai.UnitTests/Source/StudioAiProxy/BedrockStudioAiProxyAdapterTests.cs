@@ -158,7 +158,8 @@ public sealed class BedrockStudioAiProxyAdapterTests
         stalled.WasDisposed.Should().BeTrue();
 
         // Recovery: the next request gets a fresh client and reaches a successful terminal.
-        var recovered = await CollectAsync(adapter, options, ToolFreeRequest());
+        // Use the normal budget so shared runner load cannot turn recovery into another timeout.
+        var recovered = await CollectAsync(adapter, DefaultOptions(), ToolFreeRequest());
 
         factory.CreateCount.Should().Be(2);
         recovered.Select(e => e.Type).Should().Equal(
