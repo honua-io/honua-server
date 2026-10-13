@@ -186,7 +186,7 @@ public sealed class LayerPublishJobStatusResponse
     /// <summary>Queued, Processing, Completed, Failed, or Cancelled.</summary>
     public required string Status { get; init; }
 
-    /// <summary>Rows copied into the canonical features table.</summary>
+    /// <summary>Confirmed copied rows; zero is a lower bound if live progress expired before completion.</summary>
     public required long RowsMaterialized { get; init; }
 
     /// <summary>Source rows counted when the publish was accepted.</summary>

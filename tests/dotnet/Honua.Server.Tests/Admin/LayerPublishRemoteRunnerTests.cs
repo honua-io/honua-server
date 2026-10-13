@@ -136,6 +136,94 @@ public sealed class LayerPublishRemoteRunnerTests
         await fixture.Backend.DidNotReceive().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
     }
 
+    [UnitTheory]
+    [InlineData(ExecutionJobStatus.Queued, ProgressStatus.Queued)]
+    [InlineData(ExecutionJobStatus.Provisioning, ProgressStatus.Queued)]
+    [InlineData(ExecutionJobStatus.Running, ProgressStatus.Processing)]
+    [InlineData(ExecutionJobStatus.Failed, ProgressStatus.Failed)]
+    [InlineData(ExecutionJobStatus.Cancelled, ProgressStatus.Cancelled)]
+    public async Task Poll_ExpiredProgress_RecoversTenantScopedDurableState(ExecutionJobStatus status, ProgressStatus expected)
+    {
+        using var fixture = new Fixture();
+        using var owner = fixture.Scope("tenant-a");
+        var admission = await SubmitAsync(owner.ServiceProvider);
+        var job = (await fixture.Jobs.GetAsync(admission.JobId!))!;
+        await fixture.Jobs.SetAsync(job with
+        {
+            Status = status,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-2),
+            ErrorMessage = "private provider detail",
+        });
+        await owner.ServiceProvider.GetRequiredService<IUniversalProgressStore>().DeleteProgressAsync(job.OperationId);
+
+        foreach (var tenant in new string?[] { "tenant-b", "TENANT-A", null })
+        {
+            using var other = fixture.Scope(tenant);
+            Assert.Null(await other.ServiceProvider.GetRequiredService<ILayerPublishJobs>().GetAsync(job.OperationId, CancellationToken.None));
+        }
+
+        var progress = await owner.ServiceProvider.GetRequiredService<ILayerPublishJobs>().GetAsync(job.OperationId, CancellationToken.None);
+        Assert.Equal(expected, progress!.Status);
+        Assert.Equal("tenant-a", progress.TenantId);
+        Assert.Equal("roads", progress.ConnectionKey);
+        Assert.Equal(0, progress.RowsMaterialized);
+        Assert.Equal(330000, progress.RowsTotal);
+        Assert.Null(progress.LayerId);
+        Assert.DoesNotContain("private", progress.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
+        if (status is ExecutionJobStatus.Queued or ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running)
+        {
+            Assert.Contains("live row progress unavailable", progress.CurrentPhase!, StringComparison.Ordinal);
+        }
+        Assert.Null(await owner.ServiceProvider.GetRequiredService<IUniversalProgressStore>()
+            .GetProgressAsync<LayerPublishJobProgress>(job.OperationId));
+    }
+
+    [UnitTheory]
+    [InlineData("layer-publish:23:12:12", ProgressStatus.Completed, 23, 12, 12)]
+    [InlineData("invalid", ProgressStatus.Failed, null, 0, 330000)]
+    public async Task Poll_ExpiredCompletedProgress_UsesOnlyRecordedResultCounts(
+        string receipt, ProgressStatus expected, int? layerId, long materialized, long total)
+    {
+        using var fixture = new Fixture();
+        using var owner = fixture.Scope("tenant-a");
+        var admission = await SubmitAsync(owner.ServiceProvider);
+        var job = (await fixture.Jobs.GetAsync(admission.JobId!))!;
+        await fixture.Jobs.SetAsync(job with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CommittedEffectReferences = [receipt],
+        });
+        await owner.ServiceProvider.GetRequiredService<IUniversalProgressStore>().DeleteProgressAsync(job.OperationId);
+
+        var progress = await owner.ServiceProvider.GetRequiredService<ILayerPublishJobs>().GetAsync(job.OperationId, CancellationToken.None);
+        Assert.Equal(expected, progress!.Status);
+        Assert.Equal(layerId, progress.LayerId);
+        Assert.Equal(materialized, progress.RowsMaterialized);
+        Assert.Equal(total, progress.RowsTotal);
+    }
+
+    [UnitTheory]
+    [InlineData("legacy")]
+    [InlineData("wrong-kind")]
+    [InlineData("malformed-payload")]
+    public async Task Poll_ExpiredProgress_RefusesUnrecoverableRecords(string scenario)
+    {
+        using var fixture = new Fixture();
+        using var owner = fixture.Scope("tenant-a");
+        var admission = await SubmitAsync(owner.ServiceProvider);
+        var job = (await fixture.Jobs.GetAsync(admission.JobId!))!;
+        job = scenario switch
+        {
+            "legacy" => job with { Status = ExecutionJobStatus.Succeeded, CommittedEffectReferences = ["layer-publish:23"] },
+            "wrong-kind" => job with { Spec = job.Spec with { Kind = ExecutionJobKind.Geoprocessing } },
+            _ => job with { Spec = job.Spec with { Parameters = new Dictionary<string, string> { [LayerPublishJobPayload.ParameterName] = "{}" } } },
+        };
+        await fixture.Jobs.SetAsync(job);
+        await owner.ServiceProvider.GetRequiredService<IUniversalProgressStore>().DeleteProgressAsync(job.OperationId);
+
+        Assert.Null(await owner.ServiceProvider.GetRequiredService<ILayerPublishJobs>().GetAsync(job.OperationId, CancellationToken.None));
+    }
+
     private static Task<LayerPublishAdmission> SubmitAsync(IServiceProvider services, CancellationToken cancellationToken = default)
         => services.GetRequiredService<ILayerPublishJobs>().SubmitAsync(
             Connection,
