@@ -211,6 +211,15 @@ internal static partial class GPServerEndpoints
             return formatError;
         }
 
+        // Routing is the provider-level service also published by the portal's
+        // helperServices. It has no feature-service catalog row; its GP root must
+        // describe the same synchronous tools that already answer by name.
+        if (IsRoutingUtilityService(serviceId) &&
+            !await HasRoutingCatalogServiceAsync(context, ct).ConfigureAwait(false))
+        {
+            return await HandleRoutingUtilityServiceInfoAsync(context, ct).ConfigureAwait(false);
+        }
+
         var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
         if (!serviceValidation.IsValid)
         {
@@ -262,6 +271,11 @@ internal static partial class GPServerEndpoints
         // need not publish any catalog task of its own.
         if (NAServerMetadata.IsUtilityTask(taskName))
         {
+            var routingError = await ValidateRoutingUtilityTaskAsync(context, taskName, ct).ConfigureAwait(false);
+            if (routingError is not null)
+            {
+                return routingError;
+            }
             return HandleNetworkAnalysisUtilityTaskInfo(context, taskName);
         }
 
