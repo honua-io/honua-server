@@ -22,6 +22,19 @@ def planner(root):
     return module
 
 
+def order_shards(root, plan, timings):
+    spec = importlib.util.spec_from_file_location('feedback_timing', root / 'scripts/ci/shard-timing-plan.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    config = json.loads((root / '.github/ci-shards.json').read_text())
+    names = [s['name'] for s in plan['shards']]
+    ordered = module.order_names(names, config, module.observations(config, timings))
+    entries = {s['name']: s for s in plan['shards']}
+    plan['shards'] = [entries[name] for name in ordered]
+    plan['ordering'] = {'changed': names != ordered, 'timingsDirectory': str(timings),
+                        'policy': 'longest-first only with complete compatible timing hints; selection unchanged'}
+
+
 def changed_files(root, base):
     # Match test-projects.py: base-to-working-tree diff includes staged/unstaged changes.
     paths = subprocess.check_output(['git', 'diff', '--no-renames', '--name-only', '-z', base], cwd=root).decode().split('\0')
@@ -171,6 +184,7 @@ def main():
     parser.add_argument('--base', default='origin/trunk')
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--results-directory', type=Path, help='Parent for a unique retained feedback run directory')
+    parser.add_argument('--timings-dir', type=Path, help='Optional retained timing evidence; affects order only')
     args = parser.parse_args()
     root = args.root.resolve()
     module = planner(root)
@@ -180,6 +194,10 @@ def main():
     unit_plan = module.plan(root, catalog, changed)
     routing = route(root, changed)
     result = make_plan(catalog, unit_plan, routing, json.loads((root / '.github/ci-shards.json').read_text()), changed)
+    try:
+        order_shards(root, result, args.timings_dir or Path(os.environ.get('HONUA_LOCAL_CI_TIMINGS', str(root / 'tests/TestResults'))))
+    except (ValueError, OSError, KeyError):
+        result['ordering'] = {'changed': False, 'reason': 'timing hints unavailable; canonical order retained'}
     result['source'] = {'base': args.base,
                         'baseHead': subprocess.check_output(['git', 'rev-parse', args.base], cwd=root, text=True).strip(),
                         'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),

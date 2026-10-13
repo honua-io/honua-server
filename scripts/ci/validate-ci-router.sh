@@ -1536,6 +1536,7 @@ echo "Checking shard headroom audit and its drain guard..."
 # --max-utilization guard is what names a crowded shard on the PR that fills it.
 # Untested, a wrong "latest run" reading would silently stop reporting.
 "${PYTHON_BIN}" scripts/ci/audit-shard-headroom.test.py
+"${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-timing-plan.py
 
 echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/test-geoservices-support-partition.py
