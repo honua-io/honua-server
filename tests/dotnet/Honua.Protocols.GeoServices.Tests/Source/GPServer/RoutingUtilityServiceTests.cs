@@ -155,7 +155,43 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
         }
     }
 
-    private static async Task<WebAppFixture> CreateCatalogCollisionFixtureAsync(bool gpServerEnabled)
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    public async Task ExistingPrivateRoutingStableId_RootTaskAndExecuteKeepItsAccessPolicy()
+    {
+        var fixture = await CreateCatalogCollisionFixtureAsync(gpServerEnabled: true, stableIdCollision: true);
+        try
+        {
+            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer?f=json", 401);
+            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/GetTravelModes?f=json", 401);
+            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/FindRoutes/execute?f=json", 401);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    public async Task ExistingProtocolDisabledRoutingStableId_RootTaskAndExecuteDoNotFallBackToProvider()
+    {
+        var fixture = await CreateCatalogCollisionFixtureAsync(gpServerEnabled: false, stableIdCollision: true);
+        try
+        {
+            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer?f=json", 404);
+            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/GetTravelModes?f=json", 404);
+            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/FindRoutes/execute?f=json", 404);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static async Task<WebAppFixture> CreateCatalogCollisionFixtureAsync(bool gpServerEnabled, bool stableIdCollision = false)
     {
         var graph = new MetadataV2Graph
         {
@@ -163,7 +199,11 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
             [
                 new MetadataV2Service
                 {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "svc-private-routing", Name = "Routing" },
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = stableIdCollision ? "Routing" : "svc-private-routing",
+                        Name = stableIdCollision ? "Private Route" : "Routing"
+                    },
                     Protocols = gpServerEnabled ? ["GPServer"] : ["FeatureServer"],
                     AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["routing-reader"] }
                 }

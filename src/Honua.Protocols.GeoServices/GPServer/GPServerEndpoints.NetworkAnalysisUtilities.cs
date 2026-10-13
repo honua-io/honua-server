@@ -36,7 +36,9 @@ internal static partial class GPServerEndpoints
         // disabled publication cannot be mistaken for an absent service.
         var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await provider.GetCurrentAsync(ct).ConfigureAwait(false);
-        return snapshot.Graph.Services.Any(service => IsRoutingUtilityService(service.Metadata.Name));
+        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? string.Empty;
+        return snapshot.Index.ServicesById.ContainsKey(serviceId) ||
+            snapshot.Graph.Services.Any(service => string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase));
     }
 
     private static async Task<IResult?> ValidateRoutingUtilityTaskAsync(HttpContext context, string taskName, CancellationToken ct)
