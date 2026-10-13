@@ -152,14 +152,12 @@ BEGIN
     END IF;
     EXECUTE format('ALTER TABLE %I.%I RENAME TO %I', schema_name, staging_name, table_name);
 
-    -- Rename the staging indexes onto the canonical names so a later load (which
-    -- references idx_<table>_geometry / idx_<table>_properties) does not collide.
-    -- PostgreSQL truncates these derived names to 63 chars exactly as the live
-    -- create path relies on.
+    -- Preserve migration 108: canonical names remain distinct for 63-byte targets.
+    -- Staging names are already bounded by import_staging_table_name.
     EXECUTE format('ALTER INDEX IF EXISTS %I.%I RENAME TO %I',
-        schema_name, 'idx_' || staging_name || '_geometry', 'idx_' || table_name || '_geometry');
+        schema_name, 'idx_' || staging_name || '_geometry', honua.import_index_name(table_name, 'geometry'));
     EXECUTE format('ALTER INDEX IF EXISTS %I.%I RENAME TO %I',
-        schema_name, 'idx_' || staging_name || '_properties', 'idx_' || table_name || '_properties');
+        schema_name, 'idx_' || staging_name || '_properties', honua.import_index_name(table_name, 'properties'));
 END;
 $$;
 

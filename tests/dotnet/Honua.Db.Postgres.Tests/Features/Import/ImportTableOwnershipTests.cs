@@ -90,6 +90,40 @@ public sealed class ImportTableOwnershipTests(PostgresFixture fixture)
     }
 
     [Fact]
+    public async Task SwapImportTable_LongOwnedTarget_RetainsDistinctCanonicalIndexesAcrossReplacements()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("ownership_long");
+        var target = new string('t', 63);
+        try
+        {
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await InstallHelpersAsync(connection, schema);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{schema}\".\"{target}\" (old_value text); " + ImportTableOwnership.MarkSql(schema, target));
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                await using var stageCommand = new NpgsqlCommand($"SELECT \"{schema}\".create_import_staging_table('{schema}', '{target}')", connection);
+                var staging = Assert.IsType<string>(await stageCommand.ExecuteScalarAsync());
+                await ExecuteAsync(connection, $"INSERT INTO \"{schema}\".\"{staging}\" (properties) VALUES ('{{\"attempt\":{attempt}}}'); SELECT \"{schema}\".swap_import_table('{schema}', '{target}')");
+                await using var verifyRows = new NpgsqlCommand($"SELECT properties->>'attempt' FROM \"{schema}\".\"{target}\"", connection);
+                Assert.Equal(attempt.ToString(System.Globalization.CultureInfo.InvariantCulture), await verifyRows.ExecuteScalarAsync());
+                await using var verifyIndexes = new NpgsqlCommand($"""
+                    SELECT count(*) FROM pg_indexes
+                    WHERE schemaname = @schema AND tablename = @target
+                      AND ((indexname = "{schema}".import_index_name(@target, 'geometry') AND indexdef LIKE '%USING gist (geometry)%')
+                        OR (indexname = "{schema}".import_index_name(@target, 'properties') AND indexdef LIKE '%USING gin (properties)%'))
+                    """, connection);
+                verifyIndexes.Parameters.AddWithValue("schema", schema);
+                verifyIndexes.Parameters.AddWithValue("target", target);
+                Assert.Equal(2L, await verifyIndexes.ExecuteScalarAsync());
+            }
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [Fact]
     public async Task EnsureImportTable_ExistingUnownedTable_DoesNotAdoptIt()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("ownership_append");
@@ -189,7 +223,7 @@ public sealed class ImportTableOwnershipTests(PostgresFixture fixture)
             root = root.Parent;
         }
         Assert.NotNull(root);
-        foreach (var file in new[] { "070_AddImportLoadModes.sql", "071_FixImportStagingTableNameLength.sql", "129_ProtectImportTableOwnership.sql" })
+        foreach (var file in new[] { "070_AddImportLoadModes.sql", "071_FixImportStagingTableNameLength.sql", "108_FixLongImportIndexNames.sql", "129_ProtectImportTableOwnership.sql" })
         {
             var sql = (await File.ReadAllTextAsync(Path.Join(root.FullName, "src", "Honua.Server", "Migrations", file)))
                 .Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal)
