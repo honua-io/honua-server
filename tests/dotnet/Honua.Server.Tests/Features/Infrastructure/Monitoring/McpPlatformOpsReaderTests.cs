@@ -455,6 +455,7 @@ public sealed class McpPlatformOpsReaderTests
         gateway.LastRequest.RequestedByAgent.Should().Be("agent:test:subject:-:ops-agent");
         gateway.LastRequest.Reason.Should().Be("rollback bad release");
         gateway.LastRequest.IdempotencyKey.Should().Be("rollback-key");
+        gateway.LastRequest.AutonomyContext.Should().BeNull("direct rollback has no originating finding");
         await services.GetRequiredService<IOperationEnvelopeFactory>().Received(1).CreateAcceptedAsync(
             "control-plane.deploy",
             Arg.Is<OperationPolicyContext>(context =>
@@ -727,6 +728,17 @@ public sealed class McpPlatformOpsReaderTests
         // Authentication scheme + subject kind + absent issuer + subject ID.
         gateway.LastRequest!.RequestedBy.Should().Be("test:subject:-:ops-agent");
         gateway.LastRequest.IdempotencyKey.Should().Be("deployment-fixture");
+        var provenance = gateway.LastRequest.AutonomyContext;
+        provenance.Should().NotBeNull("the CLI and durable audit must retain the source finding");
+        provenance!.FindingId.Should().Be("deployment-fixture");
+        provenance.Rule.Should().Be(OpsFindingsService.RuleDeployManualIntervention);
+        provenance.ActionDiscriminator.Should().Be("deploy.converge");
+        provenance.ActionMarkedAutoSafe.Should().BeFalse();
+        provenance.BlastRadius.Should().Be(2);
+        provenance.EvidenceRefs.Should().Contain("workflow-operation:deploy-fixture");
+        provenance.EvidenceRefs.Should().Contain(reference => reference.StartsWith(
+            "evidence:" + EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations + ":",
+            StringComparison.Ordinal));
         var payload = DeployExecutionPayload.Parse(gateway.LastRequest.ExecutionPayload!);
         payload!.TargetId.Should().Be("serving-us-west");
         payload.DesiredRevision.Should().Be("rev-2");
@@ -777,6 +789,9 @@ public sealed class McpPlatformOpsReaderTests
                 {
                     Kind = OperationClass.Deploy,
                     Summary = "Converge deployment",
+                    ActionDiscriminator = "deploy.converge",
+                    AutoSafe = false,
+                    BlastRadius = 2,
                     Reason = "Apply the declared revision",
                     ExecutionPayload = new DeployExecutionPayload
                     { TargetId = "serving-us-west", CurrentRevision = "rev-1", DesiredRevision = "rev-2" }.Serialize(),
