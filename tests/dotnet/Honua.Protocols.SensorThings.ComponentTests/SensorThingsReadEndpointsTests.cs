@@ -15,26 +15,11 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 /// demoable end-to-end: list/by-id, navigation, and $filter/$orderby/$expand.
 /// </summary>
 [Protocol(TestProtocols.SensorThings)]
-public sealed class SensorThingsReadEndpointsTests : IAsyncLifetime, IAsyncDisposable
+public sealed class SensorThingsReadEndpointsTests : IClassFixture<SensorThingsComponentFixture>
 {
-    private readonly Lock _disposeGate = new();
-    private Task? _disposeTask;
+    private readonly SensorThingsComponentFixture _fixture;
 
-    private readonly SensorThingsComponentFixture _fixture = new();
-
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync()
-    {
-        lock (_disposeGate)
-        {
-            return _disposeTask ??= DisposeCoreAsync();
-        }
-    }
-
-    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
-
-    private Task DisposeCoreAsync() => _fixture.DisposeAsync();
+    public SensorThingsReadEndpointsTests(SensorThingsComponentFixture fixture) => _fixture = fixture;
 
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
