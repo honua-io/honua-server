@@ -184,6 +184,9 @@ jobs:
           python3 -m unittest discover -s scripts/certification -p 'test_generate_protocol_harness_fragment.py'
           python3 -m unittest discover -s scripts/certification -p 'test_harness_context.py'
 
+      - name: Verify CITE normalization and supplemental HTTP controls
+        run: python3 -m unittest discover -s scripts/conformance/cite/tests -p 'test_*.py'
+
       - name: Verify review-first admission contract
         run: scripts/ci/validate-review-first-dispatch.sh
 
