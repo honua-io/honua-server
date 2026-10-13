@@ -138,7 +138,7 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
         rows = [row for row in value["assignments"] if row["capability_key"] == "serve.wps"]
         self.assertEqual({
             "GET /wps?request=GetCapabilities", "GET /wps?request=DescribeProcess",
-            "POST /wps?request=Execute", "GET /wps?request=GetStatus", "GET /wps?request=GetResult",
+            "POST /wps", "GET /wps?request=GetStatus", "GET /wps?request=GetResult",
         }, {row["operation"] for row in rows})
         self.assertEqual(5, len(rows))
         source = (REPOSITORY_ROOT / "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/Wps20EndpointsTests.cs").read_text()

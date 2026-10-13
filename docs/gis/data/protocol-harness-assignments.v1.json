@@ -363,7 +363,7 @@
     {
       "capability_key": "serve.wps",
       "surface": "wps",
-      "operation": "POST /wps?request=Execute",
+      "operation": "POST /wps",
       "test_ids": [
         "Wps20EndpointsTests.Execute_XmlInputId_SubmitsCanonicalPlan",
         "Wps20EndpointsTests.Execute_WithoutDurableJobStore_ProjectsCapabilityUnavailableReceiptIntoExceptionReport",
