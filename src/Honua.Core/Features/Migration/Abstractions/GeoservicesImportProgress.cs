@@ -136,6 +136,9 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
     /// </summary>
     public string? ErrorMessage { get; init; }
 
+    /// <summary>Stable machine-readable failure code, when available.</summary>
+    public string? ErrorCode { get; init; }
+
     /// <summary>
     /// List of warning messages encountered during import.
     /// </summary>

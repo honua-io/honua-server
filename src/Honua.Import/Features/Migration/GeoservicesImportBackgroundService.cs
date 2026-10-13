@@ -222,6 +222,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 StartedAt = progressController.CurrentProgress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
                 CompletedAt = DateTimeOffset.UtcNow,
                 ErrorMessage = result.ErrorMessage,
+                ErrorCode = result.ErrorCode,
                 Warnings = result.Warnings,
                 AttachmentsProcessed = result.AttachmentCount,
                 FailedAttachments = result.FailedAttachments,

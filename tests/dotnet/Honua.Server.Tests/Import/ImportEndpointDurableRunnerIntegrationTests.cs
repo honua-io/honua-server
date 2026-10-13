@@ -130,7 +130,7 @@ public sealed class ImportEndpointDurableRunnerIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/import/jobs/{jobId}")]
+    [Operation(Operations.ContractTesting)]
     public async Task LocalDurableRunner_UnownedTarget_FailsTerminallyAndPreservesRows()
     {
         var queue = new RedisJobQueue(_multiplexer, _jobStore, NullLogger<RedisJobQueue>.Instance);

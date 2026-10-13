@@ -346,6 +346,9 @@ public sealed record GeoservicesImportResult
     /// </summary>
     public string? ErrorMessage { get; init; }
 
+    /// <summary>Stable machine-readable failure code, when available.</summary>
+    public string? ErrorCode { get; init; }
+
     /// <summary>
     /// Target Honua service name when the import requested or completed publishing.
     /// </summary>
@@ -513,7 +516,8 @@ public sealed record GeoservicesImportResult
         string sourceServiceUrl,
         int sourceLayerId,
         string errorMessage,
-        TimeSpan duration = default) =>
+        TimeSpan duration = default,
+        string? errorCode = null) =>
         new()
         {
             Success = false,
@@ -521,6 +525,7 @@ public sealed record GeoservicesImportResult
             SourceServiceUrl = sourceServiceUrl,
             SourceLayerId = sourceLayerId,
             ErrorMessage = errorMessage,
+            ErrorCode = errorCode,
             Duration = duration,
             FidelityVerdict = MigrationFidelityVerdicts.Incomplete
         };
