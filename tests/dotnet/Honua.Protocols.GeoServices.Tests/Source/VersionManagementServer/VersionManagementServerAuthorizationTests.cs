@@ -512,6 +512,41 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
                 DateTimeOffset.UtcNow.AddMinutes(30)),
             CancellationToken.None)).Token;
 
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/delete")]
+    public async Task DeleteByName_NonOwnerAndAnonymousDenied_OwnerDeletesOnlyOwnVersion()
+    {
+        var owned = await CreateVersionAsync(_ownerToken, "same_delete_name", "alice-preserved");
+        var other = await CreateVersionAsync(_nonOwnerToken, "same_delete_name", "bob-preserved");
+        using (var denied = await PostFormAsync(_nonOwnerToken, $"{ServiceBase}/delete",
+            ("versionName", "alice.same_delete_name"), ("f", "json")))
+        {
+            await AssertDeniedAsync(denied, "delete by name");
+        }
+
+        using (var anonymous = await PostFormAsync(null, $"{ServiceBase}/delete",
+            ("versionName", "alice.same_delete_name"), ("f", "json")))
+        {
+            await anonymous.AssertGeoServicesErrorAsync(EsriTokenRequired);
+        }
+
+        var ownedGuid = owned.GetProperty("versionGuid").GetString()!;
+        (await ReadVersionAsync(_ownerToken, ownedGuid)).GetProperty("description").GetString()
+            .Should().Be("alice-preserved");
+        using (var deleted = await PostFormAsync(_ownerToken, $"{ServiceBase}/delete",
+            ("versionName", "same_delete_name"), ("f", "json")))
+        {
+            using var document = JsonDocument.Parse(await deleted.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+        }
+
+        (await ReadVersionAsync(_nonOwnerToken, other.GetProperty("versionGuid").GetString()!))
+            .GetProperty("description").GetString().Should().Be("bob-preserved");
+        using var missing = await GetAsync(_ownerToken, $"{ServiceBase}/versions/{ownedGuid}?f=json");
+        await missing.AssertGeoServicesErrorAsync(404);
+    }
+
     private async Task<JsonElement> CreateVersionAsync(
         string token, string versionName, string description, string access = "private")
     {
