@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Startup;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
@@ -70,8 +71,14 @@ public sealed class LayerPublishWireContractTests
         Assert.Equal(6, schema.GetProperty("properties").EnumerateObject().Count());
         Assert.Contains(status, schema.GetProperty("properties").GetProperty("status").GetProperty("enum")
             .EnumerateArray().Select(value => value.GetString()));
-        Assert.Equal(layerId.HasValue, payload.TryGetProperty("layerId", out _));
-        Assert.Equal(error is not null, payload.TryGetProperty("errorMessage", out _));
+        Assert.Equal(status, payload.GetProperty("status").GetString());
+        Assert.Equal(layerId.HasValue ? 330000 : 1000, payload.GetProperty("rowsMaterialized").GetInt64());
+        Assert.Equal(330000, payload.GetProperty("rowsTotal").GetInt64());
+        Assert.True(schema.GetProperty("properties").GetProperty("layerId").GetProperty("nullable").GetBoolean());
+        Assert.True(schema.GetProperty("properties").GetProperty("errorMessage").GetProperty("nullable").GetBoolean());
+        var actualLayerId = payload.GetProperty("layerId");
+        Assert.Equal(layerId, actualLayerId.ValueKind == JsonValueKind.Null ? null : actualLayerId.GetInt32());
+        Assert.Equal(error, payload.GetProperty("errorMessage").GetString());
     }
 
     [UnitTest]
@@ -133,8 +140,7 @@ public sealed class LayerPublishWireContractTests
     private static async Task<(int Status, string? Location, JsonDocument Body)> ExecuteAsync(Func<HttpContext, IResult> result)
     {
         using var services = new ServiceCollection().AddLogging()
-            .Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
-                options.SerializerOptions.TypeInfoResolverChain.Insert(0, LayerPublishingJsonContext.Default))
+            .AddHonuaJsonContexts()
             .BuildServiceProvider();
         using var body = new MemoryStream();
         var context = new DefaultHttpContext
