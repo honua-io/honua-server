@@ -3,8 +3,10 @@
 
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.Licensing;
 using Honua.Server.Startup;
@@ -627,6 +629,16 @@ public sealed class ExecutionWorkerProfileTests
         services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
         services.AddSingleton(Substitute.For<IExecutionJobStore>());
         services.AddSingleton(Substitute.For<IUniversalProgressStore>());
+        // Program.cs also composes these prerequisites before applying the worker profile.
+        // Keep Development's ValidateOnBuild enabled so dependencies removed by the profile
+        // remain distinguishable from dependencies this focused fixture never registered.
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(Substitute.For<IProcessCatalog>());
+        services.AddSingleton(Substitute.For<IGeoprocessingResultPackageStore>());
+        services.AddSingleton(Substitute.For<IOperatorApprovalEvaluator>());
+        services.AddSingleton(Substitute.For<IContainerRuntimeClient>());
+        services.AddSingleton(Substitute.For<IProxyStateSwapper>());
+        services.AddSingleton(Substitute.For<ILocalReplicaHealthProbe>());
         services.AddHonuaLicensing(configuration, environment);
         services.AddJobOrchestration();
         services.AddJobWorker(configuration);
