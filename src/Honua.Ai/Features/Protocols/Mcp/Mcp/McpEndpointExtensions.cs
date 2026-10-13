@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
@@ -142,6 +143,13 @@ internal static class McpEndpointExtensions
 
     internal static async Task HandlePostAsync(HttpContext context, CancellationToken cancellationToken)
     {
+        // One platform budget covers body reading and the entire batch, not a fresh
+        // budget per tool. Keep an explicitly supplied cancellation token as well.
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context));
+        cancellationToken = requestCancellation.Token;
+        cancellationToken.ThrowIfCancellationRequested();
+
         var surface = context.RequestServices.GetRequiredService<McpDataAccessSurface>();
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
         var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
@@ -629,6 +637,7 @@ internal static class McpEndpointExtensions
         var responses = new List<McpJsonRpcResponse>();
         foreach (var element in batch.EnumerateArray())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (element.ValueKind != JsonValueKind.Object)
             {
                 responses.Add(ErrorResponse(
