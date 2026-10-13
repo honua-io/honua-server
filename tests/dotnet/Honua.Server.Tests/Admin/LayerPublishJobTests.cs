@@ -211,7 +211,8 @@ public sealed class LayerPublishJobTests
         await LayerPublishRefusals.ToResult(context).ExecuteAsync(context);
 
         context.Response.Body.Position = 0;
-        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        using var reader = new StreamReader(context.Response.Body);
+        var body = await reader.ReadToEndAsync();
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
         Assert.Contains("durable-runner-required", body, StringComparison.Ordinal);
         Assert.Contains("layer-publish-runner", body, StringComparison.Ordinal);
