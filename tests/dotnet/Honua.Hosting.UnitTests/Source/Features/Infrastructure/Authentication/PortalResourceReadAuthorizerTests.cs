@@ -225,8 +225,8 @@ public sealed class PortalResourceReadAuthorizerTests
     {
         public ServiceProvider Services { get; private init; } = null!;
         public DefaultHttpContext Context { get; private init; } = null!;
-        public IPortalGroupStore Groups { get; private init; } = null!;
-        public IPortalItemSharingStore Sharing { get; private init; } = null!;
+        public InMemoryPortalGroupStore Groups { get; private init; } = null!;
+        public InMemoryPortalItemSharingStore Sharing { get; private init; } = null!;
         public string GroupId { get; private init; } = string.Empty;
         public TestTenantContext Tenant { get; private init; } = null!;
         public MetadataV2Service Service { get; } = new()
@@ -246,7 +246,7 @@ public sealed class PortalResourceReadAuthorizerTests
         {
             var groups = new InMemoryPortalGroupStore();
             var sharing = new InMemoryPortalItemSharingStore();
-            var accessor = new HttpContextAccessor();
+            var accessor = new TestHttpContextAccessor();
             var tenant = new TestTenantContext { TenantId = tenantId };
             var services = new ServiceCollection()
                 .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
@@ -282,6 +282,11 @@ public sealed class PortalResourceReadAuthorizerTests
             Services.Dispose();
         }
     }
+    private sealed class TestHttpContextAccessor : IHttpContextAccessor
+    {
+        public HttpContext? HttpContext { get; set; }
+    }
+
     private sealed class TestTenantContext : ITenantContext
     {
         public string? TenantId { get; set; }
