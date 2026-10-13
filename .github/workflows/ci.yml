@@ -127,7 +127,8 @@ env:
   # names (certification/full-matrix-checks.yaml there). Every lane here must
   # run on a full-matrix workflow_dispatch -- see the run_all escalation in
   # the `changes` job.
-  CERTIFICATION_LANE_JOBS: 'build format dotnet-foundation-tests python-integration-tests test-all ci-gate'
+  # The separate format job remains required through ci-gate, preserving the shared five-lane contract.
+  CERTIFICATION_LANE_JOBS: 'build dotnet-foundation-tests python-integration-tests test-all ci-gate'
 
 permissions:
   contents: read

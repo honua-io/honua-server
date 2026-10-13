@@ -72,7 +72,7 @@ class ManagedBuildTests(unittest.TestCase):
         self.assertIn('--no-restore', calls[1][0])
         self.assertIn('-graphBuild', calls[1][0])
         for command, _, _ in calls:
-            self.assertTrue(set(managed.PROPERTIES) <= set(command))
+            self.assertLessEqual(set(managed.PROPERTIES), set(command))
         self.assertFalse(calls[0][1].exists(), 'temporary filter must be cleaned after both commands finish')
 
     def test_verified_complete_receipt_needs_no_restore_or_build(self):
