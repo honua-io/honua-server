@@ -111,8 +111,11 @@ public sealed class PortalResourceReadAuthorizerTests
             AuthorizationOperation.Update)).IsAllowed.Should().BeFalse();
         var other = harness.Service with { Metadata = harness.Service.Metadata with { Id = "other-service" } };
         AccessPolicyHelpers.EvaluateResourceAccess(harness.Context, harness.Resource, other).IsAllowed.Should().BeFalse();
-        var publication = new MetadataV2Publication { Metadata = new MetadataV2ObjectMetadata
-            { Id = "foreign-publication", Name = "foreign-publication", Tenant = "foreign-tenant" } };
+        var publication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            { Id = "foreign-publication", Name = "foreign-publication", Tenant = "foreign-tenant" }
+        };
         harness.Services.GetRequiredService<IPortalResourceReadAuthorizer>()
             .Evaluate(harness.Context.User, harness.Resource, harness.Service, publication).IsAllowed.Should().BeFalse();
     }
@@ -165,8 +168,11 @@ public sealed class PortalResourceReadAuthorizerTests
         using var harness = await Harness.CreateAsync("tenant-a");
         var service = harness.Service with { Metadata = harness.Service.Metadata with { Tenant = "tenant-a" } };
         var resource = harness.Resource with { Metadata = harness.Resource.Metadata with { Tenant = "tenant-a" } };
-        var publication = new MetadataV2Publication { Metadata = new MetadataV2ObjectMetadata
-            { Id = "publication", Name = "publication", Tenant = "tenant-a" } };
+        var publication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            { Id = "publication", Name = "publication", Tenant = "tenant-a" }
+        };
         var authorizer = harness.Services.GetRequiredService<IPortalResourceReadAuthorizer>();
         authorizer.Evaluate(harness.Context.User, resource, service, publication).IsAllowed.Should().BeTrue();
         (await AccessPolicyHelpers.EvaluateResourceAccessAsync(harness.Context, resource, service,
@@ -256,8 +262,15 @@ public sealed class PortalResourceReadAuthorizerTests
             var group = await groups.CreateAsync(new PortalGroupRegistration("owned", null, "private", [], tenantId),
                 "owner", CancellationToken.None);
             await groups.AddUsersAsync(group.Id, ["member"], CancellationToken.None);
-            var harness = new Harness { Services = services, Context = context, Groups = groups,
-                Sharing = sharing, GroupId = group.Id, Tenant = tenant };
+            var harness = new Harness
+            {
+                Services = services,
+                Context = context,
+                Groups = groups,
+                Sharing = sharing,
+                GroupId = group.Id,
+                Tenant = tenant
+            };
             await sharing.ShareAsync(harness.Service.Metadata.Id, "owner",
                 new PortalItemShareRequest(false, false, [group.Id]), CancellationToken.None);
             return harness;

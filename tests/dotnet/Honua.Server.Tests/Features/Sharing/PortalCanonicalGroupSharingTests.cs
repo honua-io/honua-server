@@ -6,12 +6,14 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,7 +29,7 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
 {
     private const string Referer = "https://app.example.com";
     private const string ItemId = "svc-test-feature";
-    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
     {
         builder.UseEnvironment("Test");
         builder.UseSetting("HONUA_DEV_AUTH", "false");

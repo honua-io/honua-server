@@ -56,8 +56,11 @@ public sealed class SharingCommunityTests : IAsyncLifetime
             .AddPublication("private-publication", "content-private", "private-resource", layerIndex: 0,
                 storageBindingId: "private-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
             .Build();
-        graph = graph with { Services = graph.Services.Select(service => service with
-            { Metadata = service.Metadata with { Publisher = "alice" } }).ToArray() };
+        graph = graph with
+        {
+            Services = graph.Services.Select(service => service with
+            { Metadata = service.Metadata with { Publisher = "alice" } }).ToArray()
+        };
         _fixture = new WebAppFixture()
             .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
             .ConfigureWebHost(builder =>
