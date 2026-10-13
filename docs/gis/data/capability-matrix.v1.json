@@ -29,10 +29,10 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 378,
-      "provingTestCount": 1365,
+      "entryCount": 379,
+      "provingTestCount": 1366,
       "maturity": {
-        "implemented": 375,
+        "implemented": 376,
         "preview": 2,
         "experimental": 1
       },
