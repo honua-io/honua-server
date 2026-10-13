@@ -86,6 +86,58 @@
       "scenario_facets": ["positive", "media-schema"]
     },
     {
+      "capability_key": "analytics.h3",
+      "surface": "ogc-api-features",
+      "operation": "GET /ogc/features/collections/{collectionId}/h3",
+      "test_ids": [
+        "ProviderRoutedTileAndH3EndpointTests.OgcH3_SourceBackedLayer_UsesBindingScopedFeatureReader",
+        "FeatureServerH3EntitlementTests.OgcH3_CommunityEdition_ReturnsPaymentRequired"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative"
+      ]
+    },
+    {
+      "capability_key": "analytics.h3",
+      "surface": "feature-server",
+      "operation": "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryH3",
+      "test_ids": [
+        "ProviderRoutedTileAndH3EndpointTests.QueryH3_SourceBackedLayer_UsesBindingScopedFeatureReader",
+        "FeatureServerH3EntitlementTests.QueryH3Get_CommunityEdition_ReturnsPaymentRequired"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative"
+      ]
+    },
+    {
+      "capability_key": "analytics.h3",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryH3",
+      "test_ids": [
+        "ProviderRoutedTileAndH3EndpointTests.QueryH3Post_SourceBackedLayer_UsesBindingScopedFeatureReader",
+        "FeatureServerH3EntitlementTests.QueryH3Post_CommunityEdition_ReturnsPaymentRequired"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative"
+      ]
+    },
+    {
+      "capability_key": "analytics.h3",
+      "surface": "ogc-api-features",
+      "operation": "GET /tiles/{layerId}/h3/{z}/{x}/{y}.mvt",
+      "test_ids": [
+        "ProviderRoutedTileAndH3EndpointTests.H3Tile_SourceBackedLayer_UsesBindingScopedTileProvider",
+        "FeatureServerH3EntitlementTests.H3Tile_CommunityEdition_ReturnsPaymentRequired"
+      ],
+      "scenario_facets": [
+        "positive",
+        "negative"
+      ]
+    },
+    {
       "capability_key": "analytics.line-of-sight",
       "surface": "elevation-query-profile",
       "operation": "POST /elevation/{datasetId}/line-of-sight",

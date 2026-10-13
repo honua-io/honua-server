@@ -15,6 +15,8 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 RESULTS = {"Passed": "pass", "Failed": "fail"}
 PROJECT_BY_CLASS = {
+    "ProviderRoutedTileAndH3EndpointTests": "Honua.Protocols.GeoServices.Tests",
+    "FeatureServerH3EntitlementTests": "Honua.Protocols.GeoServices.Tests",
     "VectorTileServerEndpointTests": "Honua.Protocols.GeoServices.Tests",
     "FeatureServerTemporalExtentEndpointTests": "Honua.Protocols.GeoServices.Tests",
     "FeatureServerTemporalTests": "Honua.Protocols.GeoServices.Tests",
