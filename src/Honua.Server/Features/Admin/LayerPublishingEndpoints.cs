@@ -251,7 +251,6 @@ internal static class LayerPublishingEndpoints
                 connectionString,
                 connectionId,
                 publishRequest,
-                request,
                 id,
                 context.RequestAborted).ConfigureAwait(false);
             if (admission.Kind == LayerPublishAdmissionKind.Unavailable)

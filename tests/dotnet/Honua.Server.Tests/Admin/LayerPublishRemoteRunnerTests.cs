@@ -13,7 +13,6 @@ using Honua.Db.Postgres.Features.Admin;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Migration;
-using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
@@ -142,7 +141,6 @@ public sealed class LayerPublishRemoteRunnerTests
             Connection,
             Guid.Parse("68d396c9-3c83-4b2f-b048-6ea269a920ff"),
             new LayerPublishRequest { Schema = "public", Table = "roads", LayerName = "Roads" },
-            new PublishLayerRequest { Schema = "public", Table = "roads", LayerName = "Roads" },
             "roads",
             cancellationToken);
 

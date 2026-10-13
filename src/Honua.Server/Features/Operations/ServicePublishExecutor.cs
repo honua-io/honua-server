@@ -132,7 +132,6 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
                 connectionString,
                 publishRequest.ConnectionId ?? Guid.Empty,
                 publishRequest,
-                LayerPublishRequestMapper.ToHttp(publishRequest),
                 routeId,
                 cancellationToken).ConfigureAwait(false);
             if (admission.Kind == LayerPublishAdmissionKind.Unavailable)

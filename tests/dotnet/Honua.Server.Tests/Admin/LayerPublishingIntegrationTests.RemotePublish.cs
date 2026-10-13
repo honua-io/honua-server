@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Admin.Abstractions;
@@ -10,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Db.Postgres.Features.Admin;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Migration;
@@ -27,11 +29,26 @@ using NSubstitute;
 using ProgressStatus = Honua.Core.Features.Infrastructure.Domain.OperationStatus;
 using StackExchange.Redis;
 using Testcontainers.Redis;
+using RedisJobQueue = Honua.ControlPlane.RedisJobQueue;
 
 namespace Honua.Server.Tests.Admin;
 
 public sealed partial class LayerPublishingIntegrationTests
 {
+    [IntegrationTest]
+    [Operation(Operations.Read)]
+    [Endpoint("GET /api/v1/admin/connections/{id}/layers/jobs/{jobId}")]
+    public async Task PollLayerPublish_UnknownJob_ReturnsTypedNotFound()
+    {
+        using var response = await _client.GetAsync(
+            $"/api/v1/admin/connections/{_connectionId:D}/layers/jobs/{Guid.NewGuid():N}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("The requested resource was not found.");
+        body.Should().Contain("\"success\":false");
+    }
+
     [IntegrationTheory]
     [InlineData("source")]
     [InlineData("managed")]
@@ -93,7 +110,7 @@ public sealed partial class LayerPublishingIntegrationTests
             .ResolveConnectionStringAsync(_connectionId);
         using var disconnected = new CancellationTokenSource();
         var accepted = await service.SubmitAsync(connection, _connectionId,
-            LayerPublishRequestMapper.CreateDomain(request, _connectionId, tenant.TenantId), request,
+            LayerPublishRequestMapper.CreateDomain(request, _connectionId, tenant.TenantId),
             _connectionId.ToString("D"), disconnected.Token);
         accepted.Kind.Should().Be(LayerPublishAdmissionKind.Queued);
         accepted.RowsTotal.Should().Be(2);

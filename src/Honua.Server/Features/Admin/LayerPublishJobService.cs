@@ -1,9 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Diagnostics;
-using System.Globalization;
-using Honua.ControlPlane;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -12,72 +9,28 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Db.Postgres.Features.Admin;
-using Honua.Server.Features.Admin.Models;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-internal enum LayerPublishAdmissionKind
-{
-    Completed,
-    Queued,
-    Unavailable,
-}
-
-internal sealed record LayerPublishAdmission(
-    LayerPublishAdmissionKind Kind,
-    PublishedLayerSummary? Layer,
-    string? JobId,
-    long RowsTotal,
-    string? StatusUrl);
-
-/// <summary>
-/// Accepts a layer publish. At or under the row threshold the publish runs to completion on the
-/// publication budget, not on <see cref="CancellationToken"/> from the request. Above the threshold
-/// it becomes a pollable job on the shared execution-job queue, or an in-process task when that
-/// queue is absent. A frozen host requires a remote durable worker.
-/// </summary>
-internal interface ILayerPublishJobs
-{
-    Task<LayerPublishAdmission> SubmitAsync(
-        string connectionString,
-        Guid connectionId,
-        LayerPublishRequest request,
-        PublishLayerRequest httpRequest,
-        string routeId,
-        CancellationToken requestCancellation);
-
-    Task<LayerPublishJobProgress?> GetAsync(string jobId, CancellationToken cancellationToken);
-}
-
-internal sealed partial class LayerPublishJobService(
+internal sealed class LayerPublishJobService(
     ILayerPublishingService publishingService,
     IOptions<LayerPublishingOptions> options,
-    LayerPublishRunnerDecision decision,
+    LayerPublishJobDispatcher dispatcher,
     IUniversalProgressStore progressStore,
-    IServiceScopeFactory scopeFactory,
-    IHostApplicationLifetime lifetime,
     ITenantContext tenantContext,
-    ILogger<LayerPublishJobService> logger,
     ISchemaContext? schemaContext = null,
-    IExecutionJobStore? jobStore = null,
-    IJobQueue? jobQueue = null,
-    IEnumerable<IBatchComputeBackend>? backends = null) : ILayerPublishJobs
+    IExecutionJobStore? jobStore = null) : ILayerPublishJobs
 {
-    private static readonly TimeSpan DispatchTimeout = TimeSpan.FromSeconds(30);
-    private const string WorkloadPrefix = "layer-publish:";
-
     public async Task<LayerPublishAdmission> SubmitAsync(
         string connectionString,
         Guid connectionId,
         LayerPublishRequest request,
-        PublishLayerRequest httpRequest,
         string routeId,
         CancellationToken requestCancellation)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(httpRequest);
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         ArgumentException.ThrowIfNullOrWhiteSpace(routeId);
 
@@ -92,7 +45,7 @@ internal sealed partial class LayerPublishJobService(
             return new LayerPublishAdmission(LayerPublishAdmissionKind.Completed, summary, null, rowCount, null);
         }
 
-        if (decision.Mode == LayerPublishRunnerMode.Unavailable)
+        if (dispatcher.Mode == LayerPublishRunnerMode.Unavailable)
         {
             return new LayerPublishAdmission(LayerPublishAdmissionKind.Unavailable, null, null, rowCount, null);
         }
@@ -103,7 +56,7 @@ internal sealed partial class LayerPublishJobService(
             ConnectionId = connectionId,
             ConnectionKey = routeId,
             RowCount = rowCount,
-            Request = httpRequest,
+            Request = LayerPublishRequestMapper.ToHttp(request),
             TenantId = tenantContext.TenantId,
             TenantSource = tenantContext.Source,
             CurrentSchema = schemaContext?.CurrentSchema,
@@ -121,63 +74,7 @@ internal sealed partial class LayerPublishJobService(
             CurrentPhase = "Queued",
         };
 
-        if (decision.Mode == LayerPublishRunnerMode.InProcess)
-        {
-            await progressStore.SetProgressAsync(jobId, queued, LayerPublishJobWork.ProgressRetention, CancellationToken.None)
-                .ConfigureAwait(false);
-            var stopping = lifetime.ApplicationStopping;
-            _ = Task.Run(
-                () => LayerPublishJobWork.RunInProcessAsync(
-                    scopeFactory, progressStore, logger, payload, jobId, stopping),
-                CancellationToken.None);
-            return Queued(jobId, rowCount, routeId);
-        }
-
-        if (jobStore is null || (decision.Mode == LayerPublishRunnerMode.DurableLocal && jobQueue is null))
-        {
-            throw new InvalidOperationException("The durable layer-publish runner is not composed.");
-        }
-
-        var job = BuildJobRecord(jobId, payload, request.Table, DateTimeOffset.UtcNow);
-        using var dispatch = new CancellationTokenSource(DispatchTimeout);
-        if (!await jobStore.TryCreateAsync(job, cancellationToken: dispatch.Token).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException($"Failed to create layer-publish execution job '{jobId}'.");
-        }
-
-        try
-        {
-            job = await jobStore.GetAsync(jobId, dispatch.Token).ConfigureAwait(false) ?? job;
-            await progressStore.SetProgressAsync(jobId, queued, LayerPublishJobWork.ProgressRetention, dispatch.Token)
-                .ConfigureAwait(false);
-            if (decision.Mode == LayerPublishRunnerMode.DurableLocal)
-            {
-                await jobQueue!.EnqueueAsync(jobId, cancellationToken: dispatch.Token).ConfigureAwait(false);
-            }
-            else
-            {
-                var backend = (backends ?? []).Resolve(job.Spec.Backend, job.Spec.TargetKind)
-                    ?? throw new InvalidOperationException("The selected remote layer-publish backend is not composed.");
-                await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
-                    job, backend, jobStore, progressStore, LayerPublishJobWork.ProgressRetention, logger, dispatch.Token)
-                    .ConfigureAwait(false);
-            }
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
-                jobStore,
-                jobId,
-                failureMessage: "Layer-publish submission failed.",
-                logger: logger,
-                cancellationToken: cleanup.Token).ConfigureAwait(false);
-            await TryWriteFailedAsync(jobId, queued).ConfigureAwait(false);
-            Log.DispatchFailed(logger, jobId, exception);
-            throw;
-        }
-
-        Log.JobSubmitted(logger, jobId, request.Table, rowCount);
+        await dispatcher.DispatchAsync(payload, queued, request.Table).ConfigureAwait(false);
         return Queued(jobId, rowCount, routeId);
     }
 
@@ -252,71 +149,8 @@ internal sealed partial class LayerPublishJobService(
     private static LayerPublishAdmission Queued(string jobId, long rowCount, string routeId)
         => new(LayerPublishAdmissionKind.Queued, null, jobId, rowCount, StatusUrl(routeId, jobId));
 
-    private ExecutionJobRecord BuildJobRecord(
-        string jobId,
-        LayerPublishJobPayload payload,
-        string table,
-        DateTimeOffset now)
-    {
-        var workload = decision.Workload;
-        var parameters = workload is null
-            ? new Dictionary<string, string>(StringComparer.Ordinal)
-            : new Dictionary<string, string>(workload.Parameters, StringComparer.Ordinal);
-        parameters[LayerPublishJobPayload.ParameterName] = payload.ToJson();
-        parameters["rowsTotal"] = payload.RowCount.ToString(CultureInfo.InvariantCulture);
-        return new ExecutionJobRecord
-        {
-            OperationId = jobId,
-            Status = ExecutionJobStatus.Queued,
-            CreatedAt = now,
-            UpdatedAt = now,
-            CurrentPhase = "Queued",
-            Audit = ControlPlaneTelemetry.WithSubmissionTraceContext(new OperationAuditInfo(), Activity.Current),
-            TimeoutPolicy = JobTimeoutPolicy.LongRunning,
-            Spec = new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.LayerPublish,
-                TargetKind = workload?.TargetKind ?? BatchComputeTargetKind.KubernetesJob,
-                Backend = workload?.Backend ?? LocalBatchComputeBackend.BackendId,
-                WorkloadId = workload?.WorkloadId,
-                WorkloadName = workload?.WorkloadName ?? WorkloadPrefix + table,
-                Artifact = workload?.ArtifactReference,
-                RuntimeProfile = workload?.RuntimeProfile,
-                ContractVersion = workload?.ContractVersion ?? 1,
-                Parameters = parameters,
-            },
-        };
-    }
-
-    private async Task TryWriteFailedAsync(string jobId, LayerPublishJobProgress queued)
-    {
-        try
-        {
-            await progressStore.SetProgressAsync(jobId, queued with
-            {
-                Status = OperationStatus.Failed,
-                CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = LayerPublishJobWork.SafeFailureMessage,
-                CurrentPhase = "Failed",
-            }, LayerPublishJobWork.ProgressRetention, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            Log.DispatchFailed(logger, jobId, exception);
-        }
-    }
-
     private static bool IsTerminal(OperationStatus status)
         => status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled;
-
-    private static partial class Log
-    {
-        [LoggerMessage(EventId = 8215, Level = LogLevel.Information, Message = "Queued layer publish {JobId} for {Table} ({RowCount} rows)")]
-        public static partial void JobSubmitted(ILogger logger, string jobId, string table, long rowCount);
-
-        [LoggerMessage(EventId = 8216, Level = LogLevel.Warning, Message = "Layer publish {JobId} was not queued")]
-        public static partial void DispatchFailed(ILogger logger, string jobId, Exception exception);
-    }
 }
 
 internal static class LayerPublishServiceCollectionExtensions
@@ -331,6 +165,7 @@ internal static class LayerPublishServiceCollectionExtensions
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobExecutor, LayerPublishJobExecutor>());
         services.AddSingleton(static provider => LayerPublishRunnerDecision.Resolve(provider));
+        services.AddScoped<LayerPublishJobDispatcher>();
         services.AddScoped<ILayerPublishJobs, LayerPublishJobService>();
         return services;
     }

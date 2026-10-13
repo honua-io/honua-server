@@ -20,6 +20,7 @@ using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Operations;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -32,6 +33,7 @@ namespace Honua.Server.Tests.Admin;
 public sealed class LayerPublishJobTests
 {
     [Theory]
+    [Trait("Tier", "Fast")]
     [InlineData(false, false, (int)LayerPublishRunnerMode.InProcess)]
     [InlineData(true, false, (int)LayerPublishRunnerMode.DurableLocal)]
     [InlineData(true, true, (int)LayerPublishRunnerMode.Unavailable)]
@@ -39,7 +41,7 @@ public sealed class LayerPublishJobTests
     public void Decide_SelectsDurableInProcessOrFrozen(bool durable, bool frozen, int expected)
         => Assert.Equal((LayerPublishRunnerMode)expected, LayerPublishRunnerDecision.Decide(durable, frozen));
 
-    [Fact]
+    [UnitTest]
     public async Task Submit_AtThreshold_PublishesWithoutTheRequestToken()
     {
         using var request = new CancellationTokenSource();
@@ -56,14 +58,14 @@ public sealed class LayerPublishJobTests
             });
 
         var admission = await Service(publisher, LayerPublishRunnerMode.InProcess, threshold: 10)
-            .SubmitAsync(Connection, Guid.NewGuid(), DomainRequest(), HttpRequest(), "roads", request.Token);
+            .SubmitAsync(Connection, Guid.NewGuid(), DomainRequest(), "roads", request.Token);
 
         Assert.Equal(LayerPublishAdmissionKind.Completed, admission.Kind);
         Assert.Equal(7, admission.Layer!.LayerId);
         Assert.False(observed.CanBeCanceled);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Submit_AboveThreshold_QueuesInProcessAndDetachesFromTheRequest()
     {
         using var request = new CancellationTokenSource();
@@ -86,7 +88,7 @@ public sealed class LayerPublishJobTests
             store,
             ScopeFactory(scopePublisher));
 
-        var admission = await service.SubmitAsync(Connection, Guid.NewGuid(), DomainRequest(), HttpRequest(), "roads", request.Token);
+        var admission = await service.SubmitAsync(Connection, Guid.NewGuid(), DomainRequest(), "roads", request.Token);
         var observed = await seen.Task.WaitAsync(TimeSpan.FromSeconds(5));
         request.Cancel();
 
@@ -101,7 +103,7 @@ public sealed class LayerPublishJobTests
         Assert.Equal(11, progress!.RowsTotal);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Submit_AboveThresholdOnFrozenHost_IsUnavailable()
     {
         var publisher = Substitute.For<ILayerPublishingService>();
@@ -110,7 +112,7 @@ public sealed class LayerPublishJobTests
         var queue = Substitute.For<IJobQueue>();
 
         var admission = await Service(publisher, LayerPublishRunnerMode.Unavailable, threshold: 10, queue: queue)
-            .SubmitAsync(Connection, Guid.NewGuid(), DomainRequest(), HttpRequest(), "roads", CancellationToken.None);
+            .SubmitAsync(Connection, Guid.NewGuid(), DomainRequest(), "roads", CancellationToken.None);
 
         Assert.Equal(LayerPublishAdmissionKind.Unavailable, admission.Kind);
         await queue.DidNotReceive().EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
@@ -118,7 +120,7 @@ public sealed class LayerPublishJobTests
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Submit_AboveThresholdWithRedis_EnqueuesTheSharedQueue()
     {
         var publisher = Substitute.For<ILayerPublishingService>();
@@ -141,7 +143,7 @@ public sealed class LayerPublishJobTests
                 store,
                 jobStore: jobs,
                 queue: queue)
-            .SubmitAsync(Connection, Guid.NewGuid(), DomainRequest(), HttpRequest(), "roads", CancellationToken.None);
+            .SubmitAsync(Connection, Guid.NewGuid(), DomainRequest(), "roads", CancellationToken.None);
 
         Assert.Equal(LayerPublishAdmissionKind.Queued, admission.Kind);
         await queue.Received(1).EnqueueAsync(admission.JobId!, Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
@@ -151,7 +153,7 @@ public sealed class LayerPublishJobTests
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Execute_ReportsRowsAndLayerId()
     {
         var store = new MemoryProgress();
@@ -200,7 +202,7 @@ public sealed class LayerPublishJobTests
         Assert.Equal(7, progress.LayerId);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Refusal_IsTheTypedCapabilityProblem()
     {
         var context = new DefaultHttpContext
@@ -222,7 +224,7 @@ public sealed class LayerPublishJobTests
         Assert.Equal(LayerPublishRunnerDecision.RunnerDependency, exception.MissingDependency);
     }
 
-    [Fact]
+    [UnitTest]
     public void SubmissionStatus_Is202OnlyForQueuedServicePublish()
     {
         var queued = Handle(OperationHandleStatus.Queued, ServicePublishOperation.OperationId);
@@ -234,7 +236,7 @@ public sealed class LayerPublishJobTests
         Assert.Equal(StatusCodes.Status200OK, OperationsEndpoints.SubmissionStatusCode(other));
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Executor_QueuedPublish_ReturnsQueuedHandleWithoutPublishingInline()
     {
         var jobs = Substitute.For<ILayerPublishJobs>();
@@ -242,7 +244,6 @@ public sealed class LayerPublishJobTests
                 Arg.Any<string>(),
                 Arg.Any<Guid>(),
                 Arg.Any<LayerPublishRequest>(),
-                Arg.Any<PublishLayerRequest>(),
                 Arg.Any<string>(),
                 Arg.Any<CancellationToken>())
             .Returns(new LayerPublishAdmission(
@@ -255,7 +256,7 @@ public sealed class LayerPublishJobTests
         Assert.Equal("12", handle.Result!.Details["rowsTotal"]);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Executor_GetStatus_ProjectsLayerId()
     {
         var jobs = Substitute.For<ILayerPublishJobs>();
@@ -299,18 +300,13 @@ public sealed class LayerPublishJobTests
         lifetime.ApplicationStopping.Returns(CancellationToken.None);
         var tenant = new RequestTenantContext();
         tenant.Set("tenant-a", TenantContextSource.Header);
+        store ??= new MemoryProgress();
+        var dispatcher = new LayerPublishJobDispatcher(
+            new LayerPublishRunnerDecision(mode), store,
+            scopes ?? Substitute.For<IServiceScopeFactory>(), lifetime,
+            NullLogger<LayerPublishJobDispatcher>.Instance, jobStore, queue);
         return new LayerPublishJobService(
-            publisher,
-            options,
-            new LayerPublishRunnerDecision(mode),
-            store ?? new MemoryProgress(),
-            scopes ?? Substitute.For<IServiceScopeFactory>(),
-            lifetime,
-            tenant,
-            NullLogger<LayerPublishJobService>.Instance,
-            new SchemaContext(),
-            jobStore,
-            queue);
+            publisher, options, dispatcher, store, tenant, new SchemaContext(), jobStore);
     }
 
     private static IServiceScopeFactory ScopeFactory(
