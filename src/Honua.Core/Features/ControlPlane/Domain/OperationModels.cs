@@ -241,7 +241,14 @@ public enum ExecutionJobKind
     /// file storage and the worker downloads it and runs the streaming import pipeline,
     /// reporting progress through the import job document.
     /// </summary>
-    FileImport
+    FileImport,
+
+    /// <summary>
+    /// Background layer publish (honua-server#5948): a table above the row threshold is copied
+    /// in batches on the shared execution-job queue and reports rows materialized plus the
+    /// published layer id. Same queue and worker loop as <see cref="FileImport"/>.
+    /// </summary>
+    LayerPublish
 }
 
 /// <summary>

@@ -410,6 +410,18 @@ public sealed class OperationDispatcher : IOperationInvoker
                     Reason = "Actuation was canceled after it began; side effects may have committed.",
                 };
             }
+            catch (CapabilityUnavailableException)
+            {
+                // A frozen host refuses a large layer publish (honua-server#5948). Record the
+                // failed envelope, then keep the structured dependency receipt so the operations
+                // endpoint can answer the typed 503 instead of a generic failed handle.
+                await PersistFailureAsync(
+                        envelope,
+                        "Operation actuation requires an unavailable capability.",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                throw;
+            }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 return await PersistFailureAsync(

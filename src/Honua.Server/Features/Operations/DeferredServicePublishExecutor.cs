@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Admin.Abstractions;
+using Honua.Server.Features.Admin;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -109,7 +110,8 @@ internal sealed class DeferredServicePublishExecutor(IServiceProvider services) 
             connectionResolver!,
             graphProvider!,
             clock!,
-            services.GetService<IMcpNotificationPublisher>());
+            services.GetService<IMcpNotificationPublisher>(),
+            services.GetService<ILayerPublishJobs>());
         unavailable = null;
         return true;
     }

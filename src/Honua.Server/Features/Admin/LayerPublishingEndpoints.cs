@@ -49,11 +49,19 @@ internal static class LayerPublishingEndpoints
             .WithDisplayName("Publish Layer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ApiResponse<PublishedLayerSummary>>(StatusCodes.Status201Created)
+            .Produces<ApiResponse<LayerPublishAcceptedResponse>>(StatusCodes.Status202Accepted)
             .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound)
             .Produces<ApiResponse<object>>(StatusCodes.Status409Conflict)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapGet("/jobs/{jobId}", HandleGetLayerPublishJob)
+            .WithDisplayName("Get Layer Publish Job")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .Produces<ApiResponse<LayerPublishJobStatusResponse>>(StatusCodes.Status200OK)
+            .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound);
 
         group.MapPut("/{layerId:int}/enabled", HandleSetLayerEnabled)
             .WithDisplayName("Set Layer Enabled")
@@ -161,7 +169,7 @@ internal static class LayerPublishingEndpoints
             string id,
             PublishLayerRequest request,
             [FromServices] ISecureConnectionResolver resolver,
-            [FromServices] ILayerPublishingService publishingService,
+            [FromServices] ILayerPublishJobs jobs,
             [FromServices] IDatabaseMigrationRunner migrationRunner,
             HttpContext context,
             [FromServices] ILogger<LayerPublishingEndpointsLog> logger)
@@ -197,13 +205,13 @@ internal static class LayerPublishingEndpoints
                 request.Publisher,
                 request.LicenseUrl,
                 request.SourceUrl,
-                out var sourceGovernance,
+                out _,
                 out var governanceError))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {governanceError}"));
         }
 
-        if (!TryParseStorageMode(request.StorageMode, out var storageMode))
+        if (!TryParseStorageMode(request.StorageMode, out _))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(
                 "Validation failed: storageMode must be 'source' or 'managed'."));
@@ -236,41 +244,35 @@ internal static class LayerPublishingEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
             }
 
-            var publishRequest = new LayerPublishRequest
-            {
-                CreateEditableCopy = request.CreateEditableCopy,
-                Schema = request.Schema,
-                Table = request.Table,
-                LayerName = request.LayerName,
-                Description = request.Description,
-                GeometryColumn = request.GeometryColumn,
-                GeometryType = request.GeometryType,
-                HasZ = request.HasZ,
-                HasM = request.HasM,
-                Srid = request.Srid,
-                PrimaryKey = request.PrimaryKey,
-                GlobalIdField = request.GlobalIdField,
-                SupportsAttachments = request.SupportsAttachments,
-                Fields = request.Fields ?? Array.Empty<string>(),
-                FieldDomains = request.FieldDomains is { } fieldDomains
-                    ? new Dictionary<string, MetadataV2FieldDomain>(fieldDomains, StringComparer.OrdinalIgnoreCase)
-                    : new Dictionary<string, MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase),
-                Subtypes = request.Subtypes,
-                AttributeRules = request.AttributeRules,
-                ServiceName = request.ServiceName,
-                Namespace = request.Namespace,
-                ConnectionId = connectionId,
-                Enabled = request.Enabled,
-                SourceGovernance = sourceGovernance,
-                StorageMode = storageMode,
-                Capabilities = request.Capabilities
-            };
-
-            var result = await publishingService.PublishLayerAsync(
+            var tenantId = context.RequestServices
+                .GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId;
+            var publishRequest = LayerPublishRequestMapper.CreateDomain(request, connectionId, tenantId);
+            var admission = await jobs.SubmitAsync(
                 connectionString,
+                connectionId,
                 publishRequest,
-                context.RequestAborted);
+                request,
+                id,
+                context.RequestAborted).ConfigureAwait(false);
+            if (admission.Kind == LayerPublishAdmissionKind.Unavailable)
+            {
+                return LayerPublishRefusals.ToResult(context);
+            }
 
+            if (admission.Kind == LayerPublishAdmissionKind.Queued)
+            {
+                return TypedResults.Accepted(
+                    admission.StatusUrl,
+                    ApiResponse<LayerPublishAcceptedResponse>.CreateSuccess(new LayerPublishAcceptedResponse
+                    {
+                        JobId = admission.JobId!,
+                        StatusUrl = admission.StatusUrl!,
+                        RowsTotal = admission.RowsTotal,
+                        Status = "Queued",
+                    }));
+            }
+
+            var result = admission.Layer!;
             await InvalidateServiceCatalogCacheAsync(
                 context,
                 result.ServiceName,
@@ -324,22 +326,44 @@ internal static class LayerPublishingEndpoints
     }
 
     private static bool TryParseStorageMode(string? value, out LayerStorageMode storageMode)
+        => LayerPublishRequestMapper.TryParseStorageMode(value, out storageMode);
+
+    private static async Task<IResult> HandleGetLayerPublishJob(
+        string id,
+        string jobId,
+        [FromServices] ILayerPublishJobs jobs,
+        HttpContext context)
     {
-        var normalized = value?.Trim();
-        if (string.IsNullOrEmpty(normalized) || normalized.Equals("source", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(jobId))
         {
-            storageMode = LayerStorageMode.Source;
-            return true;
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
 
-        if (normalized.Equals("managed", StringComparison.OrdinalIgnoreCase))
+        try
         {
-            storageMode = LayerStorageMode.Managed;
-            return true;
-        }
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
+            var progress = await jobs.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+            if (progress is null
+                || (progress.ConnectionId != connectionId
+                    && !string.Equals(progress.ConnectionKey, id, StringComparison.OrdinalIgnoreCase)))
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+            }
 
-        storageMode = LayerStorageMode.Source;
-        return false;
+            return TypedResults.Ok(ApiResponse<LayerPublishJobStatusResponse>.CreateSuccess(new LayerPublishJobStatusResponse
+            {
+                JobId = progress.OperationId,
+                Status = progress.Status.ToString(),
+                RowsMaterialized = progress.RowsMaterialized,
+                RowsTotal = progress.RowsTotal,
+                LayerId = progress.LayerId,
+                ErrorMessage = progress.ErrorMessage,
+            }));
+        }
+        catch (ResourceNotFoundException)
+        {
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
     }
 
     private static async Task<IResult>

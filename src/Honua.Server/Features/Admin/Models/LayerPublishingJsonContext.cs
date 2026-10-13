@@ -4,6 +4,7 @@
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -16,6 +17,11 @@ namespace Honua.Server.Features.Admin.Models;
     WriteIndented = false)]
 [JsonSerializable(typeof(ApiResponse<IReadOnlyList<PublishedLayerSummary>>))]
 [JsonSerializable(typeof(ApiResponse<PublishedLayerSummary>))]
+[JsonSerializable(typeof(ApiResponse<LayerPublishAcceptedResponse>))]
+[JsonSerializable(typeof(ApiResponse<LayerPublishJobStatusResponse>))]
+[JsonSerializable(typeof(LayerPublishAcceptedResponse))]
+[JsonSerializable(typeof(LayerPublishJobStatusResponse))]
+[JsonSerializable(typeof(LayerPublishJobPayload))]
 [JsonSerializable(typeof(ApiResponse<TablePublishValidationResult>))]
 [JsonSerializable(typeof(ApiResponse<LayerExtentRefreshResult>))]
 [JsonSerializable(typeof(ApiResponse<MaterializedFeatureRefreshResult>))]

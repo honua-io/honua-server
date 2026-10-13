@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Abstractions;
@@ -375,6 +376,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             nameof(WorkflowProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.WorkflowProgress),
             nameof(DeploymentProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.DeploymentProgress),
             nameof(TemporalCorrectiveJobProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.TemporalCorrectiveJobProgress),
+            nameof(LayerPublishJobProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.LayerPublishJobProgress),
             _ => null
         };
     }
@@ -396,6 +398,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             WorkflowProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.WorkflowProgress),
             DeploymentProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.DeploymentProgress),
             TemporalCorrectiveJobProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.TemporalCorrectiveJobProgress),
+            LayerPublishJobProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.LayerPublishJobProgress),
             _ => throw new NotSupportedException($"Unsupported progress type '{progress.GetType().FullName}'.")
         };
 
@@ -870,6 +873,7 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
             nameof(PrintProgress) => OperationType.Print,
             nameof(GeoprocessingProgress) => OperationType.Geoprocessing,
             nameof(PublishingProgress) => OperationType.Publishing,
+            nameof(LayerPublishJobProgress) => OperationType.Publishing,
             nameof(WorkflowProgress) => OperationType.Orchestration,
             nameof(DeploymentProgress) => OperationType.Deployment,
             _ => null
@@ -917,6 +921,7 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(DeploymentStatus))]
 [JsonSerializable(typeof(RolloutState))]
 [JsonSerializable(typeof(TemporalCorrectiveJobProgress))]
+[JsonSerializable(typeof(LayerPublishJobProgress))]
 [JsonSerializable(typeof(OperationType))]
 [JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(ImportStatus))]
