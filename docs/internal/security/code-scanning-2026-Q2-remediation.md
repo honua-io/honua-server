@@ -588,6 +588,19 @@ the default branch's SARIF category or dismiss existing alerts.
 For the current Lambda AOT amd64 candidate, the immutable manifest is
 `sha256:3d6a38e38f3fcef66a571be1dddf7855d64bbe60d252221ae3e67404079991ab`
 and the expected revision is `0e03bdd06b3ca3fb1b82388110bb5dfa19b9f8fa`.
-A completed scan receipt for that digest remains required. A passing generic
-Security Nightly run does not establish the result for this image. The
-general 260-item quality cleanup is not additional RC security acceptance.
+[Read-only scan 38352335588](https://github.com/honua-io/honua-server/actions/runs/38352335588)
+completed successfully for exactly that digest, `linux/amd64`, source revision,
+and image config `sha256:fe2f7293a84c3a07872b089af54d6c3af39433efe3d1ec1df49b77143d185833`.
+Artifact `existing-image-security-38352335588-1` retains 14 findings: nine MEDIUM
+and five LOW, with zero HIGH/CRITICAL findings. Its only scanned target is Ubuntu
+24.04; there is no RIE binary target in the report. The inventory SHA-256 is
+`41d401cde763cfb724a62a9ad9e291d6cf26ccf18dbde6c872d1949d66869f52`.
+This result establishes the finding set for this Lambda AOT candidate only;
+the development JIT RIE alerts and 16 historical no-fix OS alerts remain open.
+The first scan attempt, 38352034509, verified the image identity but stopped
+before scanning because the action rejects `/dev/null` as an ignore file;
+the completed run uses a fresh empty regular file.
+
+A passing generic Security Nightly run does not establish the result for
+another image digest. The general 260-item quality cleanup is not additional
+RC security acceptance.
