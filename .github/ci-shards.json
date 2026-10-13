@@ -263,7 +263,7 @@
     },
     {
       "name": "Core and API Governance capacity rebalance",
-      "filter": "((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))|(FullyQualifiedName~FeatureServerEndpointTests)|(FullyQualifiedName~AttachmentEndpointTests|FullyQualifiedName~PostgresAttachmentStoreTests|FullyQualifiedName~QueryRelatedRecordsEndpointTests|FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~LimitsEnforcementTests)|(FullyQualifiedName~Honua.Server.Tests.Features.API)",
+      "filter": "(((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))|(FullyQualifiedName~FeatureServerEndpointTests)|(FullyQualifiedName~AttachmentEndpointTests|FullyQualifiedName~PostgresAttachmentStoreTests|FullyQualifiedName~QueryRelatedRecordsEndpointTests|FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~LimitsEnforcementTests)|(FullyQualifiedName~Honua.Server.Tests.Features.API))|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.EditOwnerSubjectTests",
       "children": [
         "Core and Cloud Contracts",
         "Core Endpoints",
@@ -392,8 +392,10 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~FeatureServerEndpointTests&FullyQualifiedName!~StreamingFeatureServerEndpointTests",
+      "filter": "(FullyQualifiedName~FeatureServerEndpointTests&FullyQualifiedName!~StreamingFeatureServerEndpointTests)|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.EditOwnerSubjectTests",
       "paths": [
+        "tests/dotnet/Honua.Server.Tests/FeatureServer/EditOwnerSubjectTests.cs",
+        "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEditsHandler.cs",
         "src/Honua.Core/Features/Metadata/",
         "src/Honua.Db/Postgres/Features/Metadata/",
         "tests/dotnet/Honua.Server.Tests/AdvancedSpatialQueryTests.cs",
