@@ -554,7 +554,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         content.Should().Contain("<testElement>hello_complex</testElement>");
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("crs='urn:ogc:def:crs:OGC:1.3:CRS84'", "2")]
     [InlineData("", "2")]
     [InlineData("", "02")]
@@ -583,7 +583,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         actual.Element(ows + "UpperCorner")!.Value.Should().Be("-121.75 39.5");
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("<ows:BoundingBox crs='urn:unsupported'><ows:LowerCorner>-123 37</ows:LowerCorner><ows:UpperCorner>-121 39</ows:UpperCorner></ows:BoundingBox>")]
     [InlineData("<ows:BoundingBox>unexpected<ows:LowerCorner>-123 37</ows:LowerCorner><ows:UpperCorner>-121 39</ows:UpperCorner></ows:BoundingBox>")]
     [InlineData("<ows:BoundingBox crs='urn:ogc:def:crs:OGC:1.3:CRS84'><ows:LowerCorner>-123 37</ows:LowerCorner></ows:BoundingBox>")]
