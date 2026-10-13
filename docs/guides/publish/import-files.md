@@ -123,9 +123,14 @@ More help: [troubleshooting](../deploy/troubleshooting.md).
 
 Imports mark newly created tables with the database comment `honua:import-owned:v1`.
 Replacement and abandoned staging cleanup refuse unmarked tables, including tables
-published from an existing database. The failed job reports `IMPORT_TARGET_NOT_OWNED`;
-file import database failures also carry SQL state `HN409`. Queued requests still
-return their normal job acceptance response; inspect the terminal job outcome.
+published from an existing database. Synchronous file, WFS, and OGC API Features
+imports return HTTP `409` with `errorCode: IMPORT_TARGET_NOT_OWNED` and a message
+naming the target. Ownership refusal in the file import database helper uses internal/log SQLSTATE
+`HN409`; clients should use the stable `errorCode`.
+Queued file imports still return HTTP `202`; their terminal job document reports
+`Failed` and the same stable `errorCode`, with guidance to choose another target
+or explicitly adopt a verified legacy import. Ordinary provider errors remain
+sanitized. Validation and authorization failures retain their usual responses.
 
 Tables imported before this ownership marker are **not adopted automatically**.
 A layer catalog entry or an `imported_`/`wfs_` name does not prove that an import

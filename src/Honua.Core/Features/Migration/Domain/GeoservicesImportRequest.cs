@@ -346,6 +346,9 @@ public sealed record GeoservicesImportResult
     /// </summary>
     public string? ErrorMessage { get; init; }
 
+    /// <summary>Stable machine-readable failure code, when available.</summary>
+    public string? ErrorCode { get; init; }
+
     /// <summary>
     /// Target Honua service name when the import requested or completed publishing.
     /// </summary>

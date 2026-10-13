@@ -129,6 +129,61 @@ public sealed class ImportEndpointDurableRunnerIntegrationTests : IAsyncLifetime
         await AssertCompletedAsync(service, jobId, tableName, ImportJobRunners.Batch);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    public async Task LocalDurableRunner_UnownedTarget_FailsTerminallyAndPreservesRows()
+    {
+        var queue = new RedisJobQueue(_multiplexer, _jobStore, NullLogger<RedisJobQueue>.Instance);
+        var service = CreateDispatcher(BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false), [], queue);
+        var tableName = $"guard_{Guid.NewGuid():N}"[..25];
+        var physical = $"imported_{tableName}";
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using (var create = new NpgsqlCommand($"CREATE TABLE honua_data.\"{physical}\" (sentinel text); INSERT INTO honua_data.\"{physical}\" VALUES ('keep me')", connection))
+        {
+            await create.ExecuteNonQueryAsync();
+        }
+        try
+        {
+            var jobId = await service.QueueImportAsync(await StageAsync(tableName), 0);
+            using var worker = CreateWorkerLoop(queue);
+            await worker.StartAsync(CancellationToken.None);
+            try
+            {
+                var deadline = DateTimeOffset.UtcNow.AddSeconds(90);
+                ExecutionJobRecord? job = null;
+                while (DateTimeOffset.UtcNow < deadline)
+                {
+                    job = await _jobStore.GetAsync(jobId);
+                    if (job?.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled)
+                    {
+                        break;
+                    }
+                    await Task.Delay(100);
+                }
+                job.Should().NotBeNull();
+                job!.Status.Should().Be(ExecutionJobStatus.Failed);
+                job.ErrorMessage.Should().Contain(ImportTableOwnershipException.Code);
+                var progress = await service.GetProgressAsync(jobId);
+                progress.Should().NotBeNull();
+                progress!.Status.Should().Be(ImportStatus.Failed);
+                progress.ErrorCode.Should().Be(ImportTableOwnershipException.Code);
+                progress.ErrorMessage.Should().Be(ImportTableOwnershipException.CreateSafeMessage(tableName));
+                progress.CompletedAt.Should().NotBeNull();
+            }
+            finally
+            {
+                await worker.StopAsync(CancellationToken.None);
+            }
+            await using var verify = new NpgsqlCommand($"SELECT sentinel FROM honua_data.\"{physical}\"", connection);
+            (await verify.ExecuteScalarAsync()).Should().Be("keep me");
+        }
+        finally
+        {
+            await using var cleanup = new NpgsqlCommand($"DROP TABLE IF EXISTS honua_data.\"{physical}\"", connection);
+            await cleanup.ExecuteNonQueryAsync();
+        }
+    }
+
     private DurableImportJobService CreateDispatcher(
         BackgroundImportRunnerDecision decision,
         IEnumerable<IBatchComputeBackend> backends,

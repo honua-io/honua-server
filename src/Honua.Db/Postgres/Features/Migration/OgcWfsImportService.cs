@@ -256,6 +256,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         {
             Success = ownershipFailure is null,
             ErrorMessage = ownershipFailure,
+            ErrorCode = ownershipFailure is null ? null : ImportTableOwnershipException.Code,
             WasDryRun = request.DryRun,
             SourceServiceUrl = safeSourceUrl,
             SourceVersion = version,

@@ -790,7 +790,10 @@ internal static partial class ImportEndpoints
                     cancellationToken);
             }
 
-            IResult syncResult = Results.Json(importResult, ImportJsonContext.Default.ImportResult);
+            IResult syncResult = Results.Json(importResult, ImportJsonContext.Default.ImportResult,
+                statusCode: !importResult.Success && importResult.ErrorCode == ImportTableOwnershipException.Code
+                    ? StatusCodes.Status409Conflict
+                    : StatusCodes.Status200OK);
             await syncResult.ExecuteAsync(context);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

@@ -366,11 +366,17 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
                 Enabled = true
             });
         var publishJson = await publishResponse.Content.ReadAsStringAsync();
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, publishJson);
+        publishResponse.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Accepted);
         using var published = JsonDocument.Parse(publishJson);
         var layer = published.RootElement.GetProperty("data");
-        var serviceName = layer.GetProperty("serviceName").GetString();
-        var layerId = layer.GetProperty("layerId").GetInt32();
+        var serviceName = _publishedServiceName;
+        var layerId = publishResponse.StatusCode == HttpStatusCode.Accepted
+            ? await WaitForPublishedLayerAsync(layer, expectedCount)
+            : layer.GetProperty("layerId").GetInt32();
+        if (publishResponse.StatusCode == HttpStatusCode.Created)
+        {
+            layer.GetProperty("serviceName").GetString().Should().Be(serviceName);
+        }
 
         var queryPath = $"/rest/services/{serviceName}/FeatureServer/{layerId}/query";
         using var countResponse = await _client.GetAsync($"{queryPath}?where=1%3D1&returnCountOnly=true&f=json");
@@ -402,6 +408,35 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         }
 
         return rows;
+    }
+
+    private async Task<int> WaitForPublishedLayerAsync(JsonElement accepted, int expectedCount)
+    {
+        var jobId = accepted.GetProperty("jobId").GetString();
+        var statusUrl = accepted.GetProperty("statusUrl").GetString();
+        accepted.GetProperty("rowsTotal").GetInt64().Should().Be(expectedCount);
+        jobId.Should().NotBeNullOrWhiteSpace();
+        statusUrl.Should().StartWith("/api/v1/admin/connections/");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        while (true)
+        {
+            using var response = await _client.GetAsync(statusUrl, timeout.Token);
+            var json = await response.Content.ReadAsStringAsync(timeout.Token);
+            response.StatusCode.Should().Be(HttpStatusCode.OK, json);
+            using var document = JsonDocument.Parse(json);
+            var progress = document.RootElement.GetProperty("data");
+            progress.GetProperty("jobId").GetString().Should().Be(jobId);
+            var status = progress.GetProperty("status").GetString();
+            status.Should().BeOneOf("Queued", "Processing", "Completed");
+            if (status == "Completed")
+            {
+                progress.GetProperty("rowsTotal").GetInt64().Should().Be(expectedCount);
+                progress.GetProperty("rowsMaterialized").GetInt64().Should().Be(expectedCount);
+                return progress.GetProperty("layerId").GetInt32();
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250), timeout.Token);
+        }
     }
 
     private sealed record ImportedRow(long? ObjectId, string? Name, Geometry? Geometry);

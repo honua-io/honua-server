@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Import.Domain;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
@@ -53,9 +54,4 @@ internal static class ImportTableOwnership
     }
 
     private static string Quote(string value) => "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
-}
-
-internal sealed class ImportTableOwnershipException(string schema, string table)
-    : InvalidOperationException($"IMPORT_TARGET_NOT_OWNED: Table '{schema}.{table}' is not owned by the importer; it was not modified. Choose a new target or ask the database administrator to explicitly adopt a verified legacy import.")
-{
 }

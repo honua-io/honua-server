@@ -179,6 +179,9 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
     /// </summary>
     public string? ErrorMessage { get; init; }
 
+    /// <summary>Stable machine-readable failure code, when provided by the importer.</summary>
+    public string? ErrorCode { get; init; }
+
     /// <summary>
     /// List of warning messages encountered during import.
     /// </summary>

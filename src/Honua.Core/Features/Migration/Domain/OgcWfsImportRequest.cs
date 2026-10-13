@@ -187,6 +187,9 @@ public sealed record OgcWfsImportResult
     /// </summary>
     public string? ErrorMessage { get; init; }
 
+    /// <summary>Stable machine-readable error code when the import fails.</summary>
+    public string? ErrorCode { get; init; }
+
     /// <summary>
     /// Deterministic manifest artifact describing what was imported.
     /// </summary>
