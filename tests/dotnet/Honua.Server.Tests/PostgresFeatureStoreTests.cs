@@ -295,7 +295,8 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         {
             Assert.Equal(0, item.Id);
             Assert.Null(item.Geometry);
-            Assert.Single(item.Attributes);
+            Assert.Equal(2, item.Attributes.Count);
+            Assert.Equal(0L, Assert.IsType<long>(item.Attributes["objectid"]));
         });
     }
 
