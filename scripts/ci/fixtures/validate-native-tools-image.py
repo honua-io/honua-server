@@ -109,6 +109,46 @@ class NativeToolsTests(unittest.TestCase):
         with self.assertRaises(native.UnsupportedInput):
             native.identity(self.root)
 
+    def test_wildcard_and_escape_copy_cannot_silently_omit_hidden_inputs(self):
+        directory = self.root / 'native'
+        directory.mkdir()
+        (directory / 'visible').write_text('visible')
+        hidden = directory / '.hidden'
+        hidden.write_text('one')
+        dockerfile = self.root / native.DOCKERFILE
+        original = dockerfile.read_text()
+        for source in ('native/*', 'native/?isible', 'native/[v]isible', r'native/\*',
+                       r'native/vi\sible', '["native/*", "/opt/native/"]',
+                       r'["native/vi\u0073ible", "/opt/native/"]'):
+            with self.subTest(source=source):
+                copy = 'COPY ' + (source if source.startswith('[') else source + ' /opt/native/')
+                dockerfile.write_text(original.replace('FROM native-tools AS runtime',
+                                                       copy + '\nFROM native-tools AS runtime'))
+                with self.assertRaises(native.UnsupportedInput):
+                    native.identity(self.root)
+                hidden.write_text('two')
+                with self.assertRaises(native.UnsupportedInput):
+                    native.identity(self.root)
+
+    def test_literal_copy_directory_includes_hidden_files_and_directories(self):
+        directory = self.root / 'native'
+        (directory / '.nested').mkdir(parents=True)
+        hidden = directory / '.hidden'
+        hidden.write_text('one')
+        (directory / 'visible').write_text('visible')
+        (directory / '.nested/input').write_text('nested')
+        dockerfile = self.root / native.DOCKERFILE
+        original = dockerfile.read_text()
+        for copy in ('COPY native/ /opt/native/', 'COPY ["native/", "/opt/native/"]'):
+            with self.subTest(copy=copy):
+                dockerfile.write_text(original.replace('FROM native-tools AS runtime',
+                                                       copy + '\nFROM native-tools AS runtime'))
+                before = native.identity(self.root)
+                self.assertIn('native/.hidden', before['inputs']['files'])
+                self.assertIn('native/.nested/input', before['inputs']['files'])
+                hidden.write_text(hidden.read_text() + 'changed')
+                self.assertNotEqual(before['identity'], native.identity(self.root)['identity'])
+
     def test_unknown_external_inputs_fail_closed(self):
         dockerfile = self.root / native.DOCKERFILE
         dockerfile.write_text(dockerfile.read_text().replace('FROM native-tools AS runtime',

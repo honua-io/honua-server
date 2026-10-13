@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import hashlib
 import json
 import os
@@ -132,17 +131,20 @@ def identity(root, platform='linux/amd64', overrides=()):
                     flag, value = value.split(None, 1)
                     if not flag.startswith(('--chown=', '--chmod=')):
                         raise UnsupportedInput('Unknown COPY flag')
+                # Docker's matching/escaping grammar differs from Python glob.
+                # Reject escapes before shlex/JSON can erase their meaning;
+                # wildcard sources below remain unsupported rather than partial.
+                if '\\' in value:
+                    raise UnsupportedInput('Escaped COPY paths require an explicit input policy')
                 tokens = json.loads(value) if value.startswith('[') else shlex.split(value)
                 if not isinstance(tokens, list) or len(tokens) < 2 or not all(isinstance(t, str) for t in tokens):
                     raise UnsupportedInput('Unknown COPY syntax')
                 for source in tokens[:-1]:
+                    if any(character in source for character in '*?[]'):
+                        raise UnsupportedInput('Wildcard COPY sources require an explicit input policy')
                     if '$' in source or source.startswith('/') or '..' in Path(source).parts:
                         raise UnsupportedInput('Unresolved or external COPY input')
-                    matches = glob.glob(str(root / source))
-                    if not matches:
-                        raise UnsupportedInput('Missing COPY input')
-                    for match in matches:
-                        add_file(Path(match))
+                    add_file(root / source)
             elif instruction == 'RUN' and '--mount' in value:
                 raise UnsupportedInput('RUN mount requires an explicit input policy')
     visit('native-tools')

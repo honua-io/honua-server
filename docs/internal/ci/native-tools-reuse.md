@@ -9,6 +9,9 @@ serving-image gates are unchanged.
 The resolver fingerprints the **entire** Dockerfile, Docker ignore files, reachable
 local COPY inputs, global argument defaults and explicit overrides, target,
 platform, pinned reachable base images, and publisher/resolver policy files.
+Local COPY sources must be literal files or directories; literal directories
+include hidden files and subdirectories. Wildcard and escape syntax is rejected
+before normalization rather than approximating Docker matching with Python glob.
 Unresolved or unsupported input syntax disables reuse and builds the production
 target locally. The fingerprint excludes unrelated application source when that
 source is not consumed by the native-tools target. Native source versions and
