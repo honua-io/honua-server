@@ -329,57 +329,55 @@ jq '.contract="honua.server-test-binaries.v1"' "${strict_manifest}.valid" > "${s
 if strict_restore >/dev/null 2>&1; then echo '::error::Strict consumer accepted legacy v1'; exit 1; fi
 echo 'Strict SDK mismatch and downgrade fixtures passed.'
 
-# Strict Server.Tests also owns the canonical executable boot smoke consumes.
+# Strict Server.Tests carries its copied test runtime, not a second full host.
 boot_project='tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
 boot_test_dir="${fixture_repo}/$(dirname "${boot_project}")"
 mkdir -p "${boot_test_dir}/bin/Release/net10.0" "${boot_test_dir}/obj"
 printf '<Project />' > "${fixture_repo}/${boot_project}"
 cp "${fixture_repo}/tests/dotnet/Fixture.Tests/obj/project.assets.json" "${boot_test_dir}/obj/project.assets.json"
-for file in Honua.Server.Tests.dll Honua.Server.Tests.pdb Honua.Server.Tests.deps.json Honua.Server.Tests.runtimeconfig.json; do
-  printf 'boot-test-%s\n' "${file}" > "${boot_test_dir}/bin/Release/net10.0/${file}"
+for file in Honua.Server.Tests.dll Honua.Server.Tests.pdb Honua.Server.Tests.deps.json Honua.Server.Tests.runtimeconfig.json \
+  Honua.Server.dll Honua.Server.deps.json Honua.Server.runtimeconfig.json Honua.Dependency.dll; do
+  printf 'test-runtime-%s\n' "${file}" > "${boot_test_dir}/bin/Release/net10.0/${file}"
 done
 jq --arg project "${boot_project}" '.projects += [{csproj:$project,artifact_suffix:"boot",proof_filter:"FullyQualifiedName~Fixture"}]' \
   "${fixture_repo}/.github/server-test-artifact-projects.json" > "${fixture}/boot-registry.json"
 export HONUA_SERVER_TEST_ARTIFACT_REGISTRY="${fixture}/boot-registry.json"
-boot_host="${fixture_repo}/src/Honua.Server/bin/Release/net10.0"
 boot_package() {
   HONUA_SERVER_TEST_ARTIFACT_REPO_ROOT="${fixture_repo}" \
     "${SCRIPT_DIR}/package-server-test-binaries.sh" --project "${boot_project}" \
       --output "${fixture}/boot-artifact" --source-sha "${source_sha}"
 }
-if boot_package >/dev/null 2>&1; then echo '::error::Packaged strict Server.Tests without canonical boot output'; exit 1; fi
-mkdir -p "${boot_host}"
-printf canonical-server > "${boot_host}/Honua.Server.dll"
-printf symbols > "${boot_host}/Honua.Server.pdb"
-printf dependency > "${boot_host}/Honua.Dependency.dll"
-printf '{"runtimeOptions":{"tfm":"net10.0"}}' > "${boot_host}/Honua.Server.runtimeconfig.json"
-printf '{"targets":{"net10.0":{"Honua.Server/1":{"runtime":{"Honua.Server.dll":{},"Honua.Dependency.dll":{}}}}}}' > "${boot_host}/Honua.Server.deps.json"
-mkdir -p "${boot_host}/fr" "${fixture_repo}/src/Honua.Server/obj/Release/net10.0/boot-static"
-printf localized > "${boot_host}/fr/Honua.Dependency.resources.dll"
-printf static-host-content > "${fixture_repo}/src/Honua.Server/obj/Release/net10.0/boot-static/content"
-jq '.targets["net10.0"]["Honua.Server/1"].resources = {"lib/net10.0/fr/Honua.Dependency.resources.dll":{"locale":"fr"}}' \
-  "${boot_host}/Honua.Server.deps.json" > "${fixture}/boot-deps.json"
-cp "${fixture}/boot-deps.json" "${boot_host}/Honua.Server.deps.json"
-jq -n --arg root "${fixture_repo}/src/Honua.Server/obj/Release/net10.0/boot-static/" '{ContentRoots:[$root]}' \
-  > "${boot_host}/Honua.Server.staticwebassets.runtime.json"
+# Publication succeeds even when canonical source bin is absent.
 boot_package
 boot_manifest="${fixture}/boot-artifact/server-test-binaries-boot.manifest.json"
+boot_archive="${fixture}/boot-artifact/server-test-binaries-boot.tar.gz"
+cp "${boot_archive}" "${boot_archive}.without-host"
+# A canonical host exceeding this fixture's bound must remain producer-local.
+boot_host="${fixture_repo}/src/Honua.Server/bin/Release/net10.0"
+mkdir -p "${boot_host}"
+python3 - "${boot_host}/Honua.Server.dll" <<'SIZEPY'
+import pathlib, sys
+pathlib.Path(sys.argv[1]).write_bytes(b'x' * 100000)
+SIZEPY
+HONUA_SERVER_TEST_ARTIFACT_MAX_UNPACKED_BYTES=50000 boot_package
+cmp "${boot_archive}.without-host" "${boot_archive}"
+if tar -tzf "${boot_archive}" | grep -q 'src/Honua.Server/bin'; then
+  echo '::error::Duplicated canonical host in managed test payload'; exit 1
+fi
 boot_restore() {
   "${SCRIPT_DIR}/restore-server-test-binaries.sh" --manifest "${boot_manifest}" \
     --destination "${fixture}/boot-restored" --project "${boot_project}" --source-sha "${source_sha}"
 }
 boot_restore
-[[ "$(cat "${fixture}/boot-restored/src/Honua.Server/bin/Release/net10.0/Honua.Server.dll")" == canonical-server ]]
-[[ "$(cat "${fixture}/boot-restored/src/Honua.Server/obj/Release/net10.0/boot-static/content")" == static-host-content ]]
+for file in Honua.Server.dll Honua.Server.deps.json Honua.Server.runtimeconfig.json Honua.Dependency.dll; do
+  [[ "$(cat "${fixture}/boot-restored/tests/dotnet/Honua.Server.Tests/bin/Release/net10.0/${file}")" == "test-runtime-${file}" ]]
+done
+[[ ! -e "${fixture}/boot-restored/src/Honua.Server/bin" ]]
+# Reject an old strict payload requesting the removed host duplication; preserve
+# the already installed test runtime on this identity/layout mismatch.
 cp "${boot_manifest}" "${boot_manifest}.valid"
-jq 'del(.required_dependency_output_roots,.host_output_contract)' "${boot_manifest}.valid" > "${boot_manifest}"
-if boot_restore >/dev/null 2>&1; then echo '::error::Accepted old strict artifact without boot contract'; exit 1; fi
-cp "${boot_manifest}.valid" "${boot_manifest}"
-# A freshly digested archive may still be semantically incomplete. Preserve the
-# existing installed host and test outputs when its dependency validation fails.
-rm "${boot_host}/Honua.Dependency.dll"
-boot_package
-if boot_restore >/dev/null 2>&1; then echo '::error::Accepted incomplete boot-host dependency graph'; exit 1; fi
-[[ "$(cat "${fixture}/boot-restored/src/Honua.Server/bin/Release/net10.0/Honua.Dependency.dll")" == dependency ]]
-[[ "$(cat "${fixture}/boot-restored/src/Honua.Server/bin/Release/net10.0/Honua.Server.dll")" == canonical-server ]]
-echo 'Strict canonical boot-host packaging, dependency validation and old-contract rejection fixtures passed.'
+jq '.required_dependency_output_roots=["src/Honua.Server/bin/Release"] | .host_output_contract="honua.server-boot-output.v1"' \
+  "${boot_manifest}.valid" > "${boot_manifest}"
+if boot_restore >/dev/null 2>&1; then echo '::error::Accepted obsolete duplicated-host payload contract'; exit 1; fi
+[[ "$(cat "${fixture}/boot-restored/tests/dotnet/Honua.Server.Tests/bin/Release/net10.0/Honua.Server.dll")" == test-runtime-Honua.Server.dll ]]
+echo 'Strict Server.Tests test-runtime-only packaging and transactional old-layout rejection fixtures passed.'

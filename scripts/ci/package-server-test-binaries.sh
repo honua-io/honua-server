@@ -100,25 +100,6 @@ mkdir -p "${stage_project_dir}/bin"
 cp -a --reflink=auto "${bin_dir}" "${stage_project_dir}/bin/${CONFIGURATION}"
 cp -a --reflink=auto "${obj_dir}" "${stage_project_dir}/obj"
 
-# Strict Server.Tests consumers also boot the canonical server executable. Test
-# output copies are not a substitute for the complete host output directory.
-dependency_roots=()
-host_output_contract=""
-host_raw_bytes=0
-if [[ "${CONTRACT}" == honua.server-test-binaries.v2 && "${project}" == tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj ]]; then
-  host_root="src/Honua.Server/bin/${CONFIGURATION}"
-  for file in Honua.Server.dll Honua.Server.deps.json Honua.Server.runtimeconfig.json Honua.Server.pdb; do
-    [[ -f "${REPO_ROOT}/${host_root}/net10.0/${file}" ]] || {
-      echo "::error::Required canonical boot-host output missing: ${file}" >&2; exit 1;
-    }
-  done
-  dependency_roots+=("${host_root}")
-  host_output_contract="honua.server-boot-output.v1"
-  mkdir -p "${stage_root}/src/Honua.Server/bin"
-  cp -a --reflink=auto "${REPO_ROOT}/${host_root}" "${stage_root}/${host_root}"
-  host_raw_bytes="$(du -sb "${REPO_ROOT}/${host_root}" | cut -f1)"
-fi
-
 # Static web asset content roots (#4453). Every *.staticwebassets.runtime.json in the test
 # output names the directories the host serves static web assets from, as absolute paths on
 # the building machine. A consumer must find each of them exactly as the builder did, or a
@@ -227,7 +208,7 @@ if find "${stage_root}" -type d -path '*/runtimes/*' \
   exit 1
 fi
 
-raw_bytes="$(( $(du -sb "${bin_dir}" | cut -f1) + $(du -sb "${obj_dir}" | cut -f1) + payload_raw_bytes + host_raw_bytes ))"
+raw_bytes="$(( $(du -sb "${bin_dir}" | cut -f1) + $(du -sb "${obj_dir}" | cut -f1) + payload_raw_bytes ))"
 unpacked_bytes="$(du -sb "${stage_root}" | cut -f1)"
 file_count="$(find "${stage_root}" -type f | wc -l)"
 if (( unpacked_bytes > MAX_UNPACKED_BYTES )); then
@@ -276,8 +257,6 @@ if [[ -n "${workflow_run_id}" ]]; then
   registry_sha256="$(sha256sum "${REGISTRY}" | cut -d' ' -f1)"
 fi
 jq -nS \
-  --arg host_output_contract "${host_output_contract}" \
-  --argjson dependency_roots "$(json_array "${dependency_roots[@]}")" \
   --arg registry_sha256 "${registry_sha256}" \
   --arg workflow_run_id "${workflow_run_id}" \
   --arg build_properties "${build_properties}" \
@@ -302,8 +281,6 @@ jq -nS \
   --argjson expires_at_epoch "${expires_at_epoch}" \
   '{
     contract: $contract,
-    host_output_contract: $host_output_contract,
-    required_dependency_output_roots: $dependency_roots,
     build_identity: {workflow_run_id:$workflow_run_id,build_properties:$build_properties,
       configuration:$configuration,os:"Linux",architecture:"x86_64",registry_sha256:$registry_sha256},
     source_sha: $source_sha,

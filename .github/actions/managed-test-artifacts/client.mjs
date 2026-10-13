@@ -105,6 +105,13 @@ export async function run(options, deps = {}) {
   const restoredFile = path.join(resultDir, 'restored-projects.json');
   const receiptFile = path.join(resultDir, 'receipt.json');
   const restored = [], receipts = [];
+  const report = record => (deps.log ?? console.log)(JSON.stringify({
+    kind:'managed-test-artifact', project:record.project, status:record.status,
+    reason:record.reason ?? null, budget:record.budget ?? null,
+    observed:record.observed ?? null, limit:record.limit ?? null,
+    artifactId:record.artifactId ?? null, archiveSha256:record.archiveSha256 ?? null,
+    sourceSha:record.sourceSha ?? sourceSha
+  }));
   await writeFile(restoredFile, '[]\n');
   const save = () => writeFile(receiptFile, JSON.stringify({sourceSha, workflowRunId: env.GITHUB_RUN_ID,
     producerAttempt: attempt, projects: receipts}, null, 2) + '\n');
@@ -112,6 +119,7 @@ export async function run(options, deps = {}) {
   const attempt = options.producerAttempt || env.GITHUB_RUN_ATTEMPT;
   if ((options.enabled ?? 'true') === 'false') {
     receipts.push(...projects.map(project => ({project, status: 'disabled'})));
+    receipts.forEach(report);
     await save();
     return {restoredProjectsFile: restoredFile, receiptFile, producerAttempt: attempt};
   }
@@ -143,8 +151,10 @@ export async function run(options, deps = {}) {
   try {
     for (const {project, suffix} of entries) {
       if (now() >= deadline) {
-        receipts.push({project, sourceSha, name: `managed-tests-${attempt}-${suffix}`,
-          status: 'unrestored', reason: 'transport-budget-exhausted'});
+        const skipped = {project, sourceSha, name: `managed-tests-${attempt}-${suffix}`,
+          status: 'unrestored', reason: 'transport-budget-exhausted'};
+        receipts.push(skipped);
+        report(skipped);
         await save();
         continue;
       }
@@ -189,6 +199,12 @@ export async function run(options, deps = {}) {
           record.status = 'restored'; record.artifactId = found.id;
         }
       } catch (error) {
+        const bound = /(?:Staged payload|Archive) (\d+) bytes exceeds (\d+)|Packaging (\d+)ms exceeds (\d+)ms/.exec(error.stderr ?? '');
+        if (bound) {
+          record.budget = bound[3] ? 'package-time-ms' : 'payload-bytes';
+          record.observed = Number(bound[1] ?? bound[3]);
+          record.limit = Number(bound[2] ?? bound[4]);
+        }
         const timedOut = error.code === 'ETIMEDOUT' || error.code === 124 || error.code === 137 || (error.killed && error.signal === 'SIGTERM');
         const packageBudget = packaging && (timedOut ||
           /Staged payload.*exceeds|Archive.*exceeds|Packaging.*exceeds|Packaged archive exceeds limit/.test(
@@ -199,6 +215,7 @@ export async function run(options, deps = {}) {
         if (error.identityFailure || (packaging && !packageBudget && error.code !== 'TRANSPORT_BUDGET')) throw error;
       } finally {
         receipts.push(record);
+        report(record);
         if (!record.preservedPayloadDirectory) await rm(temp, {recursive: true, force: true});
         await save();
       }

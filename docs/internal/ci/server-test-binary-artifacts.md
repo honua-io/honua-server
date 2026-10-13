@@ -36,10 +36,16 @@ is one day. No branch-prefix lookup or cross-run artifact search is used; the
 existing v1 exact-head shard cache remains a separate fallback in full CI.
 
 Restore stages and verifies the whole payload before replacing any output root.
-Installation is transactional and rolls back on failure. The strict
-`Honua.Server.Tests` artifact additionally includes and verifies the canonical
-`src/Honua.Server/bin/Release` host output used by the boot/migrations smoke.
-Static assets and runtime dependencies remain part of verification.
+Installation is transactional and rolls back on failure. `Honua.Server.Tests`
+contains its copied test runtime and required static assets; it does not duplicate
+`src/Honua.Server/bin/Release`. The required canonical boot/migrations smoke runs
+on the producer after pristine artifact publication, using its existing host
+output. Consumer tests retain their complete test runtime and static-asset
+verification within the same artifact size limits.
+
+Each project emits a concise console receipt with status, reason, source and
+archive hash. Packaging-limit failures include the measured bound, without
+logging payload contents.
 
 Missing, expired, corrupt, oversized, or unavailable artifacts leave a project
 unrestored. The consumer restores/builds the union of missing projects once,

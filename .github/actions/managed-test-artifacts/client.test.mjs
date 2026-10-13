@@ -33,7 +33,7 @@ async function fixture(t) {
       assert.deepEqual(options,{retentionDays:1,compressionLevel:0});return {id:42};
     }
   };
-  return {root,opts,deps:{env,runner,artifact},artifact,runner};
+  return {root,opts,deps:{env,runner,artifact,log:()=>{}},artifact,runner};
 }
 async function receipt(result) {return JSON.parse(await readFile(result.receiptFile,'utf8'));}
 async function cleaned(root) {assert.equal((await readdir(root)).filter(n=>n.startsWith('managed-test-payload-')).length,0);}
@@ -199,4 +199,17 @@ test('publication gives Server.Tests the budget first; remaining order and consu
  f.artifact.getArtifact=async name=>{retrieved.push(name);return {artifact:{id:retrieved.length,size:100}};};
  f.artifact.downloadArtifact=async(id,{path:temp})=>writeFile(path.join(temp,`server-test-binaries-${suffixes.get(requested[id-1])}.manifest.json`),JSON.stringify({archive_sha256:'b'.repeat(64)}));
  await run(f.opts,f.deps);assert.deepEqual(retrieved,['managed-tests-2-fixture','managed-tests-2-other','managed-tests-2-server']);await cleaned(f.root);
+});
+
+test('per-project console receipt exposes bounded budget reason without payload data',async t=>{
+ const f=await fixture(t);const logs=[];f.deps.log=line=>logs.push(JSON.parse(line));
+ f.deps.runner=async(file,...args)=>{
+   if(file==='git')return f.runner(file,...args);
+   throw Object.assign(Error('bound'),{stderr:'::error::Staged payload 900000000 bytes exceeds 805306368.\nSECRET_PAYLOAD_DO_NOT_LOG'});
+ };
+ const r=await run({...f.opts,mode:'publish'},f.deps);
+ assert.equal((await receipt(r)).projects[0].reason,'package-budget-exceeded');
+ assert.equal(logs.length,1);assert.equal(logs[0].project,project);
+ assert.equal(logs[0].status,'unrestored');assert.equal(logs[0].observed,900000000);assert.equal(logs[0].limit,805306368);
+ assert.equal(logs[0].sourceSha,sha);assert.ok(!JSON.stringify(logs).includes('SECRET_PAYLOAD'));
 });
