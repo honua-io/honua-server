@@ -33,7 +33,7 @@ profile and retain a successful policy-change result before opening the map.
 <!-- doc-run: blocked https://github.com/honua-io/honua-server/issues/5737 -->
 
 ```bash
-python3 -m pip install 'honua-admin==0.1.10' 'honua-sdk==0.1.13' 'mcp==2.1.1'
+python3 -m pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.15' 'mcp==2.1.1'
 python3 - <<'PY'
 import asyncio
 import os

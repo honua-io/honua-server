@@ -217,7 +217,7 @@ Install the two public clients, ideally in a virtual environment:
 
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install 'honua-admin==0.1.10' 'honua-sdk==0.1.13'
+pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.15'
 ```
 
 Save this as `quickstart.py`. It registers that database as a connection,
