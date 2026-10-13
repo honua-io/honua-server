@@ -10,6 +10,7 @@ using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
@@ -26,8 +27,15 @@ public sealed class IdempotentUrlImportEndpointTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _fixture = new WebAppFixture().UseKestrel()
-            .ConfigureServices(services => services.AddSingleton<IHttpClientFactory>(_clients));
+            .ConfigureServices(services => services.AddSingleton<IHttpClientFactory>(_clients))
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            });
         await _fixture.InitializeAsync();
+        _fixture.Client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
     }
 
     public async Task DisposeAsync()
