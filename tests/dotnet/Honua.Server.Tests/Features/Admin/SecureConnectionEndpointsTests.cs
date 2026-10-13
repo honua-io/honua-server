@@ -494,6 +494,8 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         try
         {
             using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            localFixture.Services.GetRequiredService<IConnectionDriverRegistry>()
+                .Find(DataProviderNames.Postgis).Should().BeSameAs(driver);
             var name = $"port-contract-{Guid.NewGuid():N}";
             var request = new Dictionary<string, object?>
             {
@@ -527,6 +529,9 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             if (draft && accepted)
             {
                 driver.LastProbedPort.Should().Be(external ? 6432 : storedPort);
+                var result = JsonSerializer.Deserialize<ApiResponse<ConnectionTestResult>>(
+                    await response.Content.ReadAsStringAsync(), _jsonOptions);
+                result!.Data!.IsHealthy.Should().BeTrue();
             }
             using var scope = localFixture.Services.CreateScope();
             var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
@@ -535,7 +540,13 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             {
                 var stored = connections.Single(c => c.Name == name);
                 stored.Port.Should().Be(storedPort);
+                stored.IsEncrypted.Should().Be(!external);
                 stored.Validate().Should().BeTrue();
+                var byId = await registry.GetConnectionAsync(stored.ConnectionId);
+                byId.Should().NotBeNull();
+                byId!.Port.Should().Be(storedPort);
+                byId.IsEncrypted.Should().Be(!external);
+                byId.Validate().Should().BeTrue();
                 if (!external)
                 {
                     driver.LastPort.Should().Be(storedPort);

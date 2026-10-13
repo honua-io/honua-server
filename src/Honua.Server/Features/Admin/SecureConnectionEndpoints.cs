@@ -194,7 +194,7 @@ internal static partial class SecureConnectionEndpoints
             // Provider-aware: build + probe with the engine driver for the requested provider so MySQL / SQL
             // Server / Oracle drafts are tested with the right ADO.NET provider. Falls back to the PostgreSQL
             // builder/tester when no driver is registered for the provider (preserves prior behaviour).
-            var driver = driverRegistry.Find(request.Provider);
+            var driver = driverRegistry.Find(DataProviderNames.Normalize(request.Provider));
 
             string connectionString;
 
@@ -513,7 +513,7 @@ internal static partial class SecureConnectionEndpoints
                 // Microsoft.Data.SqlClient / Oracle) so the stored, encrypted string actually works for this
                 // provider and the existing-connection test can re-probe it. Falls back to the PostgreSQL
                 // builder when no driver is registered for the provider.
-                var createDriver = driverRegistry.Find(request.Provider);
+                var createDriver = driverRegistry.Find(DataProviderNames.Normalize(request.Provider));
                 var connectionString = createDriver is not null
                     ? createDriver.BuildConnectionString(new ConnectionTarget(
                         request.Host!,
