@@ -535,7 +535,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         (await ReadVersionAsync(_ownerToken, ownedGuid)).GetProperty("description").GetString()
             .Should().Be("alice-preserved");
         using (var deleted = await PostFormAsync(_ownerToken, $"{ServiceBase}/delete",
-            ("versionName", "alice.same_delete_name"), ("f", "json")))
+            ("versionName", "same_delete_name"), ("f", "json")))
         {
             using var document = JsonDocument.Parse(await deleted.Content.ReadAsStringAsync());
             document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();

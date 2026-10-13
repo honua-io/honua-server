@@ -472,14 +472,22 @@ public static class VersionManagementServerEndpoints
         }
 
         var versionName = GeoServicesRequestValueHelpers.GetValueString(values!, "versionName")?.Trim();
-        if (string.IsNullOrWhiteSpace(versionName) || versionName.LastIndexOf('.') is <= 0 || versionName.EndsWith('.'))
+        if (string.IsNullOrWhiteSpace(versionName) || versionName.StartsWith('.') || versionName.EndsWith('.'))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "versionName must be an owner-qualified version name.");
+            return StandardErrorHelpers.CreateBadRequest(context, "versionName parameter is required and must identify a version.");
         }
 
-        if (versionName.Equals("sde.DEFAULT", StringComparison.OrdinalIgnoreCase))
+        if (versionName.Equals("DEFAULT", StringComparison.OrdinalIgnoreCase) ||
+            versionName.Equals("sde.DEFAULT", StringComparison.OrdinalIgnoreCase))
         {
             return StandardErrorHelpers.CreateConflict(context, "The DEFAULT version cannot be deleted.");
+        }
+
+        // A bare name is scoped to the actual caller, even for administrators. Only an explicit
+        // owner-qualified name may select another owner's branch.
+        if (!versionName.Contains('.'))
+        {
+            versionName = ResolveOwner(context) + "." + versionName;
         }
 
         // Match the exact served identity rather than a bare name: different owners may use the
