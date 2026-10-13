@@ -27,6 +27,7 @@ class ManagedWorkflowTests(unittest.TestCase):
             self.assertIn('BUILD_TARGET:', section)
             for flag in ['TreatWarningsAsErrors=true', 'RunAnalyzers=true', 'UseSharedCompilation=false']:
                 self.assertIn(flag, section)
+        self.assertIn('dotnet-restore-retry.sh \"${BUILD_TARGET}\" -p:Configuration=Release', producer)
         self.assertLess(producer.index('Build (warnings as errors)'), producer.index('mode: publish'))
         self.assertNotIn('dotnet test ', producer)
 
