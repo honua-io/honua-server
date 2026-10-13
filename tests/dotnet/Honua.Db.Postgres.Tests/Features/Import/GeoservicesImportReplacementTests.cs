@@ -6,6 +6,7 @@ using System.Data.Common;
 using System.Net;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -50,6 +51,7 @@ public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
             var service = CreateService(new ReplacementFeatureServerHandler(["CCC"]), targetSchema: schema);
             var result = await service.ImportLayerAsync(BuildRequest(schema, overwrite: true));
             result.Success.Should().BeFalse();
+            result.ErrorCode.Should().Be(ImportTableOwnershipException.Code);
             result.ErrorMessage.Should().Contain("IMPORT_TARGET_NOT_OWNED").And.Contain(TableName);
             (await ReadCodesAsync(schema)).Should().Equal("AAA", "BBB");
         }

@@ -842,6 +842,79 @@ public class ImportEndpointTests : IAsyncLifetime
         responseContent.Should().Contain("Table name is required");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Integration")]
+    [Trait("Tier", "Integration")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    [Endpoint("GET /api/v1/admin/import/jobs/{jobId}")]
+    public async Task ImportFile_UnownedTarget_ReportsConflictAndPreservesRows(bool background)
+    {
+        var tableName = $"guard_{Guid.NewGuid():N}"[..25];
+        var physical = $"imported_{tableName}";
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using (var create = new NpgsqlCommand($"CREATE TABLE honua_data.\"{physical}\" (sentinel text); INSERT INTO honua_data.\"{physical}\" VALUES ('keep me')", connection))
+        {
+            await create.ExecuteNonQueryAsync();
+        }
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            content.Add(new StringContent("""{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"replacement"}}]}""", Encoding.UTF8, "application/json"), "File", "replacement.geojson");
+            content.Add(new StringContent(tableName), "TableName");
+            content.Add(new StringContent("true"), "OverwriteExisting");
+            content.Add(new StringContent(background ? "true" : "false"), "ForceBackground");
+
+            using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(background ? HttpStatusCode.Accepted : HttpStatusCode.Conflict, body);
+            if (background)
+            {
+                using var accepted = JsonDocument.Parse(body);
+                var jobId = accepted.RootElement.GetProperty("jobId").GetString();
+                ImportProgress? terminal = null;
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+                var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+                while (DateTimeOffset.UtcNow < deadline)
+                {
+                    using var status = await _client.GetAsync($"/api/v1/admin/import/jobs/{jobId}");
+                    status.StatusCode.Should().Be(HttpStatusCode.OK);
+                    terminal = JsonSerializer.Deserialize<ImportProgress>(await status.Content.ReadAsStringAsync(), options);
+                    if (terminal?.Status is ImportStatus.Failed or ImportStatus.Completed or ImportStatus.Cancelled)
+                    {
+                        break;
+                    }
+                    await Task.Delay(100);
+                }
+                terminal.Should().NotBeNull();
+                terminal!.Status.Should().Be(ImportStatus.Failed);
+                terminal.ErrorCode.Should().Be(ImportTableOwnershipException.Code);
+                terminal.ErrorMessage.Should().Contain(tableName);
+                terminal.CompletedAt.Should().NotBeNull();
+            }
+            else
+            {
+                using var result = JsonDocument.Parse(body);
+                result.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
+                result.RootElement.GetProperty("errorCode").GetString().Should().Be(ImportTableOwnershipException.Code);
+                result.RootElement.GetProperty("errorMessage").GetString().Should().Contain(tableName);
+            }
+            await using var verify = new NpgsqlCommand($"SELECT sentinel, obj_description('honua_data.\"{physical}\"'::regclass, 'pg_class') FROM honua_data.\"{physical}\"", connection);
+            await using var reader = await verify.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().Be("keep me");
+            reader.IsDBNull(1).Should().BeTrue();
+            (await reader.ReadAsync()).Should().BeFalse();
+        }
+        finally
+        {
+            await using var cleanup = new NpgsqlCommand($"DROP TABLE IF EXISTS honua_data.\"{physical}\"", connection);
+            await cleanup.ExecuteNonQueryAsync();
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task ImportFile_WithForceBackgroundAndLocalStaging_ReturnsAccepted()

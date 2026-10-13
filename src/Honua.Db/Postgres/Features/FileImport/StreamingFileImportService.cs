@@ -739,7 +739,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 format ?? SupportedFileFormat.GeoJson,
                 errorMessage,
                 stopwatch.Elapsed,
-                warnings);
+                warnings,
+                errorCode: ex.SqlState == "HN409" ? ImportTableOwnershipException.Code : null);
             return result;
         }
         // Intentionally broad: this is the top-level import job handler — any unexpected failure
