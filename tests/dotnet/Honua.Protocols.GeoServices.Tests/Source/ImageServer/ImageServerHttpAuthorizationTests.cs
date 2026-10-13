@@ -132,11 +132,14 @@ public sealed class ImageServerHttpAuthorizationTests
         }
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("GetFields")]
+    [InlineData("GetView")]
     [Operation(Operations.GetServiceInfo)]
     [InterfaceOperation(TestProtocols.ImageServer, "GetFields")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetView")]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
-    public async Task RestrictedGetFields_RequiresEntitledPrincipalBeforeReturningGeometryReference()
+    public async Task RestrictedSoapMetadata_RequiresEntitledPrincipalBeforeReturningGeometryReference(string operation)
     {
         var fixture = new WebAppFixture().ConfigureWebHost(builder =>
         {
@@ -172,7 +175,7 @@ public sealed class ImageServerHttpAuthorizationTests
                     using var request = new HttpRequestMessage(HttpMethod.Post, $"/services/{WebAppFixture.TestServiceId}/ImageServer")
                     {
                         Content = new StringContent(
-                            """<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetFields xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body></soap:Envelope>""",
+                            $"""<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><{operation} xmlns="http://www.esri.com/schemas/ArcGIS/10.8" /></soap:Body></soap:Envelope>""",
                             Encoding.UTF8, "text/xml"),
                     };
                     if (token is not null)
@@ -194,7 +197,7 @@ public sealed class ImageServerHttpAuthorizationTests
                     {
                         response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
                         document.Descendants().Any(element => element.Name.LocalName == "Fault").Should().BeTrue();
-                        document.Descendants().Any(element => element.Name.LocalName is "Fields" or "FieldArray" or "GeometryDef" or "SpatialReference")
+                        document.Descendants().Any(element => element.Name.LocalName is "Fields" or "FieldArray" or "GeometryDef" or "SpatialReference" or "Result")
                             .Should().BeFalse("unauthorized callers must not receive field or CRS metadata");
                     }
                 }
