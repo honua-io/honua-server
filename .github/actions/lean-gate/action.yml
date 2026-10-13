@@ -135,10 +135,6 @@ runs:
       shell: bash
       run: python3 scripts/ci/openapi-drift-check.py
 
-    - name: Restore
-      shell: bash
-      run: scripts/ci/dotnet-restore-retry.sh Honua.sln
-
     # Warnings-as-errors build scope. This used to be unconditionally
     # full-solution for BOTH callers. The reasoning split when `PR Gate` became
     # the dominant cost of landing anything (epic #3213):
@@ -162,6 +158,22 @@ runs:
         BUILD_SCOPE: ${{ inputs.build-scope }}
         GITHUB_EVENT_NAME: ${{ github.event_name }}
       run: scripts/ci/compute-lean-gate-build-scope.sh
+
+    - name: Restore selected build scope
+      shell: bash
+      env:
+        GATE_BUILD_MODE: ${{ steps.build-scope.outputs.mode }}
+        GATE_BUILD_FILTER: ${{ steps.build-scope.outputs.filter }}
+        GATE_RUN_FORMAT: ${{ inputs.run-format }}
+      run: |
+        # Inline format loads Honua.sln even when --include limits diagnostics.
+        # Keep its complete restore; separate format jobs restore independently.
+        target=Honua.sln
+        if [[ "${GATE_RUN_FORMAT}" != "true" && "${GATE_BUILD_MODE}" == "affected" ]]; then
+          [[ -f "${GATE_BUILD_FILTER}" ]] || { echo "::error::Missing selected build filter"; exit 1; }
+          target="${GATE_BUILD_FILTER}"
+        fi
+        scripts/ci/dotnet-restore-retry.sh "${target}" --property:Configuration=Release
 
     # Composite-action steps do not support `timeout-minutes`, so each bounded
     # step wraps its command in coreutils `timeout` (exit 124 => step fails).
