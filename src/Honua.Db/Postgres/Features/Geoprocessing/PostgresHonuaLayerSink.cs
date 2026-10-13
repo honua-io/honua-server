@@ -77,7 +77,7 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        await EnsureTableAsync(connection, transaction, schema, table, geometryColumn, srid, cancellationToken)
+        await EnsureTableAsync(connection, transaction, schema, table, geometryColumn, srid, request.LoadMode, cancellationToken)
             .ConfigureAwait(false);
         await EnsureReceiptsTableAsync(connection, transaction, schema, cancellationToken).ConfigureAwait(false);
 
@@ -209,11 +209,17 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
         string table,
         string geometryColumn,
         string srid,
+        HonuaLayerLoadMode loadMode,
         CancellationToken cancellationToken)
     {
         if (await ImportTableOwnership.ExistsAsync(connection, schema, table, cancellationToken).ConfigureAwait(false))
         {
-            await ImportTableOwnership.AssertOwnedAsync(connection, schema, table, cancellationToken).ConfigureAwait(false);
+            // Append and keyed upsert may write an authorized published table without
+            // adopting it. Only wholesale replacement requires importer ownership.
+            if (loadMode == HonuaLayerLoadMode.Replace)
+            {
+                await ImportTableOwnership.AssertOwnedAsync(connection, schema, table, cancellationToken).ConfigureAwait(false);
+            }
             return;
         }
 

@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Db.Postgres.Features.Geoprocessing;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Npgsql;
@@ -98,6 +100,47 @@ public sealed class ImportTableOwnershipTests(PostgresFixture fixture)
             await ExecuteAsync(connection, $"CREATE TABLE \"{schema}\".target (sentinel text); SELECT \"{schema}\".ensure_import_table('{schema}', 'target')");
             await using var transaction = await connection.BeginTransactionAsync();
             await Assert.ThrowsAsync<ImportTableOwnershipException>(() => ImportTableOwnership.AssertOwnedAsync(connection, schema, "target", CancellationToken.None));
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [Fact]
+    public async Task LayerSink_UnownedPublishedTable_AllowsAppendAndUpsertButRefusesReplacement()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("ownership_sink");
+        try
+        {
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await ExecuteAsync(connection, $$"""
+                CREATE TABLE "{{schema}}".target (id BIGSERIAL PRIMARY KEY, geometry geometry(Geometry, 4326), attributes JSONB NOT NULL);
+                INSERT INTO "{{schema}}".target (attributes) VALUES
+                    ('{"key":"old","value":"original"}'), ('{"key":"sentinel","value":"untouched"}');
+                """);
+            await using var geometry = new NpgsqlCommand("SELECT ST_AsBinary(ST_Point(1, 2))", connection);
+            var wkb = Assert.IsType<byte[]>(await geometry.ExecuteScalarAsync());
+            var sink = new PostgresHonuaLayerSink(fixture.DataSource);
+            var request = new HonuaLayerSinkRequest(schema, "target", "geometry", 4326,
+                HonuaLayerLoadMode.Append, "append", ["key"]);
+            await sink.LoadAsync(request, [new(wkb, """{"key":"new","value":"appended"}""")], CancellationToken.None);
+            await sink.LoadAsync(request with { LoadMode = HonuaLayerLoadMode.Upsert, BatchId = "upsert" },
+                [new(wkb, """{"key":"new","value":"updated"}""")], CancellationToken.None);
+
+            await using var verify = new NpgsqlCommand($"SELECT string_agg(attributes->>'value', ',' ORDER BY attributes->>'key') FROM \"{schema}\".target", connection);
+            Assert.Equal("updated,original,untouched", await verify.ExecuteScalarAsync());
+            await using var marker = new NpgsqlCommand($"SELECT obj_description('\"{schema}\".target'::regclass, 'pg_class')", connection);
+            Assert.Equal(DBNull.Value, await marker.ExecuteScalarAsync());
+
+            var replace = request with { LoadMode = HonuaLayerLoadMode.Replace, BatchId = "replace" };
+            HonuaLayerSinkRow[] replacement = [new(wkb, """{"key":"new","value":"replacement"}""")];
+            await Assert.ThrowsAsync<ImportTableOwnershipException>(() => sink.LoadAsync(replace, replacement, CancellationToken.None));
+            Assert.Equal("updated,original,untouched", await verify.ExecuteScalarAsync());
+            await ExecuteAsync(connection, ImportTableOwnership.MarkSql(schema, "target"));
+            await sink.LoadAsync(replace, replacement, CancellationToken.None);
+            Assert.Equal("replacement", await verify.ExecuteScalarAsync());
+            Assert.Equal("honua:import-owned:v1", await marker.ExecuteScalarAsync());
         }
         finally
         {
