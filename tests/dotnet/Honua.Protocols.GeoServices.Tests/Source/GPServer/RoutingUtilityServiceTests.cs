@@ -212,6 +212,7 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
                         Id = stableIdCollision ? "Routing" : "svc-private-routing",
                         Name = stableIdCollision ? "Private Route" : "Routing"
                     },
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     Protocols = gpServerEnabled ? ["GPServer"] : ["FeatureServer"],
                     AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["routing-reader"] }
                 }
