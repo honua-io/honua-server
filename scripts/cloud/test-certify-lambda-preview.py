@@ -745,11 +745,23 @@ class DeploymentBindingTests(unittest.TestCase):
         self.assertFalse((self.directory / "evidence/receipt.json").exists())
 
     def test_configuration_and_secret_rotation_invalidate_binding(self):
-        before = self.capture()
-        (self.directory / "vpc.json").write_text('{"SubnetIds":["changed-subnet"]}')
-        after = self.capture()
+        with unittest.mock.patch.object(self.driver.secrets, "token_bytes", return_value=b"k" * 32):
+            before = self.capture()
+            changed_vpc = {"SubnetIds": ["changed-subnet"]}
+            (self.directory / "vpc.json").write_text(json.dumps(changed_vpc))
+            after = self.capture()
+            rotated = self.capture("2"*32)
+        before_config = before["deployment"]["configuration"]
+        after_config = after["deployment"]["configuration"]
+        rotated_config = rotated["deployment"]["configuration"]
+        self.assertEqual(self.driver.canonical_digest(changed_vpc), after_config["vpcDigest"])
+        self.assertNotEqual(before_config["vpcDigest"], after_config["vpcDigest"])
+        self.assertEqual(before_config["secretVersions"], after_config["secretVersions"])
+        secret_name = self.driver.fingerprint("HONUA_ADMIN_PASSWORD")
+        self.assertEqual("1"*32, after_config["secretVersions"][secret_name]["versionId"])
+        self.assertEqual("2"*32, rotated_config["secretVersions"][secret_name]["versionId"])
+        self.assertEqual(after_config["vpcDigest"], rotated_config["vpcDigest"])
         self.assertNotEqual(self.driver.canonical_digest(before), self.driver.canonical_digest(after))
-        rotated = self.capture("2"*32)
         self.assertNotEqual(self.driver.canonical_digest(after), self.driver.canonical_digest(rotated))
 
     def test_private_commitments_are_fresh_field_bound_and_hide_credentials(self):
