@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Geoprocessing;
@@ -49,9 +50,10 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
         var table = Identifier(Require(request.PostgisTable, "table"));
         var geometryColumn = Identifier(string.IsNullOrWhiteSpace(request.PostgisGeometryColumn) ? "geom" : request.PostgisGeometryColumn!);
         var sql = BuildSql(schema, table, geometryColumn, request, out var parameters);
+        PostgresSqlSafety.ValidateReadOnlySingleStatement(sql);
 
         await using var connection = await OpenConnectionAsync(request, cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = PostgresSqlSafety.CreateReadCommand(connection, sql);
         foreach (var (name, value) in parameters)
         {
             // Let PostgreSQL infer the watermark type from its column (timestamp,
@@ -141,7 +143,6 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
 
         if (!string.IsNullOrWhiteSpace(request.Where))
         {
-            // Operator-supplied predicate (validated upstream); appended verbatim.
             predicates.Add($"({request.Where})");
         }
 
