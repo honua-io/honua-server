@@ -689,3 +689,10 @@ teardown still has to find by name, and a revocation that fails and fails the ot
 backend/client. Actual AWS IAM, VPC/PostGIS connectivity, fixture bootstrap,
 cold-start behavior and serving across real published versions still require the
 credentialed workflow run.
+
+The deployment input capture uses field-separated HMAC-SHA256 commitments for
+credential-bearing environment, standing configuration and runtime inputs. A fresh
+256-bit key exists only in process memory during the capture and is never published.
+Public verification authenticates the captured artifact and its digest; it does not
+recompute credential values. Source/image pins, fixture hashes and immutable secret
+versions remain independently checkable, and legacy runs remain unbound.
