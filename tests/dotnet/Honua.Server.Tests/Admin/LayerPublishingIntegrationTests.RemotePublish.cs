@@ -65,9 +65,12 @@ public sealed partial class LayerPublishingIntegrationTests
         services.Configure<DurableJobSubstrateOptions>(options => { options.RedisConfigured = true; options.RedisEntitled = true; });
         services.Configure<ControlPlaneOptions>(options => options.ExecutionWorkloads.Add(new ExecutionWorkloadOptions
         {
-            WorkloadId = "managed-publish", WorkloadName = "managed-publish",
-            Kind = ExecutionJobKind.LayerPublish, TargetKind = BatchComputeTargetKind.AwsBatch,
-            Backend = backend.BackendName, RuntimeProfile = RuntimeProfiles.Managed,
+            WorkloadId = "managed-publish",
+            WorkloadName = "managed-publish",
+            Kind = ExecutionJobKind.LayerPublish,
+            TargetKind = BatchComputeTargetKind.AwsBatch,
+            Backend = backend.BackendName,
+            RuntimeProfile = RuntimeProfiles.Managed,
             Parameters = new Dictionary<string, string> { ["batch.job_queue_arn"] = "queue", ["batch.job_definition_arn.s"] = "definition:1" },
         }));
         services.Configure<LayerPublishingOptions>(options => options.AsyncPublishRowThreshold = 1);
@@ -87,9 +90,17 @@ public sealed partial class LayerPublishingIntegrationTests
         var service = acceptingScope.ServiceProvider.GetRequiredService<ILayerPublishJobs>();
         var request = new PublishLayerRequest
         {
-            Schema = _schema, Table = _tableName, LayerName = "Remote publish", ServiceName = _serviceName,
-            GeometryColumn = "geom", GeometryType = "Point", Srid = 4326,
-            PrimaryKey = "id", Fields = _idNamePopulationFields, StorageMode = storageMode, Enabled = true,
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = "Remote publish",
+            ServiceName = _serviceName,
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            StorageMode = storageMode,
+            Enabled = true,
         };
         var connection = await scope.ServiceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionResolver>()
             .ResolveConnectionStringAsync(_connectionId);
@@ -105,7 +116,9 @@ public sealed partial class LayerPublishingIntegrationTests
         queued!.RowsMaterialized.Should().Be(0);
         var assigned = new AssignedExecutionJobQueue(new ExecutionWorkerLaunch
         {
-            OperationId = accepted.JobId!, JobKind = ExecutionJobKind.LayerPublish, ExecutionAttempt = 1,
+            OperationId = accepted.JobId!,
+            JobKind = ExecutionJobKind.LayerPublish,
+            ExecutionAttempt = 1,
         }, jobs, NullLogger<AssignedExecutionJobQueue>.Instance);
         using var worker = new JobExecutionService(assigned, jobs,
             [new LayerPublishJobExecutor(scopeFactory, workerProgress, NullLogger<LayerPublishJobExecutor>.Instance)],
