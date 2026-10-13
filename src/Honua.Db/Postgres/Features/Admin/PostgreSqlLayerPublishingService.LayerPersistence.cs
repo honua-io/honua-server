@@ -378,7 +378,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     /// <summary>
     /// One keyset page. <c>page</c> is materialized once so the insert and the cursor read
-    /// the same rows. <c>@ctid</c> is null on the first page; a null tid cast does not fail.
+    /// the same rows. Cursor ordering stays qualified so the text result alias cannot shadow
+    /// the native <c>tid</c> column. <c>@ctid</c> is null on the first page; a null tid cast does not fail.
     /// </summary>
     internal static string BuildSnapshotPageSql(
         string featuresTable,
@@ -406,8 +407,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             )
             SELECT
                 (SELECT COUNT(*)::int FROM inserted),
-                (SELECT source_oid::bigint FROM page ORDER BY source_oid DESC, source_tid DESC LIMIT 1),
-                (SELECT source_tid::text FROM page ORDER BY source_oid DESC, source_tid DESC LIMIT 1);
+                (SELECT page.source_oid::bigint FROM page ORDER BY page.source_oid DESC, page.source_tid DESC LIMIT 1),
+                (SELECT page.source_tid::text FROM page ORDER BY page.source_oid DESC, page.source_tid DESC LIMIT 1);
             """;
 
     internal static string BuildSourceCountSql(string sourceTable)
