@@ -82,7 +82,18 @@ internal sealed class LayerPublishJobService(
     {
         var progress = await progressStore.GetProgressAsync<LayerPublishJobProgress>(jobId, cancellationToken)
             .ConfigureAwait(false);
-        if (progress is null || !string.Equals(progress.TenantId, tenantContext.TenantId, StringComparison.Ordinal))
+        if (progress is null)
+        {
+            if (jobStore is null)
+            {
+                return null;
+            }
+
+            var durableJob = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            return RecoverProgress(jobId, durableJob, tenantContext.TenantId);
+        }
+
+        if (!string.Equals(progress.TenantId, tenantContext.TenantId, StringComparison.Ordinal))
         {
             return null;
         }
@@ -94,6 +105,45 @@ internal sealed class LayerPublishJobService(
 
         var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
         return job is null ? progress : ProjectExecutionOutcome(progress, job);
+    }
+
+    private static LayerPublishJobProgress? RecoverProgress(string jobId, ExecutionJobRecord? job, string? tenantId)
+    {
+        if (job is null
+            || !string.Equals(job.OperationId, jobId, StringComparison.Ordinal)
+            || job.Spec.Kind != ExecutionJobKind.LayerPublish
+            || !LayerPublishJobPayload.TryParse(job.Spec.Parameters, out var payload, out _)
+            || payload is null
+            || payload.RowCount < 0
+            || !string.Equals(payload.TenantId, tenantId, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var completion = LayerPublishCompletionReceipt.Read(job);
+        if (job.Status == ExecutionJobStatus.Succeeded
+            && completion is { RowsMaterialized: null })
+        {
+            // A legacy layer-only receipt cannot reconstruct lost completed counts. Keep the
+            // existing response contract rather than report fabricated zero or accepted totals.
+            return null;
+        }
+
+        // With no progress document, zero is only a confirmed lower bound, not a measurement
+        // of the running copy. A rich committed receipt replaces both counts on completion.
+        var recovered = new LayerPublishJobProgress
+        {
+            OperationId = jobId,
+            Status = job.Status == ExecutionJobStatus.Running ? OperationStatus.Processing : OperationStatus.Queued,
+            RowsMaterialized = 0,
+            RowsTotal = payload.RowCount,
+            ConnectionId = payload.ConnectionId,
+            ConnectionKey = payload.ConnectionKey,
+            TenantId = payload.TenantId,
+            StartedAt = job.CreatedAt,
+            CurrentPhase = "Recovered execution status; live row progress unavailable",
+        };
+        return ProjectExecutionOutcome(recovered, job);
     }
 
     internal static string StatusUrl(string routeId, string jobId)

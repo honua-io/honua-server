@@ -138,7 +138,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        // Keep delete-and-copy atomic, with one source snapshot across all pages.
+        await using var transaction = await connection.BeginTransactionAsync(
+            System.Data.IsolationLevel.RepeatableRead, cancellationToken).ConfigureAwait(false);
 
         await DeleteLayerFeaturesAsync(connection, transaction, metadata.LayerId, cancellationToken)
             .ConfigureAwait(false);

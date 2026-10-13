@@ -374,7 +374,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        // Every physical-cursor page must observe the same source snapshot.
+        await using var transaction = await connection.BeginTransactionAsync(
+            System.Data.IsolationLevel.RepeatableRead, cancellationToken);
         var transactionId = await PostgresTransactionOutcomeObserver
             .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);

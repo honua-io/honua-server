@@ -48268,7 +48268,7 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0,
-            "description": "Actual observed materialized rows."
+            "description": "Confirmed materialized rows. If live progress expires before completion, zero is a conservative lower bound rather than a current copy measurement; completion uses the recorded actual count."
           },
           "rowsTotal": {
             "type": "integer",

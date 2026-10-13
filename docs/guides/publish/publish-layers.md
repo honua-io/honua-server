@@ -126,6 +126,24 @@ typed 503 rather than accepting work that cannot finish. See
 [AWS Batch worker configuration](../../operator/geoprocessing-aws-batch.md#large-layer-publishes)
 for the API and worker rollout prerequisites.
 
+Publication and refresh copy every page from one repeatable-read database
+snapshot. Concurrent source changes do not add duplicates or mix newer rows into
+that copy; refresh again when the later source changes should be included.
+
+Polling can recover from an expired progress document using the durable job,
+subject to the same tenant and connection checks. A running recovered job reports
+`rowsMaterialized: 0` as a conservative lower bound when its live page progress is
+unavailable, and `rowsTotal` retains the count at acceptance. Completion replaces
+both with the actual committed counts. A legacy layer-only receipt cannot recover
+lost completion counts and still returns not found if its progress document has
+expired; the server does not invent a completed count.
+
+Admission performs an exact source count with a 30-second command limit before
+returning 202. A slow count can fail before work is accepted; the detached
+publication budget begins only after admission. Increasing that count limit alone
+would not solve a gateway deadline. The bounded release qualification must prove
+its actual source count and 330,000-row publish journey.
+
 ## Troubleshoot
 
 - **401 or 403** — verify the admin key and required connection/layer permissions.
