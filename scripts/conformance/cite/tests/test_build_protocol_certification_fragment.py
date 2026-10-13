@@ -19,7 +19,8 @@ class FragmentTests(unittest.TestCase):
     def build(self, *, include_suite=True, image_digest=DIGEST, passed=167,
               fixture_revision="docker/cite/shared/test-data@{source_sha}",
               candidate_cut="2026-08-30T00:00:00Z",
-              started_at="2026-08-30T00:01:00Z"):
+              started_at="2026-08-30T00:01:00Z",
+              completed_at="2026-08-30T00:02:00Z"):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             requirement = {
@@ -46,7 +47,7 @@ class FragmentTests(unittest.TestCase):
             args = argparse.Namespace(summary=paths["summary"], requirements=paths["requirements"],
                 suite_provenance=paths["provenance"], source_sha=SHA, producer_source_sha=SHA,
                 image_digest=image_digest, candidate_cut=candidate_cut,
-                started_at=started_at, completed_at="2026-08-30T00:02:00Z",
+                started_at=started_at, completed_at=completed_at,
                 run_url="https://github.com/honua-io/honua-server/actions/runs/1",
                 target_base_url="http://localhost:8080", output=root / "out.json")
             context = {"revision": "fixture-revision", "requirements": [requirement]}
@@ -74,6 +75,32 @@ class FragmentTests(unittest.TestCase):
                          observation["evidence_receipt"]["identity"]["candidate_cut_at"])
         self.assertTrue(observation["evidence_uri"].endswith(observation["evidence_digest"][7:]))
         self.assertEqual(set(observation["facet_results"]), set(observation["exercised_capabilities"]))
+
+    def test_preserves_exact_validated_candidate_cut_representation(self):
+        for cut in ("2026-08-30T00:00:00Z", "2026-08-30T00:00:00+00:00",
+                    "2026-08-29T14:00:00-10:00", "2026-08-30T00:00:00.000000Z"):
+            with self.subTest(cut=cut):
+                fragment = self.build(candidate_cut=cut)
+                self.assertEqual(fragment["candidate"]["cut_at"], cut)
+                self.assertEqual(fragment["observations"][0]["evidence_receipt"]["identity"]["candidate_cut_at"], cut)
+
+    def test_orders_fractional_instants_instead_of_timestamp_strings(self):
+        fragment = self.build(candidate_cut="2026-08-30T00:00:00Z",
+                              started_at="2026-08-30T00:00:00.000001Z",
+                              completed_at="2026-08-30T00:00:00.000002Z")
+        self.assertEqual(fragment["observations"][0]["result"], "pass")
+        with self.assertRaisesRegex(ValueError, "at or after"):
+            self.build(candidate_cut="2026-08-30T00:00:00.000001Z",
+                       started_at="2026-08-30T00:00:00Z")
+        with self.assertRaisesRegex(ValueError, "completed before"):
+            self.build(started_at="2026-08-30T00:01:00.000001Z",
+                       completed_at="2026-08-30T00:01:00Z")
+
+    def test_refuses_invalid_naive_or_multiline_candidate_cut(self):
+        for cut in ("not-a-date", "2026-08-30T00:00:00", "2026-08-30\n00:00:00Z",
+                    "2026-08-30T00:00:00Z\n", " 2026-08-30T00:00:00Z"):
+            with self.subTest(cut=cut), self.assertRaises(ValueError):
+                self.build(candidate_cut=cut)
 
     def test_missing_suite_is_explicit_skip_without_fabricated_evidence(self):
         observation = self.build(include_suite=False)["observations"][0]

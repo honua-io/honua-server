@@ -54,11 +54,13 @@ FIXTURE_BY_SUITE = {
 }
 
 
-def timestamp(value: str) -> str:
+def timestamp(value: str) -> datetime:
+    if not value or value != value.strip() or any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("timestamp must be a trimmed single-line value")
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         raise ValueError(f"timestamp must include a timezone: {value}")
-    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return parsed.astimezone(timezone.utc)
 
 
 def load_json(path: Path) -> dict:
@@ -100,13 +102,17 @@ def build(args: argparse.Namespace) -> dict:
         raise ValueError("source and producer SHAs must be lowercase full 40-character commits")
     if not DIGEST.fullmatch(args.image_digest):
         raise ValueError("image digest must be a lowercase sha256 digest")
-    generated_at = timestamp(args.completed_at)
-    started_at = timestamp(args.started_at)
-    cut_at = timestamp(args.candidate_cut)
-    if started_at < cut_at:
+    completed_instant = timestamp(args.completed_at)
+    started_instant = timestamp(args.started_at)
+    cut_instant = timestamp(args.candidate_cut)
+    if started_instant < cut_instant:
         raise ValueError("CITE execution must start at or after the frozen candidate cut")
-    if generated_at < started_at:
+    if completed_instant < started_instant:
         raise ValueError("CITE execution completed before it started")
+    generated_at = completed_instant.isoformat().replace("+00:00", "Z")
+    started_at = started_instant.isoformat().replace("+00:00", "Z")
+    # Context and receipt bind the validated supplied representation exactly.
+    cut_at = args.candidate_cut
     summary = load_json(args.summary)
     catalog = load_context(args.requirements, args.source_sha, args.producer_source_sha,
                            args.image_digest, args.candidate_cut, SUITE_BY_SURFACE, FIXTURE_BY_SUITE)
