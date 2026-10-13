@@ -37,8 +37,12 @@ internal static partial class GPServerEndpoints
         var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await provider.GetCurrentAsync(ct).ConfigureAwait(false);
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? string.Empty;
-        return snapshot.Index.ServicesById.ContainsKey(serviceId) ||
-            snapshot.Graph.Services.Any(service => string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase));
+        // The synthetic name is case-insensitive even though stable catalog IDs
+        // are ordinal. Any spelling collision suppresses the virtual service;
+        // the unchanged validator then resolves the actual route or rejects it.
+        return snapshot.Graph.Services.Any(service =>
+            string.Equals(service.Metadata.Id, serviceId, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(service.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase));
     }
 
     private static async Task<IResult?> ValidateRoutingUtilityTaskAsync(HttpContext context, string taskName, CancellationToken ct)

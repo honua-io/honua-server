@@ -166,6 +166,11 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
             await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer?f=json", 401);
             await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/GetTravelModes?f=json", 401);
             await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/FindRoutes/execute?f=json", 401);
+            // Stable IDs are ordinal. The lowercase route is absent, and must not
+            // create a public synthetic alias for the private uppercase ID.
+            await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer?f=json", 404);
+            await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer/GetTravelModes?f=json", 404);
+            await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer/FindRoutes/execute?f=json", 404);
         }
         finally
         {
@@ -184,6 +189,9 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
             await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer?f=json", 404);
             await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/GetTravelModes?f=json", 404);
             await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/FindRoutes/execute?f=json", 404);
+            await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer?f=json", 404);
+            await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer/GetTravelModes?f=json", 404);
+            await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer/FindRoutes/execute?f=json", 404);
         }
         finally
         {
