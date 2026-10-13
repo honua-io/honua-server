@@ -720,6 +720,75 @@ public sealed class PortalTokenIssuerTests
         bound!.PrincipalId.Should().Be("alice");
     }
 
+    [UnitTheory]
+    [InlineData(PortalTokenClientType.Ip, false)]
+    [InlineData(PortalTokenClientType.Referer, true)]
+    public async Task ExchangeAsync_WithoutRequestedBinding_InheritsValidatedPortalBinding(
+        PortalTokenClientType clientType, bool acceptMissingReferer)
+    {
+        var issuer = CreateIssuer();
+        var bindingValue = clientType == PortalTokenClientType.Ip ? "192.0.2.40" : "https://app.example.com/";
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(10);
+        var portal = await issuer.IssueAsync(new PortalTokenIssueRequest(
+            PrincipalId: "alice", DisplayName: null, TenantId: null, Roles: ["viewer"],
+            ClientType: clientType, BindingValue: bindingValue, ExpiresAt: expiresAt,
+            AcceptMissingReferer: acceptMissingReferer), CancellationToken.None);
+
+        var exchange = await issuer.ExchangeAsync(new PortalTokenExchangeRequest(
+            portal.Token, new PortalTokenBinding(null, "192.0.2.40"), null, null,
+            expiresAt.AddHours(1)), CancellationToken.None);
+
+        exchange.Should().NotBeNull();
+        exchange!.ClientType.Should().Be(clientType);
+        exchange.Issuance.ExpiresAt.Should().Be(expiresAt);
+        var matching = new PortalTokenBinding("https://app.example.com/maps", "192.0.2.40");
+        (await issuer.ValidateAsync(exchange.Issuance.Token, matching, CancellationToken.None))
+            .Should().NotBeNull();
+        var foreign = new PortalTokenBinding("https://foreign.example.com/", "192.0.2.41");
+        (await issuer.ValidateAsync(exchange.Issuance.Token, foreign, CancellationToken.None))
+            .Should().BeNull("inheritance must preserve the original referer or IP restriction");
+    }
+
+    [UnitTest]
+    public async Task ExchangeAsync_WithoutRequestedBinding_DoesNotRelaxStrictReferer()
+    {
+        var issuer = CreateIssuer();
+        var portal = await issuer.IssueAsync(new PortalTokenIssueRequest(
+            PrincipalId: "alice", DisplayName: null, TenantId: null, Roles: ["viewer"],
+            ClientType: PortalTokenClientType.Referer, BindingValue: "https://app.example.com/",
+            ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)), CancellationToken.None);
+
+        var exchange = await issuer.ExchangeAsync(new PortalTokenExchangeRequest(
+            portal.Token, new PortalTokenBinding(null, "192.0.2.40"), null, null,
+            DateTimeOffset.UtcNow.AddMinutes(30)), CancellationToken.None);
+
+        exchange.Should().BeNull();
+        var foreign = await issuer.ExchangeAsync(new PortalTokenExchangeRequest(
+            portal.Token, new PortalTokenBinding("https://foreign.example.com/", "192.0.2.40"), null, null,
+            DateTimeOffset.UtcNow.AddMinutes(30)), CancellationToken.None);
+        foreign.Should().BeNull("a strict referer also rejects an explicitly different header");
+    }
+
+    [UnitTest]
+    public async Task ExchangeAsync_WithoutRequestedBinding_RejectsForeignIpAndIncompleteBinding()
+    {
+        var issuer = CreateIssuer();
+        var portal = await issuer.IssueAsync(new PortalTokenIssueRequest(
+            PrincipalId: "alice", DisplayName: null, TenantId: null, Roles: ["viewer"],
+            ClientType: PortalTokenClientType.Ip, BindingValue: "192.0.2.40",
+            ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(10)), CancellationToken.None);
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
+        var matching = new PortalTokenBinding(null, "192.0.2.40");
+
+        (await issuer.ExchangeAsync(new PortalTokenExchangeRequest(portal.Token,
+            new PortalTokenBinding(null, "192.0.2.41"), null, null, expiresAt), CancellationToken.None))
+            .Should().BeNull();
+        (await issuer.ExchangeAsync(new PortalTokenExchangeRequest(portal.Token,
+            matching, null, "unrequested-binding", expiresAt), CancellationToken.None)).Should().BeNull();
+        (await issuer.ExchangeAsync(new PortalTokenExchangeRequest(portal.Token,
+            matching, PortalTokenClientType.Referer, null, expiresAt), CancellationToken.None)).Should().BeNull();
+    }
+
     [UnitTest]
     public async Task ExchangeAsync_MappedRoles_KeepClaimsMappingProvenance_Issue5491()
     {
