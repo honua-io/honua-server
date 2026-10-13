@@ -175,9 +175,13 @@ public sealed class LayerPublishRemoteRunnerTests
                 {
                     options.ExecutionWorkloads.Add(new ExecutionWorkloadOptions
                     {
-                        WorkloadId = "managed-gp", WorkloadName = "managed-gp", Kind = ExecutionJobKind.Geoprocessing,
-                        Backend = "honua-aws-batch", TargetKind = BatchComputeTargetKind.AwsBatch,
-                        RuntimeProfile = profile, ArtifactReference = "image@sha256:reviewed",
+                        WorkloadId = "managed-gp",
+                        WorkloadName = "managed-gp",
+                        Kind = ExecutionJobKind.Geoprocessing,
+                        Backend = "honua-aws-batch",
+                        TargetKind = BatchComputeTargetKind.AwsBatch,
+                        RuntimeProfile = profile,
+                        ArtifactReference = "image@sha256:reviewed",
                         Parameters = new Dictionary<string, string> { ["batch.job_queue_arn"] = "queue", ["batch.job_definition_arn.s"] = "definition:3" },
                     });
                 }

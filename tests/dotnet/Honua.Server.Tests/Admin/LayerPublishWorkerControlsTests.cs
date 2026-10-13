@@ -38,7 +38,9 @@ public sealed class LayerPublishWorkerControlsTests
         services.AddLayerPublishJobs();
         services.ApplyExecutionWorkerProfile(new ExecutionWorkerLaunch
         {
-            OperationId = "publish", JobKind = ExecutionJobKind.LayerPublish, ExecutionAttempt = 1,
+            OperationId = "publish",
+            JobKind = ExecutionJobKind.LayerPublish,
+            ExecutionAttempt = 1,
         });
         using var provider = services.BuildServiceProvider();
         Assert.IsType<LayerPublishJobExecutor>(Assert.Single(provider.GetServices<IJobExecutor>()));
@@ -139,8 +141,11 @@ public sealed class LayerPublishWorkerControlsTests
     {
         var progress = new LayerPublishJobProgress
         {
-            OperationId = "publish", Status = ProgressStatus.Processing,
-            RowsMaterialized = 1, RowsTotal = 9, StartedAt = DateTimeOffset.UtcNow,
+            OperationId = "publish",
+            Status = ProgressStatus.Processing,
+            RowsMaterialized = 1,
+            RowsTotal = 9,
+            StartedAt = DateTimeOffset.UtcNow,
         };
         var recovered = LayerPublishJobService.ProjectExecutionOutcome(progress, CompletedJob(receipt));
         Assert.Equal(layerId.HasValue ? ProgressStatus.Completed : ProgressStatus.Failed, recovered.Status);
@@ -151,19 +156,28 @@ public sealed class LayerPublishWorkerControlsTests
 
     private static ExecutionJobRecord CompletedJob(string receipt) => new()
     {
-        OperationId = "publish", Status = ExecutionJobStatus.Succeeded,
-        CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+        OperationId = "publish",
+        Status = ExecutionJobStatus.Succeeded,
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
         Spec = new ExecutionJobSpec
         {
-            Kind = ExecutionJobKind.LayerPublish, TargetKind = BatchComputeTargetKind.AwsBatch,
-            Backend = "honua-aws-batch", WorkloadName = "publish",
+            Kind = ExecutionJobKind.LayerPublish,
+            TargetKind = BatchComputeTargetKind.AwsBatch,
+            Backend = "honua-aws-batch",
+            WorkloadName = "publish",
         },
         CommittedEffectReferences = [receipt],
     };
 
     private static PublishedLayerSummary Summary() => new()
     {
-        LayerId = 23, LayerName = "Roads", Schema = "public", Table = "roads", GeometryType = "Point", ServiceName = "roads",
+        LayerId = 23,
+        LayerName = "Roads",
+        Schema = "public",
+        Table = "roads",
+        GeometryType = "Point",
+        ServiceName = "roads",
     };
 
     private sealed class Fixture : IDisposable
@@ -180,7 +194,10 @@ public sealed class LayerPublishWorkerControlsTests
         internal bool RejectTerminal { get; set; }
         internal LayerPublishJobProgress Progress { get; private set; } = new()
         {
-            OperationId = "publish", Status = ProgressStatus.Queued, RowsTotal = 9, StartedAt = DateTimeOffset.UtcNow,
+            OperationId = "publish",
+            Status = ProgressStatus.Queued,
+            RowsTotal = 9,
+            StartedAt = DateTimeOffset.UtcNow,
         };
 
         internal Fixture()
@@ -224,8 +241,12 @@ public sealed class LayerPublishWorkerControlsTests
             => LayerPublishJobWork.ExecuteAsync(_provider.GetRequiredService<IServiceScopeFactory>(), _store,
                 NullLogger<LayerPublishWorkerControlsTests>.Instance, new LayerPublishJobPayload
                 {
-                    ConnectionId = Guid.NewGuid(), ConnectionKey = "roads", RowCount = 9,
-                    TenantId = "tenant-a", TenantSource = TenantContextSource.Header, CurrentSchema = "tenant_a",
+                    ConnectionId = Guid.NewGuid(),
+                    ConnectionKey = "roads",
+                    RowCount = 9,
+                    TenantId = "tenant-a",
+                    TenantSource = TenantContextSource.Header,
+                    CurrentSchema = "tenant_a",
                     Request = new PublishLayerRequest { Schema = "public", Table = "roads", LayerName = "Roads" },
                 }, "publish", Context, cancellationToken);
 
