@@ -35,6 +35,8 @@ def bind_identity(image, platform, revision, inspected):
 
 
 def verdict(identity, inventory):
+    if not isinstance(inventory, dict):
+        raise ValueError("Trivy inventory must be an object")
     metadata = inventory.get("Metadata", {})
     if identity["image"] not in metadata.get("RepoDigests", []):
         raise ValueError("Trivy inventory digest mismatch")
@@ -42,8 +44,22 @@ def verdict(identity, inventory):
         raise ValueError("Trivy inventory image config mismatch")
     if not isinstance(inventory.get("Results"), list) or not inventory["Results"]:
         raise ValueError("Trivy inventory has no scan results")
-    findings = [finding for result in inventory["Results"]
-                for finding in (result.get("Vulnerabilities") or [])]
+    findings = []
+    for result in inventory["Results"]:
+        if not isinstance(result, dict) or not isinstance(result.get("Target"), str) or not result["Target"]:
+            raise ValueError("Trivy result must name its scanned target")
+        vulnerabilities = result.get("Vulnerabilities")
+        if vulnerabilities is None:
+            continue
+        if not isinstance(vulnerabilities, list):
+            raise ValueError("Trivy vulnerabilities must be a list")
+        for finding in vulnerabilities:
+            if not isinstance(finding, dict) or finding.get("Severity") not in (
+                    "UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"):
+                raise ValueError("Trivy vulnerability has no valid severity")
+            if not isinstance(finding.get("FixedVersion", ""), str):
+                raise ValueError("Trivy fixed version must be a string")
+            findings.append(finding)
     blocking = [finding for finding in findings
                 if finding.get("Severity") in ("HIGH", "CRITICAL")
                 and finding.get("FixedVersion")]

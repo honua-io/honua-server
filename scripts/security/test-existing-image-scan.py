@@ -45,7 +45,7 @@ class ExistingImageScanTests(unittest.TestCase):
     def test_retains_unfixed_findings_and_fails_fixed_high(self):
         identity = scan.bind_identity(IMAGE, "linux/amd64", REVISION, INSPECTED)
         inventory = {"Metadata": {"RepoDigests": [IMAGE], "ImageID": identity["imageId"]},
-                     "Results": [{"Vulnerabilities": [{"Severity": "HIGH", "FixedVersion": ""}]}]}
+                     "Results": [{"Target": "ubuntu", "Vulnerabilities": [{"Severity": "HIGH", "FixedVersion": ""}]}]}
         self.assertEqual("pass", scan.verdict(identity, inventory)["status"])
         self.assertEqual(1, scan.verdict(identity, inventory)["findingCount"])
         inventory["Results"][0]["Vulnerabilities"].append({"Severity": "HIGH", "FixedVersion": "1.2.3"})
@@ -53,6 +53,18 @@ class ExistingImageScanTests(unittest.TestCase):
         self.assertEqual("fail", result["status"])
         self.assertEqual(2, result["findingCount"])
         self.assertEqual(1, len(result["blockingFindings"]))
+
+    def test_rejects_malformed_results_but_accepts_empty_vulnerability_list(self):
+        identity = scan.bind_identity(IMAGE, "linux/amd64", REVISION, INSPECTED)
+        inventory = {"Metadata": {"RepoDigests": [IMAGE], "ImageID": identity["imageId"]},
+                     "Results": [{"Target": "ubuntu", "Vulnerabilities": []}]}
+        self.assertEqual("pass", scan.verdict(identity, inventory)["status"])
+        for result in ("invalid", {}, {"Target": "ubuntu", "Vulnerabilities": {}},
+                       {"Target": "ubuntu", "Vulnerabilities": ["invalid"]},
+                       {"Target": "ubuntu", "Vulnerabilities": [{"Severity": "INVALID"}]}):
+            inventory["Results"] = [result]
+            with self.assertRaises(ValueError):
+                scan.verdict(identity, inventory)
 
 
 if __name__ == "__main__":
