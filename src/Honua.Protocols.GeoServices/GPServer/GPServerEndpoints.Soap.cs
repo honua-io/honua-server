@@ -60,11 +60,11 @@ internal static partial class GPServerEndpoints
             {
                 var jobId = GPServerSoapExecution.ReadJobId(operation);
                 var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
-                var job = await jobService.GetJobAsync(jobId, context.User, ct).ConfigureAwait(false);
+                var serviceId = originalRoutes["serviceId"]?.ToString() ?? string.Empty;
+                var job = await jobService.GetGPServerJobAsync(jobId, serviceId, null, context.User, ct).ConfigureAwait(false);
                 var taskName = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerTaskName) ?? string.Empty;
                 context.Request.RouteValues["taskName"] = taskName;
                 context.Request.RouteValues["jobId"] = jobId;
-                var serviceId = originalRoutes["serviceId"]?.ToString() ?? string.Empty;
                 var bindingError = ValidateJobBinding(context, logger, job, serviceId, taskName);
                 if (bindingError is not null)
                 {

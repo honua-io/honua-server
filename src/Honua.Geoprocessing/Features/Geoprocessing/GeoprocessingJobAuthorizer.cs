@@ -206,6 +206,14 @@ internal sealed class GeoprocessingJobAuthorizer
     /// <see cref="GeoprocessingAuthorizationException"/> (after logging the denial) when the
     /// decision is not allowed.
     /// </summary>
+    public Task EnsureGPServerExecutionAuthorizedAsync(
+        ClaimsPrincipal principal,
+        GPServerExecutionContext execution,
+        CancellationToken cancellationToken = default)
+        => execution.IsGranted(principal)
+            ? Task.CompletedTask
+            : EnsureAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken);
+
     public async Task EnsureAuthorizedAsync(
         ClaimsPrincipal principal,
         OperatorResourceType resourceType,

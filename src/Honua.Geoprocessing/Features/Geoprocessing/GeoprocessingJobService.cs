@@ -191,6 +191,68 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return _authorizer.EnsureAuthorizedAsync(principal, resourceType, operation, cancellationToken);
     }
 
+    public Task EnsureGPServerExecutionAuthorizedAsync(
+        ClaimsPrincipal principal, GPServerExecutionContext execution, CancellationToken cancellationToken = default)
+        => _authorizer.EnsureGPServerExecutionAuthorizedAsync(principal, execution, cancellationToken);
+
+    public Task<ExecutionJobRecord> SubmitGPServerJobAsync(
+        AnalysisPlan plan, string? idempotencyKey, ClaimsPrincipal principal,
+        GPServerExecutionContext execution, IReadOnlyDictionary<string, string>? protocolMetadata = null,
+        CancellationToken cancellationToken = default)
+        => SubmitJobCoreAsync(
+            plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
+            submitterSecurityContext: null, inheritsSubmitterSecurityContext: false,
+            processCatalog: _processCatalog, gpExecution: execution, cancellationToken: cancellationToken);
+
+    public async Task<ExecutionJobRecord> GetGPServerJobAsync(
+        string jobId, string serviceId, string? taskName, ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        if (!principal.IsInRole("scoped-api-key") && !principal.IsInRole("layer-write-key"))
+        {
+            return await GetJobAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Read the owned record before deriving any scoped authority. Generic entrypoints never
+        // use this binding, and request-controlled protocol parameter bags cannot produce it.
+        var job = await GetJobForTerminalAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
+        if (HasGPServerJobGrant(job, serviceId, taskName, principal))
+        {
+            return job;
+        }
+
+        await _authorizer.EnsureAuthorizedAsync(principal, OperatorResourceType.Job, OperatorOperation.Read, cancellationToken)
+            .ConfigureAwait(false);
+        return job;
+    }
+
+    private static bool HasGPServerJobGrant(
+        ExecutionJobRecord job, string serviceId, string? taskName, ClaimsPrincipal principal)
+    {
+        var binding = job.Spec.GPServerBinding;
+        return binding is not null
+            && job.Spec.Kind == ExecutionJobKind.Geoprocessing
+            && string.Equals(job.Spec.Parameters.GetValueOrDefault(ExecutionJobParameterKeys.GeoprocessingProcessDefinitions),
+                binding.ProcessId, StringComparison.Ordinal)
+            && string.Equals(serviceId, binding.ServiceId, StringComparison.OrdinalIgnoreCase)
+            && (taskName is null || string.Equals(taskName, binding.TaskName, StringComparison.OrdinalIgnoreCase))
+            && new GPServerExecutionContext(binding.ServiceId, binding.TaskName, binding.ProcessId).IsGranted(principal);
+    }
+
+    public async Task<AnalysisResultPackage> GetGPServerJobResultsAsync(
+        string jobId, string serviceId, string taskName, ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        await GetGPServerJobAsync(jobId, serviceId, taskName, principal, cancellationToken).ConfigureAwait(false);
+        return await GetJobResultsForTerminalAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task CancelGPServerJobAsync(
+        string jobId, string serviceId, string? taskName, ClaimsPrincipal principal,
+        bool isOrphanCleanup = false, CancellationToken cancellationToken = default)
+        => CancelJobCoreAsync(jobId, principal, requireApproval: !isOrphanCleanup,
+            gpServiceId: serviceId, gpTaskName: taskName, cancellationToken: cancellationToken);
+
     public async Task<AnalysisPlan> EnsurePlanExecutionTierAuthorizedAsync(
         AnalysisPlan plan,
         ClaimsPrincipal principal,
@@ -352,7 +414,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         => SubmitJobCoreAsync(
             plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
             submitterSecurityContext: null, inheritsSubmitterSecurityContext: false,
-            processCatalog: _processCatalog, cancellationToken);
+            processCatalog: _processCatalog, cancellationToken: cancellationToken);
 
     public Task<ExecutionJobRecord> SubmitProtocolJobAsync(
         AnalysisPlan plan,
@@ -366,7 +428,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return SubmitJobCoreAsync(
             plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
             submitterSecurityContext: null, inheritsSubmitterSecurityContext: false,
-            processCatalog: protocolCatalog, cancellationToken);
+            processCatalog: protocolCatalog, cancellationToken: cancellationToken);
     }
 
     public Task<ExecutionJobRecord> SubmitJobWithSecurityContextAsync(
@@ -379,7 +441,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         => SubmitJobCoreAsync(
             plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false,
             submitterSecurityContext, inheritsSubmitterSecurityContext: true,
-            processCatalog: _processCatalog, cancellationToken);
+            processCatalog: _processCatalog, cancellationToken: cancellationToken);
 
     /// <summary>
     /// Allows a staged raster source only when its full object identity can be traced to a
@@ -551,6 +613,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         JobSecurityContext? submitterSecurityContext,
         bool inheritsSubmitterSecurityContext,
         IProcessCatalog processCatalog,
+        GPServerExecutionContext? gpExecution = null,
         CancellationToken cancellationToken = default)
     {
         // Resolve the submitter's row/field security identity once, before any gate can
@@ -595,11 +658,28 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // (#2263). Adapters that already call EnsureCallerAuthorizedAsync before
         // submit stay correct — this evaluation is idempotent and never
         // double-fails an authorized caller.
-        await _authorizer.EnsureAuthorizedAsync(
-            resumingApproved ? authorizationPrincipal : principal,
-            OperatorResourceType.Process,
-            OperatorOperation.Execute,
-            cancellationToken).ConfigureAwait(false);
+        if (gpExecution is null)
+        {
+            await _authorizer.EnsureAuthorizedAsync(
+                resumingApproved ? authorizationPrincipal : principal,
+                OperatorResourceType.Process,
+                OperatorOperation.Execute,
+                cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await _authorizer.EnsureGPServerExecutionAuthorizedAsync(principal, gpExecution, cancellationToken)
+                .ConfigureAwait(false);
+            // The resolved task is the execution boundary. A grant for one task may not
+            // authorize another step, even when an adapter supplies additional metadata.
+            if (plan.Steps.Count == 0 || plan.Steps.Any(step =>
+                !string.Equals(step.ProcessId, gpExecution.ProcessId, StringComparison.Ordinal)))
+            {
+                throw new GeoprocessingAuthorizationException(false,
+                    "The submitted plan does not match the authorized GPServer process.",
+                    OperatorResourceType.Process, OperatorOperation.Execute);
+            }
+        }
 
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
@@ -752,7 +832,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             await EnsureApprovedAsync(
                 principal, plan, idempotencyKey, protocolMetadata, isCustomCode,
-                resolvedSecurityContext, processCatalog, cancellationToken)
+                resolvedSecurityContext, processCatalog, gpExecution, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -777,6 +857,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             if (existingByKey != null)
             {
                 EnsureMatchingIdempotentRequest(existingByKey, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
+                EnsureGPServerReplayBinding(existingByKey, gpExecution, principal);
                 existingByKey = await _dispatcher.RepairLocalDispatchAsync(existingByKey, jobStore, cancellationToken)
                     .ConfigureAwait(false);
                 EnsureSubmissionDidNotRollback(existingByKey);
@@ -800,6 +881,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                         && !inheritsSubmitterSecurityContext
                         && JobOwnershipSecurity.MatchesPriorFormatSubmitter(
                             priorFormat.Audit, principal, resolvedSecurityContext.TenantId));
+                EnsureGPServerReplayBinding(priorFormat, gpExecution, principal);
                 priorFormat = await _dispatcher.RepairLocalDispatchAsync(priorFormat, jobStore, cancellationToken)
                     .ConfigureAwait(false);
                 EnsureSubmissionDidNotRollback(priorFormat);
@@ -906,6 +988,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     if (existingInWindow != null)
                     {
                         EnsureMatchingIdempotentRequest(existingInWindow, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
+                        EnsureGPServerReplayBinding(existingInWindow, gpExecution, principal);
                         existingInWindow = await _dispatcher.RepairLocalDispatchAsync(existingInWindow, jobStore, cancellationToken, admissionWindowHeld: true)
                             .ConfigureAwait(false);
                         EnsureSubmissionDidNotRollback(existingInWindow);
@@ -936,6 +1019,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     : ResolveRequiredRuntimeProfile(plan, processCatalog);
                 var spec = BuildSpec(
                     plan, specParams, requestMetadataKeys, workload, requiredRuntimeProfile, resourceProfile);
+                if (gpExecution is not null)
+                {
+                    spec = spec with
+                    {
+                        GPServerBinding = new GPServerJobBinding(
+                            gpExecution.ServiceId, gpExecution.TaskName, gpExecution.ProcessId)
+                    };
+                }
 
                 jobRecord = new ExecutionJobRecord
                 {
@@ -982,6 +1073,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     if (existing != null)
                     {
                         EnsureMatchingIdempotentRequest(existing, requestFingerprint, ownerId, resolvedSecurityContext.TenantId);
+                        EnsureGPServerReplayBinding(existing, gpExecution, principal);
                         existing = await _dispatcher.RepairLocalDispatchAsync(existing, jobStore, cancellationToken, admissionWindowHeld: true)
                             .ConfigureAwait(false);
                         EnsureSubmissionDidNotRollback(existing);
@@ -1225,30 +1317,35 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         string jobId,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
-        => CancelJobCoreAsync(jobId, principal, requireApproval: true, cancellationToken);
+        => CancelJobCoreAsync(jobId, principal, requireApproval: true, cancellationToken: cancellationToken);
 
     public Task CancelAbandonedJobAsync(
         string jobId,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
-        => CancelJobCoreAsync(jobId, principal, requireApproval: false, cancellationToken);
+        => CancelJobCoreAsync(jobId, principal, requireApproval: false, cancellationToken: cancellationToken);
 
     private async Task CancelJobCoreAsync(
         string jobId,
         ClaimsPrincipal principal,
         bool requireApproval,
-        CancellationToken cancellationToken)
+        string? gpServiceId = null,
+        string? gpTaskName = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(jobId))
         {
             throw new GeoprocessingValidationException("Job identifier is required.");
         }
 
-        await _authorizer.EnsureAuthorizedAsync(
-            principal,
-            OperatorResourceType.Job,
-            OperatorOperation.Execute,
-            cancellationToken).ConfigureAwait(false);
+        var gpJob = gpServiceId is null ? null
+            : await GetGPServerJobAsync(jobId, gpServiceId, gpTaskName, principal, cancellationToken).ConfigureAwait(false);
+        var hasGPGrant = gpJob is not null && HasGPServerJobGrant(gpJob, gpServiceId!, gpTaskName, principal);
+        if (!hasGPGrant)
+        {
+            await _authorizer.EnsureAuthorizedAsync(
+                principal, OperatorResourceType.Job, OperatorOperation.Execute, cancellationToken).ConfigureAwait(false);
+        }
 
         var jobStore = RequireJobStore();
         var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -1259,6 +1356,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         EnsureJobOwnership(job, principal);
+        if (hasGPGrant && !HasGPServerJobGrant(job, gpServiceId!, gpTaskName, principal))
+        {
+            throw new GeoprocessingNotFoundException($"Job '{jobId}' no longer matches its authorized GPServer binding.");
+        }
+
 
         if (job.Status == ExecutionJobStatus.Cancelled)
         {
@@ -1468,6 +1570,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         bool isCustomCode,
         JobSecurityContext submitterSecurityContext,
         IProcessCatalog processCatalog,
+        GPServerExecutionContext? gpExecution,
         CancellationToken cancellationToken)
     {
         var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(
@@ -1494,6 +1597,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         var policyRef = approval.PolicyRef ?? "unknown";
         GeoprocessingServiceLog.SubmitRejectedApprovalRequired(_logger, policyRef);
+
+        if (gpExecution?.IsGranted(principal) == true)
+        {
+            // A permission snapshot is not a live API-key grant. Do not park a proposal
+            // that cannot safely revalidate this scoped authority when approved later.
+            throw new GeoprocessingApprovalRequiredException(policyRef,
+                "Scoped GPServer execution grants do not support deferred approval. "
+                + "Use an operator-authorized approval workflow; no proposal or job was created.");
+        }
 
         // Park the gated plan on the approval lane. The dispatcher owns the durable
         // proposal/gateway surface (ADR-0064, #2814): when it is available and the
@@ -1546,7 +1658,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 submitterSecurityContext: payload.SubmitterSecurityContext,
                 inheritsSubmitterSecurityContext: true,
                 processCatalog: _processCatalog,
-                cancellationToken)
+                cancellationToken: cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -2010,6 +2122,19 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // of buffer.ToArray(), which would copy the whole written payload just to hand it
         // to SHA256.HashData.
         return Convert.ToHexString(SHA256.HashData(buffer.GetBuffer().AsSpan(0, (int)buffer.Length))).ToLowerInvariant();
+    }
+
+    private static void EnsureGPServerReplayBinding(
+        ExecutionJobRecord existing, GPServerExecutionContext? execution, ClaimsPrincipal principal)
+    {
+        if (execution?.IsGranted(principal) == true
+            && (!HasGPServerJobGrant(existing, execution.ServiceId, execution.TaskName, principal)
+                || !string.Equals(existing.Spec.GPServerBinding?.ProcessId, execution.ProcessId, StringComparison.Ordinal)))
+        {
+            // Check before redispatch as well as before returning: same-owner/same-plan
+            // fingerprints do not establish a GP binding for legacy or other-protocol jobs.
+            throw new GeoprocessingIdempotencyConflictException(existing.OperationId);
+        }
     }
 
     private static void EnsureMatchingIdempotentRequest(

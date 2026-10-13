@@ -17,6 +17,38 @@ namespace Honua.Geoprocessing;
 /// </summary>
 internal interface IGeoprocessingJobService
 {
+    /// <summary>Authorizes a resolved GP task without granting generic operator execution.</summary>
+    Task EnsureGPServerExecutionAuthorizedAsync(
+        ClaimsPrincipal principal, GPServerExecutionContext execution, CancellationToken cancellationToken = default)
+        => EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken);
+
+    /// <summary>Submits through the shared gates with an explicit, server-resolved GP identity.</summary>
+    Task<ExecutionJobRecord> SubmitGPServerJobAsync(
+        AnalysisPlan plan, string? idempotencyKey, ClaimsPrincipal principal,
+        GPServerExecutionContext execution, IReadOnlyDictionary<string, string>? protocolMetadata = null,
+        CancellationToken cancellationToken = default)
+        => SubmitJobAsync(plan, idempotencyKey, principal, protocolMetadata, cancellationToken);
+
+    /// <summary>Reads a service-bound GP job, preserving canonical grant and ownership checks.</summary>
+    Task<ExecutionJobRecord> GetGPServerJobAsync(
+        string jobId, string serviceId, string? taskName, ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+        => GetJobAsync(jobId, principal, cancellationToken);
+
+    /// <summary>Resolves results only for an authorized service-bound GP job.</summary>
+    Task<AnalysisResultPackage> GetGPServerJobResultsAsync(
+        string jobId, string serviceId, string taskName, ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+        => GetJobResultsAsync(jobId, principal, cancellationToken);
+
+    /// <summary>Cancels an authorized service-bound GP job through the existing approval gates.</summary>
+    Task CancelGPServerJobAsync(
+        string jobId, string serviceId, string? taskName, ClaimsPrincipal principal,
+        bool isOrphanCleanup = false, CancellationToken cancellationToken = default)
+        => isOrphanCleanup
+            ? CancelAbandonedJobAsync(jobId, principal, cancellationToken)
+            : CancelJobAsync(jobId, principal, cancellationToken);
+
     /// <summary>
     /// Validates that the caller has the required authorization for the specified operation.
     /// Enables adapters to enforce auth before protocol-specific validation.

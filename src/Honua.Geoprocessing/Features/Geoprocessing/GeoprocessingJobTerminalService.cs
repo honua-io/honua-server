@@ -160,12 +160,26 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
         }
     }
 
+    public Task<GeoprocessingCancelResult> CancelGPServerAsync(
+        string jobId, string serviceId, string taskName, ClaimsPrincipal principal,
+        TimeSpan timeout, CancellationToken clientDisconnect = default)
+        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: false, gpServiceId: serviceId, gpTaskName: taskName, clientDisconnect: clientDisconnect);
+
+    public void DispatchGPServerOrphanedCancellation(
+        string jobId, string serviceId, string taskName, ClaimsPrincipal principal, TimeSpan timeout)
+    {
+        ValidateTimeout(timeout);
+        var principalSnapshot = new ClaimsPrincipal(principal.Identities.Select(identity => new ClaimsIdentity(identity)));
+        _ = Task.Run(() => CancelOrphanedInBackgroundAsync(
+            jobId, principalSnapshot, timeout, serviceId, taskName), CancellationToken.None);
+    }
+
     public Task<GeoprocessingCancelResult> CancelAsync(
         string jobId,
         ClaimsPrincipal principal,
         TimeSpan timeout,
         CancellationToken clientDisconnect = default)
-        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: false, clientDisconnect);
+        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: false, clientDisconnect: clientDisconnect);
 
     public void DispatchOrphanedCancellation(
         string jobId,
@@ -190,20 +204,20 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
         ClaimsPrincipal principal,
         TimeSpan timeout,
         CancellationToken clientDisconnect = default)
-        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: true, clientDisconnect);
+        => CancelCoreAsync(jobId, principal, timeout, isOrphanCleanup: true, clientDisconnect: clientDisconnect);
 
     private async Task CancelOrphanedInBackgroundAsync(
         string jobId,
         ClaimsPrincipal principal,
-        TimeSpan timeout)
+        TimeSpan timeout,
+        string? gpServiceId = null,
+        string? gpTaskName = null)
     {
         try
         {
-            var result = await CancelOrphanedAsync(
-                jobId,
-                principal,
-                timeout,
-                CancellationToken.None).ConfigureAwait(false);
+            var result = await CancelCoreAsync(
+                jobId, principal, timeout, isOrphanCleanup: true,
+                gpServiceId, gpTaskName, CancellationToken.None).ConfigureAwait(false);
             if (result.Outcome is not GeoprocessingCancelOutcome.Cancelled
                 and not GeoprocessingCancelOutcome.AlreadyTerminal)
             {
@@ -221,7 +235,9 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
         ClaimsPrincipal principal,
         TimeSpan timeout,
         bool isOrphanCleanup,
-        CancellationToken clientDisconnect)
+        string? gpServiceId = null,
+        string? gpTaskName = null,
+        CancellationToken clientDisconnect = default)
     {
         ValidateTimeout(timeout);
         using var timeoutSource = _timeoutSourceFactory(timeout);
@@ -231,19 +247,27 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
 
         try
         {
-            await _jobs.EnsureCallerAuthorizedAsync(
-                principal,
-                OperatorResourceType.Job,
-                OperatorOperation.Execute,
-                linkedSource.Token).ConfigureAwait(false);
-            var current = isOrphanCleanup
+            if (gpServiceId is null)
+            {
+                await _jobs.EnsureCallerAuthorizedAsync(
+                    principal, OperatorResourceType.Job, OperatorOperation.Execute,
+                    linkedSource.Token).ConfigureAwait(false);
+            }
+            var current = gpServiceId is not null
+                ? await _jobs.GetGPServerJobAsync(jobId, gpServiceId, gpTaskName, principal, linkedSource.Token).ConfigureAwait(false)
+                : isOrphanCleanup
                 ? await _jobs.GetJobForTerminalAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false)
                 : await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
             if (current.Spec.Kind != ExecutionJobKind.Geoprocessing)
             {
                 return new(GeoprocessingCancelOutcome.NotFound);
             }
-            if (isOrphanCleanup)
+            if (gpServiceId is not null)
+            {
+                await _jobs.CancelGPServerJobAsync(jobId, gpServiceId, gpTaskName, principal,
+                    isOrphanCleanup, linkedSource.Token).ConfigureAwait(false);
+            }
+            else if (isOrphanCleanup)
             {
                 await _jobs.CancelAbandonedJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
             }
@@ -251,7 +275,9 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
             {
                 await _jobs.CancelJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
             }
-            var latest = isOrphanCleanup
+            var latest = gpServiceId is not null
+                ? await _jobs.GetGPServerJobAsync(jobId, gpServiceId, gpTaskName, principal, linkedSource.Token).ConfigureAwait(false)
+                : isOrphanCleanup
                 ? await _jobs.GetJobForTerminalAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false)
                 : await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
             return GeoprocessingJobService.IsTerminal(latest.Status) && latest.Status != ExecutionJobStatus.Cancelled
@@ -272,7 +298,9 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
             // ownership-enforcing service so adapters receive the winner without probing infra.
             try
             {
-                var winner = isOrphanCleanup
+                var winner = gpServiceId is not null
+                    ? await _jobs.GetGPServerJobAsync(jobId, gpServiceId, gpTaskName, principal, linkedSource.Token).ConfigureAwait(false)
+                    : isOrphanCleanup
                     ? await _jobs.GetJobForTerminalAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false)
                     : await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
                 return GeoprocessingJobService.IsTerminal(winner.Status)

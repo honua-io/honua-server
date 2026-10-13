@@ -113,11 +113,11 @@ env:
   DOTNET_NOLOGO: true
   PYTHON_VERSION: '3.11'
   NODE_VERSION: '20'
-  # Immutable SDK source with isolated certification settings and native gRPC
-  # count/statistics support. Scheduled full runs exercise both live backends.
+  # Immutable mcp-server-v0.1.19 release source with isolated certification
+  # settings and native gRPC count/statistics. Both live backends remain required.
   # workflow_dispatch sdk_ref remains an
   # explicit override for development/release replays, recorded in each receipt.
-  MCP_SDK_REF: '584551c20dc059223814990d0a4964bbc7a5b8a2'
+  MCP_SDK_REF: 'ae6a835b5334a14c380b085d1af57161243ae0d5'
   # Release certification lanes (honua-io/honua-release#376 R18): the job ids
   # whose check-runs must ALL conclude `success` in the newest completed
   # schedule/workflow_dispatch run of this workflow before a trunk sha is

@@ -1110,6 +1110,12 @@ public sealed record WorkflowOperationRecord
 public sealed record ExecutionJobSpec
 {
     /// <summary>
+    /// Server-owned GPServer binding, stamped after scoped execution authorization.
+    /// Arbitrary protocol parameters cannot create this binding. Null on legacy or other-protocol jobs.
+    /// </summary>
+    public GPServerJobBinding? GPServerBinding { get; init; }
+
+    /// <summary>
     /// Stable workload definition identifier resolved through the job-definition registry.
     /// </summary>
     public string? WorkloadId { get; init; }
@@ -1158,6 +1164,9 @@ public sealed record ExecutionJobSpec
     /// </summary>
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
 }
+
+/// <summary>Durable service, published task, and canonical process identity of a GPServer job.</summary>
+public sealed record GPServerJobBinding(string ServiceId, string TaskName, string ProcessId);
 
 /// <summary>
 /// Stable workload definition used to resolve specialized compute images and runtime settings.

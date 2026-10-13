@@ -403,7 +403,7 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/api-keys")]
     public async Task CreateApiKey_WithMalformedResourceGrant_ReturnsBadRequest()
     {
-        foreach (var grant in new[] { "read:", "read:*/roads", "read:catalog/", "write:*", "write:catalog/*" })
+        foreach (var grant in new[] { "read:", "read:*/roads", "read:catalog/", "write:*", "write:catalog/*", "execute:catalog", "execute:catalog/*", "execute:*/geometry.area", "execute:catalog/geometry.area/extra" })
         {
             var response = await _client.PostAsJsonAsync(
                 "/api/v1/admin/api-keys",

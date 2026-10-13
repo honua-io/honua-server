@@ -41,7 +41,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// that backs both gRPC and REST adapters.
 /// </summary>
 [Protocol(TestProtocols.GPServer)]
-public sealed class GeoprocessingJobServiceTests
+public sealed partial class GeoprocessingJobServiceTests
 {
     private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
     private readonly IJobQueue _jobQueue = Substitute.For<IJobQueue>();
