@@ -51,6 +51,12 @@ class NativeToolsTests(unittest.TestCase):
                                 'Config': {'Labels': {native.LABEL: self.label,
                                                      'org.opencontainers.image.revision': SOURCE}}}])
         if argv[:3] == ['gh', 'attestation', 'verify']:
+            # gh rejects simultaneous identity selectors before verification.
+            # Model that CLI rule so a redundant option cannot turn reuse into
+            # an unnoticed permanent fallback while all mocked proofs pass.
+            selectors = ['--cert-identity', '--cert-identity-regex', '--signer-workflow']
+            if sum(flag in argv for flag in selectors) != 1:
+                raise RuntimeError('Mutually exclusive attestation identity selectors')
             if self.failure == 'attestation':
                 raise RuntimeError('Wrong publisher signature/ref/source/issuer')
             self.assertIn(f'oci://{native.IMAGE}@{DIGEST}', argv)
@@ -59,7 +65,6 @@ class NativeToolsTests(unittest.TestCase):
                                 ('--source-ref', 'refs/heads/trunk'),
                                 ('--source-digest', SOURCE),
                                 ('--cert-oidc-issuer', 'https://token.actions.githubusercontent.com'),
-                                ('--signer-workflow', f'honua-io/honua-server/{native.WORKFLOW}'),
                                 ('--cert-identity', f'https://github.com/honua-io/honua-server/{native.WORKFLOW}@refs/heads/trunk')]:
                 self.assertEqual(argv[argv.index(flag) + 1], value)
             return 'VERIFIED'
@@ -83,6 +88,19 @@ class NativeToolsTests(unittest.TestCase):
         pull = next(argv for argv, _ in self.calls if argv[:2] == ['docker', 'pull'])
         self.assertEqual(pull[-1], result['image'])
         self.assertTrue(self.expected['inputs']['pinned_bases'])
+
+    def test_certificate_selector_is_exclusive_and_retains_all_trust_constraints(self):
+        result = native.resolve(self.root, run=self.fake)
+        self.assertEqual(result['mode'], 'reused')
+        argv = next(argv for argv, _ in self.calls if argv[:3] == ['gh', 'attestation', 'verify'])
+        self.assertIn('--cert-identity', argv)
+        self.assertNotIn('--signer-workflow', argv)
+        self.assertNotIn('--cert-identity-regex', argv)
+        self.assertIn('--deny-self-hosted-runners', argv)
+        # The fake verifier checks exact repo/issuer/ref/source and subject
+        # digest above. Reintroducing the old option reproduces CLI rejection.
+        with self.assertRaisesRegex(RuntimeError, 'Mutually exclusive'):
+            self.fake(argv + ['--signer-workflow', f'honua-io/honua-server/{native.WORKFLOW}'], self.root, 30)
 
     def test_full_dockerfile_globals_platform_args_and_policy_change_identity(self):
         original = native.identity(self.root)['identity']
