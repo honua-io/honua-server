@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -26,6 +27,7 @@ using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SkiaSharp;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
@@ -374,6 +376,68 @@ internal static partial class WmsRequestHandlers
         var title = layer.Resource.Metadata.Title ?? string.Empty;
         return string.Equals(name, citeName, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(title, citeName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Maximum number of tokens accepted in a WMS <c>LAYERS</c> / <c>QUERY_LAYERS</c> list
+    /// (<see cref="QueryLimits.MaxMapLayersPerRequest"/>). Each distinct layer costs a bounded
+    /// feature scan and render under one shared render-capacity lease (#6097).
+    /// </summary>
+    private static int GetWmsMaxLayersPerRequest(HttpContext context)
+    {
+        var configured = context.RequestServices.GetService<IOptions<LimitsOptions>>()?.Value?.Query?.MaxMapLayersPerRequest;
+        return configured is > 0 ? configured.Value : QueryLimits.DefaultMaxMapLayersPerRequest;
+    }
+
+    private static IResult? ValidateWmsLayerTokenCount(
+        HttpContext context,
+        string parameterName,
+        int tokenCount,
+        int maxLayers)
+    {
+        if (tokenCount <= maxLayers)
+        {
+            return null;
+        }
+
+        return CreateWmsServiceException(
+            context,
+            "InvalidParameterValue",
+            $"{parameterName} must name at most {maxLayers.ToString(CultureInfo.InvariantCulture)} layers.");
+    }
+
+    /// <summary>
+    /// Collapses repeated requests for the same storage layer to its first occurrence, keeping
+    /// positional per-layer values (FILTER) aligned with the surviving layers. STYLES is
+    /// validated positionally against the original LAYERS list before this runs (#6097).
+    /// </summary>
+    private static (WmsLayer[] Layers, SqlFragment?[]? Filters) DeduplicateWmsLayers(
+        WmsLayer[] layers,
+        SqlFragment?[]? filters)
+    {
+        var seen = new HashSet<int>();
+        var kept = new List<int>(layers.Length);
+        for (var i = 0; i < layers.Length; i++)
+        {
+            if (seen.Add(layers[i].StorageLayerId))
+            {
+                kept.Add(i);
+            }
+        }
+
+        if (kept.Count == layers.Length)
+        {
+            return (layers, filters);
+        }
+
+        WmsLayer[] keptLayers = [.. kept.Select(index => layers[index])];
+        if (filters is null)
+        {
+            return (keptLayers, null);
+        }
+
+        SqlFragment?[] keptFilters = [.. kept.Select(index => filters[index])];
+        return (keptLayers, keptFilters);
     }
 
     private static bool TryResolveWmsRequestedLayers(
