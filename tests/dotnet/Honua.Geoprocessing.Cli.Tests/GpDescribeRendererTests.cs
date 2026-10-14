@@ -71,7 +71,7 @@ public sealed class GpDescribeRendererTests
         text.Should().Contain("outputs     : FeatureLayer");
         // The example invocation only carries the required parameters.
         text.Should().Contain("honua gp run geometry.buffer --param wkb=");
-        text.Should().Contain("--param distance=0.0");
+        text.Should().Contain("--param distance=<number>");
         text.Should().NotContain("--param endCap");
     }
 

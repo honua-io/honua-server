@@ -11,7 +11,7 @@ namespace Honua.Geoprocessing.Cli;
 
 /// <summary>
 /// Renders the <c>honua gp describe &lt;id&gt;</c> output (GP Devkit P3, issue #2124):
-/// the typed parameters, declared outputs, an inputs JSON Schema, and a ready-to-paste
+/// the typed parameters, declared outputs, an inputs JSON Schema, and a parameterized
 /// example <c>honua gp run</c> command — so an author can treat a process like a typed
 /// library function rather than a black box. Rendering is split out as pure functions
 /// (no <see cref="Console"/> coupling) so the human and machine views can be unit-tested
@@ -82,7 +82,7 @@ internal static class GpDescribeRenderer
         builder.AppendLine(BuildInputSchema(definition).ToJsonString(IndentedOptions));
         builder.AppendLine();
 
-        builder.AppendLine("example:");
+        builder.AppendLine("example (replace placeholders using the parameter constraints):");
         builder.Append("  ").AppendLine(BuildExampleCommand(definition));
 
         return builder.ToString();
@@ -222,10 +222,10 @@ internal static class GpDescribeRenderer
 
         return parameter.ValueType switch
         {
-            ProcessParameterValueType.WholeNumber => "0",
-            ProcessParameterValueType.FloatingPoint => "0.0",
+            ProcessParameterValueType.WholeNumber => "<integer>",
+            ProcessParameterValueType.FloatingPoint => "<number>",
             ProcessParameterValueType.Flag => "false",
-            ProcessParameterValueType.Srid => "4326",
+            ProcessParameterValueType.Srid => "<srid>",
             ProcessParameterValueType.Wkb => "<base64-wkb>",
             ProcessParameterValueType.WkbArray => "<base64-wkb,...>",
             ProcessParameterValueType.LayerId => "<layer-id>",

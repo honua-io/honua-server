@@ -19,6 +19,7 @@ using Honua.TestKit.Helpers;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
+using Xunit;
 using Xunit.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
@@ -185,6 +186,7 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
     [RequiredEnvironmentFact(
         ImageEnvironmentVariable,
         skipReason: "The production worker image must be built and named by the GDAL image lane.")]
+    [Trait("Tier", "Integration")]
     public async Task ProductionImage_AssignedNativeOperation_ConvertsAndExitsWithoutDrainingQueue()
     {
         var image = Environment.GetEnvironmentVariable(ImageEnvironmentVariable)!;
