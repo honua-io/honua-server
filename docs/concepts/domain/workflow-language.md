@@ -12,6 +12,8 @@ sources:
   - id: mcp
     resource: /guides/connect/ai-agents-mcp.md
 relations:
+  - predicate: interpreted_with
+    target: /concepts/domain/intent-interpretation.md
   - predicate: distinguishes
     target: /developer/spec-grammar/spec-grammar-v1.0.md
   - predicate: depends_on
@@ -22,6 +24,8 @@ relations:
 This profile describes GIS work in terms that a person, an OpenAI-powered agent, or another language-model client can interpret consistently. It connects ordinary requests to domain objects, explicit decisions, and observable outcomes. It is a documentation and planning language, not a trained language model.
 
 The Markdown pages are the shared, editable source for human explanations and structured agent metadata. A compact agent index or context packet is a derived view with links back to these pages and a source version. It must not become a second editable vocabulary. A language model may read either view and follow the full explanations whenever the compact form leaves a decision unresolved.
+
+People express their requests in ordinary language. They do not write this profile or follow a prompt grammar. Its concepts, contextual synonyms, and distinctions help the agent determine intent before binding a supported workflow. Use the selected object, active surface, recent conversation, and already established parameters first; ask a focused question only when a remaining ambiguity materially changes the outcome. See [understanding everyday GIS requests](intent-interpretation.md).
 
 ## The format and the execution boundary
 

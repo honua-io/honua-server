@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:cb97e45c102a27f7e0c7941c705d8d0d15c280717021a1f955fde07b745c793b",
+  "bundleDigest": "sha256:aed66878bd8c3fa616b88618b7712714f1c406c0d1e7ad22b274e1b41170c680",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -91,7 +91,7 @@
     {
       "id": "concepts/domain/README",
       "path": "concepts/domain/README.md",
-      "documentDigest": "sha256:7c5157f78796670816c12eea464811a62cc9a4d7bb5b6fe3c7d080380ea45e23",
+      "documentDigest": "sha256:99555e2aced5258e8a8e076e1aa94c92ea8a26e1c94f0f6d6ab03445d3ff693c",
       "metadata": {
         "type": "index",
         "title": "GIS domain language",
@@ -697,6 +697,87 @@
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/domain/identity.md"
     },
     {
+      "id": "concepts/domain/intent-interpretation",
+      "path": "concepts/domain/intent-interpretation.md",
+      "documentDigest": "sha256:92d5559e7404440546649f313b2be6c24da0183dbb074ae8e489f704e7ba92a7",
+      "metadata": {
+        "type": "concept",
+        "title": "Understanding everyday GIS requests",
+        "description": "Use synonyms, application context, and focused clarification to understand what a person wants to accomplish.",
+        "tags": [
+          "gis",
+          "domain-language",
+          "intent",
+          "conversation"
+        ],
+        "aliases": [
+          "what I mean",
+          "plain language",
+          "synonyms",
+          "clarification",
+          "natural language",
+          "everyday requests"
+        ],
+        "relations": [
+          {
+            "predicate": "informs",
+            "target": "/concepts/domain/workflow-language.md"
+          },
+          {
+            "predicate": "uses_context_from",
+            "target": "/concepts/domain/studio-workspace.md"
+          },
+          {
+            "predicate": "distinguishes",
+            "target": "/concepts/domain/map-layer.md"
+          },
+          {
+            "predicate": "distinguishes",
+            "target": "/concepts/domain/publication.md"
+          }
+        ],
+        "languageHints": [
+          {
+            "utterance": "Make this quieter.",
+            "context": "A visually prominent basemap is selected in the map designer.",
+            "meaning": "Try a less prominent style in this composition and show the preview.",
+            "clarifyWhen": "The selected target is unknown or the conversation concerns operational alerts rather than appearance."
+          },
+          {
+            "utterance": "Remove that layer.",
+            "context": "A drawing layer is selected in the current map's layer list.",
+            "meaning": "Remove its reference from this composition, preserving the published resource and source records.",
+            "clarifyWhen": "The active surface or selected object leaves map removal and service unpublication equally plausible."
+          },
+          {
+            "utterance": "Publish this.",
+            "context": "The current map, destination, and audience were established in the conversation.",
+            "meaning": "Use the existing map publication surface for the intended version, preserving the established audience.",
+            "clarifyWhen": "A destination or audience choice remains unresolved and changes the requested outcome."
+          },
+          {
+            "utterance": "Show parks near this school.",
+            "context": "A school is selected and the current analysis already has an agreed distance and measurement method.",
+            "meaning": "Reuse the bound reference and spatial parameters to select parks.",
+            "clarifyWhen": "The context does not establish distance or whether the user means travel time rather than direct distance."
+          },
+          {
+            "utterance": "Clean this up.",
+            "context": "The map preview has overlapping labels and crowded controls.",
+            "meaning": "Improve the composition's layout and styling with a reversible preview.",
+            "clarifyWhen": "The intended visual target remains unclear; do not interpret this as permission to edit source records."
+          },
+          {
+            "utterance": "Save this.",
+            "context": "The current Studio draft has unsaved design changes.",
+            "meaning": "Use the host's supported save or checkpoint operation for the current composition.",
+            "clarifyWhen": "Several persistence actions are possible and their durability differs materially."
+          }
+        ]
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/domain/intent-interpretation.md"
+    },
+    {
       "id": "concepts/domain/job",
       "path": "concepts/domain/job.md",
       "documentDigest": "sha256:aa8511594c186701e31ea4a1f91cce18ab47973147c3a8b7f86977c38061656d",
@@ -855,7 +936,7 @@
     {
       "id": "concepts/domain/map-layer",
       "path": "concepts/domain/map-layer.md",
-      "documentDigest": "sha256:6e59f9f69019418b2e9b4eb7b941bbbe7013a986374b6c8a610edf4246d01988",
+      "documentDigest": "sha256:042b780b66a3c8a247c21a77f3ce689c76f0b3d27677872c43e8049ff57fac1b",
       "metadata": {
         "type": "concept",
         "title": "Map drawing layer",
@@ -868,7 +949,9 @@
           "map layer",
           "drawing layer",
           "overlay",
-          "visual layer"
+          "visual layer",
+          "hide",
+          "take off the map"
         ],
         "sources": [
           {
@@ -877,6 +960,10 @@
           }
         ],
         "relations": [
+          {
+            "predicate": "interpreted_with",
+            "target": "/concepts/domain/intent-interpretation.md"
+          },
           {
             "predicate": "part_of",
             "target": "/concepts/domain/map.md"
@@ -1078,7 +1165,7 @@
     {
       "id": "concepts/domain/publication",
       "path": "concepts/domain/publication.md",
-      "documentDigest": "sha256:9a6c963021533fba8d4c99e0e07b2b772afa72b78da12cc334e906af87462dc6",
+      "documentDigest": "sha256:a7206a97fb72f6cb8ca9e000f920bea7d2fdffb36748c630e5c1a0b369210109",
       "metadata": {
         "type": "concept",
         "title": "Publication",
@@ -1100,6 +1187,10 @@
           }
         ],
         "relations": [
+          {
+            "predicate": "interpreted_with",
+            "target": "/concepts/domain/intent-interpretation.md"
+          },
           {
             "predicate": "relates_to",
             "target": "/concepts/domain/layer.md"
@@ -1403,7 +1494,7 @@
     {
       "id": "concepts/domain/spatial-analysis",
       "path": "concepts/domain/spatial-analysis.md",
-      "documentDigest": "sha256:e808c7155ff188c56d026e8f9b6676274a93aa04489e9d4cc93be1159d344faa",
+      "documentDigest": "sha256:1840e37f8fe9e95505ed2fe9137ada31714e97bd079af58a818def767d66175f",
       "metadata": {
         "type": "concept",
         "title": "Filtering and spatial analysis",
@@ -1416,10 +1507,13 @@
           "filter",
           "buffer",
           "nearby",
+          "near",
+          "close to",
           "within",
           "intersect",
           "select",
-          "distance"
+          "distance",
+          "short drive"
         ],
         "sources": [
           {
@@ -1428,6 +1522,10 @@
           }
         ],
         "relations": [
+          {
+            "predicate": "interpreted_with",
+            "target": "/concepts/domain/intent-interpretation.md"
+          },
           {
             "predicate": "relates_to",
             "target": "/concepts/domain/crs.md"
@@ -1556,7 +1654,7 @@
     {
       "id": "concepts/domain/style",
       "path": "concepts/domain/style.md",
-      "documentDigest": "sha256:ba189e8d73afca13bdba7a7d8bcc7404bd4100255a1b1052c06bf8b179b143ca",
+      "documentDigest": "sha256:433a2b6ebf2c44d8fbb28af47ed63f09de9ad8a8c68335b2f9a91cfdc200c25b",
       "metadata": {
         "type": "concept",
         "title": "Style and labels",
@@ -1570,7 +1668,12 @@
           "colors",
           "legend",
           "labels",
-          "renderer"
+          "renderer",
+          "quieter",
+          "tone down",
+          "stand out",
+          "less cluttered",
+          "bolder"
         ],
         "sources": [
           {
@@ -1579,6 +1682,10 @@
           }
         ],
         "relations": [
+          {
+            "predicate": "interpreted_with",
+            "target": "/concepts/domain/intent-interpretation.md"
+          },
           {
             "predicate": "relates_to",
             "target": "/concepts/domain/map.md"
@@ -1648,7 +1755,7 @@
     {
       "id": "concepts/domain/workflow-language",
       "path": "concepts/domain/workflow-language.md",
-      "documentDigest": "sha256:05d835ba4dd9ece2a46c3e97df8a850b8e03ef8d65aa0e19a8402af84741a677",
+      "documentDigest": "sha256:96b8746078e0e23649bdff681ce560c691ca4788580842228fa91b80dea76f3f",
       "metadata": {
         "type": "concept",
         "title": "GIS workflow language in OKF",
@@ -1680,6 +1787,10 @@
           }
         ],
         "relations": [
+          {
+            "predicate": "interpreted_with",
+            "target": "/concepts/domain/intent-interpretation.md"
+          },
           {
             "predicate": "distinguishes",
             "target": "/developer/spec-grammar/spec-grammar-v1.0.md"
@@ -8265,6 +8376,11 @@
     {
       "source": "concepts/domain/README",
       "relation": "links_to",
+      "target": "concepts/domain/intent-interpretation"
+    },
+    {
+      "source": "concepts/domain/README",
+      "relation": "links_to",
       "target": "concepts/domain/job"
     },
     {
@@ -8903,6 +9019,51 @@
       "target": "guides/workflows/govern-access"
     },
     {
+      "source": "concepts/domain/intent-interpretation",
+      "relation": "distinguishes",
+      "target": "concepts/domain/map-layer"
+    },
+    {
+      "source": "concepts/domain/intent-interpretation",
+      "relation": "distinguishes",
+      "target": "concepts/domain/publication"
+    },
+    {
+      "source": "concepts/domain/intent-interpretation",
+      "relation": "informs",
+      "target": "concepts/domain/workflow-language"
+    },
+    {
+      "source": "concepts/domain/intent-interpretation",
+      "relation": "links_to",
+      "target": "concepts/domain/dataset"
+    },
+    {
+      "source": "concepts/domain/intent-interpretation",
+      "relation": "links_to",
+      "target": "concepts/domain/layer"
+    },
+    {
+      "source": "concepts/domain/intent-interpretation",
+      "relation": "links_to",
+      "target": "concepts/domain/map-layer"
+    },
+    {
+      "source": "concepts/domain/intent-interpretation",
+      "relation": "links_to",
+      "target": "concepts/domain/studio-workspace"
+    },
+    {
+      "source": "concepts/domain/intent-interpretation",
+      "relation": "links_to",
+      "target": "concepts/domain/workflow-language"
+    },
+    {
+      "source": "concepts/domain/intent-interpretation",
+      "relation": "uses_context_from",
+      "target": "concepts/domain/studio-workspace"
+    },
+    {
       "source": "concepts/domain/job",
       "relation": "links_to",
       "target": "concepts/domain/deployment"
@@ -9101,6 +9262,16 @@
       "source": "concepts/domain/map",
       "relation": "relates_to",
       "target": "studio/README"
+    },
+    {
+      "source": "concepts/domain/map-layer",
+      "relation": "interpreted_with",
+      "target": "concepts/domain/intent-interpretation"
+    },
+    {
+      "source": "concepts/domain/map-layer",
+      "relation": "links_to",
+      "target": "concepts/domain/intent-interpretation"
     },
     {
       "source": "concepts/domain/map-layer",
@@ -9306,6 +9477,16 @@
       "source": "concepts/domain/project",
       "relation": "relates_to",
       "target": "guides/workflows/save-resume-map"
+    },
+    {
+      "source": "concepts/domain/publication",
+      "relation": "interpreted_with",
+      "target": "concepts/domain/intent-interpretation"
+    },
+    {
+      "source": "concepts/domain/publication",
+      "relation": "links_to",
+      "target": "concepts/domain/intent-interpretation"
     },
     {
       "source": "concepts/domain/publication",
@@ -9674,8 +9855,18 @@
     },
     {
       "source": "concepts/domain/spatial-analysis",
+      "relation": "interpreted_with",
+      "target": "concepts/domain/intent-interpretation"
+    },
+    {
+      "source": "concepts/domain/spatial-analysis",
       "relation": "links_to",
       "target": "concepts/domain/crs"
+    },
+    {
+      "source": "concepts/domain/spatial-analysis",
+      "relation": "links_to",
+      "target": "concepts/domain/intent-interpretation"
     },
     {
       "source": "concepts/domain/spatial-analysis",
@@ -9799,6 +9990,11 @@
     },
     {
       "source": "concepts/domain/style",
+      "relation": "interpreted_with",
+      "target": "concepts/domain/intent-interpretation"
+    },
+    {
+      "source": "concepts/domain/style",
       "relation": "links_to",
       "target": "concepts/data-model"
     },
@@ -9806,6 +10002,11 @@
       "source": "concepts/domain/style",
       "relation": "links_to",
       "target": "concepts/domain/capability"
+    },
+    {
+      "source": "concepts/domain/style",
+      "relation": "links_to",
+      "target": "concepts/domain/intent-interpretation"
     },
     {
       "source": "concepts/domain/style",
@@ -9899,6 +10100,11 @@
     },
     {
       "source": "concepts/domain/workflow-language",
+      "relation": "interpreted_with",
+      "target": "concepts/domain/intent-interpretation"
+    },
+    {
+      "source": "concepts/domain/workflow-language",
       "relation": "links_to",
       "target": "concepts/domain/README"
     },
@@ -9906,6 +10112,11 @@
       "source": "concepts/domain/workflow-language",
       "relation": "links_to",
       "target": "concepts/domain/dataset"
+    },
+    {
+      "source": "concepts/domain/workflow-language",
+      "relation": "links_to",
+      "target": "concepts/domain/intent-interpretation"
     },
     {
       "source": "concepts/domain/workflow-language",

@@ -8,6 +8,8 @@ sources:
   - id: contract
     resource: "/guides/connect/ai-agents-mcp.md"
 relations:
+  - predicate: interpreted_with
+    target: /concepts/domain/intent-interpretation.md
   - predicate: relates_to
     target: "/concepts/domain/layer.md"
   - predicate: relates_to
@@ -23,6 +25,9 @@ relations:
 ---
 
 # Publication
+
+Interpret "publish this" using the current object and previously established destination and audience. A map draft and a database table lead to different publication workflows. Ask only about unresolved choices that change the outcome; preserve existing access unless the user requests a change. Understanding the phrase does not bypass the selected interface's operational policy. See [contextual interpretation](intent-interpretation.md).
+
 “Publish” has several concrete meanings: register a [layer](layer.md), expose it through a [service](service.md), or activate a saved [map](map.md) version. Name the object, version, route, and intended audience.
 
 In the canonical Metadata v2 graph, a publication links a [resource](resource.md) to a service, optionally selecting a [storage binding](storage-binding.md). Its protocol-facing identifier is service-local, distinct from the storage-layer handle. Several publications can expose one resource without copying its data. Studio saved-content activation is a separate lifecycle use of the word publication.
