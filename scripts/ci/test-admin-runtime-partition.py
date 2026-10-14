@@ -36,11 +36,13 @@ def check(children):
 
 
 counts = check(CHILDREN)
-partition = next(p for p in CONFIG['shard_partitions'] if p['name'] == 'Server Features Admin Runtime Operations capacity partition')
-assert partition['filter'] == ORIGINAL['filter']
-assert partition['children'] == list(NAMES) and partition['granularity'] == 'method'
-grandparent = next(p for p in CONFIG['shard_partitions'] if p['name'] == 'Server Features Admin Operations')
-assert set(NAMES) <= set(grandparent['children']) and grandparent['granularity'] == 'method'
+# The canonical partition validator permits one legacy parent per active child.
+parents = [p for p in CONFIG['shard_partitions'] if set(NAMES) & set(p['children'])]
+assert len(parents) == 1, 'Split children must have exactly one legacy parent.'
+parent = parents[0]
+assert parent['name'] == 'Server Features Admin Operations'
+assert parent['children'] == ['Server Features Admin Operations Endpoints', *NAMES]
+assert parent['granularity'] == 'method'
 first = sorted(PUBLISHING)[0]
 foreign = sorted(set(METHODS) - EXPECTED)[0]
 for mutation in ('lost', 'duplicated', 'foreign', 'trigger', 'budget', 'parallelism', 'project'):

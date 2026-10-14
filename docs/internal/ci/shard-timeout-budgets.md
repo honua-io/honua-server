@@ -1348,11 +1348,24 @@ changing any C# test, theory data, per-test initialization or cleanup,
 The publishing child owns the 48 methods already grouped in
 `LayerPublishingIntegrationTests.cs` and its namespace partial. The runtime
 child retains every other original method, including future methods, by the
-complementary exact-name filter. Both the original broader Admin Operations
-partition and the narrower runtime partition use canonical method granularity.
+complementary exact-name filter. The sole broader Admin Operations partition
+uses canonical method granularity and names all three active children exactly;
+no child is declared under a second legacy parent. The independent runtime
+regression still verifies the original runtime slice as an exact, disjoint union.
 The source-inventory regression rejects missing, duplicated or foreign methods,
 changed source triggers, changed assemblies, parallelism changes and raised
 budgets.
+
+The static source denominator is 122 methods, before tier selection. The
+historical integration TRX contains 93 methods expanded into 116 cases. The
+remaining 29 methods belong to `LayerPublishJobTests`,
+`LayerPublishRemoteRunnerTests`, `LayerPublishWorkerControlsTests` and
+`LayerPublishWireContractTests`; all carry Fast traits through `UnitTest`,
+`UnitTheory` or the explicit Fast theory trait. The unchanged shard runner
+excludes Fast tests because the foundation lane executes them. Authenticated
+foundation results from run `38541322272` contain all 29 methods expanded into
+53 passing cases. Those are prior-source execution observations, not new
+post-split results or additional integration cases.
 
 The [bounded evidence record](admin-runtime-shard-capacity-20261014.json)
 retains the raw artifact, log and TRX identities plus the historical method

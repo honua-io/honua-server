@@ -230,5 +230,26 @@
       }
     ]
   },
-  "boundary": "Historical interval unions are sizing observations from one completed run, not fresh post-split passes, p90 estimates or candidate qualification. Original timed-out source remains failed. All tests, theory data, lifecycle, source triggers, parallelism and 27m/37m budgets remain unchanged."
+  "boundary": "Historical interval unions are sizing observations from one completed run, not fresh post-split passes, p90 estimates or candidate qualification. Original timed-out source remains failed. All tests, theory data, lifecycle, source triggers, parallelism and 27m/37m budgets remain unchanged.",
+  "methodDenominators": {
+    "staticSourceMethods": 122,
+    "historicalIntegrationMethods": 93,
+    "historicalIntegrationCases": 116,
+    "fastMethods": 29,
+    "fastMethodsByClass": {
+      "Honua.Server.Tests.Admin.LayerPublishJobTests": 10,
+      "Honua.Server.Tests.Admin.LayerPublishRemoteRunnerTests": 9,
+      "Honua.Server.Tests.Admin.LayerPublishWireContractTests": 4,
+      "Honua.Server.Tests.Admin.LayerPublishWorkerControlsTests": 6
+    },
+    "fastEvidence": {
+      "runId": 38541322272,
+      "sourceSha": "854dd0dca9dcd939e5e414d438eb2440febb57a2",
+      "artifactIds": [
+        11884367335
+      ],
+      "passedCases": 53
+    },
+    "boundary": "Static methods precede tier selection; Fast methods execute in foundation, not integration shards. Historical execution is not fresh split proof."
+  }
 }

@@ -379,15 +379,6 @@
         "Scene",
         "Scene I3S Resources"
       ]
-    },
-    {
-      "name": "Server Features Admin Runtime Operations capacity partition",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Admin.|FullyQualifiedName~Honua.Server.Tests.AdminEndpointTests",
-      "children": [
-        "Server Features Admin Runtime Operations",
-        "Server Features Admin Layer Publishing"
-      ],
-      "granularity": "method"
     }
   ],
   "shards": [
