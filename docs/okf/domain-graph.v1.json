@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:ffd101e6726d907579e6f2c3c15dab32209a135491356f61d476add4e8013ef5",
+  "bundleDigest": "sha256:159bfbc5a73276e2faa75db3a97928be17ebac84aebde67ce9f9ca8bd61f46b1",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2474,33 +2474,33 @@
     {
       "id": "guides/query-analyze/geoprocessing-with-ai",
       "path": "guides/query-analyze/geoprocessing-with-ai.md",
-      "documentDigest": "sha256:d2a201f4db0c0a394288d54daa3b3d8b0bd6ae4fa4bef4740235c73fa128de5e",
+      "documentDigest": "sha256:d2e15abdd8202059e52cc3dde8c9b6e64b3b0c0a52c87df759c361b98ab5e80f",
       "metadata": {
         "type": "guide",
         "title": "Geoprocessing with AI",
-        "description": "Use one governed geometry.buffer operation across OGC API Processes, Honua's MCP plan tools, and the JavaScript SDK, then hand the result artifact to Studio."
+        "description": "Let an MCP agent discover GP functions, validate a plan, execute it, and inspect the actual job results on a local or deployed Honua server."
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/query-analyze/geoprocessing-with-ai.md"
     },
     {
       "id": "guides/query-analyze/gp-devkit-authoring",
       "path": "guides/query-analyze/gp-devkit-authoring.md",
-      "documentDigest": "sha256:e818711df62ed86bc14e2ef47a78ecae985ff1e6cdc2e94f8ab8c97fc2b2bc1c",
+      "documentDigest": "sha256:b4a38c9c7f435047d7d23bde82ab344b395723031a5b307729e0e4a45d652fab",
       "metadata": {
         "type": "guide",
         "title": "Author a geoprocessing process",
-        "description": "Write, run, golden-test, plan, and debug a new geoprocessing process on your laptop in about five minutes — no server, no Redis, no control plane, no cloud round-trip."
+        "description": "Discover, scaffold, run, and test GP functions locally, then verify native execution in Docker and promote the tested images."
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/query-analyze/gp-devkit-authoring.md"
     },
     {
       "id": "guides/query-analyze/gp-local-dev-quickstart",
       "path": "guides/query-analyze/gp-local-dev-quickstart.md",
-      "documentDigest": "sha256:4747268179c448b57d4f4c19ddafc035e83f28c0902ab9bee44851be22be8191",
+      "documentDigest": "sha256:46028087cc875fd937a2f4090b5aaeec821069bce501e3c442557b88716cdb5f",
       "metadata": {
         "type": "guide",
         "title": "Local geoprocessing dev quickstart",
-        "description": "Stand up a local Honua server that runs geoprocessing (GP) jobs in-process, submit a real GP job, fetch results, and iterate on your own GP processes — with"
+        "description": "Run the local GP stack, verify a metric buffer through the Python SDK, and connect native workers and AI clients."
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/query-analyze/gp-local-dev-quickstart.md"
     },
@@ -11878,12 +11878,12 @@
     {
       "source": "guides/query-analyze/geoprocessing-with-ai",
       "relation": "links_to",
-      "target": "get-started/quickstart"
+      "target": "guides/connect/ai-agents-mcp"
     },
     {
       "source": "guides/query-analyze/geoprocessing-with-ai",
       "relation": "links_to",
-      "target": "guides/connect/ai-agents-mcp"
+      "target": "guides/query-analyze/gp-local-dev-quickstart"
     },
     {
       "source": "guides/query-analyze/geoprocessing-with-ai",
@@ -11891,14 +11891,14 @@
       "target": "studio/README"
     },
     {
-      "source": "guides/query-analyze/geoprocessing-with-ai",
+      "source": "guides/query-analyze/gp-devkit-authoring",
       "relation": "links_to",
-      "target": "studio/byom"
+      "target": "guides/query-analyze/automate-workflows"
     },
     {
       "source": "guides/query-analyze/gp-devkit-authoring",
       "relation": "links_to",
-      "target": "guides/query-analyze/automate-workflows"
+      "target": "guides/query-analyze/geoprocessing-with-ai"
     },
     {
       "source": "guides/query-analyze/gp-devkit-authoring",
@@ -11906,19 +11906,14 @@
       "target": "guides/query-analyze/gp-local-dev-quickstart"
     },
     {
-      "source": "guides/query-analyze/gp-devkit-authoring",
+      "source": "guides/query-analyze/gp-local-dev-quickstart",
       "relation": "links_to",
-      "target": "guides/query-analyze/run-geoprocessing"
-    },
-    {
-      "source": "guides/query-analyze/gp-devkit-authoring",
-      "relation": "links_to",
-      "target": "reference/geoprocessing-operations"
+      "target": "guides/query-analyze/geoprocessing-with-ai"
     },
     {
       "source": "guides/query-analyze/gp-local-dev-quickstart",
       "relation": "links_to",
-      "target": "guides/query-analyze/automate-workflows"
+      "target": "guides/query-analyze/gp-devkit-authoring"
     },
     {
       "source": "guides/query-analyze/gp-local-dev-quickstart",
@@ -11929,11 +11924,6 @@
       "source": "guides/query-analyze/gp-local-dev-quickstart",
       "relation": "links_to",
       "target": "reference/geoprocessing-operations"
-    },
-    {
-      "source": "guides/query-analyze/gp-local-dev-quickstart",
-      "relation": "links_to",
-      "target": "reference/openapi-and-explorer"
     },
     {
       "source": "guides/query-analyze/query-features",
