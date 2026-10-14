@@ -50,7 +50,9 @@ execution. serverShards lists the shards that will actually run (empty for FAST)
 serverTestActions includes their final filters, projects, timeouts and CPU counts,
 and unitTestActions and architectureTestAction describe the other .NET test
 invocations. FULL overrides FAST and records all shards. A null test filter means
-the complete test project runs.
+the complete test project runs. `architectureTestAction` is null only when FAST
+has deferred catalogue/proof discovery; `sourceArchitectureTestAction` still runs.
+`--dry-run` prints the evaluated MSBuild closure. `--plan-json` does not.
 
 In sessions enrolled with the local supervisor, submit validation through
 honua-supervisor and follow its canonical runbook in the honua-supervisor

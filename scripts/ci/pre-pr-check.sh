@@ -11,12 +11,11 @@ set -euo pipefail
 #   - build      -> scripts/ci/compute-affected-projects.sh (affected .csproj
 #                   closure, or ALL when shared infrastructure changed), then
 #                   PRUNED of test projects that neither run in this
-#                   invocation nor contain changes: test projects are
-#                   dependency leaves, so skipping them skips only their own
-#                   compile + bin/ copy (each one materializes its full
-#                   dependency tree + native runtimes, ~1-2 GB), while every
-#                   src project still compiles. CI builds all test projects
-#                   in its own shards. FULL mode disables pruning.
+#                   invocation nor contain changes. Pruning removes roots
+#                   only: a kept project can still pull test assemblies back
+#                   in. The evaluated MSBuild closure below is the real work.
+#                   CI builds all test projects in its own shards. FULL mode
+#                   disables pruning.
 #   - server tests -> scripts/ci/honua-server-targeted-tests.sh picks the
 #                   ADR-0037 shard subset (or run_all); that selector remains
 #                   authoritative for WHICH SHARDS run (#2951 non-goal: it does
@@ -32,7 +31,14 @@ set -euo pipefail
 #                   apply). Otherwise the shard's normal full filter runs, same
 #                   as before this change.
 #   - unit tests -> only the *.Tests projects in the affected closure
-#   - format     -> only the changed *.cs files (`dotnet format --include`)
+#   - format     -> owning projects of the changed *.cs files, not Honua.sln.
+#                   A linked shared source has no sibling project; its owners
+#                   are the solution members whose Compile Include resolves to
+#                   that file. --include alone does not bound project loading.
+#                   FULL still formats the whole solution. The SMART/FAST cap
+#                   uses GNU timeout, then gtimeout, and runs uncapped when
+#                   neither is installed so a missing binary is not a format
+#                   failure.
 #
 # Capability narrowing — known limitation: docs/gis/data/feature-catalog.json's
 # `code_location` field is, today, almost always the endpoint-registry file
@@ -62,12 +68,17 @@ set -euo pipefail
 #                           push loop stays quick. Run without it (the default
 #                           SMART tier) or with HONUA_PRE_PR_FULL=1 before opening
 #                           a PR for the full local gate.
+#   HONUA_PRE_PR_TIMEOUT_COMMAND  override the SMART/FAST format time-cap
+#                           binary (default: timeout, then gtimeout, then
+#                           uncapped when neither is installed).
 #   HONUA_PRE_PR_DRY_RUN=1  (or --dry-run) print the full resolved selection —
-#                           build set, targeted shards, capability-narrowed
-#                           filters, format scope — and exit 0 without
-#                           restoring, building, formatting, or testing
-#                           anything. Safe to run with zero Docker/dotnet cost;
-#                           this is the primary way to inspect scope decisions.
+#                           build roots, the evaluated transitive closure,
+#                           targeted shards, capability-narrowed filters,
+#                           format scope — and exit 0 without restoring,
+#                           building, formatting, or testing. MSBuild evaluates
+#                           the dependency graph (no restore or compilation).
+#                           --plan-json stays a selector plan and does not
+#                           evaluate that graph.
 #   HONUA_PRE_PR_PRINT_BUILD_PLAN=1  print only the resolved build set (the
 #                           .slnf project list after pruning) and exit — a
 #                           narrower predecessor of --dry-run kept for
@@ -254,6 +265,28 @@ CLEANUP_PATHS+=("${LOCAL_CHANGED_FILES}")
 printf '%s\n' "${PRE_PR_CHANGED_FILES}" | sed '/^$/d' > "${LOCAL_CHANGED_FILES}"
 export HONUA_CHANGED_FILES_FILE="${LOCAL_CHANGED_FILES}"
 
+# FAST may compile only the source-topology suite when every changed path is an
+# accounted-for implementation or test-body edit. Any contract, discovery, or
+# unclassified input keeps the assembly-dependent catalogue. An unavailable
+# guard cannot select the bounded path. A contract-bearing docs path must not
+# take the CI-shell-only exit.
+ARCHITECTURE_GUARD_REASON=""
+if [[ "${FULL}" != "1" ]]; then
+    if [[ -z "${PYTHON_BIN}" ]]; then
+        ARCHITECTURE_GUARD_REASON="complete diff/interpreter unavailable"
+    else
+        GUARD_CHANGED_FILES="$(mktemp -p "${REPO_ROOT}" --suffix=.changed-files.txt)"
+        CLEANUP_PATHS+=("${GUARD_CHANGED_FILES}")
+        printf '%s\n' "${PRE_PR_CHANGED_FILES}" > "${GUARD_CHANGED_FILES}"
+        ARCHITECTURE_GUARD_REASON="$("${PYTHON_BIN}" scripts/ci/pre-pr-contract-guard.py \
+            --base "${BASE_REF}" --changed-files "${GUARD_CHANGED_FILES}")" \
+            || ARCHITECTURE_GUARD_REASON="contract guard failed"
+    fi
+    if [[ -n "${ARCHITECTURE_GUARD_REASON}" ]]; then
+        PRE_PR_SCOPE="NORMAL"
+    fi
+fi
+
 if [[ "${PRE_PR_SCOPE}" == "CI_ONLY" && "${FULL}" != "1" ]]; then
     echo "    Mode: CI-SHELL-ONLY (committed + working tree vs ${BASE_REF})."
     if [[ "${DRY_RUN}" == "1" ]]; then
@@ -326,7 +359,14 @@ CAPABILITY_SELECTION_JSON="{}"
 if [[ "${FULL}" != "1" ]]; then
     CROSS_CUTTING_FULL_TRIGGERS="$(printf '%s\n' \
         'Directory.Build.props' \
+        'Directory.Build.targets' \
         'Directory.Packages.props' \
+        'scripts/ci/pre-pr-check.sh' \
+        'scripts/ci/pre-pr-contract-guard.py' \
+        'scripts/ci/pre-pr-dependency-plan.py' \
+        'scripts/ci/compute-affected-projects.sh' \
+        'scripts/ci/classify-pre-pr-changes.sh' \
+        'tests/dotnet/Honua.Architecture.Tests/' \
         'tests/dotnet/Honua.TestKit/' \
         'tests/dotnet/Honua.TestKit.Abstractions/' \
         'tests/dotnet/Honua.TestKit.Postgres/' \
@@ -354,8 +394,8 @@ if [[ "${FULL}" != "1" ]]; then
         echo "    (Deliberate. '.github/workflows/' stays on this list because the shard"
         echo "     selectors — the 'changes' and 'targeted-shards' jobs — live INSIDE"
         echo "     ci.yml, so a path-based 'it is only a workflow file' exemption would"
-        echo "     exempt the file that hosts the selectors. Use --fast for a quick loop"
-        echo "     while iterating on workflow YAML.)"
+        echo "     exempt the file that hosts the selectors. Run --dry-run to inspect"
+        echo "     this scope before compiling.)"
         FULL=1
     fi
 fi
@@ -421,14 +461,13 @@ affected_contains() {
 # the whole solution, and every test project copies its full dependency tree
 # plus native runtime assets into bin/, so "build the closure" degrades into
 # tens of GB and 10+ minutes spent compiling suites this script never runs
-# (provider tests, unselected protocol shards). Test projects are dependency
-# LEAVES — nothing references them — so dropping them from the solution
-# filter removes exactly their own compile+copy cost while every src project
-# still builds (listed, or pulled transitively as a ProjectReference of a
-# kept test project). CI compiles everything in its own shards, so no
-# warnings-as-errors coverage is lost overall; a test project that is itself
-# edited stays in the build (its compile IS the local signal), and FULL mode
-# keeps the build-everything behavior.
+# (provider tests, unselected protocol shards). Pruning removes roots only.
+# Honua.Architecture.Tests imports the coverage project list, so keeping that
+# root pulls protocol, core, Postgres and other test assemblies back in.
+# FAST uses the existing source-topology suite when the contract guard permits
+# it. Default and FULL keep the assembly-dependent catalogue, and hosted CI
+# is unchanged. A test project that is itself edited stays in the build, and
+# FULL mode keeps the build-everything behavior.
 # ---------------------------------------------------------------------------
 UNIT_TEST_PROJECTS='tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
 tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj
@@ -438,6 +477,15 @@ tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj'
 ARCHITECTURE_TEST_PROJECT="tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
 SOURCE_ARCHITECTURE_TEST_PROJECT="tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj"
 MONOLITH_TEST_PROJECT="tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
+BOUNDED_ARCHITECTURE=0
+if [[ "${FAST}" == "1" && -z "${ARCHITECTURE_GUARD_REASON}" ]]; then
+    BOUNDED_ARCHITECTURE=1
+    echo "    Architecture: source topology guards (same assertions as the source suite)."
+    echo "    Deferred to default/FULL local and hosted CI: all other architecture tests,"
+    echo "    including route/operation coverage, parity, capability catalogue and proof discovery."
+else
+    echo "    Architecture: full catalogue/proof enforcement (${ARCHITECTURE_GUARD_REASON:-default/FULL mode})."
+fi
 
 RUN_ALL_SHARDS="$(jq -r '.run_all // false' <<< "${TARGETED}")"
 SHARD_REASON="$(jq -r '.reason // "unknown"' <<< "${TARGETED}")"
@@ -460,9 +508,15 @@ while IFS= read -r shard_name; do
     SHARD_TEST_PROJECTS+="${shard_csproj:-${MONOLITH_TEST_PROJECT}}"${HONUA_NL}
 done <<< "${SELECTED_SHARDS}"
 
-RUN_TEST_PROJECTS="$(printf '%s\n%s\n%s\n%s\n' \
-    "${UNIT_TEST_PROJECTS}" "${ARCHITECTURE_TEST_PROJECT}" "${SOURCE_ARCHITECTURE_TEST_PROJECT}" "${SHARD_TEST_PROJECTS}" \
-    | sed '/^$/d' | sort -u)"
+if [[ "${BOUNDED_ARCHITECTURE}" == "1" ]]; then
+    RUN_TEST_PROJECTS="$(printf '%s\n%s\n%s\n' \
+        "${UNIT_TEST_PROJECTS}" "${SOURCE_ARCHITECTURE_TEST_PROJECT}" "${SHARD_TEST_PROJECTS}" \
+        | sed '/^$/d' | sort -u)"
+else
+    RUN_TEST_PROJECTS="$(printf '%s\n%s\n%s\n%s\n' \
+        "${UNIT_TEST_PROJECTS}" "${ARCHITECTURE_TEST_PROJECT}" "${SOURCE_ARCHITECTURE_TEST_PROJECT}" "${SHARD_TEST_PROJECTS}" \
+        | sed '/^$/d' | sort -u)"
+fi
 
 # ---------------------------------------------------------------------------
 # Capability-narrowed per-shard test filter (#2951). ADR-0037's shard
@@ -575,6 +629,9 @@ test_project_kept() {
     # Non-test projects are always kept; test projects are kept when they
     # will run locally or contain changes themselves.
     local proj="$1"
+    if [[ "${BOUNDED_ARCHITECTURE}" == "1" && "${proj}" == "${ARCHITECTURE_TEST_PROJECT}" ]]; then
+        return 1
+    fi
     [[ "${proj}" != tests/dotnet/* ]] && return 0
     grep -qxF "${proj}" <<< "${RUN_TEST_PROJECTS}" && return 0
     local dir
@@ -583,10 +640,37 @@ test_project_kept() {
     return 1
 }
 
+evaluate_dependency_graph() {
+    local target="$1" configuration="${2:-Release}" graph
+    graph="$(mktemp -p "${REPO_ROOT}" --suffix=.dependency-graph.json)"
+    CLEANUP_PATHS+=("${graph}")
+    # GenerateRestoreGraphFile evaluates imports and conditional ProjectReferences,
+    # including Directory.Build.props's analyzer. It downloads and compiles nothing.
+    dotnet msbuild "${target}" -t:GenerateRestoreGraphFile -p:Configuration="${configuration}" \
+        -p:RestoreGraphOutputPath="${graph}" /v:quiet
+    DEPENDENCY_GRAPH="${graph}"
+}
+
+report_dependency_closure() {
+    local target="$1" label="${2:-Build}" configuration="${3:-Release}"
+    # --plan-json is the offline selector contract. The human plan is --dry-run.
+    if [[ -n "${PLAN_JSON}" ]]; then
+        return 0
+    fi
+    if [[ -z "${PYTHON_BIN}" ]]; then
+        echo "    ${label} dependency closure: not evaluated (python3 unavailable)."
+        return 0
+    fi
+    evaluate_dependency_graph "${target}" "${configuration}"
+    "${PYTHON_BIN}" scripts/ci/pre-pr-dependency-plan.py --root "${REPO_ROOT}" \
+        --label "${label}" --configuration "${configuration}" "${DEPENDENCY_GRAPH}"
+}
+
 echo "1. Checking canonical instructions..."
 bash scripts/ci/check-instructions-sync.sh
 
 if [[ "${FULL}" == "1" ]]; then
+    report_dependency_closure Honua.sln Build Release
     if [[ "${HONUA_PRE_PR_PRINT_BUILD_PLAN:-0}" == "1" ]]; then
         echo "BUILD PLAN: Honua.sln (FULL mode — every project)"
         exit 0
@@ -670,8 +754,11 @@ else
             pruned_count=$((pruned_count + 1))
         fi
     done <<< "${candidates}"
-    # Both architecture suites always run, including FAST mode.
-    kept+="${ARCHITECTURE_TEST_PROJECT}"${HONUA_NL}
+    # Source topology guards always run. The catalogue project runs unless FAST
+    # has positively accounted for every changed path.
+    if [[ "${BOUNDED_ARCHITECTURE}" != "1" ]]; then
+        kept+="${ARCHITECTURE_TEST_PROJECT}"${HONUA_NL}
+    fi
     kept+="${SOURCE_ARCHITECTURE_TEST_PROJECT}"${HONUA_NL}
     kept+="${MONOLITH_TEST_PROJECT}"${HONUA_NL}
     kept+="$("${PYTHON_BIN}" scripts/ci/test-projects.py gate-fast-projects)"${HONUA_NL}
@@ -680,7 +767,8 @@ else
         | while IFS= read -r proj; do sln_literal_path "${proj}"; printf '\n'; done \
         | jq -R . | jq -s 'unique')"
     jq -n --argjson p "${projects_json}" '{solution:{path:"Honua.sln",projects:$p}}' > "${SLNF}"
-    echo "   (build set: $(jq -r '.solution.projects|length' "${SLNF}") projects; pruned ${pruned_count} test projects that neither run locally nor changed)"
+    echo "   (build roots: $(jq -r '.solution.projects|length' "${SLNF}") projects; removed ${pruned_count} test roots that neither run locally nor changed — references may pull them back in)"
+    report_dependency_closure "${SLNF}" Build Release
     if [[ "${HONUA_PRE_PR_PRINT_BUILD_PLAN:-0}" == "1" ]]; then
         echo "BUILD PLAN:"
         jq -r '.solution.projects[]' "${SLNF}"
@@ -757,6 +845,7 @@ if [[ -n "${PLAN_JSON}" ]]; then
     jq -n --arg base "${BASE_REF}" --arg full "${FULL}" --arg fast "${FAST}" \
         --arg status "${PRE_PR_SCOPE}" --arg architecture "${ARCHITECTURE_TEST_PROJECT}" \
         --arg sourceArchitecture "${SOURCE_ARCHITECTURE_TEST_PROJECT}" \
+        --arg bounded "${BOUNDED_ARCHITECTURE}" \
         --slurpfile projects "${plan_scratch}/projects.json" --slurpfile routing "${plan_scratch}/routing.json" \
         --slurpfile actions "${plan_scratch}/actions.jsonl" --slurpfile units "${plan_scratch}/units.json" \
         --rawfile files "${LOCAL_CHANGED_FILES}" --rawfile format "${plan_scratch}/format.txt" '
@@ -768,46 +857,168 @@ if [[ -n "${PLAN_JSON}" ]]; then
           serverShards:{run_all:($fast!="1" and ($routing.run_all // false)),
             reason:(if $fast=="1" then "fast_tier_deferred" else $routing.reason end),shards:[$actions[].shard_name]},
           serverTestActions:$actions,unitTestActions:$units,
-          architectureTestAction:{project:$architecture,filter:null,maxCpuCount:1},
+          architectureTestAction:(if $bounded=="1" then null else {project:$architecture,filter:null,maxCpuCount:1} end),
           sourceArchitectureTestAction:{project:$sourceArchitecture,filter:null,maxCpuCount:1},
           formatFiles:(if $full=="1" then ["ALL"] else ($format|split("\n")|map(select(length>0))) end)}' > "${PLAN_JSON}"
 fi
+
+# Collapse '.' and '..' without touching the filesystem. Compile Include
+# paths are relative to the project and may use either separator.
+pre_pr_normalize_relpath() {
+    local input="${1//\\//}"
+    local out="" part
+    local IFS="/"
+    local -a parts
+    read -r -a parts <<< "${input}"
+    for part in "${parts[@]}"; do
+        case "${part}" in
+            ""|".") ;;
+            "..") out="${out%/*}" ;;
+            *) out="${out}/${part}" ;;
+        esac
+    done
+    printf '%s' "${out#/}"
+}
+
+# Solution members that compile a file living outside their directory.
+# tests/dotnet/Shared has no sibling csproj; ownership is Compile Include.
+pre_pr_index_linked_compile_owners() {
+    local member include resolved
+    while IFS= read -r member; do
+        [[ -z "${member}" || ! -f "${member}" ]] && continue
+        while IFS= read -r include; do
+            [[ -z "${include}" ]] && continue
+            # Globs and unevaluated MSBuild properties are not a file identity.
+            case "${include}" in
+                *'$('*|*'*'*|*'?'*) continue ;;
+            esac
+            resolved="$(pre_pr_normalize_relpath "$(dirname "${member}")/${include}")"
+            [[ -z "${resolved}" ]] && continue
+            linked_compile_owners["${resolved}"]="${linked_compile_owners[${resolved}]:-}${member}"${HONUA_NL}
+        done < <(grep -oE 'Compile[[:space:]]+Include="[^"]+"' "${member}" 2>/dev/null \
+            | sed -E 's/^Compile[[:space:]]+Include="([^"]+)"$/\1/' || true)
+    done <<< "${sln_members}"
+    return 0
+}
+
+# timeout, then gtimeout, matching scripts/ci/run-server-test-shard.sh.
+# Neither installed is success-shaped: format still runs, uncapped.
+select_pre_pr_format_timeout() {
+    if [[ -n "${HONUA_PRE_PR_TIMEOUT_COMMAND:-}" ]]; then
+        printf '%s' "${HONUA_PRE_PR_TIMEOUT_COMMAND}"
+    elif command -v timeout >/dev/null 2>&1; then
+        printf '%s' timeout
+    elif command -v gtimeout >/dev/null 2>&1; then
+        printf '%s' gtimeout
+    fi
+    return 0
+}
+
+run_bounded_dotnet_format() {
+    if [[ -n "${format_timeout_command}" ]]; then
+        "${format_timeout_command}" 20m dotnet format "$@"
+    else
+        echo "   (no GNU timeout or gtimeout on PATH; running dotnet format without a time cap)"
+        dotnet format "$@"
+    fi
+}
 
 echo "4. Checking code format..."
 # Scope by FULL (not AFFECTED): a force-full build scope (props/CI paths
 # changed) does not widen the set of .cs files whose format could differ —
 # CHANGED_CS is still the authoritative list in SMART mode.
+FORMAT_PROJECT_COUNT=""
 if [[ "${FULL}" == "1" ]]; then
     FORMAT_TARGET=(Honua.sln)
     format_scope_args=()
+    changed_arr=()
 else
-    FORMAT_TARGET=(Honua.sln)
+    FORMAT_TARGET=()
     # Restrict to the changed files; if none, skip.
     # Only format files that still exist (a changed file may have been deleted
-    # or moved) and that are tracked .cs source.
+    # or moved) and that are tracked .cs source. The workspace is the owning
+    # solution project, because --include does not stop Honua.sln from loading.
     mapfile -t changed_arr < <(printf '%s\n' "${CHANGED_CS}" | sed '/^$/d' | while IFS= read -r f; do [[ -f "${f}" ]] && printf '%s\n' "${f}"; done)
     if [[ ${#changed_arr[@]} -eq 0 ]]; then
         echo "   (no changed .cs files on disk — skipping format check)"
         FORMAT_TARGET=()
     else
+        FORMAT_SLNF="$(mktemp -p "${REPO_ROOT}" --suffix=.slnf)"
+        CLEANUP_PATHS+=("${FORMAT_SLNF}")
+        format_projects=()
+        declare -A linked_compile_owners=()
+        linked_compile_index_built=0
+        for file in "${changed_arr[@]}"; do
+            dir="$(dirname "${file}")"
+            project=""
+            while [[ "${dir}" != "." && "${dir}" != "/" ]]; do
+                mapfile -t owners < <(find "${dir}" -maxdepth 1 -name '*.csproj' -print)
+                if [[ "${#owners[@]}" -eq 1 ]]; then
+                    project="${owners[0]}"
+                    break
+                elif [[ "${#owners[@]}" -gt 1 ]]; then
+                    echo "❌ Ambiguous format owner for ${file}; run the changed projects explicitly." >&2
+                    exit 1
+                fi
+                dir="$(dirname "${dir}")"
+            done
+            if [[ -n "${project}" ]]; then
+                if [[ -z "${sln_member_paths[${project}]:-}" ]]; then
+                    echo "❌ No validated solution project owns ${file}; run its format check explicitly." >&2
+                    exit 1
+                fi
+                format_projects+=("${sln_member_paths[${project}]}")
+                continue
+            fi
+            if [[ "${linked_compile_index_built}" != "1" ]]; then
+                pre_pr_index_linked_compile_owners
+                linked_compile_index_built=1
+            fi
+            mapfile -t linked_owners < <(printf '%s\n' "${linked_compile_owners[${file}]:-}" | sed '/^$/d' | sort -u)
+            if [[ ${#linked_owners[@]} -eq 0 ]]; then
+                echo "❌ No validated solution project owns ${file}; run its format check explicitly." >&2
+                exit 1
+            fi
+            for owner in "${linked_owners[@]}"; do
+                format_projects+=("${sln_member_paths[${owner}]}")
+            done
+        done
+        printf '%s\n' "${format_projects[@]}" | jq -R . | jq -s 'unique | {solution:{path:"Honua.sln",projects:.}}' > "${FORMAT_SLNF}"
+        FORMAT_TARGET=("${FORMAT_SLNF}")
         format_scope_args=(--include "${changed_arr[@]}")
+        FORMAT_PROJECT_COUNT="$(jq '.solution.projects|length' "${FORMAT_SLNF}")"
+        echo "   Format workspace: ${FORMAT_PROJECT_COUNT} owning project(s)."
+        report_dependency_closure "${FORMAT_SLNF}" Format Debug
     fi
+fi
+format_timeout_command=""
+if [[ ${#FORMAT_TARGET[@]} -gt 0 && "${FULL}" != "1" ]]; then
+    format_timeout_command="$(select_pre_pr_format_timeout)"
 fi
 if [[ ${#FORMAT_TARGET[@]} -eq 0 ]]; then
     : # already reported "skipping format check" above
 elif [[ "${DRY_RUN}" == "1" ]]; then
     if [[ "${FULL}" == "1" ]]; then
         echo "   [dry-run] Would run 'dotnet format Honua.sln --verify-no-changes' (whole solution)."
+    elif [[ -n "${format_timeout_command}" ]]; then
+        echo "   [dry-run] Would run '${format_timeout_command} 20m dotnet format <owning-project workspace> --include <${#changed_arr[@]} changed .cs files> --verify-no-changes'."
     else
-        echo "   [dry-run] Would run 'dotnet format --include <${#changed_arr[@]} changed .cs files> --verify-no-changes'."
+        echo "   [dry-run] Would run 'dotnet format <owning-project workspace> --include <${#changed_arr[@]} changed .cs files> --verify-no-changes' (no GNU timeout; uncapped)."
     fi
 else
     # Diagnostic verbosity makes dotnet-format log every analyzed document —
     # on a 76-project solution that is minutes of pure console I/O. The
     # failure output at normal verbosity still names each unformatted file.
-    if ! dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --no-restore --verify-no-changes; then
+    if [[ "${FULL}" == "1" ]]; then
+        if ! dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --no-restore --verify-no-changes; then
+            echo "❌ Format check failed. Running 'dotnet format' to fix..."
+            dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --no-restore
+            echo "✅ Code formatted. Please review changes and commit if needed."
+            exit 1
+        fi
+    elif ! run_bounded_dotnet_format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --verify-no-changes; then
         echo "❌ Format check failed. Running 'dotnet format' to fix..."
-        dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --no-restore
+        run_bounded_dotnet_format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}"
         echo "✅ Code formatted. Please review changes and commit if needed."
         exit 1
     fi
@@ -999,13 +1210,17 @@ else
     fi
 fi
 
-# The full reflection collector remains required in SMART, FAST and FULL modes.
-# It validates live coverage/projection drift before source guards inspect those artifacts.
-if [[ "${DRY_RUN}" == "1" ]]; then
-    echo "   - [dry-run] would run tests/dotnet/Honua.Architecture.Tests (topology guards)"
+# Catalogue/proof discovery needs the test-assembly closure. FAST defers it only
+# after the contract guard accounts for the diff. Default, FULL, and hosted CI
+# still run it. Source guards stay read-only: stale projections fail and are
+# regenerated by their owner, not by this script.
+if [[ "${BOUNDED_ARCHITECTURE}" == "1" ]]; then
+    echo "   - deferred ${ARCHITECTURE_TEST_PROJECT} (catalogue/proof; default/FULL local and hosted CI)"
+elif [[ "${DRY_RUN}" == "1" ]]; then
+    echo "   - [dry-run] would run ${ARCHITECTURE_TEST_PROJECT} (catalogue/proof enforcement)"
 else
-    echo "   - tests/dotnet/Honua.Architecture.Tests (topology guards)"
-    dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+    echo "   - ${ARCHITECTURE_TEST_PROJECT} (catalogue/proof enforcement)"
+    dotnet test "${ARCHITECTURE_TEST_PROJECT}" \
         --no-build \
         --no-restore \
         --configuration Release \
@@ -1014,9 +1229,7 @@ else
         -- RunConfiguration.MaxCpuCount=1
 fi
 
-# Source-only guards have a narrow build closure, but complement rather than replace
-# the complete collector above. Ordinary validation stays read-only: stale committed
-# projections fail drift checks and must be explicitly regenerated by their owner.
+# Source topology guards have no integration-test project references.
 if [[ "${DRY_RUN}" == "1" ]]; then
     echo "   - [dry-run] would run tests/dotnet/Honua.Architecture.SourceTests (source/file guards)"
 else
@@ -1095,7 +1308,16 @@ else
     if [[ -n "${SLNF:-}" && -f "${SLNF:-/dev/null}" ]]; then
         echo "  - Build set: $(jq -r '.solution.projects|length' "${SLNF}") projects (AFFECTED=$([[ "${AFFECTED}" == "ALL" ]] && echo ALL || echo scoped))"
     fi
-    echo "  - Format scope: ${#changed_arr[@]} changed .cs file(s)"
+    if [[ "${BOUNDED_ARCHITECTURE}" == "1" ]]; then
+        echo "  - Architecture: source topology; catalogue/proof deferred to default/FULL and hosted CI"
+    else
+        echo "  - Architecture: full catalogue/proof enforcement"
+    fi
+    if [[ -n "${FORMAT_PROJECT_COUNT}" ]]; then
+        echo "  - Format scope: ${#changed_arr[@]} changed .cs file(s) in ${FORMAT_PROJECT_COUNT} owning project(s)"
+    else
+        echo "  - Format scope: ${#changed_arr[@]} changed .cs file(s)"
+    fi
 fi
 echo "  - ADR-0037 shard router reason: ${SHARD_REASON:-n/a}"
 if [[ -n "${SELECTED_SHARDS//[[:space:]]/}" ]]; then
