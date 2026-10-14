@@ -107,6 +107,7 @@ public static class OwnerEditPolicyFieldAccess
     /// <param name="layerId">Storage layer id.</param>
     /// <param name="storageFeatureIds">Storage object ids to evaluate.</param>
     /// <param name="ownerField">Attribute name that stores the owner.</param>
+    /// <param name="versionContext">Branch the edit targets. Null and DEFAULT read the base table.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Snapshots keyed by storage object id. A missing key means the row was not visible.</returns>
     public static async Task<IReadOnlyDictionary<long, OwnerFieldSnapshot>> ReadOwnersAsync(
@@ -114,6 +115,7 @@ public static class OwnerEditPolicyFieldAccess
         int layerId,
         IReadOnlyCollection<long> storageFeatureIds,
         string ownerField,
+        VersionContext? versionContext = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(reader);
@@ -134,7 +136,8 @@ public static class OwnerEditPolicyFieldAccess
             // Empty, not null: the resolver stamps a null mask from the caller's field policy,
             // which would hide the owner again. An empty mask suppresses only that concern.
             // EnforcedSqlFilter stays null so row visibility is still resolved.
-            EnforcedMaskedFields = ImmutableArray<string>.Empty
+            EnforcedMaskedFields = ImmutableArray<string>.Empty,
+            VersionContext = versionContext is { IsDefault: false } ? versionContext : null
         };
 
         var page = await reader.QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
@@ -207,7 +210,7 @@ public static class OwnerEditPolicyFieldAccess
             layerId,
             [featureId],
             policy.OwnerField,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         var snapshot = owners.TryGetValue(featureId, out var found) ? found : OwnerFieldSnapshot.Hidden;
         return Decide(policy, editEvent, principal, snapshot);
     }

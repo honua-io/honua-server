@@ -57,7 +57,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
             new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
-        await store.SetAsync(Scope(), SampleResponse(objectId: 99));
+        (await store.SetAsync(Scope(), "unreserved", SampleResponse(objectId: 99))).Should().BeTrue();
 
         var replay = await store.TryGetAsync(Scope());
 
@@ -76,7 +76,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
             cache: null,
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
-        await store.SetAsync(Scope(), SampleResponse(objectId: 7));
+        (await store.SetAsync(Scope(), "unreserved", SampleResponse(objectId: 7))).Should().BeTrue();
 
         var replay = await store.TryGetAsync(Scope());
 
@@ -92,7 +92,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
             new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
-        await store.SetAsync(Scope(principal: "alice"), SampleResponse());
+        (await store.SetAsync(Scope(principal: "alice"), "unreserved", SampleResponse())).Should().BeTrue();
 
         var replay = await store.TryGetAsync(Scope(principal: "mallory"));
 
@@ -107,7 +107,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
             new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
-        await store.SetAsync(Scope(layer: 0), SampleResponse());
+        (await store.SetAsync(Scope(layer: 0), "unreserved", SampleResponse())).Should().BeTrue();
 
         var replay = await store.TryGetAsync(Scope(layer: 1));
 
@@ -211,7 +211,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
 
         var token = await store.TryReserveAsync(scope);
         token.Should().NotBeNull();
-        await store.SetAsync(scope, SampleResponse(objectId: 1234));
+        (await store.SetAsync(scope, token!, SampleResponse(objectId: 1234))).Should().BeTrue();
 
         await store.ReleaseAsync(scope, token!);
 
