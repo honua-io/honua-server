@@ -306,7 +306,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         var now = DateTimeOffset.UtcNow;
         _jobStore.Set(CreateJob("job-phase-secret", ExecutionJobStatus.Running, now, "corr-phase") with
         {
-            CurrentPhase = "token=phase-secret /tmp/worker/phase"
+            CurrentPhase = "token=fallback-secret-value /tmp/worker/phase"
         });
         _logStore.SetLogs("job-phase-secret", new ExecutionLogEntry
         {
@@ -319,7 +319,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         var response = await _client.GetAsync("/api/v1/admin/jobs/job-phase-secret/steps");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().NotContain("phase-secret");
+        body.Should().NotContain("fallback-secret-value");
         body.Should().NotContain("/tmp/");
         body.Should().Contain("[REDACTED]");
     }
