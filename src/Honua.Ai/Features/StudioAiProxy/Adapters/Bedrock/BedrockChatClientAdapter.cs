@@ -373,9 +373,10 @@ internal sealed class BedrockChatClientAdapter : IChatClient
             if (message.Role == ChatRole.Tool && toolResultMessage is not null)
             {
                 // Bedrock expects every result for a parallel tool call in one
-                // user message. Preserve block order and IDs without joining
-                // ordinary user messages or crossing another role's turn.
-                toolResultMessage.Content.AddRange(content);
+                // user message. Claude requires all results before trailing text;
+                // stable ordering preserves the result IDs/payloads and text order.
+                toolResultMessage.Content = toolResultMessage.Content.Concat(content)
+                    .OrderBy(block => block.ToolResult is null).ToList();
                 continue;
             }
 
@@ -383,6 +384,8 @@ internal sealed class BedrockChatClientAdapter : IChatClient
             converseMessages.Add(mappedMessage);
             if (message.Role == ChatRole.Tool)
             {
+                // A single tool-role message may also contain leading text.
+                mappedMessage.Content = content.OrderBy(block => block.ToolResult is null).ToList();
                 toolResultMessage = mappedMessage;
             }
         }

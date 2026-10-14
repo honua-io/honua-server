@@ -164,7 +164,7 @@ public sealed class BedrockChatClientAdapterTests
     [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ToolResults_MultipleBlocksAndText_PreserveContentOrder(bool streaming)
+    public async Task ToolResults_MultipleBlocksAndText_PlaceResultsFirstWithStableRelativeOrder(bool streaming)
     {
         ChatMessage[] messages =
         [
@@ -183,9 +183,32 @@ public sealed class BedrockChatClientAdapterTests
         var content = mapped.Should().ContainSingle().Which.Content;
         content.Should().HaveCount(6);
         content.Select(block => block.ToolResult?.ToolUseId ?? block.Text)
-            .Should().Equal("before", "call-b", "between", "call-a", "call-c", "after");
+            .Should().Equal("call-b", "call-a", "call-c", "before", "between", "after");
         content.Where(block => block.ToolResult is not null).Select(block => block.ToolResult.Content.Single().Text)
             .Should().Equal("second result", "first result", "third result");
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ToolResults_SingleMessageWithLeadingText_PlacesResultBeforeText(bool streaming)
+    {
+        ChatMessage[] messages =
+        [
+            new(ChatRole.Tool,
+            [
+                new TextContent("before"),
+                new FunctionResultContent("call-a", "first result"),
+                new TextContent("after")
+            ])
+        ];
+
+        var mapped = await CaptureMessagesAsync(messages, streaming);
+
+        var content = mapped.Should().ContainSingle().Which.Content;
+        content.Select(block => block.ToolResult?.ToolUseId ?? block.Text)
+            .Should().Equal("call-a", "before", "after");
+        content[0].ToolResult.Content.Single().Text.Should().Be("first result");
     }
 
     [UnitTheory]
