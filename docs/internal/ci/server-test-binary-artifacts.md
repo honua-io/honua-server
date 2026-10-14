@@ -46,6 +46,15 @@ The installation uses the supported `DOTNET_INSTALL_DIR` behavior of
 No repository/global SDK policy, Docker SDK image or artifact identity override
 is introduced; the existing exact SDK comparison remains mandatory.
 
+Full-CI foundation and shard consumers restore their selected package graph
+before materializing either managed artifacts or the exact-head shard cache.
+This prerequisite step performs no compilation. A read-only trunk NuGet cache
+can lack packages introduced by the current branch; the static web asset root
+verifier must see those packages before it can accept the binary payload.
+Restoring only after acceptance would make a new package version force a cold
+build even on an exact-source cache hit. Package restore failure still fails the
+job, and payload source, SDK, hash and static-root verification remain unchanged.
+
 Restore stages and verifies the whole payload before replacing any output root.
 Installation is transactional and rolls back on failure. `Honua.Server.Tests`
 contains its copied test runtime and required static assets; it does not duplicate
