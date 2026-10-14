@@ -257,6 +257,37 @@ internal sealed partial class FeatureDataAccess
         await _outboxRepository.WriteOutboxRowAsync(connection, transaction, entry, cancellationToken).ConfigureAwait(false);
     }
 
+    private static readonly AsyncLocal<PendingGrpcEditReceipt?> PendingGrpcReceipt = new();
+
+    /// <summary>
+    /// Applies the batch and, when it commits, writes <paramref name="receipt"/> on that same
+    /// transaction before the commit is acknowledged.
+    /// </summary>
+    public async Task<FeatureEditApplication> ApplyEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        FeatureEditIdempotencyReceipt receipt,
+        CancellationToken cancellationToken = default)
+    {
+        var pending = new PendingGrpcEditReceipt { Receipt = receipt };
+        var previous = PendingGrpcReceipt.Value;
+        PendingGrpcReceipt.Value = pending;
+        try
+        {
+            var result = await ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+            return new FeatureEditApplication
+            {
+                Result = result,
+                ReceiptDurable = pending.Durable,
+                SupersededByExistingReceipt = pending.Superseded,
+            };
+        }
+        finally
+        {
+            PendingGrpcReceipt.Value = previous;
+        }
+    }
+
     public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken)
     {
         if (editBatch.IsEmpty)
@@ -274,7 +305,9 @@ internal sealed partial class FeatureDataAccess
         DbConnection dbConnection;
         NpgsqlTransaction? transaction;
 
-        if (editBatch.RollbackOnFailure)
+        // A keyed receipt has to share the edit's transaction even when the caller allows
+        // partial success. Autocommit would make the receipt a second, losable write.
+        if (editBatch.RollbackOnFailure || PendingGrpcReceipt.Value is not null)
         {
             // Expected absence uses a key-level advisory reservation shared with INSERTs. Read
             // Committed is intentional for that case: if the reservation waits for an inserting
@@ -369,14 +402,8 @@ internal sealed partial class FeatureDataAccess
                 return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
             }
 
-            if (transaction != null)
-            {
-                await CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (hasErrors)
-            {
-                return FeatureEditResult.Success(
+            var committed = hasErrors
+                ? FeatureEditResult.Success(
                     System.Linq.Enumerable.Count(createResults, r => r.IsSuccess),
                     System.Linq.Enumerable.Count(updateResults, r => r.IsSuccess),
                     System.Linq.Enumerable.Count(deleteResults, r => r.IsSuccess),
@@ -384,18 +411,23 @@ internal sealed partial class FeatureDataAccess
                     createResults,
                     updateResults,
                     deleteResults,
+                    wasRolledBack: false)
+                : FeatureEditResult.Success(
+                    createdIds.Length,
+                    updatedCount,
+                    deletedCount,
+                    createdIds,
+                    createResults,
+                    updateResults,
+                    deleteResults,
                     wasRolledBack: false);
+            if (transaction != null)
+            {
+                return await CommitStagedResultAsync(connection, transaction, committed, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
-            return FeatureEditResult.Success(
-                createdIds.Length,
-                updatedCount,
-                deletedCount,
-                createdIds,
-                createResults,
-                updateResults,
-                deleteResults,
-                wasRolledBack: false);
+            return committed;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -670,17 +702,11 @@ internal sealed partial class FeatureDataAccess
             }
         }
 
-        if (manageTransaction && transaction != null)
-        {
-            await CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
-        }
-
         var immutableCreatedIds = createdIds.ToImmutable();
         var immutableCreateResults = createResults.ToImmutable();
         var immutableUpdateResults = updateResults.ToImmutable();
         var immutableDeleteResults = deleteResults.ToImmutable();
-
-        return FeatureEditResult.Success(
+        var orderedResult = FeatureEditResult.Success(
             immutableCreatedIds.Length,
             immutableUpdateResults.Count(static result => result.IsSuccess),
             immutableDeleteResults.Count(static result => result.IsSuccess),
@@ -689,6 +715,13 @@ internal sealed partial class FeatureDataAccess
             immutableUpdateResults,
             immutableDeleteResults,
             wasRolledBack: false);
+        if (manageTransaction && transaction != null)
+        {
+            return await CommitStagedResultAsync(connection, transaction, orderedResult, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return orderedResult;
     }
 
     private async Task<FeatureEditResult> ApplyEditsWithinTransactionAsync(
@@ -1048,6 +1081,111 @@ internal sealed partial class FeatureDataAccess
         => commitOutcomeUnknown
             ? EditOperationResult.FailureWithUnknownCommitOutcome(errorMessage, objectId: objectId)
             : EditOperationResult.Failure(errorMessage, objectId: objectId);
+
+    private sealed class PendingGrpcEditReceipt
+    {
+        public required FeatureEditIdempotencyReceipt Receipt { get; init; }
+
+        public bool Durable { get; set; }
+
+        public bool Superseded { get; set; }
+    }
+
+    /// <summary>Outcome of committing a staged edit, possibly with its idempotency receipt.</summary>
+    internal readonly record struct StagedEditCommit(bool ReceiptDurable, bool SupersededByExistingReceipt);
+
+    /// <summary>
+    /// Writes <paramref name="receipt"/> on <paramref name="transaction"/> and only then commits.
+    /// A failed or conflicting receipt write does not commit the edit.
+    /// </summary>
+    internal static async Task<StagedEditCommit> CommitStagedEditAsync(
+        DbTransaction transaction,
+        FeatureEditResult result,
+        FeatureEditIdempotencyReceipt? receipt,
+        Func<DbTransaction, string, ReadOnlyMemory<byte>, DateTimeOffset, CancellationToken, Task<bool>> writeReceipt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(transaction);
+        ArgumentNullException.ThrowIfNull(writeReceipt);
+
+        if (receipt is { } claim)
+        {
+            if (result.WasRolledBack)
+            {
+                throw new InvalidOperationException("A rolled-back edit cannot commit an idempotency receipt.");
+            }
+
+            if (string.IsNullOrWhiteSpace(claim.Scope) || claim.Scope.Length > PostgresGrpcApplyEditsReceipt.MaxScopeLength)
+            {
+                throw new ArgumentException(
+                    $"Idempotency receipt scope must be 1 to {PostgresGrpcApplyEditsReceipt.MaxScopeLength} characters.",
+                    nameof(receipt));
+            }
+
+            if (claim.Payload is null)
+            {
+                throw new ArgumentException("Idempotency receipt payload factory is required.", nameof(receipt));
+            }
+
+            var payload = claim.Payload(result);
+            if (payload.Length == 0 || payload.Length > PostgresGrpcApplyEditsReceipt.MaxReceiptBytes)
+            {
+                throw new ArgumentException(
+                    $"Idempotency receipt payload must be between 1 byte and {PostgresGrpcApplyEditsReceipt.MaxReceiptBytes} bytes.",
+                    nameof(receipt));
+            }
+
+            var inserted = await writeReceipt(transaction, claim.Scope, payload, claim.ExpiresAt, cancellationToken)
+                .ConfigureAwait(false);
+            if (!inserted)
+            {
+                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                return new StagedEditCommit(ReceiptDurable: false, SupersededByExistingReceipt: true);
+            }
+        }
+
+        await CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
+        return new StagedEditCommit(receipt is not null, SupersededByExistingReceipt: false);
+    }
+
+    private async Task<FeatureEditResult> CommitStagedResultAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        FeatureEditResult result,
+        CancellationToken cancellationToken)
+    {
+        var pending = PendingGrpcReceipt.Value;
+        var staged = await CommitStagedEditAsync(
+            transaction,
+            result,
+            pending?.Receipt,
+            (editTransaction, scope, payload, expiresAt, token) =>
+            {
+                if (!ReferenceEquals(editTransaction, transaction))
+                {
+                    throw new InvalidOperationException("The idempotency receipt must use the edit transaction.");
+                }
+
+                return PostgresGrpcApplyEditsReceipt.TryWriteAsync(
+                    connection,
+                    transaction,
+                    _grpcEditReceiptTable,
+                    scope,
+                    payload,
+                    expiresAt,
+                    _queryTimeoutSeconds,
+                    token);
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        if (pending is not null)
+        {
+            pending.Durable = staged.ReceiptDurable;
+            pending.Superseded = staged.SupersededByExistingReceipt;
+        }
+
+        return staged.SupersededByExistingReceipt ? FeatureEditResult.Rollback() : result;
+    }
 
     internal static async Task CommitEditTransactionAsync(
         DbTransaction transaction,

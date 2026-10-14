@@ -45,6 +45,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     private readonly int _queryTimeoutSeconds;
     private readonly int _tileTimeoutSeconds;
     private readonly string _tableName;
+    private readonly string _grpcEditReceiptTable;
 
     public FeatureDataAccess(FeatureDataAccessDependencies dependencies)
     {
@@ -68,6 +69,9 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         _tableName = string.IsNullOrEmpty(dependencies.SchemaName)
             ? "features"
             : Infrastructure.SchemaSearchPath.QualifyTable("features", dependencies.SchemaName);
+        _grpcEditReceiptTable = Infrastructure.SchemaSearchPath.QualifyTable(
+            "grpc_apply_edits_receipt",
+            dependencies.SchemaName);
     }
 
     private static partial class Log

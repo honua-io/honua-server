@@ -653,20 +653,40 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
     {
-        if (!editBatch.Preconditions.IsDefaultOrEmpty)
+        editBatch = await PrepareEditBatchAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<FeatureEditApplication> ApplyEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        FeatureEditIdempotencyReceipt receipt,
+        CancellationToken cancellationToken = default)
+    {
+        editBatch = await PrepareEditBatchAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ApplyEditsAsync(layerId, editBatch, receipt, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<FeatureEditBatch> PrepareEditBatchAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        CancellationToken cancellationToken)
+    {
+        if (editBatch.Preconditions.IsDefaultOrEmpty)
         {
-            // Preserve omitted masked fields inside the provider transaction; the
-            // read token still covers the full row, including those hidden fields.
-            var maskedFields = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
-            editBatch = editBatch with
-            {
-                Preconditions = editBatch.Preconditions
-                    .Select(precondition => precondition with { MaskedFields = maskedFields })
-                    .ToImmutableArray()
-            };
+            return editBatch;
         }
 
-        return await _dataAccess.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+        // Preserve omitted masked fields inside the provider transaction; the
+        // read token still covers the full row, including those hidden fields.
+        var maskedFields = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
+        return editBatch with
+        {
+            Preconditions = editBatch.Preconditions
+                .Select(precondition => precondition with { MaskedFields = maskedFields })
+                .ToImmutableArray()
+        };
     }
 
     public Task<IFeatureWriterTransaction> BeginTransactionAsync(
