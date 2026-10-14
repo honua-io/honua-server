@@ -140,6 +140,9 @@
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="StackExchange.Redis" Version="2.12.14" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
+    <!-- SqlClient and Oracle transitively select vulnerable Pkcs versions; direct references
+         in their consumers select the patched net10.0 asset (CVE-2026-84008 / CVE-2026-70162). -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <!-- Test-only: independent XML-DSig reference implementation used to generate signed SAML
          assertions in tests that validate the AOT-safe in-server verifier (#508). Not referenced
          by any shipped project. -->
