@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import shutil
+import signal
 import sys
 import threading
 import uuid
@@ -76,6 +77,12 @@ def run_local(*, source: Path, entrypoint: str, params: Mapping[str, Any],
         "artifacts": [], "events": "events.jsonl",
     }
     phase = "setup"
+    cancellation = CancellationToken()
+    previous_handlers = {}
+    if threading.current_thread() is threading.main_thread():
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            previous_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, lambda _signum, _frame: cancellation.cancel())
     journal.event(phase)
     try:
         source = source.resolve(strict=True)
@@ -85,13 +92,13 @@ def run_local(*, source: Path, entrypoint: str, params: Mapping[str, Any],
         if any(not path.is_file() for path in resolved_inputs.values()):
             raise ValueError("Inputs must be files.")
         sink = OutputSink(max_total_bytes=max_output_bytes)
-        cancellation = CancellationToken()
         context = GpContext(params=dict(params), inputs=resolved_inputs, client=None,
                             output=sink, progress=journal, log=journal,
                             cancellation=cancellation, workdir=workdir)
         func = load_entrypoint(source, entrypoint)
         phase = "execute"
         journal.event(phase)
+        cancellation.raise_if_cancelled()
         outcome = _coerce_result(func(context), journal)
         cancellation.raise_if_cancelled()
         if not outcome.ok:
@@ -128,6 +135,9 @@ def run_local(*, source: Path, entrypoint: str, params: Mapping[str, Any],
         result.update(status="setupFailed" if phase == "setup" else "failed",
                       failedPhase=phase, error={"type": type(exc).__name__, "message": str(exc)[:2000]})
         code = 2 if phase == "setup" else 1
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
     journal.event(result["status"], terminal=True, exitCode=code)
     result["eventsTruncated"] = journal.truncated
     result["exitCode"] = code

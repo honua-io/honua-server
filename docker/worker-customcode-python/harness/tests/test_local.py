@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -130,3 +135,47 @@ def test_local_concurrent_callbacks_keep_sequence_and_cap(tmp_path):
     assert len(events) == 1001
     assert [event["sequence"] for event in events] == list(range(1001))
     assert events[-1]["phase"] == "succeeded"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX cooperative SIGTERM contract")
+def test_local_sigterm_writes_cancel_receipt(tmp_path):
+    source = tool(tmp_path,
+        "    import time\n"
+        "    (context.workdir / 'ready').write_text('ready')\n"
+        "    try:\n"
+        "        while True:\n"
+        "            context.cancellation.raise_if_cancelled()\n"
+        "            time.sleep(0.01)\n"
+        "    finally:\n"
+        "        (context.workdir / 'cleanup').write_text('cleaned')\n")
+    output = tmp_path / "runs"
+    process = subprocess.Popen([sys.executable, "-c",
+        "from honua_customcode_harness.local import main; raise SystemExit(main())",
+        "--source", str(source), "--entrypoint", "local_tool:execute", "--output", str(output)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])})
+    try:
+        deadline = time.monotonic() + 15
+        while not list(output.glob("*/work/ready")):
+            assert process.poll() is None
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        process.send_signal(signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=15)
+        assert process.returncode == 3, (stdout, stderr)
+        result = receipt(output)
+        assert result["status"] == "cancelled"
+        assert result["failedPhase"] == "execute"
+        assert result["artifacts"] == []
+        assert (output / result["runId"] / "work" / "cleanup").read_text() == "cleaned"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate()
+
+
+def test_local_restores_signal_handlers(tmp_path):
+    previous = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGINT)}
+    source = tool(tmp_path, "    return GpResult.succeeded()\n")
+    assert run_local(source=source, entrypoint="local_tool:execute", params={}, inputs={}, output=tmp_path / "runs") == 0
+    assert {signum: signal.getsignal(signum) for signum in previous} == previous
