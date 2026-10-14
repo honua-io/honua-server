@@ -7247,6 +7247,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.OgcFeaturesInsert_OnSourceBackedLayerDeclaringCreate_IsRefusedAsUnserviceable",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_FeatureServerQuery_ReadsSourceBackedPostGisTable",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_IntoManagedStoreDeclaringCreate_AcceptsOgcInsertAndReadsItBack",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_RawEnabledProperty_PreservesDefaultAndActualReadback",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
         "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests.ContentNegotiation_VariousFormats_ReturnCorrectContentType",
         "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests.ErrorHandling_InvalidParameters_ReturnAppropriateStatusCodes",
@@ -10366,6 +10367,8 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.ServiceQueryFeatures_GetWithMalformedLayersDelimiter_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.RestCatalog_AdminAndRoleOperationHandoffsAgreeWithCatalogVisibility",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAdmissionErrorTests.Query_WhenAdmissionUnavailable_Preserves503ErrorAndRetryAfter",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_Get_LayerDefs_AndCombinesBothPredicates",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_Get_NullLayerDefsEntry_KeepsObjectIdWhere",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_Get_ReturnsPerLayerResults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_Get_WithLayerDefs_AppliesPerLayerWhere",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_WithGeoJsonFormat_ReturnsBadRequest",
@@ -12544,6 +12547,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_ServiceQuery_GetWithLayerDefs_ExcludesFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_ServiceQuery_GetWithLayerId_ReturnsFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_ServiceQuery_WithMalformedLayersDelimiter_ReturnsBadRequest"
       ],
@@ -16060,6 +16064,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.ConnectionLifecycle_EmitsCreateAndDeleteAuditEvents",
+        "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.ConnectionPort_OmittedDefaultsAndExplicitAssertions_AreEnforced",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.CreateConnection_DuplicateName_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.CreateConnection_HostInConfiguredAllowlist_ReturnsCreatedAndAudited",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.CreateConnection_HostNotInConfiguredAllowlist_ReturnsBadRequest",
@@ -16114,6 +16119,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.ConnectionPort_OmittedDefaultsAndExplicitAssertions_AreEnforced",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.TestDraftConnection_ForbiddenResolvedSecret_ReturnsRedactedDenialWithoutProbing",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.TestDraftConnection_UsesRequestedSslMode_WhenBuildingConnectionString",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.TestDraftConnection_WithValidRequest_ReturnsResultOrBadRequest"
@@ -16149,6 +16155,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_ListAndToggle_ReturnsExpectedResults",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_MaterializesFeaturesAndExtentForFeatureServer",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_PrimaryKeyNotInFields_ReturnsBadRequest",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_RawEnabledProperty_PreservesDefaultAndActualReadback",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_SmallintSource_PersistsHintAndPreservesQueriesAfterTypeChange",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_UnserviceableEditableRequests_AreRejectedBeforePublishing",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_WhenApprovalRequired_ReturnsForbidden",
