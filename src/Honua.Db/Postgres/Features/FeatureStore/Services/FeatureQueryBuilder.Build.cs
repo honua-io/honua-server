@@ -472,9 +472,12 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         {
             sql.Append(CultureInfo.InvariantCulture, $@"
             SELECT
-                ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent)
+                ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent),
+                min_srid, max_srid
             FROM (
-                SELECT ST_Extent({extentExpression}) as extent
+                SELECT ST_Extent({extentExpression}) as extent,
+                    MIN(ST_SRID({extentExpression})) FILTER (WHERE NOT ST_IsEmpty({extentExpression})) as min_srid,
+                    MAX(ST_SRID({extentExpression})) FILTER (WHERE NOT ST_IsEmpty({extentExpression})) as max_srid
                 FROM {_tableName}
                 WHERE {DatabaseSchema.LayerIdColumn} = $1 AND {extentExpression} IS NOT NULL");
 
