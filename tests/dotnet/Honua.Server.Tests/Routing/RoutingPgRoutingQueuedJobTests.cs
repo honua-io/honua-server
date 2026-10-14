@@ -46,6 +46,17 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     private const double MeterTolerance = 0.05;
     private const double MileTolerance = 1e-4;
 
+    /// <summary>
+    /// Far below half the 0.01° lattice spacing, so a match is still one vertex.
+    /// </summary>
+    private const double VertexIdentityTolerance = 1e-9;
+
+    /// <summary>
+    /// Below the sine of a 0.01° lattice hop (~1.7e-4). A numerical zero is a
+    /// coincident point or an equatorial geodesic, not a collapsed edge.
+    /// </summary>
+    private const double VincentySingularityTolerance = 1e-12;
+
     private static readonly TimeSpan StallTolerance = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan SuccessBudget = StallTolerance + (JobExecutionService.PollInterval * 6);
 
@@ -719,7 +730,9 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     ];
 
     private static int VertexAt(double lon, double lat)
-        => Lattice.Single(vertex => vertex.Lon == lon && vertex.Lat == lat).Id;
+        => Lattice.Single(vertex =>
+            Math.Abs(vertex.Lon - lon) < VertexIdentityTolerance
+            && Math.Abs(vertex.Lat - lat) < VertexIdentityTolerance).Id;
 
     /// <summary>Orthogonal 3x3 lattice. Each hop costs <paramref name="minutesPerHop"/> minutes.</summary>
     private static int TravelMinutes(int from, int to, int minutesPerHop)
@@ -793,7 +806,7 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
             sinSigma = Math.Sqrt(
                 Math.Pow(cosU2 * sinLambda, 2)
                 + Math.Pow((cosU1 * sinU2) - (sinU1 * cosU2 * cosLambda), 2));
-            if (sinSigma == 0)
+            if (Math.Abs(sinSigma) < VincentySingularityTolerance)
             {
                 return 0;
             }
@@ -802,7 +815,9 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
             sigma = Math.Atan2(sinSigma, cosSigma);
             var sinAlpha = cosU1 * cosU2 * sinLambda / sinSigma;
             cosSqAlpha = 1 - (sinAlpha * sinAlpha);
-            cos2SigmaM = cosSqAlpha == 0 ? 0 : cosSigma - (2 * sinU1 * sinU2 / cosSqAlpha);
+            cos2SigmaM = Math.Abs(cosSqAlpha) < VincentySingularityTolerance
+                ? 0
+                : cosSigma - (2 * sinU1 * sinU2 / cosSqAlpha);
             var c = f / 16 * cosSqAlpha * (2 + (f * (4 - (3 * cosSqAlpha))));
             var nextLambda = longitudeDelta + ((1 - c) * f * sinAlpha
                 * (sigma + (c * sinSigma * (cos2SigmaM + (c * cosSigma * (-1 + (2 * cos2SigmaM * cos2SigmaM)))))));
