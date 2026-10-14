@@ -605,6 +605,35 @@ def finite_between(value, low, high):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and low <= value <= high
 
 
+def cleanup_receipt(root, head, removals, evidence_retained):
+    """Post-merge cleanup record. Success requires the delivered trunk commit and every removal."""
+    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}", head):
+        raise ValueError("cleanup head must be a 40-character commit id")
+    if not isinstance(removals, list):
+        raise ValueError("cleanup removals must be a list")
+    if not isinstance(evidence_retained, list) or any(not isinstance(item, str) or not item for item in evidence_retained):
+        raise ValueError("retained evidence must be a list of non-empty paths")
+    actual = command(["git", "rev-parse", "HEAD"], root)
+    issues = []
+    if actual != head:
+        issues.append(f"cleanup head {actual} does not match delivered trunk {head}")
+    if not removals:
+        issues.append("cleanup requires the recorded removal set")
+    failed = []
+    for item in removals:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"]:
+            raise ValueError("each removal needs a non-empty id")
+        if type(item.get("removed")) is not bool:
+            raise ValueError("each removal needs a boolean removed flag")
+        if not item["removed"]:
+            failed.append(item["id"])
+    if failed:
+        issues.append("cleanup removals failed: " + ", ".join(failed))
+    return {"schema": "honua.odata-pilot-cleanup/v1", "head": actual, "expectedHead": head,
+            "removals": removals, "evidenceRetained": evidence_retained, "issues": issues,
+            "success": not issues, "promoted": False}
+
+
 def compare(receipts, selection):
     selected = [r for r in receipts if r.get("selection") == selection]
     evidence = {}
@@ -710,8 +739,19 @@ def main():
     child.add_argument("--receipt", type=Path, action="append", required=True)
     child.add_argument("--selection", choices=("unit", "component"), required=True)
     child.add_argument("--output", type=Path, required=True)
+    child = sub.add_parser("cleanup-receipt")
+    child.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[3])
+    child.add_argument("--head", required=True)
+    child.add_argument("--removal-json", type=Path, required=True)
+    child.add_argument("--evidence", action="append", default=[])
+    child.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
+        if args.operation == "cleanup-receipt":
+            removals = json.loads(args.removal_json.read_text())
+            result = cleanup_receipt(args.root.resolve(), args.head, removals, args.evidence)
+            write(args.output, result)
+            return 0 if result["success"] else 2
         if args.operation == "plan":
             result = plan(args.root.resolve(), args.variant, args.selection, args.configuration, args.composition, args.filter, getattr(args, "runtime", None))
             write(args.output, result)

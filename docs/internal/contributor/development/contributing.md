@@ -56,7 +56,14 @@ In sessions enrolled with the local supervisor, submit validation through
 honua-supervisor and follow its canonical runbook in the honua-supervisor
 repository. The service snapshots the source, queues work, and records a receipt.
 Set HONUA_SUPERVISOR_ENABLED=1 only after enrollment and cutover: the pre-push hook
-then accepts a matching receipt and otherwise asks for queued validation.
+then accepts a receipt for the exact head being pushed. A missing CLI, a missing
+receipt, or a mismatched head fails closed and does not fall through into another
+local validation run.
+
+Docker image restore stages copy project and package-configuration inputs
+(project files, props, targets, solutions, NuGet config, and named lock, global,
+and tool manifests). Ordinary source files, including JSON content, are not
+restore inputs. The full source tree is copied only after restore.
 
 Until enrollment, use the existing host build reservation to run:
 
