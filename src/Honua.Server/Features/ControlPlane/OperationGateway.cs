@@ -94,6 +94,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                     TenantId = request.TenantId,
                     PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
                     AuthorizationOutcome = "gateway-authorized",
+                    RootProvisioningOperationId = request.RootProvisioningOperationId,
                 },
                 cancellationToken)
             .ConfigureAwait(false);
@@ -344,6 +345,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                         ApprovedPlanHash = proposal.SealedPlanHash,
                         ScopeGoverned = proposal.ScopeGoverned,
                         RecognizedScopes = proposal.RecognizedScopes,
+                        RootProvisioningOperationId = request.RootProvisioningOperationId,
                     },
                     cancellationToken)
                     .ConfigureAwait(false);
@@ -513,6 +515,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                     TenantId = request.TenantId,
                     PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
                     AuthorizationOutcome = "autonomy-authorized",
+                    RootProvisioningOperationId = request.RootProvisioningOperationId,
                 },
                 cancellationToken)
             .ConfigureAwait(false);
@@ -564,6 +567,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                         TenantId = request.TenantId,
                         PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
                         AuthorizationOutcome = "gateway-authorized",
+                        RootProvisioningOperationId = request.RootProvisioningOperationId,
                     },
                     cancellationToken)
                 .ConfigureAwait(false);
