@@ -32,6 +32,7 @@
   - [Feature set snapshot](concepts/domain/feature-set.md)
   - [Filtering and spatial analysis](concepts/domain/spatial-analysis.md)
   - [GIS workflow language in OKF](concepts/domain/workflow-language.md)
+  - [Understanding everyday GIS requests](concepts/domain/intent-interpretation.md)
   - [Semantic contracts and executable workflow slices](concepts/domain/semantic-contracts.md)
   - [Identity and credentials](concepts/domain/identity.md)
   - [Job and result](concepts/domain/job.md)
