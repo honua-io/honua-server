@@ -51,6 +51,22 @@ class ManagedWorkflowTests(unittest.TestCase):
         self.assertIn('matrix.advisory != true', shard)
         self.assertIn("continue-on-error: ${{ matrix.advisory == true }}", shard)
 
+    def test_package_prerequisites_precede_both_materializers(self):
+        for name, lane in [('dotnet-foundation-family-tests', 'foundation'), ('server-tests', 'shard')]:
+            with self.subTest(lane=lane):
+                consumer = job(name)
+                restore = f'Restore package prerequisites before {lane} materialization'
+                self.assertLess(consumer.index(restore), consumer.index(f'Consume managed {lane} outputs'))
+                section = consumer.split(f'- name: {restore}\n', 1)[1].split('\n      - name:', 1)[0]
+                self.assertNotIn('        if:', section, 'Prerequisites cannot depend on successful materialization')
+                self.assertNotIn('continue-on-error:', section)
+                self.assertIn('timeout-minutes: 10', section)
+                self.assertIn('managed-test-build.py fallback', section)
+                for option in ['--projects-file', '--restored-file']:
+                    self.assertIn(f'{option} "${{RUNNER_TEMP}}/{lane}-projects.json"', section)
+                if lane == 'shard':
+                    self.assertLess(consumer.index(restore), consumer.index('Verify and unpack exact-head shard cache'))
+
     def test_full_format_is_independent_and_required(self):
         formatter = job('format')
         self.assertIn('needs: changes', formatter)

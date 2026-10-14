@@ -1318,3 +1318,58 @@ These observations justified [PR5904](https://github.com/honua-io/honua-server/p
 merged as `19e2007ce1381c337aadae646b2856acb51b5aaf`. Two fresh observations
 per child establish observed headroom, not a p90 distribution. Full-server
 qualification and immutable release-image admission remain separate gates.
+
+## Admin Runtime Operations capacity partition (2026-10-14, #6080)
+
+[Run 38541322272](https://github.com/honua-io/honua-server/actions/runs/38541322272/job/115788121194)
+at `854dd0dca9dcd939e5e414d438eb2440febb57a2` exhausted the unchanged
+27-minute inner budget after 1,624 seconds while still producing output one
+second before termination. Its 107 passing log entries are an incomplete
+prefix, with no complete TRX; the original run remains failed.
+
+The same test workload on `0454d113bf4f1c58217cfa470e8929eb2ea10576`
+completed 116 cases in 757 seconds. Authenticated artifact `11879753603`
+contains the complete TRX. Its summed class spans / whole span ratio is 1.01,
+so the workload is nearly serial. `LayerPublishingIntegrationTests` owns 83
+cases; neighboring application timestamps in the failed log place that class
+alone across approximately 21 minutes. Those timestamps are diagnostic bounds,
+not a replacement for missing TRX intervals. A whole-class move therefore does
+not establish the required headroom on its own.
+
+The existing method-level partition contract splits the workload without
+changing any C# test, theory data, per-test initialization or cleanup,
+`Database` collection, source trigger, or parallelism setting:
+
+| Partition | Historical cases | Historical interval union | Unchanged test / job caps |
+|---|---:|---:|---:|
+| Admin Layer Publishing | 58 | 387.3 seconds | 27 / 37 minutes |
+| Admin Runtime Operations | 58 | 361.8 seconds | 27 / 37 minutes |
+
+The publishing child owns the 48 methods already grouped in
+`LayerPublishingIntegrationTests.cs` and its namespace partial. The runtime
+child retains every other original method, including future methods, by the
+complementary exact-name filter. The sole broader Admin Operations partition
+uses canonical method granularity and names all three active children exactly;
+no child is declared under a second legacy parent. The independent runtime
+regression still verifies the original runtime slice as an exact, disjoint union.
+The source-inventory regression rejects missing, duplicated or foreign methods,
+changed source triggers, changed assemblies, parallelism changes and raised
+budgets.
+
+The static source denominator is 122 methods, before tier selection. The
+historical integration TRX contains 93 methods expanded into 116 cases. The
+remaining 29 methods belong to `LayerPublishJobTests`,
+`LayerPublishRemoteRunnerTests`, `LayerPublishWorkerControlsTests` and
+`LayerPublishWireContractTests`; all carry Fast traits through `UnitTest`,
+`UnitTheory` or the explicit Fast theory trait. The unchanged shard runner
+excludes Fast tests because the foundation lane executes them. Authenticated
+foundation results from run `38541322272` contain all 29 methods expanded into
+53 passing cases. Those are prior-source execution observations, not new
+post-split results or additional integration cases.
+
+The [bounded evidence record](admin-runtime-shard-capacity-20261014.json)
+retains the raw artifact, log and TRX identities plus the historical method
+partition. These one-run timing observations size the change; they are not a
+p90 estimate or fresh post-split proof. Two actual executions per child and
+full exact-source validation remain required before delivery. Candidate
+qualification is separate.

@@ -103,7 +103,7 @@ EXPECTED_WORKER_LABELS = {
     "honua.runtime.profile": "native",
     "honua.native.gdal.version": "3.13.1",
     "honua.native.pdal.version": "2.10.2",
-    "honua.runtime.dotnet.version": "10.0.11",
+    "honua.runtime.dotnet.version": "10.0.13",
 }
 
 
