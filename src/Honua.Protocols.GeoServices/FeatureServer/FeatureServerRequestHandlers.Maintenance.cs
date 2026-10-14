@@ -234,6 +234,16 @@ internal static partial class FeatureServerEndpoints
                 [$"Omit {unsupported}. Append applies the edits array directly."]);
         }
 
+        // Resolve gdbVersion before the upsert match read (#6095): matches must be found within
+        // the named version and the resulting adds/updates must be written there, never DEFAULT.
+        var gdbVersion = GetValueString(values, "gdbVersion");
+        var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
+            context, gdbVersion, cancellationToken).ConfigureAwait(false);
+        if (versionError != null)
+        {
+            return versionError;
+        }
+
         GeoServicesFeature[] updates = [];
         var adds = features;
         if (appendOptions.Upsert)
@@ -291,6 +301,7 @@ internal static partial class FeatureServerEndpoints
                 storageLayerId.Value,
                 features,
                 appendOptions.UpsertMatchingField,
+                versionContext,
                 cancellationToken).ConfigureAwait(false);
             if (matchError is not null)
             {
@@ -314,7 +325,7 @@ internal static partial class FeatureServerEndpoints
         var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
         var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
 
-        var request = CreateAppendApplyEditsRequest(adds, updates, appendOptions.RollbackOnFailure);
+        var request = CreateAppendApplyEditsRequest(adds, updates, appendOptions.RollbackOnFailure, gdbVersion);
         var result = await editsHandler.HandleApplyEditsAsync(
             serviceId, layerId, request, limitsOptions.Value.Edits, cancellationToken: cancellationToken);
 
@@ -499,11 +510,22 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
+        // Resolve gdbVersion before any read (#6095): the candidate read must see the named
+        // version's rows and the update batches must target that version, never DEFAULT.
+        var gdbVersion = GetValueString(values, "gdbVersion");
+        var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
+            context, gdbVersion, cancellationToken).ConfigureAwait(false);
+        if (versionError != null)
+        {
+            return versionError;
+        }
+
         // Build optional WHERE filter
         var whereClause = GetValueString(values, "where");
         var query = new FeatureQuery
         {
-            SpatialReferenceSrid = resource.ReadSrid()
+            SpatialReferenceSrid = resource.ReadSrid(),
+            VersionContext = versionContext is { IsDefault: false } ? versionContext : null
         };
 
         if (!string.IsNullOrWhiteSpace(whereClause) && whereClause != "1=1")
@@ -601,7 +623,12 @@ internal static partial class FeatureServerEndpoints
         for (int offset = 0, batchIndex = 0; offset < updates.Length; offset += batchSize, batchIndex++)
         {
             var batch = updates[offset..Math.Min(offset + batchSize, updates.Length)];
-            var applyRequest = new ApplyEditsRequest { Updates = batch, RollbackOnFailure = true };
+            var applyRequest = new ApplyEditsRequest
+            {
+                Updates = batch,
+                RollbackOnFailure = true,
+                GdbVersion = gdbVersion
+            };
             // A shared Idempotency-Key would make later batches replay batch 1 and skip the write.
             // Derive a stable per-batch key so a retry replays each batch instead of the first one.
             // With no header, suppress header reads so the batches do not independently re-read it.
