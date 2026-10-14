@@ -55,11 +55,23 @@ appearing there is not a statement that it is generally available; `preview` and
 
 ## What is in the bundle
 
+The [GIS domain language](../concepts/domain/README.md) and [workflow contracts](../guides/workflows/README.md) extend this same bundle with common phrases, explicit ambiguities, typed composition, effect boundaries, recovery, and relevant interface links. They are shared human and agent documentation, not a separate test vocabulary. Agent indexes and compact context are generated views of these pages; full explanations remain in Markdown.
+
 Every page in the table of contents is a published concept. Dated evidence,
 status snapshots and build mechanics are kept out of the bundle deliberately, so
 a page you can reach from here is documentation and not a report.
 
 ## Where to go next
+
+### Agent graph and context
+
+The derived [agent graph](domain-graph.v1.json) preserves the published OKF metadata and links each node to its human document. It includes typed workflow dependencies, semantic relations, interface references, and a content digest. Edit the Markdown sources; regenerate this view with `python scripts/ci/generate-okf-graph.py`. The documentation gate checks that the generated file is current.
+
+For a compact local context, run `python scripts/ci/generate-okf-graph.py --query "publish a layer"`. Retrieval returns lexical candidates and their direct semantic neighbors. Alias collisions remain visible: a match is not a decision about which kind of layer or publication the user intends. Read the full linked document when the compact metadata is insufficient.
+
+Interface bindings report their validation level. `documentation_reference_only` establishes a published reference, while `openapi_method_and_path` additionally checks the operation against a local OpenAPI document and records its digest. Neither validates a composed request or proves runtime support. Discover installed schemas, bind actual returned identifiers, and observe outcomes before claiming execution.
+
+Consumers should pin the source repository revision and `bundleDigest` together. Human links point to the current source branch; use the pinned revision when reproducing an earlier interpretation. The graph excludes internal evidence and private test answers, and never grants execution authority.
 
 | Page | Why |
 | --- | --- |

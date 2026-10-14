@@ -27,7 +27,7 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
 
    Open `http://localhost:8080/ogc/processes/processes/geometry.buffer` in a browser.
 
-   `geometry.buffer` takes `wkb`, `srid`, `distance`, and an optional `geodesic` flag. Despite the legacy parameter name, the OGC route accepts either base64-encoded WKB or a GeoJSON geometry object. `distance` is expressed in the input CRS units, so project geographic coordinates before requesting a metric buffer.
+   `geometry.buffer` takes `wkb`, `srid`, `distance`, and an optional `geodesic` flag. The current executor performs planar buffering and rejects `geodesic: true`. Despite the legacy parameter name, the OGC route accepts either base64-encoded WKB or a GeoJSON geometry object under its explicit SRID contract. `distance` is expressed in input CRS units. For a metric buffer, use coordinates already expressed in an appropriate projected CRS, or transform geographic input first; changing only the SRID label is not a transformation.
 
 3. Execute it. The request returns `201 Created` with a job status document and a `Location` header pointing at the job:
 
@@ -36,14 +36,14 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
    ```json
    {
      "inputs": {
-       "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA",
-       "srid": 4326,
+       "wkb": "AQEAAAAAAAAAgIQeQQAAAACQBVBB",
+       "srid": 32610,
        "distance": 500
      }
    }
    ```
 
-   The `wkb` value above is `POINT(-122.4194 37.7749)`. Omit `response` or set it to `document` for inline qualified output values. Set `"response": "raw"` to retrieve native output bytes from the results route; multiple selected outputs use `multipart/related`. Both response modes work asynchronously. For a process advertising `sync-execute`, omit `Prefer` to run synchronously with the same response negotiation.
+   The `wkb` value above is `POINT(500000 4200000)` in EPSG:32610 (WGS 84 / UTM zone 10N), whose coordinate unit is meters. This requests a planar 500-meter buffer around that projected point; it does not relabel the coordinates of a geographic input. Choose the analysis CRS according to the region and accuracy needed. Omit `response` or set it to `document` for inline qualified output values. Set `"response": "raw"` to retrieve native output bytes from the results route; multiple selected outputs use `multipart/related`. Both response modes work asynchronously. For a process advertising `sync-execute`, omit `Prefer` to run synchronously with the same response negotiation.
 
 4. Poll the job until `status` reaches `successful` (or `failed`/`dismissed`). Take `JOB` from the `Location` header or the `jobID` field:
 

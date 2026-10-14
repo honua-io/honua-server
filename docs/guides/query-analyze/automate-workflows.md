@@ -32,15 +32,15 @@ A workflow package is a graph of nodes (each node is a catalog process, node typ
            "nodeId": "buffer",
            "nodeTypeId": "process:geometry.buffer",
            "parameters": {
-             "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA",
-             "srid": "4326",
+             "wkb": "AQEAAAAAAAAAgIQeQQAAAACQBVBB",
+             "srid": "32610",
              "distance": "500"
            }
          },
          {
            "nodeId": "simplify",
            "nodeTypeId": "process:geometry.simplify",
-           "parameters": { "srid": "4326", "tolerance": "10" }
+           "parameters": { "srid": "32610", "tolerance": "10" }
          }
        ],
        "edges": [
@@ -54,6 +54,8 @@ A workflow package is a graph of nodes (each node is a catalog process, node typ
      }
    }
    ```
+
+   The input is `POINT(500000 4200000)` already expressed in EPSG:32610 (WGS 84 / UTM zone 10N). Buffer distance 500 and simplification tolerance 10 therefore use projected meters. Both steps retain the same CRS. For geographic input, transform the coordinates into an appropriate analysis CRS first; changing only the SRID does not transform them. The current buffer is planar and does not support `geodesic: true`.
 
    Note the package id (`PKG` below) from the response.
 

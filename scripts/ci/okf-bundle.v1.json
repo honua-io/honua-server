@@ -58,7 +58,7 @@
     }
   ],
   "rejectedFields": {
-    "timestamp": "Not an OKF field in any version. The trust family spells the build stamp `generated`; honua-site emitted `timestamp` until 2026-09-10 and the mistake must not spread here."
+    "timestamp": "Legacy OKF v0.1 field. Honua's v0.2 producer profile uses structured generated provenance; this policy does not forbid legacy consumers from accepting v0.1."
   },
   "dateFields": [
     "generated",
