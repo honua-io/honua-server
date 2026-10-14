@@ -570,7 +570,12 @@ internal sealed class BedrockChatClientAdapter : IChatClient
             long l => new Document(l),
             double d => new Document(d),
             float f => new Document(f),
-            _ => JsonElementToDocument(JsonSerializer.SerializeToElement(value))
+            // Both incoming proxy history and Bedrock responses contain nested CLR
+            // dictionaries/lists. Traverse their JSON values directly: serializing an
+            // object here requires reflection, which the native AOT server disables.
+            IDictionary<string, object?> map => ArgumentsToDocument(map),
+            IEnumerable<object?> list => new Document(list.Select(ObjectToDocument).ToList()),
+            _ => throw new NotSupportedException("Bedrock tool arguments must contain JSON values.")
         };
     }
 
