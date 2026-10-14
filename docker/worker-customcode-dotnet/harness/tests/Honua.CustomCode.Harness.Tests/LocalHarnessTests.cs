@@ -18,22 +18,22 @@ public sealed class LocalHarnessTests
         var directory = Directory.CreateTempSubdirectory("gp-local-test-");
         try
         {
-            var input = Path.Combine(directory.FullName, "input.txt");
+            var input = Path.Join(directory.FullName, "input.txt");
             await File.WriteAllTextAsync(input, "hello");
             using var parameters = JsonDocument.Parse(JsonSerializer.Serialize(new { mode }));
             var assembly = typeof(LocalFixtureTool).Assembly;
-            var output = Path.Combine(directory.FullName, "runs");
+            var output = Path.Join(directory.FullName, "runs");
             var exit = await LocalHarness.RunAsync(Path.GetDirectoryName(assembly.Location)!,
                 $"{assembly.GetName().Name}::{typeof(LocalFixtureTool).FullName}", parameters.RootElement,
                 new Dictionary<string, string> { ["data"] = input }, output, maxOutputBytes: 10);
 
             exit.Should().Be(expectedExit);
             var run = Directory.GetDirectories(output).Single();
-            using var receipt = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(run, "receipt.json")));
+            using var receipt = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Join(run, "receipt.json")));
             receipt.RootElement.GetProperty("status").GetString().Should().Be(status);
             if (expectedExit == 0)
             {
-                (await File.ReadAllTextAsync(Path.Combine(run, "artifacts", "answer.txt"))).Should().Be("HELLO");
+                (await File.ReadAllTextAsync(Path.Join(run, "artifacts", "answer.txt"))).Should().Be("HELLO");
                 receipt.RootElement.GetProperty("artifacts")[0].GetProperty("sha256").GetString().Should().HaveLength(64);
             }
             else
@@ -52,7 +52,7 @@ public sealed class LocalHarnessTests
     {
         var assembly = typeof(LocalFixtureTool).Assembly;
         var directory = Path.GetDirectoryName(assembly.Location)!;
-        File.Exists(Path.Combine(directory, "Honua.CustomCode.Sdk.dll")).Should().BeTrue();
+        File.Exists(Path.Join(directory, "Honua.CustomCode.Sdk.dll")).Should().BeTrue();
         var tool = new EntrypointLoader().Load(directory,
             $"{assembly.GetName().Name}::{typeof(LocalFixtureTool).FullName}");
         tool.Should().BeAssignableTo<IGeoprocessingTool>();
@@ -80,7 +80,7 @@ public sealed class LocalFixtureTool : IGeoprocessingTool
         }
 
         context.Progress.Report(50, "transform");
-        var path = Path.Combine(context.WorkDirectory, "result.txt");
+        var path = Path.Join(context.WorkDirectory, "result.txt");
         var text = await File.ReadAllTextAsync(context.Inputs["data"], cancellationToken);
         await File.WriteAllTextAsync(path, text.ToUpperInvariant(), cancellationToken);
         context.Output.AddArtifact("answer.txt", mode == "case" && OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path);

@@ -18,10 +18,10 @@ public static class LocalHarness
         long maxOutputBytes = 100 * 1024 * 1024, CancellationToken cancellationToken = default)
     {
         var runId = Guid.NewGuid().ToString("N");
-        var runDirectory = Path.Combine(Path.GetFullPath(outputDirectory), runId);
-        var workDirectory = Path.Combine(runDirectory, "work");
+        var runDirectory = UnderRoot(Path.GetFullPath(outputDirectory), runId);
+        var workDirectory = UnderRoot(runDirectory, "work");
         Directory.CreateDirectory(workDirectory);
-        using var journal = new LocalJournal(Path.Combine(runDirectory, "events.jsonl"));
+        using var journal = new LocalJournal(UnderRoot(runDirectory, "events.jsonl"));
         var receipt = new JsonObject
         {
             ["schemaVersion"] = "1.0", ["runId"] = runId, ["entrypoint"] = entrypoint,
@@ -89,12 +89,12 @@ public static class LocalHarness
                 }
             }
 
-            var artifactDirectory = Path.Combine(runDirectory, "artifacts");
+            var artifactDirectory = UnderRoot(runDirectory, "artifacts");
             Directory.CreateDirectory(artifactDirectory);
             var artifacts = new JsonArray();
             foreach (var artifact in sink.Artifacts)
             {
-                var destination = Path.Combine(artifactDirectory, artifact.Name);
+                var destination = UnderRoot(artifactDirectory, artifact.Name);
                 File.Copy(artifact.Path, destination);
                 using var stream = File.OpenRead(destination);
                 var hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
@@ -126,7 +126,7 @@ public static class LocalHarness
         journal.Event(receipt["status"]!.GetValue<string>(), terminal: true);
         receipt["eventsTruncated"] = journal.Truncated;
         receipt["exitCode"] = exitCode;
-        var receiptPath = Path.Combine(runDirectory, "receipt.json");
+        var receiptPath = UnderRoot(runDirectory, "receipt.json");
         await File.WriteAllTextAsync(receiptPath, receipt.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), CancellationToken.None).ConfigureAwait(false);
         Console.WriteLine(new JsonObject
         {
@@ -188,6 +188,17 @@ public static class LocalHarness
     }
 
     private static string Limit(string value, int length) => value.Length > length ? value[..length] : value;
+
+    // Path.Join keeps root. Path.Combine would drop it when segment is absolute.
+    private static string UnderRoot(string root, string segment)
+    {
+        if (Path.IsPathRooted(segment))
+        {
+            throw new IOException("A path segment under the run directory must be relative.");
+        }
+
+        return Path.Join(root, segment);
+    }
 
     private sealed class LocalJournal(string path) : IProgressReporter, IGpLogger, IDisposable
     {

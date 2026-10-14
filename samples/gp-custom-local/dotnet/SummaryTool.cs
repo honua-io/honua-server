@@ -29,7 +29,7 @@ public sealed class SummaryTool : IGeoprocessingTool
 
         context.Progress.Report(75, "summarize");
         var result = new { count = values.Count, sum = values.Sum(), mean = values.Count == 0 ? (double?)null : values.Average() };
-        var path = Path.Combine(context.WorkDirectory, "summary.json");
+        var path = Path.Join(context.WorkDirectory, "summary.json");
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(result), cancellationToken);
         context.Output.AddArtifact("summary.json", path);
         return GpResult.Succeeded();
