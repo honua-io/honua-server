@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="../../../src/Honua.Db/Postgres/Honua.Postgres.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
+    <ProjectReference Include="../Honua.TestKit.Postgres/Honua.TestKit.Postgres.csproj" />
   </ItemGroup>
 
   <ItemGroup>

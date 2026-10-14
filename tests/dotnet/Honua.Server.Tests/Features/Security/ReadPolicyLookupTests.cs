@@ -19,7 +19,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Security;
 
-public sealed class ReadPolicyLookupTests
+public sealed partial class ReadPolicyLookupTests
 {
     [UnitTest]
     public async Task ResolveAsync_ValidatedSnapshot_ReusesScopesButReadsCurrentPoliciesAndPrincipal()
