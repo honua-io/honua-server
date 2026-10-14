@@ -74,6 +74,15 @@ Start with a closed registry. Each kind needs a versioned operand schema, equali
 
 Matching counts can conceal substituted features, duplicates, changed attributes, or shifted geometry. Similarly, matching source counts before and after cannot prove that source content stayed unchanged. A geometry equality profile must say whether it compares exact encoded content or canonical geometric meaning: harmless ring reordering and lossy coordinate rounding have different implications.
 
+A preservation observation needs an independently selected baseline and a fresh
+post-operation snapshot of the same protected resources. Freeze the projection
+before execution: source identity, attributes and geometry; shared configuration
+and permissions; and revision fields when the operation promises to preserve them.
+Exclude only documented volatile observation metadata. An unchanged resource ID,
+row count, or model-authored content digest is insufficient. An intentional change
+must have a separately declared scope; the actor cannot redefine the protected
+baseline after seeing the result.
+
 The proposed outcome states are:
 
 | State | Meaning |
@@ -86,6 +95,17 @@ The proposed outcome states are:
 Neither `unsupported` nor `not-observed` is a pass. An empty selected set can pass; a successful job with missing result observations cannot. Expected refusal tests may pass when an independently observed refusal is the required behavior, without implying the refused operation is supported.
 
 Independent provenance means a trusted observer collects responses and source/output state outside the acting model's control, and the evaluator computes expectations from frozen inputs or a separately trusted reference. Record knowledge-bundle digest, adapter/schema digest, runtime revision, input/result identities, observation hashes and collection context separately. A hash authenticates content only when its origin and custody are trusted; a model-authored `{ "pass": true }`, screenshot, or self-declared producer name is not proof. Protect source data and credentials when retaining evidence.
+
+Separate the observed outcome from its diagnosis. A failed predicate proves a
+contract was not satisfied; it does not by itself distinguish a mistaken agent
+decision from a product defect. Attribute a product failure only with an
+independent runtime reproduction, and an infrastructure failure with an
+independent infrastructure observation. Otherwise retain an undetermined cause.
+Report failed and interrupted attempts, cleanup outcomes, tool errors, latency,
+cost and relevant concept/interface identities. Repeated calls may be legitimate
+polling, and a clarification may be correct behavior. These signals guide
+investigation; they cannot replace the outcome predicates or erase an earlier
+failure through retry.
 
 ## First executable slice: read-only attribute selection
 

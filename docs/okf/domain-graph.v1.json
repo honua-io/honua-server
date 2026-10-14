@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:159bfbc5a73276e2faa75db3a97928be17ebac84aebde67ce9f9ca8bd61f46b1",
+  "bundleDigest": "sha256:0ca4ad0e3fef0111246aceab5322019c21afd93b4ffded7cc3345728e2bb4dfe",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1290,7 +1290,7 @@
     {
       "id": "concepts/domain/semantic-contracts",
       "path": "concepts/domain/semantic-contracts.md",
-      "documentDigest": "sha256:f911835d14e23da1b4ca75b3de9739ae30725c369ebfa0e00c78449846c1d11e",
+      "documentDigest": "sha256:46206b5cf6cfa5b2d693f0131d650ef5c65338280d0c84978824383641b2b7a9",
       "metadata": {
         "type": "concept",
         "title": "GIS semantic contracts and verification",
@@ -5214,7 +5214,7 @@
     {
       "id": "okf/README",
       "path": "okf/README.md",
-      "documentDigest": "sha256:926e02c6a2f01f52fbbe0a4c500ffcd0b2e3cdc5e5370053b96e2dcfb2ff5162",
+      "documentDigest": "sha256:9061f66df729791fed0c760386832fe9f6e4880f353420f680fe77dd1d3b0c32",
       "metadata": {
         "type": "index",
         "title": "Open Knowledge Format in honua-server",
