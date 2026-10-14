@@ -22,7 +22,7 @@
 
 # --- build stage: publish the harness + warm the NuGet cache + sanity-build sample ---
 # Pinned .NET SDK (do NOT use a floating tag).
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
