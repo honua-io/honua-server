@@ -1,207 +1,135 @@
 ---
 type: guide
 title: "Author a geoprocessing process"
-description: "Write, run, golden-test, plan, and debug a new geoprocessing process on your laptop in about five minutes — no server, no Redis, no control plane, no cloud round-trip."
+description: "Discover, scaffold, run, and test GP functions locally, then verify native execution in Docker and promote the tested images."
 ---
 # Author a geoprocessing process
 
-Write, run, golden-test, plan, and debug a new geoprocessing process on your laptop in about five minutes — no server, no Redis, no control plane, no cloud round-trip. The GP Devkit is the **inner loop** for authoring processes; deploying one across environments is a separate, governed step covered at the end.
+Develop against the same process executors used by the server and heavy worker.
+Start with the local devkit, use Docker for native dependencies, and use the
+[local server quickstart](gp-local-dev-quickstart.md) to verify the API journey.
 
-**Prerequisites:** the repository checkout and the .NET 10 SDK. The devkit is the dev-only `honua gp` command-line tool (assembly `honua-gp`, project `src/Honua.Geoprocessing.Cli`). It is deliberately kept out of the AOT-published server image. Nothing here needs the [GP local-dev docker quickstart](gp-local-dev-quickstart.md) — that stack (server + GDAL worker + Redis) is the integration loop; the devkit is the faster one that needs none of it.
+## Choose your local environment
 
-Run the tool with `dotnet run`:
+| Work | What you need |
+| --- | --- |
+| Managed geometry and transforms on inline data | Repository checkout and .NET 10 SDK |
+| Native GDAL/PDAL operations | The above plus Docker and the heavy-worker image |
+| Processes reading layers, databases, or object storage | Their configured input services and credentials |
+| Python SDK, GPServer, OGC, or MCP integration | Local server, PostGIS, Redis, and a heavy worker for native jobs |
 
-```bash
-dotnet run --project src/Honua.Geoprocessing.Cli -- <verb> [args]
-```
+The local runner needs no Redis or job queue. It registers both managed and
+native executors; listing a function does not install its external dependencies.
+Python SDK calls execute against a server, including a server running locally.
 
-The `-- <verb>` is `list`, `run`, `new`, `plan`, or `test`. Throughout this guide `honua gp <verb>` is shorthand for that command line (it is also the tool's own command name when installed as a local dotnet tool).
+Run commands from the repository root. Use the checkout command below; the
+`honua gp` wording in help output is a command-family label, not an installed
+shell command provided by these instructions.
 
-## Why the devkit exists
-
-A geoprocessing process here is plain code: it declares a `ProcessId` and a typed parameter schema, and it auto-registers (no toolbox file, no packaging step to author). The devkit runs that code directly through `GeoprocessingLocalRunner` — the same managed and native GDAL executors the serving and worker hosts register — with no job store, queue, or control plane in the loop.
-
-Compared with authoring a tool for ArcGIS:
-
-- **No license and no toolbox setup.** It is a `dotnet run` against the checkout.
-- **Sub-second edit/run loop.** `gp run` executes the process in-process; there is no submit/poll/fetch cycle.
-- **First-class unit tests.** Every process ships with a golden fixture; `gp test` is an NTS geometry-diff (with tolerance) plus scalar/structural diff, runnable in CI.
-- **Glass-box debugging.** `gp run --glass-box` shows the unsanitized GDAL command, full stderr, a phase timeline, and a local repro hint.
-
-It is an authoring and test tool only. Getting a process into staging or production is GitOps, described in [From local to environments](#from-local-to-environments).
-
-## The five-minute loop
-
-### 1. Scaffold a registered, runnable process — `gp new`
+## Discover and run an existing function
 
 ```bash
-honua gp new geometry.recenter --kind geometry
+dotnet run --project src/Honua.Geoprocessing.Cli -- list
+dotnet run --project src/Honua.Geoprocessing.Cli -- describe geometry.buffer
+dotnet run --project src/Honua.Geoprocessing.Cli -- run geometry.buffer \
+  --param wkb=AQEAAAAAAAAAAAAAAAAAAAAAAAAA --param srid=3857 \
+  --param distance=500 --out /tmp/honua-buffer.geojson
 ```
 
-`new` writes an executor `.cs` (registered via a one-line DI call and a matching catalog entry) plus a golden fixture under `samples/gp/geometry-recenter/` (the fixture id is the process id with dots replaced by dashes). The scaffolded body is a TODO that returns a trivial, deterministic, valid result, so the process compiles, auto-registers, runs, and golden-tests immediately. Expected output:
+This buffers `POINT(0 0)` by 500 metres in EPSG:3857. The resulting bounds are
+`[-500, -500, 500, 500]`. Planar distances use the input CRS units: do not pass a
+metre distance with EPSG:4326. Reproject metric output before using it in a map
+that expects WGS 84 GeoJSON.
 
-```text
-Scaffolding 'geometry.recenter' (Geometry) in /path/to/honua-server:
-  wrote src/.../GeometryRecenterJobExecutor.cs  (...)
-  wrote samples/gp/geometry-recenter/fixture.json  (Golden-test fixture manifest (P6) — `gp test` runs this.)
-  wrote samples/gp/geometry-recenter/golden.geojson  (...)
-  wrote samples/gp/geometry-recenter/README.md  (...)
+Use `plan` with the same inputs to validate parameters and inspect the execution
+plan without running it. Its size and cost estimates are heuristics.
 
-Next steps:
-  1. Edit the body in src/.../GeometryRecenterJobExecutor.cs (look for the TODO).
-  2. Run it:    honua gp run geometry.recenter --param value=hello
-  3. Test it:   honua gp test geometry-recenter
-  4. Plan it:   honua gp plan geometry.recenter
-```
-
-Use `--kind gdal` to scaffold a native (out-of-process GDAL) process instead. Pass `--output <dir>` to preview the rendered files in a throwaway directory without touching the repo (the tool then prints the manual registration line you would add).
-
-Confirm it registered:
+## Scaffold and test your own function
 
 ```bash
-honua gp list
+dotnet run --project src/Honua.Geoprocessing.Cli -- new geometry.recenter --kind geometry
+dotnet run --project src/Honua.Geoprocessing.Cli -- run geometry.recenter --param value=hello
+dotnet run --project src/Honua.Geoprocessing.Cli -- test geometry-recenter
 ```
 
-```text
-Available geoprocessing processes:
-  geometry.buffer                  Buffer
-  geometry.recenter                Recenter
-  ...
-```
+The scaffold writes an executor, adds its registration and catalog entry, and
+creates a fixture under `samples/gp/geometry-recenter/`. Its initial body returns
+a deterministic Point feature with an echoed `value`; it does not yet recenter
+an input geometry. Edit the TODO body and parameter schema to implement that
+behavior, then update the fixture to describe it.
 
-### 2. Edit the TODO body
+Use `--kind gdal` for a native executor scaffold. To inspect generated files
+without changing the checkout, add `--output /tmp/honua-gp-preview`; preview
+mode prints the registration steps instead of applying them.
 
-Open the generated executor and replace the marked block:
-
-```csharp
-// ----------------------------------------------------------------------
-// TODO: replace this trivial body with the real geometry.recenter implementation.
-//   1. Read + validate your typed inputs.
-//   2. Compute the result.
-//   3. Publish the artifact as a data URI.
-// ----------------------------------------------------------------------
-```
-
-Step-0 inputs arrive under the canonical `geoprocessing.step.0.<name>` keys; geometry ops emit `application/geo+json` artifacts, scalar/raster ops emit `application/json` or a native media type. See the existing `GeometryCentroidJobExecutor` and `GdalVectorConvertJobExecutor` for the input-reading and size-cap patterns.
-
-### 3. Run it instantly — `gp run`
+After an intentional change, regenerate and review the golden result:
 
 ```bash
-honua gp run geometry.recenter --param wkb=<base64> --param srid=4326
+dotnet run --project src/Honua.Geoprocessing.Cli -- test geometry-recenter --update
+dotnet run --project src/Honua.Geoprocessing.Cli -- test geometry-recenter
 ```
 
-Bind inputs with `--param k=v` (repeatable) or read a file with `--input <file>` / `-i`, which base64-encodes the bytes and binds them to the process's primary file-like input. Write the first artifact's bytes out with `--out <file>` / `-o`. The output is the resolved command, structured logs, and timing:
+`test` compares geometry with the fixture's tolerance and compares scalar or
+structural outputs. Commit the implementation and reviewed fixture together.
+Generated JSON output works with reflection disabled, as required by the lean
+server. The devkit and heavy worker remain JIT applications; the heavy worker
+supports reflection and does not require an AOT build.
 
-```text
-process : geometry.recenter
-status  : Succeeded
-elapsed : 12.4 ms
-command : <sanitized GDAL command, if native>
-artifact: data:application/geo+json;base64,...
-```
+## Run native functions in Docker
 
-There is no Redis, no queue, and no control plane — the executor runs in-process and returns synchronously.
-
-### 4. Golden-test it — `gp test`
+Build a named worker image using the same Compose definition as the integration
+stack. This builds the image without starting PostGIS, Redis, or the server:
 
 ```bash
-honua gp test geometry-recenter
+docker compose -f docker-compose.gp-dev.yml --profile gdal-worker build gdal-worker
+export HONUA_GP_WORKER_IMAGE=honua-worker-etl:gp-local
+
+dotnet run --project src/Honua.Geoprocessing.Cli -- run gdal.ogr2ogr \
+  --real-worker --input samples/gp-local-dev/points.csv \
+  --param sourceFormat=CSV --param targetFormat=GeoJSON \
+  --out /tmp/honua-points.geojson --glass-box
 ```
 
-`test` runs the golden fixture under `samples/gp/` for that id (omit the id to run every fixture). It is a geometry-diff with tolerance for geometry outputs and a scalar/structural diff otherwise:
+Expect two Point features preserving XYZ coordinates `[12.25, -4.5, 7.75]` and
+`[-2, 8, 3]`, names `alpha` and `beta`, and values `17` and `42`. CSV attributes
+may remain strings. The checked-in [sample](../../../samples/gp-local-dev/README.md)
+describes both the native conversion and server-side buffer paths.
 
-```text
-GP golden tests : 1 fixture(s) under samples/gp
-mode            : assert
+Inspect the saved coordinates as well as the job status. Some GDAL builds emit
+a Z-discard warning for this conversion even when the output retains XYZ; the
+expected coordinates above provide a direct check of the result.
 
-PASS  geometry-recenter            geometry.recenter   matched golden within tolerance
+`--real-worker` requires the selected image to exist locally. It runs native
+commands inside that image while the devkit coordinates the process on the host.
+Without this flag, the devkit selects Docker when its configured image is
+available and otherwise uses host-native tools. Use `--in-process` explicitly
+when testing a host installation.
 
-summary : 1 passed, 0 failed, 1 total
-```
-
-After an intended change to the output, regenerate the golden with `--update` (or `-u`), then commit it:
-
-```bash
-honua gp test geometry-recenter --update
-```
-
-The same regeneration is available via `HONUA_GP_UPDATE_GOLDENS=1`, and the harness (`Honua.Geoprocessing.Testing`) runs the same fixtures in the .NET test suite, so a regression fails CI like any other test.
-
-### 5. Validate and size-check — `gp plan`
-
-```bash
-honua gp plan geometry.recenter --param wkb=<base64> --param srid=4326
-```
-
-`plan` is a dry run: it validates the typed parameters, shows the step/DAG plan, and gives a **heuristic** output-size/cost estimate that warns before the 50 MiB artifact cap — without executing anything:
-
-```text
-process      : geometry.recenter  (Recenter)
-category     : Geometry
-runtime      : managed
-valid        : yes
-
-steps:
-  step-0  geometry.recenter  (depends on: -)
-    - wkb [Wkb, required] = <...>  (caller)
-    - srid [Int32, required] = 4326  (caller)
-
-outputs      : artifact
-
-size/cost estimate (HEURISTIC — not a guarantee):
-  input bytes      : 32 B
-  est. output      : ~32 B
-  cap (MaxArtifactBytes) : 50.0 MiB
-  basis            : ...
-  resource hint    : profile=managed, long-running=no
-
-Plan is valid. Submit with: honua gp run geometry.recenter ...
-```
-
-`plan` exits non-zero when the plan is invalid (a missing required input, an unknown process), so CI can gate on a clean plan; a valid plan with only size/cost warnings still exits 0.
-
-### 6. Debug with the glass box — `gp run --glass-box`
-
-When a native (GDAL) process misbehaves, make the box transparent:
-
-```bash
-honua gp run gdal.ogr2ogr --input in.geojson --param targetFormat=CSV --glass-box
-```
-
-`--glass-box` (also `--debug` / `-d`, or `HONUA_GP_GLASSBOX=1`) is **dev-only**: it prints the unsanitized GDAL command with its real scratch paths, full stdout/stderr, a phase timeline, an artifact preview, and a copy-pasteable "repro locally" hint:
-
-```text
-──── glass box (dev) ────────────────────────────────────────
-timeline:
-  +   0.0 ms      5%  parse-inputs
-  +   8.2 ms     50%  invoke-gdal
-  +  14.1 ms    100%  publish-artifact
-native commands (UNSANITIZED — real scratch paths):
-  $ ogr2ogr -f CSV /tmp/gp-xxxx/out.csv /tmp/gp-xxxx/in.geojson
-    cwd      : /tmp/gp-xxxx
-    exit     : 0
-    stdout   : ...
-scratch dirs (inspect intermediate files here):
-  /tmp/gp-xxxx
-repro locally:
-  cd /tmp/gp-xxxx && ogr2ogr -f CSV out.csv in.geojson
-─────────────────────────────────────────────────────────────
-```
-
-Without the flag, `gp run` stays on the sanitized path (scratch paths redacted, stderr not dumped) — the same output a production-equivalent caller sees.
+On Linux and macOS the devkit uses your UID/GID for writable scratch mounts.
+`HONUA_GP_CONTAINER_USER` and `HONUA_GP_CONTAINER_RUNTIME` override the user and
+container executable. `--glass-box` exposes actual command arguments, stderr,
+and scratch paths for local debugging; inspect them before sharing logs.
 
 ## From local to environments
 
-The devkit loop is **authoring and test only**. It never deploys. A process reaches staging or production through GitOps, and the path depends on how the process was authored:
+1. Run the fixture and, for native code, the real-worker Docker check.
+2. Rebuild the local server stack and submit through the SDK or MCP. A new
+   catalog definition requires a server rebuild; a native executor change
+   requires a heavy-worker rebuild. See the [quickstart](gp-local-dev-quickstart.md).
+3. Ship code through the normal image build and release process. Promote the
+   tested image digest, with a remote workload declaring the matching
+   `managed` or `native` runtime profile. Per-job Kubernetes and AWS Batch
+   workers receive an assigned operation and exit after recording its outcome.
+   Persistent Compose workers continue consuming their shared Redis queue.
 
-- **Built-in (code) processes** — the executors you scaffold and edit here ship with the server image. Once your `.cs` and golden fixture are merged, they ride the normal build and deploy pipeline; there is no per-process publish step. They appear in the [geoprocessing operations](../../reference/geoprocessing-operations.md) catalog of any deployment running that image.
-- **Console-authored workflows** — graphs of catalog processes (built in Honua Console) go through the workflow-package publish lifecycle on the admin API (`/api/v{n}/console/workflow-packages`): **save** a draft → snapshot an **immutable version** → **validate** → **dry-run** → **publish**. Publication flows into a metadata release, which a governed GitOps reconcile rolls out across environments. See [Automate workflows](automate-workflows.md) for the request/response shapes.
+Workflow publication is a separate operation: `publish` saves a workflow draft,
+creates a version, validates it, and performs a dry run; `--publish` additionally
+publishes that version. It references deployed process IDs and does not upload
+C# code or replace worker images.
 
-A future `honua gp publish` bridge is planned to take a locally-authored process from the checkout to the package store in one command. It does **not** exist yet — today, code processes ship via the image and workflow packages publish through the console API as above.
+```bash
+dotnet run --project src/Honua.Geoprocessing.Cli -- --help
+```
 
-## Next steps
-
-- [Run geoprocessing](run-geoprocessing.md) — submit a process over OGC API Processes / GPServer.
-- [Automate workflows](automate-workflows.md) — chain processes into a published, scheduled DAG.
-- [Geoprocessing operations reference](../../reference/geoprocessing-operations.md) — the full catalog and per-process parameters.
-- [GP local-dev docker quickstart](gp-local-dev-quickstart.md) — the full server + worker + Redis integration loop.
+See [automate workflows](automate-workflows.md) for the workflow lifecycle and
+[GP with AI](geoprocessing-with-ai.md) for MCP discovery, validation, and execution.

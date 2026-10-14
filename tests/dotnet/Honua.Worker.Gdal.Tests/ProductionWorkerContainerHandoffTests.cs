@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using System.Text.Json;
 using System.Runtime.Versioning;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
+using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Networks;
 using FluentAssertions;
 using Honua.ControlPlane;
@@ -17,6 +19,7 @@ using Honua.TestKit.Helpers;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
+using Xunit;
 using Xunit.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
@@ -178,6 +181,85 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
                 // Testcontainers can briefly retain a bind-mount handle during teardown.
             }
         }
+    }
+
+    [RequiredEnvironmentFact(
+        ImageEnvironmentVariable,
+        skipReason: "The production worker image must be built and named by the GDAL image lane.")]
+    [Trait("Tier", "Integration")]
+    public async Task ProductionImage_AssignedNativeOperation_ConvertsAndExitsWithoutDrainingQueue()
+    {
+        var image = Environment.GetEnvironmentVariable(ImageEnvironmentVariable)!;
+        await using var network = new NetworkBuilder().Build();
+        await network.CreateAsync();
+        await using var redis = new ContainerBuilder()
+            .WithImage("redis:7.2-alpine")
+            .WithNetwork(network)
+            .WithNetworkAliases(RedisAlias)
+            .WithPortBinding(6379, true)
+            .WithCommand("redis-server", "--appendonly", "yes", "--appendfsync", "always", "--save", "")
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilCommandIsCompleted("redis-cli", "ping"))
+            .Build();
+        await redis.StartAsync();
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(
+            $"{redis.Hostname}:{redis.GetMappedPublicPort(6379)}");
+        var store = new RedisExecutionJobStore(multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
+        var queue = new RedisJobQueue(multiplexer, store, NullLogger<RedisJobQueue>.Instance);
+        var parameters = BaseParameters("gdal.ogr2ogr");
+        const string csv = "WKT,name,value\n\"POINT Z (12.25 -4.5 7.75)\",alpha,17\n";
+        parameters[GdalWorkerParameterKeys.StepInputPrefix + "source"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(csv));
+        parameters[GdalWorkerParameterKeys.StepInputPrefix + "sourceFormat"] = "CSV";
+        parameters[GdalWorkerParameterKeys.StepInputPrefix + "targetFormat"] = "GeoJSON";
+        var assigned = CreateQueuedJob($"native-assigned-{Guid.NewGuid():N}", parameters) with
+        {
+            AttemptCount = 1,
+            ProviderOperationId = "container-certification-attempt-1",
+        };
+        (await store.TryCreateAsync(assigned)).Should().BeTrue();
+        var unrelated = CreateQueuedJob($"native-unrelated-{Guid.NewGuid():N}", parameters);
+        (await store.TryCreateAsync(unrelated)).Should().BeTrue();
+        await queue.EnqueueAsync(unrelated.OperationId);
+
+        // Reuse exactly the launch variables stamped by Kubernetes/Batch backends.
+        var launch = ExecutionWorkerLaunchEnvironment.Build(assigned, 1)
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        await using var worker = new ContainerBuilder()
+            .WithImage(image)
+            .WithNetwork(network)
+            .WithEnvironment("ConnectionStrings__redis", $"{RedisAlias}:6379")
+            .WithEnvironment("Licensing__Mode", "Disabled")
+            .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
+            .WithEnvironment(launch)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged(
+                "Application is shutting down", options => options.WithMode(WaitStrategyMode.OneShot)))
+            .Build();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await worker.StartAsync(timeout.Token);
+        (await worker.GetExitCodeAsync(timeout.Token)).Should().Be(0);
+        timeout.IsCancellationRequested.Should().BeFalse();
+        var logs = await worker.GetLogsAsync();
+        output.WriteLine(logs.Stdout);
+        output.WriteLine(logs.Stderr);
+
+        var terminal = await store.GetAsync(assigned.OperationId);
+        terminal.Should().NotBeNull();
+        terminal!.Status.Should().Be(ExecutionJobStatus.Succeeded, terminal.ErrorMessage);
+        terminal.ArtifactReferences.Should().ContainSingle();
+        var artifact = terminal.ArtifactReferences.Single();
+        artifact.Should().StartWith("data:application/geo+json;base64,");
+        using var document = JsonDocument.Parse(Convert.FromBase64String(artifact[(artifact.IndexOf(',') + 1)..]));
+        var features = document.RootElement.GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+        var feature = features[0];
+        feature.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
+        feature.GetProperty("geometry").GetProperty("coordinates").EnumerateArray()
+            .Select(value => value.GetDouble()).Should().Equal(12.25, -4.5, 7.75);
+        feature.GetProperty("properties").GetProperty("name").GetString().Should().Be("alpha");
+        feature.GetProperty("properties").GetProperty("value").GetString().Should().Be("17");
+        (await store.GetAsync(unrelated.OperationId)).Should().BeEquivalentTo(
+            unrelated, options => options.Excluding(job => job.Version));
+        (await multiplexer.GetDatabase().SortedSetScoreAsync("controlplane:jobqueue:pending", unrelated.OperationId))
+            .Should().NotBeNull();
     }
 
     private static IContainer BuildWorker(string image, INetwork network, string hostOutputRoot)

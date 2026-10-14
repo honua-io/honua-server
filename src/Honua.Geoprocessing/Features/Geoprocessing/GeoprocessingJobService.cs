@@ -840,7 +840,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // Resolve once so replay compares the same effective controls that BuildSpec persists.
         // Workload defaults also apply when the caller omits a control, and declared workload
         // values override request metadata. This read has no admission or dispatch side effects.
-        var workload = await _dispatcher.ResolveWorkloadAsync(isCustomCode, cancellationToken).ConfigureAwait(false);
+        var requiredRuntimeProfile = isCustomCode
+            ? CustomCodeJobContract.RuntimeProfile
+            : ResolveRequiredRuntimeProfile(plan, processCatalog);
+        var workload = await _dispatcher.ResolveWorkloadAsync(
+            isCustomCode, requiredRuntimeProfile, cancellationToken).ConfigureAwait(false);
         var effectiveProtocolMetadata = ResolveEffectiveProtocolControls(protocolMetadata, workload);
         var now = DateTimeOffset.UtcNow;
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
@@ -1021,9 +1025,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 // A custom-code job forces the custom-code runtime profile so the claim
                 // fence routes it to the custom-code Batch workload (and away from the lean
                 // dispatcher and the GDAL worker); otherwise stamp the catalog-required profile.
-                var requiredRuntimeProfile = isCustomCode
-                    ? CustomCodeJobContract.RuntimeProfile
-                    : ResolveRequiredRuntimeProfile(plan, processCatalog);
                 var spec = BuildSpec(
                     plan, specParams, requestMetadataKeys, workload, requiredRuntimeProfile, resourceProfile);
                 if (gpExecution is not null)

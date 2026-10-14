@@ -2357,7 +2357,7 @@ public sealed partial class GeoprocessingJobServiceTests
                 Backend = "aws-batch",
                 WorkloadName = "Remote geoprocessing",
                 ArtifactReference = "ecr/honua-gp:latest",
-                RuntimeProfile = "py311",
+                RuntimeProfile = "managed",
                 Parameters = new Dictionary<string, string>
                 {
                     ["queue"] = "gp-primary"

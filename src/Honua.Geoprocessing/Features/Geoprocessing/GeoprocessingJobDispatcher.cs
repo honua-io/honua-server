@@ -254,7 +254,8 @@ internal sealed class GeoprocessingJobDispatcher
     /// geoprocessing workload over the always-present local baseline. Returns <c>null</c> when
     /// no workload registry is configured.
     /// </summary>
-    public async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(bool isCustomCode, CancellationToken cancellationToken)
+    public async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(
+        bool isCustomCode, string? requiredRuntimeProfile, CancellationToken cancellationToken)
     {
         if (_workloadRegistry == null)
         {
@@ -283,16 +284,25 @@ internal sealed class GeoprocessingJobDispatcher
                         !string.Equals(d.RuntimeProfile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal))
             .ToArray();
 
-        // When the operator has supplied a remote (e.g. AWS Batch) GP workload
-        // alongside the always-present local/Kubernetes baseline, prefer the remote
-        // one so a fully-configured substrate routes GP execution off-box. The
-        // registry already drops remote workloads that are missing their required
-        // ARNs (see ExecutionWorkloadGate), so a surviving non-local workload is one
-        // the operator deliberately activated. Falling back to FirstOrDefault keeps
-        // the local-only default behavior when no remote workload is configured.
-        return geoprocessingWorkloads.FirstOrDefault(d =>
-                   !string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
-               ?? geoprocessingWorkloads.FirstOrDefault();
+        // A remote image must explicitly support the required runtime. The local
+        // baseline uses the shared queue, whose managed/native consumers apply the
+        // runtime claim fence, so an unprofiled local workload can serve either.
+        var profile = RuntimeProfiles.Normalize(requiredRuntimeProfile);
+        var compatible = geoprocessingWorkloads.Where(d =>
+            (string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                && string.IsNullOrWhiteSpace(d.RuntimeProfile))
+            || string.Equals(RuntimeProfiles.Normalize(d.RuntimeProfile), profile, StringComparison.Ordinal))
+            .ToArray();
+        var selected = compatible.FirstOrDefault(d =>
+            !string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+            ?? compatible.FirstOrDefault();
+        if (selected is null && geoprocessingWorkloads.Length > 0)
+        {
+            throw new GeoprocessingValidationException(
+                $"No geoprocessing workload supports runtime profile '{profile}'. Configure a compatible worker image and runtime profile.");
+        }
+
+        return selected;
     }
 
     /// <summary>
