@@ -59,7 +59,11 @@ artifact hashes, and whether the bounded event log was truncated. These are
 Try a missing input, a property name absent from the fixture, and an output cap
 of `--max-output-bytes 1`. Exit codes are `0` success, `1` tool/output failure,
 `2` setup failure, and `3` cancellation. Failed runs retain their work directory
-for inspection and do not advertise successful artifacts.
+for inspection and do not advertise successful artifacts. Cancellation is cooperative:
+Python tools must poll `context.cancellation.raise_if_cancelled()` and .NET tools
+must observe the supplied cancellation token. Blocking native calls can delay
+cancellation. Python temporarily handles SIGINT/SIGTERM when run on the main
+thread and restores the prior handlers afterward.
 
 Native imports require their matching native libraries or the appropriate
 custom-code worker image. The GDAL heavy-worker image and the Python/.NET
