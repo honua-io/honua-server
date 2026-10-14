@@ -19,3 +19,7 @@ assertions are unchanged. A both-family Development regression uses a scoped
 provider, submits a durable job, checks its four result artifacts and verifies
 scope disposal. The source digest is refreshed for this ownership correction;
 all 98 prior verdicts and the three partially-proven routing rows are retained.
+
+## Addendum: queued pgRouting composition
+
+`RoutingPgRoutingQueuedJobTests` submits the three routing tasks through the canonical durable dispatcher with the real `PgRoutingProvider` and the seeded 3x3 lattice. Closest facilities, OD cost matrix, and location-allocation match an independent shortest-path, rank, identity, and geometry oracle on both GPServer and NAServer. Unsupported travel modes fail as durable jobs with no published features. Choice-list settings the adapter rejects before enqueue return the GeoServices error and no job. Provider SQL failures stay on the safe execution message after the retry budget, with no partial results. The three matrix rows are proven. Issue #5192 remains the separate stock ArcPy binding and native Route/ServiceArea acceptance.
