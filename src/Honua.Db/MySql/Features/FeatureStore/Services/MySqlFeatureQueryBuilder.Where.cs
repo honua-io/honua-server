@@ -100,16 +100,10 @@ internal sealed partial class MySqlFeatureQueryBuilder
                 clauses.Add($"{MySqlIdentifier.Quote(clause.Field)} {direction}");
             }
 
+            // Caller ORDER BY is kept as supplied. Appending the primary key would change
+            // tie-breaking the caller did not request. Distinct selects do not call this
+            // method; unpaged and paged caller sorts share this path.
             sb.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", clauses)}");
-
-            // A non-unique caller ORDER BY still lets LIMIT/OFFSET skip or repeat rows.
-            // Append the primary key unless the caller already ordered by it. Distinct
-            // selects do not call this method: the key is not in that projection.
-            if ((query.Limit.HasValue || query.Offset is > 0) && !OrderIncludesColumn(query, mapping.PrimaryKeyColumn))
-            {
-                sb.Append(CultureInfo.InvariantCulture, $", {mapping.QuotedPrimaryKeyColumn} ASC");
-            }
-
             return;
         }
 
@@ -125,24 +119,6 @@ internal sealed partial class MySqlFeatureQueryBuilder
             sb.Append(CultureInfo.InvariantCulture,
                 $" ORDER BY {mapping.QuotedPrimaryKeyColumn} ASC");
         }
-    }
-
-    private static bool OrderIncludesColumn(FeatureQuery query, string column)
-    {
-        if (query.OrderBy is not { IsDefaultOrEmpty: false } orderBy)
-        {
-            return false;
-        }
-
-        foreach (var clause in orderBy)
-        {
-            if (string.Equals(clause.Field, column, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /// <summary>

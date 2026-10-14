@@ -538,25 +538,6 @@ internal static partial class OracleFeatureQueryBuilder
     private static bool IsPaging(FeatureQuery query)
         => query.Limit.HasValue || query.Offset is > 0;
 
-    private static bool OrderIncludesColumn(FeatureQuery query, string column, Func<string, string> resolveColumnName)
-    {
-        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
-        {
-            return false;
-        }
-
-        foreach (var orderBy in query.OrderBy.Value)
-        {
-            if (string.Equals(orderBy.Field, column, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(resolveColumnName(orderBy.Field), column, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /// <summary>
     /// Orders a DISTINCT projection by columns that appear in the select list. Oracle
     /// rejects ORDER BY expressions outside that list, and the primary key is omitted
@@ -588,12 +569,9 @@ internal static partial class OracleFeatureQueryBuilder
             }
         }
 
-        foreach (var column in projectedAttributes)
+        foreach (var column in projectedAttributes.Where(seen.Add))
         {
-            if (seen.Add(column))
-            {
-                clauses.Add($"{OracleIdentifier.QuoteAttribute(column)} ASC");
-            }
+            clauses.Add($"{OracleIdentifier.QuoteAttribute(column)} ASC");
         }
 
         sb.Append(" ORDER BY ");
@@ -612,20 +590,15 @@ internal static partial class OracleFeatureQueryBuilder
             return;
         }
 
-        // Oracle 12c+ OFFSET / FETCH NEXT requires a deterministic ORDER BY. A non-unique
-        // caller ORDER BY can still skip or duplicate rows, so append the primary key unless
-        // it is already present. Distinct projections order their selected columns instead:
-        // the key is not in that select list.
-        if (!suppressPrimaryKeyTiebreaker)
+        // Oracle 12c+ OFFSET / FETCH NEXT requires an ORDER BY. When the caller did not
+        // supply one, fall back to the primary key. A caller ORDER BY is left unchanged:
+        // appending the key would change tie-breaking the caller did not request.
+        // Distinct projections order their selected columns and suppress this fallback
+        // because the key is not in that select list.
+        if (!suppressPrimaryKeyTiebreaker
+            && (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty))
         {
-            if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
-            {
-                sb.Append(" ORDER BY ").Append(mapping.QuotedPrimaryKeyColumn);
-            }
-            else if (!OrderIncludesColumn(query, mapping.PrimaryKeyColumn, requested => requested))
-            {
-                sb.Append(", ").Append(mapping.QuotedPrimaryKeyColumn).Append(" ASC");
-            }
+            sb.Append(" ORDER BY ").Append(mapping.QuotedPrimaryKeyColumn);
         }
 
         var offset = query.Offset.GetValueOrDefault(0);

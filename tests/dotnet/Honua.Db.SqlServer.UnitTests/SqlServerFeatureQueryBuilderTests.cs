@@ -170,7 +170,8 @@ public class SqlServerFeatureQueryBuilderTests
 
         var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("ORDER BY [name] DESC, [area] ASC, [objectid] ASC", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY [name] DESC, [area] ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("[objectid] ASC", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("(SELECT 1)", result.Sql, StringComparison.Ordinal);
         Assert.Contains("FETCH NEXT @p1 ROWS ONLY", result.Sql, StringComparison.Ordinal);
     }

@@ -134,7 +134,8 @@ public class OracleFeatureQueryBuilderTests
 
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("ORDER BY \"name\" DESC, \"area\" ASC, \"OBJECTID\" ASC", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY \"name\" DESC, \"area\" ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"OBJECTID\" ASC", result.Sql, StringComparison.Ordinal);
         Assert.Contains("FETCH NEXT :p1 ROWS ONLY", result.Sql, StringComparison.Ordinal);
     }
 

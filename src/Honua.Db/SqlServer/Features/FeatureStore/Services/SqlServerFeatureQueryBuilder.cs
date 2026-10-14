@@ -487,24 +487,6 @@ internal static partial class SqlServerFeatureQueryBuilder
     private static bool IsPaging(FeatureQuery query)
         => query.Limit.HasValue || query.Offset is > 0;
 
-    private static bool OrderIncludesColumn(FeatureQuery query, string column)
-    {
-        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
-        {
-            return false;
-        }
-
-        foreach (var orderBy in query.OrderBy.Value)
-        {
-            if (string.Equals(orderBy.Field, column, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /// <summary>
     /// Orders a DISTINCT projection by columns that appear in the select list. SQL Server
     /// rejects ORDER BY expressions that are not projected, and the primary key is not part
@@ -530,12 +512,9 @@ internal static partial class SqlServerFeatureQueryBuilder
             }
         }
 
-        foreach (var column in projectedAttributes)
+        foreach (var column in projectedAttributes.Where(seen.Add))
         {
-            if (seen.Add(column))
-            {
-                clauses.Add($"{SqlServerIdentifier.QuoteAttribute(column)} ASC");
-            }
+            clauses.Add($"{SqlServerIdentifier.QuoteAttribute(column)} ASC");
         }
 
         sb.Append(" ORDER BY ");
@@ -554,21 +533,15 @@ internal static partial class SqlServerFeatureQueryBuilder
             return;
         }
 
-        // SQL Server requires ORDER BY before OFFSET / FETCH NEXT. A caller ORDER BY that is not
-        // unique can still skip or duplicate rows across pages, so append the primary key unless
-        // the caller already ordered by it. Distinct projections omit the key (it would uniquify
-        // every tuple and is not in the select list), so that path orders the projected columns
-        // before calling here.
-        if (!suppressPrimaryKeyTiebreaker)
+        // SQL Server requires ORDER BY before OFFSET / FETCH NEXT. When the caller did not
+        // supply one, fall back to the primary key. A caller ORDER BY is left unchanged:
+        // appending the key would change tie-breaking the caller did not request.
+        // Distinct projections order their selected columns and suppress this fallback
+        // because the key is not in that select list.
+        if (!suppressPrimaryKeyTiebreaker
+            && (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty))
         {
-            if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
-            {
-                sb.Append(" ORDER BY ").Append(mapping.QuotedPrimaryKeyColumn);
-            }
-            else if (!OrderIncludesColumn(query, mapping.PrimaryKeyColumn))
-            {
-                sb.Append(", ").Append(mapping.QuotedPrimaryKeyColumn).Append(" ASC");
-            }
+            sb.Append(" ORDER BY ").Append(mapping.QuotedPrimaryKeyColumn);
         }
 
         var offset = query.Offset.GetValueOrDefault(0);

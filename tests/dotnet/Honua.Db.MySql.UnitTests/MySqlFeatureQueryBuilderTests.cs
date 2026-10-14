@@ -148,7 +148,7 @@ public class MySqlFeatureQueryBuilderTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildSelectQuery_PagedOrderBy_AppendsPrimaryKeyTiebreaker()
+    public void BuildSelectQuery_PagedOrderBy_PreservesCallerSort()
     {
         var query = new FeatureQuery
         {
@@ -158,7 +158,8 @@ public class MySqlFeatureQueryBuilderTests
 
         var result = _builder.BuildSelectQuery(LayerId, query);
 
-        Assert.Contains("ORDER BY `name` DESC, `id` ASC", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY `name` DESC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("`id` ASC", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -1212,10 +1213,10 @@ public class MySqlFeatureQueryBuilderTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildSelectQuery_WithCallerOrderBy_AppendsPrimaryKeyTiebreakerWhenPaging()
+    public void BuildSelectQuery_WithCallerOrderBy_DoesNotAppendPrimaryKey()
     {
-        // A non-unique caller ORDER BY is kept, and the primary key is appended when the
-        // statement pages. Without that tiebreaker, LIMIT/OFFSET can skip or repeat rows.
+        // Caller-supplied OrderBy is honored as-is. Appending the primary key would change
+        // tie-breaking the caller did not request.
         var query = new FeatureQuery
         {
             Limit = 10,
@@ -1224,7 +1225,8 @@ public class MySqlFeatureQueryBuilderTests
 
         var result = _builder.BuildSelectQuery(LayerId, query);
 
-        Assert.Contains("ORDER BY `name` ASC, `id` ASC", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY `name` ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("`id` ASC", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
