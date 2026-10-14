@@ -13,6 +13,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Operations;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -21,7 +22,7 @@ public sealed class RootProvisioningOperationLineageTests
     private const string RootA = "urn:honua:provisioning:0123456789abcdef0123456789abcdef";
     private const string RootB = "urn:honua:provisioning:ffffffffffffffffffffffffffffffff";
 
-    [Fact]
+    [UnitTest]
     public async Task CreateAsync_StampsTheWorkflowRecordAndTheReleaseContext()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -48,7 +49,7 @@ public sealed class RootProvisioningOperationLineageTests
         Assert.Equal(2, Count(json, $"\"rootProvisioningOperationId\":\"{RootA}\""));
     }
 
-    [Fact]
+    [UnitTest]
     public async Task CreateAsync_AbsentRoot_IsOmittedFromTheWireResponse()
     {
         var service = new MetadataReleaseControlService([new InMemoryWorkflowOperationStore()]);
@@ -62,7 +63,7 @@ public sealed class RootProvisioningOperationLineageTests
         Assert.DoesNotContain("rootProvisioningOperationId", json, StringComparison.Ordinal);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task CreateAsync_ReplayWithADifferentRoot_ConflictsAndKeepsTheOriginal()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -79,7 +80,7 @@ public sealed class RootProvisioningOperationLineageTests
         Assert.Equal(RootA, stored.MetadataRelease!.RootProvisioningOperationId);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task CreateAsync_MalformedRoot_IsRejectedBeforeTheRecordIsWritten()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -91,7 +92,7 @@ public sealed class RootProvisioningOperationLineageTests
         Assert.Empty(await store.ListActiveAsync());
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Executor_StampsTheRootFromTheVerifiedGatewayHandoff()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -111,7 +112,7 @@ public sealed class RootProvisioningOperationLineageTests
         Assert.Equal(RootA, stored.MetadataRelease!.RootProvisioningOperationId);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Executor_PayloadRoot_IsTheFallbackWhenTheCanonicalFieldIsAbsent()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -127,7 +128,7 @@ public sealed class RootProvisioningOperationLineageTests
         Assert.Equal(RootA, (await store.GetAsync(operationId!))!.RootProvisioningOperationId);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Executor_MismatchedRoots_AreRejected()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -144,7 +145,7 @@ public sealed class RootProvisioningOperationLineageTests
         Assert.Empty(await store.ListActiveAsync());
     }
 
-    [Fact]
+    [UnitTest]
     public void OperationHandleAndStatus_SerializeTheCanonicalFieldName()
     {
         var now = new DateTimeOffset(2026, 10, 14, 0, 0, 0, TimeSpan.Zero);
