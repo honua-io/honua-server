@@ -446,6 +446,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
             SslRequired = reader.GetBoolean(8),              // ssl_required
             SslMode = ParseSslMode(reader.GetString(9)), // ssl_mode
             ConnectionStringEncrypted = reader.IsDBNull(10) ? null : (byte[])reader[10], // connection_string_encrypted
+            IsEncrypted = !reader.IsDBNull(10),
             EncryptionKeyVersion = reader.GetInt32(11),      // encryption_key_version
             SecretRef = reader.IsDBNull(12) ? null : reader.GetString(12), // secret_ref
             SecretType = reader.IsDBNull(13) ? null : reader.GetString(13), // secret_type

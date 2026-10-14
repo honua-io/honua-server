@@ -419,7 +419,9 @@ public class DataConnection
         if (string.IsNullOrWhiteSpace(Host))
             return false;
 
-        if (Port <= 0 || Port > 65535)
+        var hasExternalSecret = !IsEncrypted &&
+            !string.IsNullOrWhiteSpace(SecretRef) && !string.IsNullOrWhiteSpace(SecretType);
+        if (Port < 0 || Port > 65535 || (Port == 0 && !hasExternalSecret))
             return false;
 
         if (string.IsNullOrWhiteSpace(DatabaseName))

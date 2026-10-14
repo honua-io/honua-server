@@ -128,6 +128,7 @@ jobs:
       generated_only: ${{ steps.generated-only.outputs.generated_only }}
       skip: ${{ (steps.docs-only.outputs.docs_only == 'true' || steps.generated-only.outputs.generated_only == 'true') && 'true' || 'false' }}
       producer-attempt: ${{ steps.managed-producer.outputs.producer-attempt }}
+      managed-sdk-version: ${{ steps.managed-sdk.outputs.dotnet-sdk-version }}
     steps:
       # fetch-depth 2, not the default 1: the checked-out ref is
       # refs/pull/N/merge, whose FIRST PARENT is the current tip of `trunk`. That
@@ -304,6 +305,7 @@ jobs:
 
       - name: Setup .NET
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        id: managed-sdk
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
@@ -433,6 +435,7 @@ jobs:
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          artifact-sdk-version: ${{ needs.pr-gate.outputs.managed-sdk-version }}
 
       - name: Plan managed test consumer
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.skip != 'true'
@@ -1080,6 +1083,7 @@ jobs:
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          artifact-sdk-version: ${{ needs.pr-gate.outputs.managed-sdk-version }}
 
       - name: Wait for free disk space
         run: scripts/ci/server-test-shard-free-disk.sh --await

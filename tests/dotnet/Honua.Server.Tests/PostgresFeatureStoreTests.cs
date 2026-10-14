@@ -7,6 +7,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Db.Postgres.Features.FeatureStore;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Server.Tests.Infrastructure;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite.Geometries;
@@ -19,6 +21,7 @@ namespace Honua.Server.Tests;
 /// Integration tests for PostgresFeatureStore using real PostgreSQL database.
 /// </summary>
 [Collection("Database.CoreFeatureStore")]
+[Protocol(ProtocolNames.Infrastructure)]
 public class PostgresFeatureStoreTests : IAsyncLifetime
 {
     private readonly DatabaseFixtureAdapter _fixture;
@@ -257,6 +260,101 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.Equal(2, result.TotalCount);
         Assert.Equal(2, result.Items.Length);
         Assert.All(result.Items, item => Assert.Equal("TypeA", item.Attributes["type"]));
+    }
+
+    [IntegrationTheory]
+    [InlineData(0, 0, 0, true)]
+    [InlineData(1, 0, 1, true)]
+    [InlineData(1, 1, 1, false)]
+    [InlineData(2, 0, 2, false)]
+    [InlineData(10, 0, 2, false)]
+    [InlineData(1, 2, 0, false)]
+    [InlineData(null, 0, 2, false)]
+    [InlineData(int.MaxValue, 0, 2, false)]
+    [Operation(Operations.ContractTesting)]
+    public async Task QueryAsync_DistinctFallback_ReportsWhetherAnotherProjectedRowExists(
+        int? limit, int offset, int expectedItems, bool expectedHasMore)
+    {
+        // Three source rows, independently known to project to just TypeA and TypeB.
+        await CreateTestFeatures();
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ["type"],
+            Limit = limit,
+            Offset = offset
+        };
+
+        var result = await _featureStore.QueryAsync(TestLayerId, query);
+
+        // This change preserves the existing matching-source-row count contract.
+        // In particular, that count must not cause a false continuation on the last distinct page.
+        Assert.Equal(3, result.TotalCount);
+        Assert.Equal(expectedItems, result.Items.Length);
+        Assert.Equal(expectedHasMore, result.HasMoreResults);
+        Assert.Equal(new[] { "TypeA", "TypeB" }.Skip(offset).Take(limit ?? 2),
+            result.Items.Select(item => Assert.IsType<string>(item.Attributes["type"])));
+        Assert.All(result.Items, item =>
+        {
+            Assert.Equal(0, item.Id);
+            Assert.Null(item.Geometry);
+            Assert.Equal(2, item.Attributes.Count);
+            Assert.Equal(0L, Assert.IsType<long>(item.Attributes["objectid"]));
+        });
+    }
+
+    [IntegrationTheory]
+    [InlineData(0, 0, 0, true)]
+    [InlineData(1, 0, 1, true)]
+    [InlineData(2, 0, 2, true)]
+    [InlineData(1, 2, 1, false)]
+    [InlineData(3, 0, 3, false)]
+    [InlineData(10, 0, 3, false)]
+    [InlineData(1, 3, 0, false)]
+    [InlineData(null, 0, 3, false)]
+    [InlineData(int.MaxValue, 0, 3, false)]
+    [Operation(Operations.ContractTesting)]
+    public async Task QueryAsync_ReturnDistanceFallback_PreservesPageGeometryAndContinuation(
+        int? limit, int offset, int expectedItems, bool expectedHasMore)
+    {
+        await _fixture.ExecuteAsync("""
+            INSERT INTO features (objectid, layer_id, geometry, attributes) VALUES
+                (1, 1, ST_GeomFromText('POINT(0 0)', 4326), '{"name":"first"}'),
+                (2, 1, ST_GeomFromText('POINT(1 1)', 4326), '{"name":"second"}'),
+                (3, 1, ST_GeomFromText('POINT(2 2)', 4326), '{"name":"third"}'),
+                (4, 2, ST_GeomFromText('POINT(1 1)', 4326), '{"name":"other layer"}');
+            """, _schemaName);
+        var query = new FeatureQuery
+        {
+            Limit = limit,
+            Offset = offset,
+            OrderBy = [OrderByClause.Asc("objectid")],
+            SpatialReferenceSrid = 4326,
+            SpatialFilter = new SpatialFilter
+            {
+                Geometry = new WKTReader().Read("POLYGON((-1 -1,3 -1,3 3,-1 3,-1 -1))").AsBinary(),
+                Srid = 4326,
+                SpatialRelationship = SpatialRelationship.Intersects,
+                ReturnDistance = true
+            }
+        };
+
+        var result = await _featureStore.QueryAsync(TestLayerId, query);
+
+        Assert.Equal(3, result.TotalCount);
+        Assert.Equal(expectedItems, result.Items.Length);
+        Assert.Equal(expectedHasMore, result.HasMoreResults);
+        Assert.Equal(new long[] { 1, 2, 3 }.Skip(offset).Take(limit ?? 3), result.Items.Select(item => item.Id));
+        Assert.All(result.Items, item =>
+        {
+            // Each seeded point lies inside the filter polygon, so its distance is zero.
+            Assert.InRange(Assert.IsType<double>(item.Attributes["distance"]), 0, 0.001);
+            Assert.NotNull(item.Geometry);
+            var point = Assert.IsType<Point>(new WKBReader().Read(item.Geometry));
+            Assert.Equal(item.Id - 1d, point.X);
+            Assert.Equal(item.Id - 1d, point.Y);
+            Assert.Equal(new[] { "first", "second", "third" }[checked((int)item.Id - 1)], item.Attributes["name"]);
+        });
     }
 
     [Fact]

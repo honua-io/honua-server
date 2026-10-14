@@ -806,7 +806,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             return await executeOptimized(layerId, query, geometryStorageType, cancellationToken);
         }
 
-        // Fallback to original pattern for unlimited queries where count optimization isn't beneficial
+        // Distinct and distance projections also use this fallback, even with a page limit.
         var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
         var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
 
@@ -815,10 +815,18 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             return QueryResult<T>.Empty();
         }
 
-        var selectQuery = buildSelect(layerId, query, geometryStorageType);
-        var features = await executeSelect(selectQuery, query, layerId, cancellationToken);
+        var requestedLimit = query.Limit.GetValueOrDefault();
+        var probePage = query.Limit.HasValue && requestedLimit >= 0 && requestedLimit < int.MaxValue;
+        var pageQuery = probePage ? query with { Limit = requestedLimit + 1 } : query;
+        var selectQuery = buildSelect(layerId, pageQuery, geometryStorageType);
+        var features = await executeSelect(selectQuery, pageQuery, layerId, cancellationToken);
 
-        return QueryResult<T>.Create(totalCount, features, false);
+        // A source-row count cannot establish whether another DISTINCT projection exists.
+        // Probe one projected row, as QueryPageAsync does, and keep the existing total-count
+        // and output contracts. The extra row must never leak into the returned page.
+        var hasMoreResults = probePage && features.Length > requestedLimit;
+        var items = hasMoreResults ? features.Take(requestedLimit).ToImmutableArray() : features;
+        return QueryResult<T>.Create(totalCount, items, hasMoreResults);
     }
 
     /// <summary>

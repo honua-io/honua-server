@@ -615,7 +615,9 @@ internal sealed partial class FeatureDataAccess
         var attributes = update.Attributes.ToBuilder();
         foreach (var (name, value) in current.Attributes)
         {
-            if (!supplied.Contains(name))
+            // Reads project the physical feature ID into attributes. It is not
+            // an omitted JSON property to persist during a partial update.
+            if (!name.Equals("objectid", StringComparison.OrdinalIgnoreCase) && !supplied.Contains(name))
             {
                 attributes[name] = value;
             }

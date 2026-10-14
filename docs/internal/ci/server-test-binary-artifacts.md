@@ -35,6 +35,17 @@ the successful producer's original attempt in that same workflow run. Retention
 is one day. No branch-prefix lookup or cross-run artifact search is used; the
 existing v1 exact-head shard cache remains a separate fallback in full CI.
 
+The producer exports its actual selected `dotnet --version`, rather than the
+floating `10.0.x` request. Managed consumers install that exact version into a
+private runner-temp SDK directory and verify both the selected version and
+effective host/runtime-root paths before restoration. This prevents an SDK
+rollout between jobs from changing the toolchain: a producer using 10.0.401 and
+a later consumer resolving 10.0.402 must not be treated as the same identity.
+The installation uses the supported `DOTNET_INSTALL_DIR` behavior of
+[actions/setup-dotnet](https://github.com/actions/setup-dotnet#environment-variables).
+No repository/global SDK policy, Docker SDK image or artifact identity override
+is introduced; the existing exact SDK comparison remains mandatory.
+
 Restore stages and verifies the whole payload before replacing any output root.
 Installation is transactional and rolls back on failure. `Honua.Server.Tests`
 contains its copied test runtime and required static assets; it does not duplicate

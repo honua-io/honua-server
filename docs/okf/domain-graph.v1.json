@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:b00cc249ff28954e8aa94366e6e04393679476b1c942e642907badf09f2ecb29",
+  "bundleDigest": "sha256:6729e816c7e1b553c62d9f7f8d46c76ddd0aaeca4654e5b7fbe21bf83b0d1c6f",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7212,7 +7212,7 @@
     {
       "id": "reference/admin-api/connections-and-layers",
       "path": "reference/admin-api/connections-and-layers.md",
-      "documentDigest": "sha256:b864466949369c3a35a9e5848b5eaceb3bf7aae0588248de20d8d179053c6717",
+      "documentDigest": "sha256:02f82dd12731794c5d9ae97351a2adc676f19b9e3c08d2a476efc2ca646b2f81",
       "metadata": {
         "type": "reference",
         "title": "Connections and layers",

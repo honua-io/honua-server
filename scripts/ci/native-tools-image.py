@@ -242,7 +242,6 @@ def resolve(root, *, platform='linux/amd64', reuse=True, overrides=(), run=comma
             if not re.fullmatch(r'[0-9a-f]{40}', source_sha) or not HEX.fullmatch(details.get('Id', '')):
                 raise ValueError('Missing source/image identity')
             lookup(['gh', 'attestation', 'verify', f'oci://{reference}', '--repo', 'honua-io/honua-server',
-                    '--signer-workflow', f'honua-io/honua-server/{WORKFLOW}',
                     '--cert-identity', f'https://github.com/honua-io/honua-server/{WORKFLOW}@refs/heads/trunk',
                     '--cert-oidc-issuer', 'https://token.actions.githubusercontent.com',
                     '--source-ref', 'refs/heads/trunk', '--source-digest', source_sha,

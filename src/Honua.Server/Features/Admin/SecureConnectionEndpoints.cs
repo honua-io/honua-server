@@ -180,7 +180,7 @@ internal static partial class SecureConnectionEndpoints
                         {
                             Name = request.Name,
                             Host = request.Host,
-                            Port = request.Port,
+                            Port = request.GetEffectivePort(),
                             Provider = request.Provider,
                             UsesSecretReference = draftUsesSecretReference,
                             Reason = hostDecision.Reason
@@ -194,7 +194,7 @@ internal static partial class SecureConnectionEndpoints
             // Provider-aware: build + probe with the engine driver for the requested provider so MySQL / SQL
             // Server / Oracle drafts are tested with the right ADO.NET provider. Falls back to the PostgreSQL
             // builder/tester when no driver is registered for the provider (preserves prior behaviour).
-            var driver = driverRegistry.Find(request.Provider);
+            var driver = driverRegistry.Find(DataProviderNames.Normalize(request.Provider));
 
             string connectionString;
 
@@ -222,14 +222,14 @@ internal static partial class SecureConnectionEndpoints
                 connectionString = driver is not null
                     ? driver.BuildConnectionString(new ConnectionTarget(
                         request.Host!,
-                        request.Port,
+                        request.GetEffectivePort(),
                         request.DatabaseName!,
                         request.Username!,
                         request.Password,
                         parsedSslMode))
                     : connectionStringBuilder.BuildConnectionString(
                         request.Host!,
-                        request.Port,
+                        request.GetEffectivePort(),
                         request.DatabaseName!,
                         request.Username!,
                         request.Password,
@@ -244,7 +244,7 @@ internal static partial class SecureConnectionEndpoints
                     Name = request.Name,
                     Provider = request.Provider,
                     Host = request.Host ?? DataConnection.SecretReferenceMetadataPlaceholder,
-                    Port = request.Port,
+                    Port = request.GetEffectivePort(),
                     SslRequired = request.SslRequired
                 }, connectionString, context.RequestAborted).ConfigureAwait(false);
             }
@@ -260,7 +260,7 @@ internal static partial class SecureConnectionEndpoints
                     {
                         Name = request.Name,
                         Host = request.Host,
-                        Port = request.Port,
+                        Port = request.GetEffectivePort(),
                         Provider = request.Provider,
                         UsesSecretReference = draftUsesSecretReference,
                         Reason = refusal
@@ -466,7 +466,7 @@ internal static partial class SecureConnectionEndpoints
                         {
                             Name = request.Name,
                             Host = request.Host,
-                            Port = request.Port,
+                            Port = request.GetEffectivePort(),
                             Provider = request.Provider,
                             UsesSecretReference = usesSecretReference,
                             Reason = hostDecision.Reason
@@ -491,7 +491,7 @@ internal static partial class SecureConnectionEndpoints
                 connection = DataConnection.CreateWithSecretReference(
                     request.Name,
                     string.IsNullOrWhiteSpace(request.Host) ? secretMetadataPlaceholder : request.Host,
-                    request.Port,
+                    request.GetEffectivePort(),
                     string.IsNullOrWhiteSpace(request.DatabaseName) ? secretMetadataPlaceholder : request.DatabaseName,
                     string.IsNullOrWhiteSpace(request.Username) ? secretMetadataPlaceholder : request.Username,
                     request.SecretReference,
@@ -513,18 +513,18 @@ internal static partial class SecureConnectionEndpoints
                 // Microsoft.Data.SqlClient / Oracle) so the stored, encrypted string actually works for this
                 // provider and the existing-connection test can re-probe it. Falls back to the PostgreSQL
                 // builder when no driver is registered for the provider.
-                var createDriver = driverRegistry.Find(request.Provider);
+                var createDriver = driverRegistry.Find(DataProviderNames.Normalize(request.Provider));
                 var connectionString = createDriver is not null
                     ? createDriver.BuildConnectionString(new ConnectionTarget(
                         request.Host!,
-                        request.Port,
+                        request.GetEffectivePort(),
                         request.DatabaseName!,
                         request.Username!,
                         request.Password,
                         parsedSslMode))
                     : connectionStringBuilder.BuildConnectionString(
                         request.Host!,
-                        request.Port,
+                        request.GetEffectivePort(),
                         request.DatabaseName!,
                         request.Username!,
                         request.Password,
@@ -536,7 +536,7 @@ internal static partial class SecureConnectionEndpoints
                 connection = DataConnection.CreateWithEncryptedCredentials(
                     request.Name,
                     request.Host!,
-                    request.Port,
+                    request.GetEffectivePort(),
                     request.DatabaseName!,
                     request.Username!,
                     encryptedData,
