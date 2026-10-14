@@ -148,6 +148,7 @@ internal sealed class McpSessionManager
 
     private readonly int _maxSessions;
     private readonly int _maxAnonymousSessions;
+    private readonly int _maxSessionsPerPrincipal;
     private readonly TimeSpan _idleTimeout;
     private readonly McpSessionEvictionPolicy _evictionPolicy;
     private readonly TimeProvider _timeProvider;
@@ -164,6 +165,8 @@ internal sealed class McpSessionManager
     /// isolated compositions get a sane, memory-bounded registry without wiring
     /// configuration. <paramref name="maxAnonymousSessions"/> bounds the anonymous
     /// pool inside <paramref name="maxSessions"/> (SEC-18) and is clamped to it.
+    /// <paramref name="maxSessionsPerPrincipal"/> bounds one authenticated binding
+    /// key (honua-server#5629) and is clamped so it cannot occupy every slot.
     /// </summary>
     public McpSessionManager(
         int maxSessions = 10_000,
@@ -173,10 +176,17 @@ internal sealed class McpSessionManager
         int maxAnonymousSessions = 1_000,
         IMcpSessionStore? store = null,
         ILogger? logger = null,
-        McpStatelessSessionTokens? statelessTokens = null)
+        McpStatelessSessionTokens? statelessTokens = null,
+        int maxSessionsPerPrincipal = McpOptions.DefaultMaxSessionsPerPrincipal)
     {
         _maxSessions = maxSessions > 0 ? maxSessions : 1;
         _maxAnonymousSessions = Math.Clamp(maxAnonymousSessions, 1, _maxSessions);
+        var perPrincipal = maxSessionsPerPrincipal > 0
+            ? maxSessionsPerPrincipal
+            : McpOptions.DefaultMaxSessionsPerPrincipal;
+        _maxSessionsPerPrincipal = perPrincipal >= _maxSessions
+            ? Math.Max(1, _maxSessions - 1)
+            : perPrincipal;
         var idle = idleTimeout ?? TimeSpan.FromMinutes(30);
         _idleTimeout = idle > TimeSpan.Zero ? idle : TimeSpan.FromMinutes(30);
         _evictionPolicy = evictionPolicy;
@@ -248,11 +258,14 @@ internal sealed class McpSessionManager
     /// then — if still at capacity — the configured
     /// <see cref="McpSessionEvictionPolicy"/> is applied. Anonymous sessions form a
     /// separate pool bounded by the anonymous cap (SEC-18): an anonymous session
-    /// only ever evicts another anonymous session, and an authenticated session at
-    /// capacity evicts anonymous sessions before authenticated ones. Returns
+    /// only ever evicts another anonymous session. An authenticated session evicts
+    /// that principal's own least-recently-used session when the principal is at
+    /// its quota, and otherwise evicts anonymous sessions only — never another
+    /// principal's session (honua-server#5629). Returns
     /// <c>false</c> with an empty <paramref name="sessionId"/> when the cap is
     /// reached and the policy is <see cref="McpSessionEvictionPolicy.RejectNew"/>,
-    /// or when an anonymous session would have to evict an authenticated one.
+    /// when the principal is at quota under that policy, or when admitting the
+    /// session would have to evict a different principal.
     /// Invoked when the server accepts an <c>initialize</c> request in stateful mode.
     /// </summary>
     public bool TryCreateSession(string? principalKey, out string sessionId) =>
@@ -340,30 +353,10 @@ internal sealed class McpSessionManager
             SweepExpired(now);
 
             var key = principalKey ?? AnonymousPrincipalKey;
-            var anonymous = IsAnonymous(key);
-            var excess = _sessions.Count - _maxSessions + 1;
-            if (anonymous)
+            if (!TryAdmit(key))
             {
-                excess = Math.Max(excess, _sessions.Values.Count(static s => s.IsAnonymous) - _maxAnonymousSessions + 1);
-            }
-
-            if (excess > 0)
-            {
-                if (_evictionPolicy == McpSessionEvictionPolicy.RejectNew)
-                {
-                    sessionId = string.Empty;
-                    return false;
-                }
-
-                EvictLeastRecentlyUsed(excess, anonymousOnly: anonymous);
-
-                // Only reachable for an anonymous session when the table holds too few
-                // anonymous sessions to make room: it never displaces an authenticated one.
-                if (_sessions.Count >= _maxSessions)
-                {
-                    sessionId = string.Empty;
-                    return false;
-                }
+                sessionId = string.Empty;
+                return false;
             }
 
             var id = _statelessTokens?.Mint(key, elicitationSupported, workflowView) ?? GenerateSessionId();
@@ -543,13 +536,13 @@ internal sealed class McpSessionManager
 
     /// <summary>
     /// Caches a session record read from the shared store. Returns <c>false</c> when
-    /// the record was removed, or when admitting it would exceed the anonymous pool
-    /// or the session cap without a victim this admission is allowed to displace.
-    /// Capacity pressure evicts least-recently-used entries from this instance's
-    /// cache only; the store keeps them. The local idle clock is not consulted:
-    /// another replica may be refreshing the authoritative expiry, and closing the
-    /// node-local channel here would drop a session the store still considers live.
-    /// An anonymous record never displaces an authenticated session.
+    /// the record was removed, or when admitting it would exceed the anonymous pool,
+    /// the per-principal quota, or the session cap without a victim this admission
+    /// is allowed to displace. Capacity pressure evicts least-recently-used entries
+    /// from this instance's cache only; the store keeps them. The local idle clock
+    /// is not consulted: another replica may be refreshing the authoritative expiry.
+    /// An anonymous record never displaces an authenticated session, and an
+    /// authenticated record never displaces a different principal.
     /// </summary>
     private bool Adopt(McpSessionRecord record)
     {
@@ -566,23 +559,9 @@ internal sealed class McpSessionManager
                 return true;
             }
 
-            var anonymous = IsAnonymous(record.PrincipalKey);
-            var excess = _sessions.Count - _maxSessions + 1;
-            if (anonymous)
+            if (!TryAdmit(record.PrincipalKey))
             {
-                excess = Math.Max(
-                    excess,
-                    _sessions.Values.Count(static session => session.IsAnonymous) - _maxAnonymousSessions + 1);
-            }
-
-            if (excess > 0)
-            {
-                EvictLeastRecentlyUsed(excess, anonymousOnly: anonymous);
-                if (_sessions.Count >= _maxSessions
-                    || (anonymous && _sessions.Values.Count(static session => session.IsAnonymous) >= _maxAnonymousSessions))
-                {
-                    return false;
-                }
+                return false;
             }
 
             _sessions[record.SessionId] = new McpSession(
@@ -922,13 +901,85 @@ internal sealed class McpSessionManager
         string.Equals(principalKey, AnonymousPrincipalKey, StringComparison.Ordinal);
 
     /// <summary>
-    /// Evicts the <paramref name="count"/> least-recently-used sessions, taking
-    /// anonymous sessions before authenticated ones and only anonymous sessions
-    /// when <paramref name="anonymousOnly"/> is set. Called under
-    /// <see cref="_capacityGate"/> after an expiry sweep left the table at
-    /// capacity, so an <c>initialize</c> can still be admitted.
+    /// Makes room for one new session bound to <paramref name="principalKey"/>.
+    /// Caller holds <see cref="_capacityGate"/>. Anonymous admissions evict only
+    /// anonymous sessions. Authenticated admissions evict that principal's own
+    /// sessions when the principal quota is exceeded, then anonymous sessions
+    /// when the global cap is exceeded, and never another principal's session.
+    /// <see cref="McpSessionEvictionPolicy.RejectNew"/> refuses instead of evicting.
     /// </summary>
-    private string[] EvictLeastRecentlyUsed(int count, bool anonymousOnly)
+    private bool TryAdmit(string principalKey)
+    {
+        if (IsAnonymous(principalKey))
+        {
+            var excess = Math.Max(
+                _sessions.Count - _maxSessions + 1,
+                Count(static session => session.IsAnonymous) - _maxAnonymousSessions + 1);
+            if (excess <= 0)
+            {
+                return true;
+            }
+
+            if (_evictionPolicy == McpSessionEvictionPolicy.RejectNew)
+            {
+                return false;
+            }
+
+            EvictLeastRecentlyUsed(excess, anonymousOnly: true);
+            return _sessions.Count < _maxSessions;
+        }
+
+        var owned = Count(session => string.Equals(session.PrincipalKey, principalKey, StringComparison.Ordinal));
+        var principalExcess = owned - _maxSessionsPerPrincipal + 1;
+        if (principalExcess > 0)
+        {
+            if (_evictionPolicy == McpSessionEvictionPolicy.RejectNew)
+            {
+                return false;
+            }
+
+            EvictLeastRecentlyUsed(principalExcess, anonymousOnly: false, onlyPrincipal: principalKey);
+            if (Count(session => string.Equals(session.PrincipalKey, principalKey, StringComparison.Ordinal))
+                >= _maxSessionsPerPrincipal)
+            {
+                return false;
+            }
+        }
+
+        var globalExcess = _sessions.Count - _maxSessions + 1;
+        if (globalExcess <= 0)
+        {
+            return true;
+        }
+
+        if (_evictionPolicy == McpSessionEvictionPolicy.RejectNew)
+        {
+            return false;
+        }
+
+        EvictLeastRecentlyUsed(globalExcess, anonymousOnly: true);
+        return _sessions.Count < _maxSessions;
+    }
+
+    private int Count(Func<McpSession, bool> predicate)
+    {
+        var count = 0;
+        foreach (var session in _sessions.Values.Where(predicate))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Evicts the <paramref name="count"/> least-recently-used sessions. Anonymous
+    /// sessions are taken before authenticated ones. <paramref name="anonymousOnly"/>
+    /// restricts victims to the anonymous pool. <paramref name="onlyPrincipal"/>
+    /// restricts victims to that principal key. Called under
+    /// <see cref="_capacityGate"/>.
+    /// </summary>
+    private string[] EvictLeastRecentlyUsed(int count, bool anonymousOnly, string? onlyPrincipal = null)
     {
         if (count <= 0)
         {
@@ -936,7 +987,10 @@ internal sealed class McpSessionManager
         }
 
         var victims = _sessions
-            .Where(pair => !anonymousOnly || pair.Value.IsAnonymous)
+            .Where(pair =>
+                (onlyPrincipal is null
+                    || string.Equals(pair.Value.PrincipalKey, onlyPrincipal, StringComparison.Ordinal))
+                && (!anonymousOnly || pair.Value.IsAnonymous))
             .OrderByDescending(pair => pair.Value.IsAnonymous)
             .ThenBy(pair => pair.Value.LastAccessUtc)
             .Take(count)

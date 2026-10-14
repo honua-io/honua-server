@@ -14,7 +14,9 @@ using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -156,6 +158,61 @@ public sealed class McpToolDelegationTests
             Arg.Any<ClaimsPrincipal>(),
             Arg.Is<IReadOnlyDictionary<string, string>>(m => m["submittedVia"] == "honua.mcp"),
             Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_execute_plan")]
+    public async Task ExecutePlan_StartsTheJobStorePollerOnlyWhenTheServerStreamIsEnabled(bool streamEnabled)
+    {
+        var now = DateTimeOffset.UnixEpoch;
+        _jobService.SubmitJobAsync(
+                Arg.Any<AnalysisPlan>(),
+                Arg.Any<string?>(),
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<IReadOnlyDictionary<string, string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(SubmittedJob(now));
+
+        var sessions = new McpSessionManager();
+        var sessionId = sessions.CreateSession();
+        var options = Options.Create(new McpOptions { ServerInitiatedStreamEnabled = streamEnabled });
+        var scopedJobs = Substitute.For<IGeoprocessingJobService>();
+        scopedJobs.GetJobAsync(Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(SubmittedJob(now, ExecutionJobStatus.Succeeded));
+        var provider = Substitute.For<IServiceProvider>();
+        provider.GetService(typeof(IGeoprocessingJobService)).Returns(scopedJobs);
+        var scope = Substitute.For<IServiceScope>();
+        scope.ServiceProvider.Returns(provider);
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        scopeFactory.CreateScope().Returns(scope);
+        var bridge = new McpJobProgressBridge(
+            new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance),
+            sessions,
+            scopeFactory,
+            NullLogger<McpJobProgressBridge>.Instance,
+            options);
+
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton<IOptions<McpOptions>>(options);
+            services.AddSingleton(sessions);
+            services.AddSingleton(bridge);
+        });
+        context.Request.Headers[McpSessionManager.SessionHeaderName] = sessionId;
+
+        var tool = new ExecutePlanTool(_jobService, NullLogger<ExecutePlanTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpExecutePlanArgument { Plan = McpTestFactory.CreateValidPlanInput() },
+            McpJsonContext.Default.McpExecutePlanArgument);
+
+        var result = await tool.InvokeAsync(context, arguments, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        result.StructuredContent!.Value.GetProperty("jobId").GetString().Should().Be("job-xyz");
+        bridge.StartedPollCount.Should().Be(streamEnabled ? 1 : 0);
     }
 
     [UnitTest]
@@ -437,4 +494,22 @@ public sealed class McpToolDelegationTests
             .Which.Message.Should().Contain("null value for input");
         _jobService.DidNotReceiveWithAnyArgs().ValidatePlan(default!, default!);
     }
+
+    private static ExecutionJobRecord SubmittedJob(
+        DateTimeOffset now,
+        ExecutionJobStatus status = ExecutionJobStatus.Queued) => new()
+        {
+            OperationId = "job-xyz",
+            Status = status,
+            CreatedAt = now,
+            UpdatedAt = now,
+            PercentComplete = status == ExecutionJobStatus.Succeeded ? 100 : 0,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "buffer"
+            }
+        };
 }

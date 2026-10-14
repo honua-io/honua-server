@@ -85,7 +85,8 @@ internal static class McpServiceCollectionExtensions
                 options.MaxAnonymousSessions,
                 store,
                 logger,
-                statelessTokens);
+                statelessTokens,
+                options.MaxSessionsPerPrincipal);
         });
         return services;
     }

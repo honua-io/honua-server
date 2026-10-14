@@ -145,10 +145,27 @@ internal sealed class McpOptions
     /// Maximum number of concurrently tracked anonymous sessions (SEC-18). Anonymous
     /// sessions form their own pool inside <see cref="MaxSessions"/>: admitting one
     /// only ever evicts another anonymous session, never an authenticated one, and an
-    /// authenticated <c>initialize</c> at capacity evicts anonymous sessions first.
-    /// Clamped to <see cref="MaxSessions"/>. Default 1,000.
+    /// authenticated <c>initialize</c> at capacity evicts anonymous sessions before
+    /// it refuses the new session. Clamped to <see cref="MaxSessions"/>. Default 1,000.
     /// </summary>
     public int MaxAnonymousSessions { get; set; } = 1_000;
+
+    /// <summary>Default for <see cref="MaxSessionsPerPrincipal"/>.</summary>
+    public const int DefaultMaxSessionsPerPrincipal = 32;
+
+    /// <summary>
+    /// Maximum sessions one authenticated principal key may hold (honua-server#5629,
+    /// SRV-AI-003). The key is the session binding, which already includes the
+    /// effective tenant, so one caller cannot spend another identity's or tenant's
+    /// sessions. At this quota, <see cref="SessionEvictionPolicy"/> evicts that
+    /// principal's own least-recently-used session or rejects the new
+    /// <c>initialize</c>. A principal under quota never evicts another principal;
+    /// global pressure evicts anonymous sessions only, then refuses. Values at or
+    /// above <see cref="MaxSessions"/> are clamped to one less than the global cap
+    /// (or 1 when the cap is 1) so one principal cannot occupy every slot.
+    /// Default <see cref="DefaultMaxSessionsPerPrincipal"/>.
+    /// </summary>
+    public int MaxSessionsPerPrincipal { get; set; } = DefaultMaxSessionsPerPrincipal;
 
     /// <summary>
     /// Maximum number of elements in one JSON-RPC batch on <c>POST /mcp</c> (SEC-18).
