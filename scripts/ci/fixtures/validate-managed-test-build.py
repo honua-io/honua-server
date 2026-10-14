@@ -107,6 +107,29 @@ class ManagedBuildTests(unittest.TestCase):
         self.assertIn('-p:Configuration=Release', calls[0][0])
         self.assertEqual([self.literal[self.a]], calls[0][1]['solution']['projects'])
 
+    def test_cold_consumer_restores_prerequisites_without_compiling_outputs(self):
+        for project in [self.a, self.b]:
+            (self.root / Path(project).parent / 'obj/project.assets.json').unlink()
+        calls = []
+
+        def execute(command, **kwargs):
+            self.assertTrue(kwargs['check'])
+            self.assertEqual(self.root, kwargs['cwd'])
+            selection = next(Path(item) for item in command if str(item).endswith('.slnf'))
+            calls.append((command, json.loads(selection.read_text())['solution']['projects']))
+            for project in [self.a, self.b]:
+                self.package_assets(project, exists=True)
+
+        with patch.object(managed.subprocess, 'run', side_effect=execute), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual([], managed.fallback(self.root, [self.a, self.b], [self.a, self.b]))
+        self.assertEqual(1, len(calls))
+        self.assertEqual('bash', calls[0][0][0])
+        self.assertIn('dotnet-restore-retry.sh', calls[0][0][1])
+        self.assertEqual(sorted(self.literal.values()), calls[0][1])
+        for project in [self.a, self.b]:
+            self.assertTrue(managed.package_dependencies_ready(self.root, project))
+            self.assertFalse((self.root / Path(project).parent / 'bin').exists())
+
     def test_restore_union_includes_cache_miss_but_compile_excludes_verified_binary(self):
         self.package_assets(self.a, exists=False)
         calls = []
