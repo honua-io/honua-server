@@ -3,7 +3,7 @@ type: concept
 title: "Understanding everyday GIS requests"
 description: "Use synonyms, application context, and focused clarification to understand what a person wants to accomplish."
 tags: [gis, domain-language, intent, conversation]
-aliases: ["what I mean", "plain language", "synonyms", "clarification", "natural language", "everyday requests"]
+aliases: ["what I mean", "plain language", "synonyms", "clarification", "natural language", "everyday requests", "clean this up", "make this quieter", "remove that layer", "publish this", "show parks near this school", "save this"]
 relations:
   - predicate: informs
     target: /concepts/domain/workflow-language.md
@@ -81,7 +81,7 @@ A small reversible visual choice can often be tried immediately: tone down a sel
 | "Save this." | The current draft has unsaved design changes. | Save/checkpoint through the current host. Do not infer publication, deployment, or a Git commit. |
 | "Undo that." | The last design change is identifiable in the workspace. | Reverse that change using the supported scoped history, preserving unrelated edits. |
 
-The frontmatter's optional `languageHints` provides a compact agent view of selected examples: ordinary utterance, relevant context, likely meaning, and when clarification would matter. These fields describe interpretation guidance, not matching rules or execution authorization. The full human explanation remains authoritative when an example leaves something out.
+The frontmatter's optional `languageHints` provides a compact agent view of selected examples: ordinary utterance, relevant context, likely meaning, and when clarification would matter. Representative utterances also appear in the retrieval aliases so compact-context consumers can find these hints. Neither aliases nor hints supply matching rules or execution authorization. The full human explanation remains authoritative when an example leaves something out.
 
 ## Carry the meaning into the workflow
 

@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:aed66878bd8c3fa616b88618b7712714f1c406c0d1e7ad22b274e1b41170c680",
+  "bundleDigest": "sha256:ffd101e6726d907579e6f2c3c15dab32209a135491356f61d476add4e8013ef5",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -699,7 +699,7 @@
     {
       "id": "concepts/domain/intent-interpretation",
       "path": "concepts/domain/intent-interpretation.md",
-      "documentDigest": "sha256:92d5559e7404440546649f313b2be6c24da0183dbb074ae8e489f704e7ba92a7",
+      "documentDigest": "sha256:fc400f25376e25fdcb2c03ff64a65d708c698ba8e3f7af97be2673cdbda44357",
       "metadata": {
         "type": "concept",
         "title": "Understanding everyday GIS requests",
@@ -716,7 +716,13 @@
           "synonyms",
           "clarification",
           "natural language",
-          "everyday requests"
+          "everyday requests",
+          "clean this up",
+          "make this quieter",
+          "remove that layer",
+          "publish this",
+          "show parks near this school",
+          "save this"
         ],
         "relations": [
           {
@@ -1654,7 +1660,7 @@
     {
       "id": "concepts/domain/style",
       "path": "concepts/domain/style.md",
-      "documentDigest": "sha256:433a2b6ebf2c44d8fbb28af47ed63f09de9ad8a8c68335b2f9a91cfdc200c25b",
+      "documentDigest": "sha256:984bb0c7032384b0e032670abf7c0b152c38821d8356c84631f0dd0f7999b607",
       "metadata": {
         "type": "concept",
         "title": "Style and labels",
@@ -1673,7 +1679,8 @@
           "tone down",
           "stand out",
           "less cluttered",
-          "bolder"
+          "bolder",
+          "clean this up"
         ],
         "sources": [
           {

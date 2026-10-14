@@ -3,7 +3,7 @@ type: concept
 title: "Style and labels"
 description: "Drawing rules for a layer or composition, separate from its underlying features."
 tags: [gis, domain-language]
-aliases: ["symbology","colors","legend","labels","renderer","quieter","tone down","stand out","less cluttered","bolder"]
+aliases: ["symbology","colors","legend","labels","renderer","quieter","tone down","stand out","less cluttered","bolder","clean this up"]
 sources:
   - id: contract
     resource: "/concepts/data-model.md"
