@@ -11,11 +11,10 @@ namespace Honua.Server.Features.Admin.Jobs;
 /// <summary>
 /// Sanitized, read-only per-step glass-box projection for the console job detail.
 /// Surfaces the depth the dev CLI shows — the per-step phase timeline, the GDAL
-/// command, and an artifact summary — but over the PRODUCTION HTTP surface, with
-/// every client-visible string routed through <see cref="WorkspacePathSanitizer"/>
-/// (the same redaction the GDAL worker applies to <c>ErrorMessage</c>) so scratch
-/// workspace paths never leak. This is distinct from the dev-only, unsanitized P7
-/// glass-box, which is untouched.
+/// command, and an artifact summary over the production HTTP surface. Phase,
+/// message, command, and metadata values pass through <see cref="WorkspacePathSanitizer"/>.
+/// Artifact labels and metadata keys preserve their stored identities; this is
+/// recognizable credential and path redaction, not a general support-bundle sanitizer.
 /// </summary>
 internal sealed partial class ConsoleJobService
 {
