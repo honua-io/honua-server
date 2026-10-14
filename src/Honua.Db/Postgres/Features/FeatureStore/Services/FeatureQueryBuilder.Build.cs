@@ -648,13 +648,17 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 var layerSrid = query.Value.SpatialReferenceSrid.Value;
                 if (layerSrid != targetTileSrid)
                 {
-                    geometryForTile = $"ST_Transform({geometryOperand}, {targetTileSrid})";
+                    // Route through the shared clamp so a polar vertex in a geographic layer
+                    // cannot abort the Web Mercator tile statement (#6109).
+                    geometryForTile = DatumTransformSql.BuildTransformExpression(
+                        geometryOperand, targetTileSrid, selection: null, fromSrid: layerSrid);
                     tileEnvelopeForFilter = $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})";
                 }
             }
             else
             {
-                geometryForTile = $"ST_Transform({geometryOperand}, {targetTileSrid})";
+                // Layer SRID unknown: clamp geographic rows by their runtime SRID (#6109).
+                geometryForTile = DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
                 filterGeometryOperand = geometryForTile;
             }
 
@@ -771,7 +775,11 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             // Reproject the stored geometry into the gridset SRID for tile rasterization, and push
             // the spatial filter down in the layer's storage SRID so the GiST index is usable.
-            var geometryForTile = $"ST_Transform({geometryOperand}, {targetTileSrid})";
+            // A geographic layer aimed at a Web Mercator gridset is clamped first (#6109).
+            var geometryForTile = query?.SpatialReferenceSrid is { } storageSrid
+                ? DatumTransformSql.BuildTransformExpression(
+                    geometryOperand, targetTileSrid, selection: null, fromSrid: storageSrid)
+                : DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
             string filterGeometryOperand;
             string tileEnvelopeForFilter;
             if (query.HasValue && query.Value.SpatialReferenceSrid is { } layerSrid && layerSrid != targetTileSrid)

@@ -86,6 +86,33 @@ internal static class DatumTransformSql
         return $"ST_Transform({transformedOperand}, {toSrid})";
     }
 
+    /// <summary>
+    /// Builds an <c>ST_Transform</c> expression for an operand whose SRID is known only per
+    /// row (the layer SRID is unknown when the SQL is generated). When <paramref name="toSrid"/>
+    /// is Web Mercator, rows whose runtime <c>ST_SRID</c> is geographic get the same latitude
+    /// clamp/clip as <see cref="BuildTransformExpression"/>, so a polar vertex cannot abort the
+    /// statement; other rows are transformed unchanged.
+    /// </summary>
+    /// <param name="operand">The SQL geometry expression to reproject.</param>
+    /// <param name="toSrid">Target SRID.</param>
+    /// <returns>The reprojection SQL expression.</returns>
+    public static string BuildTransformExpressionForRuntimeSrid(string operand, int toSrid)
+    {
+        if (!SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
+        {
+            return $"ST_Transform({operand}, {toSrid})";
+        }
+
+        var runtimeSrid = "ST_SRID(" + operand + ")";
+        var clamped = BuildWebMercatorLatitudeClamp(operand, runtimeSrid);
+        return "ST_Transform(CASE WHEN " + runtimeSrid + " IN (" + GeographicSridListLiteral + ") "
+            + "THEN " + clamped + " ELSE " + operand + " END, " + toSrid.ToString(CultureInfo.InvariantCulture) + ")";
+    }
+
+    private static readonly string GeographicSridListLiteral = string.Join(
+        ", ",
+        GeographicSridClassifier.GeographicSrids.Select(static srid => srid.ToString(CultureInfo.InvariantCulture)));
+
     private static string BuildComposedTransformExpression(
         string operand,
         int toSrid,
@@ -127,9 +154,12 @@ internal static class DatumTransformSql
     /// expression) must be cropped before <c>ST_Transform</c>.
     /// </summary>
     internal static string BuildWebMercatorClipEnvelope(int sourceSrid)
+        => BuildWebMercatorClipEnvelope(sourceSrid.ToString(CultureInfo.InvariantCulture));
+
+    private static string BuildWebMercatorClipEnvelope(string sourceSridSql)
     {
         var latitude = WebMercatorMaxLatitudeLiteral;
-        return $"ST_MakeEnvelope(-180, -{latitude}, 180, {latitude}, {sourceSrid})";
+        return $"ST_MakeEnvelope(-180, -{latitude}, 180, {latitude}, {sourceSridSql})";
     }
 
     internal static readonly string WebMercatorMaxLatitudeLiteral =
@@ -144,20 +174,25 @@ internal static class DatumTransformSql
             return operand;
         }
 
+        return BuildWebMercatorLatitudeClamp(operand, sourceSrid.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static string BuildWebMercatorLatitudeClamp(string operand, string sourceSridSql)
+    {
         // A point at ±90 is outside the clip box, so ST_ClipByBox2D deletes it and a
         // point filter matches nothing. Move point ordinates onto the Mercator boundary
         // instead, the same way the in-process projector does. Lines and polygons keep
         // the band intersection so a polar ring does not abort the statement.
         var latitude = WebMercatorMaxLatitudeLiteral;
-        var point = ClampPointLatitude(operand, sourceSrid, latitude);
-        var dumpedPoint = ClampPointLatitude("pt.geom", sourceSrid, latitude);
+        var point = ClampPointLatitude(operand, sourceSridSql, latitude);
+        var dumpedPoint = ClampPointLatitude("pt.geom", sourceSridSql, latitude);
         return "CASE ST_GeometryType(" + operand + ") "
             + "WHEN 'ST_Point' THEN " + point + " "
             + "WHEN 'ST_MultiPoint' THEN (SELECT ST_Multi(ST_Collect(" + dumpedPoint + ")) FROM ST_Dump(" + operand + ") AS pt) "
-            + "ELSE ST_ClipByBox2D(" + operand + ", " + BuildWebMercatorClipEnvelope(sourceSrid) + ") END";
+            + "ELSE ST_ClipByBox2D(" + operand + ", " + BuildWebMercatorClipEnvelope(sourceSridSql) + ") END";
     }
 
-    private static string ClampPointLatitude(string point, int sourceSrid, string latitude)
+    private static string ClampPointLatitude(string point, string sourceSrid, string latitude)
     {
         var y = "LEAST(GREATEST(ST_Y(" + point + "), -" + latitude + "), " + latitude + ")";
         var x = "ST_X(" + point + ")";
