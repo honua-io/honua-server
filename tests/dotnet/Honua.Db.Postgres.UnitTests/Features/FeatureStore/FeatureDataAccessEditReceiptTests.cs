@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.TestKit;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
@@ -98,9 +99,10 @@ public sealed class FeatureDataAccessEditReceiptTests
     [Fact]
     public void ReceiptSql_MatchesTheMigrationTableAndPayloadBound()
     {
-        var root = FindRepositoryRoot();
-        var migration = File.ReadAllText(Path.Combine(
-            root, "src", "Honua.Server", "Migrations", "130_CreateGrpcApplyEditsReceipt.sql"));
+        // Segments are relative literals. RepositoryPaths joins them onto the
+        // repository root and does not drop earlier segments when a later one is rooted.
+        var migration = File.ReadAllText(RepositoryPaths.Resolve(
+            "src", "Honua.Server", "Migrations", "130_CreateGrpcApplyEditsReceipt.sql"));
         var insert = PostgresGrpcApplyEditsReceipt.InsertSql("honua.grpc_apply_edits_receipt");
         var select = PostgresGrpcApplyEditsReceipt.SelectSql("honua.grpc_apply_edits_receipt");
 
@@ -124,17 +126,6 @@ public sealed class FeatureDataAccessEditReceiptTests
             ExpiresAt = new DateTimeOffset(2026, 10, 15, 0, 0, 0, TimeSpan.Zero),
             Payload = payload,
         };
-
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName ?? throw new InvalidOperationException("Honua.sln was not found.");
-    }
 
     private sealed class RecordingTransaction : DbTransaction
     {
