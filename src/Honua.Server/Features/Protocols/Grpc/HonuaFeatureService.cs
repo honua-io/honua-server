@@ -920,7 +920,10 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             SqlFilter = whereFilter,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
             Offset = pagination.Offset,
-            Limit = streaming && !requestedLimit.HasValue ? null : pagination.Limit
+            // Streaming pages the full result set itself, and ids-only responses carry no
+            // exceeded_transfer_limit signal, so neither may inherit the default page size when the
+            // caller did not ask for one: FeatureServer returnIdsOnly is likewise unbounded (#6112).
+            Limit = (streaming || request.ReturnIdsOnly) && !requestedLimit.HasValue ? null : pagination.Limit
         };
 
         if (query.OrderBy is { } orderBy)

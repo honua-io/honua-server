@@ -1052,6 +1052,52 @@ public sealed class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_IdsOnly_WithoutRecordCount_DoesNotTruncateAtDefaultPageSize()
+    {
+        FeatureQuery? captured = null;
+        var allIds = Enumerable.Range(1, 1500).Select(i => (long)i).ToImmutableArray();
+        _featureReader.QueryObjectIdsAsync(0, Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var limit = call.ArgAt<FeatureQuery>(1).Limit;
+                return limit.HasValue ? allIds.Take(limit.Value).ToImmutableArray() : allIds;
+            });
+
+        var response = await _sut.QueryFeatures(new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ReturnIdsOnly = true
+        }, CreateCallContext());
+
+        captured.Should().NotBeNull();
+        captured!.Limit.Should().BeNull("ids-only has no exceeded_transfer_limit signal, so it must match FeatureServer returnIdsOnly and stay unbounded");
+        response.ObjectIds.Should().HaveCount(1500);
+        response.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_IdsOnly_WithRecordCount_KeepsRequestedLimit()
+    {
+        FeatureQuery? captured = null;
+        _featureReader.QueryObjectIdsAsync(0, Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create<long>(1, 2));
+
+        await _sut.QueryFeatures(new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ReturnIdsOnly = true,
+            ResultRecordCountLong = 2
+        }, CreateCallContext());
+
+        captured.Should().NotBeNull();
+        captured!.Limit.Should().Be(2);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_ExtentOnly_ReturnsExtent()
     {
         _featureReader.GetExtentAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
