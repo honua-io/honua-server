@@ -40,22 +40,26 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
 
     private readonly IElevationService _elevationService;
     private readonly ICrsRegistry _crsRegistry;
+    private readonly ICrsDetectionService _crsDetection;
     private readonly LimitsOptions _limits;
     private readonly ILogger<HonuaElevationGrpcService> _logger;
 
     public HonuaElevationGrpcService(
         IElevationService elevationService,
         ICrsRegistry crsRegistry,
+        ICrsDetectionService crsDetection,
         IOptions<LimitsOptions> limits,
         ILogger<HonuaElevationGrpcService> logger)
     {
         ArgumentNullException.ThrowIfNull(elevationService);
         ArgumentNullException.ThrowIfNull(crsRegistry);
+        ArgumentNullException.ThrowIfNull(crsDetection);
         ArgumentNullException.ThrowIfNull(limits);
         ArgumentNullException.ThrowIfNull(logger);
 
         _elevationService = elevationService;
         _crsRegistry = crsRegistry;
+        _crsDetection = crsDetection;
         _limits = limits.Value;
         _logger = logger;
     }
@@ -196,13 +200,10 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
     }
 
     /// <summary>
-    /// Resolves the requested input SRID from the proto spatial reference and
-    /// validates it against the shared <see cref="ICrsRegistry"/>, mirroring the
-    /// HTTP elevation surface (<c>ElevationEndpoints.ResolveSridAsync</c>) so an
-    /// unsupported/garbage WKID is rejected with <see cref="StatusCode.InvalidArgument"/>
-    /// before reaching provider code rather than diverging from the shared
-    /// validation pipeline. A null/unset reference (Wkid &lt;= 0) defers to the
-    /// canonical service default (WGS-84).
+    /// Resolves the requested input SRID in feature-query order: <c>latest_wkid</c>,
+    /// then <c>wkid</c>, then <c>wkt</c>. A supported value is returned. A reference
+    /// that names a CRS the registry cannot resolve is rejected; it is not sampled
+    /// as WGS-84. A null or empty reference still defers to the canonical default.
     /// </summary>
     private async Task<int?> ValidateSridAsync(
         Proto.SpatialReference? spatialReference,
@@ -210,23 +211,50 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
         int layerId,
         CancellationToken cancellationToken)
     {
-        if (spatialReference is not { Wkid: > 0 } reference)
+        if (spatialReference is null)
+        {
+            return null;
+        }
+
+        int? candidate;
+        if (spatialReference.LatestWkid > 0)
+        {
+            candidate = spatialReference.LatestWkid;
+        }
+        else if (spatialReference.Wkid > 0)
+        {
+            candidate = spatialReference.Wkid;
+        }
+        else if (!string.IsNullOrWhiteSpace(spatialReference.Wkt))
+        {
+            candidate = await _crsDetection
+                .DetectFromWktAsync(spatialReference.Wkt, cancellationToken)
+                .ConfigureAwait(false);
+            if (candidate is not > 0)
+            {
+                Log.InvalidArgument(_logger, operation, layerId, "spatial reference could not be resolved.");
+                throw new RpcException(new Status(
+                    StatusCode.InvalidArgument,
+                    "spatial reference could not be resolved."));
+            }
+        }
+        else
         {
             return null;
         }
 
         var supported = await _crsRegistry
-            .IsSridSupportedAsync(reference.Wkid, cancellationToken)
+            .IsSridSupportedAsync(candidate.Value, cancellationToken)
             .ConfigureAwait(false);
         if (!supported)
         {
-            Log.UnsupportedCrs(_logger, operation, layerId, reference.Wkid);
+            Log.UnsupportedCrs(_logger, operation, layerId, candidate.Value);
             throw new RpcException(new Status(
                 StatusCode.InvalidArgument,
-                $"spatial reference WKID {reference.Wkid} is not supported."));
+                $"spatial reference WKID {candidate.Value} is not supported."));
         }
 
-        return reference.Wkid;
+        return candidate.Value;
     }
 
     /// <summary>
