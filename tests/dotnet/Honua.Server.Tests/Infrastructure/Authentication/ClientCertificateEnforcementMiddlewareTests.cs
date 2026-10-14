@@ -9,6 +9,8 @@ using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -354,6 +356,175 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
 
         nextCalled.Should().BeFalse();
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    [Theory]
+    [InlineData(ClientCertificateAuthenticationMode.RequiredForAdmin, "/api/v1/admin/api-keys")]
+    [InlineData(ClientCertificateAuthenticationMode.RequiredForAdmin, "/api/v1.0/admin/api-keys")]
+    [InlineData(ClientCertificateAuthenticationMode.RequiredForAdmin, "/api/V1.0/Admin/oidc/providers")]
+    [InlineData(ClientCertificateAuthenticationMode.RequiredForAdmin, "/api/v1.0/admin")]
+    [InlineData(ClientCertificateAuthenticationMode.RequiredForEnvironment, "/api/v1.0/admin/api-keys")]
+    public async Task InvokeAsync_RequiredForAdmin_AnyAdminVersionSpellingWithoutCertificate_RejectsAndAudits(
+        ClientCertificateAuthenticationMode mode,
+        string path)
+    {
+        // #6106: admin groups are mapped as /api/v{version:apiVersion}/admin and URL-segment
+        // versioning accepts /api/v1.0/admin, so RequiredForAdmin must not bind to the literal
+        // /api/v1/admin prefix only.
+        var auditLog = new CapturingAuditLog();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IAuditLog>(auditLog);
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+        };
+        context.Request.Method = HttpMethods.Post;
+        context.Request.Path = path;
+        context.Response.Body = new MemoryStream();
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            new StubValidator(null),
+            new ClientCertificateAuthenticationOptions
+            {
+                Mode = mode,
+                EnvironmentId = "prod",
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        auditLog.Events.Should().ContainSingle(e => e.Action == "mtls.login.failure")
+            .Which.Outcome.Should().Be(AuditOutcome.Failure);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RequiredForAdmin_MatchedAdminEndpointWithoutCertificate_Rejects()
+    {
+        // Endpoint classification: a request whose matched endpoint is an admin route is
+        // protected even when the configured literal prefix list does not cover its path.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+        };
+        context.Request.Path = "/api/v1.0/admin/api-keys";
+        context.Response.Body = new MemoryStream();
+        context.SetEndpoint(new RouteEndpoint(
+            _ => Task.CompletedTask,
+            RoutePatternFactory.Parse("/api/v{version:apiVersion}/admin/api-keys"),
+            order: 0,
+            EndpointMetadataCollection.Empty,
+            displayName: "admin api keys"));
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            new StubValidator(null),
+            new ClientCertificateAuthenticationOptions
+            {
+                Mode = ClientCertificateAuthenticationMode.RequiredForAdmin,
+                EnvironmentId = "prod",
+                ProtectedAdminPathPrefixes = [],
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RequiredForAdmin_VersionOnePointZeroNonAdminCertificatePrincipal_Forbids()
+    {
+        // #6106: the admin-role check for certificate principals must also fire for /api/v1.0/admin.
+        using var certificate = CreateCertificate();
+        var auditLog = new CapturingAuditLog();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IAuditLog>(auditLog);
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+        };
+        context.Request.Path = "/api/v1.0/admin/api-keys";
+        context.Response.Body = new MemoryStream();
+        context.Items[ClientCertificateHttpContextItems.ExtractionResult] =
+            ClientCertificateExtractionResult.Success(certificate, ClientCertificateSource.DirectTls);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim(ClaimTypes.NameIdentifier, "native-prod-reader") },
+            ClientCertificateAuthenticationDefaults.AuthenticationScheme,
+            ClaimTypes.Name,
+            ClaimTypes.Role));
+        var validator = new StubValidator(ClientCertificateValidationResult.Success(
+            principal,
+            profileId: "prod-native",
+            mappingId: "prod-reader",
+            environmentId: "prod",
+            fingerprintSha256: "FINGERPRINT",
+            issuerHash: "HASH",
+            daysUntilExpiry: 30,
+            principalId: "native-prod-reader"));
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            validator,
+            new ClientCertificateAuthenticationOptions
+            {
+                Mode = ClientCertificateAuthenticationMode.RequiredForAdmin,
+                EnvironmentId = "prod",
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        auditLog.Events.Should().ContainSingle(e => e.Action == "mtls.login.failure")
+            .Which.Outcome.Should().Be(AuditOutcome.Denied);
+    }
+
+    [Theory]
+    [InlineData("/api/v1.0/features")]
+    [InlineData("/api/v1/administrators")]
+    [InlineData("/ogc/features/admin")]
+    public async Task InvokeAsync_RequiredForAdmin_NonAdminPathWithoutCertificate_CallsNext(string path)
+    {
+        var context = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().BuildServiceProvider(),
+        };
+        context.Request.Path = path;
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            new StubValidator(null),
+            new ClientCertificateAuthenticationOptions
+            {
+                Mode = ClientCertificateAuthenticationMode.RequiredForAdmin,
+                EnvironmentId = "prod",
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
     }
 
     [Fact]
