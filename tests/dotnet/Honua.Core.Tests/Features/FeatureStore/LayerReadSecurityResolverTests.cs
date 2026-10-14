@@ -12,7 +12,7 @@ using Moq;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-public sealed class LayerReadSecurityResolverTests
+public sealed partial class LayerReadSecurityResolverTests
 {
     private const int LayerId = 7;
 
