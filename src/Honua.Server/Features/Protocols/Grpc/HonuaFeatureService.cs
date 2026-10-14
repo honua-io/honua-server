@@ -351,7 +351,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // row is hidden from the caller — otherwise a caller could mutate or delete a row RLS
         // hides from them by supplying its objectid (#2071). Adds carry no objectid and are
         // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards (#2066).
-        // The same read supplies stored geometry and omitted attributes for partial updates.
+        // The same read supplies stored geometry for a partial update. Omitted attributes
+        // are merged from the locked row by the writer, not from this snapshot.
         editBatch = await EnsureEditTargetsVisibleAsync(
             layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
 
@@ -378,10 +379,12 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // the same keyed edit while this one may still commit (SEC-36).
         var writeCancellation = context.CancellationToken;
         var writeDispatched = false;
+        GrpcApplyEditsIdempotencyStore.Lease? dispatchedLease = null;
         if (idempotencyLease is not null)
         {
             writeCancellation = await idempotencyLease.TryBeginWriteAsync(context.CancellationToken).ConfigureAwait(false)
                 ?? throw IdempotencyReservationLost();
+            dispatchedLease = idempotencyLease;
             writeDispatched = true;
         }
 
@@ -398,11 +401,13 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         {
             throw IdempotencyReservationLost();
         }
-        catch (OperationCanceledException) when (writeDispatched && idempotencyLease is not null)
+        catch (OperationCanceledException) when (writeDispatched)
         {
             // The write was dispatched. A cancel here can follow a partial autocommit, so the
             // key must not become runnable again when the short reservation expires.
-            await idempotencyLease.RetainAmbiguousAsync().ConfigureAwait(false);
+            // writeDispatched is set only after dispatchedLease is assigned. The filter stays
+            // on that flag alone so the null test is not a condition the compiler can see.
+            await dispatchedLease!.RetainAmbiguousAsync().ConfigureAwait(false);
             throw;
         }
 
@@ -541,39 +546,59 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
 
         var mergedUpdates = ImmutableArray.CreateBuilder<Feature>(editBatch.Updates.Length);
-        foreach (var update in editBatch.Updates)
+        var preconditions = ImmutableArray.CreateBuilder<FeatureEditPrecondition>();
+        var guarded = new HashSet<long>();
+        if (!editBatch.Preconditions.IsDefaultOrEmpty)
         {
-            mergedUpdates.Add(storedById.TryGetValue(update.Id, out var stored)
-                ? MergePartialUpdate(update, stored)
-                : update);
+            foreach (var existing in editBatch.Preconditions)
+            {
+                preconditions.Add(existing);
+                guarded.Add(existing.ObjectId);
+            }
         }
 
-        return editBatch with { Updates = mergedUpdates.MoveToImmutable() };
+        foreach (var update in editBatch.Updates)
+        {
+            if (!storedById.TryGetValue(update.Id, out var stored))
+            {
+                mergedUpdates.Add(update);
+                continue;
+            }
+
+            mergedUpdates.Add(MergePartialUpdate(update, stored));
+            // Masked reads store the full-row token before fields are removed.
+            // Attach that token so a concurrent writer fails the update. An unmasked
+            // read has no token; hashing the caller-visible snapshot would not match
+            // the row the writer locks.
+            if (stored.ReadStateToken is { Length: > 0 } token && guarded.Add(stored.Id))
+            {
+                preconditions.Add(new FeatureEditPrecondition
+                {
+                    ObjectId = stored.Id,
+                    ExpectedStateToken = token
+                });
+            }
+        }
+
+        return editBatch with
+        {
+            Updates = mergedUpdates.MoveToImmutable(),
+            // Count is not known up front, so this builder cannot use MoveToImmutable.
+            Preconditions = preconditions.ToImmutable()
+        };
     }
 
     /// <summary>
-    /// Omitted geometry keeps the stored geometry. Omitted attribute keys keep stored values.
-    /// Supplied keys replace. There is no protobuf signal for clearing geometry.
+    /// Omitted geometry keeps the stored geometry. There is no protobuf signal for
+    /// clearing geometry. Omitted attributes are not copied from this snapshot: the
+    /// writer merges them from the locked row, including fields this caller cannot see.
     /// </summary>
     private static Feature MergePartialUpdate(Feature update, Feature stored)
-    {
-        var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var pair in stored.Attributes)
-        {
-            attributes[pair.Key] = pair.Value;
-        }
-
-        foreach (var pair in update.Attributes)
-        {
-            attributes[pair.Key] = pair.Value;
-        }
-
-        return update with
+        => update with
         {
             Geometry = update.Geometry ?? stored.Geometry,
-            Attributes = attributes.ToImmutable()
+            PreserveOmittedMaskedAttributes = true
         };
-    }
 
     private async Task PublishFeatureChangeEventsAsync(
         string serviceId,

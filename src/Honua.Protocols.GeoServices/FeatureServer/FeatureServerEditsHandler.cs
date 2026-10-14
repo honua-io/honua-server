@@ -675,7 +675,8 @@ internal sealed class FeatureServerEditsHandler(
             storageLayerId,
             existingFeatures.Values,
             principal,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            versionContext).ConfigureAwait(false);
 
         for (var i = 0; i < request.Updates.Length; i++)
         {
@@ -869,7 +870,8 @@ internal sealed class FeatureServerEditsHandler(
             storageLayerId,
             existingFeatures.Values,
             principal,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            versionContext).ConfigureAwait(false);
 
         for (var i = 0; i < request.Deletes.Length; i++)
         {
@@ -1998,7 +2000,8 @@ internal sealed class FeatureServerEditsHandler(
         int storageLayerId,
         IEnumerable<Feature> existingFeatures,
         EditPrincipal principal,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        VersionContext? versionContext = null)
     {
         if (!OwnerEditPolicyFieldAccess.RequiresStoredOwner(resource.OwnerEditPolicy, principal))
         {
@@ -2016,6 +2019,7 @@ internal sealed class FeatureServerEditsHandler(
             storageLayerId,
             ids,
             resource.OwnerEditPolicy!.OwnerField,
+            versionContext,
             cancellationToken).ConfigureAwait(false);
     }
 

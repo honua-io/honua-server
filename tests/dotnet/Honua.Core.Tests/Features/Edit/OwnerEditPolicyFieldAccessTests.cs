@@ -161,6 +161,43 @@ public sealed class OwnerEditPolicyFieldAccessTests
         bobOnAlice.Reason.Should().NotContain(Secret);
         bobOnAlice.Reason.Should().NotContain("alice");
         bob.IsAllowed.Should().BeTrue();
+        reader.LastQuery.VersionContext.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task ReadOwnersAsync_NamedVersion_QueriesThatVersion()
+    {
+        var reader = new RecordingReader(RecordingReader.Mode.PolicyOwner);
+        var version = new VersionContext
+        {
+            VersionId = Guid.Parse("11111111-2222-3333-4444-555555555555"),
+            VersionName = "editor.branch"
+        };
+
+        await OwnerEditPolicyFieldAccess.ReadOwnersAsync(
+            reader,
+            layerId: 7,
+            storageFeatureIds: [42L],
+            ownerField: "owner",
+            versionContext: version);
+
+        reader.QueryCount.Should().Be(1);
+        reader.LastQuery.VersionContext.Should().Be(version);
+    }
+
+    [UnitTest]
+    public async Task ReadOwnersAsync_DefaultVersion_LeavesTheQueryUnversioned()
+    {
+        var reader = new RecordingReader(RecordingReader.Mode.PolicyOwner);
+
+        await OwnerEditPolicyFieldAccess.ReadOwnersAsync(
+            reader,
+            layerId: 7,
+            storageFeatureIds: [42L],
+            ownerField: "owner",
+            versionContext: VersionContext.Default);
+
+        reader.LastQuery.VersionContext.Should().BeNull();
     }
 
     [UnitTest]

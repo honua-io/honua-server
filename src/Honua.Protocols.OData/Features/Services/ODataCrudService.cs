@@ -255,11 +255,14 @@ internal sealed partial class ODataCrudService
 
             // The insert already committed. A missing row or a cancelled readback still
             // acknowledges the writer result instead of turning the create into a 500.
+            // That fallback body is the submitted feature, not the stored row, so it
+            // must not carry an ETag a later If-Match would treat as the stored state.
+            var observedReadback = reloaded.HasValue && !readbackCancelled;
             var createdFeature = reloaded ?? Feature.Create(createdId.Value, geometryResult.Geometry, validatedAttributes);
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
                 srid,
-                reloaded.HasValue && !readbackCancelled ? cancellationToken : CancellationToken.None);
+                observedReadback ? cancellationToken : CancellationToken.None);
             var responseGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                 _geometryService,
                 createdFeature.Geometry,
@@ -267,7 +270,9 @@ internal sealed partial class ODataCrudService
                 axisOrder);
             var serializedAttributes = ODataAttributeSerializer.Serialize(createdFeature.Attributes);
             var response = ODataUtilityService.BuildFeaturePayload(layerId, createdFeature, responseGeometry, serializedAttributes);
-            var etag = ComputeFeatureEtag(layerId, createdFeature, responseGeometry, serializedAttributes);
+            var etag = observedReadback
+                ? ComputeFeatureEtag(layerId, createdFeature, responseGeometry, serializedAttributes)
+                : null;
 
             var locationHeader = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createdFeature.Id})";
             return ODataCrudResult<Dictionary<string, object?>>.Created(response, etag, locationHeader, createdFeature);

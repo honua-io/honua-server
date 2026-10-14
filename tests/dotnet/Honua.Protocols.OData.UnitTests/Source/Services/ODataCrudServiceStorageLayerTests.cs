@@ -130,6 +130,7 @@ public sealed class ODataCrudServiceStorageLayerTests
         result.Data!["ObjectId"].Should().Be(77L);
         result.Data["name"].Should().Be("Canonical City");
         result.LocationHeader.Should().Contain("ObjectId=77");
+        result.ETag.Should().BeNull();
     }
 
     [UnitTest]
@@ -144,6 +145,7 @@ public sealed class ODataCrudServiceStorageLayerTests
         result.Data.Should().NotBeNull();
         result.Data!["ObjectId"].Should().Be(77L);
         result.Data["name"].Should().Be("Canonical City");
+        result.ETag.Should().BeNull();
     }
 
     [UnitTest]

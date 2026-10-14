@@ -640,17 +640,26 @@ internal sealed partial class ODataBatchHandler
 
                             // The insert already committed. Acknowledge the submitted feature
                             // when reload returns nothing or the request is cancelled during readback.
+                            // A body built from that submission is not the stored row, so it
+                            // does not advertise an ETag.
                             var createdFeature = reloaded ?? (submittedFeature with { Id = createResult.ObjectId.Value });
 
                             var payload = FeatureToBody(createdFeature, layer, axisOrder, baseUrl, out var etag);
+                            if (reloaded is null)
+                            {
+                                payload.Remove("@odata.etag");
+                            }
 
                             var headers = new Dictionary<string, string>
                             {
                                 ["Location"] = $"{baseUrl}/odata/Features(LayerId={layer.PublicLayerId},ObjectId={createResult.ObjectId})",
                                 ["OData-EntityId"] = $"{baseUrl}/odata/Features(LayerId={layer.PublicLayerId},ObjectId={createResult.ObjectId})",
-                                ["EntityId"] = $"{baseUrl}/odata/Features(LayerId={layer.PublicLayerId},ObjectId={createResult.ObjectId})",
-                                ["ETag"] = etag
+                                ["EntityId"] = $"{baseUrl}/odata/Features(LayerId={layer.PublicLayerId},ObjectId={createResult.ObjectId})"
                             };
+                            if (reloaded is not null)
+                            {
+                                headers["ETag"] = etag;
+                            }
 
                             responses.Add(CreateSuccessResponse(
                                 requestId,
