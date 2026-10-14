@@ -107,6 +107,8 @@ internal static class ArcGisRestQueryParameters
         var builder = new StringBuilder();
         builder.Append(serviceUrl).Append('/').Append(layerId).Append("/query?f=json&returnIdsOnly=true");
         AppendCommonQueryParameters(builder, query);
+        // Say so explicitly: an ids-only read must never ask the upstream for geometry (#6113).
+        AppendReturnGeometry(builder, returnGeometry: false);
         AppendOrderBy(builder, query);
         // ArcGIS honors resultOffset/resultRecordCount on returnIdsOnly requests,
         // so paging must be applied here to match the feature-query path.

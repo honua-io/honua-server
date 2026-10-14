@@ -887,19 +887,40 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
+                long[] objectIds;
+                var idsExceededTransferLimit = false;
+
+                // A provider reader that cannot stream (federated ArcGIS REST) answers ids from
+                // QueryObjectIdsAsync under a hard ceiling instead of materialising every full
+                // feature with geometry (#6113). Streaming readers keep the feature path.
+                var boundedIds = await _queryExecutor.TryQueryNonStreamingObjectIdsAsync(
                     queryLayer.Service,
                     queryLayer.Resource,
                     queryLayer.Publication,
                     queryLayer.StorageLayerId,
                     query,
                     cancellationToken).ConfigureAwait(false);
+                if (boundedIds is { } bounded)
+                {
+                    objectIds = bounded.ObjectIds.ToArray();
+                    idsExceededTransferLimit = bounded.ExceededTransferLimit;
+                }
+                else
+                {
+                    QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
+                        queryLayer.Service,
+                        queryLayer.Resource,
+                        queryLayer.Publication,
+                        queryLayer.StorageLayerId,
+                        query,
+                        cancellationToken).ConfigureAwait(false);
+                    objectIds = result.Items
+                        .Select(feature => GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
+                        .ToArray();
+                }
+
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "ids", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
-
-                var objectIds = result.Items
-                    .Select(feature => GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
-                    .ToArray();
                 HonuaTelemetry.SetSuccess(featureActivity, objectIds.Length);
 
                 if (idsIsPbf)
@@ -912,6 +933,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 {
                     ObjectIdFieldName = objectIdFieldName,
                     ObjectIds = objectIds,
+                    ExceededTransferLimit = idsExceededTransferLimit,
                     Features = null
                 };
 
