@@ -263,18 +263,21 @@ internal sealed class McpDataAccessSurface
         httpContext.Items[McpWorkflowViewNegotiation.HttpContextItemKey] = requestedView;
 
         var negotiatedVersion = NegotiateProtocolVersion(parameters.ProtocolVersion);
+        // list_changed is delivered only on the optional GET /mcp stream. Advertising
+        // it while that stream is off (the default) tells clients a notification
+        // channel exists that this transport can never send (honua-server#5629).
+        var listChanged = httpContext.RequestServices?.GetService<IOptions<McpOptions>>()
+            ?.Value.ServerInitiatedStreamEnabled == true;
         var result = new McpInitializeResult
         {
             ProtocolVersion = negotiatedVersion,
-            // honua-server#1954: the server now emits notifications/tools/list_changed
-            // and notifications/resources/list_changed over the session SSE stream
-            // (e.g. when a publish mutates the catalog), so advertise the listChanged
-            // capability instead of leaving the flags inert. The prompt catalog stays
-            // static, so prompts.listChanged remains false.
+            // honua-server#1954: when the stream is enabled the server emits
+            // notifications/tools/list_changed and notifications/resources/list_changed.
+            // The prompt catalog stays static, so prompts.listChanged remains false.
             Capabilities = new McpServerCapabilities
             {
-                Tools = new McpCapabilityFlag { ListChanged = true },
-                Resources = new McpCapabilityFlag { ListChanged = true },
+                Tools = new McpCapabilityFlag { ListChanged = listChanged },
+                Resources = new McpCapabilityFlag { ListChanged = listChanged },
                 Prompts = new McpCapabilityFlag { ListChanged = false }
             },
 

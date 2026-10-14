@@ -296,10 +296,11 @@ internal static class McpEndpointExtensions
             // A successful initialize establishes a session bound to the calling
             // principal (anonymous where the endpoint allows it). Issue the id on
             // the Mcp-Session-Id response header so the client echoes it on every
-            // subsequent request. Under the session cap the registry either evicts
-            // the least-recently-used session or, in reject mode, refuses the new
-            // session — in which case the initialize is answered with a retryable
-            // structured error instead of a session header (A3 hardening; #2537).
+            // subsequent request. Under the per-principal quota the registry evicts
+            // that principal's own least-recently-used session, or refuses in
+            // reject mode. Global pressure evicts anonymous sessions only and never
+            // another principal. A refusal is a retryable structured error instead
+            // of a session header (A3 hardening; #2537, #5629).
             if (isInitialize && response.Error is null)
             {
                 // honua-server#2484: bind the client's advertised elicitation

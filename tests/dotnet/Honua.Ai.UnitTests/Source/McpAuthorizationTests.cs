@@ -5,6 +5,8 @@ using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
@@ -13,6 +15,8 @@ using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -214,6 +218,199 @@ public sealed class McpAuthorizationTests
 
         (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
             .Which.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_NonAdminOwner_ReadsOwnWorkspace()
+    {
+        var lifecycle = WorkspaceLifecycle("ws-owned", "owner-1", scopeId: null);
+        ConfigureWorkspaceAuthorization();
+        var resource = WorkspaceReader(lifecycle);
+
+        var result = await resource.ReadAsync(
+            Principal("owner-1"), "honua://workspaces/ws-owned", CancellationToken.None);
+
+        McpTestFactory.ParseJson(result.Contents[0].Text).GetProperty("workspaceId").GetString()
+            .Should().Be("ws-owned");
+        await _jobService.Received(1).EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<OperatorAuthorizationRequest>(request =>
+                request.ResourceType == OperatorResourceType.Workspace
+                && request.Operation == OperatorOperation.Read
+                && request.ResourceId == "ws-owned"
+                && request.WorkspaceVisibility == WorkspaceVisibility.Personal
+                && request.WorkspaceOwnerId == "owner-1"
+                && request.WorkspaceScopeId == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_OtherNonAdmin_IsNotFoundRatherThanPermissionDenied()
+    {
+        var lifecycle = WorkspaceLifecycle("ws-owned", "owner-1", scopeId: null);
+        ConfigureWorkspaceAuthorization();
+        var resource = WorkspaceReader(lifecycle);
+
+        var act = async () => await resource.ReadAsync(
+            Principal("owner-2"), "honua://workspaces/ws-owned", CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_SharedScopeMember_ReadsWorkspace_OutsiderIsNotFound()
+    {
+        var lifecycle = WorkspaceLifecycle("ws-shared", "owner-1", scopeId: "team-a");
+        ConfigureWorkspaceAuthorization();
+        var resource = WorkspaceReader(lifecycle);
+
+        var allowed = await resource.ReadAsync(
+            Principal("member-1", scope: "team-a"), "honua://workspaces/ws-shared", CancellationToken.None);
+        McpTestFactory.ParseJson(allowed.Contents[0].Text).GetProperty("workspaceId").GetString()
+            .Should().Be("ws-shared");
+        await _jobService.Received().EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<OperatorAuthorizationRequest>(request =>
+                request.WorkspaceVisibility == WorkspaceVisibility.Shared
+                && request.WorkspaceScopeId == "team-a"
+                && request.WorkspaceOwnerId == null),
+            Arg.Any<CancellationToken>());
+
+        var act = async () => await resource.ReadAsync(
+            Principal("outsider"), "honua://workspaces/ws-shared", CancellationToken.None);
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_MissingOrDeleted_IsNotFoundWithoutAuthorization()
+    {
+        var lifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        lifecycle.GetWorkspaceAsync("ws-missing", Arg.Any<CancellationToken>())
+            .Returns((Workspace?)null);
+        lifecycle.GetWorkspaceAsync("ws-deleted", Arg.Any<CancellationToken>())
+            .Returns(new Workspace
+            {
+                WorkspaceId = "ws-deleted",
+                Kind = WorkspaceKind.Scratch,
+                Label = "workspace",
+                OwnerId = "owner-1",
+                State = WorkspaceLifecycleState.Deleted,
+                CreatedAt = DateTimeOffset.UnixEpoch
+            });
+        var resource = WorkspaceReader(lifecycle);
+
+        var missing = async () => await resource.ReadAsync(
+            Principal("owner-1"), "honua://workspaces/ws-missing", CancellationToken.None);
+        var deleted = async () => await resource.ReadAsync(
+            Principal("owner-1"), "honua://workspaces/ws-deleted", CancellationToken.None);
+
+        await missing.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        await deleted.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        await _jobService.DidNotReceive().EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Any<OperatorAuthorizationRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_AuthenticationRequired_IsNotRewrittenAsNotFound()
+    {
+        var lifecycle = WorkspaceLifecycle("ws-owned", "owner-1", scopeId: null);
+        _jobService
+            .EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<OperatorAuthorizationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new GeoprocessingAuthorizationException(requiresAuthentication: true)));
+        var resource = WorkspaceReader(lifecycle);
+
+        var act = async () => await resource.ReadAsync(
+            Principal("owner-1"), "honua://workspaces/ws-owned", CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeTrue();
+    }
+
+    private void ConfigureWorkspaceAuthorization()
+    {
+        _jobService
+            .EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<OperatorAuthorizationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var principal = call.Arg<ClaimsPrincipal>();
+                var request = call.Arg<OperatorAuthorizationRequest>();
+                var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                var allowed = request.WorkspaceVisibility switch
+                {
+                    WorkspaceVisibility.Personal => string.Equals(userId, request.WorkspaceOwnerId, StringComparison.Ordinal),
+                    WorkspaceVisibility.Shared => principal.Claims.Any(claim =>
+                        claim.Type == "groups"
+                        && string.Equals(claim.Value, request.WorkspaceScopeId, StringComparison.Ordinal)),
+                    _ => false
+                };
+                if (!allowed)
+                {
+                    throw new GeoprocessingAuthorizationException(
+                        requiresAuthentication: false,
+                        "denied",
+                        OperatorResourceType.Workspace,
+                        OperatorOperation.Read);
+                }
+
+                return Task.CompletedTask;
+            });
+    }
+
+    private WorkspaceResource WorkspaceReader(IWorkspaceLifecycleService lifecycle)
+    {
+        var services = new ServiceCollection().AddScoped(_ => lifecycle).BuildServiceProvider();
+        return new WorkspaceResource(
+            _jobService,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<WorkspaceResource>.Instance);
+    }
+
+    private static IWorkspaceLifecycleService WorkspaceLifecycle(string workspaceId, string ownerId, string? scopeId)
+    {
+        var lifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        lifecycle.GetWorkspaceAsync(workspaceId, Arg.Any<CancellationToken>())
+            .Returns(new Workspace
+            {
+                WorkspaceId = workspaceId,
+                Kind = WorkspaceKind.Scratch,
+                Label = "workspace",
+                OwnerId = ownerId,
+                ScopeId = scopeId,
+                State = WorkspaceLifecycleState.Active,
+                CreatedAt = DateTimeOffset.UnixEpoch
+            });
+        return lifecycle;
+    }
+
+    private static DefaultHttpContext Principal(string userId, string? scope = null)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId),
+            new(ClaimTypes.Name, userId)
+        };
+        if (scope is not null)
+        {
+            claims.Add(new Claim("groups", scope));
+        }
+
+        return new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"))
+        };
     }
 
     [UnitTest]

@@ -17,7 +17,7 @@ namespace Honua.Ai.Protocols.Mcp.Resources;
 /// and surfaces provenance edges back to the originating intent, hosted
 /// deployments, and source result package. Authorization defers to the
 /// <see cref="OperatorResourceType.PublishedService"/> grant evaluated by
-/// <see cref="IGeoprocessingJobService.EnsureCallerAuthorizedAsync"/>.
+/// <see cref="IGeoprocessingJobService.EnsureCallerAuthorizedAsync(System.Security.Claims.ClaimsPrincipal, OperatorResourceType, OperatorOperation, System.Threading.CancellationToken)"/>.
 /// </summary>
 internal sealed class PublishedServiceResource : IMcpResource
 {

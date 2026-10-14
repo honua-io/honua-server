@@ -60,6 +60,22 @@ internal interface IGeoprocessingJobService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Validates authorization for a fully described operator request, including workspace
+    /// visibility, owner, and scope when <paramref name="request"/> carries them.
+    /// Implementations that only understand the type/operation pair keep the previous
+    /// check; the production job service forwards the request intact.
+    /// </summary>
+    Task EnsureCallerAuthorizedAsync(
+        ClaimsPrincipal principal,
+        OperatorAuthorizationRequest request,
+        CancellationToken cancellationToken = default)
+        => EnsureCallerAuthorizedAsync(
+            principal,
+            request.ResourceType,
+            request.Operation,
+            cancellationToken);
+
+    /// <summary>
     /// Submits a plan on behalf of a principal whose row/field security identity is supplied
     /// separately (honua-server#3068). Used by the workflow orchestration engine, which submits
     /// each step under a synthesized orchestrator identity carrying <c>role=admin</c>: capturing
@@ -121,21 +137,21 @@ internal interface IGeoprocessingJobService
 
     /// <summary>
     /// Validates a plan for executability and returns the validation result.
-    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync"/> to
+    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync(ClaimsPrincipal, OperatorResourceType, OperatorOperation, CancellationToken)"/> to
     /// guarantee auth-before-validation ordering at the adapter boundary.
     /// </summary>
     PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal);
 
     /// <summary>
     /// Performs a dry run of a plan and returns cost/artifact estimates.
-    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync"/> to
+    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync(ClaimsPrincipal, OperatorResourceType, OperatorOperation, CancellationToken)"/> to
     /// guarantee auth-before-validation ordering at the adapter boundary.
     /// </summary>
     DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal);
 
     /// <summary>
     /// Submits a plan for asynchronous execution and returns the job record.
-    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync"/> to
+    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync(ClaimsPrincipal, OperatorResourceType, OperatorOperation, CancellationToken)"/> to
     /// guarantee auth-before-validation ordering at the adapter boundary.
     /// </summary>
     /// <param name="plan">The analysis plan to execute.</param>
