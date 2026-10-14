@@ -337,9 +337,17 @@ internal sealed class BedrockChatClientAdapter : IChatClient
     {
         List<Message> converseMessages = [];
         List<SystemContentBlock> system = [];
+        Message? toolResultMessage = null;
 
         foreach (var message in messages)
         {
+            // Only adjacent tool-role messages belong to the same response turn.
+            // Reset before skipped system/empty messages so they remain boundaries.
+            if (message.Role != ChatRole.Tool)
+            {
+                toolResultMessage = null;
+            }
+
             if (message.Role == ChatRole.System)
             {
                 if (!string.IsNullOrEmpty(message.Text))
@@ -362,7 +370,21 @@ internal sealed class BedrockChatClientAdapter : IChatClient
                 ? ConversationRole.Assistant
                 : ConversationRole.User;
 
-            converseMessages.Add(new Message { Role = role, Content = content });
+            if (message.Role == ChatRole.Tool && toolResultMessage is not null)
+            {
+                // Bedrock expects every result for a parallel tool call in one
+                // user message. Preserve block order and IDs without joining
+                // ordinary user messages or crossing another role's turn.
+                toolResultMessage.Content.AddRange(content);
+                continue;
+            }
+
+            var mappedMessage = new Message { Role = role, Content = content };
+            converseMessages.Add(mappedMessage);
+            if (message.Role == ChatRole.Tool)
+            {
+                toolResultMessage = mappedMessage;
+            }
         }
 
         return (converseMessages, system);
