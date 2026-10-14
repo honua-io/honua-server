@@ -97,9 +97,10 @@ internal sealed partial class ConsoleJobService
         return new ConsoleJobStep
         {
             Ordinal = ordinal,
-            Phase = string.IsNullOrWhiteSpace(entry.Phase)
-                ? (string.IsNullOrWhiteSpace(job.CurrentPhase) ? job.Status.ToString() : job.CurrentPhase)
-                : WorkspacePathSanitizer.SanitizeForClient(entry.Phase, workspace),
+            Phase = WorkspacePathSanitizer.SanitizeForClient(
+                string.IsNullOrWhiteSpace(entry.Phase)
+                    ? (string.IsNullOrWhiteSpace(job.CurrentPhase) ? job.Status.ToString() : job.CurrentPhase)
+                    : entry.Phase, workspace),
             Status = entry.Level == ExecutionLogLevel.Error
                 ? ExecutionJobStatus.Failed.ToString()
                 : entry.Level.ToString(),

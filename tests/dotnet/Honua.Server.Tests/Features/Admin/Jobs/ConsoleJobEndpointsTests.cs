@@ -301,6 +301,31 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
+    public async Task GetJobSteps_SanitizesFallbackCurrentPhase()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(CreateJob("job-phase-secret", ExecutionJobStatus.Running, now, "corr-phase") with
+        {
+            CurrentPhase = "token=phase-secret /tmp/worker/phase"
+        });
+        _logStore.SetLogs("job-phase-secret", new ExecutionLogEntry
+        {
+            Timestamp = now,
+            Level = ExecutionLogLevel.Info,
+            Message = "Running",
+            Phase = ""
+        });
+
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-phase-secret/steps");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("phase-secret");
+        body.Should().NotContain("/tmp/");
+        body.Should().Contain("[REDACTED]");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
     public async Task GetJobSteps_RequiresAdminAuthorization()
     {
         // The shared class fixture runs with dev-auth bypass (so the admin-keyed client used by

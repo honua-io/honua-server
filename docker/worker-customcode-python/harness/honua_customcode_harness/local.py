@@ -12,6 +12,7 @@ import json
 import math
 import shutil
 import sys
+import threading
 import uuid
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -28,16 +29,18 @@ class _Journal:
         self.path = path
         self.count = 0
         self.truncated = False
+        self._lock = threading.Lock()
 
     def event(self, phase: str, *, terminal: bool = False, **values: Any) -> None:
-        if self.count >= 1000 and not terminal:
-            self.truncated = True
-            return
-        event = {"sequence": self.count, "timestamp": datetime.now(timezone.utc).isoformat(),
-                 "phase": str(phase)[:500], **values}
-        with self.path.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(event, allow_nan=False) + "\n")
-        self.count += 1
+        with self._lock:
+            if self.count >= 1000 and not terminal:
+                self.truncated = True
+                return
+            event = {"sequence": self.count, "timestamp": datetime.now(timezone.utc).isoformat(),
+                     "phase": str(phase)[:500], **values}
+            with self.path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(event, allow_nan=False) + "\n")
+            self.count += 1
 
     def report(self, pct: float, phase: str) -> None:
         pct = float(pct)

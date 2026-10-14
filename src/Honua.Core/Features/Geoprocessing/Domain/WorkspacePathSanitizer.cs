@@ -61,7 +61,7 @@ public static partial class WorkspacePathSanitizer
     private static partial Regex AuthorizationRegex();
 
     [GeneratedRegex(
-        @"\b((?:[\w-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key)[\w-]*|pwd)\s*(?:=|:|\s)\s*)(?:""[^""]*""|'[^']*'|[^\s,;""'<>]+)",
+        @"\b((?:[\w-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key)[\w-]*|pwd)[""']?\s*(?:=|:|\s)\s*)(?:""(?:\\.|[^""\\])*""|'(?:\\.|[^'\\])*'|[^\s,;""'<>]+)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
     private static partial Regex CredentialValueRegex();
 

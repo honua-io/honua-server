@@ -121,4 +121,18 @@ public sealed class WorkspacePathSanitizerTests
         // Operator log intentionally KEEPS the scratch path for diagnosis.
         Assert.Equal(message, truncated);
     }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("{\"password\":\"prefix\\\"secret-value\",\"status\":\"running\"}")]
+    [InlineData("{\"token\":\"secret-value\",\"status\":\"running\"}")]
+    [InlineData("{'api-key':'secret-value','status':'running'}")]
+    public void SanitizeForClient_RedactsQuotedCredentialKeys(string message)
+    {
+        var sanitized = WorkspacePathSanitizer.SanitizeForClient(message, workspace: null);
+
+        Assert.DoesNotContain("secret-value", sanitized);
+        Assert.Contains("[REDACTED]", sanitized);
+        Assert.Contains("running", sanitized);
+    }
 }

@@ -9,6 +9,7 @@ public sealed class LocalHarnessTests
 {
     [Theory]
     [InlineData("success", 0, "succeeded")]
+    [InlineData("case", 0, "succeeded")]
     [InlineData("failure", 1, "failed")]
     [InlineData("cancel", 3, "cancelled")]
     [InlineData("grow", 1, "failed")]
@@ -82,7 +83,7 @@ public sealed class LocalFixtureTool : IGeoprocessingTool
         var path = Path.Combine(context.WorkDirectory, "result.txt");
         var text = await File.ReadAllTextAsync(context.Inputs["data"], cancellationToken);
         await File.WriteAllTextAsync(path, text.ToUpperInvariant(), cancellationToken);
-        context.Output.AddArtifact("answer.txt", path);
+        context.Output.AddArtifact("answer.txt", mode == "case" && OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path);
         if (mode == "grow")
         {
             await File.WriteAllTextAsync(path, new string('x', 100), cancellationToken);

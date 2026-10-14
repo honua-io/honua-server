@@ -111,3 +111,22 @@ def test_documented_sample_has_expected_numeric_result(tmp_path):
     result = receipt(output)
     summary = json.loads((output / result["runId"] / "artifacts" / "summary.json").read_text())
     assert summary == {"count": 2, "sum": 30, "mean": 15}
+
+
+def test_local_concurrent_callbacks_keep_sequence_and_cap(tmp_path):
+    source = tool(tmp_path,
+        "    from concurrent.futures import ThreadPoolExecutor\n"
+        "    def emit(i):\n"
+        "        context.progress.report(50, 'working')\n"
+        "        context.log.info(str(i))\n"
+        "    with ThreadPoolExecutor(max_workers=16) as pool:\n"
+        "        list(pool.map(emit, range(1000)))\n"
+        "    return GpResult.succeeded()\n")
+    output = tmp_path / "runs"
+    assert run_local(source=source, entrypoint="local_tool:execute", params={}, inputs={}, output=output) == 0
+    result = receipt(output)
+    events = [json.loads(line) for line in (output / result["runId"] / "events.jsonl").read_text().splitlines()]
+    assert result["eventsTruncated"] is True
+    assert len(events) == 1001
+    assert [event["sequence"] for event in events] == list(range(1001))
+    assert events[-1]["phase"] == "succeeded"

@@ -70,14 +70,16 @@ public static class LocalHarness
 
                 // Do not follow symlinks/junctions out of the run directory.
                 var candidate = artifact.Path;
-                while (!string.Equals(candidate, workDirectory, StringComparison.Ordinal))
+                var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+                while (!string.Equals(candidate, workDirectory, pathComparison))
                 {
                     if ((File.GetAttributes(candidate) & FileAttributes.ReparsePoint) != 0)
                     {
                         throw new IOException("Output artifacts cannot traverse symbolic links.");
                     }
 
-                    candidate = Path.GetDirectoryName(candidate)!;
+                    candidate = Path.GetDirectoryName(candidate)
+                        ?? throw new IOException("Output artifact ancestry does not reach the run work directory.");
                 }
 
                 total = checked(total + new FileInfo(artifact.Path).Length);
