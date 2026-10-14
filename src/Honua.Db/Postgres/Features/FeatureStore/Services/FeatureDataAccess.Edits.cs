@@ -634,6 +634,13 @@ internal sealed partial class FeatureDataAccess
 
     internal static Feature PreserveOmittedAttributes(Feature update, Feature current)
     {
+        // A partial update that omitted geometry takes it from the row locked in this
+        // transaction, not from the caller's earlier unlocked read (#6094).
+        if (update.PreserveOmittedGeometry)
+        {
+            update = update with { Geometry = current.Geometry };
+        }
+
         if (!update.PreserveOmittedMaskedAttributes)
         {
             return update;
@@ -916,7 +923,7 @@ internal sealed partial class FeatureDataAccess
                                     // requireTransaction guarantees tx is non-null here.
                                     current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
                                 }
-                                else if (feature.PreserveOmittedMaskedAttributes)
+                                else if (feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry)
                                 {
                                     current = await ReadFeatureForUpdateAsync(layerId, feature.Id, conn, tx!, ct).ConfigureAwait(false);
                                 }
@@ -931,7 +938,7 @@ internal sealed partial class FeatureDataAccess
                                 return u;
                             },
                             cancellationToken,
-                            requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes).ConfigureAwait(false);
+                            requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry).ConfigureAwait(false);
                         if (hasPrecondition)
                         {
                             preconditions![updated.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(updated) };
@@ -1741,7 +1748,7 @@ internal sealed partial class FeatureDataAccess
                             // requireTransaction guarantees tx is non-null here.
                             current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
                         }
-                        else if (feature.PreserveOmittedMaskedAttributes)
+                        else if (feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry)
                         {
                             current = await ReadFeatureForUpdateAsync(layerId, feature.Id, conn, tx!, ct).ConfigureAwait(false);
                         }
@@ -1756,7 +1763,7 @@ internal sealed partial class FeatureDataAccess
                         return u;
                     },
                     cancellationToken,
-                    requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes).ConfigureAwait(false);
+                    requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry).ConfigureAwait(false);
                 if (hasPrecondition)
                 {
                     // Later operations on this row in the same batch must observe our

@@ -769,6 +769,13 @@ internal sealed class FeatureServerEditsHandler(
                     existingFeature,
                     ownerSnapshots).ConfigureAwait(false);
                 context.UpdateFeatures.Add(updateFeature);
+                // The full merged row above serves rules, validation, hooks and events. The
+                // DEFAULT writer receives only what this request changes, so the row it locks
+                // supplies every other field and the omitted geometry (#6094). The versioned
+                // overlay writer persists the payload verbatim and keeps the merged row.
+                context.UpdateWriteFeatures.Add(versionContext is { IsDefault: false }
+                    ? updateFeature
+                    : CreatePartialUpdateWritePayload(updateFeature, existingFeature.Value, update, requestHasGeometry, resource));
                 context.UpdateIndexes.Add(i);
                 context.UpdateObjectIds.Add(objectId);
                 context.UpdateGeometryChanged.Add(requestHasGeometry);
@@ -990,7 +997,7 @@ internal sealed class FeatureServerEditsHandler(
             new GeoServicesEditRequest
             {
                 Creates = context.CreateFeatures.ToImmutableArray(),
-                Updates = context.UpdateFeatures.ToImmutableArray(),
+                Updates = context.UpdateWriteFeatures.ToImmutableArray(),
                 Deletes = context.DeleteIds.ToImmutableArray(),
                 RollbackOnFailure = request.RollbackOnFailure,
                 UseGlobalIds = request.UseGlobalIds
@@ -1456,6 +1463,11 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         context.UpdateFeatures.RemoveAt(k);
+        if (k < context.UpdateWriteFeatures.Count)
+        {
+            context.UpdateWriteFeatures.RemoveAt(k);
+        }
+
         context.UpdateIndexes.RemoveAt(k);
         if (k < context.UpdateObjectIds.Count)
         {
@@ -1535,6 +1547,12 @@ internal sealed class FeatureServerEditsHandler(
         /// </summary>
         public List<bool> CreateGeometryChanged { get; } = new();
         public List<Feature> UpdateFeatures { get; } = new();
+        /// <summary>
+        /// Per-update payload sent to the writer, parallel to <see cref="UpdateFeatures"/>. A
+        /// partial update carries only the attributes this request changes and defers omitted
+        /// fields and geometry to the writer's locked read (#6094).
+        /// </summary>
+        public List<Feature> UpdateWriteFeatures { get; } = new();
         public bool GuardUpdateSnapshot { get; set; }
         public Dictionary<long, FeatureEditPrecondition> UpdateSnapshotPreconditions { get; } = new();
         public List<int> UpdateIndexes { get; } = new();
@@ -1973,6 +1991,70 @@ internal sealed class FeatureServerEditsHandler(
         => isPartialUpdate
             ? edited with { PreserveOmittedMaskedAttributes = true }
             : edited;
+
+    /// <summary>
+    /// Builds the writer payload for a partial GeoServices update (#6094). The merged feature
+    /// starts from an unlocked pre-read, so writing it whole would revert any field or geometry
+    /// another editor committed after that read. The payload keeps the caller-supplied
+    /// attributes plus every value this request changed relative to the pre-read (attribute
+    /// rule outputs, owner handling), names attributes the request removed, and asks the
+    /// writer to take omitted geometry from the row it locks. Full replacements and updates
+    /// that do not preserve omitted attributes are returned unchanged.
+    /// </summary>
+    internal static Feature CreatePartialUpdateWritePayload(
+        Feature merged,
+        Feature snapshot,
+        GeoServicesFeature request,
+        bool requestHasGeometry,
+        MetadataV2Resource resource)
+    {
+        if (request.ReplaceAttributes || !merged.PreserveOmittedMaskedAttributes)
+        {
+            return merged;
+        }
+
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        var supplied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in request.Attributes.Keys)
+        {
+            if (!request.InheritedNonEditableAttributes.Contains(key) &&
+                !key.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                supplied.Add(key);
+            }
+        }
+
+        var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in merged.Attributes)
+        {
+            if (supplied.Contains(name) ||
+                !snapshot.Attributes.TryGetValue(name, out var previous) ||
+                !Equals(previous, value))
+            {
+                attributes[name] = value;
+            }
+        }
+
+        var removals = merged.ExplicitAttributeRemovals.IsDefault
+            ? ImmutableArray.CreateBuilder<string>()
+            : merged.ExplicitAttributeRemovals.ToBuilder();
+        foreach (var name in snapshot.Attributes.Keys)
+        {
+            if (!merged.Attributes.ContainsKey(name) &&
+                !name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
+                !name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                removals.Add(name);
+            }
+        }
+
+        return merged with
+        {
+            Attributes = attributes.ToImmutable(),
+            ExplicitAttributeRemovals = removals.ToImmutable(),
+            PreserveOmittedGeometry = !requestHasGeometry
+        };
+    }
 
     /// <summary>
     /// Loads the single-update edit snapshot and returns its full-row state token.

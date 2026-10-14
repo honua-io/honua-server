@@ -279,6 +279,87 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task ApplyEdits_MultiRowPartialUpdate_PreservesFieldsAndGeometryCommittedAfterPreRead()
+    {
+        // #6094: a multi-row batch has no snapshot-token guard. Its partial updates must merge
+        // onto the row the writer locks, not write back the unlocked pre-read snapshot.
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field { Name = "score", Type = MetadataV2FieldType.Integer });
+        const string path = "/rest/services/test/FeatureServer/0/applyEdits";
+        using var add = await PostJsonAsync(path,
+            """{"adds":[{"attributes":{"name":"first","score":0},"geometry":{"x":-122.25,"y":37.75,"spatialReference":{"wkid":4326}}},{"attributes":{"name":"second","score":0},"geometry":{"x":-121.25,"y":38.75,"spatialReference":{"wkid":4326}}}]}""");
+        var added = await DeserializeEditsAsync(add);
+        added.AddResults.Should().HaveCount(2).And.OnlyContain(result => result.Success);
+        var firstId = added.AddResults![0].ObjectId!.Value;
+        var secondId = added.AddResults[1].ObjectId!.Value;
+
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        using var builder = new Npgsql.NpgsqlCommandBuilder();
+        var schema = builder.QuoteIdentifier(_fixture.CurrentSchema!);
+        // Another editor changes an unrelated field and the geometry of the first row and holds
+        // its row lock until the batch below has pre-read both rows and is waiting to write.
+        await using (var concurrent = new Npgsql.NpgsqlCommand(
+            $"UPDATE {schema}.features SET attributes = attributes || '{{\"score\":29}}'::jsonb, geometry = ST_SetSRID(ST_Point(-120.5,36.5),4326) WHERE layer_id=0 AND objectid=@id",
+            connection, transaction))
+        {
+            concurrent.Parameters.AddWithValue("id", firstId);
+            (await concurrent.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+
+        var pending = PostJsonAsync(path,
+            $$$"""{"rollbackOnFailure":false,"updates":[{"attributes":{"objectid":{{{firstId}}},"name":"first-after"}},{"attributes":{"objectid":{{{secondId}}},"name":"second-after"}}]}""");
+        var waiting = 0L;
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (waiting < 1 && DateTime.UtcNow < deadline)
+        {
+            await using (var refresh = new Npgsql.NpgsqlCommand("SELECT pg_stat_clear_snapshot()", connection, transaction))
+            {
+                await refresh.ExecuteNonQueryAsync();
+            }
+            await using var command = new Npgsql.NpgsqlCommand(
+                "SELECT count(*) FROM pg_stat_activity WHERE @lockPid = ANY(pg_blocking_pids(pid))",
+                connection, transaction);
+            command.Parameters.AddWithValue("lockPid", connection.ProcessID);
+            waiting = (long)(await command.ExecuteScalarAsync())!;
+            if (waiting < 1)
+            {
+                await Task.Delay(25);
+            }
+        }
+
+        await transaction.CommitAsync();
+        waiting.Should().BeGreaterThanOrEqualTo(1, "the batch must pre-read before the concurrent edit commits");
+
+        using (var response = await pending)
+        {
+            var result = await DeserializeEditsAsync(response);
+            result.UpdateResults.Should().HaveCount(2).And.OnlyContain(edit => edit.Success,
+                await response.Content.ReadAsStringAsync());
+        }
+
+        using var query = await _fixture.Client.GetAsync(
+            $"/rest/services/test/FeatureServer/0/query?f=json&objectIds={firstId},{secondId}&outFields=*&returnGeometry=true&outSR=4326");
+        query.Be200Ok();
+        using var document = JsonDocument.Parse(await query.Content.ReadAsStringAsync());
+        var features = document.RootElement.GetProperty("features").EnumerateArray()
+            .ToDictionary(feature => feature.GetProperty("attributes").GetProperty("objectid").GetInt64());
+        var first = features[firstId];
+        first.GetProperty("attributes").GetProperty("name").GetString().Should().Be("first-after");
+        first.GetProperty("attributes").GetProperty("score").GetInt32().Should().Be(29,
+            "the concurrently committed field must survive the batch");
+        first.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-120.5,
+            "omitted geometry must come from the locked row, not the pre-read");
+        first.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(36.5);
+        var second = features[secondId];
+        second.GetProperty("attributes").GetProperty("name").GetString().Should().Be("second-after");
+        second.GetProperty("attributes").GetProperty("score").GetInt32().Should().Be(0);
+        second.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-121.25);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ApplyEdits, Operations.Query, Operations.Metadata)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]

@@ -743,7 +743,8 @@ public sealed class EditProcessor : IEditProcessor
         {
             PreserveOmittedMaskedAttributes = !isCreate &&
                 (editFeature.PreserveOmittedMaskedAttributes || editFeature.UpdateMode != EditUpdateMode.Replace),
-            ExplicitAttributeRemovals = editFeature.ExplicitAttributeRemovals
+            ExplicitAttributeRemovals = editFeature.ExplicitAttributeRemovals,
+            PreserveOmittedGeometry = !isCreate && editFeature.PreserveOmittedGeometry
         };
     }
 
