@@ -24,6 +24,7 @@ internal sealed partial class ConsoleJobService
     // Command so the console renders it once the devkit (#2128) begins recording it.
     private static readonly string[] CommandMetadataKeys =
     [
+        "gdal.command",
         "command",
         "commandLine",
         "gdalCommand",
@@ -98,13 +99,14 @@ internal sealed partial class ConsoleJobService
             Ordinal = ordinal,
             Phase = string.IsNullOrWhiteSpace(entry.Phase)
                 ? (string.IsNullOrWhiteSpace(job.CurrentPhase) ? job.Status.ToString() : job.CurrentPhase)
-                : entry.Phase,
+                : WorkspacePathSanitizer.SanitizeForClient(entry.Phase, workspace),
             Status = entry.Level == ExecutionLogLevel.Error
                 ? ExecutionJobStatus.Failed.ToString()
                 : entry.Level.ToString(),
             StartedAt = entry.Timestamp,
             CompletedAt = completedAt,
             DurationMs = duration,
+            TimingSource = "inferred",
             Message = WorkspacePathSanitizer.SanitizeForClient(entry.Message, workspace),
             Command = ExtractSanitizedCommand(entry, workspace),
             Artifacts = isLast ? artifactSummary : null,

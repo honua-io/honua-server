@@ -197,6 +197,31 @@ policy is unreadable there. Leave it unset on those services.
 
 Recent jobs: `GET /api/v1/admin/import/jobs`; durable job detail and logs: `GET /api/v1/admin/jobs/{jobId}/logs`. For stuck workflow runs, see [Automate workflows](../query-analyze/automate-workflows.md).
 
+## Geoprocessing development and remote jobs
+
+Start with the job's status, current phase, attempt, heartbeat, and reported
+failure. In Console, open the GP job's step timeline to inspect the sanitized
+native command and artifacts. Step durations inferred from neighboring log
+timestamps are labeled `timingSource: inferred`; they are not measured spans.
+A missing command or event is missing evidence, not proof a step never ran.
+
+For local built-in functions, run the devkit's `doctor --managed-only --json`,
+then execute the failing function with the same parameters and input CRS.
+Use `--real-worker` for native worker fidelity. The doctor image probe alone
+does not execute GDAL or qualify a Kubernetes/AWS target.
+
+For custom code, use the Python/.NET
+[local debugging sample](../../../samples/gp-custom-local/README.md).
+Inspect `receipt.json` for the failed phase and `eventsTruncated`, and inspect
+`events.jsonl` and the retained work directory. Missing input is a setup error;
+an exception in the tool is an execution failure. Local files are unsanitized
+and must not be treated as exported support bundles.
+
+Re-running custom code can repeat external effects. Inspect committed results
+before retrying; cancellation and deployment rollback do not undo data writes.
+Automatic remote-to-local reproduction and per-process Git rollback are separate
+capabilities and are not provided by these local commands.
+
 ## Tiles and rendering
 
 | Symptom | Diagnosis | Fix |

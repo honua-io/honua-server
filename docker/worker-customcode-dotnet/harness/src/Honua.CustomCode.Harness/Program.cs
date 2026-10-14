@@ -15,13 +15,18 @@ Console.CancelKeyPress += (_, e) =>
 AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();
 
 // Honor SIGTERM (Batch sends it on cancel/timeout) as cooperative cancellation.
-using var sigtermRegistration = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+using var sigtermRegistration = OperatingSystem.IsWindows() ? null : System.Runtime.InteropServices.PosixSignalRegistration.Create(
     System.Runtime.InteropServices.PosixSignal.SIGTERM,
     ctx =>
     {
         ctx.Cancel = true;
         cts.Cancel();
     });
+
+if (args.Length > 0 && args[0] == "local")
+{
+    return await LocalHarness.RunCommandAsync(args[1..], cts.Token).ConfigureAwait(false);
+}
 
 var options = new HarnessOptions
 {

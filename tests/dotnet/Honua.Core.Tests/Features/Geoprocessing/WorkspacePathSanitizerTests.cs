@@ -13,6 +13,19 @@ namespace Honua.Core.Tests.Features.Geoprocessing;
 public sealed class WorkspacePathSanitizerTests
 {
     [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("gdal --config AWS_SECRET_ACCESS_KEY secret-value", "secret-value")]
+    [InlineData("PG:host=db password='two words'", "two words")]
+    [InlineData("request Authorization: Bearer opaque-token", "opaque-token")]
+    [InlineData("--api-key=opaque-value", "opaque-value")]
+    public void SanitizeForClient_RedactsRecognizableCredentials(string text, string secret)
+    {
+        var sanitized = WorkspacePathSanitizer.SanitizeForClient(text, null);
+        Assert.DoesNotContain(secret, sanitized);
+        Assert.Contains("[REDACTED]", sanitized);
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sanitize_ReplacesWorkspacePath_WithStablePlaceholder()
     {

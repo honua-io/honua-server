@@ -13,6 +13,17 @@ Start the [local GP stack](gp-local-dev-quickstart.md), then connect an MCP clie
 to `http://localhost:8080/mcp` using the [connection guide](../connect/ai-agents-mcp.md).
 The sample below uses inline geometry, so it needs no published input layer.
 
+For an agent working directly in a developer checkout, the
+[devkit](gp-devkit-authoring.md) provides `list --json`, `describe --json`, and
+`doctor --managed-only --json`. Catalog registration does not prove dependencies
+are installed. A doctor result verifies only its reported checks; a successful
+`run` and inspected output are execution evidence.
+
+Custom Python/.NET tools can use the [local debugging sample](../../../samples/gp-custom-local/README.md).
+Its receipts and progress events remain local and unsanitized. These local tools
+do not add MCP capabilities or authorize a remote deployment. Discover the live
+MCP surface before proposing remote inspection, retries, or deployment actions.
+
 ## Access and execution prerequisites
 
 - Authenticate tool calls and resource reads. The local stack's admin key is

@@ -9,6 +9,11 @@ Run a GP job through a local server, inspect its result, and repeat after editin
 your process. This stack needs no cloud account. For direct function development
 without a server or Redis, start with [the authoring guide](gp-devkit-authoring.md).
 
+For Python or .NET custom-code breakpoints, start with the
+[filesystem sample](../../../samples/gp-custom-local/README.md), then return here
+to verify server authorization, queues, worker dispatch, and result retrieval.
+A local function run does not exercise those integration boundaries.
+
 ## Prerequisites
 
 Run from the repository root with Docker Compose v2 and Python 3.11 or newer.

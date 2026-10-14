@@ -252,7 +252,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 Phase = "Reproject",
                 Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["command"] = "gdalwarp -t_srs EPSG:3857 /tmp/honua-gdal-worker/job-running/input.tif /tmp/honua-gdal-worker/job-running/out.tif",
+                    ["gdal.command"] = "gdalwarp --config AWS_SECRET_ACCESS_KEY worker-secret -t_srs EPSG:3857 /tmp/honua-gdal-worker/job-running/input.tif /tmp/honua-gdal-worker/job-running/out.tif",
                     ["targetSrs"] = "EPSG:3857"
                 }
             },
@@ -272,6 +272,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         var rawBody = await response.Content.ReadAsStringAsync();
         // The unsanitized worker filesystem path must NEVER leak over HTTP.
         rawBody.Should().NotContain("honua-gdal-worker");
+        rawBody.Should().NotContain("worker-secret");
         rawBody.Should().NotContain("/tmp/");
 
         using var doc = JsonDocument.Parse(rawBody);
@@ -294,6 +295,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         // Command keys are not duplicated into the generic metadata bag.
         first.GetProperty("metadata").GetProperty("targetSrs").GetString().Should().Be("EPSG:3857");
         first.GetProperty("metadata").TryGetProperty("command", out _).Should().BeFalse();
+        first.GetProperty("metadata").TryGetProperty("gdal.command", out _).Should().BeFalse();
+        first.GetProperty("timingSource").GetString().Should().Be("inferred");
     }
 
     [IntegrationTest]
