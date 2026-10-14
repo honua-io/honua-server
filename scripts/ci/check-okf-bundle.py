@@ -16,13 +16,12 @@ OKF v0.2 conformance notes that shape the rules below:
 
   - `type` is the only always-required key. A concept carrying just `type` is
     fully conformant, so `title` and `description` are encouraged, not demanded.
-  - There is no `timestamp` field in the specification. The trust family spells
-    the build stamp `generated`. honua-site emitted `timestamp` until
-    2026-09-10; that mistake is rejected by name here so it cannot spread.
+  - v0.1 used `timestamp`; v0.2 defines structured `generated` and `verified`
+    metadata. Honua's producer profile uses that newer structure. This is a
+    publishing policy, not a claim that legacy consumers must reject v0.1.
   - The specification requires *consumers* to tolerate unknown types and to
-    preserve unknown keys. This is a producer gate over our own bundle, so it
-    deliberately does neither: an unrecognised `type` in docs/ means a typo or a
-    page nobody classified, and both are worth failing on.
+    preserve unknown keys. This producer gate preserves extension metadata but
+    requires our published types to be classified in the bundle manifest.
 
 Usage:
     python3 scripts/ci/check-okf-bundle.py            # gate docs/
@@ -34,68 +33,67 @@ import json
 import pathlib
 import re
 import sys
+from datetime import datetime
+
+from okf_frontmatter import parse_frontmatter
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 MANIFEST_PATH = REPO_ROOT / "scripts" / "ci" / "okf-bundle.v1.json"
-
-DATE_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}"
-    r"(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$"
-)
-SCALAR_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
-SEQUENCE_ITEM_RE = re.compile(r"^\s+-\s+(.*\S)\s*$")
-
-
-def unquote(value: str) -> str:
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-        return value[1:-1]
-    return value
-
 
 def load_manifest() -> dict:
     with open(MANIFEST_PATH, "r", encoding="utf-8") as fh:
         return json.load(fh)
 
 
-def parse_frontmatter(text: str) -> tuple[dict[str, str] | None, str | None]:
-    """Return (fields, error). fields is None when the file has no frontmatter."""
-    if not text.startswith("---\n") and not text.startswith("---\r\n"):
-        return None, None
-    lines = text.splitlines()
-    fields: dict[str, str] = {}
-    pending_list: str | None = None
-    for i, raw in enumerate(lines[1:], start=1):
-        if raw.strip() == "---":
-            return fields, None
-        if not raw.strip() or raw.lstrip().startswith("#"):
-            continue
-        item = SEQUENCE_ITEM_RE.match(raw)
-        if item and pending_list is not None:
-            fields[pending_list] = (fields[pending_list] + ", " if fields[pending_list] else "") + unquote(item.group(1))
-            continue
-        m = SCALAR_RE.match(raw)
-        if not m:
-            # A nested mapping is still something this reader cannot represent;
-            # flag rather than silently skipping a line it cannot understand.
-            return fields, f"line {i + 1} is not a `key: value` scalar: {raw.strip()!r}"
-        key, value = m.group(1), m.group(2).strip()
-        # `key:` with nothing after it opens a block sequence - one page can
-        # declare several capabilities, and `resources:` is written that way.
-        pending_list = key if not value else None
-        fields[key] = unquote(value)
-    return fields, "frontmatter fence was never closed"
-
-
-def is_real_calendar_date(value: str) -> bool:
-    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", value)
-    if not m:
+def valid_instant(value):
+    if not isinstance(value, str):
         return False
-    year, month, day = (int(g) for g in m.groups())
-    if not 1 <= month <= 12:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.tzinfo is not None and parsed.utcoffset() is not None
+    except ValueError:
         return False
-    import calendar
 
-    return 1 <= day <= calendar.monthrange(year, month)[1]
+
+def metadata_problems(fields):
+    """Validate v0.2 structures without discarding custom extension keys."""
+    problems = []
+    for name in ("generated", "verified"):
+        if name not in fields:
+            continue
+        value = fields[name]
+        entries = value if name == "verified" and isinstance(value, list) else [value]
+        if not entries:
+            problems.append(f"`{name}` must contain at least one provenance event")
+        for row in entries:
+            if not isinstance(row, dict) or not isinstance(row.get("by"), str) or not row["by"].strip():
+                problems.append(f"`{name}` must contain a mapping with a nonempty `by` actor")
+                continue
+            if (name == "verified" or "at" in row) and not valid_instant(row.get("at")):
+                problems.append(f"`{name}.at` must be an ISO-8601 datetime with a UTC offset")
+    for field in ("stale_after",):
+        if field in fields and not valid_instant(fields[field]):
+            problems.append(f"`{field}` must be an ISO-8601 datetime with a UTC offset")
+    if "sources" in fields:
+        sources = fields["sources"]
+        if not isinstance(sources, list):
+            problems.append("`sources` must be a list")
+        else:
+            ids = set()
+            for source in sources:
+                if not isinstance(source, dict) or not isinstance(source.get("resource"), str) or not source["resource"].strip():
+                    problems.append("each `sources` entry requires a nonempty resource")
+                    continue
+                sid = source.get("id")
+                if sid is not None:
+                    if not isinstance(sid, str) or not sid or sid in ids:
+                        problems.append("source IDs must be nonempty and unique")
+                    else:
+                        ids.add(sid)
+    for field in ("aliases", "tags", "resources"):
+        if field in fields and (not isinstance(fields[field], list) or not all(isinstance(v, str) and v.strip() for v in fields[field])):
+            problems.append(f"`{field}` must be a list of nonempty strings")
+    return problems
 
 
 MERMAID_RE = re.compile("```mermaid" + chr(13) + "?" + chr(10) + "(.*?)```", re.DOTALL)
@@ -240,7 +238,6 @@ def check_summary_is_in_bundle(root: pathlib.Path, excluded) -> list[str]:
 REMEDIATION_RE = re.compile(r"runbook_url|remediationRef", re.IGNORECASE)
 
 
-CAPABILITY_RESOURCE_RE = re.compile(r'resource:\s*"honua://capability/([^"]+)"')
 CAPABILITY_KEYS_PATH = REPO_ROOT / "docs" / "gis" / "data" / "capability-keys.v1.json"
 
 
@@ -263,8 +260,14 @@ def check_capability_resources(root: pathlib.Path, excluded) -> list[str]:
     for path in sorted(root.rglob("*.md"), key=lambda p: p.as_posix()):
         if excluded(path):
             continue
-        text = path.read_text(encoding="utf-8", errors="replace")
-        for key in CAPABILITY_RESOURCE_RE.findall(text):
+        fields, error = parse_frontmatter(path.read_text(encoding="utf-8", errors="replace"))
+        if fields is None or error:
+            continue
+        resources = [fields.get("resource")] + (fields.get("resources", []) if isinstance(fields.get("resources", []), list) else [])
+        for resource in resources:
+            if not isinstance(resource, str) or not resource.startswith("honua://capability/"):
+                continue
+            key = resource.removeprefix("honua://capability/")
             if key not in known:
                 rel = path.relative_to(REPO_ROOT).as_posix()
                 problems.append(
@@ -328,7 +331,6 @@ def main(argv: list[str]) -> int:
     root = REPO_ROOT / manifest["root"]
     concept_types = set(manifest["conceptTypes"])
     rejected = manifest["rejectedFields"]
-    date_fields = set(manifest["dateFields"])
 
     excluded_dirs = []
     problems: list[str] = []
@@ -392,7 +394,7 @@ def main(argv: list[str]) -> int:
             continue
 
         concept_type = fields.get("type")
-        if not concept_type:
+        if not isinstance(concept_type, str) or not concept_type.strip():
             problems.append(f"{rel}: frontmatter has no `type` (the one field OKF requires)")
         elif concept_type not in concept_types:
             problems.append(
@@ -408,15 +410,10 @@ def main(argv: list[str]) -> int:
                 problems.append(f"{rel}: `{field}` must not be used — {why}")
 
         for key in ("title", "description"):
-            if key in fields and not fields[key].strip():
+            if key in fields and (not isinstance(fields[key], str) or not fields[key].strip()):
                 problems.append(f"{rel}: `{key}` is present but empty; omit it instead")
 
-        for field in sorted(date_fields & set(fields)):
-            value = fields[field]
-            if not DATE_RE.match(value) or not is_real_calendar_date(value):
-                problems.append(
-                    f"{rel}: `{field}` must be an ISO-8601 date or date-time, got {value!r}"
-                )
+        problems.extend(f"{rel}: {problem}" for problem in metadata_problems(fields))
 
     problems.extend(check_capability_resources(root, excluded))
     problems.extend(check_runbook_typing(root, excluded))

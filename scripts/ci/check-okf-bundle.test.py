@@ -120,7 +120,7 @@ def test_rejects_the_v01_timestamp_field():
         assert_that("`timestamp` must not be used" in output, output)
 
 
-def test_reads_a_block_sequence_and_still_rejects_a_nested_mapping():
+def test_reads_sequences_and_preserves_nested_extension_metadata():
     """One page can document several capabilities, so `resources:` is a list."""
     listed = (
         '---\ntype: reference\ntitle: "x"'
@@ -132,12 +132,19 @@ def test_reads_a_block_sequence_and_still_rejects_a_nested_mapping():
     with synthetic({'a.md': listed}) as (code, output):
         assert_that(code == 0, output)
 
-    # A nested mapping is still unreadable by this parser, and saying so is
-    # better than silently dropping half a page's frontmatter.
     nested = '---\ntype: reference\nowner:\n  team: maps\n---\n# x\n'
     with synthetic({'a.md': nested}) as (code, output):
-        assert_that(code == 1, 'nested mapping passed')
-        assert_that('not a `key: value` scalar' in output, output)
+        assert_that(code == 0, output)
+    fields, error = MODULE.parse_frontmatter(nested)
+    assert_that(error is None and fields['owner'] == {'team': 'maps'}, 'extension metadata was lost')
+
+
+def test_duplicate_keys_and_unsafe_yaml_are_rejected():
+    for text in ('---\ntype: concept\ntype: guide\n---\n',
+                 '---\ntype: concept\nowner: !!python/object:builtins.object {}\n---\n',
+                 '---\ntype: concept\nowner: &x [*x]\n---\n'):
+        _, error = MODULE.parse_frontmatter(text)
+        assert_that(error is not None, 'ambiguous or unsafe YAML passed')
 
 
 def test_rejects_empty_title_and_malformed_dates():
@@ -145,22 +152,31 @@ def test_rejects_empty_title_and_malformed_dates():
         assert_that(code == 1, "empty title passed")
         assert_that("`title` is present but empty" in output, output)
     for bad in ("last Tuesday", "2026-02-30", "2026-13-01"):
-        page = f'---\ntype: guide\ngenerated: "{bad}"\n---\n# x\n'
+        page = f'---\ntype: guide\ngenerated: {{by: process:test, at: "{bad}"}}\n---\n# x\n'
         with synthetic({"a.md": page}) as (code, output):
             assert_that(code == 1, f"{bad} passed as a date")
-            assert_that("`generated` must be an ISO-8601" in output, output)
-    page = '---\ntype: guide\ngenerated: "2026-02-29"\n---\n# x\n'
+            assert_that("`generated.at` must be an ISO-8601" in output, output)
+    page = '---\ntype: guide\ngenerated: {by: process:test, at: "2026-02-29T00:00:00Z"}\n---\n# x\n'
     with synthetic({"a.md": page}) as (code, output):
         assert_that(code == 1, "2026-02-29 is not a real day and must fail")
 
 
 def test_accepts_the_v02_trust_and_lifecycle_fields():
     page = (
-        '---\ntype: guide\ngenerated: "2026-09-11"\nverified: "2026-09-11"\n'
-        'stale_after: "2027-01-01"\nstatus: "available"\n---\n# x\n'
+        '---\ntype: guide\ngenerated: {by: process:docs, at: "2026-09-11T00:00:00Z"}\n'
+        'verified:\n  - {by: process:check, at: "2026-09-11T12:00:00Z"}\n'
+        'stale_after: "2027-01-01T00:00:00Z"\nstatus: "stable"\n---\n# x\n'
     )
     with synthetic({"a.md": page}) as (code, output):
         assert_that(code == 0, f"v0.2 fields rejected: {output}")
+
+
+def test_provenance_requires_actor_and_explicit_timestamp_offset():
+    for extra in ('generated: {at: "2026-09-11T12:00:00Z"}',
+                  'verified: {by: process:test, at: "2026-09-11T12:00:00"}',
+                  'sources: [{id: source-without-resource}]'):
+        with synthetic({'a.md': '---\ntype: concept\n' + extra + '\n---\n# x\n'}) as (code, output):
+            assert_that(code == 1, f'invalid provenance passed: {extra}')
 
 
 def test_a_stale_exclusion_entry_fails():
