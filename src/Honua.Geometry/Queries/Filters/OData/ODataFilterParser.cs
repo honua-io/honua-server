@@ -197,7 +197,7 @@ public sealed class ODataFilterParser
             if (Match(ODataFilterTokenType.Not))
             {
                 var operand = ParseUnaryExpression();
-                return new UnaryExpression(UnaryOperator.Not, operand);
+                return RewriteNegatedComparison(operand);
             }
 
             if (Match(ODataFilterTokenType.Minus))
@@ -792,6 +792,115 @@ public sealed class ODataFilterParser
         return new BinaryExpression(start, BinaryOperator.Add, new Literal(1, LiteralType.Number));
     }
 
+    // `not (x eq v)` must match bare `x ne v`, including rows whose attribute is null.
+    // Relational comparisons are false with one null operand, so their negation
+    // keeps those rows. Inclusive comparisons are true when both operands are null.
+    // `in` uses the same equality as eq.
+    private static FilterExpression RewriteNegatedComparison(FilterExpression operand)
+    {
+        if (operand is not BinaryExpression binary)
+        {
+            return new UnaryExpression(UnaryOperator.Not, operand);
+        }
+
+        switch (binary.Operator)
+        {
+            case BinaryOperator.Equal:
+                return BuildNullSafeNotEqual(binary.Left, binary.Right);
+            case BinaryOperator.GreaterThan:
+            case BinaryOperator.GreaterThanOrEqual:
+            case BinaryOperator.LessThan:
+            case BinaryOperator.LessThanOrEqual:
+                return BuildNullSafeNegatedRelational(binary);
+            case BinaryOperator.In:
+                return RewriteNegatedIn(binary);
+            case BinaryOperator.Or when IsNullSafeEquality(binary):
+                var equal = (BinaryExpression)binary.Left;
+                return BuildNullSafeNotEqual(equal.Left, equal.Right);
+            default:
+                return new UnaryExpression(UnaryOperator.Not, operand);
+        }
+    }
+
+    private static bool IsNullSafeEquality(BinaryExpression or)
+    {
+        if (or.Left is not BinaryExpression equal || equal.Operator != BinaryOperator.Equal)
+        {
+            return false;
+        }
+
+        if (or.Right is not BinaryExpression bothNull || bothNull.Operator != BinaryOperator.And)
+        {
+            return false;
+        }
+
+        if (bothNull.Left is not UnaryExpression leftNull || leftNull.Operator != UnaryOperator.IsNull
+            || bothNull.Right is not UnaryExpression rightNull || rightNull.Operator != UnaryOperator.IsNull)
+        {
+            return false;
+        }
+
+        return ReferenceEquals(leftNull.Operand, equal.Left)
+            && ReferenceEquals(rightNull.Operand, equal.Right);
+    }
+
+    private static FilterExpression BuildNullSafeNegatedRelational(BinaryExpression comparison)
+    {
+        FilterExpression result = new UnaryExpression(UnaryOperator.Not, comparison);
+        if (!IsNonNullValue(comparison.Left))
+        {
+            result = new BinaryExpression(
+                result,
+                BinaryOperator.Or,
+                new UnaryExpression(UnaryOperator.IsNull, comparison.Left));
+        }
+
+        if (!IsNonNullValue(comparison.Right))
+        {
+            result = new BinaryExpression(
+                result,
+                BinaryOperator.Or,
+                new UnaryExpression(UnaryOperator.IsNull, comparison.Right));
+        }
+
+        if (comparison.Operator is BinaryOperator.GreaterThanOrEqual or BinaryOperator.LessThanOrEqual
+            && !IsNonNullValue(comparison.Left) && !IsNonNullValue(comparison.Right))
+        {
+            // OData ge/le include equality: null equals null, so their negation
+            // must exclude that row rather than accepting either IS NULL arm.
+            result = new BinaryExpression(
+                result,
+                BinaryOperator.And,
+                new BinaryExpression(
+                    new UnaryExpression(UnaryOperator.IsNotNull, comparison.Left),
+                    BinaryOperator.Or,
+                    new UnaryExpression(UnaryOperator.IsNotNull, comparison.Right)));
+        }
+
+        return result;
+    }
+
+    private static FilterExpression RewriteNegatedIn(BinaryExpression membership)
+    {
+        if (membership.Right is not ValueList values || values.Values.Count == 0)
+        {
+            return new UnaryExpression(UnaryOperator.Not, membership);
+        }
+
+        FilterExpression? combined = null;
+        foreach (var value in values.Values)
+        {
+            FilterExpression term = value is Literal { Type: LiteralType.Null }
+                ? new UnaryExpression(UnaryOperator.IsNotNull, membership.Left)
+                : BuildNullSafeNotEqual(membership.Left, value);
+            combined = combined is null
+                ? term
+                : new BinaryExpression(combined, BinaryOperator.And, term);
+        }
+
+        return combined!;
+    }
+
     private static FilterExpression NormalizeComparison(FilterExpression left, BinaryOperator op, FilterExpression right, int position)
     {
         if (left is Literal { Type: LiteralType.Null } || right is Literal { Type: LiteralType.Null })
@@ -804,9 +913,20 @@ public sealed class ODataFilterParser
                     : new UnaryExpression(UnaryOperator.IsNotNull, operand);
             }
 
-            // OData v4.01 §5.1.1.1.3–5.1.1.1.6: if any operand of a relational
-            // operator (gt/ge/lt/le) is null, the operator returns false.
-            return new Literal(false, LiteralType.Boolean);
+            // OData v4.01 §5.1.1.1.4/.6 include equality: with a literal null,
+            // ge/le are true exactly when the other operand is also null.
+            if (op is BinaryOperator.GreaterThanOrEqual or BinaryOperator.LessThanOrEqual)
+            {
+                var operand = left is Literal { Type: LiteralType.Null } ? right : left;
+                return new UnaryExpression(UnaryOperator.IsNull, operand);
+            }
+
+            // Strict gt/lt are false whenever either operand is null. Keep the
+            // normalized result a predicate; bare literals are invalid $filter inputs.
+            return new BinaryExpression(
+                new Literal(0, LiteralType.Number),
+                BinaryOperator.Equal,
+                new Literal(1, LiteralType.Number));
         }
 
         // OData v4.01 eq/ne use two-valued logic where "the null value is equal to
@@ -854,7 +974,13 @@ public sealed class ODataFilterParser
             // false when both are null, plain '<>' when both are non-null.
             return new BinaryExpression(
                 new BinaryExpression(
-                    notEqual,
+                    new BinaryExpression(
+                        notEqual,
+                        BinaryOperator.And,
+                        new BinaryExpression(
+                            new UnaryExpression(UnaryOperator.IsNotNull, left),
+                            BinaryOperator.And,
+                            new UnaryExpression(UnaryOperator.IsNotNull, right))),
                     BinaryOperator.Or,
                     new BinaryExpression(
                         new UnaryExpression(UnaryOperator.IsNull, left),

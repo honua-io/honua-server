@@ -536,6 +536,45 @@ public sealed class QueryFormatterTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
+    public async Task FormatQueryResultAsync_WithJsonAndMismatchedOutFieldCase_ProjectsStoredName()
+    {
+        var limitsOptions = Options.Create(new LimitsOptions());
+        var formatter = new QueryFormatter(
+            limitsOptions,
+            new PbfQueryFormatter(limitsOptions),
+            NullLogger<QueryFormatter>.Instance);
+
+        var feature = Feature.Create(
+            42,
+            geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["id"] = 101L,
+                ["name"] = "alpha"
+            }.ToImmutableDictionary());
+
+        var (response, _) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            CreateIdBackedPointLayer(),
+            format: "json",
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            outFields: ["Name"]);
+
+        var queryResponse = response.Should().BeOfType<QueryResponse>().Subject;
+        var attributes = queryResponse.Features.Should().ContainSingle().Subject.Attributes;
+        attributes.Should().Contain("name", "alpha");
+        // The response dictionary compares keys without case, so the stored spelling
+        // has to be read off the key itself.
+        attributes.Keys.Single(key => key.Equals("name", StringComparison.OrdinalIgnoreCase)).Should().Be("name");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
     public async Task FormatQueryResultAsync_WithJson_StringIdAndNumericObjectId_UsesObjectIdField()
     {
         var limitsOptions = Options.Create(new LimitsOptions());

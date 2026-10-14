@@ -3306,7 +3306,19 @@ internal sealed partial class FeatureServerQueryHandler(
         for (var i = 0; i < outFields.Length; i++)
         {
             var fieldName = outFields[i];
-            parts[i] = feature.Attributes.TryGetValue(fieldName, out var value) && value != null
+            if (!feature.Attributes.TryGetValue(fieldName, out var value))
+            {
+                foreach (var (name, candidate) in feature.Attributes)
+                {
+                    if (name.Equals(fieldName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        value = candidate;
+                        break;
+                    }
+                }
+            }
+
+            parts[i] = value != null
                 ? value switch
                 {
                     IConvertible convertible => convertible.ToString(CultureInfo.InvariantCulture),

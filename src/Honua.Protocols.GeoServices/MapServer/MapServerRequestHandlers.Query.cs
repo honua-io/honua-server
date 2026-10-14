@@ -146,6 +146,13 @@ internal static partial class MapServerEndpoints
                 [layerError ?? "layerId parameter is required."]);
         }
 
+        if (!TryApplyServiceLayerDefinition(values, layerId, queryValidator, out var layerDefsError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [layerDefsError ?? "Invalid layerDefs parameter."]);
+        }
+
         var queryHandler = context.RequestServices.GetRequiredService<IFeatureQueryDispatcher>();
         var cancellationToken = GeoServicesRequestValueHelpers.GetTimeoutAwareCancellationToken(context);
 
@@ -220,6 +227,13 @@ internal static partial class MapServerEndpoints
                 [layerError ?? "layerId parameter is required."]);
         }
 
+        if (!TryApplyServiceLayerDefinition(mergedValues, layerId, queryValidator, out var layerDefsError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [layerDefsError ?? "Invalid layerDefs parameter."]);
+        }
+
         var queryHandler = context.RequestServices.GetRequiredService<IFeatureQueryDispatcher>();
         return await queryHandler.HandleQueryFeaturesAsync(
             serviceId,
@@ -274,6 +288,40 @@ internal static partial class MapServerEndpoints
         {
             error = "layers must contain integer layer identifiers";
             return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryApplyServiceLayerDefinition(
+        Dictionary<string, StringValues> values,
+        int layerId,
+        ICommonQueryValidator queryValidator,
+        out string? error)
+    {
+        error = null;
+        if (!values.TryGetValue("layerDefs", out var raw) || StringValues.IsNullOrEmpty(raw))
+        {
+            return true;
+        }
+
+        if (!TryParseLayerDefs(raw.ToString(), queryValidator, out var layerDefs, out error))
+        {
+            return false;
+        }
+
+        values.Remove("layerDefs");
+        if (!layerDefs.TryGetValue(layerId, out var definition) || string.IsNullOrWhiteSpace(definition))
+        {
+            return true;
+        }
+
+        values.TryGetValue("where", out var whereRaw);
+        var where = StringValues.IsNullOrEmpty(whereRaw) ? null : whereRaw.ToString();
+        var combined = CombineDefinitionExpressions(where, definition);
+        if (!string.IsNullOrWhiteSpace(combined))
+        {
+            values["where"] = combined;
         }
 
         return true;

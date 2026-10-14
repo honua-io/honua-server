@@ -207,6 +207,17 @@ internal static partial class RedshiftFeatureQueryBuilder
         // today. PostGIS-emitted fragments use JSONB operators, ::casts, and PostGIS-only spatial
         // functions that Redshift does not implement, so we re-parse Where here using this
         // provider's own parser whenever it is supplied, and reject translated SqlFilter fragments.
+        // A supplemental fragment (time filter or object ids that were not forwarded) is not
+        // represented by Where; executing Where alone would drop those predicates.
+        if (query.SqlFilterSupplementsWhere)
+        {
+            throw new NotSupportedException(
+                "Translated FeatureQuery.SqlFilter fragments are not executable against the Redshift provider. " +
+                "SqlFilter supplements Where, and the shared ISqlFilterTranslator pipeline emits PostGIS-flavored " +
+                "SQL which Redshift's spatial layer does not implement. The supplemental predicates would be " +
+                "dropped if Where were re-parsed alone.");
+        }
+
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
             var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters);

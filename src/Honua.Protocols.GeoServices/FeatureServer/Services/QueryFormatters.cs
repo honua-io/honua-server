@@ -393,11 +393,29 @@ internal sealed class QueryFormatter : IQueryFormatter
                 : objectIdValue;
         }
 
-        foreach (string field in outFields.Where(field =>
-            attributes.ContainsKey(field)
-            && ShouldIncludeGeoServicesAttribute(field, declaredAttributeFields, runtimeAttributeFields)))
+        foreach (string field in outFields)
         {
-            filtered[field] = GeoServicesAttributeProjection.ToEsriValue(attributes[field]);
+            if (!ShouldIncludeGeoServicesAttribute(field, declaredAttributeFields, runtimeAttributeFields))
+            {
+                continue;
+            }
+
+            if (attributes.TryGetValue(field, out var exact))
+            {
+                filtered[field] = GeoServicesAttributeProjection.ToEsriValue(exact);
+                continue;
+            }
+
+            foreach (var (name, value) in attributes)
+            {
+                if (!name.Equals(field, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                filtered[name] = GeoServicesAttributeProjection.ToEsriValue(value);
+                break;
+            }
         }
 
         return filtered;

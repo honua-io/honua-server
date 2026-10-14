@@ -213,6 +213,17 @@ internal static partial class SnowflakeFeatureQueryBuilder
         // ISqlFilterTranslator pipeline, which only registers a Postgres translator today.
         // Passing a Postgres-emitted fragment through here would yield invalid Snowflake SQL, so
         // we re-parse Where using this provider's own Snowflake-aware parser whenever it is supplied.
+        // A supplemental fragment (time filter or object ids that were not forwarded) is not
+        // represented by Where; executing Where alone would drop those predicates.
+        if (query.SqlFilterSupplementsWhere)
+        {
+            throw new NotSupportedException(
+                "Translated FeatureQuery.SqlFilter fragments are not executable against the Snowflake provider. " +
+                "SqlFilter supplements Where, and the shared ISqlFilterTranslator pipeline emits Postgres-flavored " +
+                "SQL which is not valid Snowflake SQL. The supplemental predicates would be dropped if Where " +
+                "were re-parsed alone.");
+        }
+
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
             var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters);

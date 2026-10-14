@@ -201,6 +201,48 @@ public sealed class QueryProcessorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public void ToFeatureQuery_OutFields_ProjectsCanonicalSchemaName()
+    {
+        var query = new UnifiedQuery
+        {
+            OutFields = ImmutableArray.Create("Name")
+        };
+
+        var featureQuery = _processor.ToFeatureQuery(query, _resource);
+
+        featureQuery.OutFields.Should().NotBeNull();
+        featureQuery.OutFields!.Value.Should().ContainSingle().Which.Should().Be("name");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void ValidateQuery_UnknownOutField_IsRejected()
+    {
+        var query = new UnifiedQuery
+        {
+            OutFields = ImmutableArray.Create("Missing")
+        };
+
+        var result = _processor.ValidateQuery(query, _resource);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().StartWith("Unknown fields:");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void ValidateQuery_OutFieldCaseVariant_IsAccepted()
+    {
+        var query = new UnifiedQuery
+        {
+            OutFields = ImmutableArray.Create("Name")
+        };
+
+        _processor.ValidateQuery(query, _resource).IsValid.Should().BeTrue();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public void OptimizeQuery_PagedQueryWithoutOrdering_UsesResourcePrimaryIdForProviderOrdering()
     {
         var resource = _resource with

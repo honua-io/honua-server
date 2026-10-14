@@ -51,6 +51,38 @@ public sealed class GeoServicesQueryParameterAdapterTests
             "the page must match the layer's advertised maxRecordCount when the caller omits resultRecordCount");
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ConvertAsync_OutFields_ProjectsCanonicalSchemaName()
+    {
+        var adapter = new GeoServicesQueryParameterAdapter(NullLogger<GeoServicesQueryParameterAdapter>.Instance);
+        var request = new GeoServicesQueryRequest
+        {
+            Parameters = new QueryParameters { F = "json", OutFields = "Name" },
+            QueryLimits = new QueryLimits
+            {
+                MaxRecordCount = 1000,
+                DefaultRecordCount = 100
+            }
+        };
+        var resource = new MetadataV2Resource
+        {
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
+            ]
+        };
+
+        var result = await adapter.ConvertAsync(request, resource);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        var fields = result.Query!.Value.OutFields!.Value;
+        fields.Should().Contain("name");
+        fields.Should().Contain("objectid");
+        fields.Should().NotContain("Name");
+    }
+
     [UnitTest]
     public async Task ConvertAsync_TrueCurve_HonorsConfiguredVertexBudget()
     {

@@ -255,17 +255,14 @@ internal static partial class FeatureServerEndpoints
             }
 
             var layerQueryParams = queryParams;
-            if (layerDefs.TryGetValue(publicLayerId, out var layerDefinitionExpression))
+            if (layerDefs.TryGetValue(publicLayerId, out var layerDefinitionExpression)
+                && !string.IsNullOrWhiteSpace(layerDefinitionExpression))
             {
                 var layerQueryValues = new Dictionary<string, StringValues>(queryValues, StringComparer.OrdinalIgnoreCase);
-                if (string.IsNullOrWhiteSpace(layerDefinitionExpression))
-                {
-                    layerQueryValues.Remove("where");
-                }
-                else
-                {
-                    layerQueryValues["where"] = layerDefinitionExpression;
-                }
+                var requestWhere = GetValueString(layerQueryValues, "where");
+                layerQueryValues["where"] = string.IsNullOrWhiteSpace(requestWhere)
+                    ? layerDefinitionExpression
+                    : $"({requestWhere}) AND ({layerDefinitionExpression})";
 
                 if (!TryParseQueryParameters(layerQueryValues, out layerQueryParams, out parseError))
                 {
