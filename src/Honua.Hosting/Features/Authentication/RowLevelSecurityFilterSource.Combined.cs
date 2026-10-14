@@ -59,12 +59,9 @@ internal sealed partial class RowLevelSecurityFilterSource
         }
 
         var fields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var policy in policies.FieldPolicies)
+        foreach (var policy in policies.FieldPolicies.Where(static policy => !string.IsNullOrWhiteSpace(policy.Attribute)))
         {
-            if (!string.IsNullOrWhiteSpace(policy.Attribute))
-            {
-                fields.Add(policy.Attribute.Trim());
-            }
+            fields.Add(policy.Attribute.Trim());
         }
 
         return new ReadSecurityResolution(

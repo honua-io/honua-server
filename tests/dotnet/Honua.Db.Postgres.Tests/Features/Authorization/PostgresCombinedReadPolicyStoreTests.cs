@@ -12,13 +12,12 @@ using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
-using Xunit;
 using IsolationLevel = System.Data.IsolationLevel;
 
-namespace Honua.Db.Postgres.Security.Tests;
+namespace Honua.Db.Postgres.Tests.Features.Authorization;
 
-public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture)
-    : IClassFixture<PostgresFixture>, IAsyncLifetime
+[Collection("Database")]
+public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture) : IAsyncLifetime
 {
     private static readonly string[] ExpectedAttributes = ["*", "ALPHA", "anonymous", "beta"];
     private string _schema = null!;
