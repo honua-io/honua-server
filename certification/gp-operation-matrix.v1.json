@@ -46,8 +46,8 @@
   "summary": {
     "total": 101,
     "byStatus": {
-      "proven": 98,
-      "partially-proven": 3,
+      "proven": 101,
+      "partially-proven": 0,
       "unproven": 0
     },
     "byEntryPoint": {
@@ -1612,7 +1612,7 @@
     },
     {
       "processId": "routing.closest-facilities",
-      "status": "partially-proven",
+      "status": "proven",
       "entryPoint": "job",
       "evidence": [
         {
@@ -1620,16 +1620,18 @@
           "test": "SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity",
           "assertion": "Both GPServer and NAServer submit through the real durable worker; named result assertions preserve input OBJECTID=0 and17, expected cost, declared SR and success result. IRoutingProvider is substituted, so this is adapter/runtime evidence only.",
           "bodyDigest": "sha256:181500b4cbbb56e3e49ad9cbd00fdd7a4d371b7c80511ce05fb7a14427fef1f4"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Routing/RoutingPgRoutingQueuedJobTests.cs",
+          "test": "ClosestFacilities_QueuedJob_MatchesLatticeOracle",
+          "assertion": "Queued GPServer and NAServer jobs on the real pgRouting lattice match an independent shortest-path oracle for the nearest facility, driving and walking minutes, route geometry, and input OBJECTID identity.",
+          "bodyDigest": "sha256:e0b4e5fca654622199c59bc331b56a623faea7e9008dab5e456a65b0a9172321"
         }
-      ],
-      "gap": {
-        "missing": "Compose this queued job with the real pgRouting provider and independent seeded graph cost/identity/geometry oracles; current durable HTTP evidence substitutes the solver.",
-        "issue": "https://github.com/honua-io/honua-server/issues/5949"
-      }
+      ]
     },
     {
       "processId": "routing.od-cost-matrix",
-      "status": "partially-proven",
+      "status": "proven",
       "entryPoint": "job",
       "evidence": [
         {
@@ -1637,16 +1639,18 @@
           "test": "SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity",
           "assertion": "Both GPServer and NAServer submit through the real durable worker; named result assertions preserve input OBJECTID=0 and17, expected cost, declared SR and success result. IRoutingProvider is substituted, so this is adapter/runtime evidence only.",
           "bodyDigest": "sha256:181500b4cbbb56e3e49ad9cbd00fdd7a4d371b7c80511ce05fb7a14427fef1f4"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Routing/RoutingPgRoutingQueuedJobTests.cs",
+          "test": "OdCostMatrix_QueuedJob_MatchesLatticeOracle",
+          "assertion": "Queued GPServer and NAServer jobs on the real pgRouting lattice match an independent rank, time, and identity oracle, including null geometry for cost-only lines and Web Mercator straight-line coordinates when outSR is 3857.",
+          "bodyDigest": "sha256:d5eca86cda81d14ca856534ed614493c7034bbc6d0cbeb19392e89216c72b8e5"
         }
-      ],
-      "gap": {
-        "missing": "Compose this queued job with the real pgRouting provider and independent seeded graph cost/identity/geometry oracles; current durable HTTP evidence substitutes the solver.",
-        "issue": "https://github.com/honua-io/honua-server/issues/5950"
-      }
+      ]
     },
     {
       "processId": "routing.location-allocation",
-      "status": "partially-proven",
+      "status": "proven",
       "entryPoint": "job",
       "evidence": [
         {
@@ -1654,12 +1658,14 @@
           "test": "SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity",
           "assertion": "Both GPServer and NAServer submit through the real durable worker; named result assertions preserve input OBJECTID=0 and17, expected cost, declared SR and success result. IRoutingProvider is substituted, so this is adapter/runtime evidence only.",
           "bodyDigest": "sha256:181500b4cbbb56e3e49ad9cbd00fdd7a4d371b7c80511ce05fb7a14427fef1f4"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Routing/RoutingPgRoutingQueuedJobTests.cs",
+          "test": "LocationAllocation_QueuedJob_MatchesLatticeOracle",
+          "assertion": "Queued GPServer and NAServer jobs on the real pgRouting lattice match an independent cutoff oracle for chosen facilities, allocation minutes and weights, and demand identity.",
+          "bodyDigest": "sha256:53ebe170d106685b5fa8ac9ba39d61553b53d7c846c228af32c39161e391581f"
         }
-      ],
-      "gap": {
-        "missing": "Compose this queued job with the real pgRouting provider and independent seeded graph cost/identity/geometry oracles; current durable HTTP evidence substitutes the solver.",
-        "issue": "https://github.com/honua-io/honua-server/issues/5951"
-      }
+      ]
     }
   ],
   "entryPointDefinitions": {
