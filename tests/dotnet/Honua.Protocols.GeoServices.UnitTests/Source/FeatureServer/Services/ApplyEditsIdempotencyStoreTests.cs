@@ -83,7 +83,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
         var reserved = await store.TryReserveAsync(scope);
         reserved.Should().NotBeNull();
 
-        await store.SetAsync(scope, expected);
+        (await store.SetAsync(scope, reserved!, expected)).Should().BeTrue();
 
         var replayed = await store.TryGetAsync(scope);
         replayed.Should().NotBeNull("SetAsync must replace the pending sentinel with the actual response");
@@ -101,7 +101,81 @@ public sealed class ApplyEditsIdempotencyStoreTests
             .Should().BeGreaterThan(TimeSpan.Zero, "reservation window must be a positive duration");
     }
 
+    [Fact]
+    public async Task SetAsync_ForeignToken_DoesNotOverwriteTheOwner()
+    {
+        var store = new DistributedApplyEditsIdempotencyStore(
+            cache: null,
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+        var scope = new ApplyEditsIdempotencyScope("svc", 0, "alice", "key-owned");
+        var owner = await store.TryReserveAsync(scope);
+        owner.Should().NotBeNull();
+
+        (await store.SetAsync(scope, "not-the-owner", BuildTestResponse())).Should().BeFalse();
+        (await store.TryGetAsync(scope)).Should().BeNull();
+        (await store.TryReserveAsync(scope)).Should().BeNull();
+
+        (await store.SetAsync(scope, owner!, BuildTestResponse())).Should().BeTrue();
+        (await store.TryGetAsync(scope)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task SetAsync_AfterOwnReservationExpiredAndWasRetaken_DoesNotOverwriteTheNewOwner()
+    {
+        var time = new ManualTimeProvider();
+        var store = new DistributedApplyEditsIdempotencyStore(
+            multiplexer: null,
+            cache: null,
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance,
+            timeProvider: time);
+        var scope = new ApplyEditsIdempotencyScope("svc", 0, "alice", "key-slow");
+        var slow = await store.TryReserveAsync(scope);
+        slow.Should().NotBeNull();
+
+        time.Advance(IdempotencyPayloadStore.ReservationWindow + TimeSpan.FromSeconds(1));
+        var retry = await store.TryReserveAsync(scope);
+        retry.Should().NotBeNull();
+
+        (await store.SetAsync(scope, slow!, BuildTestResponse())).Should().BeFalse();
+        (await store.TryGetAsync(scope)).Should().BeNull();
+        (await store.SetAsync(scope, retry!, BuildTestResponse())).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task TryReserveAsync_WindowSizedToRequestTimeout_HoldsForTheWholeRequest()
+    {
+        DistributedApplyEditsIdempotencyStore.ReservationWindowFor(TimeSpan.FromSeconds(10))
+            .Should().Be(IdempotencyPayloadStore.ReservationWindow);
+        var window = DistributedApplyEditsIdempotencyStore.ReservationWindowFor(TimeSpan.FromMinutes(10));
+        window.Should().Be(TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(30));
+
+        var time = new ManualTimeProvider();
+        var store = new DistributedApplyEditsIdempotencyStore(
+            multiplexer: null,
+            cache: null,
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance,
+            reservationWindow: window,
+            timeProvider: time);
+        var scope = new ApplyEditsIdempotencyScope("svc", 0, "alice", "key-long");
+        (await store.TryReserveAsync(scope)).Should().NotBeNull();
+
+        time.Advance(TimeSpan.FromMinutes(10));
+        (await store.TryReserveAsync(scope)).Should().BeNull();
+
+        time.Advance(window - TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(1));
+        (await store.TryReserveAsync(scope)).Should().NotBeNull();
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────────────
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 10, 12, 0, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan by) => _now += by;
+    }
 
     private static ApplyEditsResponse BuildTestResponse() =>
         new()

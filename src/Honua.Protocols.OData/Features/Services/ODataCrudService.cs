@@ -242,27 +242,35 @@ internal sealed partial class ODataCrudService
                 return ODataCrudResult<Dictionary<string, object?>>.Error("An error occurred creating the feature");
             }
 
-            var createdFeature = await _featureReader.GetAsync(storageLayerId, createdId.Value, cancellationToken);
-            if (!createdFeature.HasValue)
+            Feature? reloaded = null;
+            var readbackCancelled = false;
+            try
             {
-                return ODataCrudResult<Dictionary<string, object?>>.Error("Created feature could not be reloaded.");
+                reloaded = await _featureReader.GetAsync(storageLayerId, createdId.Value, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                readbackCancelled = true;
             }
 
+            // The insert already committed. A missing row or a cancelled readback still
+            // acknowledges the writer result instead of turning the create into a 500.
+            var createdFeature = reloaded ?? Feature.Create(createdId.Value, geometryResult.Geometry, validatedAttributes);
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
                 srid,
-                cancellationToken);
+                reloaded.HasValue && !readbackCancelled ? cancellationToken : CancellationToken.None);
             var responseGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                 _geometryService,
-                createdFeature.Value.Geometry,
+                createdFeature.Geometry,
                 srid,
                 axisOrder);
-            var serializedAttributes = ODataAttributeSerializer.Serialize(createdFeature.Value.Attributes);
-            var response = ODataUtilityService.BuildFeaturePayload(layerId, createdFeature.Value, responseGeometry, serializedAttributes);
-            var etag = ComputeFeatureEtag(layerId, createdFeature.Value, responseGeometry, serializedAttributes);
+            var serializedAttributes = ODataAttributeSerializer.Serialize(createdFeature.Attributes);
+            var response = ODataUtilityService.BuildFeaturePayload(layerId, createdFeature, responseGeometry, serializedAttributes);
+            var etag = ComputeFeatureEtag(layerId, createdFeature, responseGeometry, serializedAttributes);
 
-            var locationHeader = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createdFeature.Value.Id})";
-            return ODataCrudResult<Dictionary<string, object?>>.Created(response, etag, locationHeader, createdFeature.Value);
+            var locationHeader = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createdFeature.Id})";
+            return ODataCrudResult<Dictionary<string, object?>>.Created(response, etag, locationHeader, createdFeature);
         }
         catch (ResourceConflictException ex)
         {

@@ -34,6 +34,7 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
     private const string RedisPrefix = "honua:grpc:apply-edits:idempotency:v2:";
     private const byte PendingMarker = 0xFF;
     private const byte ReceiptMarker = 0x01;
+    private const byte AmbiguousMarkerByte = 0x02;
     private const int LocalEntryOverheadBytes = 256;
     internal static readonly TimeSpan PendingPollInterval = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan MaxPublishInterval = TimeSpan.FromMilliseconds(250);
@@ -184,10 +185,19 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         var gate = await AcquireGateAsync(scope, cancellationToken).ConfigureAwait(false);
         try
         {
-            // With Redis this holds only results whose shared receipt could not be written.
-            if (_localResponses.TryGetValue(scope, out Proto.ApplyEditsResponse? local) && local is not null)
+            // With Redis this holds results whose shared receipt could not be written, and
+            // ambiguous outcomes that must not be executed again.
+            if (_localResponses.TryGetValue(scope, out object? cached))
             {
-                return new Lease(this, scope, gate, local.Clone(), reservation: null);
+                if (cached is Proto.ApplyEditsResponse local)
+                {
+                    return new Lease(this, scope, gate, local.Clone(), reservation: null);
+                }
+
+                if (cached is AmbiguousLocal)
+                {
+                    return new Lease(this, scope, gate, response: null, reservation: null, outcomeUnknown: true);
+                }
             }
 
             if (_redis is null)
@@ -214,6 +224,11 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
                 if (held.AsSpan().SequenceEqual(token))
                 {
                     return new Lease(this, scope, gate, response: null, new Reservation(this, redisKey, token, sentAt));
+                }
+
+                if (held.Length > 0 && held[0] == AmbiguousMarkerByte)
+                {
+                    return new Lease(this, scope, gate, response: null, reservation: null, outcomeUnknown: true);
                 }
 
                 if (held.Length > 0 && held[0] == ReceiptMarker)
@@ -294,6 +309,20 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             Size = copy.CalculateSize() + LocalEntryOverheadBytes,
             AbsoluteExpirationRelativeToNow = _responseWindow,
         });
+    }
+
+    private void StoreAmbiguous(string scope)
+    {
+        _localResponses.Set(scope, AmbiguousLocal.Instance, new MemoryCacheEntryOptions
+        {
+            Size = LocalEntryOverheadBytes,
+            AbsoluteExpirationRelativeToNow = _responseWindow,
+        });
+    }
+
+    private sealed class AmbiguousLocal
+    {
+        public static readonly AmbiguousLocal Instance = new();
     }
 
     private async Task<bool> TryWriteReceiptAsync(RedisKey key, byte[] token, byte[] receipt)
@@ -424,17 +453,25 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
             string scope,
             KeyGate gate,
             Proto.ApplyEditsResponse? response,
-            Reservation? reservation)
+            Reservation? reservation,
+            bool outcomeUnknown = false)
         {
             _store = store;
             _scope = scope;
             _gate = gate;
             Response = response;
             _reservation = reservation;
+            OutcomeUnknown = outcomeUnknown;
         }
 
         /// <summary>The stored result to replay, or <see langword="null"/> when this caller must execute.</summary>
         public Proto.ApplyEditsResponse? Response { get; }
+
+        /// <summary>
+        /// A previous keyed write may have committed. The caller must not execute the edit again
+        /// and must not treat this as a stored failure receipt.
+        /// </summary>
+        public bool OutcomeUnknown { get; }
 
         /// <summary>Whether the shared reservation was lost before the edit completed.</summary>
         public bool OwnershipLost => _reservation?.Lost.IsCancellationRequested == true;
@@ -449,6 +486,9 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
         {
             if (_reservation is null)
             {
+                // No shared reservation to renew. The write is still dispatched: a later cancel
+                // must retain an ambiguous marker instead of letting the key run again.
+                _writeStarted = true;
                 return requestCancellation;
             }
 
@@ -496,6 +536,40 @@ internal sealed partial class GrpcApplyEditsIdempotencyStore : IDisposable
                 Log.ReceiptWriteFailed(_store._logger, _scope, ex);
                 _store.StoreLocal(_scope, response);
                 _store.QueueUnpublishedResult(_scope, _reservation.Key, _reservation.Token, receipt);
+            }
+        }
+
+        /// <summary>
+        /// Keeps the key for the response window without storing a failure receipt. A retry must
+        /// not execute the edit again. The marker replaces this request's reservation only.
+        /// </summary>
+        public async Task RetainAmbiguousAsync()
+        {
+            if (_completed)
+            {
+                return;
+            }
+
+            _completed = true;
+            _store.StoreAmbiguous(_scope);
+            if (_reservation is null)
+            {
+                return;
+            }
+
+            await _reservation.StopAsync().ConfigureAwait(false);
+            var marker = new[] { AmbiguousMarkerByte };
+            try
+            {
+                if (!await _store.TryWriteReceiptAsync(_reservation.Key, _reservation.Token, marker).ConfigureAwait(false))
+                {
+                    Log.ReceiptHeldByAnotherRequest(_store._logger, _scope);
+                }
+            }
+            catch (Exception ex) when (ex is RedisException or TimeoutException)
+            {
+                Log.ReceiptWriteFailed(_store._logger, _scope, ex);
+                _store.QueueUnpublishedResult(_scope, _reservation.Key, _reservation.Token, marker);
             }
         }
 

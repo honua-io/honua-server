@@ -53,7 +53,10 @@ internal static class FeatureServerServiceCollectionExtensions
             new DistributedApplyEditsIdempotencyStore(
                 serviceProvider.GetService<IConnectionMultiplexer>(),
                 serviceProvider.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
-                serviceProvider.GetRequiredService<ILogger<DistributedApplyEditsIdempotencyStore>>()));
+                serviceProvider.GetRequiredService<ILogger<DistributedApplyEditsIdempotencyStore>>(),
+                DistributedApplyEditsIdempotencyStore.ReservationWindowFor(
+                    serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>()
+                        .Value.Connections.RequestTimeout)));
 
         // At-most-once synchronizeReplica uploads (#4026): same backing and reservation semantics as
         // the applyEdits store, singleton for the same reason. The reservation outlasts the configured

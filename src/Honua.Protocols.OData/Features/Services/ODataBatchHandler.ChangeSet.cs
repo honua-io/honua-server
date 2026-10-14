@@ -624,22 +624,25 @@ internal sealed partial class ODataBatchHandler
                     for (var i = 0; i < result.CreateResults.Length && i < layerCreates.Count; i++)
                     {
                         var createResult = result.CreateResults[i];
-                        var (requestId, _, _) = layerCreates[i];
+                        var (requestId, submittedFeature, _) = layerCreates[i];
 
                         if (createResult.IsSuccess && createResult.ObjectId.HasValue)
                         {
-                            var createdFeature = await _featureReader.GetAsync(layer.StorageLayerId, createResult.ObjectId.Value, cancellationToken).ConfigureAwait(false);
-                            if (!createdFeature.HasValue)
+                            Feature? reloaded = null;
+                            try
                             {
-                                responses.Add(CreateErrorResponse(
-                                    requestId,
-                                    500,
-                                    "CreateReadbackFailed",
-                                    $"Created feature {createResult.ObjectId.Value} could not be reloaded."));
-                                continue;
+                                reloaded = await _featureReader.GetAsync(layer.StorageLayerId, createResult.ObjectId.Value, cancellationToken).ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                reloaded = null;
                             }
 
-                            var payload = FeatureToBody(createdFeature.Value, layer, axisOrder, baseUrl, out var etag);
+                            // The insert already committed. Acknowledge the submitted feature
+                            // when reload returns nothing or the request is cancelled during readback.
+                            var createdFeature = reloaded ?? (submittedFeature with { Id = createResult.ObjectId.Value });
+
+                            var payload = FeatureToBody(createdFeature, layer, axisOrder, baseUrl, out var etag);
 
                             var headers = new Dictionary<string, string>
                             {

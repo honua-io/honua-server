@@ -133,6 +133,79 @@ public sealed class GrpcApplyEditsIdempotencyTests
     }
 
     [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_CancelAfterWrite_DoesNotExecuteTheKeyedEditAgain()
+    {
+        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore(), throwAfterWrite: true);
+        var user = Subject("editor", issuer: "https://issuer-a.example");
+
+        var first = async () => await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
+        await first.Should().ThrowAsync<OperationCanceledException>();
+        harness.WriteCount.Should().Be(1);
+
+        var retry = async () => await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
+        (await retry.Should().ThrowAsync<RpcException>()).Which.Status.Detail.Should().Contain("may have committed");
+        harness.WriteCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_UnknownCommit_IsNotStoredAsAFailureAndIsNotExecutedAgain()
+    {
+        var unknown = FeatureEditResult.FailureWithUnknownCommitOutcome(
+            createResults: ImmutableArray.Create(EditOperationResult.FailureWithUnknownCommitOutcome("commit acknowledgement lost")));
+        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore(), editResult: () => unknown);
+        var user = Subject("editor", issuer: "https://issuer-a.example");
+
+        var first = await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
+        first.AddResults.Should().ContainSingle().Which.Success.Should().BeFalse();
+        harness.WriteCount.Should().Be(1);
+
+        var retry = async () => await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
+        (await retry.Should().ThrowAsync<RpcException>()).Which.Status.Detail.Should().Contain("may have committed");
+        harness.WriteCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_ConfirmedRollback_IsReplayedAsAFailure()
+    {
+        var rolledBack = FeatureEditResult.Rollback(
+            createResults: ImmutableArray.Create(EditOperationResult.Failure("rolled back", objectId: 5)));
+        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore(), editResult: () => rolledBack);
+        var user = Subject("editor", issuer: "https://issuer-a.example");
+
+        var first = await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
+        var retry = await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
+
+        harness.WriteCount.Should().Be(1);
+        first.AddResults.Should().ContainSingle().Which.Success.Should().BeFalse();
+        retry.AddResults.Should().ContainSingle().Which.Success.Should().BeFalse();
+        retry.AddResults[0].ObjectId.Should().Be(first.AddResults[0].ObjectId);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_KnownPartialSuccess_IsReplayedInsteadOfExecutedAgain()
+    {
+        var partial = FeatureEditResult.Success(
+            createdCount: 1,
+            updatedCount: 0,
+            deletedCount: 0,
+            createResults: ImmutableArray.Create(EditOperationResult.Success(50)),
+            updateResults: ImmutableArray.Create(EditOperationResult.FailureWithUnknownCommitOutcome("later row")));
+        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore(), editResult: () => partial);
+        var user = Subject("editor", issuer: "https://issuer-a.example");
+
+        var first = await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
+        var retry = await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
+
+        harness.WriteCount.Should().Be(1);
+        retry.AddResults.Should().ContainSingle().Which.ObjectId.Should().Be(first.AddResults[0].ObjectId);
+        retry.AddResults[0].ObjectId.Should().Be(50);
+    }
+
+    [UnitTest]
     public async Task ConcurrentCallersOnOneScope_ShareOneGate_AndReleaseItAfterwards()
     {
         using var store = new GrpcApplyEditsIdempotencyStore();
@@ -345,7 +418,9 @@ public sealed class GrpcApplyEditsIdempotencyTests
 
         public ServiceHarness(
             GrpcApplyEditsIdempotencyStore store,
-            Func<CancellationToken, Task>? beforeCommit = null)
+            Func<CancellationToken, Task>? beforeCommit = null,
+            Func<FeatureEditResult>? editResult = null,
+            bool throwAfterWrite = false)
         {
             var resourceValidator = Substitute.For<IResourceValidator>();
             var service = CreateService();
@@ -367,6 +442,16 @@ public sealed class GrpcApplyEditsIdempotencyTests
 
                     cancellationToken.ThrowIfCancellationRequested();
                     Interlocked.Increment(ref _writeCount);
+                    if (throwAfterWrite)
+                    {
+                        throw new OperationCanceledException(cancellationToken);
+                    }
+
+                    if (editResult is not null)
+                    {
+                        return editResult();
+                    }
+
                     var objectId = Interlocked.Increment(ref _nextObjectId);
                     return FeatureEditResult.Success(
                         createdCount: 1,

@@ -93,11 +93,11 @@ public sealed class ApplyEditsIdempotencyStoreTests
         var reserved = await store.TryReserveAsync(scope);
         reserved.Should().NotBeNull("first reservation must be won");
 
-        await store.SetAsync(scope, new Honua.Protocols.GeoServices.FeatureServer.Models.ApplyEditsResponse
+        (await store.SetAsync(scope, reserved!, new Honua.Protocols.GeoServices.FeatureServer.Models.ApplyEditsResponse
         {
             Success = true,
             AddResults = [new Honua.Protocols.GeoServices.FeatureServer.Models.EditResult { ObjectId = 1, Success = true }]
-        });
+        })).Should().BeTrue();
 
         // Second: a retry reservation attempt for the same key must fail because the response
         // is already stored (TryGetAsync would return the recorded response; TryReserveAsync

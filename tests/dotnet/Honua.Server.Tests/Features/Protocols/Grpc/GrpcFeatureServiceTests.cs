@@ -400,6 +400,59 @@ public sealed class GrpcFeatureServiceTests
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_PartialUpdate_KeepsStoredGeometryAndOmittedAttributes()
+    {
+        var storedGeometry = new byte[] { 1, 2, 3, 4 };
+        var stored = Feature.Create(
+            11,
+            storedGeometry,
+            ImmutableDictionary<string, object?>.Empty
+                .Add("name", "original")
+                .Add("code", "kept"));
+        _featureReader
+            .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<Feature?>(
+                call.ArgAt<long>(1) == 11
+                    ? stored
+                    : Feature.Create(call.ArgAt<long>(1), geometry: null)));
+
+        FeatureEditBatch? captured = null;
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(call =>
+            {
+                captured = call.ArgAt<FeatureEditBatch>(1);
+                return Task.FromResult(FeatureEditResult.Success(
+                    createdCount: 0,
+                    updatedCount: 1,
+                    deletedCount: 0,
+                    updateResults: ImmutableArray.Create(EditOperationResult.Success(11))));
+            });
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Updates.Add(new Proto.Feature
+        {
+            Id = 11,
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "renamed" } }
+        });
+
+        var response = await _sut.ApplyEdits(request, CreateCallContext());
+
+        response.UpdateResults.Should().ContainSingle().Which.Success.Should().BeTrue();
+        captured.Should().NotBeNull();
+        var update = captured!.Value.Updates.Should().ContainSingle().Subject;
+        update.Geometry.Should().Equal(storedGeometry);
+        update.Attributes["name"].Should().Be("renamed");
+        update.Attributes["code"].Should().Be("kept");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_WhenDeleteTargetHiddenByRls_ThrowsNotFoundAndDoesNotWrite()
     {
         // RLS / permanent filters are enforced only on the read path; the edit SQL filters by

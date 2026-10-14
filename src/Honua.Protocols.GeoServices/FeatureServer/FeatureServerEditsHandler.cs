@@ -335,6 +335,7 @@ internal sealed class FeatureServerEditsHandler(
                     editPrincipal,
                     lockScope,
                     retryStaleUpdate,
+                    versionContext,
                     cancellationToken);
                 editContext.GuardUpdateSnapshot = retryStaleUpdate;
                 await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
@@ -394,13 +395,14 @@ internal sealed class FeatureServerEditsHandler(
             // Record the response for at-most-once replay (#2250) only when the edit actually committed
             // rows. A fully-failed/no-op request is intentionally not recorded so a genuine retry is
             // re-attempted rather than replaying a no-op failure. Best-effort: the store swallows errors.
-            if (idempotencyScope is { } recordScope && editCommittedRows)
+            if (idempotencyScope is { } recordScope && heldReservationToken is { } recordToken && editCommittedRows)
             {
                 // The reservation is replaced by the recorded response rather than released: a
                 // successful key stays occupied for the whole dedupe window so a duplicate retry
                 // replays this response instead of re-applying the edit (#2250). The finally block
                 // below skips the release for exactly this reason (writeOutcome.MayHaveCommitted).
-                await _idempotencyStore.SetAsync(recordScope, finalResponse, CancellationToken.None).ConfigureAwait(false);
+                // The response is stored only while this request still owns the reservation.
+                await _idempotencyStore.SetAsync(recordScope, recordToken, finalResponse, CancellationToken.None).ConfigureAwait(false);
             }
 
             return Results.Json(finalResponse, FeatureServerJsonContext.Default.ApplyEditsResponse,
@@ -503,6 +505,7 @@ internal sealed class FeatureServerEditsHandler(
         EditPrincipal principal,
         EditLockScope? lockScope,
         bool guardUpdateSnapshot,
+        VersionContext? versionContext,
         CancellationToken cancellationToken)
     {
         var context = new EditOperationContext
@@ -521,8 +524,9 @@ internal sealed class FeatureServerEditsHandler(
             storageLayerId,
             principal,
             guardUpdateSnapshot,
+            versionContext,
             cancellationToken);
-        await ProcessDeleteOperationsAsync(request, resource, storageLayerId, context, principal, cancellationToken);
+        await ProcessDeleteOperationsAsync(request, resource, storageLayerId, context, principal, versionContext, cancellationToken);
 
         return context;
     }
@@ -606,13 +610,14 @@ internal sealed class FeatureServerEditsHandler(
     /// <summary>
     /// Processes update operations and tracks features to update
     /// </summary>
-    private async Task ProcessUpdateOperationsAsync(
+    internal async Task ProcessUpdateOperationsAsync(
         ApplyEditsRequest request,
         EditOperationContext context,
         MetadataV2Resource resource,
         int storageLayerId,
         EditPrincipal principal,
         bool guardUpdateSnapshot,
+        VersionContext? versionContext,
         CancellationToken cancellationToken)
     {
         if (request.Updates == null)
@@ -642,6 +647,7 @@ internal sealed class FeatureServerEditsHandler(
                 resource,
                 storageLayerId,
                 slotObjectIds,
+                versionContext,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (ArgumentException ex)
@@ -792,12 +798,13 @@ internal sealed class FeatureServerEditsHandler(
     /// <summary>
     /// Processes delete operations and tracks features to delete
     /// </summary>
-    private async Task ProcessDeleteOperationsAsync(
+    internal async Task ProcessDeleteOperationsAsync(
         ApplyEditsRequest request,
         MetadataV2Resource resource,
         int storageLayerId,
         EditOperationContext context,
         EditPrincipal principal,
+        VersionContext? versionContext,
         CancellationToken cancellationToken)
     {
         if (request.Deletes == null)
@@ -827,6 +834,7 @@ internal sealed class FeatureServerEditsHandler(
                 resource,
                 storageLayerId,
                 slotObjectIds,
+                versionContext,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (ArgumentException ex)
@@ -1502,7 +1510,7 @@ internal sealed class FeatureServerEditsHandler(
     /// <summary>
     /// Context object to track edit operations state
     /// </summary>
-    private sealed class EditOperationContext
+    internal sealed class EditOperationContext
     {
         public EditResult?[]? AddResults { get; init; }
         public EditResult?[]? UpdateResults { get; init; }
@@ -1549,7 +1557,7 @@ internal sealed class FeatureServerEditsHandler(
     /// service/layer the targeted features belong to in the lease namespace, and the
     /// holder identity the caller is editing under (#4402).
     /// </summary>
-    private sealed record EditLockScope(string ServiceName, int LayerId, LockHolder? Holder);
+    internal sealed record EditLockScope(string ServiceName, int LayerId, LockHolder? Holder);
 
     /// <summary>
     /// Builds the lock scope for a request, or returns <see langword="null"/> when the
@@ -1616,6 +1624,7 @@ internal sealed class FeatureServerEditsHandler(
         MetadataV2Resource resource,
         int storageLayerId,
         long?[] slotObjectIds,
+        VersionContext? versionContext,
         CancellationToken cancellationToken)
     {
         var objectIds = new List<long>(slotObjectIds.Length);
@@ -1637,7 +1646,8 @@ internal sealed class FeatureServerEditsHandler(
                 new FeatureQuery
                 {
                     ObjectIds = objectIds.ToImmutableArray(),
-                    Limit = objectIds.Count
+                    Limit = objectIds.Count,
+                    VersionContext = versionContext is { IsDefault: false } ? versionContext : null
                 },
                 cancellationToken).ConfigureAwait(false);
 
@@ -1672,7 +1682,8 @@ internal sealed class FeatureServerEditsHandler(
             new FeatureQuery
             {
                 SqlFilter = translation.SqlFilter,
-                Limit = objectIds.Count
+                Limit = objectIds.Count,
+                VersionContext = versionContext is { IsDefault: false } ? versionContext : null
             },
             cancellationToken).ConfigureAwait(false);
 
