@@ -135,7 +135,58 @@ public class OracleFeatureQueryBuilderTests
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
         Assert.Contains("ORDER BY \"name\" DESC, \"area\" ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"OBJECTID\" ASC", result.Sql, StringComparison.Ordinal);
         Assert.Contains("FETCH NEXT :p1 ROWS ONLY", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_OrderByPrimaryKey_DoesNotDuplicateTiebreaker()
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc("OBJECTID")),
+            Limit = 10
+        };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("ORDER BY \"OBJECTID\" ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"OBJECTID\" ASC, \"OBJECTID\"", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_Distinct_ProjectsAttributeTuplesAndOrdersThemWhenPaging()
+    {
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ImmutableArray.Create("name"),
+            Limit = 5
+        };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("SELECT DISTINCT 0 AS \"__objectid\", CAST(NULL AS BLOB) AS \"__geometry\", \"name\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY \"name\" ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ORDER BY \"OBJECTID\"", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildCountQuery_Distinct_CountsProjectedTuples()
+    {
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ImmutableArray.Create("name")
+        };
+
+        var result = OracleFeatureQueryBuilder.BuildCountQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("SELECT COUNT(*) FROM (SELECT DISTINCT \"name\" FROM", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(") distinct_values", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]

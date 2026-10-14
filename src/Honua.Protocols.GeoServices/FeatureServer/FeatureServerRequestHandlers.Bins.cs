@@ -7,8 +7,10 @@ using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Tiles.Services;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -183,8 +185,19 @@ internal static partial class FeatureServerEndpoints
 
         query = filteredQuery;
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var rows = await featureReader.QueryBinsAsync(storageLayerId.Value, query, binDefinition, cancellationToken);
+        var featureReader = await ResolveAnalyticsFeatureReaderAsync(
+            context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+        ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
+        try
+        {
+            rows = await featureReader.QueryBinsAsync(storageLayerId.Value, query, binDefinition, cancellationToken);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "queryBins is not supported by the configured feature provider for this layer.");
+        }
 
         var responseFeatures = rows.Select(row => new GeoServicesFeature
         {
@@ -280,6 +293,27 @@ internal static partial class FeatureServerEndpoints
         }
 
         return true;
+    }
+
+    private static async Task<IFeatureReader> ResolveAnalyticsFeatureReaderAsync(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        CancellationToken cancellationToken)
+    {
+        var fallbackReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        return await new TileFeatureProviderResolver(
+            context.RequestServices.GetService<FeatureProviderQueryRouter>()).ResolveFeatureReaderAsync(
+                snapshot,
+                service,
+                resource,
+                publication,
+                storageLayerId,
+                fallbackReader,
+                cancellationToken).ConfigureAwait(false);
     }
 
     private static bool TryParseBinDefinition(string json, out BinDefinition binDefinition, out string? error)

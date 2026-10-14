@@ -73,6 +73,15 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append(CultureInfo.InvariantCulture,
                 $") sub WHERE sub.rn <= ${topCountParameter}");
 
+            // LIMIT/OFFSET without an outer ORDER BY can skip or repeat groups. rn is the
+            // window ordinal and objectid is the first projected column, so both are
+            // addressable on sub.* without changing the reader shape.
+            if (query.Limit.HasValue || query.Offset.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture,
+                    $" ORDER BY sub.rn, sub.{DatabaseSchema.ObjectIdColumn}");
+            }
+
             // resultRecordCount / resultOffset paging. The LIMIT/OFFSET values are bound by
             // AddQueryParameters (AddRegularPaginationParameters / AddOffsetParameterIfEmitted)
             // after the where/topCount parameters, so the placeholders must be the trailing

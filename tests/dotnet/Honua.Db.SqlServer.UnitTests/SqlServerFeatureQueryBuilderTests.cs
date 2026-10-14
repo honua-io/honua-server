@@ -171,8 +171,75 @@ public class SqlServerFeatureQueryBuilderTests
         var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
         Assert.Contains("ORDER BY [name] DESC, [area] ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("[objectid] ASC", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("(SELECT 1)", result.Sql, StringComparison.Ordinal);
         Assert.Contains("FETCH NEXT @p1 ROWS ONLY", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_OrderByPrimaryKey_DoesNotDuplicateTiebreaker()
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Desc("objectid")),
+            Limit = 10
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("ORDER BY [objectid] DESC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("[objectid] DESC, [objectid]", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_OrderByWithoutPaging_OmitsPrimaryKeyTiebreaker()
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc("name"))
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("ORDER BY [name] ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("[objectid] ASC", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_Distinct_ProjectsAttributeTuplesAndOrdersThemWhenPaging()
+    {
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ImmutableArray.Create("name"),
+            OrderBy = ImmutableArray.Create(OrderByClause.Desc("name")),
+            Limit = 10
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("SELECT DISTINCT 0 AS [__objectid], CAST(NULL AS varbinary(max)) AS [__geometry], [name]", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY [name] DESC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ORDER BY [objectid]", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("FETCH NEXT @p1 ROWS ONLY", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildCountQuery_Distinct_CountsProjectedTuples()
+    {
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ImmutableArray.Create("category")
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildCountQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("SELECT COUNT_BIG(*) FROM (SELECT DISTINCT [category] FROM [dbo].[parcels] WHERE 1=1) AS distinct_values", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]

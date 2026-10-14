@@ -241,6 +241,12 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
 /// <summary>
 /// Reads and validates the <c>Idempotency-Key</c> request header for FeatureServer edits.
 /// </summary>
+/// <summary>
+/// Explicit idempotency key for one applyEdits call. A null <see cref="Key"/> suppresses the
+/// request header. Callers that omit the choice keep the header behavior.
+/// </summary>
+internal readonly record struct ApplyEditsIdempotencyChoice(string? Key);
+
 internal static class ApplyEditsIdempotency
 {
     /// <summary>

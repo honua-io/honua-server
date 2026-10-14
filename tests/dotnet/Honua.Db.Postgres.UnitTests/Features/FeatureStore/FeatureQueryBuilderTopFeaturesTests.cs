@@ -105,8 +105,13 @@ public sealed class FeatureQueryBuilderTopFeaturesTests
 
         // $1 = layerId, $2 = topCount, $3 = LIMIT, $4 = OFFSET.
         result.Sql.Should().Contain(") sub WHERE sub.rn <= $2");
+        result.Sql.Should().Contain("ORDER BY sub.rn, sub.objectid");
         result.Sql.Should().Contain("LIMIT $3");
         result.Sql.Should().Contain("OFFSET $4");
+        var orderAt = result.Sql.IndexOf("ORDER BY sub.rn, sub.objectid", StringComparison.Ordinal);
+        var limitAt = result.Sql.IndexOf("LIMIT $3", StringComparison.Ordinal);
+        orderAt.Should().BeGreaterThan(0);
+        orderAt.Should().BeLessThan(limitAt);
     }
 
     [Fact]

@@ -25,7 +25,7 @@ namespace Honua.Db.SqlServer.Features.FeatureStore;
 /// <para>Layer/storage configuration flows through the Metadata v2 provider binding passed by
 /// <see cref="FeatureProviderQueryRouter"/>.</para>
 /// </remarks>
-internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider
+internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider, IDistinctFeatureReader
 {
     private static readonly FeatureProviderCapabilities _capabilities = new()
     {
@@ -168,9 +168,9 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         query = PrepareQuery(query, mapping.PrimaryKeyColumn);
-        var sql = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query);
+        var sql = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 

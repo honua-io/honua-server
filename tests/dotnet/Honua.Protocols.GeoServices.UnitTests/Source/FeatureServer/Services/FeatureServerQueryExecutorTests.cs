@@ -840,7 +840,7 @@ public sealed class FeatureServerQueryExecutorTests
             new QueryParameters { F = "json", ReturnGeometry = false },
             outputSrid: null,
             context,
-            CancellationToken.None);
+            cancellationToken: CancellationToken.None);
 
         var json = await ReadResponseAsync(context);
         using var document = JsonDocument.Parse(json);

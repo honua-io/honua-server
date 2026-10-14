@@ -41,6 +41,41 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
+    public void BuildCountSql_Distinct_CountsAttributeTuples()
+    {
+        var reader = CreateReader(CreateResource());
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ["status"]
+        };
+
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildCountSql", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [query])!
+            .ToString()!;
+
+        sql.Should().Contain("SELECT COUNT(*)::bigint FROM (SELECT DISTINCT");
+        sql.Should().Contain("::text AS attributes FROM");
+        sql.Should().Contain(") AS distinct_values");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildCountSql_WithoutDistinct_StaysAPlainCount()
+    {
+        var reader = CreateReader(CreateResource());
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildCountSql", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [new FeatureQuery()])!
+            .ToString()!;
+
+        sql.Should().Contain("SELECT COUNT(*)::bigint FROM");
+        sql.Should().NotContain("SELECT DISTINCT");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
     public void SRV_DB_006_SourceTemporalFilterConvertsTypedColumnToTextBeforeEpochDetection()
     {
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(

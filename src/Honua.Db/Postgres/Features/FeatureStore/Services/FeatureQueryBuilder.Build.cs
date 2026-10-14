@@ -285,13 +285,30 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         {
             var paramIndex = 2;
             var parameters = new List<object>();
-            var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
 
-            sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*) FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            if (query.Distinct)
+            {
+                // Count distinct attribute tuples, matching the select path's projection.
+                // Bind attribute parameters before the versioned source so $n lines up
+                // with BuildAttributesSelectExpression's appearance order.
+                var attributesSelect = BuildAttributesSelectExpression(query, ref paramIndex, parameters);
+                var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
+                sql.Append(CultureInfo.InvariantCulture,
+                    $"SELECT COUNT(*) FROM (SELECT DISTINCT {attributesSelect} AS attributes FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+                AppendWhereClause(sql, query, ref paramIndex, parameters);
+                AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+                AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+                sql.Append(") AS distinct_values");
+            }
+            else
+            {
+                var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
+                sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*) FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
-            AppendWhereClause(sql, query, ref paramIndex, parameters);
-            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+                AppendWhereClause(sql, query, ref paramIndex, parameters);
+                AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+                AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
