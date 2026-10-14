@@ -32,8 +32,13 @@ set -euo pipefail
 #                   as before this change.
 #   - unit tests -> only the *.Tests projects in the affected closure
 #   - format     -> owning projects of the changed *.cs files, not Honua.sln.
-#                   --include alone does not bound project loading. FULL still
-#                   formats the whole solution.
+#                   A linked shared source has no sibling project; its owners
+#                   are the solution members whose Compile Include resolves to
+#                   that file. --include alone does not bound project loading.
+#                   FULL still formats the whole solution. The SMART/FAST cap
+#                   uses GNU timeout, then gtimeout, and runs uncapped when
+#                   neither is installed so a missing binary is not a format
+#                   failure.
 #
 # Capability narrowing — known limitation: docs/gis/data/feature-catalog.json's
 # `code_location` field is, today, almost always the endpoint-registry file
@@ -63,6 +68,9 @@ set -euo pipefail
 #                           push loop stays quick. Run without it (the default
 #                           SMART tier) or with HONUA_PRE_PR_FULL=1 before opening
 #                           a PR for the full local gate.
+#   HONUA_PRE_PR_TIMEOUT_COMMAND  override the SMART/FAST format time-cap
+#                           binary (default: timeout, then gtimeout, then
+#                           uncapped when neither is installed).
 #   HONUA_PRE_PR_DRY_RUN=1  (or --dry-run) print the full resolved selection —
 #                           build roots, the evaluated transitive closure,
 #                           targeted shards, capability-narrowed filters,
@@ -854,6 +862,67 @@ if [[ -n "${PLAN_JSON}" ]]; then
           formatFiles:(if $full=="1" then ["ALL"] else ($format|split("\n")|map(select(length>0))) end)}' > "${PLAN_JSON}"
 fi
 
+# Collapse '.' and '..' without touching the filesystem. Compile Include
+# paths are relative to the project and may use either separator.
+pre_pr_normalize_relpath() {
+    local input="${1//\\//}"
+    local out="" part
+    local IFS="/"
+    local -a parts
+    read -r -a parts <<< "${input}"
+    for part in "${parts[@]}"; do
+        case "${part}" in
+            ""|".") ;;
+            "..") out="${out%/*}" ;;
+            *) out="${out}/${part}" ;;
+        esac
+    done
+    printf '%s' "${out#/}"
+}
+
+# Solution members that compile a file living outside their directory.
+# tests/dotnet/Shared has no sibling csproj; ownership is Compile Include.
+pre_pr_index_linked_compile_owners() {
+    local member include resolved
+    while IFS= read -r member; do
+        [[ -z "${member}" || ! -f "${member}" ]] && continue
+        while IFS= read -r include; do
+            [[ -z "${include}" ]] && continue
+            # Globs and unevaluated MSBuild properties are not a file identity.
+            case "${include}" in
+                *'$('*|*'*'*|*'?'*) continue ;;
+            esac
+            resolved="$(pre_pr_normalize_relpath "$(dirname "${member}")/${include}")"
+            [[ -z "${resolved}" ]] && continue
+            linked_compile_owners["${resolved}"]="${linked_compile_owners[${resolved}]:-}${member}"${HONUA_NL}
+        done < <(grep -oE 'Compile[[:space:]]+Include="[^"]+"' "${member}" 2>/dev/null \
+            | sed -E 's/^Compile[[:space:]]+Include="([^"]+)"$/\1/' || true)
+    done <<< "${sln_members}"
+    return 0
+}
+
+# timeout, then gtimeout, matching scripts/ci/run-server-test-shard.sh.
+# Neither installed is success-shaped: format still runs, uncapped.
+select_pre_pr_format_timeout() {
+    if [[ -n "${HONUA_PRE_PR_TIMEOUT_COMMAND:-}" ]]; then
+        printf '%s' "${HONUA_PRE_PR_TIMEOUT_COMMAND}"
+    elif command -v timeout >/dev/null 2>&1; then
+        printf '%s' timeout
+    elif command -v gtimeout >/dev/null 2>&1; then
+        printf '%s' gtimeout
+    fi
+    return 0
+}
+
+run_bounded_dotnet_format() {
+    if [[ -n "${format_timeout_command}" ]]; then
+        "${format_timeout_command}" 20m dotnet format "$@"
+    else
+        echo "   (no GNU timeout or gtimeout on PATH; running dotnet format without a time cap)"
+        dotnet format "$@"
+    fi
+}
+
 echo "4. Checking code format..."
 # Scope by FULL (not AFFECTED): a force-full build scope (props/CI paths
 # changed) does not widen the set of .cs files whose format could differ —
@@ -877,6 +946,8 @@ else
         FORMAT_SLNF="$(mktemp -p "${REPO_ROOT}" --suffix=.slnf)"
         CLEANUP_PATHS+=("${FORMAT_SLNF}")
         format_projects=()
+        declare -A linked_compile_owners=()
+        linked_compile_index_built=0
         for file in "${changed_arr[@]}"; do
             dir="$(dirname "${file}")"
             project=""
@@ -891,11 +962,26 @@ else
                 fi
                 dir="$(dirname "${dir}")"
             done
-            if [[ -z "${project}" || -z "${sln_member_paths[${project}]:-}" ]]; then
+            if [[ -n "${project}" ]]; then
+                if [[ -z "${sln_member_paths[${project}]:-}" ]]; then
+                    echo "❌ No validated solution project owns ${file}; run its format check explicitly." >&2
+                    exit 1
+                fi
+                format_projects+=("${sln_member_paths[${project}]}")
+                continue
+            fi
+            if [[ "${linked_compile_index_built}" != "1" ]]; then
+                pre_pr_index_linked_compile_owners
+                linked_compile_index_built=1
+            fi
+            mapfile -t linked_owners < <(printf '%s\n' "${linked_compile_owners[${file}]:-}" | sed '/^$/d' | sort -u)
+            if [[ ${#linked_owners[@]} -eq 0 ]]; then
                 echo "❌ No validated solution project owns ${file}; run its format check explicitly." >&2
                 exit 1
             fi
-            format_projects+=("${sln_member_paths[${project}]}")
+            for owner in "${linked_owners[@]}"; do
+                format_projects+=("${sln_member_paths[${owner}]}")
+            done
         done
         printf '%s\n' "${format_projects[@]}" | jq -R . | jq -s 'unique | {solution:{path:"Honua.sln",projects:.}}' > "${FORMAT_SLNF}"
         FORMAT_TARGET=("${FORMAT_SLNF}")
@@ -905,13 +991,19 @@ else
         report_dependency_closure "${FORMAT_SLNF}" Format Debug
     fi
 fi
+format_timeout_command=""
+if [[ ${#FORMAT_TARGET[@]} -gt 0 && "${FULL}" != "1" ]]; then
+    format_timeout_command="$(select_pre_pr_format_timeout)"
+fi
 if [[ ${#FORMAT_TARGET[@]} -eq 0 ]]; then
     : # already reported "skipping format check" above
 elif [[ "${DRY_RUN}" == "1" ]]; then
     if [[ "${FULL}" == "1" ]]; then
         echo "   [dry-run] Would run 'dotnet format Honua.sln --verify-no-changes' (whole solution)."
+    elif [[ -n "${format_timeout_command}" ]]; then
+        echo "   [dry-run] Would run '${format_timeout_command} 20m dotnet format <owning-project workspace> --include <${#changed_arr[@]} changed .cs files> --verify-no-changes'."
     else
-        echo "   [dry-run] Would run 'timeout 20m dotnet format <owning-project workspace> --include <${#changed_arr[@]} changed .cs files> --verify-no-changes'."
+        echo "   [dry-run] Would run 'dotnet format <owning-project workspace> --include <${#changed_arr[@]} changed .cs files> --verify-no-changes' (no GNU timeout; uncapped)."
     fi
 else
     # Diagnostic verbosity makes dotnet-format log every analyzed document —
@@ -924,9 +1016,9 @@ else
             echo "✅ Code formatted. Please review changes and commit if needed."
             exit 1
         fi
-    elif ! timeout 20m dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --verify-no-changes; then
+    elif ! run_bounded_dotnet_format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --verify-no-changes; then
         echo "❌ Format check failed. Running 'dotnet format' to fix..."
-        timeout 20m dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}"
+        run_bounded_dotnet_format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}"
         echo "✅ Code formatted. Please review changes and commit if needed."
         exit 1
     fi

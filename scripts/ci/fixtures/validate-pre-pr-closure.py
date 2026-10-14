@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Offline regression fixtures for FAST selection and real closure reporting."""
-import json
 import os
 from pathlib import Path
 import shutil
@@ -72,11 +71,17 @@ if sys.argv[1] == "gate-fast-actions":
         self.write(self.constraint_test, self.test_source.replace("GET /old", "GET /old/{id:[a-z]+}/suffix"))
         self.write(".github/ci-shards.json", '{"shards":[]}')
         self.write("Honua.sln", '\n'.join(f'Project("guid") = "p", "{p.replace(chr(47), chr(92))}", "guid"\nEndProject' for p in self.projects))
-        # MSBuild evaluation is the only allowed managed command in --dry-run.
-        # Its fixture graph deliberately contains transitive test references.
+        self.write("scripts/ci/local-architecture-review.py", "raise SystemExit(0)\n")
+        # MSBuild evaluation is the only graph command. Other dotnet verbs are
+        # recorded and succeed so a format-cap fixture can run past --dry-run.
         self.write("bin/dotnet", '''#!/usr/bin/env python3
-import json, pathlib, sys, xml.etree.ElementTree as ET
-assert sys.argv[1] == 'msbuild', sys.argv
+import json, os, pathlib, sys, xml.etree.ElementTree as ET
+log = os.environ.get("HONUA_DOTNET_LOG")
+if log:
+    with open(log, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(sys.argv[1:]) + chr(10))
+if len(sys.argv) < 2 or sys.argv[1] != "msbuild":
+    raise SystemExit(0)
 root = pathlib.Path.cwd()
 target = pathlib.Path(sys.argv[2])
 out = next(arg.split('=', 1)[1] for arg in sys.argv if arg.startswith('-p:RestoreGraphOutputPath='))
@@ -121,13 +126,37 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
         self.run_command("git", "commit", "-qm", "test: closure fixture")
 
     def plan(self, *args):
-        env = dict(os.environ, PATH=str(self.root / "bin") + os.pathsep + os.environ["PATH"],
-                   HONUA_PRE_PR_FULL="0", HONUA_PRE_PR_FAST="0")
-        result = subprocess.run(["bash", "scripts/ci/pre-pr-check.sh", "--base", self.base,
-                                 "--dry-run", *args], cwd=self.root, env=env, text=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        result = self.execute("--dry-run", *args)
         self.assertEqual(result.returncode, 0, result.stdout)
         return result.stdout
+
+    def execute(self, *args, env_extra=None, path=None):
+        env = dict(os.environ)
+        env["PATH"] = path if path is not None else str(self.root / "bin") + os.pathsep + os.environ["PATH"]
+        env["HONUA_PRE_PR_FULL"] = "0"
+        env["HONUA_PRE_PR_FAST"] = "0"
+        if env_extra:
+            env.update(env_extra)
+        return subprocess.run(["bash", "scripts/ci/pre-pr-check.sh", "--base", self.base, *args],
+                              cwd=self.root, env=env, text=True,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+    def path_without_gnu_timeout(self):
+        bindir = Path(tempfile.mkdtemp(prefix="honua-no-timeout-"))
+        self.addCleanup(shutil.rmtree, bindir, True)
+        seen = set()
+        for directory in os.environ["PATH"].split(os.pathsep):
+            if not directory or not os.path.isdir(directory):
+                continue
+            for entry in os.listdir(directory):
+                if entry in seen or entry in ("timeout", "gtimeout", "dotnet"):
+                    continue
+                src = Path(directory) / entry
+                if src.is_file() and os.access(src, os.X_OK):
+                    os.symlink(src, bindir / entry)
+                    seen.add(entry)
+        os.symlink(self.root / "bin" / "dotnet", bindir / "dotnet")
+        return str(bindir)
 
     def guard(self, paths):
         self.write(".git/paths.txt", '\n'.join(paths))
@@ -237,6 +266,65 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
             f.write('\n# selector repair\n')
         output = self.plan("--fast")
         self.assertIn("forcing FULL mode", output)
+
+    def test_linked_shared_source_maps_to_compile_include_owner(self):
+        shared = "tests/dotnet/Shared/ProtocolUnits/Ai/McpTestFactory.cs"
+        source = "internal class McpTestFactory\n{\n    internal int Value()\n    {\n        return 1;\n    }\n}\n"
+        self.write(shared, source)
+        unit = "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj"
+        self.write(unit, '<Project Sdk="Microsoft.NET.Sdk">\n  <ItemGroup>\n'
+                   '    <Compile Include="../Shared/ProtocolUnits/Ai/McpTestFactory.cs" '
+                   'Link="Shared/McpTestFactory.cs" />\n  </ItemGroup>\n</Project>\n')
+        ai = self.root / "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj"
+        ai.write_text('<Project Sdk="Microsoft.NET.Sdk">\n  <ItemGroup>\n'
+                      '    <Compile Include="..\\Shared\\ProtocolUnits\\Ai\\McpTestFactory.cs" '
+                      'Link="Shared/McpTestFactory.cs" />\n  </ItemGroup>\n</Project>\n')
+        projects = [*self.projects, unit]
+        self.write("Honua.sln", '\n'.join(
+            f'Project("guid") = "p", "{project.replace(chr(47), chr(92))}", "guid"\nEndProject'
+            for project in projects))
+        self.commit()
+        self.base = self.run_command("git", "rev-parse", "HEAD").strip()
+        self.write(shared, source.replace("return 1;", "return 2;"))
+        output = self.plan("--fast")
+        self.assertIn("Format workspace: 2 owning project", output)
+        self.assertIn("tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj", output)
+        self.assertIn("tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj", output)
+        self.assertNotIn("No validated solution project owns", output)
+
+    def test_missing_gnu_timeout_is_not_a_format_failure(self):
+        self.source_repair()
+        log = tempfile.NamedTemporaryFile(prefix="honua-dotnet-log-", delete=False)
+        log.close()
+        self.addCleanup(os.remove, log.name)
+        result = self.execute("--fast", env_extra={"HONUA_DOTNET_LOG": log.name},
+                              path=self.path_without_gnu_timeout())
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("Format check failed", result.stdout)
+        self.assertIn("without a time cap", result.stdout)
+        self.assertIn('"format"', Path(log.name).read_text(encoding="utf-8"))
+
+    def test_gtimeout_bounds_format_when_timeout_is_absent(self):
+        self.source_repair()
+        bindir = Path(self.path_without_gnu_timeout())
+        called = tempfile.NamedTemporaryFile(prefix="honua-gtimeout-", delete=False)
+        called.close()
+        self.addCleanup(os.remove, called.name)
+        gtimeout = bindir / "gtimeout"
+        gtimeout.write_text('#!/bin/bash\nprintf "%s\\n" "$*" > "$HONUA_GTIMEOUT_LOG"\nshift\nexec "$@"\n')
+        gtimeout.chmod(0o755)
+        log = tempfile.NamedTemporaryFile(prefix="honua-dotnet-log-", delete=False)
+        log.close()
+        self.addCleanup(os.remove, log.name)
+        result = self.execute("--fast", env_extra={
+            "HONUA_DOTNET_LOG": log.name,
+            "HONUA_GTIMEOUT_LOG": called.name,
+        }, path=str(bindir))
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("Format check failed", result.stdout)
+        self.assertNotIn("without a time cap", result.stdout)
+        self.assertIn("20m", Path(called.name).read_text(encoding="utf-8"))
+        self.assertIn('"format"', Path(log.name).read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
