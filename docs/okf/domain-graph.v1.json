@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:6729e816c7e1b553c62d9f7f8d46c76ddd0aaeca4654e5b7fbe21bf83b0d1c6f",
+  "bundleDigest": "sha256:cb97e45c102a27f7e0c7941c705d8d0d15c280717021a1f955fde07b745c793b",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -5096,7 +5096,7 @@
     {
       "id": "okf/README",
       "path": "okf/README.md",
-      "documentDigest": "sha256:3d85b62b8f48ed65753bec4fe09fdae1fe510857c7c1670a74cfc4d47567ff44",
+      "documentDigest": "sha256:926e02c6a2f01f52fbbe0a4c500ffcd0b2e3cdc5e5370053b96e2dcfb2ff5162",
       "metadata": {
         "type": "index",
         "title": "Open Knowledge Format in honua-server",

@@ -65,6 +65,8 @@ a page you can reach from here is documentation and not a report.
 
 ### Agent graph and context
 
+Run these commands from the repository root with Python 3.10 or later. First install the YAML reader into your active Python environment with `python -m pip install -r scripts/ci/okf-requirements.txt`. This dependency is shared by graph generation, OKF validation, and `llms.txt` generation; CI installs the same requirements.
+
 The derived [agent graph](domain-graph.v1.json) preserves the published OKF metadata and links each node to its human document. It includes typed workflow dependencies, semantic relations, interface references, and a content digest. Edit the Markdown sources; regenerate this view with `python scripts/ci/generate-okf-graph.py`. The documentation gate checks that the generated file is current.
 
 For a compact local context, run `python scripts/ci/generate-okf-graph.py --query "publish a layer"`. Retrieval returns lexical candidates and their direct semantic neighbors. Alias collisions remain visible: a match is not a decision about which kind of layer or publication the user intends. Read the full linked document when the compact metadata is insufficient.
