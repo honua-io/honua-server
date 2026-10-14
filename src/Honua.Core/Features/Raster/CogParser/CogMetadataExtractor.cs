@@ -304,7 +304,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
 
             overviewLevels.Add(new CogOverviewLevel(
                 levelIndex, ifdWidth, ifdHeight, ifdFileOffset,
-                tileOffsets, tileByteCounts, ifdJpegTables));
+                tileOffsets, tileByteCounts, ifdJpegTables, ifdPredictor));
 
             currentOffset = nextIfdOffset;
             levelIndex++;

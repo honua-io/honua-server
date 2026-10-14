@@ -191,6 +191,64 @@ public class CogTileResolverTests
 
     [UnitTest]
     [Operation(Operations.GetTile)]
+    public async Task GetTileAsync_OverviewPredictor_DecodesWithThatIfdAndLeavesRepeatedPredictorUnchanged()
+    {
+        var stored = new byte[256 * 256];
+        stored[0] = 10;
+        stored[1] = 5;
+
+        var mismatched = await ReadOverviewTileAsync(stored, overviewPredictor: TilePixelLayout.PredictorNone);
+        mismatched[0].Should().Be(10);
+        mismatched[1].Should().Be(5);
+
+        var repeated = await ReadOverviewTileAsync(stored, overviewPredictor: TilePixelLayout.PredictorHorizontalDifferencing);
+        repeated[0].Should().Be(10);
+        repeated[1].Should().Be(15);
+    }
+
+    private static async Task<byte[]> ReadOverviewTileAsync(byte[] stored, int overviewPredictor)
+    {
+        var rangeReader = Substitute.For<ICloudRangeReader>();
+        rangeReader.Provider.Returns(CloudStorageProvider.AwsS3);
+        rangeReader.GetObjectMetadataAsync("bucket", "cog.tif", Arg.Any<CancellationToken>())
+            .Returns(new CloudObjectMetadata { SizeBytes = 1L << 30, ETag = "etag-1" });
+        rangeReader.ReadRangeAsync("bucket", "cog.tif", 32, stored.Length, "etag-1", Arg.Any<CancellationToken>())
+            .Returns(stored);
+        var metadata = new CogMetadata(
+            Width: 4096,
+            Height: 4096,
+            BandCount: 1,
+            PixelType: "uint8",
+            Srid: 3857,
+            Compression: "NONE",
+            TileWidth: 256,
+            TileHeight: 256,
+            OverviewLevels:
+            [
+                new CogOverviewLevel(Level: 0, Width: 4096, Height: 4096, IfdOffset: 8, TileOffsets: [16], TileByteCounts: [stored.Length], Predictor: TilePixelLayout.PredictorHorizontalDifferencing),
+                new CogOverviewLevel(Level: 1, Width: 2048, Height: 2048, IfdOffset: 24, TileOffsets: [32], TileByteCounts: [stored.Length], Predictor: overviewPredictor)
+            ],
+            Extent: CreateWorldExtent(),
+            Predictor: TilePixelLayout.PredictorHorizontalDifferencing);
+        var metadataReader = Substitute.For<ICogMetadataReader>();
+        metadataReader.ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>())
+            .Returns(metadata);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new CogTileResolver(
+            [rangeReader],
+            metadataReader,
+            Substitute.For<ICogStore>(),
+            cache,
+            NullLogger<CogTileResolver>.Instance);
+
+        var result = await resolver.GetTileAsync(CreateRegistration(metadata), level: 3, row: 0, col: 0, RasterFormat.Raw);
+
+        result.Should().NotBeNull();
+        return result!.Value.Data;
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
     public async Task GetTileAsync_WithMultipleOverviews_UsesResolutionMatchedOverview()
     {
         var fullResolutionTile = EncodeStandaloneJpeg(red: 10);

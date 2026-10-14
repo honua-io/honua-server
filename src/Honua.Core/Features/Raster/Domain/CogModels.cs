@@ -55,6 +55,10 @@ public sealed record CogMetadata(
 /// Shared JPEGTables (TIFF tag 347) of this level, or null. TIFF-JPEG tiles referencing them
 /// are abbreviated streams that must be assembled before they can be served.
 /// </param>
+/// <param name="Predictor">
+/// TIFF predictor (tag 317) of this IFD: 1 none, 2 horizontal differencing, 3 floating point.
+/// Zero means the level was rebuilt without the tag, and decoding uses the base image predictor.
+/// </param>
 public sealed record CogOverviewLevel(
     int Level,
     int Width,
@@ -62,7 +66,8 @@ public sealed record CogOverviewLevel(
     long IfdOffset,
     long[] TileOffsets,
     int[] TileByteCounts,
-    byte[]? JpegTables = null);
+    byte[]? JpegTables = null,
+    int Predictor = 0);
 
 /// <summary>
 /// Lightweight overview level summary for JSONB persistence (no tile offset arrays).

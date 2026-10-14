@@ -149,12 +149,13 @@ internal sealed class CogTileResolver : ICogTileResolver
             tileData = jpeg;
         }
 
-        // Decompress based on compression type, reversing the tile's predictor when it declares one.
+        // Each IFD carries its own predictor. A level rebuilt without the tag keeps the base value.
+        var predictor = overviewLevel.Predictor > 0 ? overviewLevel.Predictor : metadata.Predictor;
         var layout = new TilePixelLayout(
             metadata.TileWidth,
             metadata.BandCount,
             metadata.BitsPerSample,
-            metadata.Predictor,
+            predictor,
             metadata.IsLittleEndian);
         // The decoder's 128 MiB ceiling also accommodates codecs whose frame size is
         // unknown (ZSTD reports a window bound). Encoders require the exact sample length.

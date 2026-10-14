@@ -81,6 +81,25 @@ public class CogMetadataExtractorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task ReadMetadataAsync_OverviewPredictor_IsStoredOnThatIfd()
+    {
+        var mismatched = await new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(BuildTwoLevelCog(basePredictor: 2, overviewPredictor: 1)),
+            "fixtures",
+            "mismatch.tif");
+        mismatched.Predictor.Should().Be(TilePixelLayout.PredictorHorizontalDifferencing);
+        mismatched.OverviewLevels.Select(level => level.Predictor).Should().Equal(2, 1);
+
+        var repeated = await new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(BuildTwoLevelCog(basePredictor: 2, overviewPredictor: 2)),
+            "fixtures",
+            "repeated.tif");
+        repeated.Predictor.Should().Be(2);
+        repeated.OverviewLevels.Select(level => level.Predictor).Should().Equal(2, 2);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task ReadMetadataAsync_PixelScaleBeforeTiepoint_ComputesCorrectExtent()
     {
         // Arrange — synthetic COG with tags in TIFF-spec ascending order.
@@ -371,6 +390,34 @@ public class CogMetadataExtractorTests
         var act = () => new CogMetadataExtractor().ReadMetadataAsync(new InMemoryRangeReader(tiff), "bucket", "test.tif");
 
         await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
+    private static byte[] BuildTwoLevelCog(int basePredictor, int overviewPredictor)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write((ushort)0x4949);
+        writer.Write((ushort)42);
+        const int ifdBytes = 2 + (8 * 12) + 4;
+        const uint firstIfd = 8;
+        writer.Write(firstIfd);
+        WriteLevel(writer, 64, 64, basePredictor, firstIfd + ifdBytes);
+        WriteLevel(writer, 32, 32, overviewPredictor, 0);
+        return stream.ToArray();
+
+        static void WriteLevel(BinaryWriter levelWriter, uint width, uint height, int predictor, uint nextIfd)
+        {
+            levelWriter.Write((ushort)8);
+            WriteIfdEntry(levelWriter, 256, 4, 1, width);
+            WriteIfdEntry(levelWriter, 257, 4, 1, height);
+            WriteIfdEntry(levelWriter, 259, 3, 1, 1);
+            WriteIfdEntry(levelWriter, 317, 3, 1, (uint)predictor);
+            WriteIfdEntry(levelWriter, 322, 4, 1, 16);
+            WriteIfdEntry(levelWriter, 323, 4, 1, 16);
+            WriteIfdEntry(levelWriter, 324, 4, 1, 1);
+            WriteIfdEntry(levelWriter, 325, 4, 1, 1);
+            levelWriter.Write(nextIfd);
+        }
     }
 
     /// <summary>
