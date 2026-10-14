@@ -498,18 +498,18 @@ public sealed class McpToolDelegationTests
     private static ExecutionJobRecord SubmittedJob(
         DateTimeOffset now,
         ExecutionJobStatus status = ExecutionJobStatus.Queued) => new()
-    {
-        OperationId = "job-xyz",
-        Status = status,
-        CreatedAt = now,
-        UpdatedAt = now,
-        PercentComplete = status == ExecutionJobStatus.Succeeded ? 100 : 0,
-        Spec = new ExecutionJobSpec
         {
-            Kind = ExecutionJobKind.Geoprocessing,
-            TargetKind = BatchComputeTargetKind.KubernetesJob,
-            Backend = "local",
-            WorkloadName = "buffer"
-        }
-    };
+            OperationId = "job-xyz",
+            Status = status,
+            CreatedAt = now,
+            UpdatedAt = now,
+            PercentComplete = status == ExecutionJobStatus.Succeeded ? 100 : 0,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "buffer"
+            }
+        };
 }

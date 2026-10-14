@@ -4,6 +4,7 @@
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 
@@ -101,7 +102,7 @@ internal sealed class WorkspaceResource : IMcpResource
         try
         {
             await _jobService
-                .EnsureCallerAuthorizedAsync(principal, AuthorizationFor(workspace), cancellationToken)
+                .EnsureCallerAuthorizedAsync(principal, AuthorizationFor(httpContext, workspace), cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (GeoprocessingAuthorizationException ex) when (!ex.RequiresAuthentication)
@@ -131,9 +132,18 @@ internal sealed class WorkspaceResource : IMcpResource
         return new LifecycleRead(scope, lifecycle);
     }
 
-    private static OperatorAuthorizationRequest AuthorizationFor(Workspace workspace)
+    private static OperatorAuthorizationRequest AuthorizationFor(HttpContext httpContext, Workspace workspace)
     {
-        var shared = !string.IsNullOrWhiteSpace(workspace.ScopeId);
+        // GeoprocessingDispatchJobExecutor stores the submitter's tenant id in ScopeId.
+        // The shipped authorizer checks a shared scope only against the configured
+        // workspace-scope claim (groups by default), not the tenant, so a scope that
+        // is the effective tenant stays personal and the owner can still read it.
+        var scopeId = string.IsNullOrWhiteSpace(workspace.ScopeId) ? null : workspace.ScopeId.Trim();
+        var tenantId = httpContext.RequestServices?.GetService<ITenantContext>()?.TenantId;
+        tenantId = string.IsNullOrWhiteSpace(tenantId) ? null : tenantId.Trim();
+        var shared = scopeId is not null
+            && tenantId is not null
+            && !string.Equals(scopeId, tenantId, StringComparison.Ordinal);
         return new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Workspace,
@@ -141,7 +151,7 @@ internal sealed class WorkspaceResource : IMcpResource
             ResourceId = workspace.WorkspaceId,
             WorkspaceVisibility = shared ? WorkspaceVisibility.Shared : WorkspaceVisibility.Personal,
             WorkspaceOwnerId = shared ? null : workspace.OwnerId,
-            WorkspaceScopeId = shared ? workspace.ScopeId : null
+            WorkspaceScopeId = shared ? scopeId : null
         };
     }
 

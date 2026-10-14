@@ -964,12 +964,9 @@ internal sealed class McpSessionManager
     private int Count(Func<McpSession, bool> predicate)
     {
         var count = 0;
-        foreach (var session in _sessions.Values)
+        foreach (var session in _sessions.Values.Where(predicate))
         {
-            if (predicate(session))
-            {
-                count++;
-            }
+            count++;
         }
 
         return count;

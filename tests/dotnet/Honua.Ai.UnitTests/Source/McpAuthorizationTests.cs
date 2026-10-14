@@ -4,20 +4,25 @@
 using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -268,7 +273,9 @@ public sealed class McpAuthorizationTests
         var resource = WorkspaceReader(lifecycle);
 
         var allowed = await resource.ReadAsync(
-            Principal("member-1", scope: "team-a"), "honua://workspaces/ws-shared", CancellationToken.None);
+            Principal("member-1", scope: "team-a", tenantId: "tenant-1"),
+            "honua://workspaces/ws-shared",
+            CancellationToken.None);
         McpTestFactory.ParseJson(allowed.Contents[0].Text).GetProperty("workspaceId").GetString()
             .Should().Be("ws-shared");
         await _jobService.Received().EnsureCallerAuthorizedAsync(
@@ -280,8 +287,70 @@ public sealed class McpAuthorizationTests
             Arg.Any<CancellationToken>());
 
         var act = async () => await resource.ReadAsync(
-            Principal("outsider"), "honua://workspaces/ws-shared", CancellationToken.None);
+            Principal("outsider", tenantId: "tenant-1"),
+            "honua://workspaces/ws-shared",
+            CancellationToken.None);
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_TenantScopedWorkspace_OwnerReads_GroupEqualToTenantDoesNotShare()
+    {
+        // GeoprocessingDispatchJobExecutor sets ScopeId to the submitter tenant.
+        // That must stay a personal owner check. A groups claim equal to the tenant
+        // id is not the configured workspace-scope claim and must not grant access.
+        var lifecycle = WorkspaceLifecycle("ws-tenant", "owner-1", scopeId: "tenant-a");
+        ConfigureWorkspaceAuthorization();
+        var resource = WorkspaceReader(lifecycle);
+
+        var allowed = await resource.ReadAsync(
+            Principal("owner-1", tenantId: "tenant-a"),
+            "honua://workspaces/ws-tenant",
+            CancellationToken.None);
+        McpTestFactory.ParseJson(allowed.Contents[0].Text).GetProperty("workspaceId").GetString()
+            .Should().Be("ws-tenant");
+        await _jobService.Received().EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<OperatorAuthorizationRequest>(request =>
+                request.WorkspaceVisibility == WorkspaceVisibility.Personal
+                && request.WorkspaceOwnerId == "owner-1"
+                && request.WorkspaceScopeId == null),
+            Arg.Any<CancellationToken>());
+
+        var act = async () => await resource.ReadAsync(
+            Principal("outsider", scope: "tenant-a", tenantId: "tenant-a"),
+            "honua://workspaces/ws-tenant",
+            CancellationToken.None);
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_SharedScope_UsesConfiguredClaimNotTenantId()
+    {
+        var lifecycle = WorkspaceLifecycle("ws-shared", "owner-1", scopeId: "team-a");
+        ConfigureWorkspaceAuthorization(scopeClaimType: "team");
+        var resource = WorkspaceReader(lifecycle);
+
+        var allowed = await resource.ReadAsync(
+            Principal("member-1", scope: "team-a", tenantId: "tenant-a", scopeClaimType: "team"),
+            "honua://workspaces/ws-shared",
+            CancellationToken.None);
+        McpTestFactory.ParseJson(allowed.Contents[0].Text).GetProperty("workspaceId").GetString()
+            .Should().Be("ws-shared");
+
+        var groupsInsteadOfConfiguredClaim = async () => await resource.ReadAsync(
+            Principal("member-2", scope: "team-a", tenantId: "tenant-a", scopeClaimType: "groups"),
+            "honua://workspaces/ws-shared",
+            CancellationToken.None);
+        await groupsInsteadOfConfiguredClaim.Should().ThrowAsync<GeoprocessingNotFoundException>();
+
+        var tenantIdAsScope = async () => await resource.ReadAsync(
+            Principal("member-3", scope: "tenant-a", tenantId: "tenant-a", scopeClaimType: "team"),
+            "honua://workspaces/ws-shared",
+            CancellationToken.None);
+        await tenantIdAsScope.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
     [UnitTest]
@@ -336,8 +405,9 @@ public sealed class McpAuthorizationTests
             .Which.RequiresAuthentication.Should().BeTrue();
     }
 
-    private void ConfigureWorkspaceAuthorization()
+    private void ConfigureWorkspaceAuthorization(string scopeClaimType = "groups")
     {
+        var evaluator = ShippedAuthorizer(scopeClaimType);
         _jobService
             .EnsureCallerAuthorizedAsync(
                 Arg.Any<ClaimsPrincipal>(),
@@ -345,28 +415,59 @@ public sealed class McpAuthorizationTests
                 Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                var principal = call.Arg<ClaimsPrincipal>();
-                var request = call.Arg<OperatorAuthorizationRequest>();
-                var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                var allowed = request.WorkspaceVisibility switch
-                {
-                    WorkspaceVisibility.Personal => string.Equals(userId, request.WorkspaceOwnerId, StringComparison.Ordinal),
-                    WorkspaceVisibility.Shared => principal.Claims.Any(claim =>
-                        claim.Type == "groups"
-                        && string.Equals(claim.Value, request.WorkspaceScopeId, StringComparison.Ordinal)),
-                    _ => false
-                };
-                if (!allowed)
+                var decision = evaluator.EvaluateAsync(
+                    call.Arg<ClaimsPrincipal>(),
+                    call.Arg<OperatorAuthorizationRequest>(),
+                    call.Arg<CancellationToken>()).GetAwaiter().GetResult();
+                if (!decision.IsAllowed)
                 {
                     throw new GeoprocessingAuthorizationException(
-                        requiresAuthentication: false,
-                        "denied",
+                        decision.RequiresAuthentication,
+                        decision.FailureReason ?? "denied",
                         OperatorResourceType.Workspace,
                         OperatorOperation.Read);
                 }
 
                 return Task.CompletedTask;
             });
+    }
+
+    private static OperatorAuthorizationEvaluator ShippedAuthorizer(string scopeClaimType)
+    {
+        var roleStore = Substitute.For<IRoleStore>();
+        roleStore.GetEffectivePermissionsAsync(
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => new EffectivePermissions
+            {
+                UserId = call.ArgAt<string>(0),
+                Roles = call.ArgAt<IReadOnlyList<string>>(1),
+                Permissions =
+                [
+                    new PermissionGrant { Service = "workspace", Layer = "*", Operation = "read" }
+                ]
+            });
+
+        return new OperatorAuthorizationEvaluator(
+            new RoleStoreScopeFactory(roleStore),
+            Options.Create(new RbacOptions { WorkspaceScopeClaimType = scopeClaimType }),
+            NullLogger<OperatorAuthorizationEvaluator>.Instance);
+    }
+
+    private sealed class RoleStoreScopeFactory(IRoleStore store)
+        : IServiceScopeFactory, IServiceScope, IServiceProvider
+    {
+        public IServiceScope CreateScope() => this;
+
+        public IServiceProvider ServiceProvider => this;
+
+        public object? GetService(Type serviceType)
+            => serviceType == typeof(IRoleStore) ? store : null;
+
+        public void Dispose()
+        {
+        }
     }
 
     private WorkspaceResource WorkspaceReader(IWorkspaceLifecycleService lifecycle)
@@ -395,22 +496,37 @@ public sealed class McpAuthorizationTests
         return lifecycle;
     }
 
-    private static DefaultHttpContext Principal(string userId, string? scope = null)
+    private static DefaultHttpContext Principal(
+        string userId,
+        string? scope = null,
+        string? tenantId = null,
+        string scopeClaimType = "groups")
     {
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, userId),
-            new(ClaimTypes.Name, userId)
+            new(ClaimTypes.Name, userId),
+            new("roles", "operator")
         };
         if (scope is not null)
         {
-            claims.Add(new Claim("groups", scope));
+            claims.Add(new Claim(scopeClaimType, scope));
         }
 
-        return new DefaultHttpContext
+        var context = new DefaultHttpContext
         {
             User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"))
         };
+        if (tenantId is not null)
+        {
+            var tenant = new RequestTenantContext();
+            tenant.Set(tenantId, TenantContextSource.Claim);
+            context.RequestServices = new ServiceCollection()
+                .AddSingleton<ITenantContext>(tenant)
+                .BuildServiceProvider();
+        }
+
+        return context;
     }
 
     [UnitTest]
