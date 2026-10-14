@@ -133,4 +133,150 @@ public sealed class BedrockChatClientAdapterTests
         await act.Should().ThrowAsync<NotSupportedException>().WithMessage("*JSON values*");
         await runtime.DidNotReceive().ConverseAsync(Arg.Any<ConverseRequest>(), Arg.Any<CancellationToken>());
     }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ToolResults_ParallelCalls_AreOneUserResponseWithOriginalIdsAndPayloads(bool streaming)
+    {
+        ChatMessage[] messages =
+        [
+            new(ChatRole.User, "Describe both layers."),
+            new(ChatRole.Assistant,
+            [
+                new FunctionCallContent("call-a", "describe_layer", new Dictionary<string, object?> { ["layer"] = 1 }),
+                new FunctionCallContent("call-b", "describe_layer", new Dictionary<string, object?> { ["layer"] = 2 })
+            ]),
+            new(ChatRole.Tool, [new FunctionResultContent("call-a", "first result")]),
+            new(ChatRole.Tool, [new FunctionResultContent("call-b", "second result")])
+        ];
+
+        var mapped = await CaptureMessagesAsync(messages, streaming);
+
+        mapped.Should().HaveCount(3);
+        mapped[1].Content.Select(block => block.ToolUse.ToolUseId).Should().Equal("call-a", "call-b");
+        mapped[2].Role.Should().Be(ConversationRole.User);
+        mapped[2].Content.Select(block => block.ToolResult.ToolUseId).Should().Equal("call-a", "call-b");
+        mapped[2].Content.Select(block => block.ToolResult.Content.Single().Text)
+            .Should().Equal("first result", "second result");
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ToolResults_MultipleBlocksAndText_PreserveContentOrder(bool streaming)
+    {
+        ChatMessage[] messages =
+        [
+            new(ChatRole.Tool,
+            [
+                new TextContent("before"),
+                new FunctionResultContent("call-b", "second result"),
+                new TextContent("between"),
+                new FunctionResultContent("call-a", "first result")
+            ]),
+            new(ChatRole.Tool, [new FunctionResultContent("call-c", "third result"), new TextContent("after")])
+        ];
+
+        var mapped = await CaptureMessagesAsync(messages, streaming);
+
+        var content = mapped.Should().ContainSingle().Which.Content;
+        content.Should().HaveCount(6);
+        content.Select(block => block.ToolResult?.ToolUseId ?? block.Text)
+            .Should().Equal("before", "call-b", "between", "call-a", "call-c", "after");
+        content.Where(block => block.ToolResult is not null).Select(block => block.ToolResult.Content.Single().Text)
+            .Should().Equal("second result", "first result", "third result");
+    }
+
+    [UnitTheory]
+    [InlineData(false, "user")]
+    [InlineData(true, "user")]
+    [InlineData(false, "assistant")]
+    [InlineData(true, "assistant")]
+    [InlineData(false, "system")]
+    [InlineData(true, "system")]
+    public async Task ToolResults_NonToolBoundary_DoesNotJoinSeparateTurns(bool streaming, string boundaryRole)
+    {
+        ChatMessage[] messages =
+        [
+            new(ChatRole.Tool, [new FunctionResultContent("call-a", "first result")]),
+            new(new ChatRole(boundaryRole), "separate turn"),
+            new(ChatRole.Tool, [new FunctionResultContent("call-b", "second result")])
+        ];
+
+        var mapped = await CaptureMessagesAsync(messages, streaming);
+
+        mapped.Should().HaveCount(boundaryRole == "system" ? 2 : 3);
+        mapped[0].Content.Should().ContainSingle().Which.ToolResult.ToolUseId.Should().Be("call-a");
+        mapped[^1].Content.Should().ContainSingle().Which.ToolResult.ToolUseId.Should().Be("call-b");
+        if (boundaryRole != "system")
+        {
+            mapped[1].Role.Should().Be(boundaryRole == "assistant" ? ConversationRole.Assistant : ConversationRole.User);
+            mapped[1].Content.Should().ContainSingle().Which.Text.Should().Be("separate turn");
+        }
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OrdinaryUserMessages_AreNotCoalescedWithToolResults(bool streaming)
+    {
+        ChatMessage[] messages =
+        [
+            new(ChatRole.User, "first user message"),
+            new(ChatRole.User, "second user message"),
+            new(ChatRole.Tool, [new FunctionResultContent("call-a", "result")])
+        ];
+
+        var mapped = await CaptureMessagesAsync(messages, streaming);
+
+        mapped.Should().HaveCount(3);
+        mapped[0].Content.Should().ContainSingle().Which.Text.Should().Be("first user message");
+        mapped[1].Content.Should().ContainSingle().Which.Text.Should().Be("second user message");
+        mapped[2].Content.Should().ContainSingle().Which.ToolResult.ToolUseId.Should().Be("call-a");
+    }
+
+    private static async Task<List<Message>> CaptureMessagesAsync(ChatMessage[] messages, bool streaming)
+    {
+        var runtime = Substitute.For<IAmazonBedrockRuntime>();
+        List<Message>? captured = null;
+        using var client = new BedrockChatClientAdapter(runtime, "test-model", ownsRuntime: false);
+        if (streaming)
+        {
+            runtime.ConverseStreamAsync(Arg.Any<ConverseStreamRequest>(), Arg.Any<CancellationToken>())
+                .Returns(call =>
+                {
+                    captured = call.Arg<ConverseStreamRequest>().Messages;
+                    return Task.FromException<ConverseStreamResponse>(new InvalidOperationException("provider reached"));
+                });
+            var act = async () =>
+            {
+                await foreach (var _ in client.GetStreamingResponseAsync(messages))
+                {
+                    // Capture the actual provider request without opening a remote stream.
+                }
+            };
+            await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("provider reached");
+        }
+        else
+        {
+            runtime.ConverseAsync(Arg.Any<ConverseRequest>(), Arg.Any<CancellationToken>())
+                .Returns(call =>
+                {
+                    captured = call.Arg<ConverseRequest>().Messages;
+                    return Task.FromResult(new ConverseResponse
+                    {
+                        Output = new ConverseOutput
+                        {
+                            Message = new Message { Role = ConversationRole.Assistant, Content = [new ContentBlock { Text = "Done" }] }
+                        }
+                    });
+                });
+            (await client.GetResponseAsync(messages)).Text.Should().Be("Done");
+        }
+
+        captured.Should().NotBeNull();
+        return captured!;
+    }
+
 }
