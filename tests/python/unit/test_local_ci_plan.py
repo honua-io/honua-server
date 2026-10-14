@@ -17,7 +17,8 @@ class LocalPlanTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.scripts = self.root / "scripts/ci"
         (self.scripts / "lib").mkdir(parents=True)
-        for name in ("pre-pr-check.sh", "classify-pre-pr-changes.sh", "lib/jq-cr-safe.sh"):
+        for name in ("pre-pr-check.sh", "classify-pre-pr-changes.sh", "pre-pr-contract-guard.py",
+                     "pre-pr-dependency-plan.py", "lib/jq-cr-safe.sh"):
             shutil.copy2(ROOT / "scripts/ci" / name, self.scripts / name)
         # Reuse the actual reviewed Fast policy, without evaluating/building fake projects.
         self.fast_projects = sorted(p for p, entry in json.loads(
