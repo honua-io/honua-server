@@ -329,7 +329,10 @@ internal static class OperationsEndpoints
             {
                 var live = await executor.GetStatusAsync(handle, cancellationToken).ConfigureAwait(false);
                 return Results.Json(
-                    ApiResponse<OperationStatus>.CreateSuccess(live),
+                    ApiResponse<OperationStatus>.CreateSuccess(live with
+                    {
+                        RootProvisioningOperationId = handle.RootProvisioningOperationId,
+                    }),
                     OperationsJsonContext.Default.ApiResponseOperationStatus);
             }
         }
@@ -353,6 +356,7 @@ internal static class OperationsEndpoints
             Reason = handle.Reason,
             ResourceIds = handle.ResourceIds,
             EvidenceRefs = handle.EvidenceRefs,
+            RootProvisioningOperationId = handle.RootProvisioningOperationId,
         };
 
         return Results.Json(

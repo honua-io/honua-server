@@ -46,4 +46,11 @@ public sealed record CreateMetadataReleaseOperationRequest
 
     /// <summary>Correlation id propagated from upstream systems.</summary>
     public string? CorrelationId { get; init; }
+
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff
+    /// (<c>urn:honua:provisioning:</c> plus 32 lowercase hex digits).
+    /// Null when this release is not part of a federated handoff.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
 }

@@ -8867,7 +8867,7 @@
           "Observability"
         ],
         "summary": "Propose Ops Finding Action",
-        "description": "Route a finding's recommended fix through the operation-approval gateway. The server materializes the execution payload from the finding id, so no request body is accepted. Depending on gateway policy the action is either executed directly or raised as a proposal awaiting approval. Requires admin write access.",
+        "description": "Route a finding's recommended fix through the operation-approval gateway. The server materializes the execution payload from the finding id. An optional body may carry rootProvisioningOperationId from a verified DevOps handoff; an empty body remains valid. Depending on gateway policy the action is either executed directly or raised as a proposal awaiting approval. Requires admin write access.",
         "operationId": "proposeOpsFinding",
         "parameters": [
           {
@@ -8880,6 +8880,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservabilityOpsFindingProposeRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Proposal outcome.",
@@ -8890,6 +8900,9 @@
                 }
               }
             }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -28190,6 +28203,11 @@
           "correlationId": {
             "type": "string"
           },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff (urn:honua:provisioning: plus 32 lowercase hex digits). Null when the operation was not federated."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -28219,6 +28237,11 @@
         "properties": {
           "packageId": {
             "type": "string"
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff. Matches the top-level field on the operation."
           },
           "gitOperationId": {
             "type": "string"
@@ -34747,6 +34770,22 @@
             "type": "string",
             "nullable": true,
             "description": "Operator-facing message describing the outcome, when available."
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff. Null when the proposal was not federated."
+          }
+        }
+      },
+      "ObservabilityOpsFindingProposeRequest": {
+        "type": "object",
+        "description": "Optional body for proposing a finding action. An empty body remains valid.",
+        "properties": {
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff (urn:honua:provisioning: plus 32 lowercase hex digits)."
           }
         }
       },
@@ -35545,6 +35584,11 @@
             "type": "string",
             "nullable": true,
             "description": "Correlation id propagated from upstream systems."
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff (urn:honua:provisioning: plus 32 lowercase hex digits). Omit when the release is not federated."
           }
         }
       },
@@ -35679,6 +35723,11 @@
           "packageId": {
             "type": "string",
             "description": "Release package identifier."
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff. Matches the top-level field on the operation."
           },
           "gitOperationId": {
             "type": "string",
@@ -35855,6 +35904,11 @@
             "type": "string",
             "nullable": true,
             "description": "Upstream correlation identifier."
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff (urn:honua:provisioning: plus 32 lowercase hex digits). Null when the operation was not federated."
           },
           "createdAt": {
             "type": "string",

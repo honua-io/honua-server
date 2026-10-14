@@ -782,6 +782,13 @@ public sealed record MetadataReleaseContext
     public required string PackageId { get; init; }
 
     /// <summary>
+    /// Verified provisioning root from the DevOps handoff
+    /// (<c>urn:honua:provisioning:</c> plus 32 lowercase hex digits).
+    /// Null when this release is not part of a federated handoff.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
+
+    /// <summary>
     /// Git operation identifier that wrote the release package, if known.
     /// </summary>
     public string? GitOperationId { get; init; }
@@ -1103,6 +1110,13 @@ public sealed record WorkflowOperationRecord
     /// Metadata-release-specific desired state and rollback context.
     /// </summary>
     public MetadataReleaseContext? MetadataRelease { get; init; }
+
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff. This is the canonical field
+    /// on the workflow record. The same value is copied onto <see cref="MetadataRelease"/>
+    /// so a nested read cannot disagree with the record. Null when the operation was not federated.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
 
     /// <summary>
     /// Coordinated-release context for <see cref="WorkflowOperationKind.CoordinatedRelease"/> operations

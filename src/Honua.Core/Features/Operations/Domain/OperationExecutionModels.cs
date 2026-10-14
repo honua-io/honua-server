@@ -159,6 +159,13 @@ public sealed record OperationPolicyContext
 
     /// <summary>Normalized recognized OAuth scopes forming the invocation's upper bound.</summary>
     public IReadOnlyList<string> RecognizedScopes { get; init; } = [];
+
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff
+    /// (<c>urn:honua:provisioning:</c> plus 32 lowercase hex digits).
+    /// Null when this invocation is not part of a federated handoff.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
 }
 
 /// <summary>
@@ -270,6 +277,12 @@ public sealed record OperationHandle
 
     /// <summary>Durable evidence references associated with the invocation.</summary>
     public IReadOnlyList<string> EvidenceRefs { get; init; } = [];
+
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff. Stamped at acceptance and
+    /// preserved across actuation. Null when the invocation was not federated.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
 }
 
 /// <summary>
@@ -359,6 +372,12 @@ public sealed record OperationStatus
 
     /// <summary>Durable evidence references associated with the invocation.</summary>
     public IReadOnlyList<string> EvidenceRefs { get; init; } = [];
+
+    /// <summary>
+    /// Verified provisioning root copied from the durable <see cref="OperationHandle"/>.
+    /// Status reads do not invent a root the handle does not carry.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
 }
 
 /// <summary>
