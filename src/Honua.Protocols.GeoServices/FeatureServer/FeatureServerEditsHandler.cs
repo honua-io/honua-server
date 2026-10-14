@@ -1810,7 +1810,7 @@ internal sealed class FeatureServerEditsHandler(
                     ex);
             }
 
-            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometry, cancellationToken);
+            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(resource, geometry, cancellationToken);
             if (!geometryValidation.IsValid)
             {
                 var safeError = SanitizeEditErrorMessage(

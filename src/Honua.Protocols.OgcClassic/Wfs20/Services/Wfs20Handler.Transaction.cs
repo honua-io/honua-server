@@ -745,6 +745,7 @@ internal sealed partial class Wfs20Handler
             objectId: 0,
             payload.Geometry,
             payload.Attributes,
+            geometrySupplied: true,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -763,6 +764,7 @@ internal sealed partial class Wfs20Handler
             objectId,
             payload.Geometry,
             payload.Attributes,
+            geometrySupplied: true,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -787,6 +789,7 @@ internal sealed partial class Wfs20Handler
             existing.Id,
             changes.GeometrySpecified ? changes.Geometry : existing.Geometry,
             mergedAttributes.ToImmutable(),
+            geometrySupplied: changes.GeometrySpecified,
             cancellationToken).ConfigureAwait(false);
         return updated with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing) };
     }
@@ -797,10 +800,16 @@ internal sealed partial class Wfs20Handler
         long objectId,
         byte[]? geometry,
         ImmutableDictionary<string, object?> attributes,
+        bool geometrySupplied,
         CancellationToken cancellationToken)
     {
+        // Enforce the layer geometry type on every geometry the transaction supplies; an
+        // existing geometry carried through a property-only Update is not re-typed.
         var geometryValidation = await _mutationValidator.ValidateGeometryAsync(
             geometry,
+            geometrySupplied
+                ? FeatureMutationValidator.ResolveLayerGeometryType(resource)
+                : MetadataV2GeometryType.None,
             cancellationToken).ConfigureAwait(false);
         if (!geometryValidation.IsValid)
         {

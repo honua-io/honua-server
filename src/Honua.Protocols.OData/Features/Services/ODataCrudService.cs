@@ -201,7 +201,7 @@ internal sealed partial class ODataCrudService
             var srid = resource.ReadSrid() ?? 4326;
 
             // Parse and validate geometry if provided
-            var geometryResult = await ProcessGeometryAsync(payload.Geometry, srid, cancellationToken);
+            var geometryResult = await ProcessGeometryAsync(resource, payload.Geometry, srid, cancellationToken);
             if (!geometryResult.IsValid)
             {
                 return ODataCrudResult<Dictionary<string, object?>>.BadRequest(geometryResult.ErrorMessage!);
@@ -387,7 +387,7 @@ internal sealed partial class ODataCrudService
             byte[]? geometryBytes = replace ? null : existingFeatureValue.Geometry;
             if (payload.GeometrySpecified && payload.Geometry != null)
             {
-                var geometryResult = await ProcessGeometryAsync(payload.Geometry, srid, cancellationToken);
+                var geometryResult = await ProcessGeometryAsync(resource, payload.Geometry, srid, cancellationToken);
                 if (!geometryResult.IsValid)
                 {
                     return ODataCrudResult<Dictionary<string, object?>>.BadRequest(geometryResult.ErrorMessage!);
@@ -641,6 +641,7 @@ internal sealed partial class ODataCrudService
     /// Processes and validates geometry data from OData spatial payload.
     /// </summary>
     private async Task<GeometryProcessingResult> ProcessGeometryAsync(
+        MetadataV2Resource resource,
         ODataSpatialGeometry? geometry,
         int defaultSrid,
         CancellationToken cancellationToken)
@@ -670,7 +671,7 @@ internal sealed partial class ODataCrudService
             return GeometryProcessingResult.Valid(null);
         }
 
-        var geometryValidation = await _mutationValidator.ValidateGeometryAsync(conversion.Wkb, cancellationToken);
+        var geometryValidation = await _mutationValidator.ValidateGeometryAsync(resource, conversion.Wkb, cancellationToken);
         if (!geometryValidation.IsValid)
         {
             return GeometryProcessingResult.Invalid($"Invalid geometry: {geometryValidation.ErrorMessage}");
