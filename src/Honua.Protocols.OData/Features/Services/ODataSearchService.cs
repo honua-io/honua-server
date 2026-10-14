@@ -163,8 +163,19 @@ internal sealed partial class ODataSearchService
                         .Select(term => new FeatureSearchTerm(term.term, term.isNegated)).ToArray()).ToArray())
             };
 
-        // Storage handle is still int-keyed at the IFeatureReader boundary.
-        var result = await resolvedLayer.Reader.QueryAsync(resolvedLayer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
+        // Probe one row past the page so @odata.nextLink does not depend on TotalCount.
+        // The adapter already clamped $top, so the +1 is applied to the built query.
+        var pageLimit = query.Limit ?? top ?? 1000;
+        var executedQuery = pageLimit > 0 && pageLimit < int.MaxValue
+            ? query with { Limit = pageLimit + 1 }
+            : query;
+        var result = await resolvedLayer.Reader.QueryAsync(resolvedLayer.StorageLayerId, executedQuery, cancellationToken).ConfigureAwait(false);
+        var hasMoreResults = result.Items.Length > pageLimit;
+        if (hasMoreResults)
+        {
+            result = result with { Items = result.Items[..pageLimit] };
+        }
+
         // Some provider readers report only the current page size in TotalCount.
         // Resolve a requested total explicitly using the same search and filter predicates.
         var totalCount = count == true
@@ -239,11 +250,30 @@ internal sealed partial class ODataSearchService
             ? featuresData.Cast<object>().ToArray()
             : _queryService.ApplyFieldSelection(featuresData, select);
 
+        string? nextLink = null;
+        if (hasMoreResults &&
+            context is not null &&
+            ODataUtilityService.TryGetContinuationTop(top, result.Items.Length, out var continuationTop))
+        {
+            var nextSkip = ODataUtilityService.CalculateNextSkip(skip ?? 0, pageLimit);
+            nextLink = ODataUtilityService.GenerateNextLink(
+                context.Request,
+                nextSkip,
+                continuationTop,
+                filter,
+                select,
+                orderby,
+                count,
+                expand,
+                search: searchExpression);
+        }
+
         return new ODataSearchResult
         {
             Context = ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand),
             Count = totalCount,
-            Value = selected
+            Value = selected,
+            NextLink = nextLink
         };
     }
 

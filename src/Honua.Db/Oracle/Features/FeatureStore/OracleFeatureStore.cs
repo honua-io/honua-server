@@ -30,7 +30,7 @@ namespace Honua.Db.Oracle.Features.FeatureStore;
 /// <para>Layer/storage configuration flows through the Metadata v2 provider binding passed by
 /// <see cref="FeatureProviderQueryRouter"/>.</para>
 /// </remarks>
-internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider
+internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider, IDistinctFeatureReader
 {
     private static readonly FeatureProviderCapabilities _capabilities = new()
     {

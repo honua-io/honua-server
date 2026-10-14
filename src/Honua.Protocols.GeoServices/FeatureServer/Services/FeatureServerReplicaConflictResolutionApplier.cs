@@ -127,7 +127,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
         }
 
         var result = await _editsHandler
-            .HandleApplyEditsAsync(command.ServiceId, command.PublicLayerId, request, _editLimits, cancellationToken)
+            .HandleApplyEditsAsync(command.ServiceId, command.PublicLayerId, request, _editLimits, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         // Anything other than a successful applyEdits payload is an error result from the shared

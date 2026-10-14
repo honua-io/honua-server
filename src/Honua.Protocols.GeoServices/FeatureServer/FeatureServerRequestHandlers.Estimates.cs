@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -83,8 +84,20 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var estimates = await featureReader.GetEstimatesAsync(storageLayerId.Value, cancellationToken);
+        IFeatureReader featureReader;
+        EstimateResult estimates;
+        try
+        {
+            featureReader = await ResolveAnalyticsFeatureReaderAsync(
+                context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+            estimates = await featureReader.GetEstimatesAsync(storageLayerId.Value, cancellationToken);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "getEstimates is not supported by the configured feature provider for this layer.");
+        }
 
         var response = new GetEstimatesResponse
         {
@@ -169,7 +182,6 @@ internal static partial class FeatureServerEndpoints
         }
 
         var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, selectedLayers);
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var layerEstimates = new List<ServiceLayerEstimateInfo>(accessibleLayers.Length);
 
         foreach (var (publication, resource) in accessibleLayers)
@@ -179,7 +191,19 @@ internal static partial class FeatureServerEndpoints
                 continue;
             }
 
-            var estimates = await featureReader.GetEstimatesAsync(layerIds.StorageLayerId, cancellationToken);
+            EstimateResult estimates;
+            try
+            {
+                var featureReader = await ResolveAnalyticsFeatureReaderAsync(
+                    context, snapshot, service, resource, publication, layerIds.StorageLayerId, cancellationToken).ConfigureAwait(false);
+                estimates = await featureReader.GetEstimatesAsync(layerIds.StorageLayerId, cancellationToken);
+            }
+            catch (NotSupportedException)
+            {
+                return StandardErrorHelpers.CreateNotImplemented(
+                    context,
+                    "getEstimates is not supported by the configured feature provider for this layer.");
+            }
             layerEstimates.Add(new ServiceLayerEstimateInfo
             {
                 Id = layerIds.PublicLayerId,

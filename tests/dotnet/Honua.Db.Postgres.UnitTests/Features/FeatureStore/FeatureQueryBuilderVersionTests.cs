@@ -94,6 +94,23 @@ public sealed class FeatureQueryBuilderVersionTests
     }
 
     [Fact]
+    public void BuildCountQuery_Distinct_CountsAttributeTuples()
+    {
+        var builder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ImmutableArray.Create("status")
+        };
+
+        var result = builder.BuildCountQuery(layerId: 7, query);
+
+        result.Sql.Should().Contain("SELECT COUNT(*) FROM (SELECT DISTINCT jsonb_build_object(");
+        result.Sql.Should().Contain("AS attributes FROM \"features\" WHERE layer_id = $1) AS distinct_values");
+        result.Sql.Should().NotContain("SELECT COUNT(*) FROM \"features\" WHERE");
+    }
+
+    [Fact]
     public void BuildObjectIdsQuery_BranchVersion_OverlaysVersionEdits()
     {
         var builder = CreateQueryBuilder();

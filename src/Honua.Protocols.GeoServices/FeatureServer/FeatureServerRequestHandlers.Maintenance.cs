@@ -3,6 +3,8 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
@@ -15,6 +17,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Licensing;
@@ -313,7 +316,7 @@ internal static partial class FeatureServerEndpoints
 
         var request = CreateAppendApplyEditsRequest(adds, updates, appendOptions.RollbackOnFailure);
         var result = await editsHandler.HandleApplyEditsAsync(
-            serviceId, layerId, request, limitsOptions.Value.Edits, cancellationToken);
+            serviceId, layerId, request, limitsOptions.Value.Edits, cancellationToken: cancellationToken);
 
         // Map ApplyEditsResponse to AppendResponse
         if (result is Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult &&
@@ -349,6 +352,11 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        if (!ApplyEditsIdempotency.TryResolveKey(context, out var calculateIdempotencyKey, out var calculateIdempotencyError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, calculateIdempotencyError!);
+        }
+
         var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
@@ -590,12 +598,18 @@ internal static partial class FeatureServerEndpoints
         var updatedCount = 0;
         var allSucceeded = true;
 
-        for (var offset = 0; offset < updates.Length; offset += batchSize)
+        for (int offset = 0, batchIndex = 0; offset < updates.Length; offset += batchSize, batchIndex++)
         {
             var batch = updates[offset..Math.Min(offset + batchSize, updates.Length)];
             var applyRequest = new ApplyEditsRequest { Updates = batch, RollbackOnFailure = true };
+            // A shared Idempotency-Key would make later batches replay batch 1 and skip the write.
+            // Derive a stable per-batch key so a retry replays each batch instead of the first one.
+            // With no header, suppress header reads so the batches do not independently re-read it.
+            var batchKey = calculateIdempotencyKey is null
+                ? new ApplyEditsIdempotencyChoice(null)
+                : new ApplyEditsIdempotencyChoice(DeriveCalculateBatchKey(calculateIdempotencyKey, batchIndex));
             var batchResult = await editsHandler.HandleApplyEditsAsync(
-                serviceId, layerId, applyRequest, editLimits, cancellationToken);
+                serviceId, layerId, applyRequest, editLimits, batchKey, cancellationToken);
 
             if (batchResult is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult ||
                 jsonResult.Value is null)
@@ -627,6 +641,18 @@ internal static partial class FeatureServerEndpoints
         };
 
         return Results.Json(calcResponse, FeatureServerJsonContext.Default.CalculateResponse, contentType: "application/json");
+    }
+
+    private static string DeriveCalculateBatchKey(string header, int batchIndex)
+    {
+        var suffix = ":batch" + batchIndex.ToString(CultureInfo.InvariantCulture);
+        var combined = header + suffix;
+        if (combined.Length <= ApplyEditsIdempotency.MaxKeyLength)
+        {
+            return combined;
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(combined))).ToLowerInvariant();
     }
 
     private static async Task<IResult> HandleQueryDomains(

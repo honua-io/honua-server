@@ -43,10 +43,21 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         var parameters = new List<object>();
         var paramIndex = 0;
 
-        var columnsExpr = BuildAttributeColumnsExpression(mapping, query);
+        var projectedAttributes = ResolveProjectedAttributeColumns(mapping, query);
+        var columnsExpr = string.Join(", ", projectedAttributes.Select(MySqlIdentifier.Quote));
 
-        sb.Append(CultureInfo.InvariantCulture,
-            $"SELECT {mapping.QuotedPrimaryKeyColumn}, {MySqlSpatialSql.AsWkb(mapping.QuotedGeometryColumn, _engineFlavor)} AS geometry");
+        if (query.Distinct)
+        {
+            // Distinct values are attribute tuples. Literal 0 keeps the reader contract
+            // (GetInt64 on column 0) without uniquifying every row via the primary key.
+            sb.Append(CultureInfo.InvariantCulture,
+                $"SELECT DISTINCT 0 AS {mapping.QuotedPrimaryKeyColumn}, NULL AS geometry");
+        }
+        else
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"SELECT {mapping.QuotedPrimaryKeyColumn}, {MySqlSpatialSql.AsWkb(mapping.QuotedGeometryColumn, _engineFlavor)} AS geometry");
+        }
 
         if (!string.IsNullOrEmpty(columnsExpr))
         {
@@ -57,7 +68,18 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
 
         AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
         AppendSpatialFilter(sb, mapping, query, ref paramIndex, parameters);
-        AppendOrderByClause(sb, mapping, query);
+        if (query.Distinct)
+        {
+            if (query.Limit.HasValue || query.Offset is > 0)
+            {
+                AppendDistinctOrderBy(sb, query, projectedAttributes);
+            }
+        }
+        else
+        {
+            AppendOrderByClause(sb, mapping, query);
+        }
+
         AppendPagination(sb, query, ref paramIndex, parameters);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
@@ -76,11 +98,27 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         var parameters = new List<object>();
         var paramIndex = 0;
 
+        if (!query.Distinct)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"SELECT COUNT(*) FROM {mapping.QualifiedTableSql} WHERE 1=1");
+
+            AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sb, mapping, query, ref paramIndex, parameters);
+
+            return new ParameterizedQuery(sb.ToString(), parameters);
+        }
+
+        var projectedAttributes = ResolveProjectedAttributeColumns(mapping, query);
+        var distinctColumns = projectedAttributes.Count == 0
+            ? "1"
+            : string.Join(", ", projectedAttributes.Select(MySqlIdentifier.Quote));
         sb.Append(CultureInfo.InvariantCulture,
-            $"SELECT COUNT(*) FROM {mapping.QualifiedTableSql} WHERE 1=1");
+            $"SELECT COUNT(*) FROM (SELECT DISTINCT {distinctColumns} FROM {mapping.QualifiedTableSql} WHERE 1=1");
 
         AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
         AppendSpatialFilter(sb, mapping, query, ref paramIndex, parameters);
+        sb.Append(") AS distinct_values");
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
@@ -202,31 +240,27 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
         return BuildSelectQuery(layerId, query, geometryStorageType);
     }
 
-    private static string BuildAttributeColumnsExpression(MySqlLayerMapping mapping, FeatureQuery query)
+    private static List<string> ResolveProjectedAttributeColumns(MySqlLayerMapping mapping, FeatureQuery query)
     {
         if (query.ExcludeAttributes)
         {
-            return string.Empty;
+            return [];
         }
 
         // Null/default OutFields projects every column. An explicit empty array projects
         // none. IsEmpty throws on a default ImmutableArray, so test IsDefault first.
-        IEnumerable<string> columns;
         if (!query.OutFields.HasValue || query.OutFields.Value.IsDefault)
         {
-            columns = mapping.AttributeColumns;
-        }
-        else if (query.OutFields.Value.IsEmpty)
-        {
-            return string.Empty;
-        }
-        else
-        {
-            var requested = new HashSet<string>(query.OutFields.Value, StringComparer.OrdinalIgnoreCase);
-            columns = mapping.AttributeColumns.Where(c => requested.Contains(c));
+            return mapping.AttributeColumns.ToList();
         }
 
-        return string.Join(", ", columns.Select(MySqlIdentifier.Quote));
+        if (query.OutFields.Value.IsEmpty)
+        {
+            return [];
+        }
+
+        var requested = new HashSet<string>(query.OutFields.Value, StringComparer.OrdinalIgnoreCase);
+        return mapping.AttributeColumns.Where(c => requested.Contains(c)).ToList();
     }
 
     private static void EnsureSridCompatibility(MySqlLayerMapping mapping, FeatureQuery query)

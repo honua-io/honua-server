@@ -248,6 +248,23 @@ internal sealed partial class FeatureServerQueryExecutor
         return reader is IPagedRawGeoServicesFeatureStore;
     }
 
+    public async Task<bool> SupportsDistinctValuesAsync(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderV2Async(
+            service,
+            resource,
+            publication,
+            storageLayerId,
+            FeatureProviderReadOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        return reader is IDistinctFeatureReader;
+    }
+
     public async Task<(ReadOnlyMemory<byte> Payload, int Count)> QueryRawGeoServicesPointJsonWithValidationAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
@@ -311,7 +328,8 @@ internal sealed partial class FeatureServerQueryExecutor
         QueryParameters queryParams,
         int? outputSrid,
         HttpContext context,
-        CancellationToken cancellationToken)
+        string? negotiatedFormat = null,
+        CancellationToken cancellationToken = default)
     {
         var streamingFeatureStore = await ResolveStreamingFeatureStoreV2Async(
             service,
@@ -329,6 +347,7 @@ internal sealed partial class FeatureServerQueryExecutor
             queryParams,
             outputSrid,
             context,
+            negotiatedFormat,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -340,6 +359,7 @@ internal sealed partial class FeatureServerQueryExecutor
         QueryParameters queryParams,
         int? outputSrid,
         HttpContext context,
+        string? negotiatedFormat,
         CancellationToken cancellationToken)
     {
         var preparedStream = PrepareFeatureStream(streamingFeatureStore, layerId, query, cancellationToken);
@@ -348,7 +368,7 @@ internal sealed partial class FeatureServerQueryExecutor
             ? null
             : [.. queryParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim())];
 
-        var format = queryParams.F ?? "json";
+        var format = negotiatedFormat ?? queryParams.F ?? "json";
         var contentType = format.ToLowerInvariant() switch
         {
             "geojson" => "application/geo+json",

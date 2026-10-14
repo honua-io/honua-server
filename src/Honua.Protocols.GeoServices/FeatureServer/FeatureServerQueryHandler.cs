@@ -764,13 +764,20 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                var count = await _queryExecutor.CountAsync(
+                var (count, countError) = await ResolveReturnCountAsync(
                     queryLayer.Service,
                     queryLayer.Resource,
                     queryLayer.Publication,
                     queryLayer.StorageLayerId,
                     query,
+                    validatedParams,
+                    queryLimits.MaxRecordCount,
                     cancellationToken).ConfigureAwait(false);
+                if (countError is not null)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, countError);
+                }
+
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "count", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
                 var safeCount = (int)Math.Min(count, int.MaxValue);
@@ -1104,15 +1111,23 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
 
                 // Providers that advertise distinct-before-pagination receive a one-row
-                // probe after the requested page. Other providers use a complete
-                // materialized fallback so OFFSET is never applied before de-duplication.
-                var providerAppliesDistinct = shouldApplyDistinct && _queryExecutor.SupportsDistinctValues;
+                // probe after the requested page. Other providers scan a bounded window
+                // and de-duplicate in memory. A scan that hits the cap is a client error,
+                // not an open-ended HasMoreResults loop.
+                var providerAppliesDistinct = shouldApplyDistinct && await _queryExecutor.SupportsDistinctValuesAsync(
+                    queryLayer.Service,
+                    queryLayer.Resource,
+                    queryLayer.Publication,
+                    queryLayer.StorageLayerId,
+                    cancellationToken).ConfigureAwait(false);
                 var distinctScanLimit = checked((query.Limit ?? queryLimits.MaxRecordCount) + 1);
-                var queryForExecution = shouldApplyDistinct
-                    ? providerAppliesDistinct
-                        ? query with { Limit = distinctScanLimit }
-                        : query with { Distinct = false, Limit = null, Offset = null }
-                    : query;
+                var distinctFallbackCap = DistinctFallbackScanCap(queryLimits.MaxRecordCount);
+                var queryForExecution = BuildDistinctExecutionQuery(
+                    query,
+                    shouldApplyDistinct,
+                    providerAppliesDistinct,
+                    distinctScanLimit,
+                    distinctFallbackCap);
                 var queryStopwatch = Stopwatch.StartNew();
                 // Pass the authenticated caller so plugin computed-field providers (#1562) can
                 // scope derived values per-actor. Projection inside the executor is a no-op unless
@@ -1131,6 +1146,11 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 if (shouldApplyDistinct)
                 {
+                    if (!providerAppliesDistinct && result.Items.Length > distinctFallbackCap)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(context, DistinctScanExceededMessage);
+                    }
+
                     var distinctScanTruncated = providerAppliesDistinct && result.Items.Length >= distinctScanLimit;
                     result = ApplyDistinctValues(result, outFields!);
                     result = ApplyPaginationWindow(
@@ -1207,6 +1227,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 validatedParams,
                 outputSrid,
                 context,
+                format,
                 cancellationToken);
 
             HonuaTelemetry.SetSuccess(featureActivity);
@@ -2013,13 +2034,20 @@ internal sealed partial class FeatureServerQueryHandler(
         if (validatedParams.ReturnCountOnly)
         {
             var stopwatch = Stopwatch.StartNew();
-            var count = await _queryExecutor.CountAsync(
+            var (count, countError) = await ResolveReturnCountAsync(
                 queryLayer.Service,
                 queryLayer.Resource,
                 queryLayer.Publication,
                 queryLayer.StorageLayerId,
                 query,
+                validatedParams,
+                queryLimits.MaxRecordCount,
                 cancellationToken).ConfigureAwait(false);
+            if (countError is not null)
+            {
+                throw new ArgumentException(countError);
+            }
+
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "count", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
             return new QueryResponse
@@ -2109,13 +2137,20 @@ internal sealed partial class FeatureServerQueryHandler(
         // Providers that advertise distinct-before-pagination receive a one-row probe
         // after the requested page. Other providers use a complete materialized fallback
         // so OFFSET is never applied before de-duplication.
-        var providerAppliesDistinct = shouldApplyDistinct && _queryExecutor.SupportsDistinctValues;
+        var providerAppliesDistinct = shouldApplyDistinct && await _queryExecutor.SupportsDistinctValuesAsync(
+            queryLayer.Service,
+            queryLayer.Resource,
+            queryLayer.Publication,
+            queryLayer.StorageLayerId,
+            cancellationToken).ConfigureAwait(false);
         var distinctScanLimit = checked((query.Limit ?? queryLimits.MaxRecordCount) + 1);
-        var queryForExecution = shouldApplyDistinct
-            ? providerAppliesDistinct
-                ? query with { Limit = distinctScanLimit }
-                : query with { Distinct = false, Limit = null, Offset = null }
-            : query;
+        var distinctFallbackCap = DistinctFallbackScanCap(queryLimits.MaxRecordCount);
+        var queryForExecution = BuildDistinctExecutionQuery(
+            query,
+            shouldApplyDistinct,
+            providerAppliesDistinct,
+            distinctScanLimit,
+            distinctFallbackCap);
         var queryStopwatch = Stopwatch.StartNew();
         QueryResult<Feature> queryResult = await _queryExecutor.QueryWithValidationAsync(
             queryLayer.Service,
@@ -2129,6 +2164,11 @@ internal sealed partial class FeatureServerQueryHandler(
 
         if (shouldApplyDistinct)
         {
+            if (!providerAppliesDistinct && queryResult.Items.Length > distinctFallbackCap)
+            {
+                throw new ArgumentException(DistinctScanExceededMessage);
+            }
+
             var distinctScanTruncated = providerAppliesDistinct && queryResult.Items.Length >= distinctScanLimit;
             queryResult = ApplyDistinctValues(queryResult, outFields!);
             queryResult = ApplyPaginationWindow(
@@ -3237,6 +3277,94 @@ internal sealed partial class FeatureServerQueryHandler(
             // edits). The router throws InvalidOperationException rather than NotSupportedException, so
             // the message-prefix check is required to keep these capability mismatches out of the 500 path.
             || exception.Message.Contains("does not support", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private const string DistinctScanExceededMessage =
+        "returnDistinctValues exceeds the bounded scan for this layer. Narrow the query and retry.";
+
+    private const string DistinctCountRequiresOutFieldsMessage =
+        "returnDistinctValues with returnCountOnly requires outFields for this layer.";
+
+    private static int DistinctFallbackScanCap(int maxRecordCount)
+        => checked(Math.Max(1, maxRecordCount) * 10);
+
+    private static FeatureQuery BuildDistinctExecutionQuery(
+        FeatureQuery query,
+        bool shouldApplyDistinct,
+        bool providerAppliesDistinct,
+        int distinctScanLimit,
+        int distinctFallbackCap)
+    {
+        if (!shouldApplyDistinct)
+        {
+            return query;
+        }
+
+        return providerAppliesDistinct
+            ? query with { Limit = distinctScanLimit }
+            : query with { Distinct = false, Limit = distinctFallbackCap + 1, Offset = null };
+    }
+
+    private async Task<(long Count, string? Error)> ResolveReturnCountAsync(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        FeatureQuery query,
+        QueryParameters validatedParams,
+        int maxRecordCount,
+        CancellationToken cancellationToken)
+    {
+        if (!validatedParams.ReturnDistinctValues)
+        {
+            var rawCount = await _queryExecutor.CountAsync(
+                service, resource, publication, storageLayerId, query, cancellationToken).ConfigureAwait(false);
+            return (rawCount, null);
+        }
+
+        if (await _queryExecutor.SupportsDistinctValuesAsync(
+                service, resource, publication, storageLayerId, cancellationToken).ConfigureAwait(false))
+        {
+            var distinctCount = await _queryExecutor.CountAsync(
+                service, resource, publication, storageLayerId, query, cancellationToken).ConfigureAwait(false);
+            return (distinctCount, null);
+        }
+
+        var outFields = ParseQueryOutFields(validatedParams.OutFields);
+        if (outFields is not { Length: > 0 })
+        {
+            return (0, DistinctCountRequiresOutFieldsMessage);
+        }
+
+        var scanCap = DistinctFallbackScanCap(maxRecordCount);
+        var scan = await _queryExecutor.QueryWithValidationAsync(
+            service,
+            resource,
+            publication,
+            storageLayerId,
+            query with { Distinct = false, Limit = scanCap + 1, Offset = null },
+            cancellationToken).ConfigureAwait(false);
+        if (scan.Items.Length > scanCap)
+        {
+            return (0, DistinctScanExceededMessage);
+        }
+
+        return (ApplyDistinctValues(scan, outFields).Items.Length, null);
+    }
+
+    private static string[]? ParseQueryOutFields(string? outFields)
+    {
+        if (string.IsNullOrEmpty(outFields))
+        {
+            return null;
+        }
+
+        var parsed = outFields
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(field => field.Trim())
+            .Where(field => field.Length > 0)
+            .ToArray();
+        return parsed.Length == 0 ? null : parsed;
     }
 
     private static QueryResult<Feature> ApplyDistinctValues(QueryResult<Feature> result, string[] outFields)

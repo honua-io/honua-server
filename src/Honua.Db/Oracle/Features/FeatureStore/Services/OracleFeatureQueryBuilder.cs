@@ -43,12 +43,23 @@ internal static partial class OracleFeatureQueryBuilder
         var sb = new StringBuilder();
         var parameters = new List<object>();
         var resolveColumnName = CreateColumnNameResolver(mapping, attributeColumns);
+        var projectedAttributes = ResolveProjectedAttributeColumns(mapping, query, attributeColumns);
 
-        sb.Append("SELECT ").Append(mapping.QuotedPrimaryKeyColumn).Append(" AS \"__objectid\"");
+        if (query.Distinct)
+        {
+            // Distinct values are attribute tuples. A real primary key or geometry would
+            // make every row unique. Literal 0 keeps the reader contract (non-null id)
+            // without uniquifying the DISTINCT projection.
+            sb.Append("SELECT DISTINCT 0 AS \"__objectid\", CAST(NULL AS BLOB) AS \"__geometry\"");
+            AppendQuotedAttributeColumns(sb, projectedAttributes);
+        }
+        else
+        {
+            sb.Append("SELECT ").Append(mapping.QuotedPrimaryKeyColumn).Append(" AS \"__objectid\"");
 
-        sb.Append(", ").Append(BuildGeometryWkbExpression(mapping)).Append(" AS \"__geometry\"");
-
-        AppendAttributeColumns(sb, mapping, query, attributeColumns);
+            sb.Append(", ").Append(BuildGeometryWkbExpression(mapping)).Append(" AS \"__geometry\"");
+            AppendQuotedAttributeColumns(sb, projectedAttributes);
+        }
 
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
@@ -56,8 +67,19 @@ internal static partial class OracleFeatureQueryBuilder
         AppendWhereClause(sb, query, parameters, resolveColumnName);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
-        AppendOrderByClause(sb, query, resolveColumnName);
-        AppendPagination(sb, mapping, query, parameters);
+        if (query.Distinct)
+        {
+            if (IsPaging(query))
+            {
+                AppendDistinctOrderBy(sb, query, projectedAttributes, resolveColumnName);
+            }
+        }
+        else
+        {
+            AppendOrderByClause(sb, query, resolveColumnName);
+        }
+
+        AppendPagination(sb, mapping, query, parameters, suppressPrimaryKeyTiebreaker: query.Distinct);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
@@ -78,12 +100,38 @@ internal static partial class OracleFeatureQueryBuilder
         var parameters = new List<object>();
         var resolveColumnName = CreateColumnNameResolver(mapping, attributeColumns);
 
-        sb.Append("SELECT COUNT(*) FROM ").Append(mapping.QuotedTableReference);
+        if (!query.Distinct)
+        {
+            sb.Append("SELECT COUNT(*) FROM ").Append(mapping.QuotedTableReference);
+            sb.Append(" WHERE 1=1");
+
+            AppendWhereClause(sb, query, parameters, resolveColumnName);
+            AppendObjectIdsFilter(sb, mapping, query, parameters);
+            AppendSpatialFilter(sb, mapping, query, parameters);
+
+            return new ParameterizedQuery(sb.ToString(), parameters);
+        }
+
+        var projectedAttributes = attributeColumns is null
+            ? []
+            : ResolveProjectedAttributeColumns(mapping, query, attributeColumns);
+        sb.Append("SELECT COUNT(*) FROM (SELECT DISTINCT ");
+        if (projectedAttributes.Count == 0)
+        {
+            sb.Append('1');
+        }
+        else
+        {
+            sb.Append(string.Join(", ", projectedAttributes.Select(OracleIdentifier.QuoteAttribute)));
+        }
+
+        sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
         AppendWhereClause(sb, query, parameters, resolveColumnName);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
+        sb.Append(") distinct_values");
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
@@ -209,15 +257,14 @@ internal static partial class OracleFeatureQueryBuilder
         return $"SDO_UTIL.TO_WKBGEOMETRY({mapping.QuotedGeometryColumn})";
     }
 
-    private static void AppendAttributeColumns(
-        StringBuilder sb,
+    private static List<string> ResolveProjectedAttributeColumns(
         OracleLayerMapping mapping,
         FeatureQuery query,
         IReadOnlyList<string> attributeColumns)
     {
         if (query.ExcludeAttributes || attributeColumns.Count == 0)
         {
-            return;
+            return [];
         }
 
         // Null/default OutFields projects every column. An explicit empty array projects
@@ -228,7 +275,7 @@ internal static partial class OracleFeatureQueryBuilder
             var requestedOutFields = query.OutFields.Value;
             if (requestedOutFields.IsEmpty)
             {
-                return;
+                return [];
             }
 
             var resolveColumnName = CreateColumnNameResolver(
@@ -241,7 +288,12 @@ internal static partial class OracleFeatureQueryBuilder
             columns = attributeColumns.Where(c => requested.Contains(c));
         }
 
-        foreach (var column in columns)
+        return columns.ToList();
+    }
+
+    private static void AppendQuotedAttributeColumns(StringBuilder sb, IReadOnlyList<string> projectedAttributes)
+    {
+        foreach (var column in projectedAttributes)
         {
             sb.Append(", ").Append(OracleIdentifier.QuoteAttribute(column));
         }
@@ -483,18 +535,97 @@ internal static partial class OracleFeatureQueryBuilder
         sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));
     }
 
-    private static void AppendPagination(StringBuilder sb, OracleLayerMapping mapping, FeatureQuery query, List<object> parameters)
+    private static bool IsPaging(FeatureQuery query)
+        => query.Limit.HasValue || query.Offset is > 0;
+
+    private static bool OrderIncludesColumn(FeatureQuery query, string column, Func<string, string> resolveColumnName)
     {
-        if (!query.Limit.HasValue && (!query.Offset.HasValue || query.Offset.Value <= 0))
+        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        foreach (var orderBy in query.OrderBy.Value)
+        {
+            if (string.Equals(orderBy.Field, column, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(resolveColumnName(orderBy.Field), column, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Orders a DISTINCT projection by columns that appear in the select list. Oracle
+    /// rejects ORDER BY expressions outside that list, and the primary key is omitted
+    /// so it cannot uniquify every distinct tuple.
+    /// </summary>
+    private static void AppendDistinctOrderBy(
+        StringBuilder sb,
+        FeatureQuery query,
+        IReadOnlyList<string> projectedAttributes,
+        Func<string, string> resolveColumnName)
+    {
+        var clauses = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (query.OrderBy.HasValue && !query.OrderBy.Value.IsDefaultOrEmpty)
+        {
+            foreach (var orderBy in query.OrderBy.Value)
+            {
+                var resolved = resolveColumnName(orderBy.Field);
+                var match = projectedAttributes.FirstOrDefault(column =>
+                    string.Equals(column, resolved, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(column, orderBy.Field, StringComparison.OrdinalIgnoreCase));
+                if (match is null || !seen.Add(match))
+                {
+                    continue;
+                }
+
+                var direction = orderBy.Ascending ? "ASC" : "DESC";
+                clauses.Add($"{OracleIdentifier.QuoteAttribute(match)} {direction}");
+            }
+        }
+
+        foreach (var column in projectedAttributes)
+        {
+            if (seen.Add(column))
+            {
+                clauses.Add($"{OracleIdentifier.QuoteAttribute(column)} ASC");
+            }
+        }
+
+        sb.Append(" ORDER BY ");
+        sb.Append(clauses.Count == 0 ? "\"__objectid\"" : string.Join(", ", clauses));
+    }
+
+    private static void AppendPagination(
+        StringBuilder sb,
+        OracleLayerMapping mapping,
+        FeatureQuery query,
+        List<object> parameters,
+        bool suppressPrimaryKeyTiebreaker = false)
+    {
+        if (!IsPaging(query))
         {
             return;
         }
 
-        // Oracle 12c+ OFFSET / FETCH NEXT requires a deterministic ORDER BY for stable paging.
-        // Fall back to the primary key when the caller did not supply one.
-        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+        // Oracle 12c+ OFFSET / FETCH NEXT requires a deterministic ORDER BY. A non-unique
+        // caller ORDER BY can still skip or duplicate rows, so append the primary key unless
+        // it is already present. Distinct projections order their selected columns instead:
+        // the key is not in that select list.
+        if (!suppressPrimaryKeyTiebreaker)
         {
-            sb.Append(" ORDER BY ").Append(mapping.QuotedPrimaryKeyColumn);
+            if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+            {
+                sb.Append(" ORDER BY ").Append(mapping.QuotedPrimaryKeyColumn);
+            }
+            else if (!OrderIncludesColumn(query, mapping.PrimaryKeyColumn, requested => requested))
+            {
+                sb.Append(", ").Append(mapping.QuotedPrimaryKeyColumn).Append(" ASC");
+            }
         }
 
         var offset = query.Offset.GetValueOrDefault(0);

@@ -68,6 +68,7 @@ internal sealed class FeatureServerEditsHandler(
         int layerId,
         ApplyEditsRequest request,
         Honua.Core.Configuration.EditLimits editLimits,
+        ApplyEditsIdempotencyChoice? idempotencyOverride = null,
         CancellationToken cancellationToken = default)
     {
         var httpContext = _httpContextAccessor.HttpContext!;
@@ -85,7 +86,13 @@ internal sealed class FeatureServerEditsHandler(
 
         // Server-side at-most-once (#2250): validate the optional Idempotency-Key header up front so a
         // malformed header fails fast with a 400 before any edit work, rather than being silently ignored.
-        if (!ApplyEditsIdempotency.TryResolveKey(httpContext, out var idempotencyKey, out var idempotencyError))
+        // An explicit override (calculate batches) does not re-read the shared header.
+        string? idempotencyKey;
+        if (idempotencyOverride is { } idempotencyChoice)
+        {
+            idempotencyKey = idempotencyChoice.Key;
+        }
+        else if (!ApplyEditsIdempotency.TryResolveKey(httpContext, out idempotencyKey, out var idempotencyError))
         {
             return StandardErrorHelpers.CreateBadRequest(httpContext, idempotencyError!);
         }

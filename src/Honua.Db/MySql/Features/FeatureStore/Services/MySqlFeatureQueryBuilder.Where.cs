@@ -101,6 +101,15 @@ internal sealed partial class MySqlFeatureQueryBuilder
             }
 
             sb.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", clauses)}");
+
+            // A non-unique caller ORDER BY still lets LIMIT/OFFSET skip or repeat rows.
+            // Append the primary key unless the caller already ordered by it. Distinct
+            // selects do not call this method: the key is not in that projection.
+            if ((query.Limit.HasValue || query.Offset is > 0) && !OrderIncludesColumn(query, mapping.PrimaryKeyColumn))
+            {
+                sb.Append(CultureInfo.InvariantCulture, $", {mapping.QuotedPrimaryKeyColumn} ASC");
+            }
+
             return;
         }
 
@@ -116,6 +125,67 @@ internal sealed partial class MySqlFeatureQueryBuilder
             sb.Append(CultureInfo.InvariantCulture,
                 $" ORDER BY {mapping.QuotedPrimaryKeyColumn} ASC");
         }
+    }
+
+    private static bool OrderIncludesColumn(FeatureQuery query, string column)
+    {
+        if (query.OrderBy is not { IsDefaultOrEmpty: false } orderBy)
+        {
+            return false;
+        }
+
+        foreach (var clause in orderBy)
+        {
+            if (string.Equals(clause.Field, column, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Orders a DISTINCT projection by columns that appear in the select list. MySQL
+    /// rejects ORDER BY expressions outside that list, and the primary key is omitted
+    /// so it cannot uniquify every distinct tuple.
+    /// </summary>
+    private static void AppendDistinctOrderBy(StringBuilder sb, FeatureQuery query, IReadOnlyList<string> projectedAttributes)
+    {
+        var clauses = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (query.OrderBy is { IsDefaultOrEmpty: false } orderBy)
+        {
+            foreach (var clause in orderBy)
+            {
+                var match = projectedAttributes.FirstOrDefault(column =>
+                    string.Equals(column, clause.Field, StringComparison.OrdinalIgnoreCase));
+                if (match is null || !seen.Add(match))
+                {
+                    continue;
+                }
+
+                MySqlIdentifier.ValidateAttributeName(match);
+                var direction = clause.Ascending ? "ASC" : "DESC";
+                clauses.Add($"{MySqlIdentifier.Quote(match)} {direction}");
+            }
+        }
+
+        foreach (var column in projectedAttributes)
+        {
+            if (!seen.Add(column))
+            {
+                continue;
+            }
+
+            MySqlIdentifier.ValidateAttributeName(column);
+            clauses.Add($"{MySqlIdentifier.Quote(column)} ASC");
+        }
+
+        sb.Append(" ORDER BY ");
+        sb.Append(clauses.Count == 0
+            ? "1"
+            : string.Join(", ", clauses));
     }
 
     private static void AppendPagination(

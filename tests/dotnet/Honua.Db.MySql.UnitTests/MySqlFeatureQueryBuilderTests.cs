@@ -139,10 +139,75 @@ public class MySqlFeatureQueryBuilderTests
 
         var result = _builder.BuildSelectQuery(LayerId, query);
 
+        Assert.Contains("ORDER BY `id` ASC", result.Sql, StringComparison.Ordinal);
         Assert.Contains("LIMIT @p0", result.Sql, StringComparison.Ordinal);
         Assert.Contains("OFFSET @p1", result.Sql, StringComparison.Ordinal);
         Assert.Equal(10, result.WhereParameters[0]);
         Assert.Equal(20, result.WhereParameters[1]);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_PagedOrderBy_AppendsPrimaryKeyTiebreaker()
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Desc("name")),
+            Limit = 10
+        };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains("ORDER BY `name` DESC, `id` ASC", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_OrderByPrimaryKey_DoesNotDuplicateTiebreaker()
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc("id")),
+            Limit = 10
+        };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains("ORDER BY `id` ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("`id` ASC, `id` ASC", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_Distinct_ProjectsAttributeTuplesAndOrdersThemWhenPaging()
+    {
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ImmutableArray.Create("type"),
+            Limit = 4
+        };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        Assert.Contains("SELECT DISTINCT 0 AS `id`, NULL AS geometry, `type`", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY `type` ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ORDER BY `id`", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildCountQuery_Distinct_CountsProjectedTuples()
+    {
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ImmutableArray.Create("name")
+        };
+
+        var result = _builder.BuildCountQuery(LayerId, query);
+
+        Assert.Contains("SELECT COUNT(*) FROM (SELECT DISTINCT `name` FROM `honua`.`parcels` WHERE 1=1) AS distinct_values", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -1147,10 +1212,10 @@ public class MySqlFeatureQueryBuilderTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildSelectQuery_WithCallerOrderBy_DoesNotAppendPrimaryKey()
+    public void BuildSelectQuery_WithCallerOrderBy_AppendsPrimaryKeyTiebreakerWhenPaging()
     {
-        // Caller-supplied OrderBy is honored as-is — appending the primary key would change
-        // tie-breaking semantics the caller didn't ask for.
+        // A non-unique caller ORDER BY is kept, and the primary key is appended when the
+        // statement pages. Without that tiebreaker, LIMIT/OFFSET can skip or repeat rows.
         var query = new FeatureQuery
         {
             Limit = 10,
@@ -1159,8 +1224,7 @@ public class MySqlFeatureQueryBuilderTests
 
         var result = _builder.BuildSelectQuery(LayerId, query);
 
-        Assert.Contains("ORDER BY `name` ASC", result.Sql, StringComparison.Ordinal);
-        Assert.DoesNotContain("`id` ASC", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY `name` ASC, `id` ASC", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
