@@ -169,7 +169,9 @@ internal sealed partial class StreamingFileImportService
                         continue;
                     }
 
-                    if (format != SupportedFileFormat.FileGdb && feature.Geometry != null)
+                    // FileGDB included: the resolved/explicit source SRID must win over whatever the
+                    // reader's geometry factory carried (#6114).
+                    if (feature.Geometry != null)
                     {
                         feature.Geometry.SRID = sourceSrid;
                     }

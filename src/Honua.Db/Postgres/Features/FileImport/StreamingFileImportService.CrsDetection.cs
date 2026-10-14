@@ -39,7 +39,7 @@ internal sealed partial class StreamingFileImportService
                 SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
                 SupportedFileFormat.GeoPackage => await DetectGeoPackageSridAsync(stream, cancellationToken),
                 SupportedFileFormat.FlatGeobuf => await DetectFlatGeobufCrsAsync(stream, cancellationToken),
-                SupportedFileFormat.FileGdb => null, // CRS detected during preparation via FileGdbReader.DetectSrid
+                SupportedFileFormat.FileGdb => null, // CRS resolved during preparation via ResolveFileGdbSridAsync
                 _ => null
             };
         }
@@ -56,6 +56,54 @@ internal sealed partial class StreamingFileImportService
             if (stream.CanSeek)
                 stream.Position = 0;
         }
+    }
+
+    /// <summary>
+    /// Resolves the source SRID of discovered FileGDB feature classes. A layer whose WKT carries
+    /// an EPSG authority (or a plain WGS84/NAD83 geographic name) already has an SRID; otherwise the
+    /// layer's ESRI WKT is resolved through <see cref="ICrsDetectionService"/> exactly like a
+    /// shapefile <c>.prj</c> sidecar (ESRI projected-name table, then spatial_ref_sys WKT match).
+    /// ArcGIS writes ESRI WKT1 without AUTHORITY nodes for every State Plane / UTM / Web Mercator
+    /// class, so skipping this step silently stored projected coordinates as EPSG:4326 (#6114).
+    /// Returns null when nothing resolves so the caller reports <c>SourceSridRequired</c>.
+    /// </summary>
+    private async Task<int?> ResolveFileGdbSridAsync(
+        IReadOnlyList<Honua.Core.Features.FileImport.Services.FileGdb.FileGdbReader.FileGdbLayerInfo> layers,
+        CancellationToken cancellationToken)
+    {
+        for (var i = 0; i < layers.Count; i++)
+        {
+            if (layers[i].Srid > 0)
+            {
+                return layers[i].Srid;
+            }
+        }
+
+        for (var i = 0; i < layers.Count; i++)
+        {
+            var wkt = layers[i].SpatialReferenceWkt;
+            if (string.IsNullOrWhiteSpace(wkt))
+            {
+                continue;
+            }
+
+            try
+            {
+                var resolved = await _crsDetectionService.DetectFromPrjAsync(wkt, cancellationToken);
+                if (resolved is > 0)
+                {
+                    return resolved;
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+            {
+                // Best-effort like every other format's CRS detection: an unresolvable WKT falls
+                // through to an explicit SourceSrid or a SourceSridRequired failure.
+                ImportLog.CrsDetectionFailed(_logger, ex, SupportedFileFormat.FileGdb);
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

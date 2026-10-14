@@ -67,6 +67,9 @@
     <None Update="Features/Import/Fixtures/LoadMode/*.geojson">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="Features/Import/Fixtures/FileGdb/*.gdb.zip">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
