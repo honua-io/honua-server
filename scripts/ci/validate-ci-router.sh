@@ -999,16 +999,16 @@ assert_excludes_shard \
   "streaming-test-excludes-data-enrichment-sharing" \
   "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamSnapshotEndpointsTests.cs" \
   "Server Features Data Enrichment and Capabilities"
-# Root Admin tests share the already-running Admin Operations shard after the
-# legacy Admin & Infrastructure runner exhausted its test budget.
+# Root Admin paths retain the Operations owner and both children of the
+# measured Runtime/Layer Publishing partition.
 assert_exact_shards \
   "root-admin-test-exact-owner" \
   "tests/dotnet/Honua.Server.Tests/Admin/LayerPublishingIntegrationTests.cs" \
-  '["Server Features Admin Operations Endpoints","Server Features Admin Runtime Operations"]'
+  '["Server Features Admin Layer Publishing","Server Features Admin Operations Endpoints","Server Features Admin Runtime Operations"]'
 assert_exact_shards \
   "root-admin-endpoint-test-exact-owner" \
   "tests/dotnet/Honua.Server.Tests/AdminEndpointTests.cs" \
-  '["Server Features Admin Operations Endpoints","Server Features Admin Runtime Operations"]'
+  '["Server Features Admin Layer Publishing","Server Features Admin Operations Endpoints","Server Features Admin Runtime Operations"]'
 assert_descriptor \
   "collaboration-source-retains-owner" \
   "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs" \
