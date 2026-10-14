@@ -135,4 +135,18 @@ public sealed class WorkspacePathSanitizerTests
         Assert.Contains("[REDACTED]", sanitized);
         Assert.Contains("running", sanitized);
     }
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("password=\"secret-suffix")]
+    [InlineData("password=\"prefix\\\"secret-suffix")]
+    [InlineData("password=\"secret-suffix\\")]
+    [InlineData("token='secret-suffix")]
+    public void SanitizeForClient_RedactsTruncatedQuotedCredentials(string message)
+    {
+        var sanitized = WorkspacePathSanitizer.SanitizeForClient(message, workspace: null);
+
+        Assert.DoesNotContain("secret-suffix", sanitized);
+        Assert.Contains("[REDACTED]", sanitized);
+    }
+
 }
