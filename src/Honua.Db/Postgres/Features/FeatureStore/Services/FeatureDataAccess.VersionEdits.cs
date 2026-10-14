@@ -29,7 +29,7 @@ internal sealed partial class FeatureDataAccess
     /// <summary>
     /// Applies an edit batch against a branch version overlay. Always transactional so the GUC
     /// (<c>SET LOCAL honua.gdb_version</c>) and the overlay upserts commit atomically. DEFAULT batches do
-    /// not reach here (see <see cref="ApplyEditsAsync"/>).
+    /// not reach here (see <see cref="ApplyEditsAsync(int, FeatureEditBatch, CancellationToken)"/>).
     /// </summary>
     private async Task<FeatureEditResult> ApplyVersionedEditsAsync(
         int layerId,
@@ -122,13 +122,10 @@ internal sealed partial class FeatureDataAccess
                     createResults.ToImmutable(), updateResults.ToImmutable(), deleteResults.ToImmutable());
             }
 
-            await CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
-
             var immutableCreateResults = createResults.ToImmutable();
             var immutableUpdateResults = updateResults.ToImmutable();
             var immutableDeleteResults = deleteResults.ToImmutable();
-
-            return FeatureEditResult.Success(
+            var versionedResult = FeatureEditResult.Success(
                 immutableCreateResults.Count(static r => r.IsSuccess),
                 immutableUpdateResults.Count(static r => r.IsSuccess),
                 immutableDeleteResults.Count(static r => r.IsSuccess),
@@ -137,6 +134,8 @@ internal sealed partial class FeatureDataAccess
                 immutableUpdateResults,
                 immutableDeleteResults,
                 wasRolledBack: false);
+            return await CommitStagedResultAsync(connection, transaction, versionedResult, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

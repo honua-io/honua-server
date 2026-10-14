@@ -154,6 +154,30 @@ public sealed class FeatureLockEnforcingFeatureWriter : IFeatureWriter
             : await transaction.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<FeatureEditApplication> ApplyEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        FeatureEditIdempotencyReceipt receipt,
+        CancellationToken cancellationToken = default)
+    {
+        var targets = CollectMutatedObjectIds(editBatch);
+        if (targets.Count > 0)
+        {
+            var conflict = await FindConflictAsync(layerId, targets, "edit", cancellationToken).ConfigureAwait(false);
+            if (conflict is not null)
+            {
+                return new FeatureEditApplication
+                {
+                    Result = BuildLockedRollback(editBatch, conflict),
+                    ReceiptDurable = false,
+                };
+            }
+        }
+
+        return await _inner.ApplyEditsAsync(layerId, editBatch, receipt, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Keeps lease enforcement on every transaction-bound layer batch.
     /// </summary>
