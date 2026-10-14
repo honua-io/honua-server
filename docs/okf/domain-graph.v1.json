@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:159bfbc5a73276e2faa75db3a97928be17ebac84aebde67ce9f9ca8bd61f46b1",
+  "bundleDigest": "sha256:f746001bc28ec80ac37698280e832fd88165a6c68e369e7f89b6eae2046db8ca",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1924,7 +1924,7 @@
     {
       "id": "get-started/quickstart",
       "path": "get-started/quickstart.md",
-      "documentDigest": "sha256:1c41ed6052a23b03161a43fd87473c531515d6de3445b81e8067ff2b733b0c26",
+      "documentDigest": "sha256:ab3a64cec44ac8845e5f5a47d94764b204dacebff9a34149488a2eb0f1f4eed2",
       "metadata": {
         "type": "guide",
         "title": "Quickstart: install, publish, and query",
@@ -5246,7 +5246,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:00c52e4a8bf6b9fd4b9dc1edb2de7326d6b9916e01eddb892626a930e0f5c081",
+      "documentDigest": "sha256:1c9f86efe7ed8103ab5c211789c4649bb4c0794764b21b918f8d5fc2f580a069",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -6640,7 +6640,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:34f8bbdb08ae1d7cf4ac58347085786cb15a31125eb88c81dba5b6712d888be9",
+      "documentDigest": "sha256:c8693e34303a5f3c33c0f6f521dc6968955c80d4a777666f40a2d8c3bc111f5f",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
@@ -6708,7 +6708,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-mapserver",
       "path": "okf/capabilities/serve.geoservices-mapserver.md",
-      "documentDigest": "sha256:5ab5e0887496bcb3ecc78ce41539493b6ae9ea5f6bcb653ab9eac0d9f295b050",
+      "documentDigest": "sha256:6457cfa7d84e73ea7f45ce70602cb5a17129493777fac4b82f8a2c314bfde33e",
       "metadata": {
         "type": "capability",
         "title": "MapServer",
@@ -6844,7 +6844,7 @@
     {
       "id": "okf/capabilities/serve.ogc-api-features",
       "path": "okf/capabilities/serve.ogc-api-features.md",
-      "documentDigest": "sha256:974d0f6367c9cc6f9adceba92d5c02ebf949534676969c3ed67993b87506cd77",
+      "documentDigest": "sha256:c935347766b566373bf7093958cc30837e8c1fca119224860076335723f9f6f1",
       "metadata": {
         "type": "capability",
         "title": "OGC API Features",

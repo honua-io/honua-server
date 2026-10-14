@@ -435,8 +435,10 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
 }
 
 if (connectedRedis is not null &&
-    !builder.Environment.IsDevelopment() &&
-    !builder.Environment.IsEnvironment("Test"))
+    OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+        builder.Environment.IsDevelopment(),
+        isTestEnvironment,
+        redisConnected: true))
 {
     // The operation-secret protector is intentionally backed by the same Redis authority
     // as the proposal/instance stores so every replay node shares a rotation-capable key ring.

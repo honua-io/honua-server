@@ -37,6 +37,14 @@ Make a directory and put this in it as `compose.yaml`:
 
 ```yaml
 services:
+  keyring-init:
+    image: redis:7.4-alpine
+    user: "0:0"
+    entrypoint: ["sh", "-c"]
+    command: ["chown 0:1001 /keyring/keyring.pfx && chmod 0640 /keyring/keyring.pfx"]
+    volumes:
+      - ./secrets:/keyring
+    restart: "no"
   honua:
     image: ${HONUA_IMAGE:?Set the server image}
     platform: linux/amd64
@@ -59,6 +67,8 @@ services:
       FileStorage__Provider: Local
       FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
     depends_on:
+      keyring-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -156,10 +166,10 @@ Keep `.env`. Losing it means losing the database.
 
 Production stores operation secrets in Redis. The server will not start until a certificate
 encrypts that key ring, so a copy of Redis does not hold both the secrets and the keys. This
-file is not a license. Generate a local RSA PKCS#12. The container runs as a different user
-than you, so the file is world-readable; the password still encrypts it.
-[honua-server#5439](https://github.com/honua-io/honua-server/issues/5439) tracks whether a
-root-owned `0640` mount can replace that mode.
+file is not a license. Generate a local RSA PKCS#12 and keep it private on the host. The
+published image runs as uid 1001 and gid 1001. Before the server starts, Compose runs a
+one-shot root step that sets the mount to owner root, group 1001, mode `0640`. That mode
+has no other-read. The export password still encrypts the PKCS#12.
 
 ```bash
 mkdir -p secrets
@@ -171,7 +181,7 @@ openssl pkcs12 -export \
   -inkey secrets/keyring.pem -in secrets/keyring.crt \
   -out secrets/keyring.pfx -passout "pass:${HONUA_KEYRING_PASSWORD}"
 rm -f secrets/keyring.pem secrets/keyring.crt
-chmod a+r secrets/keyring.pfx
+chmod 600 secrets/keyring.pfx
 ```
 
 On Windows, run that block in WSL or Git Bash. `New-SelfSignedCertificate` plus
@@ -299,8 +309,9 @@ a backup.
   switch to the Development environment or disable preflight to get past a
   startup failure; it is telling you something.
 - **`KeyRingCertificatePath` is required** — the key-ring PKCS#12 from step 2 is
-  missing. Re-run that `openssl` block so `secrets/keyring.pfx` exists before
-  `docker compose up`.
+  missing or not readable. Re-run that `openssl` block so `secrets/keyring.pfx`
+  exists, then `docker compose up` so the root-owned mode `0640` mount is applied
+  before the server starts. Do not grant other-read on the file.
 - **A pull fails** — these pins need no credentials, so it is network or proxy
   policy. The optional .NET client uses a different registry; see
   [registry clients](registry-clients.md) only if you need it.
