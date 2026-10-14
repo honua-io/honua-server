@@ -4,6 +4,8 @@
 
 Accepted (2026-07)
 
+Clarified (2026-10): the local developer loop below is separate from server job execution.
+
 ## Context
 
 Honua lets an operator register a **custom geoprocessing tool** — user-authored
@@ -72,6 +74,23 @@ Concretely:
 This does not narrow where *built-in* GP runs (ADR-0057 / ADR-0060 are
 unchanged); it constrains only the untrusted `custom-code` profile.
 
+### Trusted local authoring
+
+A developer may explicitly run their own trusted source or compiled tool through
+the standalone Python/.NET harness on their workstation for debugging. This is
+ordinary local program execution, with the developer's filesystem permissions;
+it is not a sandbox or a server execution backend. The local harness constructs
+no job-scoped cloud client, fetches no remote source, accepts explicit local
+inputs, and writes local artifacts and diagnostic receipts.
+
+Product CLI adapters may invoke the separately installed developer tooling.
+They must not add a local execution selector to server submission APIs, convert
+remote custom-code submissions into local runs, or bypass the workload validator
+and runtime claim fence. SDK data-plane methods remain server clients.
+
+This clarification supports the approved GP developer experience without
+sanctioning custom-code dispatch on Kubernetes, Azure, or the server host.
+
 ## How this is enforced
 
 1. **Startup configuration gate (primary).**
@@ -99,13 +118,14 @@ unchanged); it constrains only the untrusted `custom-code` profile.
    Dockerfiles) so they cannot silently regress. The isolation expectation is that
    the Batch job's network egress and task-role scope are restricted by the
    deployment IaC; user code is denied the task role by the scrub regardless.
-4. **SDK exposes no local-execution path.** `honua-sdk-python` has **no**
+4. **SDK exposes no local server-job execution path.** `honua-sdk-python` has **no**
    custom-code job-submission surface and cannot influence backend selection
    (backend is server configuration). Its ArcPy/ModelBuilder migration codemod
    translates recognized tools only to **built-in server processes**
    (`EXECUTABLE_PROCESS_IDS`); unrecognized tools become `manual-review`, never an
    auto-submitted custom-code job. A tripwire test locks in the absence of any
-   custom-code/local-execution surface in the SDK.
+   custom-code submission or backend-selection surface in the SDK. The explicit
+   developer CLI adapter described above is separate from this server contract.
 
 ## Consequences
 

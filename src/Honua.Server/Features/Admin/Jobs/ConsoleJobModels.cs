@@ -140,6 +140,7 @@ internal sealed record ConsoleJobStep
     public required DateTimeOffset StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public long? DurationMs { get; init; }
+    public string TimingSource { get; init; } = "inferred";
     public required string Message { get; init; }
     public string? Command { get; init; }
     public ConsoleJobStepArtifact[]? Artifacts { get; init; }

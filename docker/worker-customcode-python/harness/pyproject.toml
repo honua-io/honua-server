@@ -29,6 +29,7 @@ test = [
 
 [project.scripts]
 honua-customcode-harness = "honua_customcode_harness.harness:main"
+honua-gp-python = "honua_customcode_harness.local:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["honua_customcode_harness"]

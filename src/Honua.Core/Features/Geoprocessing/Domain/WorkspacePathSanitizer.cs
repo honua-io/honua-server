@@ -55,6 +55,16 @@ public static partial class WorkspacePathSanitizer
         RegexOptions.CultureInvariant)]
     private static partial Regex AbsolutePathRegex();
 
+    [GeneratedRegex(
+        @"\b(?:Bearer|Basic)\s+[^\s""'<>]+",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
+    private static partial Regex AuthorizationRegex();
+
+    [GeneratedRegex(
+        @"\b((?:[\w-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key)[\w-]*|pwd)[""']?\s*(?:=|:|\s)\s*)(?:""(?:\\.|[^""\\])*(?:""|\\?$)|'(?:\\.|[^'\\])*(?:'|\\?$)|[^\s,;""'<>]+)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
+    private static partial Regex CredentialValueRegex();
+
     /// <summary>
     /// Redacts the known per-job <paramref name="workspace"/> path (replaced with
     /// <see cref="ScratchPlaceholder"/>) and length-caps the result. This is the
@@ -113,7 +123,18 @@ public static partial class WorkspacePathSanitizer
             ? trimmed
             : trimmed.Replace(workspace, ScratchPlaceholder, StringComparison.Ordinal);
 
-        redacted = AbsolutePathRegex().Replace(redacted, PathPlaceholder);
+        // Run before path replacement so URL/path structure cannot hide a credential.
+        // This covers recognizable credentials, not arbitrary sensitive user data.
+        try
+        {
+            redacted = AuthorizationRegex().Replace(redacted, "[REDACTED]");
+            redacted = CredentialValueRegex().Replace(redacted, "$1[REDACTED]");
+            redacted = AbsolutePathRegex().Replace(redacted, PathPlaceholder);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return "[REDACTED]";
+        }
 
         return Truncate(redacted, maxLength);
     }

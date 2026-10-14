@@ -86,8 +86,10 @@ class OutputSink:
         Raises if the file is missing or if adding it would exceed the
         configured output-size cap.
         """
-        if not name or "/" in name or name in {".", ".."}:
+        if not name or any(char in name for char in '/\\:') or name in {".", ".."}:
             raise ValueError(f"Artifact name {name!r} must be a simple file name.")
+        if any(artifact.name.casefold() == name.casefold() for artifact in self._artifacts):
+            raise ValueError(f"Artifact name {name!r} is already registered.")
         resolved = Path(path)
         if not resolved.is_file():
             raise FileNotFoundError(f"Artifact {name!r} path does not exist: {resolved}")
@@ -201,7 +203,8 @@ class GpContext:
         inputs: Resolved input artifacts (name -> local path). For Phase 1 this
             is whatever the server pre-staged; tools that need server data pull
             it via :attr:`client`.
-        client: A pre-authenticated, *scoped* :class:`HonuaClient`. Its bearer
+        client: A pre-authenticated, *scoped* :class:`HonuaClient`, or None in
+            the offline local runner. Its bearer
             token is job-bound and least-privilege; the raw token is never
             exposed to tool code.
         output: Sink to register artifacts for upload to ``output_prefix``.
@@ -213,7 +216,7 @@ class GpContext:
 
     params: Mapping[str, Any]
     inputs: Mapping[str, Path]
-    client: "HonuaClient"
+    client: "HonuaClient | None"
     output: OutputSink
     progress: ProgressReporter
     log: Logger

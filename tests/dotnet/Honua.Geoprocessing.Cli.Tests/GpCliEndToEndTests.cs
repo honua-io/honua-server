@@ -30,6 +30,41 @@ public sealed class GpCliEndToEndTests
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     [Fact]
+    public async Task RunAsync_ListJson_DistinguishesRegistrationFromDependencyReadiness()
+    {
+        var (exit, stdout, _) = await InvokeAsync("list", "--json");
+        exit.Should().Be(0);
+        using var document = JsonDocument.Parse(stdout.Trim());
+        var processes = document.RootElement.EnumerateArray().ToArray();
+        processes.Should().Contain(process => process.GetProperty("id").GetString() == "geometry.buffer");
+        processes.Should().OnlyContain(process => !process.GetProperty("dependenciesVerified").GetBoolean());
+        processes.First(process => process.GetProperty("id").GetString() == "geometry.buffer")
+            .GetProperty("runtimeProfile").GetString().Should().Be("managed");
+    }
+
+    [Fact]
+    public async Task RunAsync_DoctorManagedJson_ExecutesManagedProbeWithoutDocker()
+    {
+        var (exit, stdout, _) = await InvokeAsync("doctor", "--managed-only", "--json");
+
+        exit.Should().Be(0);
+        using var document = JsonDocument.Parse(ExtractJson(stdout));
+        var root = document.RootElement;
+        root.GetProperty("managed").GetString().Should().Be("ready");
+        root.GetProperty("nativeWorker").GetString().Should().Be("notChecked");
+        root.GetProperty("registeredProcessCount").GetInt32().Should().BeGreaterThan(0);
+        root.GetProperty("serviceBacked").GetString().Should().Be("requiresIntegrationStack");
+    }
+
+    [Fact]
+    public async Task RunAsync_DoctorUnknownOption_ReturnsUsageError()
+    {
+        var (exit, _, stderr) = await InvokeAsync("doctor", "--unknown");
+        exit.Should().Be(2);
+        stderr.Should().Contain("Unknown option");
+    }
+
+    [Fact]
     public async Task RunAsync_NoArgs_PrintsUsageAndReturnsUsageExit()
     {
         var (exit, stdout, _) = await InvokeAsync();

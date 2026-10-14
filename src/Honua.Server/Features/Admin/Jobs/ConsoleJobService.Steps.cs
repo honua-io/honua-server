@@ -11,11 +11,10 @@ namespace Honua.Server.Features.Admin.Jobs;
 /// <summary>
 /// Sanitized, read-only per-step glass-box projection for the console job detail.
 /// Surfaces the depth the dev CLI shows — the per-step phase timeline, the GDAL
-/// command, and an artifact summary — but over the PRODUCTION HTTP surface, with
-/// every client-visible string routed through <see cref="WorkspacePathSanitizer"/>
-/// (the same redaction the GDAL worker applies to <c>ErrorMessage</c>) so scratch
-/// workspace paths never leak. This is distinct from the dev-only, unsanitized P7
-/// glass-box, which is untouched.
+/// command, and an artifact summary over the production HTTP surface. Phase,
+/// message, command, and metadata values pass through <see cref="WorkspacePathSanitizer"/>.
+/// Artifact labels and metadata keys preserve their stored identities; this is
+/// recognizable credential and path redaction, not a general support-bundle sanitizer.
 /// </summary>
 internal sealed partial class ConsoleJobService
 {
@@ -24,6 +23,7 @@ internal sealed partial class ConsoleJobService
     // Command so the console renders it once the devkit (#2128) begins recording it.
     private static readonly string[] CommandMetadataKeys =
     [
+        "gdal.command",
         "command",
         "commandLine",
         "gdalCommand",
@@ -96,15 +96,17 @@ internal sealed partial class ConsoleJobService
         return new ConsoleJobStep
         {
             Ordinal = ordinal,
-            Phase = string.IsNullOrWhiteSpace(entry.Phase)
-                ? (string.IsNullOrWhiteSpace(job.CurrentPhase) ? job.Status.ToString() : job.CurrentPhase)
-                : entry.Phase,
+            Phase = WorkspacePathSanitizer.SanitizeForClient(
+                string.IsNullOrWhiteSpace(entry.Phase)
+                    ? (string.IsNullOrWhiteSpace(job.CurrentPhase) ? job.Status.ToString() : job.CurrentPhase)
+                    : entry.Phase, workspace),
             Status = entry.Level == ExecutionLogLevel.Error
                 ? ExecutionJobStatus.Failed.ToString()
                 : entry.Level.ToString(),
             StartedAt = entry.Timestamp,
             CompletedAt = completedAt,
             DurationMs = duration,
+            TimingSource = "inferred",
             Message = WorkspacePathSanitizer.SanitizeForClient(entry.Message, workspace),
             Command = ExtractSanitizedCommand(entry, workspace),
             Artifacts = isLast ? artifactSummary : null,

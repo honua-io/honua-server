@@ -108,7 +108,7 @@ public sealed class EntrypointLoader
         // A dedicated load context resolves the user assembly's dependencies from the
         // build output directory (where dotnet build copied them) without polluting the
         // harness's default context.
-        var context = new UserAssemblyLoadContext(buildOutputDirectory);
+        var context = new UserAssemblyLoadContext(path);
         return context.LoadFromAssemblyPath(path);
     }
 
@@ -126,13 +126,20 @@ public sealed class EntrypointLoader
         !name.Contains("..", StringComparison.Ordinal) &&
         !Path.IsPathRooted(name);
 
-    private sealed class UserAssemblyLoadContext(string probeDirectory) : AssemblyLoadContext
+    private sealed class UserAssemblyLoadContext(string assemblyPath) : AssemblyLoadContext
     {
-        private readonly AssemblyDependencyResolver _resolver = new(probeDirectory);
-        private readonly string _probeDirectory = probeDirectory;
+        private readonly AssemblyDependencyResolver _resolver = new(assemblyPath);
+        private readonly string _probeDirectory = Path.GetDirectoryName(assemblyPath)!;
 
         protected override Assembly? Load(AssemblyName assemblyName)
         {
+            // The contract must share identity even when the build copied its DLL
+            // beside the tool. Loading that copy would make IsAssignableFrom fail.
+            if (string.Equals(assemblyName.Name, typeof(IGeoprocessingTool).Assembly.GetName().Name, StringComparison.Ordinal))
+            {
+                return typeof(IGeoprocessingTool).Assembly;
+            }
+
             var resolved = _resolver.ResolveAssemblyToPath(assemblyName);
             if (resolved is not null)
             {
@@ -155,6 +162,12 @@ public sealed class EntrypointLoader
             // assembly (Honua.CustomCode.Sdk) loaded by the harness is reused — the tool
             // and harness must agree on the same IGeoprocessingTool type identity.
             return null;
+        }
+
+        protected override nint LoadUnmanagedDll(string unmanagedDllName)
+        {
+            var path = _resolver.ResolveUnmanagedDllToPath(unmanagedDllName);
+            return path is null ? 0 : LoadUnmanagedDllFromPath(path);
         }
     }
 }

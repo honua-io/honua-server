@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>SummaryTool</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../docker/worker-customcode-dotnet/harness/src/Honua.CustomCode.Sdk/Honua.CustomCode.Sdk.csproj" />
+  </ItemGroup>
+</Project>

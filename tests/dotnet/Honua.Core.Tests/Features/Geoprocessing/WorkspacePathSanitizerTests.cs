@@ -13,6 +13,19 @@ namespace Honua.Core.Tests.Features.Geoprocessing;
 public sealed class WorkspacePathSanitizerTests
 {
     [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("gdal --config AWS_SECRET_ACCESS_KEY secret-value", "secret-value")]
+    [InlineData("PG:host=db password='two words'", "two words")]
+    [InlineData("request Authorization: Bearer opaque-token", "opaque-token")]
+    [InlineData("--api-key=opaque-value", "opaque-value")]
+    public void SanitizeForClient_RedactsRecognizableCredentials(string text, string secret)
+    {
+        var sanitized = WorkspacePathSanitizer.SanitizeForClient(text, null);
+        Assert.DoesNotContain(secret, sanitized);
+        Assert.Contains("[REDACTED]", sanitized);
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sanitize_ReplacesWorkspacePath_WithStablePlaceholder()
     {
@@ -108,4 +121,32 @@ public sealed class WorkspacePathSanitizerTests
         // Operator log intentionally KEEPS the scratch path for diagnosis.
         Assert.Equal(message, truncated);
     }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("{\"password\":\"prefix\\\"secret-value\",\"status\":\"running\"}")]
+    [InlineData("{\"token\":\"secret-value\",\"status\":\"running\"}")]
+    [InlineData("{'api-key':'secret-value','status':'running'}")]
+    public void SanitizeForClient_RedactsQuotedCredentialKeys(string message)
+    {
+        var sanitized = WorkspacePathSanitizer.SanitizeForClient(message, workspace: null);
+
+        Assert.DoesNotContain("secret-value", sanitized);
+        Assert.Contains("[REDACTED]", sanitized);
+        Assert.Contains("running", sanitized);
+    }
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("password=\"secret-suffix")]
+    [InlineData("password=\"prefix\\\"secret-suffix")]
+    [InlineData("password=\"secret-suffix\\")]
+    [InlineData("token='secret-suffix")]
+    public void SanitizeForClient_RedactsTruncatedQuotedCredentials(string message)
+    {
+        var sanitized = WorkspacePathSanitizer.SanitizeForClient(message, workspace: null);
+
+        Assert.DoesNotContain("secret-suffix", sanitized);
+        Assert.Contains("[REDACTED]", sanitized);
+    }
+
 }

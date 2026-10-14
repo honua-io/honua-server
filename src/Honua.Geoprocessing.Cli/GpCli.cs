@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Nodes;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -48,7 +49,8 @@ public static class GpCli
         {
             return verb switch
             {
-                "list" => RunList(),
+                "list" => RunList(rest),
+                "doctor" => await RunDoctor(rest).ConfigureAwait(false),
                 "describe" => RunDescribe(rest),
                 "run" => await RunRun(rest).ConfigureAwait(false),
                 "test" => await RunTest(rest).ConfigureAwait(false),
@@ -134,12 +136,32 @@ public static class GpCli
         return resolved;
     }
 
-    private static int RunList()
+    private static int RunList(string[] args)
     {
+        if (args.Any(arg => arg != "--json"))
+        {
+            throw new GpCliUsageException("Usage: honua-gp-devkit list [--json]");
+        }
+
         using var provider = BuildProvider();
         var executors = ResolveExecutors(provider);
         var runner = new GeoprocessingLocalRunner(executors);
         var catalog = provider.GetService<IProcessCatalog>();
+
+        if (args.Length > 0)
+        {
+            var definitions = new JsonArray();
+            foreach (var id in runner.AvailableProcessIds)
+            {
+                var definition = catalog?.GetProcess(id);
+                definitions.Add(definition is null
+                    ? new JsonObject { ["id"] = id, ["dependenciesVerified"] = false }
+                    : JsonNode.Parse(GpDescribeRenderer.RenderJson(definition)));
+            }
+
+            Console.WriteLine(definitions.ToJsonString());
+            return 0;
+        }
 
         Console.WriteLine("Available geoprocessing processes:");
         foreach (var id in runner.AvailableProcessIds)
@@ -156,6 +178,59 @@ public static class GpCli
         }
 
         return 0;
+    }
+
+    private static async Task<int> RunDoctor(string[] args)
+    {
+        foreach (var arg in args)
+        {
+            if (arg is not ("--json" or "--managed-only"))
+            {
+                throw new GpCliUsageException($"Unknown option '{arg}'.");
+            }
+        }
+
+        using var provider = BuildProvider();
+        var runner = new GeoprocessingLocalRunner(ResolveExecutors(provider));
+        // Exercise an actual executor: registration alone cannot prove local readiness.
+        var probe = await runner.RunAsync("geometry.buffer", new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["wkb"] = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+            ["srid"] = "3857",
+            ["distance"] = "10",
+        }).ConfigureAwait(false);
+        var configuration = GpContainerConfiguration.Create();
+        var managedOnly = args.Contains("--managed-only", StringComparer.Ordinal);
+        var image = configuration["GdalContainer:Image"]!;
+        var nativeReady = false;
+        if (!managedOnly)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            try
+            {
+                nativeReady = await GdalContainerProbe.IsImageAvailableAsync(
+                    image, configuration["GdalContainer:DockerExecutable"]!, timeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                nativeReady = false;
+            }
+        }
+
+        var report = new JsonObject
+        {
+            ["schemaVersion"] = "1.0",
+            ["managed"] = probe.Succeeded ? "ready" : "failed",
+            ["registeredProcessCount"] = runner.AvailableProcessIds.Count,
+            ["nativeWorker"] = managedOnly ? "notChecked" : nativeReady ? "imageAvailable" : "unavailable",
+            ["workerImage"] = image,
+            ["serviceBacked"] = "requiresIntegrationStack",
+            ["note"] = "Image availability is a prerequisite check; use run --real-worker to verify native execution. Service-backed processes require server/database configuration.",
+        };
+        Console.WriteLine(args.Contains("--json", StringComparer.Ordinal)
+            ? report.ToJsonString()
+            : $"managed: {report["managed"]}\nnative worker: {report["nativeWorker"]} ({image})\n{report["note"]}");
+        return probe.Succeeded && (managedOnly || nativeReady) ? 0 : 1;
     }
 
     private static int RunDescribe(string[] args)
@@ -1087,7 +1162,9 @@ public static class GpCli
         Console.WriteLine("honua gp — headless, Redis-free geoprocessing dev runner (GP Devkit)");
         Console.WriteLine();
         Console.WriteLine("Usage:");
-        Console.WriteLine("  honua gp list");
+        Console.WriteLine("  Installed tool: honua-gp-devkit <command> (equivalent to the honua gp command family below)");
+        Console.WriteLine("  honua gp doctor [--managed-only] [--json]");
+        Console.WriteLine("  honua gp list [--json]");
         Console.WriteLine("  honua gp describe <processId> [--json]");
         Console.WriteLine("  honua gp plan <processId> [--input <file>] [--param k=v ...]");
         Console.WriteLine("  honua gp run  <processId> [--input <file>] [--param k=v ...] [--out <file>] [--glass-box] [--real-worker]");

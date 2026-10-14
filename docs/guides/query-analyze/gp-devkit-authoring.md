@@ -28,6 +28,17 @@ shell command provided by these instructions.
 
 ## Discover and run an existing function
 
+Check the managed execution path before starting:
+
+```bash
+dotnet run --project src/Honua.Geoprocessing.Cli -- doctor --managed-only --json
+```
+
+Without `--managed-only`, `doctor` also checks whether Docker can find the
+configured worker image. An image check is not a native execution test: run a
+representative process with `--real-worker` to verify that path. Service-backed
+functions still require the integration stack.
+
 ```bash
 dotnet run --project src/Honua.Geoprocessing.Cli -- list
 dotnet run --project src/Honua.Geoprocessing.Cli -- describe geometry.buffer
@@ -43,6 +54,38 @@ that expects WGS 84 GeoJSON.
 
 Use `plan` with the same inputs to validate parameters and inspect the execution
 plan without running it. Its size and cost estimates are heuristics.
+
+## Install a tool built from this checkout
+
+The devkit can be packed and installed outside the source tree:
+
+```bash
+dotnet pack src/Honua.Geoprocessing.Cli -c Release -o artifacts/gp-tool
+dotnet tool install Honua.Geoprocessing.Cli --add-source ./artifacts/gp-tool \
+  --tool-path ./artifacts/gp-bin
+./artifacts/gp-bin/honua-gp-devkit doctor --managed-only --json
+```
+
+The executable is `honua-gp-devkit`; `honua gp` in existing help is the command-family
+label. This local package procedure does not imply a matching NuGet release
+has already been published. On Windows use the generated `.exe` launcher.
+
+`list --json` and `describe <id> --json` expose catalog execution modes and
+configuration dependencies for scripts and agents. `dependenciesVerified: false`
+means registration alone has not established that the function can run here.
+
+## Debug custom Python and .NET tools
+
+Use the [local custom-code sample](../../../samples/gp-custom-local/README.md)
+for filesystem inputs, fresh output directories, and VS Code breakpoints in both
+languages. This uses the production `execute(context)` / `IGeoprocessingTool`
+contracts with no cloud credentials for pure functions. The .NET harness is JIT
+and loads user assemblies through reflection, without AOT.
+
+Each local run retains a receipt and bounded progress events, including failure
+phase and output hashes. These files are unsanitized local evidence. Server-backed
+tools need the integration stack, and native imports need their matching runtime.
+The local runner executes trusted developer code; it is not a security sandbox.
 
 ## Scaffold and test your own function
 

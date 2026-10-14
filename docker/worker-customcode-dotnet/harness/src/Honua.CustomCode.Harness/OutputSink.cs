@@ -40,9 +40,14 @@ public sealed class OutputSink : IOutputSink
     /// <inheritdoc />
     public Artifact AddArtifact(string name, string path)
     {
-        if (string.IsNullOrEmpty(name) || name.Contains('/') || name.Contains('\\') || name is "." or "..")
+        if (string.IsNullOrEmpty(name) || name.Contains('/') || name.Contains('\\') || name.Contains(':') || name is "." or "..")
         {
             throw new ArgumentException($"Artifact name '{name}' must be a simple file name.", nameof(name));
+        }
+
+        if (_artifacts.Any(artifact => string.Equals(artifact.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new ArgumentException($"Artifact name '{name}' is already registered.", nameof(name));
         }
 
         var resolved = Path.GetFullPath(path);
