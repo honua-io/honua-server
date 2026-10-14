@@ -380,8 +380,11 @@ def main():
         return
     changed = args.changed
     if changed is None:
-        changed = subprocess.check_output(['git', 'diff', '--no-renames', '--name-only', args.base], cwd=root, text=True).splitlines()
-        changed += subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard'], cwd=root, text=True).splitlines()
+        script_dir = str(Path(__file__).resolve().parent)
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+        import local_change_manifest
+        changed = local_change_manifest.read_local_manifest(root, args.base)
     result = plan(root, catalog, changed)
     print(json.dumps(result, indent=2), flush=True)
     if args.operation == 'run':

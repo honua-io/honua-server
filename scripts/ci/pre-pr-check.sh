@@ -566,8 +566,8 @@ if [[ "${FULL}" != "1" && "${CAPABILITY_RUN_ALL}" == "false" && "${CAPABILITY_UN
     done <<< "${SELECTED_SHARDS}"
 fi
 
-# Full committed diff — used to keep directly-edited test projects in the
-# build even when they will not run locally.
+# Same frozen manifest — keep directly-edited test projects in the build
+# even when they will not run locally.
 CHANGED_FILES_ALL="${PRE_PR_CHANGED_FILES}"
 
 test_project_kept() {

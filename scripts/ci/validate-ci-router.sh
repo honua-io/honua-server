@@ -1999,6 +1999,9 @@ fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-rename-selection.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-working-tree-manifest.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-pre-push-receipt.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-restore-inputs.py
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then

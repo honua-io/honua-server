@@ -36,10 +36,14 @@ def order_shards(root, plan, timings):
 
 
 def changed_files(root, base):
-    # Match test-projects.py: base-to-working-tree diff includes staged/unstaged changes.
-    paths = subprocess.check_output(['git', 'diff', '--no-renames', '--name-only', '-z', base], cwd=root).decode().split('\0')
-    paths += subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard', '-z'], cwd=root).decode().split('\0')
-    return sorted(set(filter(None, paths)))
+    # The same classifier pre-pr-check freezes, including staged paths that no
+    # longer exist in the worktree. Load it from this script's repository so a
+    # fixture checkout does not need its own copy.
+    spec = importlib.util.spec_from_file_location(
+        'local_change_manifest', ROOT / 'scripts/ci/local_change_manifest.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.read_local_manifest(root, base)
 
 
 def route(root, changed):

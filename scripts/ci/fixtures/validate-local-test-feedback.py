@@ -211,11 +211,36 @@ class FeedbackTests(unittest.TestCase):
                 feedback.execute(Path(root), self.plan([self.unit]), run=fail)
         self.assertEqual(len(calls), 1)
 
-    def test_base_worktree_and_untracked_changes_share_one_changed_list(self):
-        with patch.object(feedback.subprocess, 'check_output', side_effect=[b'src/a.cs\0tests/b.cs\0', b'new.cs\0src/a.cs\0']) as command:
-            self.assertEqual(feedback.changed_files(Path('/fixture'), 'base'), ['new.cs', 'src/a.cs', 'tests/b.cs'])
-            self.assertEqual(command.call_args_list[0].args[0], ['git', 'diff', '--no-renames', '--name-only', '-z', 'base'])
-        self.assertEqual(command.call_args_list[1].args[0], ['git', 'ls-files', '--others', '--exclude-standard', '-z'])
+    def test_one_manifest_keeps_staged_deleted_and_untracked_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
+
+            git('init', '-q')
+            git('config', 'user.name', 'Fixture')
+            git('config', 'user.email', 'fixture@example.invalid')
+            (root / 'src').mkdir()
+            (root / 'src/a.cs').write_text('base')
+            (root / 'tests').mkdir()
+            (root / 'tests/b.cs').write_text('base')
+            (root / 'src/committed.cs').write_text('base')
+            git('add', '.')
+            git('commit', '-qm', 'baseline')
+            base = git('rev-parse', 'HEAD')
+            (root / 'src/committed.cs').write_text('committed')
+            git('add', 'src/committed.cs')
+            git('commit', '-qm', 'committed')
+            (root / 'src/a.cs').write_text('unstaged')
+            staged = root / 'tests/staged-only.cs'
+            staged.write_text('index')
+            git('add', 'tests/staged-only.cs')
+            staged.unlink()
+            (root / 'tests/b.cs').unlink()
+            (root / 'new.cs').write_text('untracked')
+            self.assertEqual(feedback.changed_files(root, base), [
+                'new.cs', 'src/a.cs', 'src/committed.cs', 'tests/b.cs', 'tests/staged-only.cs'])
 
 
 if __name__ == '__main__':
