@@ -198,6 +198,12 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
             ServerContractVersion = 1,
             SupportedTargetKinds = ["aws-batch"],
             CustomCodeMayUseKubernetes = false,
+            ReadyTargets = [new GpProcessBindingTarget
+            {
+                Kind = "aws-batch",
+                Image = document.RuntimeImage.Reference,
+                JobDefinitionArn = activation.Targets[0].JobDefinitionArn,
+            }],
         };
 
         var results = await Task.WhenAll(Enumerable.Range(0, 4)
@@ -263,6 +269,8 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
             Kind = ExecutionJobKind.Geoprocessing,
             WorkloadName = "Custom code (AWS Batch)",
             RuntimeProfile = "custom-code",
+            ArtifactReference = "ghcr.io/honua-io/honua-gp-worker@sha256:" + new string('b', 64),
+            Parameters = new Dictionary<string, string> { [GpProcessReleaseAdmission.AwsBatchJobDefinitionParam] = JobDefinitionArn },
         };
 
         public Task<IReadOnlyList<ExecutionJobDefinition>> ListAsync(CancellationToken cancellationToken = default)

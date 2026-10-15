@@ -25,6 +25,12 @@ public sealed class GpProcessReleaseBindingTests
         ServerContractVersion = 1,
         SupportedTargetKinds = ["aws-batch"],
         CustomCodeMayUseKubernetes = false,
+        ReadyTargets = [new GpProcessBindingTarget
+        {
+            Kind = "aws-batch",
+            Image = "ghcr.io/honua-io/honua-gp-worker@sha256:" + new string('b', 64),
+            JobDefinitionArn = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:7",
+        }],
     };
 
     [Fact]
@@ -170,6 +176,19 @@ public sealed class GpProcessReleaseBindingTests
 
         read!.Lock.Targets.Should().ContainSingle();
         read.Lock.Digest.Should().Be(release.Digest);
+    }
+
+    [Fact]
+    public async Task Activate_WorkerIdentityNotRegistered_LeavesBindingUnchanged()
+    {
+        var store = new InMemoryGpProcessReleaseStore();
+        var release = await store.PublishAsync(Lock("1.0.0", "a"), "operator");
+
+        var decision = await store.ActivateAsync(Activation(release.Digest, 0), AwsEnvironment with { ReadyTargets = [] });
+
+        decision.Activated.Should().BeFalse();
+        decision.Reasons.Should().Contain(GpProcessBindingRefusal.TargetNotReady);
+        (await store.GetBindingAsync("buffer-features")).Should().BeNull();
     }
 
     [Fact]

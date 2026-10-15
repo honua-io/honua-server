@@ -85,6 +85,12 @@ public sealed class CustomCodeSubmitTests
             ServerContractVersion = 1,
             SupportedTargetKinds = ["aws-batch"],
             CustomCodeMayUseKubernetes = false,
+            ReadyTargets = new[] { "7", "8" }.Select(revision => new GpProcessBindingTarget
+            {
+                Kind = "aws-batch",
+                Image = v1.Lock.RuntimeImage.Reference,
+                JobDefinitionArn = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:" + revision,
+            }).ToArray(),
         };
         GpProcessBindingActivation Activation(string digest, int version, string revision) => new()
         {
@@ -141,6 +147,10 @@ public sealed class CustomCodeSubmitTests
         replay.OperationId.Should().Be(queued.OperationId);
         replay.Spec.Parameters[GpProcessReleaseAdmission.ReleaseLockDigestParam].Should().Be(v1.Digest);
         await backend.Received(1).StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+
+        metadata[CustomCodeJobContract.ParamsJsonParam] = "{\"distance\":999}";
+        var changedInputs = () => sut.SubmitJobAsync(CustomCodePlan(), "release-replay", OwnerPrincipal(), metadata);
+        await changedInputs.Should().ThrowAsync<GeoprocessingIdempotencyConflictException>();
 
         metadata[GpProcessReleaseAdmission.ProcessParam] = "another-process";
         var conflicting = () => sut.SubmitJobAsync(CustomCodePlan(), "release-replay", OwnerPrincipal(), metadata);

@@ -2260,7 +2260,32 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             && ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput)
             && ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerOutSr)
             && ScalarControlMatches(stored, requested, GpProcessReleaseAdmission.ProcessParam)
+            && ReleaseInputsMatch(stored, requested)
             && OutputSelectionMatches(stored, requested);
+
+    private static bool ReleaseInputsMatch(
+        IReadOnlyDictionary<string, string> stored,
+        IReadOnlyDictionary<string, string>? requested)
+    {
+        if (requested is null || !requested.ContainsKey(GpProcessReleaseAdmission.ProcessParam))
+        {
+            return true;
+        }
+
+        // Compare explicit code and input values with the admitted spec, never the
+        // current binding. Omitted release-derived values remain valid on replay.
+        foreach (var pair in requested)
+        {
+            if (pair.Key.StartsWith("customcode.", StringComparison.Ordinal)
+                && (!stored.TryGetValue(pair.Key, out var value)
+                    || !string.Equals(value, pair.Value?.Trim(), StringComparison.Ordinal)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     private static bool ScalarControlMatches(
         IReadOnlyDictionary<string, string> stored,

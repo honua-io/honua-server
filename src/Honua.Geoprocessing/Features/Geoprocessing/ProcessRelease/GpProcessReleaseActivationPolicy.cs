@@ -115,10 +115,21 @@ public static partial class GpProcessReleaseActivationPolicy
                 }
             }
 
+            var image = ImageForTarget(lockDocument, target.WorkerImageDigest);
+            if (!environment.ReadyTargets.Any(ready =>
+                string.Equals(ready.Kind, target.Kind, StringComparison.Ordinal)
+                && string.Equals(ready.Image, image, StringComparison.Ordinal)
+                && string.Equals(ready.JobDefinitionArn, jobDefinitionArn, StringComparison.Ordinal)))
+            {
+                Refuse(GpProcessBindingRefusal.TargetNotReady,
+                    "the pinned worker image and provider revision must be registered on a compatible execution workload before activation");
+                continue;
+            }
+
             targets.Add(new GpProcessBindingTarget
             {
                 Kind = target.Kind,
-                Image = ImageForTarget(lockDocument, target.WorkerImageDigest),
+                Image = image,
                 JobDefinitionArn = jobDefinitionArn,
             });
         }

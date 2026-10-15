@@ -52,7 +52,8 @@ Activation body:
 | `STALE_BINDING_VERSION` | The live version moved since the deployment read it; re-read and retry from the current state. |
 | `INCOMPATIBLE_SERVER_CONTRACT` | The server's execution contract version is outside the lock's window. |
 | `TARGET_UNSUPPORTED` | No activatable execution workload of that kind here, or a `kubernetes-job` target on a custom-code process (ADR-0063: custom code is AWS-Batch-only). |
-| `TARGET_IDENTITY_MISSING` | An `aws-batch` target needs the job definition ARN with its revision. |
+| `TARGET_IDENTITY_MISSING` | An `aws-batch` target needs the lock's job-definition name with an explicit positive revision in its ARN. |
+| `TARGET_NOT_READY` | The exact image digest and provider revision are not registered on a compatible custom-code workload. Deploy and register that worker path first. |
 | `ROLLBACK_TARGET_MISSING` / `ROLLBACK_TARGET_MISMATCH` | No previous release, or the lock is not the previous release. |
 
 ## What a job executes

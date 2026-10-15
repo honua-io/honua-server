@@ -43,6 +43,12 @@ public sealed partial class GpProcessReleaseAdmission
     /// <summary>Stamped: the immutable worker image selected by the release.</summary>
     public const string WorkerImageParam = "honua.release.worker_image";
 
+    /// <summary>Stamped: dependency lock digest.</summary>
+    public const string DependencyDigestParam = "honua.release.dependency_digest";
+
+    /// <summary>Stamped: workflow version declared by the release.</summary>
+    public const string WorkflowVersionParam = "honua.release.workflow_version";
+
     private readonly IGpProcessReleaseStore _store;
     private readonly ILogger<GpProcessReleaseAdmission> _logger;
 
@@ -100,6 +106,8 @@ public sealed partial class GpProcessReleaseAdmission
         specParams[ProcessParam] = process;
         specParams[ReleaseProcessParam] = process;
         specParams[ReleaseVersionParam] = lockDocument.Process.Version;
+        specParams[DependencyDigestParam] = lockDocument.DependencyLock.Sha256;
+        specParams[WorkflowVersionParam] = lockDocument.WorkflowVersion;
         specParams[ReleaseLockDigestParam] = binding.LockDigest;
         specParams[ReleaseBindingVersionParam] = binding.BindingVersion.ToString(CultureInfo.InvariantCulture);
 

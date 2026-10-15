@@ -12,6 +12,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.ControlPlane;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.ProcessRelease;
 
 namespace Honua.Server.Features.Admin.Jobs;
 
@@ -249,6 +250,13 @@ internal sealed partial class ConsoleJobService
             SourceRef = SafeIdentity(sourceRef),
             Entrypoint = SafeIdentity(entrypoint),
             DependencyManifest = SafeIdentity(dependencyManifest),
+            ProcessRelease = SafeIdentity(GetParameter(job, GpProcessReleaseAdmission.ReleaseProcessParam)),
+            ProcessVersion = SafeIdentity(GetParameter(job, GpProcessReleaseAdmission.ReleaseVersionParam)),
+            LockDigest = SafeIdentity(GetParameter(job, GpProcessReleaseAdmission.ReleaseLockDigestParam)),
+            BindingVersion = SafeIdentity(GetParameter(job, GpProcessReleaseAdmission.ReleaseBindingVersionParam)),
+            WorkflowVersion = SafeIdentity(GetParameter(job, GpProcessReleaseAdmission.WorkflowVersionParam)),
+            DependencyLockDigest = SafeIdentity(GetParameter(job, GpProcessReleaseAdmission.DependencyDigestParam)),
+            WorkerImage = SafeIdentity(GetParameter(job, GpProcessReleaseAdmission.WorkerImageParam)),
             PlanId = planId,
             ProcessDefinitions = processDefinitions,
             Environment = GetParameter(job, ExecutionJobParameterKeys.Environment),

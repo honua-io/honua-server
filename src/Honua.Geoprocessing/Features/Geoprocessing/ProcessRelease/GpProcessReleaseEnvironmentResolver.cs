@@ -26,6 +26,7 @@ public sealed class GpProcessReleaseEnvironmentResolver
     public async Task<GpProcessReleaseEnvironment> ResolveAsync(CancellationToken cancellationToken = default)
     {
         var kinds = new List<string>();
+        var readyTargets = new List<GpProcessBindingTarget>();
         if (_workloads is not null)
         {
             var definitions = await _workloads.ListAsync(cancellationToken).ConfigureAwait(false);
@@ -43,6 +44,24 @@ public sealed class GpProcessReleaseEnvironmentResolver
                     BatchComputeTargetKind.KubernetesJob => GpProcessReleaseActivationPolicy.KubernetesJobTarget,
                     _ => null,
                 };
+                if (kind is not null && !string.IsNullOrWhiteSpace(definition.ArtifactReference))
+                {
+                    foreach (var parameter in definition.Parameters.Where(p =>
+                        p.Key == GpProcessReleaseAdmission.AwsBatchJobDefinitionParam
+                        || p.Key.StartsWith(GpProcessReleaseAdmission.AwsBatchJobDefinitionParam + ".", StringComparison.Ordinal)))
+                    {
+                        if (!string.IsNullOrWhiteSpace(parameter.Value))
+                        {
+                            readyTargets.Add(new GpProcessBindingTarget
+                            {
+                                Kind = kind,
+                                Image = definition.ArtifactReference.Trim(),
+                                JobDefinitionArn = parameter.Value.Trim(),
+                            });
+                        }
+                    }
+                }
+
                 if (kind is not null && !kinds.Contains(kind, StringComparer.Ordinal))
                 {
                     kinds.Add(kind);
@@ -55,6 +74,7 @@ public sealed class GpProcessReleaseEnvironmentResolver
         {
             ServerContractVersion = CustomCodeJobContract.ContractVersion,
             SupportedTargetKinds = kinds,
+            ReadyTargets = readyTargets,
             // ADR-0063: custom-code execution is AWS-Batch-only; there is no operator switch
             // that admits custom code to Kubernetes Jobs, so the policy refuses that target.
             CustomCodeMayUseKubernetes = false,

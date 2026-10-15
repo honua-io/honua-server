@@ -121,6 +121,12 @@ public sealed record GpProcessReleaseEnvironment
     public required IReadOnlyList<string> SupportedTargetKinds { get; init; }
 
     /// <summary>
+    /// Immutable worker identities explicitly registered on this server's compatible
+    /// execution workloads. Deployment must register the worker path before activation.
+    /// </summary>
+    public IReadOnlyList<GpProcessBindingTarget> ReadyTargets { get; init; } = [];
+
+    /// <summary>
     /// Whether custom-code processes may bind a Kubernetes Job target. ADR-0063 makes custom
     /// code AWS-Batch-only, so this is false unless an operator policy says otherwise.
     /// </summary>
@@ -163,6 +169,9 @@ public static class GpProcessBindingRefusal
 
     /// <summary>A supported target lacks the provider identity the activation must pin.</summary>
     public const string TargetIdentityMissing = "TARGET_IDENTITY_MISSING";
+
+    /// <summary>The pinned worker identity has not been registered in a compatible workload.</summary>
+    public const string TargetNotReady = "TARGET_NOT_READY";
 
     /// <summary>Rollback requested on a process with no previous release.</summary>
     public const string RollbackTargetMissing = "ROLLBACK_TARGET_MISSING";

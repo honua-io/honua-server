@@ -49029,6 +49029,34 @@
             "items": {
               "type": "string"
             }
+          },
+          "processRelease": {
+            "type": "string",
+            "nullable": true
+          },
+          "processVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "lockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "bindingVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "workflowVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "dependencyLockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "workerImage": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
