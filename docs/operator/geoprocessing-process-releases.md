@@ -35,7 +35,6 @@ Activation body:
   "lockDigest": "sha256:…",
   "expectedBindingVersion": 2,
   "operation": "deploy",
-  "actor": "gp-deploy-process run 123",
   "targets": [
     { "kind": "aws-batch", "jobDefinitionArn": "arn:aws:batch:us-west-2:123456789012:job-definition/buffer-features:7" }
   ]
@@ -84,4 +83,10 @@ Releases, bindings and the append-only activation history live in `honua.gp_proc
 `honua.gp_process_binding` and `honua.gp_process_binding_history` (migration
 `131_CreateGpProcessReleases.sql`). Activation locks the process's binding row inside one
 transaction. The server requires the migrated database. The devkit and isolated tests can use an
-in-process store; production registration always uses the durable store.
+in-process store. Non-PostgreSQL providers also retain that process-local fallback: their
+release state does not survive a restart and is not shared across replicas. Durable production
+release deployment in this slice requires PostgreSQL. `Database:Schema` selects the release
+tables alongside the other migrated metadata tables.
+
+The server records the authenticated principal as `activatedBy`; activation requests do not
+accept a caller-supplied actor identity.

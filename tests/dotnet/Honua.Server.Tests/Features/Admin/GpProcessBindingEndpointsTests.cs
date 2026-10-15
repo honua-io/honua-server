@@ -16,6 +16,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -174,13 +175,34 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    public async Task PostgresActivation_ConcurrentFirstDeploys_CommitOneVersionAndSurviveNewStore()
+    public async Task PostgresActivation_CustomSchema_ConcurrentPublishesAndDeploysPersistOnce()
     {
         var process = "binding-test-" + Guid.NewGuid().ToString("N");
+        var schema = _fixture.CurrentSchema!;
+        using var builder = new NpgsqlCommandBuilder();
+        var quotedSchema = builder.QuoteIdentifier(schema);
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+        {
+            // Isolate the release metadata as a configured non-default schema would.
+            foreach (var table in new[] { "gp_process_release", "gp_process_binding", "gp_process_binding_history" })
+            {
+                await using var command = new NpgsqlCommand(
+                    $"CREATE TABLE IF NOT EXISTS {quotedSchema}.{table} (LIKE honua.{table} INCLUDING ALL)", connection);
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
         var store = new PostgresGpProcessReleaseStore(
-            _fixture.Services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
+            _fixture.Services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, schema);
         var document = GpProcessReleaseLock.Parse(Lock("1.0.0", 'a').Replace("buffer-features", process, StringComparison.Ordinal));
-        var release = await store.PublishAsync(document, "test-operator");
+        var publications = await Task.WhenAll(Enumerable.Range(0, 4)
+            .Select(_ => store.PublishWithStatusAsync(document, "test-operator")));
+        publications.Count(result => result.Created).Should().Be(1);
+        var release = publications[0].Record;
+        publications.Select(result => result.Record.PublishedAt).Distinct().Should().ContainSingle();
+        var defaultSchemaStore = new PostgresGpProcessReleaseStore(
+            _fixture.Services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
+        (await defaultSchemaStore.GetReleaseAsync(release.Digest)).Should().BeNull();
         var activation = new GpProcessBindingActivation
         {
             Process = process,
@@ -212,7 +234,7 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
         results.Count(r => r.Activated).Should().Be(1);
         results.Where(r => !r.Activated).Should().OnlyContain(r => r.Reasons.Contains(GpProcessBindingRefusal.StaleBindingVersion));
         var reopened = new PostgresGpProcessReleaseStore(
-            _fixture.Services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
+            _fixture.Services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, schema);
         var persisted = await reopened.GetBindingAsync(process);
         persisted!.BindingVersion.Should().Be(1);
         persisted.LockDigest.Should().Be(release.Digest);
@@ -227,7 +249,6 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
             lockDigest = digest,
             expectedBindingVersion = expected,
             operation,
-            actor = "deploy-workflow",
             targets = new[] { new { kind = "aws-batch", jobDefinitionArn = JobDefinitionArn } },
         };
 

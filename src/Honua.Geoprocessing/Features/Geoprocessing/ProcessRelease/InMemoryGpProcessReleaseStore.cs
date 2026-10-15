@@ -25,7 +25,11 @@ public sealed class InMemoryGpProcessReleaseStore : IGpProcessReleaseStore
     }
 
     /// <inheritdoc />
-    public Task<GpProcessReleaseRecord> PublishAsync(GpProcessReleaseLock lockDocument, string publishedBy, CancellationToken cancellationToken = default)
+    public async Task<GpProcessReleaseRecord> PublishAsync(GpProcessReleaseLock lockDocument, string publishedBy, CancellationToken cancellationToken = default)
+        => (await PublishWithStatusAsync(lockDocument, publishedBy, cancellationToken).ConfigureAwait(false)).Record;
+
+    /// <inheritdoc />
+    public Task<(GpProcessReleaseRecord Record, bool Created)> PublishWithStatusAsync(GpProcessReleaseLock lockDocument, string publishedBy, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(lockDocument);
         ArgumentException.ThrowIfNullOrWhiteSpace(publishedBy);
@@ -33,7 +37,8 @@ public sealed class InMemoryGpProcessReleaseStore : IGpProcessReleaseStore
         var digest = lockDocument.Digest;
         lock (_gate)
         {
-            if (!_releases.TryGetValue(digest, out var existing))
+            var created = !_releases.TryGetValue(digest, out var existing);
+            if (created)
             {
                 existing = new GpProcessReleaseRecord
                 {
@@ -45,7 +50,7 @@ public sealed class InMemoryGpProcessReleaseStore : IGpProcessReleaseStore
                 _releases[digest] = existing;
             }
 
-            return Task.FromResult(CloneRelease(existing));
+            return Task.FromResult((CloneRelease(existing!), created));
         }
     }
 

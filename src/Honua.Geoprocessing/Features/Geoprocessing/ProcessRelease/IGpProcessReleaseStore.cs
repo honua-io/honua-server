@@ -18,6 +18,9 @@ public interface IGpProcessReleaseStore
     /// </summary>
     Task<GpProcessReleaseRecord> PublishAsync(GpProcessReleaseLock lockDocument, string publishedBy, CancellationToken cancellationToken = default);
 
+    /// <summary>Publishes atomically and reports whether this call created the immutable record.</summary>
+    Task<(GpProcessReleaseRecord Record, bool Created)> PublishWithStatusAsync(GpProcessReleaseLock lockDocument, string publishedBy, CancellationToken cancellationToken = default);
+
     /// <summary>Reads a published release by digest.</summary>
     Task<GpProcessReleaseRecord?> GetReleaseAsync(string digest, CancellationToken cancellationToken = default);
 

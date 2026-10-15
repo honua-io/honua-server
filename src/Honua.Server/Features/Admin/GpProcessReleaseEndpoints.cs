@@ -91,10 +91,9 @@ public static class GpProcessReleaseEndpoints
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        var existing = await store.GetReleaseAsync(lockDocument.Digest, context.RequestAborted).ConfigureAwait(false);
-        var record = await store.PublishAsync(lockDocument, ActorOf(context), context.RequestAborted).ConfigureAwait(false);
-        var response = ToResponse(record, created: existing is null);
-        return existing is null
+        var (record, created) = await store.PublishWithStatusAsync(lockDocument, ActorOf(context), context.RequestAborted).ConfigureAwait(false);
+        var response = ToResponse(record, created);
+        return created
             ? Results.Created($"/api/v1/admin/gp/process-releases/{record.Digest}", response)
             : Results.Ok(response);
     }

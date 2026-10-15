@@ -23,13 +23,24 @@ namespace Honua.Server.Features.Geoprocessing.ProcessRelease;
 /// </summary>
 internal sealed class PostgresGpProcessReleaseStore(
     IServiceScopeFactory scopeFactory,
-    TimeProvider time) : IGpProcessReleaseStore
+    TimeProvider time,
+    string? schema = null) : IGpProcessReleaseStore
 {
-    private const string ReleaseTable = "honua.gp_process_release";
-    private const string BindingTable = "honua.gp_process_binding";
-    private const string HistoryTable = "honua.gp_process_binding_history";
+    private readonly string _schema = string.IsNullOrWhiteSpace(schema) ? "honua" : schema.Trim();
+    private string ReleaseTable => QuoteSchema(_schema) + ".gp_process_release";
+    private string BindingTable => QuoteSchema(_schema) + ".gp_process_binding";
+    private string HistoryTable => QuoteSchema(_schema) + ".gp_process_binding_history";
+
+    private static string QuoteSchema(string value)
+    {
+        using var builder = new NpgsqlCommandBuilder();
+        return builder.QuoteIdentifier(value);
+    }
 
     public async Task<GpProcessReleaseRecord> PublishAsync(GpProcessReleaseLock lockDocument, string publishedBy, CancellationToken cancellationToken = default)
+        => (await PublishWithStatusAsync(lockDocument, publishedBy, cancellationToken).ConfigureAwait(false)).Record;
+
+    public async Task<(GpProcessReleaseRecord Record, bool Created)> PublishWithStatusAsync(GpProcessReleaseLock lockDocument, string publishedBy, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(lockDocument);
         ArgumentException.ThrowIfNullOrWhiteSpace(publishedBy);
@@ -39,11 +50,12 @@ internal sealed class PostgresGpProcessReleaseStore(
         await using var connection = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
 
         // Idempotent by digest: a re-publish keeps the first record's bytes and time.
-        const string insert = $"""
+        var insert = $"""
             INSERT INTO {ReleaseTable} (lock_digest, process_name, process_version, lock_document, published_by, published_at)
             VALUES (@digest, @process, @version, @lock, @by, @at)
             ON CONFLICT (lock_digest) DO NOTHING
             """;
+        int inserted;
         await using (var command = new NpgsqlCommand(insert, connection))
         {
             command.Parameters.AddWithValue("@digest", digest);
@@ -52,11 +64,12 @@ internal sealed class PostgresGpProcessReleaseStore(
             command.Parameters.Add(new NpgsqlParameter("@lock", NpgsqlDbType.Jsonb) { Value = lockDocument.ToCanonicalJson() });
             command.Parameters.AddWithValue("@by", publishedBy);
             command.Parameters.AddWithValue("@at", time.GetUtcNow());
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            inserted = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        return await GetReleaseAsync(connection, null, digest, cancellationToken).ConfigureAwait(false)
+        var record = await GetReleaseAsync(connection, null, digest, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Release {digest} was not stored.");
+        return (record, inserted == 1);
     }
 
     public async Task<GpProcessReleaseRecord?> GetReleaseAsync(string digest, CancellationToken cancellationToken = default)
@@ -70,7 +83,7 @@ internal sealed class PostgresGpProcessReleaseStore(
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         await using var connection = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
-        const string sql = $"""
+        var sql = $"""
             SELECT lock_digest, lock_document::text, published_by, published_at
             FROM {ReleaseTable}
             WHERE (@process::text IS NULL OR process_name = @process)
@@ -99,7 +112,7 @@ internal sealed class PostgresGpProcessReleaseStore(
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         await using var connection = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
-        const string sql = $"""
+        var sql = $"""
             SELECT process_name, binding_version, lock_digest, previous_lock_digest, targets::text, operation, activated_by, activated_at
             FROM {BindingTable}
             ORDER BY process_name
@@ -141,7 +154,7 @@ internal sealed class PostgresGpProcessReleaseStore(
 
         var binding = decision.Binding!;
         var targetsJson = WriteTargets(binding.Targets);
-        const string upsert = $"""
+        var upsert = $"""
             INSERT INTO {BindingTable} (process_name, binding_version, lock_digest, previous_lock_digest, targets, operation, activated_by, activated_at)
             VALUES (@process, @version, @lock, @previous, @targets, @operation, @by, @at)
             ON CONFLICT (process_name) DO UPDATE SET
@@ -174,7 +187,7 @@ internal sealed class PostgresGpProcessReleaseStore(
             };
         }
 
-        const string history = $"""
+        var history = $"""
             INSERT INTO {HistoryTable} (process_name, binding_version, lock_digest, previous_lock_digest, targets, operation, activated_by, activated_at)
             VALUES (@process, @version, @lock, @previous, @targets, @operation, @by, @at)
             """;
@@ -190,7 +203,7 @@ internal sealed class PostgresGpProcessReleaseStore(
         return decision;
     }
 
-    private static async Task<NpgsqlConnection> OpenAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
+    private async Task<NpgsqlConnection> OpenAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
     {
         var provider = scope.ServiceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
         var connection = await provider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -218,9 +231,9 @@ internal sealed class PostgresGpProcessReleaseStore(
         command.Parameters.AddWithValue("@at", binding.ActivatedAt);
     }
 
-    private static async Task<GpProcessReleaseRecord?> GetReleaseAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, string digest, CancellationToken cancellationToken)
+    private async Task<GpProcessReleaseRecord?> GetReleaseAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, string digest, CancellationToken cancellationToken)
     {
-        const string sql = $"""
+        var sql = $"""
             SELECT lock_digest, lock_document::text, published_by, published_at
             FROM {ReleaseTable}
             WHERE lock_digest = @digest
@@ -231,7 +244,7 @@ internal sealed class PostgresGpProcessReleaseStore(
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadRelease(reader) : null;
     }
 
-    private static async Task<GpProcessBinding?> GetBindingAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, string process, bool forUpdate, CancellationToken cancellationToken)
+    private async Task<GpProcessBinding?> GetBindingAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, string process, bool forUpdate, CancellationToken cancellationToken)
     {
         var sql = $"""
             SELECT process_name, binding_version, lock_digest, previous_lock_digest, targets::text, operation, activated_by, activated_at
@@ -313,13 +326,14 @@ internal sealed class PostgresGpProcessReleaseStore(
     /// Fails closed with a named migration when the tables are absent. This is a read-only
     /// catalog probe: schema evolution belongs to the numbered migrations, never to a store.
     /// </summary>
-    private static async Task VerifyMigrationAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    private async Task VerifyMigrationAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         const string sql = """
             SELECT count(*) FROM information_schema.tables
-            WHERE table_schema = 'honua' AND table_name IN ('gp_process_release', 'gp_process_binding', 'gp_process_binding_history')
+            WHERE table_schema = @schema AND table_name IN ('gp_process_release', 'gp_process_binding', 'gp_process_binding_history')
             """;
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@schema", _schema);
         var count = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false), CultureInfo.InvariantCulture);
         if (count != 3)
         {

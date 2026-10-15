@@ -155,9 +155,6 @@ public sealed class GpProcessBindingActivateRequest
     [JsonPropertyName("targets")]
     public IReadOnlyList<GpProcessBindingTargetRequest> Targets { get; init; } = [];
 
-    /// <summary>Actor to record; defaults to the authenticated principal.</summary>
-    [JsonPropertyName("actor")]
-    public string? Actor { get; init; }
 }
 
 /// <summary>A refused activation, returned with HTTP 409.</summary>

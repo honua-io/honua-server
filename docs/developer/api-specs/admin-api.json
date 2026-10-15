@@ -49498,10 +49498,6 @@
             "items": {
               "$ref": "#/components/schemas/GpProcessBindingTargetRequest"
             }
-          },
-          "actor": {
-            "type": "string",
-            "nullable": true
           }
         }
       },
