@@ -263,7 +263,9 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
             // Route each consecutive pair with pgr_dijkstra and collect the visited
             // (node, edge) steps in order so we can thread the geometry in traversal
-            // order with correct orientation and sum the cost.
+            // order with correct orientation and sum the cost. A same-vertex leg is a
+            // zero-cost degenerate pair (pgRouting returns no row); it must not fail
+            // the rest of the route.
             var steps = new List<RouteStep>();
             var totalCost = 0.0;
             for (var i = 0; i < vertexIds.Length - 1; i++)
@@ -285,8 +287,25 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
             if (steps.Count == 0)
             {
-                activity?.SetTag("honua.routing.solved", false);
-                return new RouteSolveResult(string.Empty, 0, 0, []);
+                // Every leg snapped to one vertex. Emit a degenerate line so the
+                // solve is a zero-cost path instead of "no route".
+                var degenerate = await DegenerateSameVertexGeometryAsync(
+                    session, request.Stops[0], request.InSrid, request.OutSrid, cancellationToken)
+                    .ConfigureAwait(false);
+                if (string.IsNullOrEmpty(degenerate))
+                {
+                    activity?.SetTag("honua.routing.solved", false);
+                    return new RouteSolveResult(string.Empty, 0, 0, []);
+                }
+
+                var zeroMinutes = RoutingCostUnitConverter.CostToMinutes(totalCost, _costUnit);
+                activity?.SetTag("honua.routing.solved", true);
+                activity?.SetTag("honua.routing.length_m", 0);
+                return new RouteSolveResult(
+                    degenerate,
+                    0,
+                    zeroMinutes,
+                    [new RouteDirectionStep("Route", 0, zeroMinutes, "straight")]);
             }
 
             var (geometryGeoJson, lengthMeters) = await MergeEdgeGeometryAsync(
@@ -877,22 +896,46 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 @source, @targets, directed => true);
             """;
 
-        var costs = new Dictionary<long, double>();
-        await foreach (var row in session.QueryAsync(
-                           sql,
-                           static row => (
-                               EndVid: row.GetFieldValue<long>(0),
-                               Cost: row.GetFieldValue<double>(1)),
-                           new Dictionary<string, object?>
-                           {
-                               ["edges_sql"] = edgesSql,
-                               ["source"] = sourceVertex,
-                               ["targets"] = destinationVertices,
-                           },
-                           cancellationToken).ConfigureAwait(false))
+        // pgRouting 3.x returns no row when start = end. Drop the source from the
+        // target array and seed cost 0 so a co-located facility, OD pair, or
+        // demand point is reachable at cost 0 instead of missing.
+        var targets = new List<long>(destinationVertices.Length);
+        var includeSource = false;
+        foreach (var destination in destinationVertices)
         {
-            // pgr_dijkstraCost returns the minimum agg_cost per (start,end) pair.
-            costs[row.EndVid] = row.Cost;
+            if (destination == sourceVertex)
+            {
+                includeSource = true;
+                continue;
+            }
+
+            targets.Add(destination);
+        }
+
+        var costs = new Dictionary<long, double>();
+        if (targets.Count > 0)
+        {
+            await foreach (var row in session.QueryAsync(
+                               sql,
+                               static row => (
+                                   EndVid: row.GetFieldValue<long>(0),
+                                   Cost: row.GetFieldValue<double>(1)),
+                               new Dictionary<string, object?>
+                               {
+                                   ["edges_sql"] = edgesSql,
+                                   ["source"] = sourceVertex,
+                                   ["targets"] = targets.ToArray(),
+                               },
+                               cancellationToken).ConfigureAwait(false))
+            {
+                // pgr_dijkstraCost returns the minimum agg_cost per (start,end) pair.
+                costs[row.EndVid] = row.Cost;
+            }
+        }
+
+        if (includeSource)
+        {
+            costs.TryAdd(sourceVertex, 0);
         }
 
         return costs;
@@ -938,6 +981,13 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         long targetVertex,
         CancellationToken cancellationToken)
     {
+        // Same snapped vertex: there is no edge to traverse. pgRouting returns no
+        // row for start = end, which callers must not treat as "no route".
+        if (sourceVertex == targetVertex)
+        {
+            return ([], 0);
+        }
+
         // pgr_dijkstra over the ways edge table. The inner edges_sql is built by
         // BuildRouteEdgesSql from a constant base plus a barrier-exclusion clause
         // that lists only server-derived integer edge gids (never a user string),
@@ -987,6 +1037,40 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         }
 
         return any ? (steps, cost) : null;
+    }
+
+    /// <summary>
+    /// A zero-length line at a stop whose every leg stayed on one vertex, in the
+    /// request output SRID. Empty when PostGIS does not return a geometry.
+    /// </summary>
+    private static async Task<string> DegenerateSameVertexGeometryAsync(
+        IDatabaseSession session,
+        RoutePoint point,
+        int inSrid,
+        int outSrid,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT ST_AsGeoJSON(
+                ST_Transform(
+                    ST_SetSRID(
+                        ST_MakeLine(ST_MakePoint(@lon, @lat), ST_MakePoint(@lon, @lat)),
+                        @in_srid),
+                    @out_srid));
+            """;
+
+        return await session.QuerySingleOrDefaultAsync(
+                sql,
+                static row => row.IsNull(0) ? string.Empty : row.GetFieldValue<string>(0),
+                new Dictionary<string, object?>
+                {
+                    ["lon"] = point.Lon,
+                    ["lat"] = point.Lat,
+                    ["in_srid"] = inSrid,
+                    ["out_srid"] = outSrid,
+                },
+                cancellationToken)
+            .ConfigureAwait(false) ?? string.Empty;
     }
 
     private static async Task<(string GeometryGeoJson, double LengthMeters)> MergeEdgeGeometryAsync(
