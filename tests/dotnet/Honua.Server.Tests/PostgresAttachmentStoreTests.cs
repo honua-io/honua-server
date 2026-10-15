@@ -13,6 +13,7 @@ using Honua.Infrastructure.Security;
 using Honua.Server.Tests.Infrastructure;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -631,7 +632,7 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         await _fileStorage.DeleteAsync(attachment.StoragePath);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task UploadAsync_ConcurrentUploadsAtLimitMinusOne_DoesNotExceedCount()
     {
         const int limit = 3;
