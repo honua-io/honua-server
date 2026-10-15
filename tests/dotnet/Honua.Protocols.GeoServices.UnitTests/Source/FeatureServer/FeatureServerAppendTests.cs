@@ -57,6 +57,46 @@ public sealed class FeatureServerAppendTests
     }
 
     [UnitTest]
+    public void CreateAppendApplyEditsRequest_GdbVersion_ReachesTheEditRequest()
+    {
+        // #6095: append must target the named branch version, not DEFAULT.
+        var request = FeatureServerEndpoints.CreateAppendApplyEditsRequest(
+            [], [], rollbackOnFailure: true, gdbVersion: "admin.edit1");
+
+        request.GdbVersion.Should().Be("admin.edit1");
+    }
+
+    [UnitTest]
+    public async Task LoadAppendUpsertMatches_VersionContext_ReadsWithinTheVersion()
+    {
+        // #6095: upsert matching must read the named version, not DEFAULT.
+        var resource = MatchResource();
+        var version = new VersionContext { VersionId = Guid.NewGuid(), VersionName = "admin.edit1" };
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(4, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty)));
+        var filters = Substitute.For<IFilterExpressionService>();
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+            .Returns(FilterTranslationResult.Success(null, new SqlFragment("code = @p", new object?[] { "a" })));
+
+        var (_, error) = await FeatureServerEndpoints.LoadAppendUpsertMatchesAsync(
+            reader,
+            filters,
+            resource,
+            4,
+            [new GeoServicesFeature { Attributes = new Dictionary<string, object?> { ["code"] = "a" } }],
+            "code",
+            version,
+            CancellationToken.None);
+
+        error.Should().BeNull();
+        await reader.Received(1).QueryAsync(
+            4,
+            Arg.Is<FeatureQuery>(query => query.VersionContext == version),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public void PartitionAppendFeatures_ExistingKeyBecomesUpdate_MissingKeyStaysAdd()
     {
         var existing = new GeoServicesFeature

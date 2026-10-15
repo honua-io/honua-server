@@ -24,8 +24,9 @@ public sealed class FieldCollectionAutomationOptions
     public bool Enabled { get; set; }
 
     /// <summary>
-    /// Gets or sets the bounded in-process delivery queue capacity. Enqueue waits
-    /// for room rather than dropping invocations when the queue is full.
+    /// Gets or sets the bounded in-process delivery queue capacity. When the queue
+    /// is full, enqueue drops the invocation and logs rather than blocking the
+    /// request path.
     /// </summary>
     public int QueueCapacity { get; set; } = 1024;
 

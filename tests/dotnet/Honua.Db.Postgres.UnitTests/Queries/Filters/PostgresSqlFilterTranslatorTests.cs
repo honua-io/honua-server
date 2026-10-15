@@ -560,8 +560,54 @@ public class PostgresSqlFilterTranslatorTests
 
         var result = _translator.Translate(function, resource);
 
-        result.Sql.Should().Be("ST_Relate(\"geom\"::geometry, ST_Transform(ST_GeomFromWKB(@p0, @p1), 3857), @p2)");
+        AssertGeographicLiteralClampedBeforeWebMercator(result.Sql, targetSrid: 3857);
+        result.Sql.Should().StartWith("ST_Relate(\"geom\"::geometry, ST_Transform(");
+        result.Sql.Should().EndWith(", 3857), @p2)");
         result.Parameters[1].Should().Be(4326);
+    }
+
+    [Fact]
+    public void Translate_Intersects_GeographicWorldPolygonIntoWebMercator_ClampsBeforeTransform()
+    {
+        var resource = CreateResource(new MetadataV2SpatialReference
+        {
+            Srid = 3857,
+            Crs = "EPSG:3857",
+            IsGeographic = false,
+        });
+        var spatial = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("geom"),
+            new GeometryLiteral(
+                [1, 2, 3, 4],
+                4326,
+                "POLYGON((-180 -90,180 -90,180 90,-180 90,-180 -90))"));
+
+        var result = _translator.Translate(spatial, resource);
+
+        result.Sql.Should().StartWith("ST_Intersects(\"geom\"::geometry, ST_Transform(");
+        AssertGeographicLiteralClampedBeforeWebMercator(result.Sql, targetSrid: 3857);
+        result.Parameters[1].Should().Be(4326);
+    }
+
+    [Fact]
+    public void Translate_Intersects_GeographicLiteralIntoNonMercator_DoesNotClamp()
+    {
+        var resource = CreateResource(new MetadataV2SpatialReference
+        {
+            Srid = 4269,
+            Crs = "EPSG:4269",
+            IsGeographic = true,
+        });
+        var spatial = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("geom"),
+            new GeometryLiteral([1, 2, 3, 4], 4326, "POINT(1 2)"));
+
+        var result = _translator.Translate(spatial, resource);
+
+        result.Sql.Should().Be("ST_Intersects(\"geom\"::geometry, ST_Transform(ST_GeomFromWKB(@p0, @p1), 4269))");
+        result.Sql.Should().NotContain("ST_ClipByBox2D");
     }
 
     [Theory]
@@ -1132,6 +1178,19 @@ public class PostgresSqlFilterTranslatorTests
         var act = () => _translator.Translate(expression, _resource);
 
         act.Should().NotThrow();
+    }
+
+    private static void AssertGeographicLiteralClampedBeforeWebMercator(string sql, int targetSrid)
+    {
+        var targetLiteral = targetSrid.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var transform = sql.IndexOf("ST_Transform(", StringComparison.Ordinal);
+        var clip = sql.IndexOf("ST_ClipByBox2D(", StringComparison.Ordinal);
+        var target = sql.IndexOf(", " + targetLiteral + ")", StringComparison.Ordinal);
+        transform.Should().BeGreaterThanOrEqualTo(0);
+        clip.Should().BeGreaterThan(transform);
+        target.Should().BeGreaterThan(clip);
+        sql.Should().Contain("ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, 4326)");
+        sql.Should().NotContain("ST_Transform(ST_GeomFromWKB(@p0, @p1), " + targetLiteral + ")");
     }
 
     private static MetadataV2Resource CreateResource(MetadataV2SpatialReference? spatialReference = null)

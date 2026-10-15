@@ -3200,7 +3200,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await _metadataGraphStore.SaveAsync(updatedGraph, snapshot.Etag, cancellationToken).ConfigureAwait(false);
     }
 
-    private static MetadataV2Service BuildPublishedService(
+    internal static MetadataV2Service BuildPublishedService(
         MetadataV2Graph graph,
         string serviceName,
         int srid,
@@ -3214,7 +3214,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // instead of repeating `existing?.Metadata` (which CodeQL cannot correlate with
         // the later null-forgiving access to `existing!.Metadata`).
         var existingMetadata = existing?.Metadata;
-        var serviceId = existingMetadata?.Id ?? $"svc-publish-{SanitizeMetadataId(serviceName)}";
+        var serviceId = existingMetadata?.Id ?? BuildNewPublishedServiceId(graph, serviceName);
         var metadata = (existingMetadata ?? new MetadataV2ObjectMetadata()) with
         {
             Id = serviceId,
@@ -3227,7 +3227,23 @@ internal sealed partial class PostgreSqlLayerPublishingService
             UpdatedAt = now
         };
 
-        return (existing ?? new MetadataV2Service()) with
+        if (existing is not null)
+        {
+            // Publishing a layer into an existing service only adds a publication. The
+            // operator-owned service configuration (protocol restrictions, lifecycle
+            // status, route, type, output CRS) must survive; rebuilding it from defaults
+            // would silently re-enable closed protocols and restart stopped services.
+            return existing with
+            {
+                Metadata = metadata,
+                Route = string.IsNullOrWhiteSpace(existing.Route)
+                    ? $"/rest/services/{metadata.Name}/FeatureServer"
+                    : existing.Route,
+                SpatialReference = existing.SpatialReference ?? CreateSpatialReference(srid),
+            };
+        }
+
+        return new MetadataV2Service
         {
             Metadata = metadata,
             ServiceType = MetadataV2ServiceType.EsriFeatureService,
@@ -3236,6 +3252,32 @@ internal sealed partial class PostgreSqlLayerPublishingService
             SpatialReference = CreateSpatialReference(srid),
             Status = ActiveReadyStatus(now)
         };
+    }
+
+    private static string BuildNewPublishedServiceId(MetadataV2Graph graph, string serviceName)
+    {
+        var trimmed = serviceName.Trim();
+        if (!trimmed.Any(static ch => char.IsLetterOrDigit(ch)))
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                "Service name must contain at least one letter or digit.");
+        }
+
+        // The id is derived from a lossy sanitisation ("Roads A" and "Roads-A" both map to
+        // "svc-publish-Roads-A"). A new service must never take over another service's id:
+        // UpsertById would replace that record wholesale (access policy, settings, name).
+        var serviceId = $"svc-publish-{SanitizeMetadataId(trimmed)}";
+        var colliding = graph.Services.FirstOrDefault(service =>
+            string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal));
+        if (colliding is not null)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Conflict,
+                $"Service name '{trimmed}' conflicts with existing service '{colliding.Metadata.Name}'; choose a distinct service name.");
+        }
+
+        return serviceId;
     }
 
     private static MetadataV2Resource BuildPublishedResource(

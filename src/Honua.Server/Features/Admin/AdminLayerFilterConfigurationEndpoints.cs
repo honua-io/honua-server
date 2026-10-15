@@ -20,7 +20,6 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class AdminLayerFilterConfigurationEndpoints
 {
-    private const int MetadataMutationMaxAttempts = 5;
     private const int MaxFilterExpressionLength = 4096;
 
     /// <summary>
@@ -79,6 +78,17 @@ internal static class AdminLayerFilterConfigurationEndpoints
             return layerResult.Problem!;
         }
 
+        var preview = AdminLayerConfigurationTargets.Resolve(
+            await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false),
+            layerId);
+        if (preview.IsAmbiguous)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status409Conflict,
+                preview.ConflictDetail ?? "The layer id is published by more than one resource.");
+        }
+
         var validationResult = ValidateAndBuildPermanentFilter(
             layerResult.Resource,
             request.PermanentFilter,
@@ -92,11 +102,19 @@ internal static class AdminLayerFilterConfigurationEndpoints
                 validationResult.Error);
         }
 
-        await WriteResourcePermanentFilterAsync(
+        var written = await AdminLayerConfigurationTargets.WriteAsync(
             graphStore,
             layerId,
-            validationResult.Filter,
+            resource => resource with { PermanentFilter = validationResult.Filter },
             cancellationToken).ConfigureAwait(false);
+        if (written.IsAmbiguous)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status409Conflict,
+                written.ConflictDetail ?? "The layer id is published by more than one resource.");
+        }
+
         await cacheInvalidator.InvalidateServiceCatalogAsync(null, [layerId], cancellationToken).ConfigureAwait(false);
 
         var response = BuildResponse(layerId, validationResult.Filter);
@@ -104,69 +122,6 @@ internal static class AdminLayerFilterConfigurationEndpoints
             ApiResponse<LayerFilterConfigurationResponse>.CreateSuccess(response),
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFilterConfigurationResponse);
     }
-
-    /// <summary>
-    /// Writes the per-layer permanent filter onto every V2 resource that this layer id
-    /// publishes through. Slice 51/N moved <c>LayerMetadata.PermanentFilter</c> to
-    /// <see cref="MetadataV2Resource.PermanentFilter"/>; this endpoint is the migrated
-    /// admin write-path. Passing <c>null</c> clears the filter. Retries on optimistic-concurrency
-    /// etag mismatch (background writers can bump the etag between the read and the save),
-    /// mirroring <c>AdminLayerAuthoringEndpoints.MutateResourceForLayerAsync</c>.
-    /// </summary>
-    private static async Task WriteResourcePermanentFilterAsync(
-        IMetadataV2GraphStore graphStore,
-        int layerId,
-        MetadataV2PermanentFilter? filter,
-        CancellationToken cancellationToken)
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-
-            // Resolve every resource id that this layer id publishes through. The admin
-            // permanent-filter endpoint is service-agnostic (it operates on layer ids only),
-            // so we walk all publications whose numeric identifier equals layerId and apply
-            // the change to each unique backing resource.
-            var targetResourceIds = snapshot.Graph.Publications
-                .Where(p => p.Identifier.IsNumeric && p.LayerIndex == layerId)
-                .Select(p => p.ResourceId)
-                .ToHashSet(StringComparer.Ordinal);
-
-            if (targetResourceIds.Count == 0)
-            {
-                return;
-            }
-
-            var resources = snapshot.Graph.Resources.ToArray();
-            for (var i = 0; i < resources.Length; i++)
-            {
-                if (targetResourceIds.Contains(resources[i].Metadata.Id))
-                {
-                    resources[i] = resources[i] with { PermanentFilter = filter };
-                }
-            }
-
-            var updated = snapshot.Graph with
-            {
-                Resources = resources,
-                Revision = snapshot.Graph.Revision + 1,
-            };
-
-            try
-            {
-                _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
-                return;
-            }
-            catch (Exception ex) when (IsEtagMismatch(ex) && attempt < MetadataMutationMaxAttempts)
-            {
-                // Concurrent etag bump — re-read and re-apply.
-            }
-        }
-    }
-
-    private static bool IsEtagMismatch(Exception exception) =>
-        exception is InvalidOperationException
-        && exception.Message.Contains("etag mismatch", StringComparison.OrdinalIgnoreCase);
 
     private static (MetadataV2PermanentFilter? Filter, string? Error) ValidateAndBuildPermanentFilter(
         MetadataV2Resource resource,

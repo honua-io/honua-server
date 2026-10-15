@@ -338,9 +338,7 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
     }
 
     private static List<string> Tokenize(string text)
-        => Normalize(text)
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToList();
+        => GeocodeQueryLimits.DistinctTokens(text, "singleLine");
 
     // Normalizes to a lowercase, single-spaced form matching the documented `search_text` column,
     // so the same normalization is applied on load (locator/reference import) and at query time.

@@ -91,11 +91,7 @@ internal sealed partial class StreamingFileImportService
                 var layers = FileGdb.FileGdbReader.DiscoverLayers(fileGdbScratch.GdbPath);
                 availableLayers = layers.Select(layer => layer.Name).ToArray();
                 previewFileGdbLayer = layers.Length > 0 ? layers[0] : null;
-                detectedSrid = layers.FirstOrDefault(layer => layer.Srid > 0).Srid;
-                if (detectedSrid <= 0)
-                {
-                    detectedSrid = FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
-                }
+                detectedSrid = await ResolveFileGdbSridAsync(layers, cancellationToken);
 
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
                 if (layers.Length > 1)

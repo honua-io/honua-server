@@ -1,12 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.RegularExpressions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication.ClientCertificates;
 
-internal sealed class ClientCertificateEnforcementMiddleware(
+internal sealed partial class ClientCertificateEnforcementMiddleware(
     RequestDelegate next,
     ClientCertificateExtractor extractor,
     IClientCertificateValidator validator,
@@ -153,11 +154,68 @@ internal sealed class ClientCertificateEnforcementMiddleware(
 
     private static bool IsAdminRequest(HttpContext context, ClientCertificateAuthenticationOptions options)
     {
-        return context.Request.Path.HasValue &&
-            options.ProtectedAdminPathPrefixes.Any(prefix =>
-                !string.IsNullOrWhiteSpace(prefix) &&
-                context.Request.Path.StartsWithSegments(new PathString(prefix.TrimEnd('/'))));
+        if (!context.Request.Path.HasValue)
+        {
+            return false;
+        }
+
+        // Classify the admin surface independently of how the API version segment is
+        // spelled (#6106). Admin groups are mapped as /api/v{version:apiVersion}/admin and
+        // URL-segment versioning accepts /api/v1/admin, /api/v1.0/admin, ... so a literal
+        // prefix match alone let /api/v1.0/admin skip RequiredForAdmin entirely. The
+        // matched endpoint's route template is authoritative when routing has already run;
+        // the version-agnostic path match covers requests evaluated before endpoint
+        // selection. The configured prefix list stays an additional opt-in.
+        if (IsAdminRouteEndpoint(context.GetEndpoint()) ||
+            VersionedAdminPathRegex().IsMatch(context.Request.Path.Value!))
+        {
+            return true;
+        }
+
+        var normalizedPath = NormalizeApiVersionSegment(context.Request.Path);
+        return options.ProtectedAdminPathPrefixes.Any(prefix =>
+        {
+            if (string.IsNullOrWhiteSpace(prefix))
+            {
+                return false;
+            }
+
+            var normalizedPrefix = NormalizeApiVersionSegment(new PathString(prefix.TrimEnd('/')));
+            return context.Request.Path.StartsWithSegments(new PathString(prefix.TrimEnd('/'))) ||
+                normalizedPath.StartsWithSegments(normalizedPrefix);
+        });
     }
+
+    private static bool IsAdminRouteEndpoint(Endpoint? endpoint)
+        => endpoint is RouteEndpoint { RoutePattern.RawText: { } rawText } &&
+            VersionedAdminPathRegex().IsMatch(rawText);
+
+    /// <summary>
+    /// Rewrites a leading <c>/api/v{major}[.0...]</c> segment to <c>/api/v{major}</c> so a
+    /// configured prefix such as <c>/api/v1/admin/foo</c> also protects
+    /// <c>/api/v1.0/admin/foo</c>.
+    /// </summary>
+    private static PathString NormalizeApiVersionSegment(PathString path)
+    {
+        var value = path.Value;
+        if (string.IsNullOrEmpty(value))
+        {
+            return path;
+        }
+
+        var match = ApiVersionSegmentRegex().Match(value);
+        return match.Success
+            ? new PathString("/api/v" + match.Groups["major"].Value + value[match.Length..])
+            : path;
+    }
+
+    // Matches /api/v{anything}/admin for both request paths (/api/v1.0/admin/...) and
+    // route templates (api/v{version:apiVersion}/admin/...).
+    [GeneratedRegex("^/?api/v[^/]+/admin(?:/|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
+    private static partial Regex VersionedAdminPathRegex();
+
+    [GeneratedRegex("^/api/v(?<major>[0-9]+)(?:\\.0+)*(?=/|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
+    private static partial Regex ApiVersionSegmentRegex();
 
     private static bool IsProtectedGrpcRequest(HttpContext context, ClientCertificateAuthenticationOptions options)
     {

@@ -925,6 +925,50 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_AnonymousCallerOmitsRollbackTargets()
+    {
+        const string targetId = "rollback-secret-target";
+        var automatic = RollbackBackend("rollback-auto", supportsRollback: true);
+        var store = Substitute.For<IWorkflowOperationStore>();
+        store.GetMostRecentSucceededDeployByTargetAsync(targetId, Arg.Any<CancellationToken>())
+            .Returns(ProtectedDeploy(targetId));
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDeployBackend>();
+                services.AddSingleton(automatic);
+                services.AddSingleton(store);
+                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.Add(
+                    Target(targetId, automatic.BackendName, "test")));
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var anonymous = fixture.CreateClient();
+            using var anonymousResponse = await anonymous.GetAsync("/api/v1/capabilities/manifest?environment=test");
+            using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
+            var anonymousRollback = GetCapability(anonymousDocument.RootElement, "deploy.rollback");
+            anonymousRollback.GetProperty("supported").ValueKind.Should().Be(JsonValueKind.True);
+            anonymousRollback.TryGetProperty("available", out _).Should().BeTrue();
+            anonymousRollback.TryGetProperty("rollbackTargets", out _).Should().BeFalse();
+            anonymousDocument.RootElement.GetRawText().Should().NotContain(targetId);
+
+            using var admin = fixture.CreateAdminClient();
+            using var adminResponse = await admin.GetAsync("/api/v1/capabilities/manifest?environment=test");
+            using var adminDocument = await ReadDocumentAsync(adminResponse);
+            var claims = GetCapability(adminDocument.RootElement, "deploy.rollback")
+                .GetProperty("rollbackTargets").EnumerateArray().ToArray();
+            claims.Should().Contain(claim => claim.GetProperty("targetId").GetString() == targetId);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static IDeployBackend RollbackBackend(string name, bool supportsRollback, bool probeFails = false)
     {
         var backend = Substitute.For<IDeployBackend>();

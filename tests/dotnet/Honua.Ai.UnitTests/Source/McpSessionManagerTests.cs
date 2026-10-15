@@ -86,6 +86,52 @@ public sealed class McpSessionManagerTests
     }
 
     [UnitTest]
+    public void Terminate_DropsJobAssociations_WhileLiveSessionStillResolves()
+    {
+        var manager = new McpSessionManager();
+        var live = manager.CreateSession();
+        var ending = manager.CreateSession();
+        manager.AssociateJob(live, "job-live");
+        manager.AssociateJob(ending, "job-ending");
+        manager.AssociateJob(ending, "job-ending-2");
+
+        manager.TryGetJobSession("job-live", out var liveResolved).Should().BeTrue();
+        liveResolved.Should().Be(live);
+        manager.TryGetJobSession("job-ending", out var endingResolved).Should().BeTrue();
+        endingResolved.Should().Be(ending);
+
+        manager.Terminate(ending).Should().BeTrue();
+
+        manager.TryGetJobSession("job-ending", out _).Should().BeFalse();
+        manager.TryGetJobSession("job-ending-2", out _).Should().BeFalse();
+        manager.TryGetJobSession("job-live", out liveResolved).Should().BeTrue();
+        liveResolved.Should().Be(live);
+    }
+
+    [UnitTest]
+    public void Evict_DropsJobAssociationsForTheEvictedSession()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var manager = new McpSessionManager(
+            maxSessions: 10,
+            idleTimeout: TimeSpan.FromHours(1),
+            evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
+            timeProvider: time,
+            maxAnonymousSessions: 1);
+
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var evicted).Should().BeTrue();
+        manager.AssociateJob(evicted, "job-evicted");
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var kept).Should().BeTrue();
+        manager.AssociateJob(kept, "job-kept");
+
+        manager.IsValid(evicted).Should().BeFalse();
+        manager.TryGetJobSession("job-evicted", out _).Should().BeFalse();
+        manager.TryGetJobSession("job-kept", out var resolved).Should().BeTrue();
+        resolved.Should().Be(kept);
+    }
+
+    [UnitTest]
     public void ValidateAccess_BindsToPrincipal_AndRejectsDifferentPrincipal()
     {
         var manager = new McpSessionManager();

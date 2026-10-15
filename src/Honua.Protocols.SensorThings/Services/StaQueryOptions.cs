@@ -19,6 +19,12 @@ internal sealed record StaQueryOptions
     /// <summary>Maximum page size the server will honor for <c>$top</c>.</summary>
     public const int MaxTop = 1000;
 
+    /// <summary>
+    /// Maximum <c>$top</c> inside <c>$expand</c>. Nested pages are smaller than the root
+    /// collection so one anonymous expand cannot fan out at the root page size.
+    /// </summary>
+    public const int NestedMaxTop = 100;
+
     /// <summary>The raw <c>$filter</c> expression, if present.</summary>
     public string? Filter { get; init; }
 

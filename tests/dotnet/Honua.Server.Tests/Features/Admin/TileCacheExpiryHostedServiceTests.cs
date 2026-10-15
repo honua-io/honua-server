@@ -8,6 +8,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 using System.Runtime.CompilerServices;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -92,11 +93,141 @@ public sealed class TileCacheExpiryHostedServiceTests
         jobService.Requests.Should().BeEmpty();
     }
 
-    private sealed class RecordingTileOperationJobService : ITileOperationJobService
+    [UnitTest]
+    public async Task ExecuteAsync_WhenSweepThrows_RetriesOnNextTick()
+    {
+        var jobService = new ThrowingTileOperationJobService();
+        var clock = new ManualTimeProvider();
+        var service = new TileCacheExpiryHostedService(
+            jobService,
+            Options.Create(new TileCacheExpiryOptions
+            {
+                Enabled = true,
+                IntervalSeconds = TileCacheExpiryHostedService.MinIntervalSeconds,
+                Targets = [new TileCacheExpiryTarget { LayerId = 1 }]
+            }),
+            NullLogger<TileCacheExpiryHostedService>.Instance,
+            clock);
+
+        await service.StartAsync(CancellationToken.None);
+        // BackgroundService.StartAsync queues ExecuteAsync, so the sweep timer does not exist yet.
+        await WaitUntilAsync(() => clock.HasTimer);
+        clock.HasTimer.Should().BeTrue();
+
+        clock.Advance(TimeSpan.FromSeconds(TileCacheExpiryHostedService.MinIntervalSeconds));
+        await WaitUntilAsync(() => jobService.Calls >= 1);
+        clock.Advance(TimeSpan.FromSeconds(TileCacheExpiryHostedService.MinIntervalSeconds));
+        await WaitUntilAsync(() => jobService.Calls >= 2);
+
+        service.ExecuteTask.Should().NotBeNull();
+        service.ExecuteTask!.IsFaulted.Should().BeFalse();
+        jobService.Calls.Should().BeGreaterThanOrEqualTo(2);
+
+        await service.StopAsync(CancellationToken.None);
+        service.ExecuteTask.Should().NotBeNull();
+        service.ExecuteTask!.IsFaulted.Should().BeFalse();
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> predicate)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!predicate())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
+    }
+
+    private sealed class ThrowingTileOperationJobService : RecordingTileOperationJobService
+    {
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public override Task<string> StartAsync(
+            TileOperationStartRequest request,
+            string? schemaName = null,
+            string? tenantScope = null,
+            CancellationToken cancellationToken = default)
+        {
+            var call = Interlocked.Increment(ref _calls);
+            if (call == 1)
+            {
+                throw new RedisTimeoutException("Timeout awaiting response, command=GET", CommandStatus.Sent);
+            }
+
+            return base.StartAsync(request, schemaName, tenantScope, cancellationToken);
+        }
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long _utcTicks = DateTimeOffset.UnixEpoch.UtcTicks;
+        private ManualTimer? _timer;
+
+        public bool HasTimer => _timer is { Disposed: false };
+
+        public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref _utcTicks), TimeSpan.Zero);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+            => _timer = new ManualTimer(callback, state, dueTime, period);
+
+        public void Advance(TimeSpan duration)
+        {
+            Interlocked.Add(ref _utcTicks, duration.Ticks);
+            _timer?.Advance(duration);
+        }
+
+        private sealed class ManualTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period) : ITimer
+        {
+            private TimeSpan _remaining = dueTime;
+            private TimeSpan _period = period;
+
+            public bool Disposed { get; private set; }
+
+            public void Advance(TimeSpan duration)
+            {
+                if (Disposed)
+                {
+                    return;
+                }
+
+                _remaining -= duration;
+                if (_remaining > TimeSpan.Zero)
+                {
+                    return;
+                }
+
+                callback(state);
+                _remaining += _period > TimeSpan.Zero ? _period : TimeSpan.Zero;
+            }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                if (Disposed)
+                {
+                    return false;
+                }
+
+                _remaining = dueTime;
+                _period = period;
+                return true;
+            }
+
+            public void Dispose() => Disposed = true;
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
+    private class RecordingTileOperationJobService : ITileOperationJobService
     {
         public List<TileOperationStartRequest> Requests { get; } = [];
 
-        public Task<string> StartAsync(
+        public virtual Task<string> StartAsync(
             TileOperationStartRequest request,
             string? schemaName = null,
             string? tenantScope = null,

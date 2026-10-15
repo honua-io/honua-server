@@ -208,6 +208,44 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
 
     [IntegrationTest]
     [Operation(Operations.Create)]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task CreateFeature_PointIntoPolygonCollection_ReturnsBadRequest()
+    {
+        // #6108: the layer's declared geometry type is enforced by the shared mutation
+        // validator, so OGC API Features cannot make a polygon layer heterogeneous.
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[1000, 2000]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "point-in-polygon-layer"
+            }
+        };
+
+        var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PolygonLayerId}/items")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/geo+json")
+        };
+        request.Headers.TryAddWithoutValidation("Content-Crs", "<http://www.opengis.net/def/crs/EPSG/0/3857>");
+        using var response = await _fixture.Client.SendAsync(request);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, responseContent);
+        JsonDocument.Parse(responseContent).RootElement.GetProperty("detail").GetString()
+            .Should().Contain("does not match the layer geometry type Polygon");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
     [Operation(Operations.Update)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]

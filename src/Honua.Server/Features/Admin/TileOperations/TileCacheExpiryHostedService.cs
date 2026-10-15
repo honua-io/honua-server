@@ -30,7 +30,8 @@ internal sealed class TileCacheExpiryScheduledTickHandler(TileCacheExpiryHostedS
 internal sealed partial class TileCacheExpiryHostedService(
     ITileOperationJobService jobService,
     IOptions<TileCacheExpiryOptions> options,
-    ILogger<TileCacheExpiryHostedService> logger) : BackgroundService
+    ILogger<TileCacheExpiryHostedService> logger,
+    TimeProvider? timeProvider = null) : BackgroundService
 {
     /// <summary>
     /// Minimum sweep interval. Sweeps queue invalidation jobs against the serving pod, so a too-low
@@ -41,6 +42,7 @@ internal sealed partial class TileCacheExpiryHostedService(
     private readonly ITileOperationJobService _jobService = jobService ?? throw new ArgumentNullException(nameof(jobService));
     private readonly TileCacheExpiryOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly ILogger<TileCacheExpiryHostedService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -51,13 +53,25 @@ internal sealed partial class TileCacheExpiryHostedService(
         }
 
         var intervalSeconds = Math.Max(MinIntervalSeconds, _options.IntervalSeconds);
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(intervalSeconds));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(intervalSeconds), _timeProvider);
 
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
-                await SweepAsync(stoppingToken).ConfigureAwait(false);
+                try
+                {
+                    await SweepAsync(stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                // A Redis or progress-store fault must not stop the host. Log and retry next tick.
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    Log.ExpirySweepFailed(_logger, ex);
+                }
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -102,5 +116,8 @@ internal sealed partial class TileCacheExpiryHostedService(
 
         [LoggerMessage(EventId = 9243, Level = LogLevel.Warning, Message = "Skipped invalid scheduled tile cache expiry target (no service or layer).")]
         public static partial void InvalidExpiryTargetSkipped(ILogger logger);
+
+        [LoggerMessage(EventId = 9244, Level = LogLevel.Warning, Message = "Scheduled tile-cache expiry sweep failed; will retry on the next tick.")]
+        public static partial void ExpirySweepFailed(ILogger logger, Exception exception);
     }
 }

@@ -13,6 +13,8 @@ using Honua.Infrastructure.Security;
 using Honua.Server.Tests.Infrastructure;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -25,6 +27,7 @@ namespace Honua.Server.Tests;
 /// <summary>
 /// Integration tests for PostgresAttachmentStore using real PostgreSQL database.
 /// </summary>
+[Protocol(TestProtocols.TestQuality)]
 [Collection("Database.CoreFeatureStore")]
 public class PostgresAttachmentStoreTests : IAsyncLifetime
 {
@@ -629,6 +632,50 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.True(await _fileStorage.ExistsAsync(attachment.StoragePath));
 
         await _fileStorage.DeleteAsync(attachment.StoragePath);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task UploadAsync_ConcurrentUploadsAtLimitMinusOne_DoesNotExceedCount()
+    {
+        const int limit = 3;
+        const long featureId = 990613;
+        var store = new PostgresAttachmentStore(
+            new TestDatabaseConnectionProvider(_fixture.DataSource),
+            _fileStorage,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            _schemaName,
+            attachmentLimits: new AttachmentLimits
+            {
+                MaxAttachmentsPerFeature = limit,
+                MaxAttachmentSize = 1024 * 1024,
+                MaxTotalAttachmentSize = 50L * 1024 * 1024
+            });
+
+        for (var index = 0; index < limit - 1; index++)
+        {
+            await using var seed = new MemoryStream("seed"u8.ToArray());
+            await store.UploadAsync(TestLayerId, featureId, $"seed-{index}.txt", "text/plain", seed);
+        }
+
+        var outcomes = await Task.WhenAll(Enumerable.Range(0, 10).Select(async index =>
+        {
+            try
+            {
+                await using var stream = new MemoryStream("concurrent"u8.ToArray());
+                await store.UploadAsync(TestLayerId, featureId, $"concurrent-{index}.txt", "text/plain", stream);
+                return true;
+            }
+            catch (ValidationException)
+            {
+                return false;
+            }
+        }));
+
+        Assert.Equal(1, outcomes.Count(succeeded => succeeded));
+        var stored = await store.ListAsync(TestLayerId, featureId);
+        Assert.True(stored.Length <= limit);
+        Assert.Equal(limit, stored.Length);
     }
 
     /// <summary>

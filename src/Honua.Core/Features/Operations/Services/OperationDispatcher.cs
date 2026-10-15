@@ -3,7 +3,6 @@
 
 using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 
@@ -106,7 +105,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         // A scope-governed bearer is constrained on EVERY submission, not only on approved
         // replay: read-only operations execute directly and never reach the replay branch, so
         // enforcing there alone let a discover/create-only bearer invoke sensitive inventories.
-        if (ExceedsScopeAuthority(request, context))
+        if (OperationScopeMapping.ExceedsScopeAuthority(request, context))
         {
             return new OperationHandle
             {
@@ -724,11 +723,6 @@ public sealed class OperationDispatcher : IOperationInvoker
                 : $"operationId={envelope.OperationId};status={envelope.Status}",
         }, cancellationToken);
 
-    /// <summary>
-    /// Whether a scope-governed caller lacks the OAuth authority this operation requires. An
-    /// operation with no scope mapping is refused rather than allowed: a bearer cannot invoke
-    /// authority the scope catalog does not describe.
-    /// </summary>
     private static OperationPolicyContext BindProvisioningRoot(OperationRequest request, OperationPolicyContext context)
     {
         var root = RootProvisioningOperationIds.PreferCanonical(
@@ -739,15 +733,6 @@ public sealed class OperationDispatcher : IOperationInvoker
             ? context
             : context with { RootProvisioningOperationId = root };
     }
-
-    private static bool ExceedsScopeAuthority(OperationRequest request, OperationPolicyContext context)
-        => context.ScopeGoverned
-            && (context.RecognizedScopes.Count == 0
-                || context.RecognizedScopes.Any(scope =>
-                    !OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal))
-                || !OperationScopeMapping.TryResolve(request, out var requiredOperation)
-                || !OperatorScopeCatalog.PermitsOperation(
-                    context.RecognizedScopes.ToHashSet(StringComparer.Ordinal), requiredOperation));
 
     private IOperationExecutor ResolveExecutor(string operationId)
         => _executors.TryGetValue(operationId, out var executor)

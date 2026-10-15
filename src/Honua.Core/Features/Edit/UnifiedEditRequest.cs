@@ -180,6 +180,13 @@ public readonly record struct EditFeature
     public ImmutableArray<string> ExplicitAttributeRemovals { get; init; }
 
     /// <summary>
+    /// Keeps the stored geometry of the locked row when a materialized partial update omitted
+    /// geometry, instead of writing <see cref="Geometry"/> from an earlier read (#6094).
+    /// </summary>
+    [JsonIgnore]
+    public bool PreserveOmittedGeometry { get; init; }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="EditFeature"/> struct with default values.
     /// </summary>
     public EditFeature()
@@ -192,6 +199,7 @@ public readonly record struct EditFeature
         UpdateMode = EditUpdateMode.Replace;
         PreserveOmittedMaskedAttributes = false;
         ExplicitAttributeRemovals = ImmutableArray<string>.Empty;
+        PreserveOmittedGeometry = false;
         Metadata = null;
     }
 

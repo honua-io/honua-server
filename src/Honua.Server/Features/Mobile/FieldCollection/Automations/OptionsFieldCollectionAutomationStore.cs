@@ -30,7 +30,16 @@ internal sealed class OptionsFieldCollectionAutomationStore : IFieldCollectionAu
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var definitions = _options.CurrentValue.Actions;
+        var current = _options.CurrentValue;
+        // Enabled is the operator kill switch. Configured actions must not be
+        // enqueued while dispatch is off, or the bounded queue fills and the
+        // mobile push that already committed the change waits forever.
+        if (!current.Enabled)
+        {
+            return Task.FromResult<IReadOnlyList<FieldCollectionAutomationAction>>(Array.Empty<FieldCollectionAutomationAction>());
+        }
+
+        var definitions = current.Actions;
         if (definitions is null || definitions.Count == 0)
         {
             return Task.FromResult<IReadOnlyList<FieldCollectionAutomationAction>>(Array.Empty<FieldCollectionAutomationAction>());

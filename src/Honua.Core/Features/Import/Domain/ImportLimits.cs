@@ -6,8 +6,11 @@ using Honua.Core.Configuration;
 namespace Honua.Core.Features.Import.Domain;
 
 /// <summary>
-/// Configuration limits for file import operations.
-/// Controls batch sizes, memory usage, and background job thresholds.
+/// Pipeline limits for file import, bound from <c>Import:Limits:*</c> by the hand parser in
+/// the Postgres composition root. Not the <c>Limits:Imports:*</c> size ceilings
+/// (<see cref="Honua.Core.Configuration.ImportSizeLimits"/>). Shared names such as <c>BatchSize</c>,
+/// <c>MaxPreviewFeatures</c>, and <c>MaxPreviewCountScan</c> are separate settings with
+/// separate defaults; the pipeline uses this record (#3346).
 /// </summary>
 public sealed record ImportLimits
 {

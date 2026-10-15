@@ -288,6 +288,82 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
         }
     }
 
+    // honua-server#6114: a FileGDB feature class in NAD83 / California zone 3 (ftUS), stored as
+    // ESRI WKT without an AUTHORITY node (as ArcGIS writes it). Every feature used to be stamped
+    // EPSG:4326 by the reader, so an explicit SourceSrid was ignored and State Plane feet were
+    // stored as degrees.
+    private static readonly string StatePlaneGdbPath = Path.Join(
+        AppContext.BaseDirectory, "Features", "Import", "Fixtures", "FileGdb", "stateplane-parcels.gdb.zip");
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_FileGdbStatePlaneWithExplicitSourceSrid_StoresSrid2227()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportDatumTransformationTests));
+        try
+        {
+            await EnsureImportFunctionsAsync();
+
+            var service = CreateService(schema, datumTransformationCatalog: null);
+            var result = await ImportStatePlaneGdbAsync(service, schema, "gdb_sp_native", targetSrid: 2227);
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(2);
+
+            var (x, y, srid) = await ReadSinglePointAsync(schema, "imported_gdb_sp_native");
+            srid.Should().Be(2227);
+            // Both fixture points (SF-001 6010000/2110000, SF-002 6012500.5/2113250.25) are State
+            // Plane feet and must be stored unchanged in their own CRS.
+            x.Should().BeInRange(6009999.0, 6012501.0);
+            y.Should().BeInRange(2109999.0, 2113251.0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_FileGdbStatePlaneWithExplicitSourceSrid_ReprojectsToWgs84()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportDatumTransformationTests));
+        try
+        {
+            await EnsureImportFunctionsAsync();
+
+            var service = CreateService(schema, datumTransformationCatalog: null);
+            var result = await ImportStatePlaneGdbAsync(service, schema, "gdb_sp_wgs84", targetSrid: 4326);
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+
+            var (x, y, srid) = await ReadSinglePointAsync(schema, "imported_gdb_sp_wgs84");
+            srid.Should().Be(4326);
+            x.Should().BeInRange(-123.5, -121.0, "the point lies in the San Francisco Bay Area, not at 6,010,000 degrees");
+            y.Should().BeInRange(37.0, 38.5);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private static async Task<ImportResult> ImportStatePlaneGdbAsync(
+        StreamingFileImportService service,
+        string schema,
+        string tableName,
+        int targetSrid)
+    {
+        await using var stream = File.OpenRead(StatePlaneGdbPath);
+        return await service.ImportFileAsync(new ImportRequest
+        {
+            FileStream = stream,
+            FileName = "stateplane-parcels.gdb.zip",
+            TableName = tableName,
+            TargetSchema = schema,
+            SourceSrid = 2227,
+            TargetSrid = targetSrid,
+        });
+    }
+
     private StreamingFileImportService CreateService(string schema, IDatumTransformationCatalog? datumTransformationCatalog)
     {
         var provider = new TestConnectionProvider(fixture.DataSource, schema);

@@ -192,6 +192,45 @@ public sealed class GeometryServiceEditOperationsTests
 
     [IntegrationTest]
     [Operation(Operations.TrimExtend)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/trimExtend")]
+    public async Task TrimExtend_TrimLineOrientedSouth_KeepsEastPart()
+    {
+        // A south-oriented trim line has the east half on its left. The previous
+        // implementation always kept the start of the line, so the first vertex was (0,0).
+        var body = """
+        {
+            "polylines": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [
+                    {"paths": [[[0,0],[10,0]]]}
+                ]
+            },
+            "trimExtendTo": {
+                "paths": [[[3,2],[3,-2]]]
+            },
+            "sr": "3857"
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/trimExtend",
+            requestContent);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+
+        var paths = result.Geometries![0].GetProperty("paths");
+        var firstVertex = paths[0][0];
+        firstVertex[0].GetDouble().Should().BeApproximately(3.0, 0.001);
+        firstVertex[1].GetDouble().Should().BeApproximately(0.0, 0.001);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TrimExtend)]
     [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/trimExtend")]
     public async Task TrimExtend_GetMissingTrimLine_Returns400()
     {
@@ -401,7 +440,82 @@ public sealed class GeometryServiceEditOperationsTests
         var content = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceGeometryResponse);
         result.Should().NotBeNull();
-        result!.Geometry.TryGetProperty("rings", out _).Should().BeTrue();
+        result!.Geometry.TryGetProperty("rings", out var rings).Should().BeTrue();
+        // Square (area 1) plus the outward lobe triangle (area 0.5). The longest original
+        // boundary is preserved, so the result is not the untouched square.
+        PolygonArea(rings).Should().BeApproximately(1.5, 1e-6);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Reshape)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/reshape")]
+    public async Task Reshape_PostInwardReshaper_DropsLargerFace()
+    {
+        // The reshaper runs from the bottom-left corner to the bottom-right corner through
+        // the interior, close to the three-side boundary. That longer boundary encloses
+        // area 0.25; the short bottom edge plus the reshaper encloses 0.75. Esri keeps the
+        // longer boundary, so the larger face is the part that is removed.
+        var body = """
+        {
+            "target": {
+                "rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]
+            },
+            "reshaper": {
+                "paths": [[[0,0],[0.125,0.8571428571428571],[0.875,0.8571428571428571],[1,0]]]
+            },
+            "sr": "4326"
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/reshape",
+            requestContent);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceGeometryResponse);
+        result.Should().NotBeNull();
+        result!.Geometry.TryGetProperty("rings", out var rings).Should().BeTrue();
+        PolygonArea(rings).Should().BeApproximately(0.25, 1e-6);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Reshape)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/reshape")]
+    public async Task Reshape_PostPolylineWithReshaper_KeepsOuterSections()
+    {
+        // Keep (0,0)-(3,0), splice the reshaper, then keep (7,0)-(10,0). Length is
+        // 3+2+4+2+3 = 14. Returning only the reshaper (length 8) drops the line.
+        var body = """
+        {
+            "target": {
+                "paths": [[[0,0],[10,0]]]
+            },
+            "reshaper": {
+                "paths": [[[3,0],[3,2],[7,2],[7,0]]]
+            },
+            "sr": "3857"
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/reshape",
+            requestContent);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceGeometryResponse);
+        result.Should().NotBeNull();
+        result!.Geometry.TryGetProperty("paths", out var paths).Should().BeTrue();
+        var path = paths[0];
+        PathLength(path).Should().BeApproximately(14, 1e-6);
+        path[0][0].GetDouble().Should().BeApproximately(0, 1e-6);
+        path[0][1].GetDouble().Should().BeApproximately(0, 1e-6);
+        var last = path[path.GetArrayLength() - 1];
+        last[0].GetDouble().Should().BeApproximately(10, 1e-6);
+        last[1].GetDouble().Should().BeApproximately(0, 1e-6);
     }
 
     [IntegrationTest]
@@ -486,5 +600,48 @@ public sealed class GeometryServiceEditOperationsTests
         var response = await _fixture.Client.GetAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/findTransformations?inSR=4326");
         await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    private static double PolygonArea(JsonElement rings)
+    {
+        double area = 0;
+        var index = 0;
+        foreach (var ring in rings.EnumerateArray())
+        {
+            var ringArea = Math.Abs(SignedArea(ring));
+            area += index == 0 ? ringArea : -ringArea;
+            index++;
+        }
+
+        return area;
+    }
+
+    private static double SignedArea(JsonElement ring)
+    {
+        double sum = 0;
+        var count = ring.GetArrayLength();
+        for (var i = 0; i < count; i++)
+        {
+            var start = ring[i];
+            var end = ring[(i + 1) % count];
+            sum += (start[0].GetDouble() * end[1].GetDouble()) - (end[0].GetDouble() * start[1].GetDouble());
+        }
+
+        return sum / 2;
+    }
+
+    private static double PathLength(JsonElement path)
+    {
+        double length = 0;
+        for (var i = 1; i < path.GetArrayLength(); i++)
+        {
+            var start = path[i - 1];
+            var end = path[i];
+            var dx = end[0].GetDouble() - start[0].GetDouble();
+            var dy = end[1].GetDouble() - start[1].GetDouble();
+            length += Math.Sqrt((dx * dx) + (dy * dy));
+        }
+
+        return length;
     }
 }

@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -15,6 +16,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests;
 
@@ -34,6 +36,11 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        // The default test graph declares no edit capabilities. applyEdits treats that as
+        // Query-only, and attachment writes now use the same resolver (#6135).
+        _fixture.EnableV2ServiceEditingCapabilities(
+            TestServiceId,
+            ["Query", "Create", "Update", "Delete"]);
         var storage = _fixture.GetService<ICloudFileStorage>();
         await AttachmentTestData.SeedAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId);
     }
@@ -210,6 +217,46 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         // Read the bytes back through the public download route.
         var downloaded = await DownloadAttachmentBytesAsync(result.AddAttachmentResult.ObjectId);
         downloaded.Should().Equal(fileContent);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_WhenOnlyQueryIsDeclared_DoesNotStore()
+    {
+        _fixture.EnableV2ServiceEditingCapabilities(TestServiceId, ["Query"]);
+        try
+        {
+            var before = await CountStoredAttachmentsAsync();
+            using var response = await PostPdfAttachmentAsync("query-only.pdf");
+            await response.AssertGeoServicesErrorAsync(400);
+            (await CountStoredAttachmentsAsync()).Should().Be(before);
+        }
+        finally
+        {
+            _fixture.EnableV2ServiceEditingCapabilities(
+                TestServiceId,
+                ["Query", "Create", "Update", "Delete"]);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_WhenLayerDoesNotSupportAttachments_DoesNotStore()
+    {
+        SetLayerEditing(new MetadataV2ResourceEditing { SupportsAttachments = false });
+        try
+        {
+            var before = await CountStoredAttachmentsAsync();
+            using var response = await PostPdfAttachmentAsync("unsupported.pdf");
+            await response.AssertGeoServicesErrorAsync(400);
+            (await CountStoredAttachmentsAsync()).Should().Be(before);
+        }
+        finally
+        {
+            SetLayerEditing(null);
+        }
     }
 
     [IntegrationTest]
@@ -1121,6 +1168,51 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         }
 
         return payload;
+    }
+
+    private async Task<HttpResponseMessage> PostPdfAttachmentAsync(string filename)
+    {
+        var byteContent = new ByteArrayContent("refused"u8.ToArray());
+        byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { byteContent, "attachment", filename }
+        };
+        return await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment",
+            form);
+    }
+
+    private async Task<long> CountStoredAttachmentsAsync()
+    {
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM honua.attachments
+            WHERE layer_id = @layerId AND feature_id = @featureId
+            """;
+        command.Parameters.AddWithValue("layerId", TestLayerId);
+        command.Parameters.AddWithValue("featureId", TestFeatureId);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+    }
+
+    private void SetLayerEditing(MetadataV2ResourceEditing? editing)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.LayerIndex == TestLayerId);
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = snapshot.Graph.Resources.Select(resource =>
+                resource.Metadata.Id == publication.ResourceId
+                    ? resource with { Editing = editing }
+                    : resource).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
     }
 
     private async Task<long> AddAttachmentAsync(byte[] payload, string filename, string contentType)

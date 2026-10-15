@@ -133,6 +133,16 @@ internal sealed class GeocodingHandler(
                 "singleLine is required, or provide structured fields: address, city, region, postal, countryCode.");
         }
 
+        try
+        {
+            // Cap length and distinct tokens before any provider builds a predicate per token.
+            GeocodeQueryLimits.EnsureBounded(query, "singleLine");
+        }
+        catch (GeocodeRequestException ex)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+        }
+
         // The forward category filter narrows candidates by their provider-supplied address type.
         // A magicKey's encoded category is honored when the request itself carries no explicit one.
         var requestedCategories = GeocodeCategoryFilter.ParseCategories(GetValue(values, "category"))
@@ -767,6 +777,17 @@ internal sealed class GeocodingHandler(
             {
                 if (!string.IsNullOrWhiteSpace(address))
                 {
+                    try
+                    {
+                        GeocodeQueryLimits.EnsureBounded(address, "records");
+                    }
+                    catch (GeocodeRequestException ex)
+                    {
+                        queries = null;
+                        error = ex.Message;
+                        return false;
+                    }
+
                     queries.Add(address);
                 }
                 else

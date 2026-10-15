@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
@@ -237,11 +236,11 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
             // Resolve barrier-restricted edges first so the same exclusion set
             // applies to every leg. Empty when no barriers are supplied.
-            var blockedEdges = await ResolveBlockedEdgesAsync(
+            var blockedEdgeCount = await ResolveBlockedEdgesAsync(
                 session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.barriers", request.Barriers.Count);
-            activity?.SetTag("honua.routing.blocked_edges", blockedEdges.Count);
-            var edgesSql = BuildRouteEdgesSql(dataset, profile, blockedEdges);
+            activity?.SetTag("honua.routing.blocked_edges", blockedEdgeCount);
+            var edgesSql = BuildRouteEdgesSql(dataset, profile, blockedEdgeCount);
 
             // Snap each stop to its nearest graph vertex (input transformed from the
             // request SRID to the graph SRID 4326 before the KNN snap).
@@ -263,7 +262,9 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
             // Route each consecutive pair with pgr_dijkstra and collect the visited
             // (node, edge) steps in order so we can thread the geometry in traversal
-            // order with correct orientation and sum the cost.
+            // order with correct orientation and sum the cost. A same-vertex leg is a
+            // zero-cost degenerate pair (pgRouting returns no row); it must not fail
+            // the rest of the route.
             var steps = new List<RouteStep>();
             var totalCost = 0.0;
             for (var i = 0; i < vertexIds.Length - 1; i++)
@@ -285,12 +286,29 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
             if (steps.Count == 0)
             {
-                activity?.SetTag("honua.routing.solved", false);
-                return new RouteSolveResult(string.Empty, 0, 0, []);
+                // Every leg snapped to one vertex. Emit a degenerate line so the
+                // solve is a zero-cost path instead of "no route".
+                var degenerate = await DegenerateSameVertexGeometryAsync(
+                    session, request.Stops[0], request.InSrid, request.OutSrid, cancellationToken)
+                    .ConfigureAwait(false);
+                if (string.IsNullOrEmpty(degenerate))
+                {
+                    activity?.SetTag("honua.routing.solved", false);
+                    return new RouteSolveResult(string.Empty, 0, 0, []);
+                }
+
+                var zeroMinutes = RoutingCostUnitConverter.CostToMinutes(totalCost, _costUnit);
+                activity?.SetTag("honua.routing.solved", true);
+                activity?.SetTag("honua.routing.length_m", 0);
+                return new RouteSolveResult(
+                    degenerate,
+                    0,
+                    zeroMinutes,
+                    [new RouteDirectionStep("Route", 0, zeroMinutes, "straight")]);
             }
 
             var (geometryGeoJson, lengthMeters) = await MergeEdgeGeometryAsync(
-                session, dataset, steps, request.OutSrid, cancellationToken).ConfigureAwait(false);
+                session, dataset, steps, request.OutSrid, reverseLine: false, cancellationToken).ConfigureAwait(false);
 
             // The raw pgRouting cost weight is converted to travel-time minutes
             // through the declared cost-unit contract (see RoutingCostUnitConverter /
@@ -351,10 +369,10 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
             // Resolve barrier-restricted edges once and exclude them from the
             // reachability graph for every facility/break.
-            var blockedEdges = await ResolveBlockedEdgesAsync(
+            var blockedEdgeCount = await ResolveBlockedEdgesAsync(
                 session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.barriers", request.Barriers.Count);
-            activity?.SetTag("honua.routing.blocked_edges", blockedEdges.Count);
+            activity?.SetTag("honua.routing.blocked_edges", blockedEdgeCount);
 
             // ToFacility coverage runs driving-distance over the reversed graph
             // (source/target swapped) so it computes who can reach the facility
@@ -362,7 +380,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             var baseEdgesSql = request.TravelDirection == ServiceAreaTravelDirection.ToFacility
                 ? ReversedEdgesSql(dataset, profile)
                 : OutboundEdgesSql(dataset, profile);
-            var edgesSql = ApplyBlockedEdgeFilter(baseEdgesSql, blockedEdges);
+            var edgesSql = ApplyBlockedEdgeFilter(baseEdgesSql, blockedEdgeCount);
 
             var polygons = new List<ServiceAreaPolygon>();
 
@@ -377,7 +395,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                     continue;
                 }
 
-                var fromBreak = 0.0;
                 foreach (var toBreak in orderedBreaks)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -395,14 +412,14 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                     // polygon. Emitting an empty-rings feature would signal a polygon
                     // that does not exist, so the facility/break pair is omitted and
                     // the absence is surfaced via the adapter's no-solve message.
+                    // An omitted break does not shift the next polygon's label: every
+                    // polygon is the cumulative disk out to its own break (#6026).
                     if (string.IsNullOrEmpty(geometry))
                     {
-                        fromBreak = toBreak;
                         continue;
                     }
 
-                    polygons.Add(new ServiceAreaPolygon(facilityId, fromBreak, toBreak, geometry));
-                    fromBreak = toBreak;
+                    polygons.Add(new ServiceAreaPolygon(facilityId, 0, toBreak, geometry));
                 }
             }
 
@@ -444,7 +461,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             var profile = ResolveTravelProfile(dataset, request.TravelMode);
             activity?.SetTag("honua.routing.travel_profile", profile.Name);
 
-            var blockedEdges = await ResolveBlockedEdgesAsync(
+            var blockedEdgeCount = await ResolveBlockedEdgesAsync(
                 session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
 
             // ToFacility ranks by the cost incident -> facility over the outbound
@@ -454,7 +471,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             var baseEdgesSql = request.Direction == ClosestFacilityTravelDirection.FromFacility
                 ? ReversedEdgesSql(dataset, profile)
                 : OutboundEdgesSql(dataset, profile);
-            var edgesSql = ApplyBlockedEdgeFilter(baseEdgesSql, blockedEdges);
+            var edgesSql = ApplyBlockedEdgeFilter(baseEdgesSql, blockedEdgeCount);
 
             // Snap facilities once; reused across incidents.
             var facilityVertices = await SnapAllAsync(
@@ -518,8 +535,14 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                     var length = 0.0;
                     if (leg is { } legValue && legValue.Steps.Count > 0)
                     {
+                        // The leg is solved from the incident over whichever graph
+                        // ranked the facility, so the merged line starts at the
+                        // incident. FromFacility travel runs facility -> incident;
+                        // reverse the merged line so its first vertex is the facility.
+                        var reverseLine = request.Direction == ClosestFacilityTravelDirection.FromFacility;
                         (geometry, length) = await MergeEdgeGeometryAsync(
-                            session, dataset, legValue.Steps, request.OutSrid, cancellationToken).ConfigureAwait(false);
+                            session, dataset, legValue.Steps, request.OutSrid, reverseLine, cancellationToken)
+                            .ConfigureAwait(false);
                     }
 
                     // Convert the raw cost impedance to travel-time minutes for the
@@ -576,9 +599,9 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             var profile = ResolveTravelProfile(dataset, request.TravelMode);
             activity?.SetTag("honua.routing.travel_profile", profile.Name);
 
-            var blockedEdges = await ResolveBlockedEdgesAsync(
+            var blockedEdgeCount = await ResolveBlockedEdgesAsync(
                 session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
-            var edgesSql = ApplyBlockedEdgeFilter(OutboundEdgesSql(dataset, profile), blockedEdges);
+            var edgesSql = ApplyBlockedEdgeFilter(OutboundEdgesSql(dataset, profile), blockedEdgeCount);
 
             var originVertices = await SnapAllAsync(
                 session, dataset, request.Origins, request.InSrid, cancellationToken).ConfigureAwait(false);
@@ -769,9 +792,9 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             var profile = ResolveTravelProfile(dataset, request.TravelMode);
             activity?.SetTag("honua.routing.travel_profile", profile.Name);
 
-            var blockedEdges = await ResolveBlockedEdgesAsync(
+            var blockedEdgeCount = await ResolveBlockedEdgesAsync(
                 session, dataset, request.Barriers, request.InSrid, cancellationToken).ConfigureAwait(false);
-            var edgesSql = ApplyBlockedEdgeFilter(OutboundEdgesSql(dataset, profile), blockedEdges);
+            var edgesSql = ApplyBlockedEdgeFilter(OutboundEdgesSql(dataset, profile), blockedEdgeCount);
 
             // Build the candidate-facility × demand-point impedance matrix:
             // matrix[facility][demand] = network cost (PositiveInfinity when
@@ -877,22 +900,46 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 @source, @targets, directed => true);
             """;
 
-        var costs = new Dictionary<long, double>();
-        await foreach (var row in session.QueryAsync(
-                           sql,
-                           static row => (
-                               EndVid: row.GetFieldValue<long>(0),
-                               Cost: row.GetFieldValue<double>(1)),
-                           new Dictionary<string, object?>
-                           {
-                               ["edges_sql"] = edgesSql,
-                               ["source"] = sourceVertex,
-                               ["targets"] = destinationVertices,
-                           },
-                           cancellationToken).ConfigureAwait(false))
+        // pgRouting 3.x returns no row when start = end. Drop the source from the
+        // target array and seed cost 0 so a co-located facility, OD pair, or
+        // demand point is reachable at cost 0 instead of missing.
+        var targets = new List<long>(destinationVertices.Length);
+        var includeSource = false;
+        foreach (var destination in destinationVertices)
         {
-            // pgr_dijkstraCost returns the minimum agg_cost per (start,end) pair.
-            costs[row.EndVid] = row.Cost;
+            if (destination == sourceVertex)
+            {
+                includeSource = true;
+                continue;
+            }
+
+            targets.Add(destination);
+        }
+
+        var costs = new Dictionary<long, double>();
+        if (targets.Count > 0)
+        {
+            await foreach (var row in session.QueryAsync(
+                               sql,
+                               static row => (
+                                   EndVid: row.GetFieldValue<long>(0),
+                                   Cost: row.GetFieldValue<double>(1)),
+                               new Dictionary<string, object?>
+                               {
+                                   ["edges_sql"] = edgesSql,
+                                   ["source"] = sourceVertex,
+                                   ["targets"] = targets.ToArray(),
+                               },
+                               cancellationToken).ConfigureAwait(false))
+            {
+                // pgr_dijkstraCost returns the minimum agg_cost per (start,end) pair.
+                costs[row.EndVid] = row.Cost;
+            }
+        }
+
+        if (includeSource)
+        {
+            costs.TryAdd(sourceVertex, 0);
         }
 
         return costs;
@@ -938,10 +985,17 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         long targetVertex,
         CancellationToken cancellationToken)
     {
+        // Same snapped vertex: there is no edge to traverse. pgRouting returns no
+        // row for start = end, which callers must not treat as "no route".
+        if (sourceVertex == targetVertex)
+        {
+            return ([], 0);
+        }
+
         // pgr_dijkstra over the ways edge table. The inner edges_sql is built by
-        // BuildRouteEdgesSql from a constant base plus a barrier-exclusion clause
-        // that lists only server-derived integer edge gids (never a user string),
-        // so no user value is interpolated. source/target are bound parameters.
+        // BuildRouteEdgesSql from a constant base plus, when barriers matched, a
+        // reference to the session temp table of blocked gids (never an inlined
+        // gid list or a user string). source/target are bound parameters.
         // edge = -1 marks the synthetic final row pgr_dijkstra appends, which we
         // skip. We capture the per-step node alongside the edge so geometry can be
         // threaded in traversal order with correct orientation.
@@ -989,11 +1043,46 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         return any ? (steps, cost) : null;
     }
 
+    /// <summary>
+    /// A zero-length line at a stop whose every leg stayed on one vertex, in the
+    /// request output SRID. Empty when PostGIS does not return a geometry.
+    /// </summary>
+    private static async Task<string> DegenerateSameVertexGeometryAsync(
+        IDatabaseSession session,
+        RoutePoint point,
+        int inSrid,
+        int outSrid,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT ST_AsGeoJSON(
+                ST_Transform(
+                    ST_SetSRID(
+                        ST_MakeLine(ST_MakePoint(@lon, @lat), ST_MakePoint(@lon, @lat)),
+                        @in_srid),
+                    @out_srid));
+            """;
+
+        return await session.QuerySingleOrDefaultAsync(
+                sql,
+                static row => row.IsNull(0) ? string.Empty : row.GetFieldValue<string>(0),
+                new Dictionary<string, object?>
+                {
+                    ["lon"] = point.Lon,
+                    ["lat"] = point.Lat,
+                    ["in_srid"] = inSrid,
+                    ["out_srid"] = outSrid,
+                },
+                cancellationToken)
+            .ConfigureAwait(false) ?? string.Empty;
+    }
+
     private static async Task<(string GeometryGeoJson, double LengthMeters)> MergeEdgeGeometryAsync(
         IDatabaseSession session,
         NetworkDataset dataset,
         IReadOnlyList<RouteStep> steps,
         int outSrid,
+        bool reverseLine,
         CancellationToken cancellationToken)
     {
         // Thread the visited edge geometries into a single ordered LineString,
@@ -1003,6 +1092,12 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         // meters (ST_Length over geography), which stays correct across legs and
         // revisits. Ordered parallel arrays (@edge_ids, @nodes) bind as two array
         // parameters. The edge table name is a validated identifier.
+        // reverseLine flips the finished line (closest-facility FromFacility) without
+        // changing length. The expression has no quotes, so it stays valid inside
+        // the statement.
+        var mergedLine = reverseLine
+            ? "ST_Reverse(ST_MakeLine(the_geom ORDER BY ord))"
+            : "ST_MakeLine(the_geom ORDER BY ord)";
         var sql = $"""
             WITH steps AS (
                 SELECT e.gid, n.node, e.ord
@@ -1017,7 +1112,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 JOIN {dataset.EdgeTable} w ON w.gid = s.gid
             )
             SELECT
-                ST_AsGeoJSON(ST_Transform(ST_MakeLine(the_geom ORDER BY ord), @out_srid)) AS geojson,
+                ST_AsGeoJSON(ST_Transform({mergedLine}, @out_srid)) AS geojson,
                 COALESCE(SUM(ST_Length(the_geom::geography)), 0) AS length_m
             FROM oriented;
             """;
@@ -1098,21 +1193,27 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     }
 
     /// <summary>
-    /// Resolves the set of graph edge gids restricted by the supplied barriers by
-    /// transforming each barrier geometry to the graph SRID and testing it against
-    /// the <c>ways</c> edges. Point barriers block the single nearest edge; line
-    /// and polygon barriers block every edge they intersect. Returns an empty list
-    /// when there are no barriers (the common case), so the unrestricted graph is
-    /// used unchanged.
+    /// Session-local table of edge gids restricted by the current solve's barriers.
+    /// Created only when barriers are present. Pool reset discards it with the
+    /// connection, so the next checkout does not see a previous solve's rows.
+    /// </summary>
+    private const string BlockedEdgesTable = "pg_temp.honua_blocked_edges";
+
+    /// <summary>
+    /// Materializes the graph edge gids restricted by the supplied barriers into
+    /// <see cref="BlockedEdgesTable"/> and returns how many rows were inserted.
+    /// Zero (no barriers, or none intersect an edge) leaves the unrestricted graph
+    /// in use. Point barriers block the single nearest edge; line and polygon
+    /// barriers block every edge they intersect.
     /// </summary>
     /// <remarks>
-    /// Barrier geometries are passed as a parallel pair of bound array parameters
-    /// (GeoJSON text + per-barrier kind code) and reconstructed in SQL via
-    /// <c>ST_GeomFromGeoJSON</c>; no user value is interpolated into SQL. The
-    /// returned gids are server-derived integers, safe to embed in the inner
-    /// pgr_dijkstra edges-SQL string (which cannot reference bound parameters).
+    /// Barrier geometries are bound as GeoJSON text plus a kind code and rebuilt
+    /// with <c>ST_GeomFromGeoJSON</c>. The intersected gids stay in the session
+    /// temp table. Edges SQL names that table instead of inlining every gid, so
+    /// its length does not grow with the network (#6158). Statements are separate
+    /// because the driver rejects multi-statement commands.
     /// </remarks>
-    private static async Task<IReadOnlyList<long>> ResolveBlockedEdgesAsync(
+    private static async Task<int> ResolveBlockedEdgesAsync(
         IDatabaseSession session,
         NetworkDataset dataset,
         IReadOnlyList<RouteBarrier> barriers,
@@ -1121,7 +1222,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     {
         if (barriers.Count == 0)
         {
-            return [];
+            return 0;
         }
 
         // Per-barrier parallel arrays: GeoJSON geometry text and the integer kind
@@ -1137,8 +1238,9 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         // Each barrier is transformed from the request SRID to the graph SRID
         // (4326). A point barrier (kind 0) restricts the single nearest edge (KNN
         // <-> on the GiST index); a line/polygon barrier (kind 1/2) restricts every
-        // edge it intersects. DISTINCT collapses overlapping barriers.
-        var sql = $"""
+        // edge it intersects. UNION collapses overlapping barriers.
+        var insertSql = $"""
+            INSERT INTO {BlockedEdgesTable} (gid)
             WITH input AS (
                 SELECT
                     ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(g.geojson), @in_srid), 4326) AS geom,
@@ -1165,59 +1267,61 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             )
             SELECT gid FROM point_blocked
             UNION
-            SELECT gid FROM shape_blocked;
+            SELECT gid FROM shape_blocked
+            ON CONFLICT (gid) DO NOTHING;
             """;
 
-        var gids = new List<long>();
-        await foreach (var gid in session.QueryAsync(
-                           sql,
-                           static row => row.GetFieldValue<long>(0),
-                           new Dictionary<string, object?>
-                           {
-                               ["geojson"] = geoJson,
-                               ["kinds"] = kinds,
-                               ["in_srid"] = inSrid,
-                           },
-                           cancellationToken).ConfigureAwait(false))
-        {
-            gids.Add(gid);
-        }
-
-        return gids;
+        await session.ExecuteAsync(
+                $"""
+                 CREATE TEMP TABLE IF NOT EXISTS {BlockedEdgesTable} (
+                     gid bigint PRIMARY KEY);
+                 """,
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        await session.ExecuteAsync(
+                $"DELETE FROM {BlockedEdgesTable};",
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        return await session.ExecuteAsync(
+                insertSql,
+                new Dictionary<string, object?>
+                {
+                    ["geojson"] = geoJson,
+                    ["kinds"] = kinds,
+                    ["in_srid"] = inSrid,
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Builds the inner pgr_dijkstra edges-SQL for the dataset, appending a
-    /// barrier-exclusion <c>WHERE</c> clause listing the server-derived blocked edge
-    /// gids. Only the validated edge-table identifier and integers (formatted
-    /// invariantly) are embedded; no user string ever enters the SQL text.
+    /// Builds the inner pgr_dijkstra edges-SQL for the dataset. When barriers
+    /// matched any edge, the exclusion names <see cref="BlockedEdgesTable"/>
+    /// instead of embedding gid literals. Only the validated edge-table identifier
+    /// is embedded; no user string ever enters the SQL text.
     /// </summary>
     private static string BuildRouteEdgesSql(
         NetworkDataset dataset,
         RoutingTravelProfile profile,
-        IReadOnlyList<long> blockedEdges)
-        => ApplyBlockedEdgeFilter(RouteBaseEdgesSqlFor(dataset, profile), blockedEdges);
+        int blockedEdgeCount)
+        => ApplyBlockedEdgeFilter(RouteBaseEdgesSqlFor(dataset, profile), blockedEdgeCount);
 
     /// <summary>
-    /// Appends a <c>WHERE gid NOT IN (...)</c> exclusion of the blocked edge gids to
-    /// a base edges-SQL. The base SQL has no existing <c>WHERE</c>, so a fresh
-    /// clause is appended. Returns the base SQL unchanged when nothing is blocked.
+    /// Appends a <c>WHERE gid NOT IN (SELECT ...)</c> exclusion against
+    /// <see cref="BlockedEdgesTable"/> when <paramref name="blockedEdgeCount"/> is
+    /// positive. The base SQL has no existing <c>WHERE</c>. The fragment contains
+    /// no quotes so it can be embedded in the single-quoted edges SQL that
+    /// <c>pgr_dijkstra</c> re-parses. Returns the base SQL unchanged when nothing
+    /// is blocked.
     /// </summary>
-    private static string ApplyBlockedEdgeFilter(string baseEdgesSql, IReadOnlyList<long> blockedEdges)
+    private static string ApplyBlockedEdgeFilter(string baseEdgesSql, int blockedEdgeCount)
     {
-        if (blockedEdges.Count == 0)
+        if (blockedEdgeCount <= 0)
         {
             return baseEdgesSql;
         }
 
-        // gids are server-derived BIGINTs; format invariantly and join. This is the
-        // pgRouting-idiomatic exclusion: the inner edges-SQL is a string the
-        // function re-parses, so it cannot reference bound parameters — only safe,
-        // server-derived integer literals are embedded here.
-        var idList = string.Join(
-            ",",
-            blockedEdges.Select(id => id.ToString(CultureInfo.InvariantCulture)));
-        return $"{baseEdgesSql} WHERE gid NOT IN ({idList})";
+        return $"{baseEdgesSql} WHERE gid NOT IN (SELECT gid FROM {BlockedEdgesTable})";
     }
 
     /// <summary>

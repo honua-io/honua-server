@@ -432,6 +432,22 @@ internal static class SearchEndpoints
                 == StacNumberMatchedPolicy.OmitWhenExpensive;
             var pageLimit = omitCount ? effectiveLimit + 1 : effectiveLimit;
             var remainingSkip = offset;
+            // A cross-collection sort reads each collection's ordered prefix up to
+            // offset + limit and merges them in memory, so the window must stay
+            // bounded: an unbounded offset would load every row of every collection.
+            var crossCollectionWindow = 0;
+            if (crossCollectionOrdered is not null)
+            {
+                if (!TryGetCrossCollectionWindow(offset, effectiveLimit, pageLimit, out crossCollectionWindow))
+                {
+                    StacTelemetry.SetFailed(activity, "cross_collection_sort_window_limit");
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"sortby across multiple collections supports at most {StacConstants.MaxSearchLimit} items " +
+                        "(offset + limit). Narrow collections to a single collection to page further.");
+                }
+            }
+
             var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
             // STAC item search is a union across the selected collections. A property
             // absent from one selected collection is evaluated as NULL for that
@@ -609,11 +625,10 @@ internal static class SearchEndpoints
                         throw new InvalidOperationException("A cross-collection STAC sort requires a valid sort order.");
                     }
 
-                    var windowLimit = ClampSearchWindow(offset, pageLimit);
                     var sortedPage = await StacPageReader.ReadAsync(
                         targetReader,
                         storageLayerId,
-                        query with { Offset = null, Limit = windowLimit },
+                        query with { Offset = null, Limit = crossCollectionWindow },
                         omitCount,
                         cancellationToken).ConfigureAwait(false);
                     if (!omitCount)
@@ -623,6 +638,16 @@ internal static class SearchEndpoints
 
                     crossCollectionOrdered.AddRange(sortedPage.Items.Select(feature =>
                         new GlobalSearchCandidate(feature, target, projection, resolvedOrder)));
+                    // Only the first window rows of the merged order can reach this page,
+                    // so retain at most one window across all collections.
+                    if (crossCollectionOrdered.Count > crossCollectionWindow)
+                    {
+                        SortGlobalCandidates(crossCollectionOrdered);
+                        crossCollectionOrdered.RemoveRange(
+                            crossCollectionWindow,
+                            crossCollectionOrdered.Count - crossCollectionWindow);
+                    }
+
                     continue;
                 }
 
@@ -853,13 +878,23 @@ internal static class SearchEndpoints
     private static bool ExceedsGlobalCandidateBudget(int currentCount, int incomingCount)
         => incomingCount > MaxItemIdCount - currentCount;
 
-    private static int ClampSearchWindow(int offset, int pageLimit)
+    /// <summary>
+    /// Computes the per-collection read window (<c>offset + pageLimit</c>) for a
+    /// cross-collection sort. The window is refused when <c>offset + limit</c>
+    /// exceeds <see cref="StacConstants.MaxSearchLimit"/>, so a reader is never
+    /// asked for more than <c>MaxSearchLimit + 1</c> rows.
+    /// </summary>
+    private static bool TryGetCrossCollectionWindow(int offset, int effectiveLimit, int pageLimit, out int window)
     {
-        var safeOffset = Math.Max(offset, 0);
-        var safeLimit = Math.Max(pageLimit, 0);
-        return safeOffset > int.MaxValue - safeLimit
-            ? int.MaxValue
-            : safeOffset + safeLimit;
+        window = 0;
+        if (offset < 0 || effectiveLimit < 1 || pageLimit < effectiveLimit ||
+            (long)offset + effectiveLimit > StacConstants.MaxSearchLimit)
+        {
+            return false;
+        }
+
+        window = offset + pageLimit;
+        return true;
     }
 
     private static void SortGlobalCandidates(List<GlobalSearchCandidate> candidates)

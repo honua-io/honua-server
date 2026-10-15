@@ -113,13 +113,14 @@ public sealed partial class TileCachePackageImportService : ITileCachePackageImp
 
         var imported = 0;
         var skipped = 0;
+        var retained = new List<OgcTileCoordinate>();
 
         request.Package.Position = 0;
         await foreach (var tile in _reader
             .ReadTilesAsync(request.Package, descriptor, minZoom, maxZoom, cancellationToken)
             .ConfigureAwait(false))
         {
-            var status = await _sink.WriteTileAsync(
+            var status = await _sink.ReplaceTileAsync(
                 new OgcTileCacheRecord
                 {
                     TileCacheId = cacheId,
@@ -132,7 +133,8 @@ public sealed partial class TileCachePackageImportService : ITileCachePackageImp
                 },
                 cancellationToken).ConfigureAwait(false);
 
-            if (status == OgcTileCacheWriteStatus.Inserted)
+            retained.Add(new OgcTileCoordinate(tile.Z, tile.X, tile.Y));
+            if (status is OgcTileCacheWriteStatus.Inserted or OgcTileCacheWriteStatus.Replaced)
             {
                 imported++;
             }
@@ -141,6 +143,9 @@ public sealed partial class TileCachePackageImportService : ITileCachePackageImp
                 skipped++;
             }
         }
+
+        // Tiles the new package no longer contains must not keep being served (#6175).
+        await _sink.DeleteTilesExceptAsync(cacheId, retained, cancellationToken).ConfigureAwait(false);
 
         Log.ImportCompleted(_logger, cacheId, imported, skipped);
 

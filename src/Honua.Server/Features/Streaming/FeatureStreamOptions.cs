@@ -41,6 +41,13 @@ public sealed class FeatureStreamOptions
     public TimeSpan CrossNodeSyncInterval { get; set; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
+    /// Interval at which open subscriptions re-resolve layer access, row-level security and
+    /// field masks. Policy changes apply to frames matched after the next refresh, and a
+    /// subscription whose layer access was revoked is closed (honua-server#6105).
+    /// </summary>
+    public TimeSpan SubscriberPolicyRefreshInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Maximum byte size for an inbound WebSocket control frame (subscribe, unsubscribe, ping).
     /// Frames that exceed this cap are rejected with a client-safe error and the connection
     /// is closed, preventing a malicious client from buffering an unbounded fragmented message.
@@ -132,6 +139,11 @@ internal sealed class FeatureStreamOptionsValidator : IValidateOptions<FeatureSt
         if (options.CrossNodeSyncInterval <= TimeSpan.Zero)
         {
             failures.Add("FeatureStreaming:CrossNodeSyncInterval must be a positive duration.");
+        }
+
+        if (options.SubscriberPolicyRefreshInterval <= TimeSpan.Zero)
+        {
+            failures.Add("FeatureStreaming:SubscriberPolicyRefreshInterval must be a positive duration.");
         }
 
         if (options.MaxControlFrameBytes <= 0)

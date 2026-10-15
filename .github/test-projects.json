@@ -668,6 +668,18 @@
       "isolated": true,
       "coverageRequired": true
     },
+    "tests/dotnet/Honua.LicenseMint.Tests/Honua.LicenseMint.Tests.csproj": {
+      "role": "mixed",
+      "shardRouted": false,
+      "runtimeOwners": [
+        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.LicenseMint/Honua.LicenseMint.csproj"
+      ],
+      "resources": [],
+      "isolated": false,
+      "coverageRequired": false
+    },
     "tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj": {
       "role": "integration",
       "runtimeOwners": [

@@ -5,6 +5,8 @@ using Honua.Db.Postgres.Features.GeometryService;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Db.Postgres.Tests.Features.GeometryService;
 
@@ -81,6 +83,22 @@ public sealed class PostgresGeometryCrsMetricsTests : IAsyncLifetime
         // A 1°×1° patch at the origin is about 1.2e10 m² on the spheroid.
         // The planar branch would return 1, or the degree-unit factor squared.
         area.Should().BeGreaterThan(1e9);
+    }
+
+    [Fact]
+    public async Task ProjectAsync_Nad83SouthPoleToWebMercator_ClampsLatitude()
+    {
+        // POINT(0 -90) is outside the Web Mercator domain. The latitude is clamped
+        // before ST_Transform, so Y is the mercator limit rather than an error or a
+        // pole overflow. 4269 is geographic but is not EPSG:4326 (#6132).
+        var wkb = new WKBWriter().Write(new Point(0, -90));
+
+        var projected = await _service!.ProjectAsync(wkb, 4269, 3857);
+
+        var result = (Point)new WKBReader().Read(projected);
+        double.IsFinite(result.Y).Should().BeTrue();
+        result.X.Should().BeApproximately(0, 1e-4);
+        result.Y.Should().BeApproximately(-20037508.34, 0.05);
     }
 
     private async Task InsertAsync(int srid, string srtext, string proj4text)

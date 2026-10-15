@@ -422,6 +422,12 @@ internal static partial class OracleFeatureQueryBuilder
         }
 
         var ids = query.ObjectIds.Value;
+        if (ids.Length > 65_000)
+        {
+            throw new NotSupportedException(
+                $"The object id list of {ids.Length.ToString(CultureInfo.InvariantCulture)} values exceeds this provider's parameter limit of 65000.");
+        }
+
         var placeholders = new string[ids.Length];
         for (var i = 0; i < ids.Length; i++)
         {

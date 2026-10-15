@@ -25,8 +25,10 @@ internal static class CollaborationSessionEndpoints
             .WithDisplayName("Join Saved Map Collaboration Session")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<ApiResponse<CollaborationJoinResponse>>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
-            .ProducesProblem(StatusCodes.Status403Forbidden);
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
         // Explicit session end for REST-joined sessions (#2999, REQ-001). WebSocket sessions end
         // on disconnect; the prune sweep reclaims anything that never says goodbye.
@@ -46,7 +48,8 @@ internal static class CollaborationSessionEndpoints
             .WithMetadata(WebSocketEndpointMetadata.Instance)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
-            .ProducesProblem(StatusCodes.Status403Forbidden);
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
     }
 
     private static async Task<IResult> HandleJoin(
@@ -55,6 +58,19 @@ internal static class CollaborationSessionEndpoints
         [FromServices] InMemoryCollaborationSessionService sessions,
         HttpContext context)
     {
+        if (request is null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "A join request body is required.");
+        }
+
+        if (!InMemoryCollaborationSessionService.TryValidateJoinFields(
+                request.DisplayName,
+                request.ClientInstanceId,
+                out var fieldError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, fieldError!);
+        }
+
         var result = await sessions.JoinAsync(
                 // One canonical session/log key per draft regardless of the GUID textual form in
                 // the route (honua-server#2999): sessions, appends, replay, and checkpoints agree.
@@ -71,19 +87,29 @@ internal static class CollaborationSessionEndpoints
                 CollaborationSessionJsonContext.Default.ApiResponseCollaborationJoinResponse);
         }
 
-        return result.Authorization.Status switch
+        return MapJoinFailure(result, context);
+    }
+
+    internal static IResult MapJoinFailure(CollaborationJoinResult result, HttpContext context)
+    {
+        return result.Refusal switch
         {
-            SavedMapCollaborationAuthorizationStatus.RequiresAuthentication =>
-                StandardErrorHelpers.CreateUnauthorized(
-                    context,
-                    result.Authorization.Detail ?? "Authentication is required to join this collaboration session."),
-            SavedMapCollaborationAuthorizationStatus.Forbidden =>
-                StandardErrorHelpers.CreateForbidden(
-                    context,
-                    result.Authorization.Detail ?? "You are not allowed to join this collaboration session."),
-            _ => StandardErrorHelpers.CreateForbidden(
+            CollaborationJoinRefusal.InvalidRequest => StandardErrorHelpers.CreateBadRequest(
                 context,
-                "You are not allowed to join this collaboration session.")
+                result.Detail ?? "The collaboration join request is invalid."),
+            CollaborationJoinRefusal.CapacityExceeded => StandardErrorHelpers.CreateTooManyRequests(
+                context,
+                result.Detail ?? "The collaboration session limit has been reached."),
+            _ => result.Authorization.Status switch
+            {
+                SavedMapCollaborationAuthorizationStatus.RequiresAuthentication =>
+                    StandardErrorHelpers.CreateUnauthorized(
+                        context,
+                        result.Authorization.Detail ?? "Authentication is required to join this collaboration session."),
+                _ => StandardErrorHelpers.CreateForbidden(
+                    context,
+                    result.Authorization.Detail ?? result.Detail ?? "You are not allowed to join this collaboration session.")
+            }
         };
     }
 

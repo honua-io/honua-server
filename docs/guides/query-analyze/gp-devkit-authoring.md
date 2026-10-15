@@ -61,10 +61,25 @@ The devkit can be packed and installed outside the source tree:
 
 ```bash
 dotnet pack src/Honua.Geoprocessing.Cli -c Release -o artifacts/gp-tool
-dotnet tool install Honua.Geoprocessing.Cli --add-source ./artifacts/gp-tool \
+cat > artifacts/gp-tool/nuget.config <<'NUGET'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="gp-tool" value="." />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+NUGET
+dotnet tool install Honua.Geoprocessing.Cli --configfile artifacts/gp-tool/nuget.config \
   --tool-path ./artifacts/gp-bin
 ./artifacts/gp-bin/honua-gp-devkit doctor --managed-only --json
 ```
+
+The checkout's `NuGet.config` maps every package to nuget.org, and `dotnet tool
+install --add-source` refuses to combine an extra source with package source
+mapping. The explicit `--configfile` above sidesteps that mapping for the
+install only; it does not change how the repository restores.
 
 The executable is `honua-gp-devkit`; `honua gp` in existing help is the command-family
 label. This local package procedure does not imply a matching NuGet release

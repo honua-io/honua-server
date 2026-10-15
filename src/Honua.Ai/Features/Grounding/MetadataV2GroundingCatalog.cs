@@ -42,7 +42,7 @@ internal static class MetadataV2GroundingCatalog
                 name,
                 resource.Metadata.Description,
                 resource.ReadSrid(),
-                resource.SchemaFields.Select(MapField).ToArray()));
+                resource.VisibleSchemaFields().Select(MapField).ToArray()));
         }
 
         return layers

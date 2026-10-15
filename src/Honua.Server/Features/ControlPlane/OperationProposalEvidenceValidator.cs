@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.ControlPlane.Executors;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
@@ -115,6 +116,17 @@ internal sealed class OperationProposalEvidenceValidator(
         if (!CryptographicOperations.FixedTimeEquals(durablePayload, payloadBytes))
         {
             throw new InvalidOperationException("The durable proposal execution payload does not match its evidence seal.");
+        }
+
+        if (proposal.Kind == OperationClass.Deploy)
+        {
+            var deployPayload = DeployExecutionPayload.Parse(proposal.Plan.ExecutionPayload);
+            if (deployPayload is null
+                || !string.Equals(deployPayload.TargetId, evidence.TargetId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The durable proposal target does not match its evidence seal.");
+            }
         }
 
         using var arguments = JsonDocument.Parse(requestBytes);

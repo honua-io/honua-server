@@ -65,6 +65,19 @@ public readonly record struct FeatureEditBatch
     public ImmutableArray<FeatureEditPrecondition> Preconditions { get; init; }
 
     /// <summary>
+    /// Caller-scoped row-level security predicate every created or updated row must satisfy
+    /// after the write (the <c>WITH CHECK</c> half of row-level security, honua-server#6103).
+    /// Stamped by the feature store from the same request-scoped RLS source its readers apply;
+    /// protocol adapters never set it. Writers that honour it re-select each written row with
+    /// this predicate inside the write transaction and fail the operation with
+    /// <see cref="EditOperationResult.NotPermittedErrorCode"/> (undoing that row) when the row
+    /// would fall outside the caller's visible partition. Null means no row-level security
+    /// policy applies to the caller.
+    /// </summary>
+    [JsonIgnore]
+    public Honua.Core.Queries.Filters.SqlFragment? RowSecurityWriteCheck { get; init; }
+
+    /// <summary>
     /// Initializes a new FeatureEditBatch with default values
     /// </summary>
     public FeatureEditBatch()
@@ -387,6 +400,13 @@ public readonly record struct EditOperationResult
     /// from a stale partial-update conflict using the rejecting snapshot.
     /// </summary>
     public const int PreconditionFailedErrorCode = 412;
+
+    /// <summary>
+    /// Well-known error code reported when an edit operation is rejected because the written
+    /// row would not satisfy the caller's row-level security predicate (honua-server#6103).
+    /// The operation was not applied.
+    /// </summary>
+    public const int NotPermittedErrorCode = 403;
 
     /// <summary>
     /// Object ID of the affected feature
