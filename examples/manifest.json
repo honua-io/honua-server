@@ -16,8 +16,8 @@
   "summary": {
     "total": 1191,
     "byStatus": {
-      "not-executable": 1177,
-      "unvalidated": 11,
+      "not-executable": 1176,
+      "unvalidated": 12,
       "passed": 3
     }
   },
@@ -15255,9 +15255,9 @@
       "kind": "sample-asset",
       "path": "samples/gp-local-dev/submit-buffer.py",
       "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
+        "status": "unvalidated",
+        "reason": "Runnable Python GP sample has no matching execution evidence.",
+        "check": "explicit-execution-evidence"
       }
     },
     {
