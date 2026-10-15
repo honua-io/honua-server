@@ -100,7 +100,7 @@ internal sealed class JobEvidenceTool(ILogger<JobEvidenceTool> logger) : IMcpToo
         Title = "Job evidence",
         Description =
             "Read-only retrieval of the recorded evidence behind a job diagnosis: sanitized per-step "
-            + "commands and timings (durations are inferred from log timestamps), the most recent events "
+            + "commands and timings (timingSource distinguishes measured harness durations from inferred log timings), the most recent events "
             + "(bounded by events, maximum 500; truncated reports when older events exist), and artifact "
             + "availability. Paths and credentials are redacted before they leave the server. No "
             + "explanations are added; use honua_diagnose_job for the inferred layer.",

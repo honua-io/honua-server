@@ -761,6 +761,45 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_WithHarnessEvents_PreservesMeasuredAndInferredStepTiming()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _logStore.SetLogs("job-failed",
+            new ExecutionLogEntry
+            {
+                Timestamp = now.AddMinutes(-5),
+                Level = ExecutionLogLevel.Info,
+                Message = "Executing tool",
+                Phase = "Execute",
+                Metadata = new Dictionary<string, string>
+                {
+                    [HarnessEvents.ElapsedKey] = "100"
+                }
+            },
+            new ExecutionLogEntry
+            {
+                Timestamp = now.AddMinutes(-4),
+                Level = ExecutionLogLevel.Error,
+                Message = "Tool failed",
+                Phase = "Execute",
+                Metadata = new Dictionary<string, string>
+                {
+                    [HarnessEvents.ElapsedKey] = "600"
+                }
+            });
+
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-failed/diagnostics");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = await ReadJsonAsync(response);
+        var steps = doc.RootElement.GetProperty("steps");
+        steps[0].GetProperty("durationMs").GetInt64().Should().Be(500);
+        steps[0].GetProperty("timingSource").GetString().Should().Be("measured");
+        steps[1].GetProperty("timingSource").GetString().Should().Be("inferred");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
     public async Task GetJobDiagnostics_ForRunningJobs_JudgesWorkerLivenessByHeartbeatPolicy()
     {
         var now = DateTimeOffset.UtcNow;

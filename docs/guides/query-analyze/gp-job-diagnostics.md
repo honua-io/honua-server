@@ -36,7 +36,7 @@ Read `observed.status` for the job outcome and `evidence` for missing records.
 | `attempt` | Which attempt is this and would a retry help? | `retry.allowed` follows the same rules as `POST .../retry`; `wouldRepeat` states what a retry re-runs and whether earlier attempts left committed effects. |
 | `worker` | Is the worker alive? | `liveness` is judged against the job's own heartbeat policy: `alive`, `stale` (past the interval), `lost` (past the timeout; the reconciler will fail or retry the attempt), `not-claimed`, `finished` or `unknown`. |
 | `failure` | Which step failed and with what? | Classification `execution_failed`, `worker_lost`, `timeout` or `cancelled`; the failing step's phase and ordinal, structured `errorCode`, `nativeExitCode` and a sanitized `stderrExcerpt` when the worker recorded them; a `recovery` sentence. |
-| `steps` | What ran, in order? | The same sanitized per-step view as `/steps`; durations are inferred from consecutive log timestamps. |
+| `steps` | What ran, in order? | The same sanitized per-step view as `/steps`; `timingSource` distinguishes measured harness durations from timings inferred from consecutive log timestamps. |
 | `events` | What did the worker report recently? | The most recent `limit` events with `totalCount` and `truncated`; page `/logs` for the rest. |
 | `artifacts` | Are the outputs usable? | `complete`, `partial`, `unavailable` or `none`, with counts of expired and unresolved references. |
 | `evidence` | What is the projection not telling me? | `missing`, `truncated` and `notes`. |

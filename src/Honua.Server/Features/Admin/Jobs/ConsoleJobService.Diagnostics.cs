@@ -88,7 +88,7 @@ internal sealed partial class ConsoleJobService
         }
         else
         {
-            notes.Add("step durations are inferred from consecutive log timestamps, not measured by the worker");
+            notes.Add("step timingSource identifies measured harness durations or durations inferred from consecutive log timestamps");
         }
 
         var artifacts = await BuildDiagnosticArtifactsAsync(job, missing, cancellationToken).ConfigureAwait(false);
@@ -516,7 +516,7 @@ internal sealed partial class ConsoleJobService
         {
             var isLast = i == entries.Count - 1;
             var nextTimestamp = isLast ? job.CompletedAt : entries[i + 1].Timestamp;
-            steps[i] = MapStep(job, entries[i], i, workspace, artifactSummary, isLast, nextTimestamp);
+            steps[i] = MapStep(job, entries[i], isLast ? null : entries[i + 1], i, workspace, artifactSummary, isLast, nextTimestamp);
         }
 
         return steps;
