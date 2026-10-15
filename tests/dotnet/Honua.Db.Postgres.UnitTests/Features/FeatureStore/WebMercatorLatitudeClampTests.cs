@@ -75,6 +75,65 @@ public sealed class WebMercatorLatitudeClampTests
         sql.Should().NotContain("ST_ClipByBox2D");
     }
 
+    [UnitTest]
+    public void MvtTile_GeographicLayer_ClampsBeforeTransform()
+    {
+        var sql = BuildMvtTile(new FeatureQuery { SpatialReferenceSrid = 4326 });
+
+        AssertClipPrecedesTransform(sql, sourceSrid: 4326, targetSrid: 3857);
+    }
+
+    [UnitTest]
+    public void MvtTile_UnknownLayerSrid_ClampsGeographicRowsByRuntimeSrid()
+    {
+        var sql = BuildMvtTile(new FeatureQuery());
+
+        sql.Should().Contain("CASE WHEN ST_SRID(f.geometry) IN (");
+        sql.Should().Contain("4326");
+        sql.Should().Contain("ST_ClipByBox2D(");
+        sql.Should().Contain("ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, ST_SRID(f.geometry))");
+        sql.Should().NotContain("ST_Transform(f.geometry, 3857)");
+    }
+
+    [UnitTest]
+    public void MvtTile_CustomWebMercatorGridset_ClampsBeforeTransform()
+    {
+        var sql = BuildMvtTile(new FeatureQuery { SpatialReferenceSrid = 4326 }, WebMercatorGridset);
+
+        AssertClipPrecedesTransform(sql, sourceSrid: 4326, targetSrid: 3857);
+        sql.Should().NotContain("ST_Transform(f.geometry, 3857)");
+    }
+
+    [UnitTest]
+    public void MvtTile_GeographicTileMatrix_DoesNotClamp()
+    {
+        var sql = BuildMvtTile(new FeatureQuery { SpatialReferenceSrid = 3857, OutputSrid = 4326 });
+
+        sql.Should().Contain("ST_Transform(f.geometry, 4326)");
+        sql.Should().NotContain("ST_ClipByBox2D");
+    }
+
+    private static readonly Honua.Core.Features.Tiles.GridGeometry WebMercatorGridset = new()
+    {
+        Id = "custom-web-mercator",
+        Srid = 3857,
+        IsGeographic = false,
+        TopLeftX = -20037508.342789244,
+        TopLeftY = 20037508.342789244,
+        TileWidth = 256,
+        TileHeight = 256,
+        Levels = [new Honua.Core.Features.Tiles.GridLevel(0, 559082264.0287178, 156543.03392804097, 1, 1)],
+    };
+
+    private static string BuildMvtTile(FeatureQuery query, Honua.Core.Features.Tiles.GridGeometry? gridGeometry = null)
+        => CreateQueryBuilder().BuildMvtTileQuery(
+            1, 0, 0, 0,
+            query,
+            new Honua.Core.Features.Tiles.TileOptions { TileBuffer = 64, TileExtent = 4096 },
+            new Honua.Core.Configuration.TileLimits(),
+            Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType.Geometry,
+            gridGeometry).Sql;
+
     private static string Build(string format, FeatureQuery query)
     {
         var builder = CreateQueryBuilder();
