@@ -189,16 +189,14 @@ public readonly record struct ImageServerMosaicRule
             byId.TryAdd(raster.Id, raster);
         }
 
-        var ordered = new List<RasterInfo>(lockedIds.Length);
-        foreach (var id in lockedIds)
-        {
-            if (byId.Remove(id, out var raster))
+        return lockedIds
+            .Where(byId.ContainsKey)
+            .Select(id =>
             {
-                ordered.Add(raster);
-            }
-        }
-
-        return ordered.ToArray();
+                byId.Remove(id, out var raster);
+                return raster;
+            })
+            .ToArray();
     }
 
     /// <summary>
