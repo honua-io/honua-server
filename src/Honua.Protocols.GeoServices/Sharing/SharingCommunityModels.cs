@@ -56,9 +56,13 @@ internal sealed record GroupResponse
     [JsonPropertyName("tags")]
     public IReadOnlyList<string> Tags { get; init; } = Array.Empty<string>();
 
-    /// <summary>Current member usernames.</summary>
+    /// <summary>
+    /// Current member usernames. Omitted for callers who are not the owner, a member,
+    /// or an administrator.
+    /// </summary>
     [JsonPropertyName("members")]
-    public IReadOnlyList<string> Members { get; init; } = Array.Empty<string>();
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Members { get; init; }
 
     /// <summary>Epoch-millisecond creation timestamp.</summary>
     [JsonPropertyName("created")]
