@@ -289,6 +289,47 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Calculate)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_UnknownSourceField_ReturnsBadRequestAndLeavesRowsUnchanged()
+    {
+        const string originalName = "calc-6142-original";
+        var objectId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, originalName);
+        var calcExpression = JsonSerializer.Serialize(new[]
+        {
+            new { field = "name", sqlExpression = "not_a_field" }
+        });
+
+        var response = await PostCalculateAsync(calcExpression, $"objectid = {objectId}");
+        var body = await response.Content.ReadAsStringAsync();
+
+        body.Should().Contain("does not exist in layer");
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+            .Should().Be(originalName);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Calculate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_MixedCaseSourceField_WritesMatchedValue()
+    {
+        const string originalName = "Ada";
+        var objectId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, originalName);
+        var calcExpression = JsonSerializer.Serialize(new[]
+        {
+            new { field = "name", sqlExpression = "NAME || '_ok'" }
+        });
+
+        var response = await PostCalculateAsync(calcExpression, $"objectid = {objectId}");
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+            .Should().Be("Ada_ok");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Calculate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_PostFormBody_ReturnsSuccess()
     {
         var calcExpression = JsonSerializer.Serialize(new[]

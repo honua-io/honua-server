@@ -547,6 +547,12 @@ internal static partial class FeatureServerEndpoints
 
             foreach (var sourceField in sourceFields)
             {
+                if (!validFieldNames.Contains(sourceField))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context, $"Field '{sourceField}' does not exist in layer {layerId}.");
+                }
+
                 if (unavailableFields.Contains(sourceField))
                 {
                     return StandardErrorHelpers.CreateBadRequest(
@@ -963,14 +969,35 @@ internal static partial class FeatureServerEndpoints
         return parsed;
     }
 
-    private static bool TryEvaluateCalcExpression(
+    internal static bool TryEvaluateCalcExpression(
         string expression,
         IReadOnlyDictionary<string, object?> attributes,
         out object? value,
         out string? error)
     {
-        var parser = new CalcSqlExpressionParser(expression, attributes);
+        var parser = new CalcSqlExpressionParser(expression, ToCaseInsensitiveAttributes(attributes));
         return parser.TryParse(out value, out error);
+    }
+
+    /// <summary>
+    /// Managed attribute bags are case-sensitive. Calculate identifiers follow the schema, which is not.
+    /// </summary>
+    private static IReadOnlyDictionary<string, object?> ToCaseInsensitiveAttributes(
+        IReadOnlyDictionary<string, object?> attributes)
+    {
+        if (attributes is Dictionary<string, object?> dictionary
+            && dictionary.Comparer == StringComparer.OrdinalIgnoreCase)
+        {
+            return dictionary;
+        }
+
+        var copy = new Dictionary<string, object?>(attributes.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in attributes)
+        {
+            copy[pair.Key] = pair.Value;
+        }
+
+        return copy;
     }
 
     private static bool TryParseCalcExpressionEntries(string calcExpression, out CalcExpressionEntry[] expressions)

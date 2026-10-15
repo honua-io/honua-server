@@ -34,4 +34,20 @@ public sealed class FeatureServerCalculateExpressionTests
         error.Should().BeNull();
         sources.Should().Equal("secret");
     }
+
+    [UnitTest]
+    public void TryEvaluateCalcExpression_MixedCaseIdentifier_ReadsAttribute()
+    {
+        var attributes = new Dictionary<string, object?> { ["name"] = "Ada" };
+
+        var parsed = FeatureServerEndpoints.TryEvaluateCalcExpression(
+            "NAME || '_ok'",
+            attributes,
+            out var value,
+            out var error);
+
+        parsed.Should().BeTrue();
+        error.Should().BeNull();
+        value.Should().Be("Ada_ok");
+    }
 }
