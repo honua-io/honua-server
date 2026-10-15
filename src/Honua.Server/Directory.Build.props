@@ -1,6 +1,6 @@
 <Project>
   <!-- Closest Directory.Build.props wins. Import the repository file, then isolate non-all profiles before Microsoft.Common.props. -->
-  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)..'))" />
+  <Import Project="../../Directory.Build.props" />
   <PropertyGroup Condition="'$(HonuaProtocolProfile)' != '' and '$(HonuaProtocolProfile)' != 'all'">
     <BaseOutputPath>$(MSBuildThisFileDirectory)bin/protocol-$(HonuaProtocolProfile)/</BaseOutputPath>
     <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj/protocol-$(HonuaProtocolProfile)/</BaseIntermediateOutputPath>
