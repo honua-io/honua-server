@@ -372,6 +372,9 @@ internal sealed partial class FeatureDataAccess
                 cancellationToken);
             partialCreatedIds = createdIds;
             partialCreateResults = createResults;
+            // A cancelled autocommit returns the rows already recorded. Do not start
+            // the next kind; the catch below attaches the unknown tail (#6028).
+            cancellationToken.ThrowIfCancellationRequested();
 
             var (updatedCount, updateResults) = await ProcessUpdatesWithResultsAsync(
                 layerId,
@@ -382,6 +385,7 @@ internal sealed partial class FeatureDataAccess
                 editBatch.RowSecurityWriteCheck,
                 cancellationToken);
             partialUpdateResults = updateResults;
+            cancellationToken.ThrowIfCancellationRequested();
 
             var (deletedCount, deleteResults) = await ProcessDeletesWithResultsAsync(
                 layerId,
@@ -391,6 +395,7 @@ internal sealed partial class FeatureDataAccess
                 preconditions,
                 cancellationToken);
             partialDeleteResults = deleteResults;
+            cancellationToken.ThrowIfCancellationRequested();
 
             var hasErrors = System.Linq.Enumerable.Any(createResults, r => !r.IsSuccess) ||
                             System.Linq.Enumerable.Any(updateResults, r => !r.IsSuccess) ||
@@ -432,8 +437,12 @@ internal sealed partial class FeatureDataAccess
 
             return committed;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested && transaction != null)
         {
+            // rollbackOnFailure and a keyed receipt share one transaction. Dispose rolls
+            // it back, so a partial receipt would name rows that do not stay committed.
+            // Autocommit (no transaction) falls through and returns the rows already
+            // committed plus an unknown tail (#6028).
             throw;
         }
         // Intentionally broad: this is the top-level edit-batch error handler; any
@@ -442,7 +451,10 @@ internal sealed partial class FeatureDataAccess
         // rather than letting the exception propagate past the batch boundary.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Log.ApplyEditsFailed(_logger, layerId, editBatch.TotalOperations, ex);
+            if (ex is not OperationCanceledException)
+            {
+                Log.ApplyEditsFailed(_logger, layerId, editBatch.TotalOperations, ex);
+            }
 
             if (transaction != null)
             {
@@ -465,22 +477,26 @@ internal sealed partial class FeatureDataAccess
             // every result that was recorded before the exception. Only operations that did
             // not yet produce a result (the unprocessed tail) should be reported as failed.
             // Reporting all as failed previously drove clients to re-submit already-committed
-            // rows, creating duplicates.
+            // rows, creating duplicates. Cancellation uses the same shape so an autocommit
+            // that already landed is not reported as a clean rollback (#6028).
+            var unrecordedMessage = ex is OperationCanceledException
+                ? "Edit cancelled."
+                : "Edit batch failed.";
             var tailCreateFailures = editBatch.Creates.Length > partialCreateResults.Length
                 ? System.Linq.Enumerable
-                    .Repeat(EditOperationResult.FailureWithUnknownCommitOutcome("Edit batch failed."), editBatch.Creates.Length - partialCreateResults.Length)
+                    .Repeat(EditOperationResult.FailureWithUnknownCommitOutcome(unrecordedMessage), editBatch.Creates.Length - partialCreateResults.Length)
                     .ToImmutableArray()
                 : ImmutableArray<EditOperationResult>.Empty;
             var tailUpdateFailures = editBatch.Updates.Length > partialUpdateResults.Length
                 ? editBatch.Updates
                     .Skip(partialUpdateResults.Length)
-                    .Select(f => EditOperationResult.FailureWithUnknownCommitOutcome("Edit batch failed.", objectId: f.Id))
+                    .Select(f => EditOperationResult.FailureWithUnknownCommitOutcome(unrecordedMessage, objectId: f.Id))
                     .ToImmutableArray()
                 : ImmutableArray<EditOperationResult>.Empty;
             var tailDeleteFailures = editBatch.Deletes.Length > partialDeleteResults.Length
                 ? editBatch.Deletes
                     .Skip(partialDeleteResults.Length)
-                    .Select(id => EditOperationResult.FailureWithUnknownCommitOutcome("Edit batch failed.", objectId: id))
+                    .Select(id => EditOperationResult.FailureWithUnknownCommitOutcome(unrecordedMessage, objectId: id))
                     .ToImmutableArray()
                 : ImmutableArray<EditOperationResult>.Empty;
 
@@ -681,32 +697,53 @@ internal sealed partial class FeatureDataAccess
         var createResults = ImmutableArray.CreateBuilder<EditOperationResult>();
         var updateResults = ImmutableArray.CreateBuilder<EditOperationResult>();
         var deleteResults = ImmutableArray.CreateBuilder<EditOperationResult>();
+        var operations = editBatch.Operations;
 
-        foreach (var operation in editBatch.Operations)
+        for (var index = 0; index < operations.Length; index++)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var operationSucceeded = await ApplyOrderedEditOperationAsync(
-                layerId,
-                operation,
-                connection,
-                transaction,
-                preconditions,
-                editBatch.RowSecurityWriteCheck,
-                createdIds,
-                createResults,
-                updateResults,
-                deleteResults,
-                cancellationToken).ConfigureAwait(false);
-
-            if (!operationSucceeded && editBatch.RollbackOnFailure)
+            try
             {
-                if (manageTransaction && transaction != null)
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var operationSucceeded = await ApplyOrderedEditOperationAsync(
+                    layerId,
+                    operations[index],
+                    connection,
+                    transaction,
+                    preconditions,
+                    editBatch.RowSecurityWriteCheck,
+                    createdIds,
+                    createResults,
+                    updateResults,
+                    deleteResults,
+                    cancellationToken).ConfigureAwait(false);
+
+                if (!operationSucceeded && editBatch.RollbackOnFailure)
                 {
-                    await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
+                    if (manageTransaction && transaction != null)
+                    {
+                        await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
+                    }
+
+                    return FeatureEditResult.Rollback(
+                        createResults.ToImmutable(),
+                        updateResults.ToImmutable(),
+                        deleteResults.ToImmutable());
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // An open transaction, including ApplyEditsWithinTransactionAsync, still
+                // rolls back. Autocommit keeps the rows already recorded (#6028).
+                if (transaction != null)
+                {
+                    throw;
                 }
 
-                return FeatureEditResult.Rollback(
+                return CancelledAutocommitOrderedResult(
+                    editBatch,
+                    index,
+                    createdIds.ToImmutable(),
                     createResults.ToImmutable(),
                     updateResults.ToImmutable(),
                     deleteResults.ToImmutable());
@@ -733,6 +770,69 @@ internal sealed partial class FeatureDataAccess
         }
 
         return orderedResult;
+    }
+
+    /// <summary>
+    /// Builds the autocommit receipt for an ordered batch cancelled at
+    /// <paramref name="firstUnrecordedIndex"/>. Recorded results keep their object
+    /// ids. The operation at that index and everything after it are an unknown tail:
+    /// the in-flight statement may have committed, and later statements did not run.
+    /// </summary>
+    internal static FeatureEditResult CancelledAutocommitOrderedResult(
+        FeatureEditBatch editBatch,
+        int firstUnrecordedIndex,
+        ImmutableArray<long> createdIds,
+        ImmutableArray<EditOperationResult> createResults,
+        ImmutableArray<EditOperationResult> updateResults,
+        ImmutableArray<EditOperationResult> deleteResults)
+    {
+        const string message = "Edit cancelled.";
+        var creates = createResults.IsDefault
+            ? ImmutableArray.CreateBuilder<EditOperationResult>()
+            : createResults.ToBuilder();
+        var updates = updateResults.IsDefault
+            ? ImmutableArray.CreateBuilder<EditOperationResult>()
+            : updateResults.ToBuilder();
+        var deletes = deleteResults.IsDefault
+            ? ImmutableArray.CreateBuilder<EditOperationResult>()
+            : deleteResults.ToBuilder();
+
+        var start = Math.Max(0, firstUnrecordedIndex);
+        for (var index = start; index < editBatch.Operations.Length; index++)
+        {
+            var operation = editBatch.Operations[index];
+            switch (operation.Kind)
+            {
+                case FeatureEditOperationKind.Create:
+                    creates.Add(EditOperationResult.FailureWithUnknownCommitOutcome(message));
+                    break;
+                case FeatureEditOperationKind.Update:
+                    updates.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
+                        message,
+                        objectId: operation.Feature?.Id));
+                    break;
+                case FeatureEditOperationKind.Delete:
+                    deletes.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
+                        message,
+                        objectId: operation.ObjectId));
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unsupported ordered edit operation kind '{operation.Kind}'.");
+            }
+        }
+
+        var createArray = creates.ToImmutable();
+        var updateArray = updates.ToImmutable();
+        var deleteArray = deletes.ToImmutable();
+        return FeatureEditResult.Success(
+            createArray.Count(static result => result.IsSuccess),
+            updateArray.Count(static result => result.IsSuccess),
+            deleteArray.Count(static result => result.IsSuccess),
+            createdIds.IsDefault ? ImmutableArray<long>.Empty : createdIds,
+            createArray,
+            updateArray,
+            deleteArray,
+            wasRolledBack: false);
     }
 
     private async Task<FeatureEditResult> ApplyEditsWithinTransactionAsync(
@@ -1509,6 +1609,11 @@ internal sealed partial class FeatureDataAccess
                                 created.Id,
                                 feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
                     }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        // Let the adaptive splitter keep the committed prefix and stop (#6028).
+                        throw;
+                    }
                     // Intentionally broad: per-feature failure in an adaptive batch; sanitize via
                     // GetSafeEditOperationError and let the remaining features in the batch continue.
                     catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -1527,6 +1632,16 @@ internal sealed partial class FeatureDataAccess
 
         foreach (var feature in features)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                if (transaction != null)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                return (createdIds.ToImmutableArray(), results.ToImmutableArray());
+            }
+
             // Advance per-operation outbox metadata once per attempt; a failed mutation
             // must consume its slot so the next successful row of the same kind picks
             // up its own GeometryChanged / requestId, not the failed row's.
@@ -1549,9 +1664,15 @@ internal sealed partial class FeatureDataAccess
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // BH7-020: propagate cancellation so the server stops executing remaining
-                // batch items after a client abort, mirroring the update/delete path fixes.
-                throw;
+                // BH7-020: stop the rest of the batch. An open transaction still rolls
+                // back, so that cancellation propagates. Autocommit returns the rows
+                // already recorded; the in-flight row stays in the unknown tail (#6028).
+                if (transaction != null)
+                {
+                    throw;
+                }
+
+                return (createdIds.ToImmutableArray(), results.ToImmutableArray());
             }
             // Intentionally broad: per-feature failure in the row-by-row create path; sanitize
             // via GetSafeEditOperationError and let the rest of the batch continue.
@@ -1597,6 +1718,8 @@ internal sealed partial class FeatureDataAccess
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // One autocommit statement: its ids were not observed. Splitting would
+            // insert the same rows again if the statement had already committed (#6028).
             throw;
         }
         // Intentionally broad: adaptive bisection on any batch-insert failure, recursively split in
@@ -1615,16 +1738,27 @@ internal sealed partial class FeatureDataAccess
                 singleCreateAsync,
                 createSuccessResult,
                 cancellationToken).ConfigureAwait(false);
-            var rightOutcome = await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
-                right,
-                batchCreateAsync,
-                singleCreateAsync,
-                createSuccessResult,
-                cancellationToken).ConfigureAwait(false);
+            if (cancellationToken.IsCancellationRequested || leftOutcome.results.Length < left.Length)
+            {
+                return leftOutcome;
+            }
 
-            return (
-                leftOutcome.createdIds.AddRange(rightOutcome.createdIds),
-                leftOutcome.results.AddRange(rightOutcome.results));
+            try
+            {
+                var rightOutcome = await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
+                    right,
+                    batchCreateAsync,
+                    singleCreateAsync,
+                    createSuccessResult,
+                    cancellationToken).ConfigureAwait(false);
+                return (
+                    leftOutcome.createdIds.AddRange(rightOutcome.createdIds),
+                    leftOutcome.results.AddRange(rightOutcome.results));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return leftOutcome;
+            }
         }
     }
 
@@ -1740,6 +1874,16 @@ internal sealed partial class FeatureDataAccess
 
         foreach (var feature in features)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                if (transaction != null)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                return (updatedCount, results.ToImmutableArray());
+            }
+
             FeatureEditPrecondition precondition = default;
             var hasPrecondition = preconditions?.TryGetValue(feature.Id, out precondition) == true;
 
@@ -1788,10 +1932,14 @@ internal sealed partial class FeatureDataAccess
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // BH7-020: propagate cancellation so the server stops executing the remaining
-                // batch items after a client abort. Swallowing this was wasting CPU/connections
-                // and misreporting any committed row as a failure.
-                throw;
+                // BH7-020: stop the rest of the batch. An open transaction still rolls
+                // back. Autocommit returns the rows already recorded (#6028).
+                if (transaction != null)
+                {
+                    throw;
+                }
+
+                return (updatedCount, results.ToImmutableArray());
             }
             catch (FeatureEditPreconditionFailedException ex)
             {
@@ -1826,6 +1974,16 @@ internal sealed partial class FeatureDataAccess
 
         foreach (var featureId in featureIds)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                if (transaction != null)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                return (deletedCount, results.ToImmutableArray());
+            }
+
             FeatureEditPrecondition precondition = default;
             var hasPrecondition = preconditions?.TryGetValue(featureId, out precondition) == true;
 
@@ -1873,9 +2031,14 @@ internal sealed partial class FeatureDataAccess
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // BH7-020: propagate cancellation so the server stops executing remaining
-                // batch items after a client abort, mirroring the update path fix.
-                throw;
+                // BH7-020: stop the rest of the batch. An open transaction still rolls
+                // back. Autocommit returns the rows already recorded (#6028).
+                if (transaction != null)
+                {
+                    throw;
+                }
+
+                return (deletedCount, results.ToImmutableArray());
             }
             catch (FeatureEditPreconditionFailedException ex)
             {
