@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:0970c9e71c0da7163897926ccc28fd4d39e0617c86983ee3499bc44fbd50dffc",
+  "bundleDigest": "sha256:4dffcd50c0b7458e725978e040cb4cb057751b86715f3612bc6e7f27cfffea23",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2012,7 +2012,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:84d13e5a75a7ba7a9aea70343bf98a766580bc83ae7f09615580739cfe2f0aa2",
+      "documentDigest": "sha256:48b1a4bd19d00d75eb77e7333461ec45c539e35124b072d1539d6ff025d422cb",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -2485,7 +2485,7 @@
     {
       "id": "guides/query-analyze/gp-devkit-authoring",
       "path": "guides/query-analyze/gp-devkit-authoring.md",
-      "documentDigest": "sha256:a64868890a85fae15dff3b80235899ee8c1d31782f2564ad84761715435c4559",
+      "documentDigest": "sha256:7b0252f8b979eb2fa822f4083e0dbad8a2660b1095a42efee7324d7d66852f40",
       "metadata": {
         "type": "guide",
         "title": "Author a geoprocessing process",
@@ -16166,7 +16166,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:51aa9c12e7df1c3363adc3d15790b7708e9795a24f0d321061c0003f67a2fa34"
+      "contractDigest": "sha256:8165edeb967ef64c4a169a0d6efc98823f696c8b79d59441682f56723a2d8837"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -16239,7 +16239,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:51aa9c12e7df1c3363adc3d15790b7708e9795a24f0d321061c0003f67a2fa34"
+      "contractDigest": "sha256:8165edeb967ef64c4a169a0d6efc98823f696c8b79d59441682f56723a2d8837"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16249,7 +16249,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:51aa9c12e7df1c3363adc3d15790b7708e9795a24f0d321061c0003f67a2fa34"
+      "contractDigest": "sha256:8165edeb967ef64c4a169a0d6efc98823f696c8b79d59441682f56723a2d8837"
     },
     {
       "workflow": "guides/workflows/import-data",
