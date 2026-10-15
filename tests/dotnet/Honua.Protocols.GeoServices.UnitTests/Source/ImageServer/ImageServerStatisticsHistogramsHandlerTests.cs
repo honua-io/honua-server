@@ -674,6 +674,76 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public async Task ComputeHistogramsAsync_LockRasterMosaicRule_AnalysesOnlyTheLockedRaster()
+    {
+        var raster1 = CreateTestRasterInfo() with { Id = 1, Name = "scene-a" };
+        var raster2 = CreateTestRasterInfo() with { Id = 2, Name = "scene-b" };
+        _rasterStore.QueryRastersAsync(default, default!, default)
+            .ReturnsForAnyArgs([raster1, raster2]);
+        _rasterStore.GetStatisticsAsync(1, 2, Arg.Any<int[]?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new RasterStatistics
+                {
+                    Band = 1,
+                    MinValue = 0,
+                    MaxValue = 1,
+                    MeanValue = 0,
+                    StandardDeviation = 0,
+                    ValidPixelCount = 1,
+                },
+            ]);
+        _rasterStore.GetHistogramsAsync(1, 2, Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new RasterHistogram { Band = 1, BinCount = 1, Min = 0, Max = 1, Counts = [1L] },
+            ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["mosaicRule"] = "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[2]}",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeHistogramsAsync(context, 1, values, CancellationToken.None);
+
+        result.Should().BeOfType<JsonHttpResult<ComputeHistogramsResponse>>();
+        await _rasterStore.Received(1).GetHistogramsAsync(
+            1,
+            2,
+            Arg.Any<int[]?>(),
+            Arg.Any<int>(),
+            Arg.Any<RasterIdentifyRendering?>(),
+            Arg.Any<CancellationToken>());
+        await _rasterStore.DidNotReceive().GetHistogramsAsync(
+            1,
+            1,
+            Arg.Any<int[]?>(),
+            Arg.Any<int>(),
+            Arg.Any<RasterIdentifyRendering?>(),
+            Arg.Any<CancellationToken>());
+        await _rasterStore.DidNotReceiveWithAnyArgs().GetMosaicHistogramsAsync(
+            default, default!, default, default, default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_NonTrivialMosaicWhereWithoutRasterIds_ReturnsNotImplemented()
+    {
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["mosaicRule"] = "{\"where\":\"Name='scene-b'\"}",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
+        await _rasterStore.DidNotReceiveWithAnyArgs().QueryRastersAsync(default, default!, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public async Task ComputeAsync_MosaicWhere_ReturnsNotImplemented()
     {
         _rasterStore.GetRasterInfoAsync(1, 100, Arg.Any<CancellationToken>())
