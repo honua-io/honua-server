@@ -474,4 +474,31 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
         features.GetArrayLength().Should().Be(1);
         features[0].GetProperty("attributes").GetProperty("Total_Time").GetDouble().Should().Be(0);
     }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task ClosestFacility_FromFacility_OverRealPgRouting_StartsAtFacility()
+    {
+        // Incident at vertex 1, facility at vertex 2. FromFacility travel must
+        // orient the path facility -> incident (#6161).
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("incidents", "0.0,0.0"),
+            new KeyValuePair<string, string>("facilities", "0.01,0.0"),
+            new KeyValuePair<string, string>("travelDirection", "esriNATravelDirectionFromFacility"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/ClosestFacility/solveClosestFacility",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(CancellationToken.None));
+        var path = document.RootElement.GetProperty("routes").GetProperty("features")[0]
+            .GetProperty("geometry").GetProperty("paths")[0];
+        path[0][0].GetDouble().Should().BeApproximately(0.01, 1e-6);
+        path[0][1].GetDouble().Should().BeApproximately(0.0, 1e-6);
+    }
 }

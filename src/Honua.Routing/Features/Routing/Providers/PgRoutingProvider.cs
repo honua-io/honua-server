@@ -308,7 +308,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             }
 
             var (geometryGeoJson, lengthMeters) = await MergeEdgeGeometryAsync(
-                session, dataset, steps, request.OutSrid, cancellationToken).ConfigureAwait(false);
+                session, dataset, steps, request.OutSrid, reverseLine: false, cancellationToken).ConfigureAwait(false);
 
             // The raw pgRouting cost weight is converted to travel-time minutes
             // through the declared cost-unit contract (see RoutingCostUnitConverter /
@@ -536,8 +536,14 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                     var length = 0.0;
                     if (leg is { } legValue && legValue.Steps.Count > 0)
                     {
+                        // The leg is solved from the incident over whichever graph
+                        // ranked the facility, so the merged line starts at the
+                        // incident. FromFacility travel runs facility -> incident;
+                        // reverse the merged line so its first vertex is the facility.
+                        var reverseLine = request.Direction == ClosestFacilityTravelDirection.FromFacility;
                         (geometry, length) = await MergeEdgeGeometryAsync(
-                            session, dataset, legValue.Steps, request.OutSrid, cancellationToken).ConfigureAwait(false);
+                            session, dataset, legValue.Steps, request.OutSrid, reverseLine, cancellationToken)
+                            .ConfigureAwait(false);
                     }
 
                     // Convert the raw cost impedance to travel-time minutes for the
@@ -1077,6 +1083,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         NetworkDataset dataset,
         IReadOnlyList<RouteStep> steps,
         int outSrid,
+        bool reverseLine,
         CancellationToken cancellationToken)
     {
         // Thread the visited edge geometries into a single ordered LineString,
@@ -1086,6 +1093,12 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         // meters (ST_Length over geography), which stays correct across legs and
         // revisits. Ordered parallel arrays (@edge_ids, @nodes) bind as two array
         // parameters. The edge table name is a validated identifier.
+        // reverseLine flips the finished line (closest-facility FromFacility) without
+        // changing length. The expression has no quotes, so it stays valid inside
+        // the statement.
+        var mergedLine = reverseLine
+            ? "ST_Reverse(ST_MakeLine(the_geom ORDER BY ord))"
+            : "ST_MakeLine(the_geom ORDER BY ord)";
         var sql = $"""
             WITH steps AS (
                 SELECT e.gid, n.node, e.ord
@@ -1100,7 +1113,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 JOIN {dataset.EdgeTable} w ON w.gid = s.gid
             )
             SELECT
-                ST_AsGeoJSON(ST_Transform(ST_MakeLine(the_geom ORDER BY ord), @out_srid)) AS geojson,
+                ST_AsGeoJSON(ST_Transform({mergedLine}, @out_srid)) AS geojson,
                 COALESCE(SUM(ST_Length(the_geom::geography)), 0) AS length_m
             FROM oriented;
             """;
