@@ -95,6 +95,9 @@ public sealed class VersionJobRunnerTelemetryTests
         public Task<VersionContext?> ResolveAsync(string? gdbVersion, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public Task<VersionContext?> ResolveAsync(string? gdbVersion, string? callerOwner, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public Task<VersionReconcileResult> ReconcileAsync(
             Guid versionId,
             VersionReconcilePolicy policy = VersionReconcilePolicy.None,

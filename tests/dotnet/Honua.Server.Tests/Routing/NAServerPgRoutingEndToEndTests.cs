@@ -216,7 +216,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
             await response.Content.ReadAsStringAsync(CancellationToken.None));
         var features = document.RootElement.GetProperty("saPolygons").GetProperty("features");
 
-        // One facility x two breaks => two concentric polygons.
+        // One facility x two breaks => two cumulative disks.
         features.GetArrayLength().Should().Be(2);
 
         var first = features[0].GetProperty("attributes");
@@ -224,7 +224,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
         first.GetProperty("ToBreak").GetDouble().Should().Be(1);
 
         var second = features[1].GetProperty("attributes");
-        second.GetProperty("FromBreak").GetDouble().Should().Be(1);
+        second.GetProperty("FromBreak").GetDouble().Should().Be(0);
         second.GetProperty("ToBreak").GetDouble().Should().Be(2);
 
         features[0].GetProperty("geometry").GetProperty("rings").GetArrayLength().Should().BeGreaterThan(0);
@@ -398,5 +398,108 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
             .EnumerateArray()
             .Should().OnlyContain(feature =>
                 feature.GetProperty("attributes").GetProperty("FacilityID").GetInt32() > 0);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task RouteSolve_RepeatedStop_OverRealPgRouting_ReturnsPath()
+    {
+        // The last two stops snap to vertex 2. That zero-cost leg must not fail the
+        // route from vertex 1 (#6157).
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("stops", "0,0;0.01,0;0.01,0"),
+            new KeyValuePair<string, string>("returnRoutes", "true"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/Route/solve",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(CancellationToken.None));
+        var root = document.RootElement;
+        root.TryGetProperty("messages", out var messages).Should().BeFalse();
+        var paths = root.GetProperty("routes").GetProperty("features")[0]
+            .GetProperty("geometry").GetProperty("paths");
+        paths.GetArrayLength().Should().BeGreaterThan(0);
+        paths[0].GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task ClosestFacility_CoLocatedFacility_OverRealPgRouting_RanksAtZero()
+    {
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("incidents", "0.0,0.0"),
+            new KeyValuePair<string, string>("facilities", "0.0,0.0;0.02,0.02"),
+            new KeyValuePair<string, string>("defaultTargetFacilityCount", "1"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/ClosestFacility/solveClosestFacility",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(CancellationToken.None));
+        var attributes = document.RootElement.GetProperty("routes").GetProperty("features")[0]
+            .GetProperty("attributes");
+        attributes.GetProperty("FacilityID").GetInt32().Should().Be(1);
+        attributes.GetProperty("Total_TravelTime").GetDouble().Should().Be(0);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task OdCostMatrix_OriginEqualsDestination_OverRealPgRouting_ReturnsZeroCost()
+    {
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("origins", "0.0,0.0"),
+            new KeyValuePair<string, string>("destinations", "0.0,0.0"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/ODCostMatrix/solveODCostMatrix",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(CancellationToken.None));
+        var features = document.RootElement.GetProperty("odLines").GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+        features[0].GetProperty("attributes").GetProperty("Total_Time").GetDouble().Should().Be(0);
+    }
+
+    [RoutingTest(RoutingTestEnv)]
+    public async Task ClosestFacility_FromFacility_OverRealPgRouting_StartsAtFacility()
+    {
+        // Incident at vertex 1, facility at vertex 2. FromFacility travel must
+        // orient the path facility -> incident (#6161).
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("incidents", "0.0,0.0"),
+            new KeyValuePair<string, string>("facilities", "0.01,0.0"),
+            new KeyValuePair<string, string>("travelDirection", "esriNATravelDirectionFromFacility"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/ClosestFacility/solveClosestFacility",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(CancellationToken.None));
+        var path = document.RootElement.GetProperty("routes").GetProperty("features")[0]
+            .GetProperty("geometry").GetProperty("paths")[0];
+        path[0][0].GetDouble().Should().BeApproximately(0.01, 1e-6);
+        path[0][1].GetDouble().Should().BeApproximately(0.0, 1e-6);
     }
 }

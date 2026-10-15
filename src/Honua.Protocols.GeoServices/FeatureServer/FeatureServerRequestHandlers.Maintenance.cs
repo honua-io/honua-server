@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -234,6 +235,16 @@ internal static partial class FeatureServerEndpoints
                 [$"Omit {unsupported}. Append applies the edits array directly."]);
         }
 
+        // Resolve gdbVersion before the upsert match read (#6095): matches must be found within
+        // the named version and the resulting adds/updates must be written there, never DEFAULT.
+        var gdbVersion = GetValueString(values, "gdbVersion");
+        var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
+            context, gdbVersion, cancellationToken).ConfigureAwait(false);
+        if (versionError != null)
+        {
+            return versionError;
+        }
+
         GeoServicesFeature[] updates = [];
         var adds = features;
         if (appendOptions.Upsert)
@@ -291,6 +302,7 @@ internal static partial class FeatureServerEndpoints
                 storageLayerId.Value,
                 features,
                 appendOptions.UpsertMatchingField,
+                versionContext,
                 cancellationToken).ConfigureAwait(false);
             if (matchError is not null)
             {
@@ -314,7 +326,7 @@ internal static partial class FeatureServerEndpoints
         var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
         var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
 
-        var request = CreateAppendApplyEditsRequest(adds, updates, appendOptions.RollbackOnFailure);
+        var request = CreateAppendApplyEditsRequest(adds, updates, appendOptions.RollbackOnFailure, gdbVersion);
         var result = await editsHandler.HandleApplyEditsAsync(
             serviceId, layerId, request, limitsOptions.Value.Edits, cancellationToken: cancellationToken);
 
@@ -499,11 +511,72 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
+        // Hidden schema fields and request-scoped field masks are not calculate inputs or outputs.
+        // The candidate read returns the full attribute bag, so a sqlExpression could otherwise copy
+        // a publisher-hidden value into a visible field (#6141).
+        var unavailableFields = resource.SchemaFields
+            .Where(static field => field.Hidden)
+            .Select(static field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var maskSource = context.RequestServices.GetService<IFieldMaskSource>();
+        if (maskSource is not null)
+        {
+            unavailableFields.UnionWith(await maskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false));
+        }
+
+        foreach (var (field, _, _, sqlExpression) in parsedExpressions)
+        {
+            if (unavailableFields.Contains(field))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context, $"Field '{field}' is not available for calculate.");
+            }
+
+            if (sqlExpression is null)
+            {
+                continue;
+            }
+
+            if (!TryInspectCalcExpression(sqlExpression, out var sourceFields, out var sourceError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Unsupported expression for field '{field}'",
+                    [sourceError ?? "Expression is not supported."]);
+            }
+
+            foreach (var sourceField in sourceFields)
+            {
+                if (!validFieldNames.Contains(sourceField))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context, $"Field '{sourceField}' does not exist in layer {layerId}.");
+                }
+
+                if (unavailableFields.Contains(sourceField))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context, $"Field '{sourceField}' is not available for calculate.");
+                }
+            }
+        }
+
+        // Resolve gdbVersion before any read (#6095): the candidate read must see the named
+        // version's rows and the update batches must target that version, never DEFAULT.
+        var gdbVersion = GetValueString(values, "gdbVersion");
+        var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
+            context, gdbVersion, cancellationToken).ConfigureAwait(false);
+        if (versionError != null)
+        {
+            return versionError;
+        }
+
         // Build optional WHERE filter
         var whereClause = GetValueString(values, "where");
         var query = new FeatureQuery
         {
-            SpatialReferenceSrid = resource.ReadSrid()
+            SpatialReferenceSrid = resource.ReadSrid(),
+            VersionContext = versionContext is { IsDefault: false } ? versionContext : null
         };
 
         if (!string.IsNullOrWhiteSpace(whereClause) && whereClause != "1=1")
@@ -601,7 +674,12 @@ internal static partial class FeatureServerEndpoints
         for (int offset = 0, batchIndex = 0; offset < updates.Length; offset += batchSize, batchIndex++)
         {
             var batch = updates[offset..Math.Min(offset + batchSize, updates.Length)];
-            var applyRequest = new ApplyEditsRequest { Updates = batch, RollbackOnFailure = true };
+            var applyRequest = new ApplyEditsRequest
+            {
+                Updates = batch,
+                RollbackOnFailure = true,
+                GdbVersion = gdbVersion
+            };
             // A shared Idempotency-Key would make later batches replay batch 1 and skip the write.
             // Derive a stable per-batch key so a retry replays each batch instead of the first one.
             // With no header, suppress header reads so the batches do not independently re-read it.
@@ -876,14 +954,50 @@ internal static partial class FeatureServerEndpoints
         return parser.TryParse(out _, out error);
     }
 
-    private static bool TryEvaluateCalcExpression(
+    /// <summary>
+    /// Parses a calculate <c>sqlExpression</c> and reports the field identifiers it reads.
+    /// Function names and the NULL/TRUE/FALSE keywords are not field references.
+    /// </summary>
+    internal static bool TryInspectCalcExpression(
+        string expression,
+        out IReadOnlyCollection<string> sourceFields,
+        out string? error)
+    {
+        var parser = new CalcSqlExpressionParser(expression, new Dictionary<string, object?>(), validationOnly: true);
+        var parsed = parser.TryParse(out _, out error);
+        sourceFields = parser.SourceFields;
+        return parsed;
+    }
+
+    internal static bool TryEvaluateCalcExpression(
         string expression,
         IReadOnlyDictionary<string, object?> attributes,
         out object? value,
         out string? error)
     {
-        var parser = new CalcSqlExpressionParser(expression, attributes);
+        var parser = new CalcSqlExpressionParser(expression, ToCaseInsensitiveAttributes(attributes));
         return parser.TryParse(out value, out error);
+    }
+
+    /// <summary>
+    /// Managed attribute bags are case-sensitive. Calculate identifiers follow the schema, which is not.
+    /// </summary>
+    private static Dictionary<string, object?> ToCaseInsensitiveAttributes(
+        IReadOnlyDictionary<string, object?> attributes)
+    {
+        if (attributes is Dictionary<string, object?> dictionary
+            && dictionary.Comparer == StringComparer.OrdinalIgnoreCase)
+        {
+            return dictionary;
+        }
+
+        var copy = new Dictionary<string, object?>(attributes.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in attributes)
+        {
+            copy[pair.Key] = pair.Value;
+        }
+
+        return copy;
     }
 
     private static bool TryParseCalcExpressionEntries(string calcExpression, out CalcExpressionEntry[] expressions)
@@ -1025,8 +1139,11 @@ internal static partial class FeatureServerEndpoints
         private readonly string _expression;
         private readonly IReadOnlyDictionary<string, object?> _attributes;
         private readonly bool _validationOnly;
+        private readonly HashSet<string> _sourceFields = new(StringComparer.OrdinalIgnoreCase);
         private int _position;
         private Token _current;
+
+        public IReadOnlyCollection<string> SourceFields => _sourceFields;
 
         public CalcSqlExpressionParser(
             string expression,
@@ -1175,8 +1292,8 @@ internal static partial class FeatureServerEndpoints
                 return true;
             }
 
-            // During the validation pass unknown fields are allowed; the layer schema check
-            // validates targets, while a missing source field evaluates to SQL NULL.
+            // Record the identifier before lookup so validation can reject hidden sources (#6141).
+            _sourceFields.Add(name);
             value = _attributes.TryGetValue(name, out var attribute) ? attribute : null;
             return true;
         }

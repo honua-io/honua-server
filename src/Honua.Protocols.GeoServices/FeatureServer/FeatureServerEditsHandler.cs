@@ -419,6 +419,18 @@ internal sealed class FeatureServerEditsHandler(
         {
             throw;
         }
+        catch (EditBatchValidationException ex)
+        {
+            // A batch-level validation failure is a client error. Mapping it to 500 made one
+            // bad add fail the whole request, including rows that rollbackOnFailure=false
+            // should have kept (#6133). Per-slot failures are reported on the edit result
+            // instead; this is the leftover that never reached a slot.
+            FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
+            scope.RecordException(ex);
+            return StandardErrorHelpers.CreateBadRequest(
+                httpContext,
+                SanitizeEditErrorMessage(ex.Message, "Invalid edit request."));
+        }
         // A read/query-only provider's writer (ReadOnlyFeatureWriter for DuckDB and
         // MySQL/MariaDB) rejects every write with NotSupportedException. That is the
         // provider's documented posture, not an internal failure, so map it through the
@@ -579,7 +591,20 @@ internal sealed class FeatureServerEditsHandler(
                 // request's, but using request.Adds[i].Geometry directly keeps the rule
                 // identical to the update path.
                 var requestHasGeometry = request.Adds[i].Geometry != null;
-                var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, resource, AttributeRuleEditEvent.Insert, principal, cancellationToken);
+                var newFeature = await BuildFeatureFromGeoServicesAsync(
+                    request.Adds[i],
+                    0,
+                    resource,
+                    AttributeRuleEditEvent.Insert,
+                    principal,
+                    cancellationToken,
+                    useGlobalIds: request.UseGlobalIds);
+                var createRejection = EditProcessor.DescribeCreateAttributeRejection(resource, newFeature.Attributes);
+                if (createRejection is not null)
+                {
+                    throw new ArgumentException(createRejection);
+                }
+
                 context.CreateFeatures.Add(newFeature);
                 context.CreateIndexes.Add(i);
                 context.CreateGeometryChanged.Add(requestHasGeometry);
@@ -635,12 +660,16 @@ internal sealed class FeatureServerEditsHandler(
         var slotObjectIds = new long?[request.Updates.Length];
         for (var i = 0; i < request.Updates.Length; i++)
         {
-            if (!TryGetObjectId(request.Updates[i].Attributes, resource, out var parsedObjectId))
+            var hasObjectId = TryGetObjectId(request.Updates[i].Attributes, resource, out var parsedObjectId);
+            if (!hasObjectId || parsedObjectId <= 0)
             {
                 context.HasValidationErrors = true;
                 context.UpdateResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.InvalidObjectId,
-                    description: "ObjectId is required for update operations");
+                    description: hasObjectId
+                        ? "Invalid Object ID for update operation"
+                        : "ObjectId is required for update operations",
+                    objectId: hasObjectId ? parsedObjectId : null);
                 continue;
             }
 
@@ -767,8 +796,16 @@ internal sealed class FeatureServerEditsHandler(
                     principal,
                     cancellationToken,
                     existingFeature,
-                    ownerSnapshots).ConfigureAwait(false);
+                    ownerSnapshots,
+                    request.UseGlobalIds).ConfigureAwait(false);
                 context.UpdateFeatures.Add(updateFeature);
+                // The full merged row above serves rules, validation, hooks and events. The
+                // DEFAULT writer receives only what this request changes, so the row it locks
+                // supplies every other field and the omitted geometry (#6094). The versioned
+                // overlay writer persists the payload verbatim and keeps the merged row.
+                context.UpdateWriteFeatures.Add(versionContext is { IsDefault: false }
+                    ? updateFeature
+                    : CreatePartialUpdateWritePayload(updateFeature, existingFeature.Value, update, requestHasGeometry, resource));
                 context.UpdateIndexes.Add(i);
                 context.UpdateObjectIds.Add(objectId);
                 context.UpdateGeometryChanged.Add(requestHasGeometry);
@@ -823,12 +860,14 @@ internal sealed class FeatureServerEditsHandler(
         var slotObjectIds = new long?[request.Deletes.Length];
         for (var i = 0; i < request.Deletes.Length; i++)
         {
-            if (!FeatureServerValueParser.TryConvertToLong(request.Deletes[i], out var parsedObjectId))
+            if (!FeatureServerValueParser.TryConvertToLong(request.Deletes[i], out var parsedObjectId) ||
+                parsedObjectId <= 0)
             {
                 context.HasValidationErrors = true;
                 context.DeleteResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.InvalidObjectId,
-                    description: "Invalid ObjectId for delete operation");
+                    description: "Invalid Object ID for delete operation",
+                    objectId: parsedObjectId > 0 ? parsedObjectId : null);
                 continue;
             }
 
@@ -990,7 +1029,7 @@ internal sealed class FeatureServerEditsHandler(
             new GeoServicesEditRequest
             {
                 Creates = context.CreateFeatures.ToImmutableArray(),
-                Updates = context.UpdateFeatures.ToImmutableArray(),
+                Updates = context.UpdateWriteFeatures.ToImmutableArray(),
                 Deletes = context.DeleteIds.ToImmutableArray(),
                 RollbackOnFailure = request.RollbackOnFailure,
                 UseGlobalIds = request.UseGlobalIds
@@ -999,14 +1038,14 @@ internal sealed class FeatureServerEditsHandler(
             cancellationToken);
         if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
         {
-            throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
+            throw new EditBatchValidationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
         }
 
         var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, resource);
         var editValidation = _editProcessor.ValidateEdit(optimizedEdit, resource);
         if (!editValidation.IsValid)
         {
-            throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
+            throw new EditBatchValidationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
@@ -1456,6 +1495,11 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         context.UpdateFeatures.RemoveAt(k);
+        if (k < context.UpdateWriteFeatures.Count)
+        {
+            context.UpdateWriteFeatures.RemoveAt(k);
+        }
+
         context.UpdateIndexes.RemoveAt(k);
         if (k < context.UpdateObjectIds.Count)
         {
@@ -1535,6 +1579,12 @@ internal sealed class FeatureServerEditsHandler(
         /// </summary>
         public List<bool> CreateGeometryChanged { get; } = new();
         public List<Feature> UpdateFeatures { get; } = new();
+        /// <summary>
+        /// Per-update payload sent to the writer, parallel to <see cref="UpdateFeatures"/>. A
+        /// partial update carries only the attributes this request changes and defers omitted
+        /// fields and geometry to the writer's locked read (#6094).
+        /// </summary>
+        public List<Feature> UpdateWriteFeatures { get; } = new();
         public bool GuardUpdateSnapshot { get; set; }
         public Dictionary<long, FeatureEditPrecondition> UpdateSnapshotPreconditions { get; } = new();
         public List<int> UpdateIndexes { get; } = new();
@@ -1725,7 +1775,9 @@ internal sealed class FeatureServerEditsHandler(
         EditPrincipal principal,
         CancellationToken cancellationToken,
         Feature? existingFeature = null,
-        IReadOnlyDictionary<long, OwnerFieldSnapshot>? ownerSnapshots = null)
+        IReadOnlyDictionary<long, OwnerFieldSnapshot>? ownerSnapshots = null,
+        bool useGlobalIds = false,
+        TimeProvider? timeProvider = null)
     {
         byte[]? geometry = existingFeature?.Geometry;
         if (feature.ClearGeometry)
@@ -1792,7 +1844,7 @@ internal sealed class FeatureServerEditsHandler(
                     ex);
             }
 
-            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometry, cancellationToken);
+            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(resource, geometry, cancellationToken);
             if (!geometryValidation.IsValid)
             {
                 var safeError = SanitizeEditErrorMessage(
@@ -1833,6 +1885,14 @@ internal sealed class FeatureServerEditsHandler(
                 .Where(entry => !entry.Key.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
                 .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
         }
+
+        // Drop client GlobalID, editor-tracking, and (on insert) other non-editable
+        // values before validation. Stamp replaces them after rules run (#6134).
+        attributesToValidate = ServerMaintainedEditFields.OmitClientValues(
+            resource,
+            attributesToValidate,
+            isUpdate: existingFeature is not null,
+            useGlobalIds);
 
         var attributesResult = _mutationValidator.ValidateAttributes(
             resource,
@@ -1940,6 +2000,18 @@ internal sealed class FeatureServerEditsHandler(
             }
         }
 
+        var clock = timeProvider
+            ?? _httpContextAccessor.HttpContext?.RequestServices.GetService<TimeProvider>()
+            ?? TimeProvider.System;
+        ServerMaintainedEditFields.Stamp(
+            resource,
+            attributes,
+            isInsert: editEvent == AttributeRuleEditEvent.Insert,
+            principal,
+            clock.GetUtcNow(),
+            useGlobalIds,
+            existingFeature?.Attributes);
+
         // Contingent-value enforcement (#2133): the effective merged attribute row (existing
         // values + this edit) must satisfy the resource's restrictive contingent-value groups.
         // An invalid cross-field combination is rejected per-feature naming the offending group.
@@ -1973,6 +2045,70 @@ internal sealed class FeatureServerEditsHandler(
         => isPartialUpdate
             ? edited with { PreserveOmittedMaskedAttributes = true }
             : edited;
+
+    /// <summary>
+    /// Builds the writer payload for a partial GeoServices update (#6094). The merged feature
+    /// starts from an unlocked pre-read, so writing it whole would revert any field or geometry
+    /// another editor committed after that read. The payload keeps the caller-supplied
+    /// attributes plus every value this request changed relative to the pre-read (attribute
+    /// rule outputs, owner handling), names attributes the request removed, and asks the
+    /// writer to take omitted geometry from the row it locks. Full replacements and updates
+    /// that do not preserve omitted attributes are returned unchanged.
+    /// </summary>
+    internal static Feature CreatePartialUpdateWritePayload(
+        Feature merged,
+        Feature snapshot,
+        GeoServicesFeature request,
+        bool requestHasGeometry,
+        MetadataV2Resource resource)
+    {
+        if (request.ReplaceAttributes || !merged.PreserveOmittedMaskedAttributes)
+        {
+            return merged;
+        }
+
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        var supplied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in request.Attributes.Keys)
+        {
+            if (!request.InheritedNonEditableAttributes.Contains(key) &&
+                !key.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                supplied.Add(key);
+            }
+        }
+
+        var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in merged.Attributes)
+        {
+            if (supplied.Contains(name) ||
+                !snapshot.Attributes.TryGetValue(name, out var previous) ||
+                !Equals(previous, value))
+            {
+                attributes[name] = value;
+            }
+        }
+
+        var removals = merged.ExplicitAttributeRemovals.IsDefault
+            ? ImmutableArray.CreateBuilder<string>()
+            : merged.ExplicitAttributeRemovals.ToBuilder();
+        foreach (var name in snapshot.Attributes.Keys)
+        {
+            if (!merged.Attributes.ContainsKey(name) &&
+                !name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
+                !name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                removals.Add(name);
+            }
+        }
+
+        return merged with
+        {
+            Attributes = attributes.ToImmutable(),
+            ExplicitAttributeRemovals = removals.ToImmutable(),
+            PreserveOmittedGeometry = !requestHasGeometry
+        };
+    }
 
     /// <summary>
     /// Loads the single-update edit snapshot and returns its full-row state token.
@@ -2357,6 +2493,15 @@ internal sealed class FeatureServerEditsHandler(
     /// <see cref="GeoServicesEditErrorCodes.ValidationFailed"/>.
     /// </summary>
     private sealed class EditNotPermittedException(string message) : Exception(message)
+    {
+    }
+
+    /// <summary>
+    /// Batch-level edit validation that must surface as a client error rather than a 500
+    /// (honua-server#6133). Per-feature failures use <see cref="ArgumentException"/> inside
+    /// the slot loop instead.
+    /// </summary>
+    private sealed class EditBatchValidationException(string message) : Exception(message)
     {
     }
 }

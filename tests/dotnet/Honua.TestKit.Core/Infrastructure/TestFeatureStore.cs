@@ -389,8 +389,44 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         if (existingIndex == -1)
             throw new InvalidOperationException($"Feature {feature.Id} not found");
 
+        feature = MergeOmittedOntoStored(feature, features[existingIndex]);
         features[existingIndex] = feature;
         return Task.FromResult(feature);
+    }
+
+    /// <summary>
+    /// Mirrors the Postgres writer's partial-update contract: a partial update keeps stored
+    /// attributes it omits (except explicit removals) and, when it omitted geometry, the
+    /// stored geometry (#6094).
+    /// </summary>
+    private static Feature MergeOmittedOntoStored(Feature update, Feature stored)
+    {
+        if (update.PreserveOmittedGeometry)
+        {
+            update = update with { Geometry = stored.Geometry };
+        }
+
+        if (!update.PreserveOmittedMaskedAttributes)
+        {
+            return update;
+        }
+
+        var supplied = new HashSet<string>(update.Attributes.Keys, StringComparer.OrdinalIgnoreCase);
+        if (!update.ExplicitAttributeRemovals.IsDefaultOrEmpty)
+        {
+            supplied.UnionWith(update.ExplicitAttributeRemovals);
+        }
+
+        var attributes = update.Attributes.ToBuilder();
+        foreach (var (name, value) in stored.Attributes)
+        {
+            if (!name.Equals("objectid", StringComparison.OrdinalIgnoreCase) && !supplied.Contains(name))
+            {
+                attributes[name] = value;
+            }
+        }
+
+        return update with { Attributes = attributes.ToImmutable() };
     }
 
     /// <summary>

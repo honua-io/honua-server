@@ -536,8 +536,10 @@ public static partial class OgcMapsEndpoints
         var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
             context,
             value,
+            snapshot: snapshot,
+            preferExactPublicationId: true,
             requiredProtocol: ServiceProtocols.OgcApiMaps,
-            cancellationToken: cancellationToken, snapshot: snapshot, preferExactPublicationId: true).ConfigureAwait(false);
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         // A protected collection answers with the access-policy refusal (401/403), as the
         // Features and Tiles collection routes do, so an anonymous client learns it must
         // authenticate instead of concluding the collection does not exist (#4991).

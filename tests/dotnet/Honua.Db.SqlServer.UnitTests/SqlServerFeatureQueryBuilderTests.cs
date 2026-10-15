@@ -551,6 +551,28 @@ public class SqlServerFeatureQueryBuilderTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
+    public void BuildSelectQuery_ObjectIdsBeyondTwoThousand_UsesOneOpenJsonParameter()
+    {
+        var mapping = BuildMapping();
+        var ids = new long[2_001];
+        for (var i = 0; i < ids.Length; i++)
+        {
+            ids[i] = i + 1L;
+        }
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(
+            mapping,
+            new FeatureQuery { ObjectIds = ids.ToImmutableArray() },
+            _attributeColumns);
+
+        Assert.Contains("OPENJSON(@p0)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("@p1", result.Sql, StringComparison.Ordinal);
+        Assert.Single(result.WhereParameters);
+        Assert.StartsWith("[1,", (string)result.WhereParameters[0], StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
     public void BuildSelectQuery_IntersectsFilter_UsesGeometryStaticConstructor()
     {
         var mapping = BuildMapping();

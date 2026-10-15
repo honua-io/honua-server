@@ -887,17 +887,38 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                var objectIdResult = await _queryExecutor.QueryObjectIdsWithValidationAsync(
+                long[] objectIds;
+                var idsExceededTransferLimit = false;
+
+                // A provider reader that cannot stream (federated ArcGIS REST) answers ids from
+                // QueryObjectIdsAsync under a hard ceiling instead of materialising every full
+                // feature with geometry (#6113). Other readers also use their ids-only path.
+                var boundedIds = await _queryExecutor.TryQueryNonStreamingObjectIdsAsync(
                     queryLayer.Service,
                     queryLayer.Resource,
                     queryLayer.Publication,
                     queryLayer.StorageLayerId,
                     query,
                     cancellationToken).ConfigureAwait(false);
+                if (boundedIds is { } bounded)
+                {
+                    objectIds = bounded.ObjectIds.ToArray();
+                    idsExceededTransferLimit = bounded.ExceededTransferLimit;
+                }
+                else
+                {
+                    var result = await _queryExecutor.QueryObjectIdsWithValidationAsync(
+                        queryLayer.Service,
+                        queryLayer.Resource,
+                        queryLayer.Publication,
+                        queryLayer.StorageLayerId,
+                        query,
+                        cancellationToken).ConfigureAwait(false);
+                    objectIds = result.IsDefault ? [] : result.ToArray();
+                }
+
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "ids", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
-
-                var objectIds = objectIdResult.IsDefault ? [] : objectIdResult.ToArray();
                 HonuaTelemetry.SetSuccess(featureActivity, objectIds.Length);
 
                 if (idsIsPbf)
@@ -910,6 +931,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 {
                     ObjectIdFieldName = objectIdFieldName,
                     ObjectIds = objectIds,
+                    ExceededTransferLimit = idsExceededTransferLimit,
                     Features = null
                 };
 
@@ -1432,14 +1454,27 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         var inputSrid = await _queryServices.ResolveSridAsync(validatedParams.InSr, parsedGeometry?.SpatialReference, cancellationToken).ConfigureAwait(false);
-        if (validatedParams.InSrSpecified && !inputSrid.HasValue)
+        var inputSridDecision = DecideMissingInputSrid(
+            validatedParams.InSrSpecified,
+            inputSrid,
+            parsedGeometry?.SpatialReference);
+        if (inputSridDecision == MissingInputSridDecision.RejectInSr)
         {
             return (null, null, StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid input spatial reference",
                 [CreateSpatialReferenceErrorMessage("inSR", validatedParams.InSr)]));
         }
 
-        if (parsedGeometry != null && !inputSrid.HasValue)
+        if (inputSridDecision == MissingInputSridDecision.RejectGeometrySpatialReference)
+        {
+            return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid input spatial reference",
+                [CreateSpatialReferenceErrorMessage(
+                    "geometry.spatialReference",
+                    DescribeUnresolvableGeometrySpatialReference(parsedGeometry?.SpatialReference))]));
+        }
+
+        if (parsedGeometry != null && inputSridDecision == MissingInputSridDecision.FallBackToLayer)
         {
             inputSrid = mapSpatialReference ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         }
@@ -2093,7 +2128,7 @@ internal sealed partial class FeatureServerQueryHandler(
         if (validatedParams.ReturnIdsOnly)
         {
             var stopwatch = Stopwatch.StartNew();
-            var objectIdResult = await _queryExecutor.QueryObjectIdsWithValidationAsync(
+            QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
                 queryLayer.Service,
                 queryLayer.Resource,
                 queryLayer.Publication,
@@ -2106,7 +2141,9 @@ internal sealed partial class FeatureServerQueryHandler(
             return new QueryResponse
             {
                 ObjectIdFieldName = objectIdFieldName,
-                ObjectIds = objectIdResult.IsDefault ? [] : objectIdResult.ToArray(),
+                ObjectIds = result.Items
+                        .Select(feature => GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
+                        .ToArray(),
                 Features = null
             };
         }
@@ -2594,6 +2631,80 @@ internal sealed partial class FeatureServerQueryHandler(
         => string.IsNullOrWhiteSpace(rawValue)
             ? $"{parameterName} must not be empty."
             : $"Unsupported {parameterName} value: {rawValue}";
+
+    /// <summary>
+    /// How a query treats an unresolved input spatial reference.
+    /// </summary>
+    internal enum MissingInputSridDecision
+    {
+        /// <summary>The resolver produced a supported SRID.</summary>
+        UseResolved,
+
+        /// <summary>The caller supplied inSR and it could not be resolved.</summary>
+        RejectInSr,
+
+        /// <summary>The geometry carried a spatial reference and it could not be resolved.</summary>
+        RejectGeometrySpatialReference,
+
+        /// <summary>No input spatial reference was supplied, so the layer SR may apply.</summary>
+        FallBackToLayer,
+    }
+
+    /// <summary>
+    /// Chooses whether an unresolved input SR is a client error or a layer-SR fallback.
+    /// A geometry spatial reference counts as supplied when wkid, latestWkid, or WKT is present.
+    /// </summary>
+    internal static MissingInputSridDecision DecideMissingInputSrid(
+        bool inSrSpecified,
+        int? resolvedSrid,
+        GeoServicesSpatialReference? geometrySpatialReference)
+    {
+        if (resolvedSrid.HasValue)
+        {
+            return MissingInputSridDecision.UseResolved;
+        }
+
+        if (inSrSpecified)
+        {
+            return MissingInputSridDecision.RejectInSr;
+        }
+
+        if (GeometryCarriesSpatialReference(geometrySpatialReference))
+        {
+            return MissingInputSridDecision.RejectGeometrySpatialReference;
+        }
+
+        return MissingInputSridDecision.FallBackToLayer;
+    }
+
+    /// <summary>
+    /// True when the geometry object included a horizontal spatial reference.
+    /// A missing object, an empty object, or wkid 0 is treated as absent.
+    /// </summary>
+    internal static bool GeometryCarriesSpatialReference(GeoServicesSpatialReference? spatialReference)
+        => spatialReference is { Wkid: > 0 }
+            || spatialReference?.LatestWkid is > 0
+            || !string.IsNullOrWhiteSpace(spatialReference?.Wkt);
+
+    internal static string DescribeUnresolvableGeometrySpatialReference(GeoServicesSpatialReference? spatialReference)
+    {
+        if (!string.IsNullOrWhiteSpace(spatialReference?.Wkt))
+        {
+            return spatialReference.Wkt;
+        }
+
+        if (spatialReference?.Wkid is > 0)
+        {
+            return spatialReference.Wkid.Value.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (spatialReference?.LatestWkid is > 0)
+        {
+            return spatialReference.LatestWkid.Value.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return string.Empty;
+    }
 
     private static SpatialReference ResolveAreaLimitSpatialReference(
         MetadataV2Resource resource,

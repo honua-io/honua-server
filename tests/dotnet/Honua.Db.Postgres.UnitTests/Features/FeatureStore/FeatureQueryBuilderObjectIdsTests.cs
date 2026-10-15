@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
@@ -12,6 +13,30 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderObjectIdsTests
 {
+    [Fact]
+    public void BuildCountQuery_SeventyThousandObjectIds_BindsOneArrayParameter()
+    {
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, new GeometryProcessor());
+        var objectIds = new long[70_000];
+        for (var i = 0; i < objectIds.Length; i++)
+        {
+            objectIds[i] = i + 1L;
+        }
+
+        var result = queryBuilder.BuildCountQuery(layerId: 1, new FeatureQuery
+        {
+            ObjectIds = objectIds.ToImmutableArray()
+        });
+
+        result.Sql.Should().Contain("objectid = ANY($2::bigint[])");
+        result.Sql.Should().NotContain("ANY(ARRAY[");
+        result.WhereParameters.Should().ContainSingle();
+        result.WhereParameters[0].Should().BeOfType<long[]>();
+        ((long[])result.WhereParameters[0]).Should().HaveCount(70_000);
+    }
+
     [Fact]
     public void BuildObjectIdsQuery_SelectsObjectIdOnly()
     {
