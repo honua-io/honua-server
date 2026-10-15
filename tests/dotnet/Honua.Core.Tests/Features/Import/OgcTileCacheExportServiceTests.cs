@@ -514,5 +514,14 @@ public sealed class OgcTileCacheExportServiceTests
 
             return Task.FromResult(OgcTileCacheWriteStatus.AlreadyPresent);
         }
+
+        public Task<OgcTileCacheWriteStatus> ReplaceTileAsync(OgcTileCacheRecord record, CancellationToken cancellationToken = default)
+            => WriteTileAsync(record, cancellationToken);
+
+        public Task DeleteTilesExceptAsync(
+            string tileCacheId,
+            IReadOnlyList<OgcTileCoordinate> retained,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }

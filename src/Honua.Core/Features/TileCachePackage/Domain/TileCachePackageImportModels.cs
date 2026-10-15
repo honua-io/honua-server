@@ -63,7 +63,7 @@ public sealed record TileCachePackageImportResult
     /// <summary>Resolved maximum zoom imported.</summary>
     public required int MaxZoom { get; init; }
 
-    /// <summary>Number of tiles inserted (zero for dry-run or fully-deduplicated re-imports).</summary>
+    /// <summary>Number of tiles inserted or replaced. Zero for a dry run.</summary>
     public required int TilesImported { get; init; }
 
     /// <summary>Number of tiles skipped because they already existed in the catalog.</summary>
