@@ -24,6 +24,7 @@ using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.Infrastructure.Rendering;
 using Honua.Protocols.Ogc.Classic;
+using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
@@ -844,38 +845,73 @@ internal static partial class WmsRequestHandlers
                 continue;
             }
 
-            FilterExpression expression;
-            try
+            var (filter, error) = TranslateWmsLayerFilter(
+                context,
+                filterExpressionService,
+                layers[i].Resource,
+                token);
+            if (error is not null)
             {
-                expression = Fes20Parser.ParseFilter(token);
-            }
-            catch (Fes20ParseException ex)
-            {
-                return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                    $"Invalid FILTER XML: {ex.Message}"));
-            }
-
-            // Resolve FILTER properties against the public schema only, as WFS does: a
-            // predicate on a publisher-hidden field would be a value oracle (#6098).
-            var publicResource = layers[i].Resource.WithoutHiddenSchemaFields();
-            expression = filterExpressionService.Normalize(expression, publicResource);
-            if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
-            {
-                return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                    "FILTER expression must be a boolean predicate."));
+                return (null, error);
             }
 
-            var translation = filterExpressionService.Translate(expression, publicResource);
-            if (!translation.IsSuccess)
-            {
-                return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                    translation.ErrorMessage ?? "Invalid filter expression."));
-            }
-
-            layerFilters[i] = translation.SqlFilter;
+            layerFilters[i] = filter;
         }
 
         return (layerFilters, null);
+    }
+
+    /// <summary>
+    /// Parses one WMS FILTER token against the layer's public schema. Unknown properties,
+    /// namespaced ValueReferences, and literals the field cannot hold are client errors
+    /// (<c>InvalidParameterValue</c>), matching WFS (#6183). Publisher-hidden fields are
+    /// not part of that schema (#6098).
+    /// </summary>
+    internal static (SqlFragment? Filter, IResult? Error) TranslateWmsLayerFilter(
+        HttpContext context,
+        IFilterExpressionService filterExpressionService,
+        MetadataV2Resource resource,
+        string token)
+    {
+        FilterExpression expression;
+        try
+        {
+            expression = Fes20Parser.ParseFilter(token);
+        }
+        catch (Fes20ParseException ex)
+        {
+            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                $"Invalid FILTER XML: {ex.Message}"));
+        }
+
+        var publicResource = resource.WithoutHiddenSchemaFields();
+        try
+        {
+            expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(
+                expression,
+                publicResource,
+                propertyName => WfsPropertyNameResolver.Resolve(publicResource, propertyName, allowGeometryAlias: true));
+            expression = filterExpressionService.Normalize(expression, publicResource);
+        }
+        catch (ArgumentException ex)
+        {
+            return (null, CreateWmsServiceException(context, "InvalidParameterValue", ex.Message));
+        }
+
+        if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
+        {
+            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                "FILTER expression must be a boolean predicate."));
+        }
+
+        var translation = filterExpressionService.Translate(expression, publicResource);
+        if (!translation.IsSuccess)
+        {
+            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                translation.ErrorMessage ?? "Invalid filter expression."));
+        }
+
+        return (translation.SqlFilter, null);
     }
 
     private static bool TryParseWmsBbox(

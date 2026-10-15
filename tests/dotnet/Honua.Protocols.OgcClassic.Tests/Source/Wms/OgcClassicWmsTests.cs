@@ -917,6 +917,57 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Operation(Operations.Wms)]
     [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_FilterOnUnknownProperty_ReturnsInvalidParameterValue()
+    {
+        const string filter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>nosuchfield</fes:ValueReference><fes:Literal>x</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var response = await GetFeatureInfoWithFilterAsync(filter);
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("InvalidParameterValue").And.Contain("nosuchfield");
+        content.Should().NotContain("NoApplicableCode");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_FilterOnNamespacedValueReference_ResolvesField()
+    {
+        const string filter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>cite:category</fes:ValueReference><fes:Literal>does-not-exist</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var response = await GetFeatureInfoWithFilterAsync(filter);
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Be("No features found.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_FilterWithMistypedLiteral_ReturnsInvalidParameterValue()
+    {
+        const string filter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>population</fes:ValueReference><fes:Literal>abc</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var response = await GetFeatureInfoWithFilterAsync(filter);
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("InvalidParameterValue").And.Contain("numeric");
+        content.Should().NotContain("NoApplicableCode");
+    }
+
+    private Task<HttpResponseMessage> GetFeatureInfoWithFilterAsync(string filter)
+        => _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0" +
+            $"&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}" +
+            $"&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&I=41&J=74" +
+            $"&FILTER={Uri.EscapeDataString(filter)}");
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetFeatureInfo_DuplicateLayerWithFilter_Returns200NotCrash()
     {
         // BH5-007 regression: LAYERS=X,X with a per-layer FILTER used to throw ArgumentException
