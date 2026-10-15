@@ -351,6 +351,44 @@ internal static partial class SensorThingsEndpoints
         return false;
     }
 
+    private static void RequirePositiveEntityIds(JsonElement body)
+    {
+        Walk(body);
+
+        static void Walk(JsonElement node)
+        {
+            switch (node.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    foreach (var property in node.EnumerateObject())
+                    {
+                        if (property.NameEquals("@iot.id"))
+                        {
+                            if (property.Value.ValueKind != JsonValueKind.Number
+                                || !property.Value.TryGetInt64(out var id)
+                                || id <= 0)
+                            {
+                                throw new SensorThingsValidationException("@iot.id must be a positive integer.");
+                            }
+                        }
+                        else
+                        {
+                            Walk(property.Value);
+                        }
+                    }
+
+                    break;
+                case JsonValueKind.Array:
+                    foreach (var item in node.EnumerateArray())
+                    {
+                        Walk(item);
+                    }
+
+                    break;
+            }
+        }
+    }
+
     /// <summary>Counts expand queries and related entities for one read. The root page is not charged as entities.</summary>
     private sealed class ExpansionBudget
     {
@@ -426,6 +464,7 @@ internal static partial class SensorThingsEndpoints
             using var document = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted).ConfigureAwait(false);
             var body = document.RootElement;
             if (body.ValueKind != JsonValueKind.Object) throw new SensorThingsValidationException("An entity must be a JSON object.");
+            RequirePositiveEntityIds(body);
             if (context.Request.Method == "POST" && resource.Set == "Observations" && resource.ParentSet is null
                 && resource.Id is null && body.TryGetProperty("value", out var bulk))
             {

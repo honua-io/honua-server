@@ -219,12 +219,23 @@ internal sealed partial class PostgresObservationStore
     private static JsonObject ParseBody(JsonElement body) => body.ValueKind == JsonValueKind.Object
         ? JsonNode.Parse(body.GetRawText())!.AsObject() : throw new SensorThingsValidationException("An entity must be a JSON object.");
 
+    /// <summary>Accepts only a positive integer <c>@iot.id</c>. Objects and arrays are client errors.</summary>
+    internal static long RequirePositiveEntityId(JsonNode key)
+    {
+        if (key is not JsonValue value || !value.TryGetValue<long>(out var id) || id <= 0)
+        {
+            throw new SensorThingsValidationException("@iot.id must be a positive integer.");
+        }
+
+        return id;
+    }
+
     private async Task<long> ResolveEntityAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string set, JsonNode? value, int depth, CancellationToken ct)
     {
         if (value is not JsonObject body) throw new SensorThingsValidationException($"{set} must be an entity object or an @iot.id reference.");
         if (body.Count == 1 && body["@iot.id"] is { } key)
         {
-            if (!key.AsValue().TryGetValue<long>(out var id) || id <= 0) throw new SensorThingsValidationException("@iot.id must be a positive integer.");
+            var id = RequirePositiveEntityId(key);
             if (!await ExistsAsync(connection, transaction, EntityTable(set), id, ct).ConfigureAwait(false))
                 throw new SensorThingsValidationException($"Referenced {set}({id}) does not exist.");
             return id;
