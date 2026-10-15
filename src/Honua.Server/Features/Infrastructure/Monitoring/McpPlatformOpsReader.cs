@@ -340,19 +340,33 @@ internal sealed class McpPlatformOpsReader(
         var scopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal);
         var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray();
         var authorizationOutcome = scopeGoverned ? "admin-policy-and-oauth-scope-authorized" : "admin-policy-authorized";
-        var evidence = _services.GetService<IHttpContextAccessor>()?.HttpContext?.Items[
-            ProposalEvidenceVerifier.HttpContextItemKey] as OperationProposalEvidence;
-        if (evidence is not null && evidence.OperationId != LegacyOperationIds.For(kind))
-        {
-            throw new GeoprocessingValidationException(
-                "The verified proposal evidence does not match the routed operation descriptor.");
-        }
+        var httpContext = _services.GetService<IHttpContextAccessor>()?.HttpContext;
+        var evidence = httpContext?.Items[ProposalEvidenceVerifier.HttpContextItemKey] as OperationProposalEvidence;
         if (evidence is not null)
         {
+            var invokingTool = httpContext!.Items[ProposalEvidenceVerifier.InvokingToolItemKey] as string;
+            if (!string.Equals(evidence.ToolName, invokingTool, StringComparison.Ordinal))
+            {
+                throw new GeoprocessingValidationException(
+                    "The verified proposal evidence does not match the invoking tool.");
+            }
+
+            if (evidence.OperationId != LegacyOperationIds.For(kind))
+            {
+                throw new GeoprocessingValidationException(
+                    "The verified proposal evidence does not match the routed operation descriptor.");
+            }
+
             if (string.IsNullOrWhiteSpace(payload))
             {
                 throw new GeoprocessingValidationException(
                     "An evidence-bound proposal requires an execution payload.");
+            }
+
+            if (!PayloadTargetMatches(kind, payload, evidence.TargetId))
+            {
+                throw new GeoprocessingValidationException(
+                    "The verified proposal evidence does not match the proposal target.");
             }
 
             await EnsureEvidenceProposerCanBeRevalidatedAsync(actor!, cancellationToken)
@@ -415,6 +429,19 @@ internal sealed class McpPlatformOpsReader(
             SupportedKinds = ResolveSupportedKinds(),
             Message = result.Message
         };
+    }
+
+    private static bool PayloadTargetMatches(OperationClass kind, string payload, string evidenceTargetId)
+    {
+        var target = kind switch
+        {
+            OperationClass.Deploy => DeployExecutionPayload.Parse(payload)?.TargetId,
+            OperationClass.MetadataRelease => MetadataReleaseExecutionPayload.ParseAndValidate(payload).Payload?.TargetEnvironment,
+            _ => null,
+        };
+
+        return !string.IsNullOrWhiteSpace(target)
+            && string.Equals(target, evidenceTargetId, StringComparison.Ordinal);
     }
 
     private async Task EnsureEvidenceProposerCanBeRevalidatedAsync(

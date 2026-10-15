@@ -578,6 +578,12 @@ internal sealed class McpDataAccessSurface
         McpJsonRpcRequest request,
         CancellationToken cancellationToken)
     {
+        // A JSON-RPC batch reuses one HttpContext. Drop any evidence left by an
+        // earlier element before this call resolves a tool, and again in the
+        // invoke finally so the next element cannot seal it.
+        httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
+        httpContext.Items.Remove(ProposalEvidenceVerifier.InvokingToolItemKey);
+
         // Per docs/developer/MCP_SERVER.md the authenticated principal gate
         // precedes any protocol-level param or tool-name validation so an
         // anonymous caller sees the `unauthenticated` reauthentication signal
@@ -668,6 +674,8 @@ internal sealed class McpDataAccessSurface
         McpToolsCallResult result;
         try
         {
+            httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
+            httpContext.Items[ProposalEvidenceVerifier.InvokingToolItemKey] = tool.Name;
             if (tool is IEvidenceBoundProposalTool)
             {
                 var tenant = httpContext.RequestServices.GetService<ITenantContext>();
@@ -744,6 +752,11 @@ internal sealed class McpDataAccessSurface
             {
                 McpLog.ToolFailedUnexpected(_logger, tool.Name, ex);
             }
+        }
+        finally
+        {
+            httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
+            httpContext.Items.Remove(ProposalEvidenceVerifier.InvokingToolItemKey);
         }
 
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
