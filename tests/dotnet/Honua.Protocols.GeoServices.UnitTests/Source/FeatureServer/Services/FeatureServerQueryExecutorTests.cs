@@ -11,11 +11,15 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.GeoServicesRest.Features.FeatureStore;
+using Honua.GeoServicesRest.Features.FeatureStore.Models;
+using Honua.GeoServicesRest.Features.FeatureStore.Services;
 using Honua.Plugins.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using System.Collections.Immutable;
@@ -772,11 +776,9 @@ public sealed class FeatureServerQueryExecutorTests
     {
         var featureReader = Substitute.For<IFeatureReader>();
         var providerReader = Substitute.For<IFeatureReader>();
-        var features = Enumerable.Range(1, 1001)
-            .Select(id => Feature.Create(id, geometry: null))
-            .ToImmutableArray();
-        providerReader.QueryAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(QueryResult<Feature>.Create(features.Length, features));
+        var ids = Enumerable.Range(1, 1001).Select(id => (long)id).ToImmutableArray();
+        providerReader.QueryObjectIdsAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ids);
         var router = CreateProviderRouter(providerReader);
         var service = CreateService();
         var resource = CreatePointResource(storageBindingIds: ["binding-roads"]);
@@ -806,7 +808,187 @@ public sealed class FeatureServerQueryExecutorTests
         objectIds.GetArrayLength().Should().Be(1001);
         objectIds[0].GetInt64().Should().Be(1);
         objectIds[1000].GetInt64().Should().Be(1001);
+        document.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeFalse();
         await featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        await providerReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task StreamIdsAsync_FederatedArcGisLayer_RequestsIdsOnlyAndStopsAtCeiling()
+    {
+        // #6113: an anonymous returnIdsOnly query on a federated ArcGIS layer must ask the
+        // upstream for ids only (never features or geometry) and stop at a hard ceiling,
+        // reporting exceededTransferLimit, instead of materialising the whole upstream layer.
+        var upstreamTotal = FeatureServerQueryExecutor.MaxNonStreamingObjectIds + 5_000;
+        var upstream = new RecordingArcGisRestClient(upstreamTotal);
+        var (sut, service, resource, publication) = CreateFederatedArcGisSut(upstream);
+        var context = CreateHttpContext();
+
+        await sut.StreamIdsAsync(
+            service,
+            resource,
+            publication,
+            7,
+            new FeatureQuery(),
+            "objectid",
+            context,
+            CancellationToken.None);
+
+        upstream.FeatureRequests.Should().BeEmpty("an ids-only query must never page full features from the upstream");
+        upstream.ObjectIdsRequests.Should().NotBeEmpty();
+        upstream.ObjectIdsRequests.Should().OnlyContain(url =>
+            url.Contains("returnIdsOnly=true", StringComparison.Ordinal)
+            && url.Contains("returnGeometry=false", StringComparison.Ordinal)
+            && !url.Contains("returnGeometry=true", StringComparison.Ordinal));
+        upstream.IdsServed.Should().BeLessThanOrEqualTo(
+            FeatureServerQueryExecutor.MaxNonStreamingObjectIds + ArcGisRestFeatureStore.DefaultPageSize,
+            "the upstream id paging must stop at the ceiling, not drain the layer");
+
+        var json = await ReadResponseAsync(context);
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("objectIds").GetArrayLength()
+            .Should().Be(FeatureServerQueryExecutor.MaxNonStreamingObjectIds);
+        document.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task TryQueryNonStreamingObjectIdsAsync_FederatedArcGisLayer_ReturnsBoundedIdsWithoutFeatureReads()
+    {
+        // The materialised ids path (f=pbf, or a small resultRecordCount) shares the bound.
+        var upstream = new RecordingArcGisRestClient(totalIds: 25);
+        var (sut, service, resource, publication) = CreateFederatedArcGisSut(upstream);
+
+        var bounded = await sut.TryQueryNonStreamingObjectIdsAsync(
+            service,
+            resource,
+            publication,
+            7,
+            new FeatureQuery { Limit = 10 },
+            CancellationToken.None);
+
+        bounded.Should().NotBeNull();
+        bounded!.Value.ObjectIds.Should().Equal(Enumerable.Range(0, 10).Select(id => (long)id));
+        bounded.Value.ExceededTransferLimit.Should().BeTrue();
+        upstream.FeatureRequests.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task TryQueryNonStreamingObjectIdsAsync_StreamingReader_ReturnsNull()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var sut = CreateSut(featureReader);
+        var service = CreateService();
+        var resource = CreateResource();
+        var publication = CreatePublication(service, resource);
+
+        var bounded = await sut.TryQueryNonStreamingObjectIdsAsync(
+            service,
+            resource,
+            publication,
+            7,
+            new FeatureQuery(),
+            CancellationToken.None);
+
+        bounded.Should().BeNull();
+        await featureReader.DidNotReceive().QueryObjectIdsAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    private static (FeatureServerQueryExecutor Sut, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+        CreateFederatedArcGisSut(IArcGisRestFeatureClient upstream)
+    {
+        var service = CreateService();
+        var resource = CreatePointResource(storageBindingIds: ["binding-roads"]);
+        var publication = CreatePublication(service, resource, storageBindingId: "binding-roads");
+        var storageBinding = CreateStorageBinding(resource, "binding-roads");
+        var connection = new DataConnection
+        {
+            ConnectionId = Guid.NewGuid(),
+            Provider = DataProviderNames.ArcGisRest,
+            Name = "remote-roads",
+            // Public address literal. The service-root validator vets the host with a live DNS
+            // lookup and fail-closes when resolution is unavailable, which is what CI did for
+            // services.example.com. An address literal is vetted without contacting a resolver.
+            ConnectionString = "https://93.184.216.34/arcgis/rest/services/roads/FeatureServer"
+        };
+        var store = new ArcGisRestFeatureStore(upstream, NullLogger<ArcGisRestFeatureStore>.Instance);
+        var reader = ((IBindableFeatureDataProvider)store).CreateReaderForBinding(new FeatureProviderBinding(
+            service,
+            resource,
+            publication,
+            storageBinding,
+            FeatureStorageMapping.FromMetadata(resource, storageBinding),
+            7,
+            store,
+            connection));
+        var graphProvider = CreateGraphProvider(service, resource, publication, storageBinding);
+        var sut = CreateSut(
+            Substitute.For<IFeatureReader>(),
+            providerQueryRouter: CreateProviderRouter(reader),
+            metadataGraphProvider: graphProvider);
+        return (sut, service, resource, publication);
+    }
+
+    /// <summary>
+    /// Fake upstream FeatureServer that honors resultOffset/resultRecordCount on returnIdsOnly
+    /// requests and records every request so a test can prove what was asked for.
+    /// </summary>
+    private sealed class RecordingArcGisRestClient(int totalIds) : IArcGisRestFeatureClient
+    {
+        public List<string> FeatureRequests { get; } = [];
+
+        public List<string> ObjectIdsRequests { get; } = [];
+
+        public long IdsServed { get; private set; }
+
+        public Task<ArcGisRestQueryResponse> QueryAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+        {
+            FeatureRequests.Add(url);
+            return Task.FromResult(new ArcGisRestQueryResponse { Features = [] });
+        }
+
+        public Task<ArcGisRestObjectIdsResponse> QueryObjectIdsAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+        {
+            ObjectIdsRequests.Add(url);
+            var offset = ReadInt(url, "resultOffset") ?? 0;
+            var recordCount = ReadInt(url, "resultRecordCount") ?? int.MaxValue;
+            var take = Math.Max(0, Math.Min(recordCount, totalIds - offset));
+            var ids = new long[take];
+            for (var i = 0; i < take; i++)
+            {
+                ids[i] = offset + i;
+            }
+
+            IdsServed += take;
+            return Task.FromResult(new ArcGisRestObjectIdsResponse { ObjectIdFieldName = "objectid", ObjectIds = ids });
+        }
+
+        public Task<ArcGisRestCountResponse> QueryCountAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+            => Task.FromResult(new ArcGisRestCountResponse { Count = totalIds });
+
+        public Task<ArcGisRestExtentResponse> QueryExtentAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+            => Task.FromResult(new ArcGisRestExtentResponse());
+
+        public Task<ArcGisRestLayerResponse> GetLayerMetadataAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+            => Task.FromResult(new ArcGisRestLayerResponse());
+
+        private static int? ReadInt(string url, string key)
+        {
+            var query = url[(url.IndexOf('?', StringComparison.Ordinal) + 1)..];
+            foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var eq = pair.IndexOf('=', StringComparison.Ordinal);
+                if (eq > 0 && pair[..eq] == key
+                    && int.TryParse(pair[(eq + 1)..], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var value))
+                {
+                    return value;
+                }
+            }
+
+            return null;
+        }
     }
 
     [UnitTest]

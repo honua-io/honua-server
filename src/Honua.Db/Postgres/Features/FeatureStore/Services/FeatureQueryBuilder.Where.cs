@@ -75,21 +75,9 @@ internal sealed partial class FeatureQueryBuilder
         if (query.ObjectIds.HasValue && !query.ObjectIds.Value.IsDefaultOrEmpty)
         {
             var objectIds = query.ObjectIds.Value;
-            var placeholders = new string[objectIds.Length];
-
-            for (var i = 0; i < objectIds.Length; i++)
-            {
-                placeholders[i] = $"${paramIndex + i}";
-            }
-
-            sql.Append(CultureInfo.InvariantCulture, $" AND {DatabaseSchema.ObjectIdColumn} = ANY(ARRAY[{string.Join(", ", placeholders)}])");
-
-            foreach (var objectId in objectIds)
-            {
-                parameters.Add(objectId);
-            }
-
-            paramIndex += objectIds.Length;
+            sql.Append(CultureInfo.InvariantCulture, $" AND {DatabaseSchema.ObjectIdColumn} = ANY(${paramIndex}::bigint[])");
+            parameters.Add(objectIds.ToArray());
+            paramIndex++;
         }
     }
 
