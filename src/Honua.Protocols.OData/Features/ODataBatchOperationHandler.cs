@@ -79,14 +79,7 @@ internal sealed partial class ODataBatchOperationHandler(
             }
 
             var readBudget = context.RequestServices.GetService<IOptions<ODataOptions>>()?.Value ?? new ODataOptions();
-            var readOperations = 0;
-            foreach (var batchItem in batchRequest.Requests)
-            {
-                if (!IsMutationMethod(batchItem.Method))
-                {
-                    readOperations++;
-                }
-            }
+            var readOperations = batchRequest.Requests.Count(static batchItem => !IsMutationMethod(batchItem.Method));
 
             if (readOperations > readBudget.MaxBatchReadOperations)
             {

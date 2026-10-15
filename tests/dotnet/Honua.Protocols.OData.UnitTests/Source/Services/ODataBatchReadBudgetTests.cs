@@ -36,7 +36,8 @@ public sealed class ODataBatchReadBudgetTests
         services.AddLogging();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddSingleton<IOptions<ODataOptions>>(Options.Create(options));
-        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+        using var serviceProvider = services.BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = serviceProvider };
         context.Request.ContentType = "application/json";
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(BatchJson(options.MaxBatchReadOperations + 1)));
         context.Response.Body = new MemoryStream();
@@ -46,7 +47,8 @@ public sealed class ODataBatchReadBudgetTests
         await result.ExecuteAsync(context);
 
         context.Response.Body.Position = 0;
-        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        using var responseReader = new StreamReader(context.Response.Body);
+        var body = await responseReader.ReadToEndAsync();
         context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest, "response body was {0}", body);
         body.Should().Contain(options.MaxBatchReadOperations.ToString(CultureInfo.InvariantCulture));
         await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<Honua.Core.Features.FeatureStore.Domain.FeatureQuery>(), Arg.Any<CancellationToken>());
