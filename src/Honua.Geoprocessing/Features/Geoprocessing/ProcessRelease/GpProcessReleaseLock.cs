@@ -190,7 +190,7 @@ public sealed record GpProcessReleaseLock
             Check(receipt.Status == "pass", $"validation.receipts[{receipt.Name}].status must be pass");
         }
 
-        Check(LockPatterns.GeneratedAt.IsMatch(GeneratedAt), "generatedAt must be yyyy-MM-ddTHH:mm:ssZ");
+        Check(LockPatterns.TryParseGeneratedAt(GeneratedAt, out _), "generatedAt must be yyyy-MM-ddTHH:mm:ssZ");
         return errors;
     }
 
@@ -389,7 +389,8 @@ public sealed record GpProcessReleaseLock
                 receipts = ArrayOf(v, "validation", "receipts");
             }
 
-            if (errors.Count > 0)
+            if (errors.Count > 0 || process is null || source is null || dependencyLock is null
+                || runtimeImage is null || contract is null || serverContract is null)
             {
                 return null;
             }
@@ -484,8 +485,8 @@ public sealed record GpProcessReleaseLock
                 {
                     ServerContractVersion = new GpReleaseContractWindow
                     {
-                        Minimum = (int)Integer(serverContract!.Value, "compatibility.serverContractVersion", "minimum"),
-                        Maximum = (int)Integer(serverContract.Value, "compatibility.serverContractVersion", "maximum"),
+                        Minimum = ContractInteger(serverContract.Value, "minimum"),
+                        Maximum = ContractInteger(serverContract.Value, "maximum"),
                     },
                 },
                 Artifacts = artifactList,
@@ -494,14 +495,23 @@ public sealed record GpProcessReleaseLock
             };
         }
 
+        private int ContractInteger(JsonElement element, string name)
+        {
+            var value = Integer(element, "compatibility.serverContractVersion", name);
+            if (value is < int.MinValue or > int.MaxValue)
+            {
+                errors.Add($"compatibility.serverContractVersion.{name} must be an Int32 integer");
+                return 0;
+            }
+
+            return (int)value;
+        }
+
         private void RejectUnknown(JsonElement element, string path, string[] allowed)
         {
-            foreach (var property in element.EnumerateObject())
+            foreach (var property in element.EnumerateObject().Where(property => Array.IndexOf(allowed, property.Name) < 0))
             {
-                if (Array.IndexOf(allowed, property.Name) < 0)
-                {
-                    errors.Add($"{Join(path, property.Name)} is not part of the v1 lock");
-                }
+                errors.Add($"{Join(path, property.Name)} is not part of the v1 lock");
             }
         }
 
@@ -753,6 +763,11 @@ internal static partial class LockPatterns
     public static readonly Regex JobDefinitionName = JobDefinitionNameRegex();
     public static readonly Regex ArtifactName = ArtifactNameRegex();
     public static readonly Regex GeneratedAt = GeneratedAtRegex();
+
+    public static bool TryParseGeneratedAt(string value, out DateTimeOffset instant)
+        => DateTimeOffset.TryParseExact(value,
+            ["yyyy-MM-dd'T'HH:mm:ss'Z'", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'"],
+            CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out instant);
 
     [GeneratedRegex("^sha256:[0-9a-f]{64}$")]
     private static partial Regex Sha256Regex();

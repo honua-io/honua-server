@@ -86,6 +86,26 @@ public sealed class GpProcessReleaseLockTests
 
     private const string CommittedDigest = "sha256:75154d7a4ebdf830a0e68cfe5e2d7a15fbb58ceef02eba73fa6bc92e3ecad747";
 
+    [Theory]
+    [InlineData("4294967297")]
+    [InlineData("-4294967295")]
+    [InlineData("2147483648")]
+    public void Parse_RejectsContractWindowIntegerOverflow(string value)
+    {
+        var json = CommittedLock.Replace("\"minimum\": 3", "\"minimum\": " + value, StringComparison.Ordinal)
+            .Replace("\"maximum\": 4", "\"maximum\": " + value, StringComparison.Ordinal);
+        var parse = () => GpProcessReleaseLock.Parse(json);
+        parse.Should().Throw<GpProcessReleaseLockException>().WithMessage("*Int32*");
+    }
+
+    [Fact]
+    public void Parse_RejectsImpossibleCalendarDate()
+    {
+        var json = CommittedLock.Replace("2026-10-15T04:00:00Z", "2026-02-31T04:00:00Z", StringComparison.Ordinal);
+        var parse = () => GpProcessReleaseLock.Parse(json);
+        parse.Should().Throw<GpProcessReleaseLockException>().WithMessage("*generatedAt*");
+    }
+
     [Fact]
     public void Digest_MatchesTheReleaseRepositoryPythonDigest()
     {

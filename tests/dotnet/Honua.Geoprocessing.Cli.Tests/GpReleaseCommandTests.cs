@@ -173,6 +173,134 @@ public sealed class GpReleaseCommandTests : IDisposable
         verify.Stderr.Should().Contain("summary-tool-1.2.0.tar.gz").And.Contain("does not match the lock");
     }
 
+    [Theory]
+    [InlineData("requirements.lock")]
+    [InlineData("schema/inputs.schema.json")]
+    [InlineData("schema/outputs.schema.json")]
+    [InlineData("artifacts/golden-tests.junit.xml")]
+    public void Release_RefusesDirtyHashedInputsOutsideArtifactIncludes(string relative)
+    {
+        var project = CreateProject();
+        var tool = Path.Join(project, "tools", "summary");
+        var descriptor = Path.Join(tool, "honua-gp.yaml");
+        File.WriteAllText(descriptor, File.ReadAllText(descriptor)
+            .Replace("    - schema\n", "", StringComparison.Ordinal)
+            .Replace("    - requirements.lock\n", "", StringComparison.Ordinal));
+        Git(project, "add", ".");
+        Git(project, "commit", "-qm", "narrow artifact inputs");
+        File.AppendAllText(Path.Join(tool, relative), "\nchanged");
+
+        var result = Run(project, "out");
+
+        result.Exit.Should().Be(1);
+        result.Stderr.Should().Contain("uncommitted changes").And.Contain(Path.GetFileName(relative));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Release_DefaultIncludesExcludeNestedOutputOnRerun(bool ignored)
+    {
+        var project = CreateProject();
+        var descriptor = Path.Join(project, "tools", "summary", "honua-gp.yaml");
+        var text = File.ReadAllText(descriptor);
+        var start = text.IndexOf("artifacts:", StringComparison.Ordinal);
+        var end = text.IndexOf("validation:", start, StringComparison.Ordinal);
+        File.WriteAllText(descriptor, text.Remove(start, end - start));
+        if (!ignored)
+        {
+            File.WriteAllText(Path.Join(project, ".gitignore"), "");
+        }
+        Git(project, "add", ".");
+        Git(project, "commit", "-qm", "use default includes");
+        const string output = "tools/summary/out-release";
+        var first = Run(project, output);
+        first.Exit.Should().Be(0, first.Stderr);
+        var lockPath = Path.Join(project, output, "process-release-lock.json");
+        var original = File.ReadAllBytes(lockPath);
+
+        var second = Run(project, output);
+
+        second.Exit.Should().Be(0, second.Stderr);
+        File.ReadAllBytes(lockPath).Should().Equal(original);
+    }
+
+    [Theory]
+    [InlineData("2026-02-31T00:00:00Z")]
+    [InlineData("2026-10-15T25:00:00Z")]
+    public void Release_InvalidTimestampReturnsFindingBeforeWriting(string timestamp)
+    {
+        var project = CreateProject();
+        var result = Run(project, "out", "--generated-at", timestamp);
+        result.Exit.Should().Be(1);
+        result.Stderr.Should().Contain("--generated-at");
+        Directory.Exists(Path.Join(project, "out")).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Release_FractionalTimestampIsAcceptedAndDeterministic()
+    {
+        var project = CreateProject();
+        const string timestamp = "2026-10-15T04:00:00.123Z";
+        var first = Run(project, "out1", "--generated-at", timestamp);
+        var second = Run(project, "out2", "--generated-at", timestamp);
+        first.Exit.Should().Be(0, first.Stderr);
+        second.Exit.Should().Be(0, second.Stderr);
+        File.ReadAllBytes(Path.Join(project, "out2", "process-release-lock.json"))
+            .Should().Equal(File.ReadAllBytes(Path.Join(project, "out1", "process-release-lock.json")));
+    }
+
+    [Fact]
+    public void Release_RefusesSiblingPrefixPath()
+    {
+        var project = CreateProject();
+        var tool = Path.Join(project, "tools", "summary");
+        Directory.CreateDirectory(Path.Join(project, "tools", "summary-extra"));
+        File.WriteAllText(Path.Join(project, "tools", "summary-extra", "requirements.lock"), "outside");
+        var descriptor = Path.Join(tool, "honua-gp.yaml");
+        File.WriteAllText(descriptor, File.ReadAllText(descriptor).Replace(
+            "dependencyLock: requirements.lock", "dependencyLock: ../summary-extra/requirements.lock", StringComparison.Ordinal));
+        Git(project, "add", ".");
+        Git(project, "commit", "-qm", "reference sibling");
+
+        var result = Run(project, "out");
+
+        result.Exit.Should().Be(1);
+        result.Stderr.Should().Contain("leaves the project directory");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Release_RefusesTrackedFileAndDirectorySymlinks(bool directory)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return; // Creating links requires a privilege not present on every Windows runner.
+        }
+        var project = CreateProject();
+        var outside = Path.Join(_root, "outside");
+        Directory.CreateDirectory(outside);
+        File.WriteAllText(Path.Join(outside, "private.txt"), "must not be packaged");
+        var link = Path.Join(project, "tools", "summary", "process", "linked");
+        if (directory)
+        {
+            Directory.CreateSymbolicLink(link, outside);
+        }
+        else
+        {
+            File.CreateSymbolicLink(link, Path.Join(outside, "private.txt"));
+        }
+        Git(project, "add", ".");
+        Git(project, "commit", "-qm", "include link");
+
+        var result = Run(project, "out");
+
+        result.Exit.Should().Be(1);
+        result.Stderr.Should().Contain("symlink");
+        Directory.Exists(Path.Join(project, "out")).Should().BeFalse();
+    }
+
     private (int Exit, string Stdout, string Stderr) Run(string project, string output, params string[] extra)
     {
         var args = new List<string>

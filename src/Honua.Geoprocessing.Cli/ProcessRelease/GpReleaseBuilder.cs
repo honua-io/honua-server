@@ -74,6 +74,13 @@ internal static class GpReleaseBuilder
             throw new GpReleaseException([$"descriptor not found: {descriptorPath}"]);
         }
 
+        var projectDirectory = Path.GetDirectoryName(descriptorPath)!;
+        var pathErrors = new List<string>();
+        if (!ValidateInputPath(projectDirectory, descriptorPath, "descriptor", pathErrors))
+        {
+            throw new GpReleaseException(pathErrors);
+        }
+
         var descriptor = GpProcessDescriptor.Parse(File.ReadAllText(descriptorPath));
         var errors = new List<string>(descriptor.Validate());
         if (errors.Count > 0)
@@ -81,7 +88,6 @@ internal static class GpReleaseBuilder
             throw new GpReleaseException(errors);
         }
 
-        var projectDirectory = Path.GetDirectoryName(descriptorPath)!;
         var process = descriptor.Process!;
         var contract = process.Contract!;
         var git = GitFacts.Resolve(projectDirectory);
@@ -113,27 +119,30 @@ internal static class GpReleaseBuilder
         }
 
         var generatedAt = request.GeneratedAt ?? git.CommitTimeUtc;
-        if (!LockPatterns.GeneratedAt.IsMatch(generatedAt))
+        if (!LockPatterns.TryParseGeneratedAt(generatedAt, out var modificationTime))
         {
             errors.Add("--generated-at must be yyyy-MM-ddTHH:mm:ssZ");
         }
 
-        var includes = ResolveIncludes(descriptor, projectDirectory, errors);
-        var dirty = git.DirtyPaths(includes.Select(p => p.Absolute).Append(descriptorPath));
-        if (dirty.Length > 0)
+        var outputDirectory = Path.GetFullPath(request.OutputDirectory);
+        if (IsWithin(outputDirectory, projectDirectory))
         {
-            errors.Add("the checkout has uncommitted changes under the release inputs; commit them first: " + string.Join(", ", dirty.Take(8)));
+            errors.Add("the output directory must not contain the project directory");
         }
 
+        var includes = ResolveIncludes(descriptor, projectDirectory, outputDirectory, errors);
+        var sourcePaths = includes.Select(p => p.Absolute).Append(descriptorPath).ToList();
         var dependencyLockPath = ResolveProjectFile(projectDirectory, descriptor.DependencyLock!, "dependencyLock", errors);
         var inputSchemaPath = ResolveProjectFile(projectDirectory, contract.InputSchema!, "process.contract.inputSchema", errors);
         var outputSchemaPath = ResolveProjectFile(projectDirectory, contract.OutputSchema!, "process.contract.outputSchema", errors);
+        sourcePaths.AddRange(new[] { dependencyLockPath, inputSchemaPath, outputSchemaPath }.OfType<string>());
         var receipts = new List<GpReleaseValidationReceipt>();
         foreach (var receipt in descriptor.Validation!.Receipts!)
         {
             var receiptPath = ResolveProjectFile(projectDirectory, receipt.Path!, $"validation.receipts[{receipt.Name}]", errors);
             if (receiptPath is not null)
             {
+                sourcePaths.Add(receiptPath);
                 receipts.Add(new GpReleaseValidationReceipt
                 {
                     Name = receipt.Name!,
@@ -141,6 +150,12 @@ internal static class GpReleaseBuilder
                     Status = "pass",
                 });
             }
+        }
+
+        var dirty = git.DirtyPaths(sourcePaths);
+        if (dirty.Length > 0)
+        {
+            errors.Add("the checkout has uncommitted changes under the release inputs; commit them first: " + string.Join(", ", dirty.Take(8)));
         }
 
         if (errors.Count > 0)
@@ -151,11 +166,10 @@ internal static class GpReleaseBuilder
         var image = runtimeImage!;
         var runtimeDigest = image[(image.IndexOf('@', StringComparison.Ordinal) + 1)..];
         var artifactName = $"{process.Name}-{process.Version}.tar.gz";
-        var outputDirectory = Path.GetFullPath(request.OutputDirectory);
         var artifactsDirectory = Path.Join(outputDirectory, ArtifactsDirectoryName);
         Directory.CreateDirectory(artifactsDirectory);
         var artifactPath = Path.Join(artifactsDirectory, artifactName);
-        var artifactBytes = PackArtifact(includes, DateTimeOffset.ParseExact(generatedAt, "yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal));
+        var artifactBytes = PackArtifact(includes, modificationTime);
         File.WriteAllBytes(artifactPath, artifactBytes);
 
         var lockDocument = new GpProcessReleaseLock
@@ -258,16 +272,20 @@ internal static class GpReleaseBuilder
         return findings;
     }
 
-    private static List<(string Relative, string Absolute)> ResolveIncludes(GpProcessDescriptor descriptor, string projectDirectory, List<string> errors)
+    private static List<(string Relative, string Absolute)> ResolveIncludes(GpProcessDescriptor descriptor, string projectDirectory, string outputDirectory, List<string> errors)
     {
         var roots = descriptor.Artifacts?.Include is { Count: > 0 } include ? include : ["."];
         var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
         foreach (var root in roots)
         {
             var absolute = Path.GetFullPath(Path.Join(projectDirectory, root));
-            if (!absolute.StartsWith(projectDirectory, StringComparison.Ordinal))
+            if (!ValidateInputPath(projectDirectory, absolute, $"artifacts.include entry '{root}'", errors))
             {
-                errors.Add($"artifacts.include entry '{root}' leaves the project directory");
+                continue;
+            }
+
+            if (IsWithin(outputDirectory, absolute))
+            {
                 continue;
             }
 
@@ -277,7 +295,7 @@ internal static class GpReleaseBuilder
             }
             else if (Directory.Exists(absolute))
             {
-                foreach (var file in EnumerateFiles(absolute))
+                foreach (var file in EnumerateFiles(absolute, projectDirectory, outputDirectory, errors))
                 {
                     files[ToRelative(projectDirectory, file)] = file;
                 }
@@ -296,43 +314,88 @@ internal static class GpReleaseBuilder
         return files.Select(kv => (kv.Key, kv.Value)).ToList();
     }
 
-    private static IEnumerable<string> EnumerateFiles(string directory)
+    private static IEnumerable<string> EnumerateFiles(string directory, string projectDirectory, string outputDirectory, List<string> errors)
     {
-        foreach (var file in Directory.EnumerateFiles(directory))
+        foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
         {
-            yield return file;
-        }
-
-        foreach (var sub in Directory.EnumerateDirectories(directory))
-        {
-            if (ExcludedDirectoryNames.Contains(Path.GetFileName(sub), StringComparer.Ordinal))
+            if (IsWithin(outputDirectory, entry))
             {
                 continue;
             }
 
-            foreach (var file in EnumerateFiles(sub))
+            if (!ValidateInputPath(projectDirectory, entry, $"artifact '{ToRelative(projectDirectory, entry)}'", errors))
             {
-                yield return file;
+                continue;
+            }
+
+            if (Directory.Exists(entry))
+            {
+                if (ExcludedDirectoryNames.Contains(Path.GetFileName(entry), StringComparer.Ordinal))
+                {
+                    continue;
+                }
+
+                foreach (var file in EnumerateFiles(entry, projectDirectory, outputDirectory, errors))
+                {
+                    yield return file;
+                }
+            }
+            else
+            {
+                yield return entry;
             }
         }
+    }
+
+    private static bool IsWithin(string root, string path)
+    {
+        var relative = Path.GetRelativePath(root, path);
+        return !Path.IsPathRooted(relative) && relative != ".."
+            && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+    }
+
+    private static bool ValidateInputPath(string projectDirectory, string absolute, string field, List<string> errors)
+    {
+        if (!IsWithin(projectDirectory, absolute))
+        {
+            errors.Add($"{field} leaves the project directory");
+            return false;
+        }
+
+        if (!File.Exists(absolute) && !Directory.Exists(absolute))
+        {
+            errors.Add($"{field} does not exist");
+            return false;
+        }
+
+        // Check every component before opening a file or traversing a directory.
+        for (var current = absolute; current is not null; current = Path.GetDirectoryName(current))
+        {
+            if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+            {
+                errors.Add($"{field} uses a symlink or reparse point");
+                return false;
+            }
+
+            if (current == projectDirectory)
+            {
+                break;
+            }
+        }
+
+        return true;
     }
 
     private static string? ResolveProjectFile(string projectDirectory, string relative, string field, List<string> errors)
     {
         var absolute = Path.GetFullPath(Path.Join(projectDirectory, relative));
-        if (!absolute.StartsWith(projectDirectory, StringComparison.Ordinal))
-        {
-            errors.Add($"{field} '{relative}' leaves the project directory");
-            return null;
-        }
-
         if (!File.Exists(absolute))
         {
             errors.Add($"{field} '{relative}' does not exist");
             return null;
         }
 
-        return absolute;
+        return ValidateInputPath(projectDirectory, absolute, $"{field} '{relative}'", errors) ? absolute : null;
     }
 
     private static string ToRelative(string root, string path)
