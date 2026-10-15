@@ -293,7 +293,7 @@ internal static partial class FeatureStreamEndpoints
         // durable-store sweep floor; live sends are remembered per cursor rather than
         // raising a high-water mark, so an out-of-order lower cursor is still delivered.
         var defaultDelivered = new FeatureStreamDeliveredCursorWindow(replayCursor);
-        var writerTask = WriteWebSocketAsync(webSocket, session, replayCursor, sessionManager, logger, linkedCts.Token,
+        var writerTask = WriteWebSocketAsync(webSocket, session, replayCursor, sessionManager, logger,
             defaultDelivered,
             onFirstRead: hasReplay
                 ? async (cursor, ct) =>
@@ -388,7 +388,8 @@ internal static partial class FeatureStreamEndpoints
 
                 return cursor;
             },
-            pollInterval: options.CrossNodeSyncInterval);
+            pollInterval: options.CrossNodeSyncInterval,
+            cancellationToken: linkedCts.Token);
 
         // Receive loop keeps the connection alive and detects client close.
         try
@@ -479,11 +480,11 @@ internal static partial class FeatureStreamEndpoints
         long replayCursor,
         FeatureStreamSessionManager sessionManager,
         ILogger logger,
-        CancellationToken cancellationToken,
         FeatureStreamDeliveredCursorWindow defaultDelivered,
-        Func<long, CancellationToken, Task<long>>? onFirstRead = null,
-        Func<long, CancellationToken, Task<long>>? onPoll = null,
-        TimeSpan? pollInterval = null)
+        Func<long, CancellationToken, Task<long>>? onFirstRead,
+        Func<long, CancellationToken, Task<long>>? onPoll,
+        TimeSpan? pollInterval,
+        CancellationToken cancellationToken)
     {
         try
         {
