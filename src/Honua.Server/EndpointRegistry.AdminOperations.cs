@@ -47,6 +47,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/jobs/{jobId}/artifacts"),
         new("GET", "/api/v1/admin/jobs/{jobId}/actions"),
         new("GET", "/api/v1/admin/jobs/{jobId}/steps"),
+        new("GET", "/api/v1/admin/jobs/{jobId}/diagnostics"),
         new("POST", "/api/v1/admin/jobs/{jobId}/cancel"),
         new("POST", "/api/v1/admin/jobs/{jobId}/retry"),
 

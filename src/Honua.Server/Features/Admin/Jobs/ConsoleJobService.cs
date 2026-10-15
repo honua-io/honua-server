@@ -877,8 +877,10 @@ internal sealed partial class ConsoleJobService(
         => string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal);
 
     private static ConsoleJobLinks BuildLinks(HttpContext context, ExecutionJobRecord job)
+        => BuildLinks(context.Request.PathBase.Value ?? string.Empty, job);
+
+    private static ConsoleJobLinks BuildLinks(string pathBase, ExecutionJobRecord job)
     {
-        var pathBase = context.Request.PathBase.Value ?? string.Empty;
         var basePath = $"{pathBase}/api/v1/admin/jobs/{Uri.EscapeDataString(job.OperationId)}";
         var correlation = job.Audit.CorrelationId;
 

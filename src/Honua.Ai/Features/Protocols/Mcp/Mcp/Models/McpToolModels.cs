@@ -42,6 +42,30 @@ internal sealed class McpCancelJobArgument
 }
 
 /// <summary>
+/// Arguments for <c>honua_diagnose_job</c> (honua-server#6219).
+/// </summary>
+internal sealed class McpDiagnoseJobArgument
+{
+    [JsonPropertyName("jobId")]
+    public string? JobId { get; set; }
+
+    [JsonPropertyName("events")]
+    public int? Events { get; set; }
+}
+
+/// <summary>
+/// Arguments for <c>honua_job_evidence</c> (honua-server#6219).
+/// </summary>
+internal sealed class McpJobEvidenceArgument
+{
+    [JsonPropertyName("jobId")]
+    public string? JobId { get; set; }
+
+    [JsonPropertyName("events")]
+    public int? Events { get; set; }
+}
+
+/// <summary>
 /// Arguments for <c>honua_ops_findings</c>: list active deterministic ops
 /// findings, or fetch a single finding by its stable identifier.
 /// </summary>

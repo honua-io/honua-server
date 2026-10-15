@@ -63,6 +63,17 @@ and a note saying so.
 5. Check `artifacts.state` before promising outputs to a caller: `partial`
    means some references expired or could not be resolved.
 
-The same projection backs the SDK, CLI, Console and MCP surfaces as they adopt
-it (honua-release#613, stage 3). Local reproduction from this evidence is
+## From an AI client
+
+`honua_diagnose_job` returns the same projection for an MCP caller, restructured so the
+agent cannot mistake the server's reading for the record: `observed` holds the recorded
+facts, `inferred` holds the canonical phase, liveness verdict, failure classification,
+recovery advice and retry disposition, `evidence` lists what is missing or truncated, and
+`caveat` repeats that a returned diagnosis is not proof the job succeeded.
+`honua_job_evidence` returns only steps, bounded recent events and artifact availability.
+Both are read-only and use the same Job Read authorization as the REST route; an agent
+with a read-only key gets the owner view.
+
+The same projection backs the SDK, CLI and Console surfaces as they adopt it
+(honua-release#613, stage 3). Local reproduction from this evidence is
 tracked separately (honua-server#6220).

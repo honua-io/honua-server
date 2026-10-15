@@ -2653,6 +2653,24 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-admin-jobs-jobid-diagnostics",
+      "route": "/api/v1/admin/jobs/{jobId}/diagnostics",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_DisclosesEventTruncationAndHistoricalJobsWithoutProvenance",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_ForCustomCodeJob_ReportsCompleteReleaseIdentityWithoutCredentials",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_ForFailedJob_ProjectsSanitizedFailureAndDisclosesMissingProvenance",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_ForRunningJobs_JudgesWorkerLivenessByHeartbeatPolicy",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_ScopedReadKey_ReceivesOwnerViewWithoutInfrastructureIdentities"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-admin-jobs-jobid-logs",
       "route": "/api/v1/admin/jobs/{jobId}/logs",
       "method": "GET",

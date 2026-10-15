@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Reflection;
+using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -35,13 +36,21 @@ internal sealed partial class ConsoleJobService
 
     private static readonly string ServerVersion = ResolveServerVersion();
 
-    public async Task<ConsoleJobDiagnostics?> GetDiagnosticsAsync(
+    public Task<ConsoleJobDiagnostics?> GetDiagnosticsAsync(
         HttpContext context,
         string jobId,
         int? eventLimit,
         CancellationToken cancellationToken)
+        => GetDiagnosticsAsync(context.User, context.Request.PathBase.Value ?? string.Empty, jobId, eventLimit, cancellationToken);
+
+    public async Task<ConsoleJobDiagnostics?> GetDiagnosticsAsync(
+        ClaimsPrincipal user,
+        string pathBase,
+        string jobId,
+        int? eventLimit,
+        CancellationToken cancellationToken)
     {
-        var job = await GetAuthorizedJobAsync(context, jobId, cancellationToken).ConfigureAwait(false);
+        var job = await GetAuthorizedJobAsync(user, jobId, cancellationToken).ConfigureAwait(false);
         if (job == null)
         {
             return null;
@@ -54,7 +63,7 @@ internal sealed partial class ConsoleJobService
         var notes = new List<string>();
 
         var executeDecision = await approvalGate.CheckAuthorizationAsync(
-            context.User,
+            user,
             new OperatorAuthorizationRequest
             {
                 ResourceType = OperatorResourceType.Job,
@@ -86,7 +95,7 @@ internal sealed partial class ConsoleJobService
         var release = BuildRelease(job, missing);
         var lifecycle = BuildLifecycle(job, now, missing);
         var worker = BuildWorker(job, now, operatorView);
-        var attempt = await BuildAttemptAsync(context, job, operatorView, cancellationToken).ConfigureAwait(false);
+        var attempt = await BuildAttemptAsync(user, job, operatorView, cancellationToken).ConfigureAwait(false);
         var failure = BuildFailure(job, entries, workspace, attempt);
         if (failure == null && job.Status == ExecutionJobStatus.Failed)
         {
@@ -130,8 +139,31 @@ internal sealed partial class ConsoleJobService
                 Truncated = truncated.ToArray(),
                 Notes = notes.ToArray()
             },
-            Links = BuildLinks(context, job)
+            Links = BuildLinks(pathBase, job)
         };
+    }
+
+    private async Task<ExecutionJobRecord?> GetAuthorizedJobAsync(
+        ClaimsPrincipal user,
+        string jobId,
+        CancellationToken cancellationToken)
+    {
+        var job = await RequireJobStore().GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (job == null)
+        {
+            return null;
+        }
+
+        var decision = await approvalGate.CheckAuthorizationAsync(
+            user,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Read,
+                ResourceId = job.OperationId
+            },
+            cancellationToken).ConfigureAwait(false);
+        return decision.IsAllowed ? job : null;
     }
 
     private static ConsoleJobDiagnosticRelease BuildRelease(ExecutionJobRecord job, List<string> missing)
@@ -334,7 +366,7 @@ internal sealed partial class ConsoleJobService
     }
 
     private async Task<ConsoleJobDiagnosticAttempt> BuildAttemptAsync(
-        HttpContext context,
+        ClaimsPrincipal user,
         ExecutionJobRecord job,
         bool canExecute,
         CancellationToken cancellationToken)
@@ -357,7 +389,7 @@ internal sealed partial class ConsoleJobService
             var dispatch = await ResolveRetryDispatchAsync(job, throwOnCapabilityFailure: false, cancellationToken).ConfigureAwait(false);
             allowed = canExecute && dispatch.IsAllowed;
             disabledReason = allowed ? null : ResolveRetryDisabledReason(canExecute, dispatch.DisabledReason);
-            requiresApproval = approvalGate.CheckApproval(context.User, new()
+            requiresApproval = approvalGate.CheckApproval(user, new()
             {
                 ResourceType = OperatorResourceType.Job,
                 Operation = OperatorOperation.Execute,
