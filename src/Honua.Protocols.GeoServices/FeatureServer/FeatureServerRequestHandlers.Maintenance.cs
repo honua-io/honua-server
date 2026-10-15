@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -510,6 +511,50 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
+        // Hidden schema fields and request-scoped field masks are not calculate inputs or outputs.
+        // The candidate read returns the full attribute bag, so a sqlExpression could otherwise copy
+        // a publisher-hidden value into a visible field (#6141).
+        var unavailableFields = resource.SchemaFields
+            .Where(static field => field.Hidden)
+            .Select(static field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var maskSource = context.RequestServices.GetService<IFieldMaskSource>();
+        if (maskSource is not null)
+        {
+            unavailableFields.UnionWith(await maskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false));
+        }
+
+        foreach (var (field, _, _, sqlExpression) in parsedExpressions)
+        {
+            if (unavailableFields.Contains(field))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context, $"Field '{field}' is not available for calculate.");
+            }
+
+            if (sqlExpression is null)
+            {
+                continue;
+            }
+
+            if (!TryInspectCalcExpression(sqlExpression, out var sourceFields, out var sourceError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Unsupported expression for field '{field}'",
+                    [sourceError ?? "Expression is not supported."]);
+            }
+
+            foreach (var sourceField in sourceFields)
+            {
+                if (unavailableFields.Contains(sourceField))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context, $"Field '{sourceField}' is not available for calculate.");
+                }
+            }
+        }
+
         // Resolve gdbVersion before any read (#6095): the candidate read must see the named
         // version's rows and the update batches must target that version, never DEFAULT.
         var gdbVersion = GetValueString(values, "gdbVersion");
@@ -903,6 +948,21 @@ internal static partial class FeatureServerEndpoints
         return parser.TryParse(out _, out error);
     }
 
+    /// <summary>
+    /// Parses a calculate <c>sqlExpression</c> and reports the field identifiers it reads.
+    /// Function names and the NULL/TRUE/FALSE keywords are not field references.
+    /// </summary>
+    internal static bool TryInspectCalcExpression(
+        string expression,
+        out IReadOnlyCollection<string> sourceFields,
+        out string? error)
+    {
+        var parser = new CalcSqlExpressionParser(expression, new Dictionary<string, object?>(), validationOnly: true);
+        var parsed = parser.TryParse(out _, out error);
+        sourceFields = parser.SourceFields;
+        return parsed;
+    }
+
     private static bool TryEvaluateCalcExpression(
         string expression,
         IReadOnlyDictionary<string, object?> attributes,
@@ -1052,8 +1112,11 @@ internal static partial class FeatureServerEndpoints
         private readonly string _expression;
         private readonly IReadOnlyDictionary<string, object?> _attributes;
         private readonly bool _validationOnly;
+        private readonly HashSet<string> _sourceFields = new(StringComparer.OrdinalIgnoreCase);
         private int _position;
         private Token _current;
+
+        public IReadOnlyCollection<string> SourceFields => _sourceFields;
 
         public CalcSqlExpressionParser(
             string expression,
@@ -1202,8 +1265,8 @@ internal static partial class FeatureServerEndpoints
                 return true;
             }
 
-            // During the validation pass unknown fields are allowed; the layer schema check
-            // validates targets, while a missing source field evaluates to SQL NULL.
+            // Record the identifier before lookup so validation can reject hidden sources (#6141).
+            _sourceFields.Add(name);
             value = _attributes.TryGetValue(name, out var attribute) ? attribute : null;
             return true;
         }

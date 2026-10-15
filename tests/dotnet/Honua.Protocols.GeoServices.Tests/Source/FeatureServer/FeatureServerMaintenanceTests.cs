@@ -9,8 +9,10 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -232,6 +234,56 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
         postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
             .Should().Be(attackerName, "the same calculate over POST is the supported write path");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Calculate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_SourceExpressionReferencingHiddenField_ReturnsBadRequest()
+    {
+        const string originalName = "calc-6141-original";
+        _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId, new MetadataV2Field
+        {
+            Name = "secret",
+            Type = MetadataV2FieldType.String,
+            Hidden = true,
+            Nullable = true,
+        });
+        var objectId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, originalName);
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(schema))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE features
+                SET attributes = jsonb_set(attributes, '{secret}', to_jsonb(@secret::text))
+                WHERE layer_id = @layerId AND objectid = @objectId
+                """;
+            command.Parameters.AddWithValue("secret", "hidden-value");
+            command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+            command.Parameters.AddWithValue("objectId", objectId);
+            (await command.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+
+        var sourceExpression = JsonSerializer.Serialize(new[]
+        {
+            new { field = "name", sqlExpression = "secret" }
+        });
+        var sourceResponse = await PostCalculateAsync(sourceExpression, $"objectid = {objectId}");
+        var sourceBody = await sourceResponse.Content.ReadAsStringAsync();
+        sourceBody.Should().Contain("not available for calculate");
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+            .Should().Be(originalName);
+
+        var targetExpression = JsonSerializer.Serialize(new[]
+        {
+            new { field = "secret", value = "exposed" }
+        });
+        var targetResponse = await PostCalculateAsync(targetExpression, $"objectid = {objectId}");
+        var targetBody = await targetResponse.Content.ReadAsStringAsync();
+        targetBody.Should().Contain("not available for calculate");
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+            .Should().Be(originalName);
     }
 
     [IntegrationTest]
