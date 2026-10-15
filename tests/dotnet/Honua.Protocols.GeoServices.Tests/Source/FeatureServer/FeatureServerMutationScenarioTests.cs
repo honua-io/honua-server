@@ -161,8 +161,8 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         });
 
         const string clientGlobalId = "11111111-1111-1111-1111-111111111111";
-        var payload = $$"""
-            {"adds":[{"attributes":{"name":"tracked-add","GlobalID":"{{clientGlobalId}}","created_user":"forged-editor"},"geometry":{"x":-122.41,"y":37.77}}]}
+        var payload = $$$"""
+            {"adds":[{"attributes":{"name":"tracked-add","GlobalID":"{{{clientGlobalId}}}","created_user":"forged-editor"},"geometry":{"x":-122.41,"y":37.77}}]}
             """;
         var response = await PostJsonAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",

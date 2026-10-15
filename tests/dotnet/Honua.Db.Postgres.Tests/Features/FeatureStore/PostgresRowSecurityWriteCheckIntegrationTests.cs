@@ -27,7 +27,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 /// a caller scoped by an RLS policy (<c>region IN (claim region)</c>) must not create a row
 /// outside that scope or move a visible row out of it. Every protocol (GeoServices applyEdits,
 /// OGC API Features, WFS-T, OData, gRPC) writes through
-/// <see cref="PostgresFeatureStoreRefactored.ApplyEditsAsync"/> or its writer transaction.
+/// <c>PostgresFeatureStoreRefactored.ApplyEditsAsync</c> or its writer transaction.
 /// </summary>
 [Collection("Database")]
 public sealed class PostgresRowSecurityWriteCheckIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
