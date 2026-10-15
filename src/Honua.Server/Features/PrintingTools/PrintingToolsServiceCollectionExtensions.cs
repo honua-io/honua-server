@@ -27,7 +27,11 @@ internal static class PrintingToolsServiceCollectionExtensions
         services.AddSingleton<PrintJobCancellationTokens>();
         services.AddSingleton<IJobCancellationNotifier>(
             sp => sp.GetRequiredService<PrintJobCancellationTokens>());
+        services.AddOptions<PrintingToolsOrphanOptions>();
+        services.AddSingleton<PrintWorkerInstance>();
+        services.AddSingleton<PrintJobTracker>();
         services.AddHostedService<PrintingToolsBackgroundService>();
+        services.AddHostedService<PrintingToolsOrphanReconciler>();
 
         return services;
     }

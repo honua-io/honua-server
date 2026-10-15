@@ -849,13 +849,29 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var requiredRuntimeProfile = isCustomCode
             ? CustomCodeJobContract.RuntimeProfile
             : ResolveRequiredRuntimeProfile(plan, processCatalog);
-        var workload = await _dispatcher.ResolveWorkloadAsync(
-            isCustomCode, requiredRuntimeProfile, cancellationToken).ConfigureAwait(false);
-        var effectiveProtocolMetadata = ResolveEffectiveProtocolControls(protocolMetadata, workload);
-        var now = DateTimeOffset.UtcNow;
+        // The job id does not depend on the selected workload. Compute it first so an
+        // incompatible image set can still acknowledge an already-accepted keyed job (#6069).
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
         var jobId = CreateJobId(resolvedKey, ownerId, resolvedSecurityContext.TenantId);
         var requestFingerprint = CreateRequestFingerprint(plan);
+        var workload = await _dispatcher.ResolveWorkloadAsync(
+            isCustomCode,
+            requiredRuntimeProfile,
+            cancellationToken,
+            resolvedKey is null ? null : ConfirmKeyedReplayAsync).ConfigureAwait(false);
+        var effectiveProtocolMetadata = ResolveEffectiveProtocolControls(protocolMetadata, workload);
+        var now = DateTimeOffset.UtcNow;
+
+        async Task<bool> ConfirmKeyedReplayAsync(CancellationToken replayToken)
+        {
+            if (await jobStore.GetAsync(jobId, replayToken).ConfigureAwait(false) != null)
+            {
+                return true;
+            }
+
+            var priorFormatId = JobOwnershipSecurity.CreatePriorFormatJobId("gp", resolvedKey!);
+            return await jobStore.GetAsync(priorFormatId, replayToken).ConfigureAwait(false) != null;
+        }
 
         // Resolve authorized existing submissions before charging admission/quota or
         // minting new side effects (server#4627): a caller-supplied idempotency key whose

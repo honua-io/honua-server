@@ -118,4 +118,22 @@ internal static partial class PrintingToolsLog
         Level = LogLevel.Warning,
         Message = "Web map definition contains a baseMap element which is not yet supported and will be omitted from the output")]
     public static partial void BaseMapNotSupported(ILogger logger);
+
+    /// <summary>
+    /// Logs when a startup or lease sweep fails an orphaned print job.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5532,
+        Level = LogLevel.Information,
+        Message = "Marked orphaned print job {JobId} failed after the owning worker stopped")]
+    public static partial void OrphanedPrintFailed(ILogger logger, string jobId);
+
+    /// <summary>
+    /// Logs when the orphan sweep itself fails and will retry on the next interval.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5533,
+        Level = LogLevel.Warning,
+        Message = "Print orphan sweep failed")]
+    public static partial void OrphanSweepFailed(ILogger logger, Exception exception);
 }

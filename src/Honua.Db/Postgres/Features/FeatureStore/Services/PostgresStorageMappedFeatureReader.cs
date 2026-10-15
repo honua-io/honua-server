@@ -1006,7 +1006,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 HavingComparisonOperator.LessThanOrEqual => "<=",
                 _ => throw new ArgumentOutOfRangeException(nameof(query))
             };
-            clauses.Add($"{aggregate} {comparison} {sql.AddParameter(condition.Value)}");
+            clauses.Add($"{aggregate} {comparison} {sql.AddParameter(condition.BoundValue())}");
         }
 
         sql.Append(CultureInfo.InvariantCulture, $" HAVING {string.Join(" AND ", clauses)}");

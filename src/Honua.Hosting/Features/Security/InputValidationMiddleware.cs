@@ -130,7 +130,11 @@ internal sealed class InputValidationMiddleware
         // Parse the form asynchronously up front so the synchronous HttpRequest.Form
         // access in ValidateRequest reuses the cached result instead of blocking a
         // threadpool thread on sync-over-async body I/O (FormFeature.ReadForm).
-        if (context.Request.HasFormContentType && !IsMultipartFormData(context.Request.ContentType))
+        // An unmatched route has no handler that needs form fields. Parsing it
+        // would buffer an anonymous body before authentication (#5615 SRV-INF-008).
+        if (context.GetEndpoint() is not null
+            && context.Request.HasFormContentType
+            && !IsMultipartFormData(context.Request.ContentType))
         {
             try
             {
@@ -212,9 +216,13 @@ internal sealed class InputValidationMiddleware
                 return result;
         }
 
-        // Validate form data if applicable
-        if (request.HasFormContentType && !IsMultipartFormData(request.ContentType) && request.Form != null &&
-            !(HttpMethods.IsPost(request.Method) && request.HttpContext.GetEndpoint()?.Metadata.GetMetadata<GeometryParameterMetadata>() != null))
+        // Validate form data if applicable. An unmatched route has no handler that
+        // reads fields; touching Request.Form would buffer the body (#5615 SRV-INF-008).
+        if (request.HttpContext.GetEndpoint() is not null
+            && request.HasFormContentType
+            && !IsMultipartFormData(request.ContentType)
+            && !(HttpMethods.IsPost(request.Method) && request.HttpContext.GetEndpoint()?.Metadata.GetMetadata<GeometryParameterMetadata>() != null)
+            && request.Form != null)
         {
             // Not a pure filter: returns the first invalid ValidateParameter result immediately
             // (short-circuiting the remaining parameters), so this doesn't reduce to '.Where(...)'.

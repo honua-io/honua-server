@@ -543,7 +543,7 @@ internal static class McpEndpointExtensions
             return null;
         }
 
-        var initialCapacity = (int)Math.Min(request.ContentLength ?? 4096, maxBytes);
+        var initialCapacity = BoundedBodyInitialCapacity(maxBytes);
         byte[] bytes;
         int length;
         using (var buffer = new MemoryStream(initialCapacity))
@@ -573,6 +573,21 @@ internal static class McpEndpointExtensions
 
         var body = new ReadOnlyMemory<byte>(bytes, 0, length);
         return body.Span.StartsWith(Utf8ByteOrderMark) ? body[Utf8ByteOrderMark.Length..] : body;
+    }
+
+    /// <summary>
+    /// Initial buffer size for <see cref="ReadBoundedBodyAsync"/>. Ignores
+    /// Content-Length so a declared 10 MB body does not allocate up front.
+    /// </summary>
+    internal static int BoundedBodyInitialCapacity(long maxBytes)
+    {
+        const int smallCapacity = 16 * 1024;
+        if (maxBytes <= 0)
+        {
+            return 0;
+        }
+
+        return (int)Math.Min(smallCapacity, maxBytes);
     }
 
     private static ReadOnlySpan<byte> Utf8ByteOrderMark => [0xEF, 0xBB, 0xBF];

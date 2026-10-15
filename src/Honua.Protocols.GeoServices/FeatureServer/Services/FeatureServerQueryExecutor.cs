@@ -81,6 +81,36 @@ internal sealed partial class FeatureServerQueryExecutor
         CancellationToken cancellationToken)
         => await QueryWithValidationAsync(_featureReader, layerId, query, cancellationToken).ConfigureAwait(false);
 
+    /// <summary>
+    /// Id-only read. <c>returnIdsOnly</c> must not materialize geometry or attributes
+    /// (#5615 SRV-GS-001). Callers format the returned object ids directly.
+    /// </summary>
+    public async Task<ImmutableArray<long>> QueryObjectIdsWithValidationAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+        => await QueryObjectIdsWithValidationAsync(_featureReader, layerId, query, cancellationToken).ConfigureAwait(false);
+
+    private static async Task<ImmutableArray<long>> QueryObjectIdsWithValidationAsync(
+        IFeatureReader reader,
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await reader.QueryObjectIdsAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidOperationException("Invalid query.", ex);
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidOperationException("Invalid query format.", ex);
+        }
+    }
+
     private static async Task<QueryResult<Feature>> QueryWithValidationAsync(
         IFeatureReader reader,
         int layerId,
@@ -450,28 +480,19 @@ internal sealed partial class FeatureServerQueryExecutor
         string objectIdFieldName,
         HttpContext context,
         CancellationToken cancellationToken)
-        => await StreamIdsAsync(
-            _streamingFeatureStore,
-            layerId,
-            query,
-            objectIdFieldName,
-            context,
-            cancellationToken).ConfigureAwait(false);
+    {
+        var objectIds = await QueryObjectIdsWithValidationAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        await WriteObjectIdsAsync(objectIds, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
+    }
 
-    private static async Task StreamIdsAsync(
-        IStreamingFeatureStore streamingFeatureStore,
-        int layerId,
-        FeatureQuery query,
+    private static async Task WriteObjectIdsAsync(
+        ImmutableArray<long> objectIds,
         string objectIdFieldName,
         HttpContext context,
         CancellationToken cancellationToken)
     {
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = StatusCodes.Status200OK;
-
-        var features = streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken);
-        await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
-        var hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
 
         await using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
         {
@@ -484,17 +505,17 @@ internal sealed partial class FeatureServerQueryExecutor
         writer.WriteStartArray("objectIds");
 
         var idsSinceFlush = 0;
-        while (hasFeature)
+        if (!objectIds.IsDefault)
         {
-            var feature = enumerator.Current;
-            writer.WriteNumberValue(GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
-            if (++idsSinceFlush >= FlushInterval)
+            foreach (var objectId in objectIds)
             {
-                await writer.FlushAsync(cancellationToken);
-                idsSinceFlush = 0;
+                writer.WriteNumberValue(objectId);
+                if (++idsSinceFlush >= FlushInterval)
+                {
+                    await writer.FlushAsync(cancellationToken);
+                    idsSinceFlush = 0;
+                }
             }
-
-            hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
         }
 
         writer.WriteEndArray();

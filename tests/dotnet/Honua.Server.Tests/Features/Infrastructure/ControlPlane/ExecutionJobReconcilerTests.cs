@@ -197,7 +197,7 @@ public sealed class ExecutionJobReconcilerTests
         await progressStore.SetProgressAsync(
             "job-local",
             GeoprocessingProgress.CreateForSubmittedJob("job-local", "plan-local"));
-        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var sut = new ExecutionJobReconciler(
             jobStore,
             [backend],
@@ -228,7 +228,7 @@ public sealed class ExecutionJobReconcilerTests
             CurrentPhase = "Executing buffer analysis"
         };
         await progressStore.SetProgressAsync("job-local-running", workerProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var sut = new ExecutionJobReconciler(
             jobStore,
             [backend],
@@ -263,7 +263,7 @@ public sealed class ExecutionJobReconcilerTests
             CurrentPhase = "Prior attempt progress"
         };
         await progressStore.SetProgressAsync("job-local-retry", staleProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var sut = new ExecutionJobReconciler(
             jobStore,
             [backend],
@@ -308,7 +308,7 @@ public sealed class ExecutionJobReconcilerTests
             TotalSteps = 10
         };
         await progressStore.SetProgressAsync("job-local-retry-terminal", staleProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var sut = new ExecutionJobReconciler(
             jobStore,
             [backend],
@@ -349,7 +349,7 @@ public sealed class ExecutionJobReconcilerTests
         var progressStore = new InMemoryProgressStore();
         var freshProgress = GeoprocessingProgress.CreateForSubmittedJob("job-local-retry-idempotent", "plan-local");
         await progressStore.SetProgressAsync("job-local-retry-idempotent", freshProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var sut = new ExecutionJobReconciler(
             jobStore,
             [backend],
@@ -379,7 +379,7 @@ public sealed class ExecutionJobReconcilerTests
             CurrentStageStatus = GeoprocessingStageStatus.Pending
         };
         await progressStore.SetProgressAsync("job-retry-cancel", staleProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, notifier);
+        var backend = new LocalBatchComputeBackend(progressStore, [notifier]);
 
         var job = CreateJobRecord(
             operationId: "job-retry-cancel",
@@ -418,7 +418,7 @@ public sealed class ExecutionJobReconcilerTests
             CurrentStageStatus = GeoprocessingStageStatus.Pending
         };
         await progressStore.SetProgressAsync("job-local-q-cancel", staleProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, notifier);
+        var backend = new LocalBatchComputeBackend(progressStore, [notifier]);
 
         var job = CreateJobRecord(
             operationId: "job-local-q-cancel",
@@ -1040,7 +1040,7 @@ public sealed class ExecutionJobReconcilerTests
             CurrentStageStatus = GeoprocessingStageStatus.Pending
         };
         await progressStore.SetProgressAsync("job-local-cancel", workerProgress);
-        var backend = new LocalBatchComputeBackend(progressStore, notifier);
+        var backend = new LocalBatchComputeBackend(progressStore, [notifier]);
 
         var job = CreateJobRecord(
             operationId: "job-local-cancel",

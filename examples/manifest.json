@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1191,
+    "total": 1182,
     "byStatus": {
-      "not-executable": 1176,
+      "not-executable": 1167,
       "unvalidated": 12,
       "passed": 3
     }
@@ -4319,7 +4319,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 309,
+      "line": 310,
       "language": "console"
     },
     {
@@ -4527,7 +4527,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 8,
+      "line": 9,
       "language": "text"
     },
     {
@@ -6625,7 +6625,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 110,
+      "line": 125,
       "language": "bash"
     },
     {
@@ -6638,7 +6638,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 173,
+      "line": 188,
       "language": "bash"
     },
     {
@@ -6664,7 +6664,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 92,
+      "line": 107,
       "language": "bash"
     },
     {
@@ -6677,7 +6677,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 126,
+      "line": 141,
       "language": "bash"
     },
     {
@@ -13103,71 +13103,6 @@
       "language": "bash"
     },
     {
-      "id": "2a5b00227f733c10",
-      "kind": "docs-fence",
-      "path": "docs/internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 5,
-      "line": 116,
-      "language": "json"
-    },
-    {
-      "id": "44f36a18bc44ba2c",
-      "kind": "docs-fence",
-      "path": "docs/internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 29,
-      "language": "text"
-    },
-    {
-      "id": "4b74d240a7b8f267",
-      "kind": "docs-fence",
-      "path": "docs/internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 2,
-      "line": 70,
-      "language": "powershell"
-    },
-    {
-      "id": "71eb99a91ecdaf5a",
-      "kind": "docs-fence",
-      "path": "docs/internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 3,
-      "line": 86,
-      "language": "bash"
-    },
-    {
-      "id": "b49b2ac52d31c78f",
-      "kind": "docs-fence",
-      "path": "docs/internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 4,
-      "line": 99,
-      "language": "text"
-    },
-    {
       "id": "0688522b1c2eac4f",
       "kind": "docs-fence",
       "path": "docs/internal/evidence/aot-geoparquet-candidate-8862065-2026-09-16/README.md",
@@ -13363,32 +13298,6 @@
       "language": "plain"
     },
     {
-      "id": "57af3ed018d0c686",
-      "kind": "docs-fence",
-      "path": "docs/internal/evidence/gp-desktop-fixture-2cc2213/README.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 23,
-      "language": "bash"
-    },
-    {
-      "id": "926c94dc63294656",
-      "kind": "docs-fence",
-      "path": "docs/internal/evidence/gp-desktop-fixture-d1fc139/README.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 29,
-      "language": "bash"
-    },
-    {
       "id": "086d687ee40614ae",
       "kind": "docs-fence",
       "path": "docs/internal/evidence/quickstart-verification.md",
@@ -13504,32 +13413,6 @@
       "fence": 1,
       "line": 44,
       "language": "bash"
-    },
-    {
-      "id": "215c25cc256a8c75",
-      "kind": "docs-fence",
-      "path": "docs/internal/evidence/soap-argument-binding-4973/README.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 28,
-      "language": "plain"
-    },
-    {
-      "id": "b55fc13ab42e85ae",
-      "kind": "docs-fence",
-      "path": "docs/internal/evidence/soap-services-site-root-4974/README.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 23,
-      "language": "plain"
     },
     {
       "id": "99d2ab05758f67f3",

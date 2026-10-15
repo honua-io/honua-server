@@ -1649,6 +1649,10 @@ app.UseAuthentication();
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
 
+// Anonymous callers must not keep the multipart import ceiling that limits
+// enforcement granted before authentication could run.
+app.UseAnonymousImportPayloadClamp();
+
 // Required-authentication routes must see every validated credential type. Running
 // this before the portal bridge rejects valid SensorThings subscription tokens.
 app.UseAuthorization();

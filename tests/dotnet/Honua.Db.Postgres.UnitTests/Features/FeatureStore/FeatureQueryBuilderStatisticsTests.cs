@@ -251,6 +251,58 @@ public sealed class FeatureQueryBuilderStatisticsTests
     }
 
     [Fact]
+    public void BuildStatisticsQuery_HavingBindsStringAndTimestampInsteadOfDouble()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var created = new DateTimeOffset(2021, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Max,
+                    OnStatisticField = "name",
+                    OutStatisticFieldName = "max_name",
+                    FieldType = MetadataV2FieldType.String
+                },
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Max,
+                    OnStatisticField = "created_at",
+                    OutStatisticFieldName = "max_created_at",
+                    FieldType = MetadataV2FieldType.DateTime
+                }),
+            GroupByFields = ImmutableArray.Create("kind"),
+            Having = ImmutableArray.Create(
+                new HavingCondition
+                {
+                    StatisticType = StatisticType.Max,
+                    OnStatisticField = "name",
+                    Operator = HavingComparisonOperator.GreaterThan,
+                    FieldType = MetadataV2FieldType.String,
+                    Value = 0,
+                    TextValue = "beta"
+                },
+                new HavingCondition
+                {
+                    StatisticType = StatisticType.Max,
+                    OnStatisticField = "created_at",
+                    Operator = HavingComparisonOperator.GreaterThan,
+                    FieldType = MetadataV2FieldType.DateTime,
+                    Value = 0,
+                    TimestampValue = created
+                })
+        };
+
+        var result = queryBuilder.BuildStatisticsQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("MAX(attributes->>'name') > $2");
+        result.Sql.Should().Contain("to_timestamp");
+        result.Sql.Should().NotContain("::numeric) > $2");
+        result.WhereParameters.Should().Equal("beta", created);
+    }
+
+    [Fact]
     public void BuildStatisticsQuery_WithOrderByInjectionAttempt_Throws()
     {
         var queryBuilder = CreateQueryBuilder();
