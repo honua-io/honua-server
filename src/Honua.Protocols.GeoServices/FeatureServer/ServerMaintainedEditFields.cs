@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Generic;
 using System.Globalization;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -220,24 +221,36 @@ internal static class ServerMaintainedEditFields
         return null;
     }
 
-    private static bool TryGet(IReadOnlyDictionary<string, object?> attributes, string name, out object? value)
-    {
-        if (attributes.TryGetValue(name, out value))
-        {
-            return true;
-        }
+    private static bool TryGet(IDictionary<string, object?> attributes, string name, out object? value)
+        => TryGetValue(attributes, name, out value);
 
+    private static bool TryGet(IReadOnlyDictionary<string, object?> attributes, string name, out object? value)
+        => TryGetValue(attributes, name, out value);
+
+    private static bool TryGetValue(
+        IEnumerable<KeyValuePair<string, object?>> attributes,
+        string name,
+        out object? value)
+    {
+        object? caseInsensitive = null;
+        var foundCaseInsensitive = false;
         foreach (var entry in attributes)
         {
-            if (entry.Key.Equals(name, StringComparison.OrdinalIgnoreCase))
+            if (entry.Key.Equals(name, StringComparison.Ordinal))
             {
                 value = entry.Value;
                 return true;
             }
+
+            if (!foundCaseInsensitive && entry.Key.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                caseInsensitive = entry.Value;
+                foundCaseInsensitive = true;
+            }
         }
 
-        value = null;
-        return false;
+        value = caseInsensitive;
+        return foundCaseInsensitive;
     }
 
     private static string NormalizeGuid(object value)
