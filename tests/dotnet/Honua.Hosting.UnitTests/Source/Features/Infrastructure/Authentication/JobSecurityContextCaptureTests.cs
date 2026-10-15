@@ -581,12 +581,10 @@ public sealed class JobSecurityContextCaptureTests
             "deferred coarse-role authorization must match the submitting identity");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(LayerScopedWriteKey.ScopedKeyRole)]
     [InlineData(AdminApiKeyPermission.ScopedAdminRole)]
     [InlineData(AdminApiKeyPermission.ApprovedOperationRole)]
-    [Trait("Category", "Unit")]
-    [Trait("Tier", "Fast")]
     public void Capture_ThenRestore_ScopedApiKeyUnderOidcRoleClaimType_StaysScopeGoverned(string marker)
     {
         // The API-key handler stamps its scope-governance marker as ClaimTypes.Role, while the

@@ -8,6 +8,7 @@ using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Authentication.ClientCertificates;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
@@ -358,7 +359,7 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("RequiredForAdmin", "/api/v1/admin/api-keys")]
     [InlineData("RequiredForAdmin", "/api/v1.0/admin/api-keys")]
     [InlineData("RequiredForAdmin", "/api/V1.0/Admin/oidc/providers")]
@@ -411,7 +412,7 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
             .Which.Outcome.Should().Be(AuditOutcome.Failure);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task InvokeAsync_RequiredForAdmin_MatchedAdminEndpointWithoutCertificate_Rejects()
     {
         // Endpoint classification: a request whose matched endpoint is an admin route is
@@ -451,7 +452,7 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task InvokeAsync_RequiredForAdmin_VersionOnePointZeroNonAdminCertificatePrincipal_Forbids()
     {
         // #6106: the admin-role check for certificate principals must also fire for /api/v1.0/admin.
@@ -504,7 +505,7 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
             .Which.Outcome.Should().Be(AuditOutcome.Denied);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("/api/v1.0/features")]
     [InlineData("/api/v1/administrators")]
     [InlineData("/ogc/features/admin")]
