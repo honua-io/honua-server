@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:1a085b1223c96bd85217b13fa6d669a971a00109c288a3235b51305025236d5e",
+  "bundleDigest": "sha256:114909bf95e97c139f9aacd4088a53501a3dfbeb63f8e514a6cebcff7228486d",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1960,7 +1960,7 @@
     {
       "id": "gis/CLIENT_TEMPLATE_RUNBOOK",
       "path": "gis/CLIENT_TEMPLATE_RUNBOOK.md",
-      "documentDigest": "sha256:5a33d2b483e5e04ceab6aed848f857a9cf8179cc4b148e04536c3d2d3de8acf4",
+      "documentDigest": "sha256:5dc10d8fbd4006a121857bce870af73f6a3f359f9966dfaf8479bd26d4f1f9e9",
       "metadata": {
         "type": "guide",
         "title": "Client template runbook",
