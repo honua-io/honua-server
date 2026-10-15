@@ -1631,15 +1631,15 @@ internal sealed partial class Wfs20Handler
             || localName.Equals("GeodesicString", StringComparison.OrdinalIgnoreCase)
             || localName.Equals("OffsetCurve", StringComparison.OrdinalIgnoreCase);
 
-    private static void AppendCurveCoordinates(List<Coordinate> target, IReadOnlyList<Coordinate> addition)
+    private static void AppendCurveCoordinates(List<Coordinate> target, Coordinate[] addition)
     {
         var start = 0;
-        if (target.Count > 0 && addition.Count > 0 && target[^1].Equals2D(addition[0]))
+        if (target.Count > 0 && addition.Length > 0 && target[^1].Equals2D(addition[0]))
         {
             start = 1;
         }
 
-        for (var index = start; index < addition.Count; index++)
+        for (var index = start; index < addition.Length; index++)
         {
             target.Add(addition[index]);
         }
