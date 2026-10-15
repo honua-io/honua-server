@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:19641001c4adfe2cd0ce40b9198769d688cd1354f9bc596257fbcd1951848d6e",
+  "bundleDigest": "sha256:c7217d4d5381c2f4ff6002ef4e100dd7b5037a11b39d0f6bc900aabd00ea2b38",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1924,7 +1924,7 @@
     {
       "id": "get-started/quickstart",
       "path": "get-started/quickstart.md",
-      "documentDigest": "sha256:ab3a64cec44ac8845e5f5a47d94764b204dacebff9a34149488a2eb0f1f4eed2",
+      "documentDigest": "sha256:fef28eea1ad868385807bce38fe4dbfc21e927272c6445c9ec41ac138d49c631",
       "metadata": {
         "type": "guide",
         "title": "Quickstart: install, publish, and query",
@@ -7600,7 +7600,7 @@
     {
       "id": "reference/configuration/environment-variables",
       "path": "reference/configuration/environment-variables.md",
-      "documentDigest": "sha256:d25e36993fc21e2409894a3678d4c18ce6e398fa4fa8ccad3a80a2c76f368c39",
+      "documentDigest": "sha256:26c6db45490ef4c663a460f16bd735c2639c04a7fa50b368aace80586f676459",
       "metadata": {
         "type": "reference",
         "title": "Environment variables",
