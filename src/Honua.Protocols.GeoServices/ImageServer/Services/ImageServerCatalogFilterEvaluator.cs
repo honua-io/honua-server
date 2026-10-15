@@ -203,15 +203,25 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
         var pattern = right.ToString() ?? string.Empty;
         var input = left.ToString() ?? string.Empty;
 
-        // Translate SQL LIKE wildcards into a simple comparison.
+        // Translate SQL LIKE wildcards into a simple comparison. A backtracking
+        // timeout is a client error: the catalog handler maps this exception to 400.
         var regexPattern = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
             .Replace("%", ".*", StringComparison.Ordinal)
             .Replace("_", ".", StringComparison.Ordinal) + "$";
-        var matched = System.Text.RegularExpressions.Regex.IsMatch(
-            input,
-            regexPattern,
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase,
-            TimeSpan.FromMilliseconds(50));
+        bool matched;
+        try
+        {
+            matched = System.Text.RegularExpressions.Regex.IsMatch(
+                input,
+                regexPattern,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase,
+                TimeSpan.FromMilliseconds(50));
+        }
+        catch (System.Text.RegularExpressions.RegexMatchTimeoutException ex)
+        {
+            throw new ImageServerCatalogFilterException("Raster catalog LIKE pattern could not be evaluated.", ex);
+        }
+
         return negate ? !matched : matched;
     }
 
