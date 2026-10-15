@@ -117,11 +117,13 @@ public sealed class TileCacheExpiryHostedServiceTests
         clock.Advance(TimeSpan.FromSeconds(TileCacheExpiryHostedService.MinIntervalSeconds));
         await WaitUntilAsync(() => jobService.Calls >= 2);
 
-        service.ExecuteTask.IsFaulted.Should().BeFalse();
+        service.ExecuteTask.Should().NotBeNull();
+        service.ExecuteTask!.IsFaulted.Should().BeFalse();
         jobService.Calls.Should().BeGreaterThanOrEqualTo(2);
 
         await service.StopAsync(CancellationToken.None);
-        service.ExecuteTask.IsFaulted.Should().BeFalse();
+        service.ExecuteTask.Should().NotBeNull();
+        service.ExecuteTask!.IsFaulted.Should().BeFalse();
     }
 
     private static async Task WaitUntilAsync(Func<bool> predicate)

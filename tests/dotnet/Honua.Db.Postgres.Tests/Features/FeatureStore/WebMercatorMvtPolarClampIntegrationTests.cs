@@ -61,23 +61,23 @@ public sealed class WebMercatorMvtPolarClampIntegrationTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _schema = await _fixture.CreateIsolatedSchemaAsync(nameof(WebMercatorMvtPolarClampIntegrationTests));
-        await _fixture.ExecuteAsync($"""
-            CREATE TABLE {_schema}.features (
+        await _fixture.ExecuteAsync($$"""
+            CREATE TABLE {{_schema}}.features (
                 layer_id integer NOT NULL,
                 objectid bigint NOT NULL,
                 geometry geometry,
                 attributes jsonb
             );
-            INSERT INTO {_schema}.features (layer_id, objectid, geometry, attributes)
-            VALUES (1, 1, ST_GeomFromText('{PolarPolygonWkt}', 4326), '{{"name":"Antarctica"}}'::jsonb);
+            INSERT INTO {{_schema}}.features (layer_id, objectid, geometry, attributes)
+            VALUES (1, 1, ST_GeomFromText('{{PolarPolygonWkt}}', 4326), '{"name":"Antarctica"}'::jsonb);
 
-            CREATE TABLE {_schema}.continents (
+            CREATE TABLE {{_schema}}.continents (
                 objectid bigint PRIMARY KEY,
                 geom geometry(Polygon, 4326),
                 name text
             );
-            INSERT INTO {_schema}.continents (objectid, geom, name)
-            VALUES (1, ST_GeomFromText('{PolarPolygonWkt}', 4326), 'Antarctica');
+            INSERT INTO {{_schema}}.continents (objectid, geom, name)
+            VALUES (1, ST_GeomFromText('{{PolarPolygonWkt}}', 4326), 'Antarctica');
             """);
     }
 
