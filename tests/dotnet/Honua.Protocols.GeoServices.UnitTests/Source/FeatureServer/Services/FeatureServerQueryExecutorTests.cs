@@ -908,7 +908,10 @@ public sealed class FeatureServerQueryExecutorTests
             ConnectionId = Guid.NewGuid(),
             Provider = DataProviderNames.ArcGisRest,
             Name = "remote-roads",
-            ConnectionString = "https://services.example.com/arcgis/rest/services/roads/FeatureServer"
+            // Public address literal. The service-root validator vets the host with a live DNS
+            // lookup and fail-closes when resolution is unavailable, which is what CI did for
+            // services.example.com. An address literal is vetted without contacting a resolver.
+            ConnectionString = "https://93.184.216.34/arcgis/rest/services/roads/FeatureServer"
         };
         var store = new ArcGisRestFeatureStore(upstream, NullLogger<ArcGisRestFeatureStore>.Instance);
         var reader = ((IBindableFeatureDataProvider)store).CreateReaderForBinding(new FeatureProviderBinding(
