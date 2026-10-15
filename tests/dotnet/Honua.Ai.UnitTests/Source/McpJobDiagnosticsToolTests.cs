@@ -28,13 +28,14 @@ public sealed class McpJobDiagnosticsToolTests
         var context = BuildContext(reader);
         var tool = new DiagnoseJobTool(NullLogger<DiagnoseJobTool>.Instance);
 
-        var result = await tool.InvokeAsync(context, Json("""{ "jobId": "gp-1", "events": 7 }"""), CancellationToken.None);
+        var result = await tool.InvokeAsync(context, Json("""{ "jobId": "gp-1", "events": 7, "eventCursor": "start" }"""), CancellationToken.None);
 
         result.IsError.Should().BeFalse();
         reader.DiagnoseCalls.Should().Be(1);
         reader.LastPrincipal.Should().BeSameAs(context.User);
         reader.DiagnoseArgument!.JobId.Should().Be("gp-1");
         reader.DiagnoseArgument.Events.Should().Be(7);
+        reader.DiagnoseArgument.EventCursor.Should().Be("start");
         var structured = result.StructuredContent!.Value;
         structured.GetProperty("observed").GetProperty("status").GetString().Should().Be("Failed");
         structured.GetProperty("inferred").GetProperty("phase").GetString().Should().Be("failed");

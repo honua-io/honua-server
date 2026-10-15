@@ -41,20 +41,28 @@ internal sealed partial class ConsoleJobService
         HttpContext context,
         string jobId,
         int? eventLimit,
+        string? eventCursor,
         CancellationToken cancellationToken)
-        => GetDiagnosticsAsync(context.User, context.Request.PathBase.Value ?? string.Empty, jobId, eventLimit, cancellationToken);
+        => GetDiagnosticsAsync(context.User, context.Request.PathBase.Value ?? string.Empty, jobId, eventLimit, eventCursor, cancellationToken);
 
     public async Task<ConsoleJobDiagnostics?> GetDiagnosticsAsync(
         ClaimsPrincipal user,
         string pathBase,
         string jobId,
         int? eventLimit,
+        string? eventCursor,
         CancellationToken cancellationToken)
     {
         var job = await GetAuthorizedJobAsync(user, jobId, cancellationToken).ConfigureAwait(false);
         if (job == null)
         {
             return null;
+        }
+
+        if (eventCursor is not null && eventCursor != "start"
+            && (eventCursor.Length > 128 || !TryDecodeOffsetCursor(eventCursor, out _, out _)))
+        {
+            throw new ArgumentException("Invalid diagnostic event cursor.", nameof(eventCursor));
         }
 
         var limit = Math.Clamp(eventLimit ?? DefaultDiagnosticEventLimit, 1, MaxDiagnosticEventLimit);
@@ -79,10 +87,19 @@ internal sealed partial class ConsoleJobService
         }
 
         var workspace = await ResolveWorkspaceAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
-        var entries = await GetOrderedLogEntriesAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
         var logStore = serviceProvider.GetService<IExecutionLogStore>();
-        var events = await BuildEventsAsync(logStore, job, limit, truncated, missing, cancellationToken).ConfigureAwait(false);
-        var steps = await BuildDiagnosticStepsAsync(job, entries, workspace, cancellationToken).ConfigureAwait(false);
+        var tail = logStore is null
+            ? new ExecutionLogTail { Items = [], TotalCount = 0 }
+            : await logStore.TailAsync(job.OperationId, MaxDiagnosticEventLimit, cancellationToken).ConfigureAwait(false);
+        var entries = tail.Items;
+        var ordinalOffset = Math.Max(0, tail.TotalCount - entries.Count);
+        if (ordinalOffset > 0)
+        {
+            truncated.Add($"steps and failure details: inspecting the most recent {entries.Count} of {tail.TotalCount} events; page events from firstCursor for earlier evidence");
+        }
+
+        var events = await BuildEventsAsync(logStore, job, tail, limit, eventCursor, truncated, missing, cancellationToken).ConfigureAwait(false);
+        var steps = await BuildDiagnosticStepsAsync(job, entries, workspace, ordinalOffset, cancellationToken).ConfigureAwait(false);
         if (steps.Length == 0)
         {
             missing.Add("steps: no execution log entries were recorded for this job");
@@ -97,7 +114,7 @@ internal sealed partial class ConsoleJobService
         var lifecycle = BuildLifecycle(job, now, missing);
         var worker = BuildWorker(job, now, operatorView);
         var attempt = await BuildAttemptAsync(user, job, operatorView, cancellationToken).ConfigureAwait(false);
-        var failure = BuildFailure(job, entries, workspace, attempt);
+        var failure = BuildFailure(job, entries, workspace, attempt, ordinalOffset);
         if (failure == null && job.Status == ExecutionJobStatus.Failed)
         {
             missing.Add("failure: the job is Failed but recorded no error message");
@@ -429,7 +446,8 @@ internal sealed partial class ConsoleJobService
         ExecutionJobRecord job,
         IReadOnlyList<ExecutionLogEntry> entries,
         string? workspace,
-        ConsoleJobDiagnosticAttempt attempt)
+        ConsoleJobDiagnosticAttempt attempt,
+        int ordinalOffset)
     {
         if (string.IsNullOrWhiteSpace(job.ErrorMessage) && job.Status != ExecutionJobStatus.Cancelled)
         {
@@ -444,7 +462,7 @@ internal sealed partial class ConsoleJobService
             if (entries[i].Level == ExecutionLogLevel.Error)
             {
                 errorEntry = entries[i];
-                ordinal = i;
+                ordinal = ordinalOffset + i;
                 break;
             }
         }
@@ -511,6 +529,7 @@ internal sealed partial class ConsoleJobService
         ExecutionJobRecord job,
         IReadOnlyList<ExecutionLogEntry> entries,
         string? workspace,
+        int ordinalOffset,
         CancellationToken cancellationToken)
     {
         if (entries.Count == 0)
@@ -524,7 +543,7 @@ internal sealed partial class ConsoleJobService
         {
             var isLast = i == entries.Count - 1;
             var nextTimestamp = isLast ? job.CompletedAt : entries[i + 1].Timestamp;
-            steps[i] = MapStep(job, entries[i], isLast ? null : entries[i + 1], i, workspace, artifactSummary, isLast, nextTimestamp);
+            steps[i] = MapStep(job, entries[i], isLast ? null : entries[i + 1], ordinalOffset + i, workspace, artifactSummary, isLast, nextTimestamp);
         }
 
         return steps;
@@ -533,7 +552,9 @@ internal sealed partial class ConsoleJobService
     private static async Task<ConsoleJobDiagnosticEvents> BuildEventsAsync(
         IExecutionLogStore? logStore,
         ExecutionJobRecord job,
+        ExecutionLogTail tail,
         int limit,
+        string? eventCursor,
         List<string> truncated,
         List<string> missing,
         CancellationToken cancellationToken)
@@ -551,12 +572,17 @@ internal sealed partial class ConsoleJobService
             };
         }
 
-        var tail = await logStore.TailAsync(job.OperationId, limit, cancellationToken).ConfigureAwait(false);
-        var items = tail.Items.Select(MapDiagnosticLogEntry).ToArray();
+        var page = eventCursor is null
+            ? null
+            : await logStore.QueryAsync(job.OperationId,
+                new ExecutionLogQuery { Cursor = eventCursor == "start" ? null : eventCursor, Limit = limit },
+                cancellationToken).ConfigureAwait(false);
+        var selected = page?.Items ?? tail.Items.TakeLast(limit).ToArray();
+        var items = selected.Select(MapDiagnosticLogEntry).ToArray();
         var isTruncated = tail.TotalCount > items.Length;
         if (isTruncated)
         {
-            truncated.Add($"events: {items.Length} most recent of {tail.TotalCount} returned; page the logs link for the rest");
+            truncated.Add($"events: {items.Length} of {tail.TotalCount} returned; use firstCursor to start paging and nextCursor to continue");
         }
 
         return new ConsoleJobDiagnosticEvents
@@ -565,6 +591,9 @@ internal sealed partial class ConsoleJobService
             Items = items,
             TotalCount = tail.TotalCount,
             Limit = limit,
+            FirstCursor = "start",
+            NextCursor = page?.NextCursor,
+            Mode = eventCursor is null ? "tail" : "page",
             Truncated = isTruncated
         };
     }

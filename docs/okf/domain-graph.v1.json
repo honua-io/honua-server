@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:b395575093d05abc34d59fb5fc174915541650f5546b160856ba45e1f1c2c324",
+  "bundleDigest": "sha256:87a7b49732649f1b5512dccb1fc99250a0d9ce8b75294d865d6aa878ea3647af",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2496,7 +2496,7 @@
     {
       "id": "guides/query-analyze/gp-job-diagnostics",
       "path": "guides/query-analyze/gp-job-diagnostics.md",
-      "documentDigest": "sha256:877ba537c4903a5e1517f5313d26f5f780881ff76dc5964c768c2bc0f3417212",
+      "documentDigest": "sha256:3b4746cce5a99826de30ca3b409c2c25e378c9ab461cd649fa011f79c7981728",
       "metadata": {
         "type": "guide",
         "title": "Diagnose a remote geoprocessing job",
@@ -16261,7 +16261,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:217cbbe4cf4ee2f1fe90835be3685a82fe886e74ece5006902ef5aa76dc23d2c"
+      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -16334,7 +16334,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:217cbbe4cf4ee2f1fe90835be3685a82fe886e74ece5006902ef5aa76dc23d2c"
+      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16344,7 +16344,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:217cbbe4cf4ee2f1fe90835be3685a82fe886e74ece5006902ef5aa76dc23d2c"
+      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
     },
     {
       "workflow": "guides/workflows/import-data",

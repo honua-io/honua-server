@@ -43,6 +43,7 @@ internal interface IConsoleJobService
         HttpContext context,
         string jobId,
         int? eventLimit,
+        string? eventCursor,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -54,6 +55,7 @@ internal interface IConsoleJobService
         string pathBase,
         string jobId,
         int? eventLimit,
+        string? eventCursor,
         CancellationToken cancellationToken);
 
     Task<ConsoleJobControlResponse?> CancelAsync(
