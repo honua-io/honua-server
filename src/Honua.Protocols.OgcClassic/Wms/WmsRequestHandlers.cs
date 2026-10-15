@@ -855,14 +855,17 @@ internal static partial class WmsRequestHandlers
                     $"Invalid FILTER XML: {ex.Message}"));
             }
 
-            expression = filterExpressionService.Normalize(expression, layers[i].Resource);
+            // Resolve FILTER properties against the public schema only, as WFS does: a
+            // predicate on a publisher-hidden field would be a value oracle (#6098).
+            var publicResource = layers[i].Resource.WithoutHiddenSchemaFields();
+            expression = filterExpressionService.Normalize(expression, publicResource);
             if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
             {
                 return (null, CreateWmsServiceException(context, "InvalidParameterValue",
                     "FILTER expression must be a boolean predicate."));
             }
 
-            var translation = filterExpressionService.Translate(expression, layers[i].Resource);
+            var translation = filterExpressionService.Translate(expression, publicResource);
             if (!translation.IsSuccess)
             {
                 return (null, CreateWmsServiceException(context, "InvalidParameterValue",

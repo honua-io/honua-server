@@ -975,6 +975,7 @@ internal static class WmtsRequestHandlers
         var plainText = new StringBuilder();
         var jsonFeatures = new List<OgcClassicFeatureInfoFeature>();
         var layerName = GetWmsLayerName(layer.Resource, layer.Publication);
+        var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
 
         var featureQuery = new FeatureQuery
         {
@@ -998,7 +999,7 @@ internal static class WmtsRequestHandlers
             }
 
             remaining--;
-            var attributes = BuildVisibleFeatureInfoAttributes(item);
+            var attributes = BuildVisibleFeatureInfoAttributes(item, hiddenFields);
             if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
             {
                 jsonFeatures.Add(new OgcClassicFeatureInfoFeature

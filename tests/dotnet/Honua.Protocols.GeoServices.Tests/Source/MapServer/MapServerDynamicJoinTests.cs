@@ -36,7 +36,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerDynamicJoinTests
 {
-    private const string ServiceName = "join-map";
+    internal const string ServiceName = "join-map";
     private const string WorkspaceId = "analytics-workspace";
 
     // Left layer maps to TestFeatureStore layer 0 (5 features, objectid 1..5 + "category").
@@ -226,7 +226,7 @@ public sealed class MapServerDynamicJoinTests
         content.Should().Contain("not a valid field name");
     }
 
-    private static string BuildJoinDynamicLayers(
+    internal static string BuildJoinDynamicLayers(
         string joinType,
         string leftKey = "objectid",
         string rightKey = "objectid")
@@ -242,7 +242,14 @@ public sealed class MapServerDynamicJoinTests
             + $"\"leftTableKey\":\"{leftKey}\",\"rightTableKey\":\"{rightKey}\","
             + $"\"joinType\":\"{joinType}\"}}}}}}";
 
-    private static WebApplicationFactory<Program> CreateFactory(bool rightLayerAnonymous, bool temporalFields = false)
+    /// <summary>
+    /// Builds the in-memory join host. With <paramref name="hiddenFields"/>, the left layer's
+    /// <c>category</c> and the right layer's <c>name</c> are publisher-hidden (#6098).
+    /// </summary>
+    internal static WebApplicationFactory<Program> CreateFactory(
+        bool rightLayerAnonymous,
+        bool temporalFields = false,
+        bool hiddenFields = false)
         => new TestWebApplicationFactory().WithWebHostBuilder(builder =>
         {
             builder.ConfigureTestServices(services =>
@@ -257,7 +264,7 @@ public sealed class MapServerDynamicJoinTests
 
                 services.RemoveAll<IMetadataV2GraphProvider>();
                 services.RemoveAll<IMetadataV2GraphStore>();
-                services.AddSingleton(_ => BuildJoinGraphProvider(rightLayerAnonymous, temporalFields));
+                services.AddSingleton(_ => BuildJoinGraphProvider(rightLayerAnonymous, temporalFields, hiddenFields));
                 services.AddSingleton<IMetadataV2GraphProvider>(provider =>
                     provider.GetRequiredService<TestMetadataV2GraphProvider>());
                 services.AddSingleton<IMetadataV2GraphStore>(provider =>
@@ -273,7 +280,10 @@ public sealed class MapServerDynamicJoinTests
             });
         });
 
-    private static TestMetadataV2GraphProvider BuildJoinGraphProvider(bool rightLayerAnonymous, bool temporalFields)
+    private static TestMetadataV2GraphProvider BuildJoinGraphProvider(
+        bool rightLayerAnonymous,
+        bool temporalFields,
+        bool hiddenFields)
     {
         var openAccessPolicy = new AccessPolicy { AllowAnonymous = true, AllowAnonymousWrite = true };
         var rightAccessPolicy = rightLayerAnonymous
@@ -284,7 +294,7 @@ public sealed class MapServerDynamicJoinTests
         [
             new() { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },
             new() { Name = "name", Type = MetadataV2FieldType.String, Length = 255 },
-            new() { Name = "category", Type = MetadataV2FieldType.String, Length = 255 },
+            new() { Name = "category", Type = MetadataV2FieldType.String, Length = 255, Hidden = hiddenFields },
             new() { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = true, SemanticRoles = ["geometry"] }
         ];
 
@@ -292,7 +302,7 @@ public sealed class MapServerDynamicJoinTests
         [
             new() { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },
             new() { Name = "id", Type = MetadataV2FieldType.String, Length = 255 },
-            new() { Name = "name", Type = MetadataV2FieldType.String, Length = 255 },
+            new() { Name = "name", Type = MetadataV2FieldType.String, Length = 255, Hidden = hiddenFields },
         ];
 
         if (temporalFields)

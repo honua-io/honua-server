@@ -230,6 +230,7 @@ internal static partial class MapServerEndpoints
                 // matching the MapServer identify and FeatureServer query paths (a date field
                 // searched via searchFields would otherwise leak its raw stored shape).
                 var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(layer.Resource);
+                var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
 
                 SqlFragment? layerSqlFilter = null;
                 if (!string.IsNullOrWhiteSpace(layerDef) &&
@@ -281,7 +282,7 @@ internal static partial class MapServerEndpoints
                         var attributes = new Dictionary<string, object?>();
                         foreach (var kvp in feature.Attributes)
                         {
-                            if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+                            if (!IsPublicAttribute(kvp.Key, hiddenFields))
                             {
                                 continue;
                             }
@@ -444,16 +445,20 @@ internal static partial class MapServerEndpoints
             .Any(trimmed => !int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _));
     }
 
+    /// <summary>
+    /// Resolves the string fields find searches. Publisher-hidden fields are never searched:
+    /// a match (and its <c>foundFieldName</c>) would disclose the hidden value (#6098).
+    /// </summary>
     private static MetadataV2Field[] ResolveSearchFields(MetadataV2Resource resource, HashSet<string>? requestedFields)
     {
         if (requestedFields is { Count: > 0 })
         {
-            return resource.SchemaFields
+            return resource.VisibleSchemaFields()
                 .Where(f => f.Type == MetadataV2FieldType.String && requestedFields.Contains(f.Name))
                 .ToArray();
         }
 
-        return resource.SchemaFields
+        return resource.VisibleSchemaFields()
             .Where(f => f.Type == MetadataV2FieldType.String)
             .ToArray();
     }

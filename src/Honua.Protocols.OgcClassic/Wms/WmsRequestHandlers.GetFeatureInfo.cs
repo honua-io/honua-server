@@ -244,6 +244,7 @@ internal static partial class WmsRequestHandlers
 
             // Per-layer source SRID — see ResolveServiceSrid for the resolution order.
             var serviceSrid = ResolveServiceSrid(service, layer.Resource);
+            var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
 
             var layerClickExtent = clickExtent;
             if (requestSrid != serviceSrid)
@@ -299,7 +300,7 @@ internal static partial class WmsRequestHandlers
 
                 remaining--;
                 var layerName = GetWmsLayerDisplayName(layer);
-                var attributes = BuildVisibleFeatureInfoAttributes(item);
+                var attributes = BuildVisibleFeatureInfoAttributes(item, hiddenFields);
 
                 if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
                 {
