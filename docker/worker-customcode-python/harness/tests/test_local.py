@@ -50,8 +50,11 @@ def test_local_executes_real_contract_without_cloud(tmp_path):
     assert (output / result["runId"] / artifact["path"]).read_text() == "HELLO"
     assert len(artifact["sha256"]) == 64
     events = [json.loads(line) for line in (output / result["runId"] / "events.jsonl").read_text().splitlines()]
-    assert any(e.get("percentComplete") == 50 and e["phase"] == "transform" for e in events)
-    assert events[-1]["phase"] == "succeeded"
+    assert any(e["kind"] == "progress" and e["percent"] == 50 and e["phase"] == "transform" for e in events)
+    assert events[-1]["kind"] == "terminal" and events[-1]["status"] == "succeeded" and events[-1]["exitCode"] == 0
+    assert all(e["v"] == 1 and e["attempt"] == "local" for e in events)
+    assert any(e["kind"] == "artifact" and e["artifact"]["name"] == "answer.txt" for e in events)
+    assert result["eventsSchema"] == "honua.gp.events/v1"
 
 
 @pytest.mark.parametrize("body,status,code", [
@@ -104,7 +107,21 @@ def test_local_bounded_events_disclose_truncation(tmp_path):
         "    return GpResult.succeeded()\n")
     output = tmp_path / "runs"
     assert run_local(source=source, entrypoint="local_tool:execute", params={}, inputs={}, output=output) == 0
-    assert receipt(output)["eventsTruncated"] is True
+    result = receipt(output)
+    assert result["eventsTruncated"] is True and result["eventsDropped"] == 103  # 3 phase + 1100 progress - 1000 cap
+    events = [json.loads(line) for line in (output / result["runId"] / "events.jsonl").read_text().splitlines()]
+    assert events[-2]["kind"] == "truncated" and events[-2]["dropped"] == 103
+    assert events[-1]["kind"] == "terminal"
+
+
+def test_local_failure_records_failure_event_before_terminal(tmp_path):
+    source = tool(tmp_path, "    raise RuntimeError('broken input')" + chr(10))
+    output = tmp_path / "runs"
+    assert run_local(source=source, entrypoint="local_tool:execute", params={}, inputs={}, output=output) == 1
+    result = receipt(output)
+    events = [json.loads(line) for line in (output / result["runId"] / "events.jsonl").read_text().splitlines()]
+    assert events[-2]["kind"] == "failure" and events[-2]["error"] == {"type": "RuntimeError", "message": "broken input"}
+    assert events[-1]["kind"] == "terminal" and events[-1]["status"] == "failed" and events[-1]["phase"] == "execute"
 
 
 def test_documented_sample_has_expected_numeric_result(tmp_path):
@@ -132,9 +149,9 @@ def test_local_concurrent_callbacks_keep_sequence_and_cap(tmp_path):
     result = receipt(output)
     events = [json.loads(line) for line in (output / result["runId"] / "events.jsonl").read_text().splitlines()]
     assert result["eventsTruncated"] is True
-    assert len(events) == 1001
-    assert [event["sequence"] for event in events] == list(range(1001))
-    assert events[-1]["phase"] == "succeeded"
+    assert len(events) == 1002
+    assert [event["seq"] for event in events] == list(range(1002))
+    assert events[-2]["kind"] == "truncated" and events[-1]["kind"] == "terminal"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX cooperative SIGTERM contract")
@@ -167,6 +184,8 @@ def test_local_sigterm_writes_cancel_receipt(tmp_path):
         assert result["status"] == "cancelled"
         assert result["failedPhase"] == "execute"
         assert result["artifacts"] == []
+        events = [json.loads(line) for line in (output / result["runId"] / "events.jsonl").read_text().splitlines()]
+        assert events[-1]["kind"] == "terminal" and events[-1]["status"] == "cancelled" and events[-1]["exitCode"] == 3
         assert (output / result["runId"] / "work" / "cleanup").read_text() == "cleaned"
     finally:
         if process.poll() is None:
