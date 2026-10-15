@@ -79,57 +79,29 @@ public sealed class ConfigurationDocumentationCredentialTests
 
     private static ConfigurationProperty Property(ConfigurationDocumentation documentation, string path)
     {
-        foreach (var section in documentation.Sections)
-        {
-            var match = Find(section, path);
-            if (match is not null)
-            {
-                return match;
-            }
-        }
-
-        throw new InvalidOperationException($"Configuration property '{path}' was not documented.");
+        return documentation.Sections
+            .Select(section => Find(section, path))
+            .FirstOrDefault(match => match is not null)
+            ?? throw new InvalidOperationException($"Configuration property '{path}' was not documented.");
     }
 
     private static ConfigurationProperty? Find(ConfigurationSection section, string path)
     {
-        foreach (var property in section.Properties)
-        {
-            if (string.Equals(property.Path, path, StringComparison.Ordinal))
-            {
-                return property;
-            }
-        }
-
-        foreach (var child in section.SubSections)
-        {
-            var match = Find(child, path);
-            if (match is not null)
-            {
-                return match;
-            }
-        }
-
-        return null;
+        return section.Properties.FirstOrDefault(property =>
+                string.Equals(property.Path, path, StringComparison.Ordinal))
+            ?? section.SubSections
+                .Select(child => Find(child, path))
+                .FirstOrDefault(match => match is not null);
     }
 
     private static List<string> AllCurrentValues(IEnumerable<ConfigurationSection> sections)
     {
-        var values = new List<string>();
-        foreach (var section in sections)
-        {
-            foreach (var property in section.Properties)
-            {
-                if (property.CurrentValue is string text)
-                {
-                    values.Add(text);
-                }
-            }
-
-            values.AddRange(AllCurrentValues(section.SubSections));
-        }
-
-        return values;
+        return sections
+            .SelectMany(section => section.Properties
+                .Select(property => property.CurrentValue)
+                .OfType<string>()
+                .Concat(AllCurrentValues(section.SubSections)))
+            .ToList();
     }
 
     private sealed class TokenUrlContributor : IConfigurationDocumentationContributor
