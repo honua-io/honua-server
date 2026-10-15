@@ -138,7 +138,7 @@ public sealed class CustomCodeSubmitTests
         backend.BackendName.Returns("aws-batch");
         backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
         backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
-            .Returns(new BatchComputeSubmissionResult { Status = ExecutionJobStatus.Provisioning, ProviderJobId = "provider-job" });
+            .Returns(new BatchComputeSubmissionResult { Status = ExecutionJobStatus.Provisioning, ProviderOperationId = "provider-job" });
         var sut = CreateService(workloadRegistry: registry, backends: [backend],
             releaseAdmission: new GpProcessReleaseAdmission(store, NullLogger<GpProcessReleaseAdmission>.Instance));
         var metadata = CustomCodeMetadata();
