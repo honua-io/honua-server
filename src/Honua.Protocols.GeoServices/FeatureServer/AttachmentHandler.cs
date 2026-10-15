@@ -52,10 +52,15 @@ internal static partial class AttachmentHandler
         ILogger<AttachmentOperations> logger,
         HttpContext context,
         CancellationToken cancellationToken,
-        IReadOnlyDictionary<long, long>? storageIdByPublicObjectId = null)
+        IReadOnlyDictionary<long, long>? storageIdByPublicObjectId = null,
+        int? publicLayerId = null)
     {
         try
         {
+            // Store calls keep the storage layer id. URLs use the route layer id, which is
+            // what download routes resolve (#6136). Omitting it preserves callers that pass
+            // one id for both.
+            var urlLayerId = publicLayerId ?? layerId;
             var uniqueFeatureIds = featureIds
                 .Distinct()
                 .ToArray();
@@ -76,7 +81,7 @@ internal static partial class AttachmentHandler
                     attachments = Array.FindAll(attachments, filter.Matches);
                 }
 
-                var infos = MapAttachmentInfos(attachments, context, layerId, featureId, returnUrl);
+                var infos = MapAttachmentInfos(attachments, context, urlLayerId, featureId, returnUrl);
 
                 groups.Add(new AttachmentGroup
                 {

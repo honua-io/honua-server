@@ -298,7 +298,8 @@ internal static partial class AttachmentEndpoints
             logger,
             context,
             cancellationToken,
-            visibleByPublic);
+            visibleByPublic,
+            resource.Value.PublicLayerId);
 
         await result.ExecuteAsync(context);
     }
@@ -904,13 +905,15 @@ internal static partial class AttachmentEndpoints
 
     /// <summary>
     /// Resolved V2 attachment-access context: the canonical resource, the publishing service,
-    /// and the integer storage-layer handle the attachment store expects.
+    /// the integer storage-layer handle the attachment store expects, and the public route
+    /// layer id clients use in URLs.
     /// </summary>
     internal readonly record struct AttachmentAccessContext(
         MetadataV2Service Service,
         MetadataV2Resource Resource,
         int StorageLayerId,
-        IFeatureReader Reader);
+        IFeatureReader Reader,
+        int PublicLayerId);
 
     private static async Task<bool> AuthorizeAttachmentOwnerEditAsync(
         HttpContext context,
@@ -1117,7 +1120,7 @@ internal static partial class AttachmentEndpoints
                 .ResolveReaderAsync(snapshot, service, resource, publication, storageLayerId.Value,
                     FeatureProviderReadOperation.Query, context.RequestAborted).ConfigureAwait(false);
 
-        return new AttachmentAccessContext(service, resource, storageLayerId.Value, reader);
+        return new AttachmentAccessContext(service, resource, storageLayerId.Value, reader, layerId);
     }
 
     private static bool TryParseObjectIds(
