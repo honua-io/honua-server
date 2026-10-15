@@ -16,6 +16,7 @@ namespace Honua.Geoprocessing.Cli.Tests;
 /// service-backed op needs the integration stack, custom code needs its harness, and the
 /// verdict names the first missing prerequisite instead of guessing.
 /// </summary>
+[Trait("Tier", "Fast")]
 public sealed class GpRunnabilityTests
 {
     private static ProcessDefinition Definition(string id, string runtime = RuntimeProfiles.Managed, string? dependency = null) => new()
@@ -35,6 +36,36 @@ public sealed class GpRunnabilityTests
         RuntimeProfile = runtime,
         ConfigurationDependency = dependency,
     };
+
+    [Theory]
+    [InlineData("gdal.gdalwarp", "gdalwarp")]
+    [InlineData("gdal.ogr2ogr", "ogr2ogr")]
+    [InlineData("surface.slope", "gdaldem")]
+    [InlineData("conversion.raster-format", "gdal_translate")]
+    public void Native_ChecksTheSelectedProcessExecutable(string processId, string executable)
+    {
+        var definition = Definition(processId, RuntimeProfiles.Native);
+        var probe = new GpEnvironmentProbe(false, false, false, false,
+            executableAvailable: tool => tool == executable);
+        GpRunnabilityAssessor.Assess(definition, processId, null, probe).RunnableHere.Should().BeTrue();
+        var missing = new GpEnvironmentProbe(true, false, true, true,
+            executableAvailable: tool => tool != executable);
+        GpRunnabilityAssessor.Assess(definition, processId, null, missing).RunnableHere.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("routing.solve", "Routing:NetworkDatasetId")]
+    [InlineData("imagery.classify", "Geoprocessing:ImageryInference")]
+    public void ServiceBacked_DoesNotSubstituteGenericConnectivityForNamedDependency(string processId, string dependency)
+    {
+        var definition = Definition(processId, dependency: dependency);
+        var missing = new GpEnvironmentProbe(true, true, true, true,
+            configurationAvailable: key => key == "ConnectionStrings:DefaultConnection");
+        GpRunnabilityAssessor.Assess(definition, processId, null, missing).RunnableHere.Should().BeFalse();
+        var configured = new GpEnvironmentProbe(false, false, false, false,
+            configurationAvailable: key => key == dependency);
+        GpRunnabilityAssessor.Assess(definition, processId, null, configured).RunnableHere.Should().BeTrue();
+    }
 
     [Fact]
     public void Managed_IsAlwaysRunnable()
@@ -64,7 +95,7 @@ public sealed class GpRunnabilityTests
         var hostCli = GpRunnabilityAssessor.Assess(definition, "gdal.ogr2ogr", RuntimeProfiles.Native,
             new GpEnvironmentProbe(hostGdalAvailable: true, workerImageAvailable: null, pythonAvailable: false, integrationStackConfigured: false));
         hostCli.RunnableHere.Should().BeTrue();
-        hostCli.Prerequisites[0].Name.Should().Be("host GDAL CLIs (ogr2ogr, gdal_translate)");
+        hostCli.Prerequisites[0].Name.Should().Be("host native CLIs (ogr2ogr)");
         hostCli.Prerequisites[0].Detail.Should().Contain("not probed");
 
         var image = GpRunnabilityAssessor.Assess(definition, "gdal.ogr2ogr", RuntimeProfiles.Native,

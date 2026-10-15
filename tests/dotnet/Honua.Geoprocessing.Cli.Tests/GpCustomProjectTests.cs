@@ -14,6 +14,7 @@ namespace Honua.Geoprocessing.Cli.Tests;
 /// the scaffold adds only the descriptor (and the .NET response file), and the artifact
 /// comparison names the first difference.
 /// </summary>
+[Trait("Tier", "Fast")]
 public sealed class GpCustomProjectTests
 {
     public static bool PythonAvailable()
@@ -22,6 +23,46 @@ public sealed class GpCustomProjectTests
         var names = OperatingSystem.IsWindows() ? new[] { "python3.exe", "python.exe" } : ["python3", "python"];
         return path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
             .Any(dir => names.Any(n => File.Exists(Path.Join(dir, n))));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Update_ReconcilesRemovedArtifactsAndGoldenDigest(bool removeGoldenArtifact)
+    {
+        var directory = Directory.CreateTempSubdirectory("gp-update-");
+        try
+        {
+            var produced = Directory.CreateDirectory(Path.Join(directory.FullName, "produced")).FullName;
+            var expected = Directory.CreateDirectory(Path.Join(directory.FullName, "expected")).FullName;
+            File.WriteAllText(Path.Join(expected, "removed.json"), "{}");
+            File.WriteAllText(Path.Join(expected, "golden.json"),
+                "{\"artifact\":\"" + (removeGoldenArtifact ? "removed.json" : "current.json") + "\",\"sha256\":\"old\"}");
+            File.WriteAllText(Path.Join(produced, "current.json"), "{\"count\":2}");
+
+            GpCustomProjectTester.ReconcileExpectations(produced, expected, []);
+
+            File.Exists(Path.Join(expected, "removed.json")).Should().BeFalse();
+            GpCustomProjectTester.Compare(Path.Join(expected, "current.json"), Path.Join(produced, "current.json"), 0)
+                .Should().BeNull();
+            var goldenPath = Path.Join(expected, "golden.json");
+            if (removeGoldenArtifact)
+            {
+                File.Exists(goldenPath).Should().BeFalse();
+            }
+            else
+            {
+                File.ReadAllText(goldenPath).Should().Contain(
+                    Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(Path.Join(produced, "current.json")))));
+            }
+            var before = Directory.GetFiles(expected).Order(StringComparer.Ordinal).Select(File.ReadAllText).ToArray();
+            GpCustomProjectTester.ReconcileExpectations(produced, expected, []);
+            Directory.GetFiles(expected).Order(StringComparer.Ordinal).Select(File.ReadAllText).Should().Equal(before);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
     }
 
     [Theory]

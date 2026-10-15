@@ -259,9 +259,9 @@ public static partial class GpCustomProjectScaffolder
             }
         }
 
-        foreach (var start in new[] { startDirectory, Directory.GetCurrentDirectory() })
+        foreach (var start in new[] { startDirectory, Directory.GetCurrentDirectory() }.Select(Path.GetFullPath))
         {
-            var directory = new DirectoryInfo(Path.GetFullPath(start));
+            var directory = new DirectoryInfo(start);
             while (directory is not null)
             {
                 if (IsHarnessRoot(directory.FullName))
@@ -522,19 +522,7 @@ public static class GpCustomProjectTester
 
         if (update)
         {
-            foreach (var produced in Directory.EnumerateFiles(artifactsDirectory))
-            {
-                File.Copy(produced, Path.Join(expectedDirectory, Path.GetFileName(produced)), overwrite: true);
-                lines.Add($"UPDATED  {Path.GetFileName(produced)}");
-            }
-
-            if (File.Exists(goldenPath) && JsonNode.Parse(File.ReadAllText(goldenPath)) is JsonObject golden &&
-                golden["artifact"]?.GetValue<string>() is { } goldenArtifact && File.Exists(Path.Join(artifactsDirectory, goldenArtifact)))
-            {
-                golden["sha256"] = Hash(Path.Join(artifactsDirectory, goldenArtifact));
-                File.WriteAllText(goldenPath, golden.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
-                lines.Add($"UPDATED  golden.json (sha256 of {goldenArtifact})");
-            }
+            ReconcileExpectations(artifactsDirectory, expectedDirectory, lines);
 
             return new GpCustomProjectTestResult { Passed = true, ReceiptPath = receiptPath, Status = status, Lines = lines };
         }
@@ -611,6 +599,41 @@ public static class GpCustomProjectTester
         }
 
         return new GpCustomProjectTestResult { Passed = passed, ReceiptPath = receiptPath, Status = status, Lines = lines };
+    }
+
+    internal static void ReconcileExpectations(string artifactsDirectory, string expectedDirectory, List<string> lines)
+    {
+        var producedFiles = Directory.EnumerateFiles(artifactsDirectory).ToArray();
+        var producedNames = producedFiles.Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
+        foreach (var stale in Directory.EnumerateFiles(expectedDirectory)
+            .Where(path => Path.GetFileName(path) != "golden.json" && !producedNames.Contains(Path.GetFileName(path))))
+        {
+            File.Delete(stale);
+            lines.Add($"REMOVED  {Path.GetFileName(stale)}");
+        }
+
+        foreach (var produced in producedFiles)
+        {
+            File.Copy(produced, Path.Join(expectedDirectory, Path.GetFileName(produced)), overwrite: true);
+            lines.Add($"UPDATED  {Path.GetFileName(produced)}");
+        }
+
+        var goldenPath = Path.Join(expectedDirectory, "golden.json");
+        if (File.Exists(goldenPath) && JsonNode.Parse(File.ReadAllText(goldenPath)) is JsonObject golden &&
+            golden["artifact"]?.GetValue<string>() is { } goldenArtifact)
+        {
+            if (producedNames.Contains(goldenArtifact))
+            {
+                golden["sha256"] = Hash(Path.Join(artifactsDirectory, goldenArtifact));
+                File.WriteAllText(goldenPath, golden.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+                lines.Add($"UPDATED  golden.json (sha256 of {goldenArtifact})");
+            }
+            else
+            {
+                File.Delete(goldenPath);
+                lines.Add($"REMOVED  golden.json ({goldenArtifact} is no longer produced)");
+            }
+        }
     }
 
     /// <summary>
@@ -821,9 +844,8 @@ public static class GpCustomProjectTester
         var names = OperatingSystem.IsWindows() ? new[] { executable + ".exe", executable + ".cmd", executable + ".bat" } : [executable];
         foreach (var directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
         {
-            foreach (var name in names)
+            foreach (var candidate in names.Select(name => Path.Join(directory, name)))
             {
-                var candidate = Path.Join(directory, name);
                 if (File.Exists(candidate))
                 {
                     return candidate;

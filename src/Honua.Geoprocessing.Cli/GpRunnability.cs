@@ -98,6 +98,8 @@ public sealed record GpRunnability
 /// </summary>
 public sealed class GpEnvironmentProbe
 {
+    private readonly Func<string, bool> _executableAvailable;
+    private readonly Func<string, bool> _configurationAvailable;
     private readonly Lazy<bool> _hostGdal;
     private readonly Lazy<bool> _python;
     private readonly Lazy<bool> _integrationStack;
@@ -109,6 +111,10 @@ public sealed class GpEnvironmentProbe
     {
         WorkerImageAvailable = workerImageAvailable;
         WorkerImage = workerImage;
+        _executableAvailable = OnPath;
+        _configurationAvailable = static dependency => dependency == "Geoprocessing:ImageryInference"
+            ? HasConfiguration("Geoprocessing:ImageryInference:Provider") && HasConfiguration("Geoprocessing:ImageryInference:Endpoint")
+            : HasConfiguration(dependency);
         _hostGdal = new Lazy<bool>(static () => OnPath("ogr2ogr") && OnPath("gdal_translate"));
         _python = new Lazy<bool>(static () => OnPath("python3") || OnPath("python"));
         _integrationStack = new Lazy<bool>(static () =>
@@ -117,10 +123,13 @@ public sealed class GpEnvironmentProbe
     }
 
     /// <summary>Creates a probe with fixed answers (tests).</summary>
-    public GpEnvironmentProbe(bool hostGdalAvailable, bool? workerImageAvailable, bool pythonAvailable, bool integrationStackConfigured, string workerImage = "honua-worker-etl")
+    public GpEnvironmentProbe(bool hostGdalAvailable, bool? workerImageAvailable, bool pythonAvailable, bool integrationStackConfigured, string workerImage = "honua-worker-etl",
+        Func<string, bool>? executableAvailable = null, Func<string, bool>? configurationAvailable = null)
     {
         WorkerImageAvailable = workerImageAvailable;
         WorkerImage = workerImage;
+        _executableAvailable = executableAvailable ?? (_ => hostGdalAvailable);
+        _configurationAvailable = configurationAvailable ?? (_ => integrationStackConfigured);
         _hostGdal = new Lazy<bool>(() => hostGdalAvailable);
         _python = new Lazy<bool>(() => pythonAvailable);
         _integrationStack = new Lazy<bool>(() => integrationStackConfigured);
@@ -140,6 +149,15 @@ public sealed class GpEnvironmentProbe
 
     /// <summary>Whether a server connection or database connection string is configured in the environment.</summary>
     public bool IntegrationStackConfigured => _integrationStack.Value;
+
+    /// <summary>Whether the selected process's executable resolves on PATH.</summary>
+    public bool ExecutableAvailable(string executable) => _executableAvailable(executable);
+
+    /// <summary>Whether the named configuration prerequisite is present.</summary>
+    public bool ConfigurationAvailable(string dependency) => _configurationAvailable(dependency);
+
+    private static bool HasConfiguration(string key)
+        => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key.Replace(":", "__", StringComparison.Ordinal)));
 
     private static bool OnPath(string executable)
     {
@@ -198,13 +216,15 @@ public static class GpRunnabilityAssessor
                 prerequisites.Add(new GpPrerequisite("devkit runtime", "satisfied", "runs in-process with the devkit's .NET runtime"));
                 break;
             case GpExecutionMode.Native:
+                var tools = NativeTools(processId);
+                var toolNames = string.Join(", ", tools);
                 if (probe.WorkerImageAvailable == true)
                 {
                     prerequisites.Add(new GpPrerequisite($"GDAL worker image ({probe.WorkerImage})", "satisfied", "container image present; run --real-worker uses it"));
                 }
-                else if (probe.HostGdalAvailable)
+                else if (tools.Length > 0 && tools.All(probe.ExecutableAvailable))
                 {
-                    prerequisites.Add(new GpPrerequisite("host GDAL CLIs (ogr2ogr, gdal_translate)", "satisfied",
+                    prerequisites.Add(new GpPrerequisite($"host native CLIs ({toolNames})", "satisfied",
                         probe.WorkerImageAvailable is null
                             ? "found on PATH; the worker image was not probed (describe --probe-container, or doctor)"
                             : "found on PATH; the worker image is not available"));
@@ -213,16 +233,16 @@ public static class GpRunnabilityAssessor
                 {
                     prerequisites.Add(new GpPrerequisite("GDAL (worker image or host CLIs)", "missing",
                         probe.WorkerImageAvailable is null
-                            ? $"ogr2ogr/gdal_translate are not on PATH and the worker image was not probed; build {probe.WorkerImage} (docker/worker-gdal/Dockerfile) or install GDAL"
-                            : $"ogr2ogr/gdal_translate are not on PATH and {probe.WorkerImage} is not available; build it with docker/worker-gdal/Dockerfile or install GDAL"));
+                            ? $"Required native tools ({toolNames}) are not all on PATH and the worker image was not probed; build {probe.WorkerImage} (docker/worker-gdal/Dockerfile) or install GDAL"
+                            : $"Required native tools ({toolNames}) are not all on PATH and {probe.WorkerImage} is not available; build it with docker/worker-gdal/Dockerfile or install GDAL"));
                 }
 
                 break;
             case GpExecutionMode.ServiceBacked:
-                prerequisites.Add(new GpPrerequisite($"integration stack ({definition!.ConfigurationDependency})", probe.IntegrationStackConfigured ? "satisfied" : "missing",
-                    probe.IntegrationStackConfigured
-                        ? "ConnectionStrings__DefaultConnection or HONUA_BASE_URL is set"
-                        : "set ConnectionStrings__DefaultConnection (or HONUA_BASE_URL) and start docker-compose.gp-dev.yml; the devkit never submits to a server for you"));
+                prerequisites.Add(new GpPrerequisite($"integration stack ({definition!.ConfigurationDependency})", probe.ConfigurationAvailable(definition.ConfigurationDependency!) ? "satisfied" : "missing",
+                    probe.ConfigurationAvailable(definition.ConfigurationDependency!)
+                        ? $"{definition.ConfigurationDependency} is configured"
+                        : $"configure {definition.ConfigurationDependency} and start docker-compose.gp-dev.yml; the devkit never submits to a server for you"));
                 break;
             default:
                 prerequisites.Add(new GpPrerequisite("custom-code local harness", probe.PythonAvailable ? "satisfied" : "unchecked",
@@ -245,6 +265,29 @@ public static class GpRunnabilityAssessor
             },
         };
     }
+
+    private static string[] NativeTools(string processId) => processId switch
+    {
+        "gdal.ogr2ogr" or "source.ogr" or "transform.reproject" => ["ogr2ogr"],
+        "gdal.gdalwarp" or "raster.reproject" or "conversion.raster-reproject" or "raster.resample" or "raster.mosaic" => ["gdalwarp"],
+        "surface.slope" or "surface.aspect" or "surface.hillshade" or "surface.rugosity-tri" or "surface.rugosity-tpi" or "surface.roughness" => ["gdaldem"],
+        "surface.contour" => ["gdal_contour"],
+        "surface.viewshed" => ["gdal_viewshed"],
+        "raster.statistics" or "raster.histogram" => ["gdalinfo", "python3"],
+        "raster.clip" or "raster.zonal-statistics" => ["gdalwarp", "python3"],
+        "raster.interpolate-idw" => ["gdal_grid"],
+        "raster.interpolate-kriging" => ["gdal_translate", "gdal_merge.py"],
+        "raster.map-algebra" => ["gdal_calc.py", "python3"],
+        "raster.spectral-index" => ["gdal_calc.py", "gdal_translate"],
+        "raster.reclassify" => ["gdal_calc.py"],
+        "conversion.polygonize" => ["gdal_polygonize.py", "ogr2ogr"],
+        "conversion.rasterize" => ["gdal_rasterize"],
+        "conversion.raster-format" => ["gdal_translate"],
+        "proximity.euclidean-distance" or "proximity.euclidean-allocation" => ["python3"],
+        "pcloud.translate" => ["pdal"],
+        "coverage.multidim.metadata" => ["gdalmdiminfo", "gdalmdimtranslate", "gdalinfo"],
+        _ => [],
+    };
 
     /// <summary>
     /// A valid example value per parameter: the declared default, else the first allowed

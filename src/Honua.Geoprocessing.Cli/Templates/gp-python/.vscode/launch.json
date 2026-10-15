@@ -1,0 +1,53 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "GP: run with breakpoints (host)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "honua_customcode_harness.local",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "--source",
+        "process",
+        "--entrypoint",
+        "summary_tool:execute",
+        "--params",
+        "fixtures/params.json",
+        "--input",
+        "features=fixtures/input.geojson",
+        "--output",
+        ".honua/runs"
+      ],
+      "justMyCode": false
+    },
+    {
+      "name": "GP: golden tests (host)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "-q",
+        "tests"
+      ],
+      "justMyCode": false
+    },
+    {
+      "name": "GP: attach to container (docker/compose.debug.yaml)",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "127.0.0.1",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}/process",
+          "remoteRoot": "/work/src/process"
+        }
+      ],
+      "justMyCode": false
+    }
+  ]
+}
