@@ -2613,7 +2613,7 @@ internal sealed class GeometryServiceHandler(
     }
 
     private static (Coordinate Origin, Coordinate Destination) AbuttingTrimSegment(
-        IReadOnlyList<Coordinate> piece,
+        List<Coordinate> piece,
         Coordinate[] trim)
     {
         var best = 1;
@@ -3131,10 +3131,10 @@ internal sealed class GeometryServiceHandler(
 
     private static List<Coordinate> AppendChain(IReadOnlyList<Coordinate> head, Coordinate[] tail)
     {
-        var combined = new List<Coordinate>(head.Count + tail.Count);
+        var combined = new List<Coordinate>(head.Count + tail.Length);
         combined.AddRange(head);
-        var start = combined.Count > 0 && tail.Count > 0 && SamePoint(combined[^1], tail[0]) ? 1 : 0;
-        for (var i = start; i < tail.Count; i++)
+        var start = combined.Count > 0 && tail.Length > 0 && SamePoint(combined[^1], tail[0]) ? 1 : 0;
+        for (var i = start; i < tail.Length; i++)
         {
             combined.Add(tail[i]);
         }
