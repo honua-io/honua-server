@@ -204,8 +204,9 @@ principal in this fixture, which is what makes the private tier the denial arm o
   same applier. Additive only — it may pin the image digest and enable TLS and may not change any
   seeded identity, count, extent, or access policy. All three revisions carry through unchanged; a
   different value is drift, not an overlay. `CERT-CONN-02` becomes applicable.
-- **licensed** (release): the entitlement-bound overlay for ArcGIS Pro/arcpy, Excel, Power BI, and
-  Tableau. It binds the same identities and the same auth policy plus an entitlement; it may not
+- **licensed** (release): entitlement-bound overlay named for ArcGIS Pro/arcpy, Excel, Power BI, and
+  Tableau. Seat and licence configuration stay in the owning evidence repository. The overlay
+  binds the same identities and the same auth policy; it may not
   substitute its own seed for the canonical fixture.
 
 ## 6. Case and scenario-facet identities

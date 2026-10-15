@@ -18,11 +18,11 @@ claiming a complete fresh certification of one server image.
 | Surface | Observed outcome | Remaining limitation |
 | --- | --- | --- |
 | PyQGIS WCS 1.0/2.0 | Stock provider discovery/description, SQL-verified corner pixels, exact full/subset TIFF affine grids, and project reload pass | Current evidence is SDK-only and Development/JIT |
-| ArcPy WCS 1.0/2.0 | Both native MakeWCSLayer calls still fail with ERROR 999999 | Failure occurs before pixel or layer-file validation; remains open |
-| ArcPy STAC | Native GetSTACInfo validates catalog, collection extent, and filtered item search | RasterCollection cannot read this fixture's GeoJSON assets; asset-download remains open |
-| PyQGIS STAC | Native controller metadata/search and advertised GeoJSON asset through stock OGR succeed | Refreshes existing SDK coverage; no UI credit |
-| ArcPy GPServer/SOAP | Native remote area job returns 12 with correct CRS/result metadata and completed status | Toolbox catalog omits GetToolInfo/GetTravelModes; task discovery remains incomplete |
-| ArcPy branch versioning | Clean URL and token-URL workspace probes retained | Native workspace authentication/validation prevents CreateVersion and dependent reconciliation |
+| ArcPy WCS 1.0/2.0 | fail, ERROR 999999 | Remains open. Not a pixel or layer-file result |
+| ArcPy STAC | pass for catalog, collection extent, and item search | Asset download remains open |
+| PyQGIS STAC | pass for metadata, search, and the advertised GeoJSON asset | No UI credit |
+| ArcPy GPServer/SOAP | pass; remote area result 12, completed, CRS metadata retained | Task discovery remains incomplete |
+| ArcPy branch versioning | blocked | Create-version and reconciliation remain unresolved |
 | PyQGIS OGC API Tiles | Stock OGR with explicit projected bounds and zoom 10 returns the expected feature within tile quantization tolerance, including reload | Default vector bounds handling remains an upstream GDAL issue; configured success does not close the default workflow |
 
 ## Raster repair and fixture
@@ -44,8 +44,8 @@ image and earlier receipts remain preserved.
 PostGIS and postgis_raster 3.4.3 are installed. Experimental capability flags and
 the Development Enterprise grant were already enabled; they did not fix these
 spatial errors. The local database needed its already-journaled raster column
-storage migration reapplied. Missing raster support or Basic licensing was not
-established as the cause of the remaining ArcPy WCS/versioning failures.
+storage migration reapplied. Client licence setup is not recorded here and was
+not established as the cause of the remaining ArcPy WCS/versioning failures.
 
 ## SDK status across protocols
 

@@ -78,20 +78,18 @@ Errors follow the Esri envelope `{ "error": { "code", "message", "details" } }`.
 
 ## Conformance & evidence
 
-- **Automated (unlicensed):** the `arcgis-stub` `portal` protocol lane
-  (`docker/client-compat/arcgis-stub/stub_runner.py`, envelope
-  `tests/baselines/client-compat/arcgis-stub/arcgis-stub-portal.cert.json`)
+- **Automated (unlicensed):** evidence identifier `arcgis-stub`, envelope
+  `tests/baselines/client-compat/arcgis-stub/arcgis-stub-portal.cert.json`,
   exercises the sequence above as CERT-PRTL-\* — see the
   [certification matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md#arcgis-portal-facade-lane-arcgis-stub-portal-protocol).
 - **Contract/integration (server):**
   `tests/dotnet/Honua.Server.Tests/Features/Sharing/PortalFacadeDiscoveryContractTests.cs`
   asserts the tiered projection and Esri wire shapes in-process.
-- **Licensed (real client):** the ArcGIS Pro / Field Maps evidence runs point at a
-  Portal-enabled deployment seeded with this fixture and emit a
-  `client_lane: "desktop-arcgis"` envelope — see
+- **Desktop client:** ArcGIS Pro / Field Maps compatibility is nominative. The
+  evidence identifier is `client_lane: "desktop-arcgis"`. Receipts stay in
+  private `honua-esri-compat`; see
   [`ARCGIS_PRO_LICENSED_EVIDENCE.md`](../internal/evidence/ARCGIS_PRO_LICENSED_EVIDENCE.md).
-  This is an operator-provisioned run (self-hosted Windows + licensed ArcGIS Pro),
-  tracked in #1372/#1096.
+  No desktop receipt is linked yet (#1372/#1096).
 
 ## Consuming repos
 
