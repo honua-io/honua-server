@@ -279,6 +279,74 @@ public sealed class AlertPipelineTests
         await stateStore.DidNotReceive().UpsertManyAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(), Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task ProcessChangesAsync_ChangeAtOrBehindStoredGeneration_DoesNotReevaluate()
+    {
+        var changeReader = Substitute.For<IAlertChangeReader>();
+        var ruleRepository = Substitute.For<IAlertRuleRepository>();
+        var stateStore = Substitute.For<IAlertStateStore>();
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var featureReader = Substitute.For<IFeatureReader>();
+        var graphProvider = CreateGraphProviderWithService("svc-7", layerId: 7);
+        var evaluator = Substitute.For<IAlertEvaluator>();
+        var editionPolicy = Substitute.For<IAlertEditionPolicy>();
+        var rule = CreateRule();
+        const string serviceName = "svc-7";
+        var zone = CreateZone(rule.ZoneId!.Value);
+        var change = new AlertChange
+        {
+            Generation = 4,
+            LayerId = rule.LayerId,
+            ObjectId = 100,
+            Operation = AlertChangeOperation.Update,
+            ChangedAt = DateTimeOffset.UtcNow,
+        };
+
+        changeReader.GetChangesAfterAsync(0, 10, Arg.Any<CancellationToken>()).Returns([change]);
+        ruleRepository.GetActiveRulesAsync(Arg.Any<IReadOnlyCollection<AlertRuleLookupKey>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>
+            {
+                [new AlertRuleLookupKey(serviceName, rule.LayerId)] = [rule],
+            });
+        ruleRepository.GetZonesAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, AlertZoneDefinition> { [zone.ZoneId] = zone });
+        stateStore.GetManyAsync(Arg.Any<IReadOnlyCollection<AlertStateLookupKey>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<AlertStateLookupKey, AlertStateSnapshot>
+            {
+                [new AlertStateLookupKey(rule.RuleId, rule.LayerId, 100)] = CreateState(rule.RuleId, rule.LayerId, 100, 4),
+            });
+        featureReader.GetAsync(rule.LayerId, 100, Arg.Any<CancellationToken>()).Returns(CreateFeature(100));
+        editionPolicy.IsRuleAllowed(rule).Returns(true);
+
+        var dispatchWriter = new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance);
+        var sut = new AlertPipeline(
+            changeReader,
+            ruleRepository,
+            stateStore,
+            featureReader,
+            graphProvider,
+            evaluator,
+            editionPolicy,
+            dispatchWriter,
+            NullLogger<AlertPipeline>.Instance);
+
+        var maxGeneration = await sut.ProcessChangesAsync(0, 10, CancellationToken.None);
+
+        maxGeneration.Should().Be(4);
+        await evaluator.DidNotReceive().EvaluateAsync(
+            Arg.Any<AlertChange>(),
+            Arg.Any<Feature?>(),
+            Arg.Any<AlertRuleDefinition>(),
+            Arg.Any<AlertZoneDefinition?>(),
+            Arg.Any<AlertStateSnapshot?>(),
+            Arg.Any<DateTimeOffset>(),
+            Arg.Any<CancellationToken>());
+        await outbox.DidNotReceive().CommitEvaluationAsync(
+            Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(),
+            Arg.Any<CancellationToken>());
+    }
+
     private static AlertRuleDefinition CreateRule(AlertTriggerType triggerType = AlertTriggerType.Enter)
         => new()
         {

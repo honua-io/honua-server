@@ -44,6 +44,61 @@ public sealed class DefaultAlertEvaluatorTests
     }
 
     [UnitTest]
+    public async Task EvaluateAsync_OlderGeneration_DoesNotRewriteStateOrEmit()
+    {
+        var evaluator = new DefaultAlertEvaluator();
+        var evaluatedAt = DateTimeOffset.UtcNow;
+        var rule = CreateRule(AlertTriggerType.Enter);
+        var state = new AlertStateSnapshot
+        {
+            RuleId = rule.RuleId,
+            LayerId = rule.LayerId,
+            ObjectId = 100,
+            Inside = false,
+            LastGeneration = 50,
+        };
+
+        var result = await evaluator.EvaluateAsync(
+            CreateChange(rule, 100, evaluatedAt, generation: 10),
+            CreateFeature(100),
+            rule,
+            CreateZone(),
+            state,
+            evaluatedAt);
+
+        result.Events.Should().BeEmpty();
+        result.UpdatedState.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_EqualGeneration_StillEvaluates()
+    {
+        var evaluator = new DefaultAlertEvaluator();
+        var evaluatedAt = DateTimeOffset.UtcNow;
+        var rule = CreateRule(AlertTriggerType.Enter);
+        var state = new AlertStateSnapshot
+        {
+            RuleId = rule.RuleId,
+            LayerId = rule.LayerId,
+            ObjectId = 100,
+            Inside = false,
+            LastGeneration = 5,
+        };
+
+        var result = await evaluator.EvaluateAsync(
+            CreateChange(rule, 100, evaluatedAt, generation: 5),
+            CreateFeature(100),
+            rule,
+            CreateZone(),
+            state,
+            evaluatedAt);
+
+        result.Events.Should().ContainSingle();
+        result.UpdatedState.Should().NotBeNull();
+        result.UpdatedState!.LastGeneration.Should().Be(5);
+    }
+
+    [UnitTest]
     public async Task EvaluateAsync_EnterRuleWhileStillInside_DoesNotEmitOngoingEnterEvent()
     {
         var evaluator = new DefaultAlertEvaluator();
