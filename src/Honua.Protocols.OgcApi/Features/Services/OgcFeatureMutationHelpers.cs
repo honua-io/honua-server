@@ -98,7 +98,7 @@ internal static class OgcFeatureMutationHelpers
             geometryWkb = wkbResult.Wkb;
         }
 
-        var geometryValidation = await mutationValidator.ValidateGeometryAsync(geometryWkb, cancellationToken);
+        var geometryValidation = await mutationValidator.ValidateGeometryAsync(resource, geometryWkb, cancellationToken);
         if (!geometryValidation.IsValid)
         {
             return new FeatureBuildResult(

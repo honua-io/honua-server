@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Linq;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
@@ -61,7 +62,8 @@ public readonly record struct RelatedQuery
     public ImmutableArray<string>? OutFields { get; init; }
 
     /// <summary>
-    /// Maximum number of related records to return per origin object
+    /// Maximum number of related records to return across every origin object.
+    /// The SQL window is global, not per origin.
     /// </summary>
     public int? Limit { get; init; }
 
@@ -90,4 +92,47 @@ public readonly record struct RelatedQuery
             OriginForeignKeyField = originForeignKeyField,
             DestinationForeignKeyField = destinationForeignKeyField
         };
+
+    /// <summary>
+    /// Limit that fetches one row past the page so a store can set <see cref="QueryResult{T}.HasMoreResults"/>.
+    /// </summary>
+    /// <param name="pageLimit">Caller page size. Null and non-positive values are unchanged.</param>
+    /// <returns>The probe limit, or <paramref name="pageLimit"/> when no extra row can be requested.</returns>
+    public static int? ProbeLimit(int? pageLimit)
+        => pageLimit is int limit && limit > 0 && limit < int.MaxValue ? limit + 1 : pageLimit;
+
+    /// <summary>
+    /// Trims a probe page back to <paramref name="pageLimit"/> and reports whether another row existed.
+    /// </summary>
+    /// <typeparam name="T">Row type.</typeparam>
+    /// <param name="pageLimit">Requested page size. Null keeps every row.</param>
+    /// <param name="rows">Rows fetched with <see cref="ProbeLimit"/>.</param>
+    /// <param name="readerHasMore">True when an upstream reader already observed rows beyond the probe.</param>
+    /// <returns>The page and the exceeded-transfer flag.</returns>
+    public static QueryResult<T> ApplyProbeWindow<T>(int? pageLimit, IReadOnlyList<T> rows, bool readerHasMore = false)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        if (pageLimit is not int limit || limit <= 0)
+        {
+            return rows.Count == 0
+                ? QueryResult<T>.Empty()
+                : QueryResult<T>.Create(rows.Count, rows.ToImmutableArray(), readerHasMore);
+        }
+
+        var hasMore = readerHasMore || rows.Count > limit;
+        if (rows.Count == 0)
+        {
+            return hasMore
+                ? QueryResult<T>.Create(0, ImmutableArray<T>.Empty, true)
+                : QueryResult<T>.Empty();
+        }
+
+        if (!hasMore)
+        {
+            return QueryResult<T>.Create(rows.Count, rows.ToImmutableArray(), false);
+        }
+
+        var kept = rows.Take(limit).ToImmutableArray();
+        return QueryResult<T>.Create(kept.Length, kept, true);
+    }
 }

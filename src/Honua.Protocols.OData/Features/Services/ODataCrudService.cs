@@ -201,7 +201,7 @@ internal sealed partial class ODataCrudService
             var srid = resource.ReadSrid() ?? 4326;
 
             // Parse and validate geometry if provided
-            var geometryResult = await ProcessGeometryAsync(payload.Geometry, srid, cancellationToken);
+            var geometryResult = await ProcessGeometryAsync(resource, payload.Geometry, srid, cancellationToken);
             if (!geometryResult.IsValid)
             {
                 return ODataCrudResult<Dictionary<string, object?>>.BadRequest(geometryResult.ErrorMessage!);
@@ -255,14 +255,26 @@ internal sealed partial class ODataCrudService
 
             // The insert already committed. A missing row or a cancelled readback still
             // acknowledges the writer result instead of turning the create into a 500.
-            // That fallback body is the submitted feature, not the stored row, so it
-            // must not carry an ETag a later If-Match would treat as the stored state.
+            // Defaults, triggers, and canonicalization can change the stored row, so
+            // that acknowledgement is the new identity only: no representation and no
+            // ETag built from the submitted create (#6079).
+            var locationHeader = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createdId.Value})";
             var observedReadback = reloaded.HasValue && !readbackCancelled;
-            var createdFeature = reloaded ?? Feature.Create(createdId.Value, geometryResult.Geometry, validatedAttributes);
+            if (!observedReadback)
+            {
+                var acknowledgement = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["ObjectId"] = createdId.Value,
+                    ["LayerId"] = layerId,
+                };
+                return ODataCrudResult<Dictionary<string, object?>>.Created(acknowledgement, locationHeader: locationHeader);
+            }
+
+            var createdFeature = reloaded!.Value;
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
                 srid,
-                observedReadback ? cancellationToken : CancellationToken.None);
+                cancellationToken);
             var responseGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                 _geometryService,
                 createdFeature.Geometry,
@@ -270,11 +282,7 @@ internal sealed partial class ODataCrudService
                 axisOrder);
             var serializedAttributes = ODataAttributeSerializer.Serialize(createdFeature.Attributes);
             var response = ODataUtilityService.BuildFeaturePayload(layerId, createdFeature, responseGeometry, serializedAttributes);
-            var etag = observedReadback
-                ? ComputeFeatureEtag(layerId, createdFeature, responseGeometry, serializedAttributes)
-                : null;
-
-            var locationHeader = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createdFeature.Id})";
+            var etag = ComputeFeatureEtag(layerId, createdFeature, responseGeometry, serializedAttributes);
             return ODataCrudResult<Dictionary<string, object?>>.Created(response, etag, locationHeader, createdFeature);
         }
         catch (ResourceConflictException ex)
@@ -387,7 +395,7 @@ internal sealed partial class ODataCrudService
             byte[]? geometryBytes = replace ? null : existingFeatureValue.Geometry;
             if (payload.GeometrySpecified && payload.Geometry != null)
             {
-                var geometryResult = await ProcessGeometryAsync(payload.Geometry, srid, cancellationToken);
+                var geometryResult = await ProcessGeometryAsync(resource, payload.Geometry, srid, cancellationToken);
                 if (!geometryResult.IsValid)
                 {
                     return ODataCrudResult<Dictionary<string, object?>>.BadRequest(geometryResult.ErrorMessage!);
@@ -641,6 +649,7 @@ internal sealed partial class ODataCrudService
     /// Processes and validates geometry data from OData spatial payload.
     /// </summary>
     private async Task<GeometryProcessingResult> ProcessGeometryAsync(
+        MetadataV2Resource resource,
         ODataSpatialGeometry? geometry,
         int defaultSrid,
         CancellationToken cancellationToken)
@@ -670,7 +679,7 @@ internal sealed partial class ODataCrudService
             return GeometryProcessingResult.Valid(null);
         }
 
-        var geometryValidation = await _mutationValidator.ValidateGeometryAsync(conversion.Wkb, cancellationToken);
+        var geometryValidation = await _mutationValidator.ValidateGeometryAsync(resource, conversion.Wkb, cancellationToken);
         if (!geometryValidation.IsValid)
         {
             return GeometryProcessingResult.Invalid($"Invalid geometry: {geometryValidation.ErrorMessage}");

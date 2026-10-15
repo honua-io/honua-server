@@ -221,13 +221,15 @@ public sealed record ServiceAreaSolveRequest(
 }
 
 /// <summary>
-/// A single service-area polygon ring for one facility and one break interval.
+/// A service-area polygon for one facility out to one break. The geometry is the
+/// cumulative disk out to that break, not a band between breaks.
 /// </summary>
 /// <param name="FacilityId">Zero-based index of the facility this polygon belongs to.</param>
 /// <param name="FromBreak">
-/// Inner cost cutoff (minutes) of this ring; 0 for the innermost ring.
+/// Inner cost cutoff (minutes). Cumulative disks use 0, matching geometry that
+/// reaches from the facility out to the break.
 /// </param>
-/// <param name="ToBreak">Outer cost cutoff (minutes) of this ring.</param>
+/// <param name="ToBreak">Outer cost cutoff (minutes) of this polygon.</param>
 /// <param name="GeometryGeoJson">
 /// The service-area polygon as a GeoJSON <c>Polygon</c>/<c>MultiPolygon</c> string
 /// in the request SRID. Empty string when no reachable area was produced.

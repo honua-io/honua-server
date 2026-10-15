@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -17,6 +18,25 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
+    // Matches QueryLimits.MaxRecordCount. Larger lists are a 400 here so they never
+    // become one SQL parameter per id (Postgres 65535, SQL Server 2100).
+    private const int MaxQueryObjectIds = 10_000;
+
+    private static long[] DeduplicateObjectIds(long[] objectIds)
+    {
+        var seen = new HashSet<long>(objectIds.Length);
+        var unique = new List<long>(objectIds.Length);
+        foreach (var objectId in objectIds)
+        {
+            if (seen.Add(objectId))
+            {
+                unique.Add(objectId);
+            }
+        }
+
+        return unique.Count == objectIds.Length ? objectIds : unique.ToArray();
+    }
+
     private static async Task<IResult> HandleQueryFeaturesGet(
         string serviceId,
         int layerId,
@@ -420,6 +440,17 @@ internal static partial class FeatureServerEndpoints
         if (!TryParseLongArray(values, "objectIds", out var objectIds, out error))
         {
             return false;
+        }
+
+        if (objectIds is { Length: > MaxQueryObjectIds })
+        {
+            error = $"objectIds exceeds the maximum of {MaxQueryObjectIds.ToString(CultureInfo.InvariantCulture)} values";
+            return false;
+        }
+
+        if (objectIds is { Length: > 1 })
+        {
+            objectIds = DeduplicateObjectIds(objectIds);
         }
 
         var outFields = GetValueString(values, "outFields");

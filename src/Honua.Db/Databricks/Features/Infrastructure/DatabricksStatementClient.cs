@@ -77,6 +77,9 @@ internal sealed class DatabricksStatementClient : IDatabricksStatementClient
             // Cap the server-side wait at the API maximum (50s); the client poll loop
             // covers the remainder of the configured CommandTimeout budget.
             WaitTimeout = "50s",
+            // When the whole command budget fits in that first wait, ask Databricks to
+            // cancel the statement instead of leaving it running.
+            OnWaitTimeout = _options.CommandTimeoutSeconds <= 50 ? "CANCEL" : null,
             Parameters = statement.Parameters.Count == 0
                 ? null
                 : statement.Parameters
@@ -85,11 +88,52 @@ internal sealed class DatabricksStatementClient : IDatabricksStatementClient
         };
 
         var response = await PostAsync(request, cancellationToken).ConfigureAwait(false);
-        response = await AwaitCompletionAsync(response, cancellationToken).ConfigureAwait(false);
+        var statementId = response.StatementId;
+        try
+        {
+            response = await AwaitCompletionAsync(response, cancellationToken).ConfigureAwait(false);
+            statementId = response.StatementId ?? statementId;
 
-        var columns = ResolveColumns(response);
-        var rows = await CollectRowsAsync(response, cancellationToken).ConfigureAwait(false);
-        return new DatabricksResultSet(columns, rows);
+            var columns = ResolveColumns(response);
+            var rows = await CollectRowsAsync(response, cancellationToken).ConfigureAwait(false);
+            return new DatabricksResultSet(columns, rows);
+        }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
+        {
+            if (!string.IsNullOrWhiteSpace(statementId))
+            {
+                await CancelStatementAsync(statementId).ConfigureAwait(false);
+            }
+
+            throw;
+        }
+    }
+
+    private async Task CancelStatementAsync(string statementId)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var message = new HttpRequestMessage(
+                HttpMethod.Post,
+                StatusPathPrefix + Uri.EscapeDataString(statementId) + "/cancel");
+            ApplyAuthorization(message);
+            using var httpResponse = await _httpClient
+                .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, timeout.Token)
+                .ConfigureAwait(false);
+        }
+        catch (HttpRequestException)
+        {
+            // Cancellation is best-effort. The caller still observes the original timeout or abort.
+        }
+        catch (OperationCanceledException)
+        {
+            // The cancel call has its own timeout and must not replace the original failure.
+        }
+        catch (InvalidOperationException)
+        {
+            // A non-success cancel response is ignored; the original failure is rethrown.
+        }
     }
 
     private async Task<DatabricksStatementResponse> PostAsync(DatabricksStatementRequest request, CancellationToken cancellationToken)

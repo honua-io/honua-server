@@ -34,6 +34,9 @@ public sealed record LocalRunResult
     /// <summary>Warnings collected during execution.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
+    /// <summary>The phase timeline the executor reported, in order (always populated, unlike the glass box).</summary>
+    public IReadOnlyList<LocalRunPhase> Phases { get; init; } = [];
+
     /// <summary>Wall-clock duration of the executor invocation.</summary>
     public TimeSpan Elapsed { get; init; }
 

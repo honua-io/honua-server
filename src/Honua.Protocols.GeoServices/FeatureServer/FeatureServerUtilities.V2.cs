@@ -251,7 +251,7 @@ internal static partial class FeatureServerEndpoints
             SupportsCoordinatesQuantization = true,
             Relationships = relationships,
             AllowGeometryUpdates = supportsEditing,
-            EditFieldsInfo = null,
+            EditFieldsInfo = ResolveEditFieldsInfo(resource),
             EditingInfo = supportsEditing ? new EditingInfo() : null,
             // Esri projects a layer's editing types/templates from its subtypes (one type per
             // subtype, each carrying an editing template seeded with the subtype's default
@@ -990,6 +990,36 @@ internal static partial class FeatureServerEndpoints
     private static bool ServiceSupportsSyncV2(MetadataV2Service service)
         => ReadServiceCapabilitiesV2(service)
             .Any(capability => capability.Equals("Sync", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Projects declared editor-tracking fields onto the GeoServices <c>editFieldsInfo</c>
+    /// block. Returns null when the resource declares none, so layers without tracking
+    /// stay byte-stable (#6134).
+    /// </summary>
+    internal static EditFieldsInfo? ResolveEditFieldsInfo(MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var editing = resource.Editing;
+        if (editing is null ||
+            (string.IsNullOrWhiteSpace(editing.CreatorField) &&
+             string.IsNullOrWhiteSpace(editing.CreatedAtField) &&
+             string.IsNullOrWhiteSpace(editing.EditorField) &&
+             string.IsNullOrWhiteSpace(editing.UpdatedAtField)))
+        {
+            return null;
+        }
+
+        return new EditFieldsInfo
+        {
+            CreatorField = BlankToNull(editing.CreatorField),
+            CreationDateField = BlankToNull(editing.CreatedAtField),
+            EditorField = BlankToNull(editing.EditorField),
+            EditDateField = BlankToNull(editing.UpdatedAtField),
+        };
+    }
+
+    private static string? BlankToNull(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value;
 
     /// <summary>
     /// Resolves only declared, visible UUID fields as the public GlobalID binding.

@@ -148,10 +148,10 @@ internal sealed partial class FeatureDataAccess
 
         sql.Append(" ORDER BY objectid");
 
-        if (query.Limit.HasValue && query.Limit.Value > 0)
+        if (query.Limit is int pageLimit && pageLimit > 0)
         {
             sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
-            parameters.Add(query.Limit.Value);
+            parameters.Add(RelatedQuery.ProbeLimit(pageLimit)!.Value);
         }
 
         if (query.Offset.HasValue && query.Offset.Value > 0)
@@ -217,9 +217,7 @@ internal sealed partial class FeatureDataAccess
             features.Add(feature);
         }
 
-        return features.Count == 0
-            ? QueryResult<Feature>.Empty()
-            : QueryResult<Feature>.Create(features.Count, features.ToImmutableArray());
+        return RelatedQuery.ApplyProbeWindow(query.Limit, features);
     }
 
     private async Task<Dictionary<string, List<long>>> GetOriginForeignKeyValuesAsync(

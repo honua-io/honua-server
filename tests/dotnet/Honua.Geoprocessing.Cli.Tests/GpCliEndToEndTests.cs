@@ -352,6 +352,54 @@ public sealed class GpCliEndToEndTests
     }
 
     [Fact]
+    public async Task RunAsync_Run_WritesReceiptAndV1Events()
+    {
+        var receiptDir = Path.Join(Path.GetTempPath(), $"gp-cli-receipts-{Guid.NewGuid():N}");
+        try
+        {
+            var (exit, stdout, _) = await InvokeAsync(
+                "run", "geometry.buffer",
+                "--in-process",
+                "--param", $"wkb={PointWkbBase64}",
+                "--param", "srid=4326",
+                "--param", "distance=10",
+                "--receipt-dir", receiptDir);
+
+            exit.Should().Be(0);
+            stdout.Should().Contain("receipt : ");
+            var run = Directory.GetDirectories(receiptDir).Should().ContainSingle().Subject;
+            using var receipt = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(Path.Join(run, "receipt.json")));
+            receipt.RootElement.GetProperty("status").GetString().Should().Be("succeeded");
+            receipt.RootElement.GetProperty("processId").GetString().Should().Be("geometry.buffer");
+            receipt.RootElement.GetProperty("eventsSchema").GetString().Should().Be(Honua.Geoprocessing.CustomCode.HarnessEvents.Schema);
+            var events = Honua.Geoprocessing.CustomCode.HarnessEvents.Parse(await File.ReadAllTextAsync(Path.Join(run, "events.jsonl")));
+            events.Should().NotBeEmpty();
+            events.Should().OnlyContain(e => e.Version == 1 && e.Attempt == "devkit");
+            events[^1].Kind.Should().Be("terminal");
+            events[^1].Status.Should().Be("succeeded");
+            events.Should().Contain(e => e.Kind == "artifact");
+        }
+        finally
+        {
+            if (Directory.Exists(receiptDir))
+            {
+                Directory.Delete(receiptDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_Run_NoReceipt_WritesNothing()
+    {
+        var (exit, stdout, _) = await InvokeAsync(
+            "run", "geometry.buffer", "--in-process", "--no-receipt",
+            "--param", $"wkb={PointWkbBase64}", "--param", "srid=4326", "--param", "distance=10");
+
+        exit.Should().Be(0);
+        stdout.Should().NotContain("receipt : ");
+    }
+
+    [Fact]
     public async Task RunAsync_Run_WithOut_WritesArtifactBytesToFile()
     {
         var outPath = Path.Join(Path.GetTempPath(), $"gp-cli-out-{Guid.NewGuid():N}.bin");

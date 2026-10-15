@@ -359,7 +359,7 @@ internal static class ElevationEndpoints
                 datasetId,
                 AccessScope.Read,
                 ElevationProtocolName,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (!validation.IsValid || validation.Publication?.LayerIndex is not null)
         {

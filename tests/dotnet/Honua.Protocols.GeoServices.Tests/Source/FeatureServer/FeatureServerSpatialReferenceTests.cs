@@ -425,6 +425,57 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_CollinearPolygonOnPolygonLayer_IsRejectedNotStoredAsLine()
+    {
+        // #6108: ST_MakeValid collapses a zero-area ring to a LINESTRING. The shared mutation
+        // validator re-checks the post-repair geometry type, so the polygon layer must not
+        // receive a line.
+        var request = new ApplyEditsRequest
+        {
+            Adds =
+            [
+                new GeoServicesFeature
+                {
+                    Attributes = new Dictionary<string, object?>
+                    {
+                        ["name"] = "Collinear Polygon"
+                    },
+                    Geometry = new GeoServicesGeometry
+                    {
+                        Rings = [[[-13627000.0, 4547000.0], [-13626000.0, 4548000.0], [-13625000.0, 4549000.0], [-13627000.0, 4547000.0]]],
+                        SpatialReference = new GeoServicesSpatialReference { Wkid = 102100, LatestWkid = 3857 }
+                    }
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PolygonLayerId}/applyEdits",
+            content);
+
+        response.Be200Ok();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var applyResponse = JsonSerializer.Deserialize(responseContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
+
+        applyResponse.Should().NotBeNull();
+        applyResponse!.AddResults.Should().NotBeNull();
+        applyResponse.AddResults![0].Success.Should().BeFalse(responseContent);
+
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT count(*) FROM features
+            WHERE layer_id = @layer AND GeometryType(geometry) NOT IN ('POLYGON', 'MULTIPOLYGON')
+            """;
+        command.Parameters.AddWithValue("layer", SpatialReferenceTestLayerCatalog.PolygonLayerId);
+        ((long)(await command.ExecuteScalarAsync())!).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithWebMercatorAliasSrid_AgainstWebMercatorLayer_Succeeds()
     {
         // Regression for #2360: ArcGIS Pro / the ArcGIS JS API send the Web Mercator

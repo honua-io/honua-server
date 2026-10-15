@@ -184,6 +184,18 @@ public class ArcGisRestQueryParametersTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public void BuildObjectIdsUrl_NeverRequestsGeometry()
+    {
+        // #6113: the ids-only read must tell the upstream not to send geometry.
+        var url = ArcGisRestQueryParameters.BuildObjectIdsUrl(ServiceUrl, 0, new FeatureQuery { Limit = 10 }, token: null);
+
+        Assert.Contains("returnGeometry=false", url, StringComparison.Ordinal);
+        Assert.DoesNotContain("returnGeometry=true", url, StringComparison.Ordinal);
+        Assert.DoesNotContain("outFields=", url, StringComparison.Ordinal);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public void BuildLayerMetadataUrl_TargetsLayerRootJson()
     {
         var url = ArcGisRestQueryParameters.BuildLayerMetadataUrl(ServiceUrl, 3, token: null);

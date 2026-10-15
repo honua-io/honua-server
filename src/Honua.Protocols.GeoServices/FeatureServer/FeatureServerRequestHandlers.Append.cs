@@ -88,6 +88,28 @@ internal static partial class FeatureServerEndpoints
     internal static bool IsAppendMatchField(MetadataV2Resource resource, string fieldName)
         => resource.SchemaFields.Any(field => field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
 
+    internal static Task<(Dictionary<string, long>? Matches, string? Error)> LoadAppendUpsertMatchesAsync(
+        IFeatureReader featureReader,
+        IFilterExpressionService filterService,
+        MetadataV2Resource resource,
+        int storageLayerId,
+        IReadOnlyList<GeoServicesFeature> features,
+        string matchingField,
+        CancellationToken cancellationToken)
+        => LoadAppendUpsertMatchesAsync(
+            featureReader,
+            filterService,
+            resource,
+            storageLayerId,
+            features,
+            matchingField,
+            versionContext: null,
+            cancellationToken);
+
+    /// <summary>
+    /// Loads existing object ids for upsert matching, reading within <paramref name="versionContext"/>
+    /// when it names a branch version (#6095) so matches are never taken from DEFAULT.
+    /// </summary>
     internal static async Task<(Dictionary<string, long>? Matches, string? Error)> LoadAppendUpsertMatchesAsync(
         IFeatureReader featureReader,
         IFilterExpressionService filterService,
@@ -95,6 +117,7 @@ internal static partial class FeatureServerEndpoints
         int storageLayerId,
         IReadOnlyList<GeoServicesFeature> features,
         string matchingField,
+        VersionContext? versionContext,
         CancellationToken cancellationToken)
     {
         var field = resource.SchemaFields.FirstOrDefault(candidate =>
@@ -158,7 +181,11 @@ internal static partial class FeatureServerEndpoints
                 return (null, translation.ErrorMessage ?? "upsertMatchingField could not be queried.");
             }
 
-            var query = new FeatureQuery { SqlFilter = translation.SqlFilter };
+            var query = new FeatureQuery
+            {
+                SqlFilter = translation.SqlFilter,
+                VersionContext = versionContext is { IsDefault: false } ? versionContext : null
+            };
             var pageOffset = 0;
             while (true)
             {
@@ -244,13 +271,15 @@ internal static partial class FeatureServerEndpoints
     internal static ApplyEditsRequest CreateAppendApplyEditsRequest(
         GeoServicesFeature[] adds,
         GeoServicesFeature[] updates,
-        bool rollbackOnFailure)
+        bool rollbackOnFailure,
+        string? gdbVersion = null)
         => new()
         {
             Adds = updates.Length == 0 || adds.Length > 0 ? adds : null,
             Updates = updates.Length > 0 ? updates : null,
             RollbackOnFailure = rollbackOnFailure,
-            RollbackOnFailureExplicitlySet = true
+            RollbackOnFailureExplicitlySet = true,
+            GdbVersion = gdbVersion
         };
 
     private static GeoServicesFeature StampAppendObjectId(

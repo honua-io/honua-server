@@ -85,7 +85,10 @@ internal static class FeatureServerVersioning
                 ["Branch versioning requires a PostgreSQL/PostGIS feature provider."]));
         }
 
-        var resolved = await versionManager.ResolveAsync(gdbVersion, cancellationToken).ConfigureAwait(false);
+        // A bare name prefers the caller's own branch. Qualified names, including ones whose
+        // branch name contains dots, are matched as the full owner.name identity (#6140).
+        var callerOwner = context.User?.Identity?.Name;
+        var resolved = await versionManager.ResolveAsync(gdbVersion, callerOwner, cancellationToken).ConfigureAwait(false);
         if (resolved is not { } resolvedVersion)
         {
             return (null, StandardErrorHelpers.CreateNotFound(

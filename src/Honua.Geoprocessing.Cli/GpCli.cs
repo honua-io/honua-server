@@ -1,14 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Cli.Publish;
 using Honua.Geoprocessing.CustomCode;
-using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Geoprocessing.LocalRunner;
 using Honua.Geoprocessing.Testing;
 using Honua.Worker.Gdal;
@@ -339,7 +340,7 @@ public static class GpCli
     {
         var parsed = ParseProcessArgs(
             args,
-            "honua gp run <id> --input <file> [--param k=v] [--out <file>]");
+            "honua gp run <id> --input <file> [--param k=v] [--out <file>] [--receipt-dir <dir> | --no-receipt]");
 
         // Glass-box (dev-only) is gated behind an EXPLICIT opt-in: the --glass-box/--debug
         // flag OR the HONUA_GP_GLASSBOX env truthy. Absent both, the run takes the default
@@ -378,11 +379,20 @@ public static class GpCli
         }
 
         var result = await runner.RunAsync(parsed.ProcessId, inputs, capture).ConfigureAwait(false);
+        var runnerLabel = gdalMode == GdalProcessExecutorMode.Container ? "container (honua-worker-etl image)" : "in-process";
 
         Console.WriteLine($"process : {result.ProcessId}");
-        Console.WriteLine($"runner  : {(gdalMode == GdalProcessExecutorMode.Container ? "container (honua-worker-etl image)" : "in-process")}");
+        Console.WriteLine($"runner  : {runnerLabel}");
         Console.WriteLine($"status  : {result.Status}");
         Console.WriteLine($"elapsed : {result.Elapsed.TotalMilliseconds:F1} ms");
+
+        if (!parsed.NoReceipt)
+        {
+            // The run receipt directory holds the same honua.gp.events/v1 evidence a remote
+            // job leaves behind, so a local failure can be read the way a remote one is.
+            var receiptPath = await WriteRunReceiptAsync(parsed.ReceiptDir ?? Path.Join(".honua", "runs"), result, runnerLabel).ConfigureAwait(false);
+            Console.WriteLine($"receipt : {receiptPath}");
+        }
 
         foreach (var command in result.Logs
             .Select(static log => log.Metadata is not null &&
@@ -430,6 +440,64 @@ public static class GpCli
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Writes <c>&lt;dir&gt;/&lt;runId&gt;/receipt.json</c> and <c>events.jsonl</c>
+    /// (<c>honua.gp.events/v1</c>, see docs/reference/gp-harness-events.v1.md) for a devkit
+    /// run. Returns the receipt path.
+    /// </summary>
+    private static async Task<string> WriteRunReceiptAsync(string receiptRoot, LocalRunResult result, string runnerLabel)
+    {
+        var runId = Guid.NewGuid().ToString("N");
+        var runDirectory = Path.Join(Path.GetFullPath(receiptRoot), runId);
+        Directory.CreateDirectory(runDirectory);
+
+        var eventsPath = Path.Join(runDirectory, "events.jsonl");
+        await using (var writer = new StreamWriter(eventsPath, append: false))
+        {
+            HarnessEvents.WriteDevkitRun(writer, result, result.Phases);
+        }
+
+        var receiptPath = Path.Join(runDirectory, "receipt.json");
+        await using (var stream = File.Create(receiptPath))
+        await using (var json = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
+        {
+            json.WriteStartObject();
+            json.WriteString("schemaVersion", "1.0");
+            json.WriteString("runId", runId);
+            json.WriteString("processId", result.ProcessId);
+            json.WriteString("executionMode", "devkit");
+            json.WriteString("runner", runnerLabel);
+            json.WriteString("contentClassification", "local-development-unsanitized");
+            json.WriteString("status", result.Succeeded ? "succeeded" : "failed");
+            json.WriteNumber("exitCode", result.Succeeded ? 0 : 1);
+            json.WriteNumber("elapsedMs", (long)result.Elapsed.TotalMilliseconds);
+            if (result.ErrorMessage is not null)
+            {
+                json.WriteString("error", result.ErrorMessage);
+            }
+
+            json.WriteStartArray("artifacts");
+            foreach (var artifact in result.Artifacts)
+            {
+                json.WriteStringValue(Summarize(artifact));
+            }
+
+            json.WriteEndArray();
+            json.WriteStartArray("warnings");
+            foreach (var warning in result.Warnings)
+            {
+                json.WriteStringValue(warning);
+            }
+
+            json.WriteEndArray();
+            json.WriteString("events", "events.jsonl");
+            json.WriteString("eventsSchema", HarnessEvents.Schema);
+            json.WriteEndObject();
+        }
+
+        return receiptPath;
     }
 
     private static bool IsEnvTruthy(string name)
@@ -693,6 +761,8 @@ public static class GpCli
         var processId = args[0];
         string? inputPath = null;
         string? outPath = null;
+        string? receiptDir = null;
+        var noReceipt = false;
         var glassBoxRequested = false;
         // null = auto: use the container path when the worker image is present locally,
         // else the fast in-process path. true = force container, false = force in-process.
@@ -708,6 +778,12 @@ public static class GpCli
                     break;
                 case "--out" or "-o":
                     outPath = NextValue(args, ref i, "--out");
+                    break;
+                case "--receipt-dir":
+                    receiptDir = NextValue(args, ref i, "--receipt-dir");
+                    break;
+                case "--no-receipt":
+                    noReceipt = true;
                     break;
                 case "--glass-box" or "--debug" or "-d":
                     glassBoxRequested = true;
@@ -733,7 +809,7 @@ public static class GpCli
             }
         }
 
-        return new ProcessArgs(processId, inputPath, outPath, glassBoxRequested, forceContainer, inputs);
+        return new ProcessArgs(processId, inputPath, outPath, glassBoxRequested, forceContainer, inputs, receiptDir, noReceipt);
     }
 
     /// <summary>
@@ -1290,7 +1366,9 @@ public static class GpCli
         string? OutPath,
         bool GlassBoxRequested,
         bool? ForceContainer,
-        Dictionary<string, string> Params);
+        Dictionary<string, string> Params,
+        string? ReceiptDir = null,
+        bool NoReceipt = false);
 
     /// <summary>
     /// Resolves the parameter name that <c>--input &lt;file&gt;</c> binds to: the

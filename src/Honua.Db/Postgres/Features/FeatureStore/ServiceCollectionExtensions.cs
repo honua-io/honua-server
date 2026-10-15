@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Infrastructure.Caching;
@@ -84,7 +85,8 @@ internal static class ServiceCollectionExtensions
                 provider.GetService<IOptions<LimitsOptions>>(),
                 provider.GetService<IPerformanceMonitor>(),
                 schemaName,
-                provider.GetService<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter>());
+                provider.GetService<Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter>(),
+                provider.GetService<IFeatureAttachmentCleanup>());
 
             return new FeatureDataAccess(dependencies);
         });

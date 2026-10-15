@@ -134,7 +134,7 @@ internal sealed partial class ODataBatchHandler
 
             geometry = conversion.Wkb;
 
-            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometry, cancellationToken);
+            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(layer.Resource, geometry, cancellationToken);
             if (!geometryValidation.IsValid)
             {
                 throw new ArgumentException($"Invalid geometry: {geometryValidation.ErrorMessage}");

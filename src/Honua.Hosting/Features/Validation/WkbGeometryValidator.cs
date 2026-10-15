@@ -242,7 +242,10 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
             warnings.Add(new ValidationIssue(ValidationErrorCode.None, repair));
         }
 
-        return GeometryValidationResult.SuccessWithRepair(repairResult.RepairedWkb!, warnings);
+        return GeometryValidationResult.SuccessWithRepair(repairResult.RepairedWkb!, warnings) with
+        {
+            GeometryTypeChanged = repairResult.GeometryTypeChanged
+        };
     }
 
     #region Private Validation Helpers

@@ -95,6 +95,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 context,
                 collectionId,
                 requiredProtocol: OgcFeaturesProtocolName,
+                preferExactPublicationId: true,
+                preferAdvertisedCollectionId: true,
                 cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
             {
@@ -471,6 +473,16 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 queryHasMoreResults = gmlResult.Value.HasMoreResults;
             }
 
+            // SQL Server, Oracle, Redshift, and Snowflake report the page length as TotalCount.
+            // numberMatched must be the match count or be omitted, never the page size.
+            if (queryTotalCount is long reportedTotal
+                && IsPageSizedTotal(reportedTotal, numberReturned, queryHasMoreResults, effectiveOffset))
+            {
+                queryTotalCount = omitExactNumberMatched
+                    ? null
+                    : await featureReader.CountAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            }
+
             OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, numberReturned, queryTotalCount, stopwatch.Elapsed.TotalMilliseconds);
             HonuaTelemetry.SetSuccess(featureActivity, numberReturned);
 
@@ -614,6 +626,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 context,
                 collectionId,
                 requiredProtocol: OgcFeaturesProtocolName,
+                preferExactPublicationId: true,
+                preferAdvertisedCollectionId: true,
                 cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
             {
@@ -1055,6 +1069,15 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static bool ShouldRouteProviderReader(MetadataV2Publication publication)
         => !string.IsNullOrEmpty(publication.StorageBindingId);
+
+    /// <summary>
+    /// True when a reader reported its page length as the match count.
+    /// A complete first page (no further rows, offset zero) is an exact total.
+    /// </summary>
+    internal static bool IsPageSizedTotal(long reportedTotal, int numberReturned, bool hasMore, int offset)
+        => reportedTotal < 0
+            || (hasMore && reportedTotal <= numberReturned)
+            || (!hasMore && offset > 0 && reportedTotal == numberReturned);
 
     internal static ReadOnlyMemory<byte> CreateRawFeatureCollectionPayload(
         ImmutableArray<RawGeoJsonFeature> features,

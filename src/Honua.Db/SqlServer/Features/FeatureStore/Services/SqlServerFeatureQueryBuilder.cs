@@ -344,6 +344,19 @@ internal static partial class SqlServerFeatureQueryBuilder
         }
 
         var ids = query.ObjectIds.Value;
+        // SQL Server rejects statements with more than 2100 parameters. Keep a short IN list
+        // and bind a longer id set as one JSON array.
+        if (ids.Length > 2000 || parameters.Count + ids.Length > 2000)
+        {
+            var placeholder = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+            parameters.Add(FormatObjectIdJsonArray(ids));
+            sb.Append(" AND ").Append(mapping.QuotedPrimaryKeyColumn)
+                .Append(" IN (SELECT CAST([value] AS bigint) FROM OPENJSON(")
+                .Append(placeholder)
+                .Append("))");
+            return;
+        }
+
         var placeholders = new string[ids.Length];
         for (var i = 0; i < ids.Length; i++)
         {
@@ -352,6 +365,24 @@ internal static partial class SqlServerFeatureQueryBuilder
         }
 
         sb.Append(" AND ").Append(mapping.QuotedPrimaryKeyColumn).Append(" IN (").Append(string.Join(", ", placeholders)).Append(')');
+    }
+
+    private static string FormatObjectIdJsonArray(ImmutableArray<long> ids)
+    {
+        var json = new StringBuilder(ids.Length * 4);
+        json.Append('[');
+        for (var i = 0; i < ids.Length; i++)
+        {
+            if (i > 0)
+            {
+                json.Append(',');
+            }
+
+            json.Append(ids[i].ToString(CultureInfo.InvariantCulture));
+        }
+
+        json.Append(']');
+        return json.ToString();
     }
 
     private static void AppendSpatialFilter(StringBuilder sb, SqlServerLayerMapping mapping, FeatureQuery query, List<object> parameters)

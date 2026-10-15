@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.Db.Postgres.Features.Infrastructure.Caching;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
@@ -26,7 +27,8 @@ internal sealed record FeatureDataAccessDependencies(
     IOptions<LimitsOptions>? LimitsOptions,
     IPerformanceMonitor? PerformanceMonitor,
     string? SchemaName,
-    Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter? OutboxRepository = null);
+    Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter? OutboxRepository = null,
+    IFeatureAttachmentCleanup? AttachmentCleanup = null);
 
 /// <summary>
 /// Handles database data access operations for PostgreSQL feature store
@@ -41,6 +43,9 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     private readonly IPerformanceMonitor? _performanceMonitor;
     private readonly ILogger<FeatureDataAccess> _logger;
     private readonly Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter? _outboxRepository;
+    private readonly IFeatureAttachmentCleanup? _attachmentCleanup;
+    private readonly PendingAttachmentBlobs _pendingAttachmentBlobs;
+    private NpgsqlTransaction? _attachmentBlobTransaction;
     private readonly double _slowQueryThresholdMs;
     private readonly int _queryTimeoutSeconds;
     private readonly int _tileTimeoutSeconds;
@@ -59,6 +64,8 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
         _performanceMonitor = dependencies.PerformanceMonitor;
         _logger = dependencies.Logger ?? throw new ArgumentNullException(nameof(dependencies), "Logger is required.");
         _outboxRepository = dependencies.OutboxRepository;
+        _attachmentCleanup = dependencies.AttachmentCleanup;
+        _pendingAttachmentBlobs = new PendingAttachmentBlobs();
         _slowQueryThresholdMs = (dependencies.PerformanceOptions?.Value.SlowRequestThreshold ?? TimeSpan.FromSeconds(1))
             .TotalMilliseconds;
 

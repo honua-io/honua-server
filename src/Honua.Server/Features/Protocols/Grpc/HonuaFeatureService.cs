@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
@@ -285,7 +286,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
 
         // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
-        // Validation, authz, eventing, and telemetry still run through the shared edit pipeline.
+        // Geometry and attributes go through FeatureMutationValidator before the write (#6193).
 
         FeatureEditBatch editBatch;
         try
@@ -298,6 +299,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
 
         await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
+        editBatch = await ValidateGrpcMutationsAsync(layer.Resource, editBatch, context.CancellationToken)
+            .ConfigureAwait(false);
 
         if (layer.Snapshot is { } snapshot)
         {
@@ -483,6 +486,82 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             context).ConfigureAwait(false);
 
         return response;
+
+        async Task<FeatureEditBatch> ValidateGrpcMutationsAsync(
+            MetadataV2Resource resource,
+            FeatureEditBatch batch,
+            CancellationToken cancellationToken)
+        {
+            var geometryValidator = context.GetHttpContext()?.RequestServices.GetService<IGeometryValidator>()
+                ?? new WkbGeometryValidator(
+                    Options.Create(new LimitsOptions()),
+                    new Honua.Core.Features.FeatureStore.ReadOnlyProviders.ReadOnlyGeometryTopologyValidator("gRPC"),
+                    _logger);
+            var mutationValidator = new FeatureMutationValidator(geometryValidator);
+            var creates = await ValidateFeaturesAsync(batch.Creates, isUpdate: false).ConfigureAwait(false);
+            var updates = await ValidateFeaturesAsync(batch.Updates, isUpdate: true).ConfigureAwait(false);
+            return batch with { Creates = creates, Updates = updates };
+
+            async Task<ImmutableArray<Feature>> ValidateFeaturesAsync(ImmutableArray<Feature> features, bool isUpdate)
+            {
+                if (features.IsDefaultOrEmpty)
+                {
+                    return features.IsDefault ? ImmutableArray<Feature>.Empty : features;
+                }
+
+                var validated = ImmutableArray.CreateBuilder<Feature>(features.Length);
+                foreach (var feature in features)
+                {
+                    var geometry = feature.Geometry;
+                    if (geometry is { Length: > 0 })
+                    {
+                        var geometryResult = await mutationValidator
+                            .ValidateGeometryAsync(resource, geometry, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (!geometryResult.IsValid)
+                        {
+                            throw new RpcException(new Status(
+                                StatusCode.InvalidArgument,
+                                BoundEditValidationMessage(geometryResult.ErrorMessage, "Invalid geometry.")));
+                        }
+
+                        geometry = geometryResult.Geometry;
+                    }
+
+                    var attributesResult = mutationValidator.ValidateAttributes(
+                        resource,
+                        feature.Attributes,
+                        ValidationExtensions.AttributeValidationMode.Strict,
+                        isUpdate);
+                    if (!attributesResult.IsValid)
+                    {
+                        throw new RpcException(new Status(
+                            StatusCode.InvalidArgument,
+                            BoundEditValidationMessage(attributesResult.ErrorMessage, "Invalid attributes.")));
+                    }
+
+                    validated.Add(feature with
+                    {
+                        Geometry = geometry,
+                        Attributes = attributesResult.Value ?? feature.Attributes,
+                    });
+                }
+
+                return validated.MoveToImmutable();
+            }
+        }
+
+        static string BoundEditValidationMessage(string? message, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return fallback;
+            }
+
+            var singleLine = message.Replace('\r', ' ').Replace('\n', ' ').Trim();
+            const int maxLength = 240;
+            return singleLine.Length <= maxLength ? singleLine : singleLine[..maxLength];
+        }
     }
 
     private async Task<Proto.ApplyEditsResponse> ReplayCommittedReceiptAsync(
@@ -920,7 +999,10 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             SqlFilter = whereFilter,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
             Offset = pagination.Offset,
-            Limit = streaming && !requestedLimit.HasValue ? null : pagination.Limit
+            // Streaming pages the full result set itself, and ids-only responses carry no
+            // exceeded_transfer_limit signal, so neither may inherit the default page size when the
+            // caller did not ask for one: FeatureServer returnIdsOnly is likewise unbounded (#6112).
+            Limit = (streaming || request.ReturnIdsOnly) && !requestedLimit.HasValue ? null : pagination.Limit
         };
 
         if (query.OrderBy is { } orderBy)

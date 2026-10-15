@@ -407,7 +407,7 @@ internal static partial class SceneAnalysisEndpoints
             datasetId,
             AccessScope.Read,
             Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols.Elevation,
-            cancellationToken);
+            cancellationToken: cancellationToken);
     }
 
     private static IResult MapElevationException(HttpContext context, ElevationQueryException exception)

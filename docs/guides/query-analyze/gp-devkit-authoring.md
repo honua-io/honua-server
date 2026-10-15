@@ -97,10 +97,30 @@ languages. This uses the production `execute(context)` / `IGeoprocessingTool`
 contracts with no cloud credentials for pure functions. The .NET harness is JIT
 and loads user assemblies through reflection, without AOT.
 
-Each local run retains a receipt and bounded progress events, including failure
+Each local run retains a receipt and a bounded event journal, including failure
 phase and output hashes. These files are unsanitized local evidence. Server-backed
 tools need the integration stack, and native imports need their matching runtime.
 The local runner executes trusted developer code; it is not a security sandbox.
+
+### Read a run's events
+
+Every run writes `events.jsonl` in the
+[`honua.gp.events/v1`](../../reference/gp-harness-events.v1.md) shape: one record
+per `phase`, `progress`, `log`, `artifact`, `failure`, and `terminal` event, with a
+contiguous `seq`, an `at` timestamp, and `elapsedMs` on the producer's monotonic
+clock. The production harnesses write the same journal beside their stderr text and
+upload it as `honua-events.v1.jsonl` next to the tool's artifacts, so a remote failure
+reads the way a local one does. `honua gp run` writes the same shape under
+`.honua/runs/<runId>/` (`--receipt-dir`, or `--no-receipt`).
+
+```bash
+jq -c 'select(.kind=="failure" or .kind=="terminal")' .honua/runs/*/events.jsonl
+```
+
+The journal holds at most 1000 records and 256 KiB; a `truncated` record discloses
+anything dropped, and the receipt repeats it as `eventsTruncated` / `eventsDropped`.
+The job step view labels a duration `measured` only when it comes from these events;
+anything derived from log timestamps is `inferred`.
 
 ## Scaffold a custom-code project
 

@@ -127,10 +127,12 @@ public sealed class ODataCrudServiceStorageLayerTests
         result.IsSuccess.Should().BeTrue();
         result.StatusCode.Should().Be(201);
         result.Data.Should().NotBeNull();
-        result.Data!["ObjectId"].Should().Be(77L);
-        result.Data["name"].Should().Be("Canonical City");
+        result.Data!.Keys.Should().BeEquivalentTo(["ObjectId", "LayerId"]);
+        result.Data["ObjectId"].Should().Be(77L);
+        result.Data["LayerId"].Should().Be(RouteLayerId);
         result.LocationHeader.Should().Contain("ObjectId=77");
         result.ETag.Should().BeNull();
+        result.MutationFeature.Should().BeNull();
     }
 
     [UnitTest]
@@ -143,9 +145,11 @@ public sealed class ODataCrudServiceStorageLayerTests
         result.IsSuccess.Should().BeTrue();
         result.StatusCode.Should().Be(201);
         result.Data.Should().NotBeNull();
-        result.Data!["ObjectId"].Should().Be(77L);
-        result.Data["name"].Should().Be("Canonical City");
+        result.Data!.Keys.Should().BeEquivalentTo(["ObjectId", "LayerId"]);
+        result.Data["ObjectId"].Should().Be(77L);
+        result.Data.Should().NotContainKey("name");
         result.ETag.Should().BeNull();
+        result.MutationFeature.Should().BeNull();
     }
 
     [UnitTest]
