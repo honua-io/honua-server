@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
@@ -25,6 +26,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
     private readonly ICloudFileStorage _fileStorage;
     private readonly ILogger<PostgresAttachmentStore> _logger;
     private readonly IAttachmentOrphanLedger? _orphanLedger;
+    private readonly AttachmentLimits? _attachmentLimits;
     private readonly string _tableName;
     private readonly string _importCleanupTableName;
 
@@ -33,12 +35,14 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         ICloudFileStorage fileStorage,
         ILogger<PostgresAttachmentStore> logger,
         string? schemaName = null,
-        IAttachmentOrphanLedger? orphanLedger = null)
+        IAttachmentOrphanLedger? orphanLedger = null,
+        AttachmentLimits? attachmentLimits = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _fileStorage = fileStorage ?? throw new ArgumentNullException(nameof(fileStorage));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _orphanLedger = orphanLedger;
+        _attachmentLimits = attachmentLimits;
         _tableName = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
         _importCleanupTableName = Infrastructure.SchemaSearchPath.QualifyTable("import_attachment_cleanup", schemaName);
     }
@@ -126,29 +130,9 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
 
     public async Task<Attachment> CreateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default)
     {
-        var sql = $@"
-            INSERT INTO {_tableName} (feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords, attachment_origin)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'honua')
-            RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
-
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue(featureId);
-        command.Parameters.AddWithValue(layerId);
-        command.Parameters.AddWithValue(attachment.Filename);
-        command.Parameters.AddWithValue(attachment.ContentType);
-        command.Parameters.AddWithValue(attachment.Size);
-        command.Parameters.AddWithValue(attachment.CreatedAt);
-        command.Parameters.AddWithValue(attachment.StoragePath);
-        command.Parameters.AddWithValue(attachment.Keywords ?? (object)DBNull.Value);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            throw new InvalidOperationException("Failed to create attachment");
-        }
-
-        return ReadAttachment(reader);
+        return await InsertAttachmentAsync(connection, transaction: null, layerId, featureId, attachment, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task<Attachment> UpdateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default)
@@ -417,7 +401,12 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
 
         try
         {
-            return await CreateAsync(layerId, featureId, attachment, cancellationToken);
+            if (_attachmentLimits is null)
+            {
+                return await CreateAsync(layerId, featureId, attachment, cancellationToken).ConfigureAwait(false);
+            }
+
+            return await InsertWithinQuotaAsync(layerId, featureId, attachment, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception insertException)
         {
@@ -512,6 +501,104 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             "attachments",
             layerId.ToString(CultureInfo.InvariantCulture),
             featureId.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Holds a transaction advisory lock for this feature, recounts its attachments, and
+    /// inserts only when the configured count and size limits still hold. A refusal throws
+    /// <see cref="ValidationException"/> so the caller can delete the blob it already stored.
+    /// </summary>
+    private async Task<Attachment> InsertWithinQuotaAsync(
+        int layerId,
+        long featureId,
+        Attachment attachment,
+        CancellationToken cancellationToken)
+    {
+        var limits = _attachmentLimits ?? throw new InvalidOperationException("Attachment limits are not configured.");
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // hashtextextended keeps the lock in the bigint form. Feature ids do not fit the
+        // two-int overload, and the prefix does not share the feature-edit lock key.
+        await using (var lease = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended('attachment:' || $1::text || ':' || $2::text, 0))",
+            connection,
+            transaction))
+        {
+            lease.Parameters.AddWithValue(layerId);
+            lease.Parameters.AddWithValue(featureId);
+            await lease.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        long count;
+        long totalSize;
+        await using (var countCommand = new NpgsqlCommand($"""
+            SELECT COUNT(*)::bigint, COALESCE(SUM(size), 0)::bigint
+            FROM {_tableName}
+            WHERE layer_id = $1 AND feature_id = $2
+            """, connection, transaction))
+        {
+            countCommand.Parameters.AddWithValue(layerId);
+            countCommand.Parameters.AddWithValue(featureId);
+            await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("Failed to count attachments");
+            }
+
+            count = reader.GetInt64(0);
+            totalSize = reader.GetInt64(1);
+        }
+
+        if (count >= limits.MaxAttachmentsPerFeature)
+        {
+            throw new ValidationException(
+                $"Feature already has the maximum number of attachments ({limits.MaxAttachmentsPerFeature})");
+        }
+
+        if (attachment.Size > limits.MaxTotalAttachmentSize ||
+            totalSize > limits.MaxTotalAttachmentSize - attachment.Size)
+        {
+            throw new ValidationException(
+                $"Total attachment size would exceed maximum allowed ({limits.MaxTotalAttachmentSize:N0} bytes)");
+        }
+
+        var created = await InsertAttachmentAsync(connection, transaction, layerId, featureId, attachment, cancellationToken)
+            .ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return created;
+    }
+
+    private async Task<Attachment> InsertAttachmentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        int layerId,
+        long featureId,
+        Attachment attachment,
+        CancellationToken cancellationToken)
+    {
+        var sql = $@"
+            INSERT INTO {_tableName} (feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords, attachment_origin)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'honua')
+            RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue(featureId);
+        command.Parameters.AddWithValue(layerId);
+        command.Parameters.AddWithValue(attachment.Filename);
+        command.Parameters.AddWithValue(attachment.ContentType);
+        command.Parameters.AddWithValue(attachment.Size);
+        command.Parameters.AddWithValue(attachment.CreatedAt);
+        command.Parameters.AddWithValue(attachment.StoragePath);
+        command.Parameters.AddWithValue(attachment.Keywords ?? (object)DBNull.Value);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("Failed to create attachment");
+        }
+
+        return ReadAttachment(reader);
     }
 
     private static Attachment ReadAttachment(NpgsqlDataReader reader)

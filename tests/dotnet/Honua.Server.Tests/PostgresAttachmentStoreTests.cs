@@ -631,6 +631,49 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         await _fileStorage.DeleteAsync(attachment.StoragePath);
     }
 
+    [Fact]
+    public async Task UploadAsync_ConcurrentUploadsAtLimitMinusOne_DoesNotExceedCount()
+    {
+        const int limit = 3;
+        const long featureId = 990613;
+        var store = new PostgresAttachmentStore(
+            new TestDatabaseConnectionProvider(_fixture.DataSource),
+            _fileStorage,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            _schemaName,
+            attachmentLimits: new AttachmentLimits
+            {
+                MaxAttachmentsPerFeature = limit,
+                MaxAttachmentSize = 1024 * 1024,
+                MaxTotalAttachmentSize = 50L * 1024 * 1024
+            });
+
+        for (var index = 0; index < limit - 1; index++)
+        {
+            await using var seed = new MemoryStream("seed"u8.ToArray());
+            await store.UploadAsync(TestLayerId, featureId, $"seed-{index}.txt", "text/plain", seed);
+        }
+
+        var outcomes = await Task.WhenAll(Enumerable.Range(0, 10).Select(async index =>
+        {
+            try
+            {
+                await using var stream = new MemoryStream("concurrent"u8.ToArray());
+                await store.UploadAsync(TestLayerId, featureId, $"concurrent-{index}.txt", "text/plain", stream);
+                return true;
+            }
+            catch (ValidationException)
+            {
+                return false;
+            }
+        }));
+
+        Assert.Equal(1, outcomes.Count(succeeded => succeeded));
+        var stored = await store.ListAsync(TestLayerId, featureId);
+        Assert.True(stored.Length <= limit);
+        Assert.Equal(limit, stored.Length);
+    }
+
     /// <summary>
     /// A schema that does not exist, so the metadata INSERT fails while the object upload against
     /// the shared file storage succeeds — the exact window the compensating delete exists for.

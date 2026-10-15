@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Net.Http;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -77,6 +78,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using StackExchange.Redis;
 
@@ -310,7 +312,9 @@ internal static class ServiceCollectionExtensions
                 schemaName: string.IsNullOrWhiteSpace(configuration["Attachments:Schema"])
                     ? "honua"
                     : configuration["Attachments:Schema"],
-                orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>()));
+                orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
+                attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
+                    ?? new AttachmentLimits()));
 
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();
 

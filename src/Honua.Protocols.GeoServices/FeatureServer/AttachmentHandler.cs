@@ -259,6 +259,12 @@ internal static partial class AttachmentHandler
             LogAddAttachmentSuccess(logger, layerId, featureId, attachment.Id);
             return Results.Ok(response);
         }
+        catch (ValidationException ex)
+        {
+            // The store re-checks the quota inside the insert transaction. That refusal is a
+            // client error, and the message is the same limit text the pre-check returns.
+            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
