@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Security.Claims;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
@@ -105,12 +106,13 @@ internal static class SharingOAuth2Endpoints
             .WithDisplayName("ArcGIS Portal OAuth2 Token Revocation")
             .WithName("SharingRestOAuth2Revoke")
             .WithSummary("RFC 7009 per-token revocation for opaque and JWT access tokens and refresh tokens")
-            .WithDescription("Immediately invalidates the presented access or refresh token so it fails every subsequent authorization check. Per RFC 7009 Â§2.2 a revocation request always returns 200, even for an unknown or already-revoked token. The presented token value is the authorization to revoke it (#2155).")
+            .WithDescription("Immediately invalidates the presented access or refresh token so it fails every subsequent authorization check. Per RFC 7009 Â§2.2 a revocation request returns 200 for an unknown or already-revoked token. If the authoritative store cannot confirm deletion, the endpoint returns 503 so the caller can retry (#6164). The presented token value is the authorization to revoke it (#2155).")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status503ServiceUnavailable);
 
         oauthGroup.MapPost(PortalOAuthRoutes.IntrospectPath, HandleIntrospectAsync)
             .WithDisplayName("ArcGIS Portal OAuth2 Token Introspection")
@@ -159,7 +161,20 @@ internal static class SharingOAuth2Endpoints
             return OAuth2Error("invalid_request", "token is required.");
         }
 
-        await revocationService.RevokeAsync(token, tokenTypeHint, context.RequestAborted).ConfigureAwait(false);
+        try
+        {
+            await revocationService.RevokeAsync(token, tokenTypeHint, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (ServiceUnavailableException)
+        {
+            // The shared store could not confirm deletion. 200 here would leave the
+            // token valid cluster-wide while telling the holder it was revoked
+            // (honua-server#6164). 503 is retryable; the body stays generic.
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Token revocation is temporarily unavailable.",
+                retryable: true);
+        }
 
         // RFC 7009 Â§2.2: the authorization server responds with HTTP 200 for a
         // successful revocation as well as for an unknown/already-revoked token, so a

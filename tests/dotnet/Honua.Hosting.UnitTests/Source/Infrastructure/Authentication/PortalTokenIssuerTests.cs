@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Licensing.Abstractions;
@@ -20,6 +21,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
@@ -932,6 +934,51 @@ public sealed class PortalTokenIssuerTests
 
         exchange!.Issuance.ExpiresAt.Should().Be(portal.ExpiresAt);
     }
+
+    [UnitTest]
+    public async Task RevokeAsync_DistributedCacheRemoveThrows_ThrowsServiceUnavailable()
+    {
+        var cache = Substitute.For<IDistributedCache>();
+        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect, "redis down")));
+        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task<byte[]?>>(_ => throw new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect, "redis down"));
+        using var memory = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new PortalTokenIssuer(memory, NullLogger<PortalTokenIssuer>.Instance, cache);
+        var issuance = await issuer.IssueAsync(SampleIssue(), CancellationToken.None);
+
+        var act = () => issuer.RevokeAsync(issuance.Token, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ServiceUnavailableException>();
+    }
+
+    [UnitTest]
+    public async Task RevokeAsync_DistributedCacheRemoveThrowsButKeyIsGone_Succeeds()
+    {
+        var cache = Substitute.For<IDistributedCache>();
+        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect, "delete denied")));
+        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<byte[]?>(null));
+        using var memory = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new PortalTokenIssuer(memory, NullLogger<PortalTokenIssuer>.Instance, cache);
+        var issuance = await issuer.IssueAsync(SampleIssue(), CancellationToken.None);
+
+        await issuer.RevokeAsync(issuance.Token, CancellationToken.None);
+    }
+
+    private static PortalTokenIssueRequest SampleIssue()
+        => new(
+            PrincipalId: "alice",
+            DisplayName: null,
+            TenantId: null,
+            Roles: ["viewer"],
+            ClientType: PortalTokenClientType.Ip,
+            BindingValue: "192.0.2.10",
+            ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30));
 
     private static Task<PortalTokenExchange?> ExchangeForSameIpAsync(
         PortalTokenIssuer issuer,
