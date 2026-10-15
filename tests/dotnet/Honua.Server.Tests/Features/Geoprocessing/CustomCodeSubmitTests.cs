@@ -110,11 +110,20 @@ public sealed class CustomCodeSubmitTests
         {
             new ExecutionJobDefinition
             {
-                WorkloadId = "custom-code", WorkloadName = "Custom code", Kind = ExecutionJobKind.Geoprocessing,
+                WorkloadId = "unrelated", WorkloadName = "Unrelated", Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.AwsBatch, Backend = "aws-batch",
                 RuntimeProfile = CustomCodeJobContract.RuntimeProfile, ArtifactReference = "worker:latest",
+                Parameters = new Dictionary<string, string> { ["batch.queue"] = "wrong-queue" },
+            },
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "custom-code", WorkloadName = "Custom code", Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch, Backend = "aws-batch",
+                RuntimeProfile = CustomCodeJobContract.RuntimeProfile, ArtifactReference = v1.Lock.RuntimeImage.Reference,
                 Parameters = new Dictionary<string, string>
                 {
+                    ["batch.queue"] = "release-queue",
+                    ["batch.job_definition_arn"] = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:7",
                     ["batch.job_definition_arn.s"] = "arn:aws:batch:us-west-2:123456789012:job-definition/wrong:99",
                     [CustomCodeJobContract.GitRefParam] = new string('f', 40),
                 },
@@ -140,6 +149,8 @@ public sealed class CustomCodeSubmitTests
         queued.Spec.Parameters[GpProcessReleaseAdmission.AwsBatchJobDefinitionParam].Should().EndWith(":7");
         queued.Spec.Parameters.Should().NotContainKey("batch.job_definition_arn.s");
         queued.Spec.Artifact.Should().Be(v1.Lock.RuntimeImage.Reference);
+        queued.Spec.WorkloadId.Should().Be("custom-code");
+        queued.Spec.Parameters["batch.queue"].Should().Be("release-queue");
         _jobStore.GetAsync(queued.OperationId, Arg.Any<CancellationToken>()).Returns(queued);
 
         (await store.ActivateAsync(Activation(v2.Digest, 1, "8"), environment)).Activated.Should().BeTrue();
@@ -155,6 +166,31 @@ public sealed class CustomCodeSubmitTests
         metadata[GpProcessReleaseAdmission.ProcessParam] = "another-process";
         var conflicting = () => sut.SubmitJobAsync(CustomCodePlan(), "release-replay", OwnerPrincipal(), metadata);
         await conflicting.Should().ThrowAsync<GeoprocessingIdempotencyConflictException>();
+
+        registry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "unrelated", WorkloadName = "Unrelated", Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch, Backend = "aws-batch",
+                RuntimeProfile = CustomCodeJobContract.RuntimeProfile, ArtifactReference = "worker:latest",
+            },
+        });
+        var refusedIssuer = Substitute.For<IScopedJobTokenIssuer>();
+        var unavailable = CreateService(workloadRegistry: registry, backends: [backend],
+            releaseAdmission: new GpProcessReleaseAdmission(store, NullLogger<GpProcessReleaseAdmission>.Instance),
+            scopedJobTokenIssuer: refusedIssuer);
+        var newMetadata = CustomCodeMetadata();
+        newMetadata[GpProcessReleaseAdmission.ProcessParam] = "buffer-features";
+        newMetadata.Remove(CustomCodeJobContract.GitRefParam);
+        newMetadata.Remove(CustomCodeJobContract.RepoUrlParam);
+        newMetadata.Remove(CustomCodeJobContract.EntrypointParam);
+        newMetadata.Remove(CustomCodeJobContract.DepsManifestParam);
+
+        var missingWorker = () => unavailable.SubmitJobAsync(CustomCodePlan(), "missing-worker", OwnerPrincipal(), newMetadata);
+        await missingWorker.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*pinned image and job-definition revision*");
+        await refusedIssuer.DidNotReceive().IssueAsync(Arg.Any<ScopedJobTokenRequest>(), Arg.Any<CancellationToken>());
     }
 
     // -----------------------------------------------------------------------
@@ -914,7 +950,8 @@ public sealed class CustomCodeSubmitTests
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
         IEnumerable<IBatchComputeBackend>? backends = null,
         ICustomCodeCommitSignatureVerifier? signatureVerifier = null,
-        GpProcessReleaseAdmission? releaseAdmission = null)
+        GpProcessReleaseAdmission? releaseAdmission = null,
+        IScopedJobTokenIssuer? scopedJobTokenIssuer = null)
     {
         var options = new CustomCodeOptions
         {
@@ -934,7 +971,7 @@ public sealed class CustomCodeSubmitTests
             _jobStore, _jobQueue,
             workloadRegistry: workloadRegistry,
             backends: backends,
-            scopedJobTokenIssuer: _issuer,
+            scopedJobTokenIssuer: scopedJobTokenIssuer ?? _issuer,
             customCodeOptions: new StaticOptionsMonitor<CustomCodeOptions>(options),
             customCodeSignatureVerifier: signatureVerifier,
             releaseAdmission: releaseAdmission);

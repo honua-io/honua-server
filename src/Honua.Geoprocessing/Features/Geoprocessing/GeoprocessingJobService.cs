@@ -166,7 +166,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 operationEnvelopeFactory,
                 admissionCoordinator),
             new CustomCodeJobSubmissionGate(
-                logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier, releaseAdmission),
+                logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier, releaseAdmission, workloadRegistry),
             new GeoprocessingJobArtifactService(
                 logger,
                 executorOptions,
@@ -953,8 +953,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         string? mintedCustomCodeToken = null;
         if (isCustomCode)
         {
-            (ownerScope, mintedCustomCodeToken) = await _customCodeGate.ValidateMintAndInjectAsync(
-                jobId, principal, specParams, cancellationToken).ConfigureAwait(false);
+            (ownerScope, mintedCustomCodeToken, workload) = await _customCodeGate.ValidateMintAndInjectAsync(
+                jobId, principal, specParams, workload, cancellationToken).ConfigureAwait(false);
+            effectiveProtocolMetadata = ResolveEffectiveProtocolControls(protocolMetadata, workload);
         }
         else
         {
@@ -1844,13 +1845,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         GpResourceProfile resourceProfile)
     {
         var releasePinned = specParams.ContainsKey(GpProcessReleaseAdmission.ReleaseLockDigestParam);
-        if (releasePinned && (workload is null
-            || workload.TargetKind != BatchComputeTargetKind.AwsBatch
-            || !specParams.ContainsKey(GpProcessReleaseAdmission.AwsBatchJobDefinitionParam)))
-        {
-            throw new GeoprocessingValidationException("The active process release requires a compatible AWS Batch custom-code workload.");
-        }
-
         if (workload == null)
         {
             // The no-registered-workload case (the default) is built through the shared
