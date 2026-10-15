@@ -139,7 +139,8 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/gp/process-releases")]
     public async Task Publish_RejectsAnInvalidLockWithTheFindings()
     {
-        var response = await _client.PostAsync(Base, new StringContent("{\"schema\":\"honua.gp-process-release-lock/v1\"}", Encoding.UTF8, "application/json"));
+        using var content = new StringContent("{\"schema\":\"honua.gp-process-release-lock/v1\"}", Encoding.UTF8, "application/json");
+        using var response = await _client.PostAsync(Base, content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("process is required");
