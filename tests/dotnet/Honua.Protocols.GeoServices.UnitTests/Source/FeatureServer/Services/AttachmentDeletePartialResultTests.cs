@@ -39,9 +39,12 @@ public sealed class AttachmentDeletePartialResultTests
         results.Select(item => item.Success).Should().Equal(true, false, true);
         results[0].Error.Should().BeNull();
         results[1].ObjectId.Should().Be(12L);
-        results[1].Error!.Code.Should().Be(500);
-        results[1].Error.Description.Should().Be("Failed to delete attachment.");
-        results[1].Error.Description.Should().NotContain("transient");
+        var failed = results[1].Error;
+        failed.Should().NotBeNull();
+        var error = failed!;
+        error.Code.Should().Be(500);
+        error.Description.Should().Be("Failed to delete attachment.");
+        error.Description.Should().NotContain("transient");
         results[2].Error.Should().BeNull();
     }
 }

@@ -8,6 +8,7 @@ using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -565,7 +566,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
 
         var created = await InsertAttachmentAsync(connection, transaction, layerId, featureId, attachment, cancellationToken)
             .ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return created;
     }
 
