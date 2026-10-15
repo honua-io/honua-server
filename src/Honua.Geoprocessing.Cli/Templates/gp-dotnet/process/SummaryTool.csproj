@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>SummaryTool</AssemblyName>
+    <RootNamespace>Honua.Templates</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!-- The custom-code worker loads this assembly by reflection; local development never needs AOT. -->
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The only package a process references. Honua.CustomCode.Sdk is not on NuGet yet, so it is
+         consumed from a honua-server checkout; see Directory.Build.props for the path. -->
+    <ProjectReference Include="$(HonuaCustomCodeSdkProject)" />
+  </ItemGroup>
+</Project>

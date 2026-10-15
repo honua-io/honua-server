@@ -1,0 +1,38 @@
+# Container debugging with the process source mounted into the custom-code
+# worker image, for processes that need the native stack of that image (GDAL,
+# rasterio, geopandas). Build the image from a honua-server checkout first:
+#
+#   docker build -f docker/worker-customcode-python/Dockerfile #     -t honua-worker-customcode-python:local .
+#
+# then from this template directory:
+#
+#   docker compose -f docker/compose.debug.yaml up
+#
+# and start the "GP: attach to container" launch configuration. The run waits
+# for the debugger on port 5678 before executing the process. Receipts land in
+# .honua/container-runs on the host. The image runs as uid 1001, so the
+# template directory must be readable by that user. debugpy is installed into
+# a throwaway user site inside the container at start; it is not part of the
+# production image.
+services:
+  gp-debug:
+    image: ${HONUA_CUSTOMCODE_PYTHON_IMAGE:-honua-worker-customcode-python:local}
+    working_dir: /work/src
+    user: "${HONUA_CONTAINER_USER:-1001:1001}"
+    environment:
+      PYTHONUSERBASE: /tmp/debugpy-site
+    volumes:
+      - ..:/work/src:ro
+      - ../.honua/container-runs:/work/out
+    ports:
+      - "127.0.0.1:5678:5678"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        python3 -m pip install --user --quiet --disable-pip-version-check debugpy==1.8.14 &&
+        python3 -m debugpy --listen 0.0.0.0:5678 --wait-for-client
+        -m honua_customcode_harness.local
+        --source /work/src/process --entrypoint summary_tool:execute
+        --params /work/src/fixtures/params.json
+        --input features=/work/src/fixtures/input.geojson
+        --output /work/out

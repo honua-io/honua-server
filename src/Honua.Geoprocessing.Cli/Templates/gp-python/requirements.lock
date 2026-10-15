@@ -1,0 +1,6 @@
+# Pinned harness and test dependencies for this template (pip format).
+# The custom-code harness is not published to PyPI yet: install it from a
+# honua-server checkout as README.md describes (docker/worker-customcode-python/harness).
+# The process itself needs only the standard library at runtime.
+honua-customcode-harness==0.1.0
+pytest==9.1.1

@@ -26,7 +26,16 @@ internal static class GpDescribeRenderer
     /// </summary>
     /// <param name="definition">The catalog definition to describe.</param>
     /// <returns>The multi-line description text.</returns>
-    public static string RenderText(ProcessDefinition definition)
+    public static string RenderText(ProcessDefinition definition) => RenderText(definition, null);
+
+    /// <summary>
+    /// Renders the description with the devkit's runnability verdict (execution mode,
+    /// prerequisites, whether it can run here, supported targets) when one is supplied.
+    /// </summary>
+    /// <param name="definition">The catalog definition to describe.</param>
+    /// <param name="runnability">The verdict, or null to omit it.</param>
+    /// <returns>The multi-line description text.</returns>
+    public static string RenderText(ProcessDefinition definition, GpRunnability? runnability)
     {
         ArgumentNullException.ThrowIfNull(definition);
 
@@ -40,6 +49,17 @@ internal static class GpDescribeRenderer
         if (definition.ExecutionCapabilityReason is { } reason)
         {
             builder.Append("availability: ").AppendLine(reason);
+        }
+        if (runnability is not null)
+        {
+            builder.Append("mode        : ").AppendLine(runnability.ExecutionModeLabel);
+            builder.Append("runnable    : ").AppendLine(runnability.RunnableHere ? "yes" : $"no — blocked by {runnability.BlockedBy}");
+            foreach (var prerequisite in runnability.Prerequisites)
+            {
+                builder.Append("  needs     : ").Append(prerequisite.Name).Append(" [").Append(prerequisite.Status).Append("] ").AppendLine(prerequisite.Detail);
+            }
+
+            builder.Append("targets     : ").AppendLine(string.Join(", ", runnability.SupportedTargets));
         }
         builder.Append("description : ").AppendLine(definition.Description);
         builder.AppendLine();
@@ -74,6 +94,11 @@ internal static class GpDescribeRenderer
                 {
                     builder.Append("      allowed: ").AppendLine(string.Join(", ", allowed));
                 }
+
+                if (runnability is not null && GpRunnabilityAssessor.ExampleValues(definition)[parameter.Name] is { } example)
+                {
+                    builder.Append("      example: ").AppendLine(example.GetValue<string>());
+                }
             }
         }
 
@@ -102,7 +127,17 @@ internal static class GpDescribeRenderer
     /// </summary>
     /// <param name="definition">The catalog definition to describe.</param>
     /// <returns>The indented JSON descriptor.</returns>
-    public static string RenderJson(ProcessDefinition definition)
+    public static string RenderJson(ProcessDefinition definition) => RenderJson(definition, null);
+
+    /// <summary>
+    /// Renders the descriptor with the devkit's runnability verdict and a valid example value
+    /// per parameter (<c>executionMode</c>, <c>prerequisites</c>, <c>runnableHere</c>,
+    /// <c>blockedBy</c>, <c>supportedTargets</c>, <c>parameterExamples</c>) when one is supplied.
+    /// </summary>
+    /// <param name="definition">The catalog definition to describe.</param>
+    /// <param name="runnability">The verdict, or null to omit it.</param>
+    /// <returns>The indented JSON descriptor.</returns>
+    public static string RenderJson(ProcessDefinition definition, GpRunnability? runnability)
     {
         ArgumentNullException.ThrowIfNull(definition);
 
@@ -129,6 +164,11 @@ internal static class GpDescribeRenderer
             ["outputs"] = outputs,
             ["example"] = BuildExampleCommand(definition),
         };
+        if (runnability is not null)
+        {
+            runnability.WriteTo(descriptor);
+            descriptor["parameterExamples"] = GpRunnabilityAssessor.ExampleValues(definition);
+        }
 
         return descriptor.ToJsonString(IndentedOptions);
     }

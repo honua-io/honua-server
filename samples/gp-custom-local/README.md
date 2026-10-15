@@ -71,3 +71,5 @@ custom-code images have different entrypoints; they are not interchangeable.
 See the [authoring guide](../../docs/guides/query-analyze/gp-devkit-authoring.md)
 and [integration quickstart](../../docs/guides/query-analyze/gp-local-dev-quickstart.md)
 for the next validation step. Local success alone does not certify a cloud target.
+
+To start a project of your own with the same layout, run `honua-gp-devkit init --language python|dotnet --name <process>`; it copies the maintained honua-samples template and `honua-gp-devkit test` runs its fixtures through the local harness.

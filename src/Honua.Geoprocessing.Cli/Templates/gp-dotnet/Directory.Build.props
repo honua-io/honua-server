@@ -1,0 +1,20 @@
+<Project>
+  <!--
+    Shared settings for the process and its tests. The custom-code SDK and the
+    local harness are consumed from a honua-server checkout until they are
+    published as packages: set HONUA_SERVER_CHECKOUT, or keep honua-server as a
+    sibling of the honua-samples checkout (the default below).
+  -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <HonuaServerCheckout Condition="'$(HonuaServerCheckout)' == '' and '$(HONUA_SERVER_CHECKOUT)' != ''">$(HONUA_SERVER_CHECKOUT)</HonuaServerCheckout>
+    <HonuaServerCheckout Condition="'$(HonuaServerCheckout)' == ''">$(MSBuildThisFileDirectory)../../../honua-server</HonuaServerCheckout>
+    <HonuaCustomCodeHarnessRoot>$(HonuaServerCheckout)/docker/worker-customcode-dotnet/harness</HonuaCustomCodeHarnessRoot>
+    <HonuaCustomCodeSdkProject>$(HonuaCustomCodeHarnessRoot)/src/Honua.CustomCode.Sdk/Honua.CustomCode.Sdk.csproj</HonuaCustomCodeSdkProject>
+    <HonuaCustomCodeHarnessProject>$(HonuaCustomCodeHarnessRoot)/src/Honua.CustomCode.Harness/Honua.CustomCode.Harness.csproj</HonuaCustomCodeHarnessProject>
+  </PropertyGroup>
+</Project>

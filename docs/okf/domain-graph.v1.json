@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:4dffcd50c0b7458e725978e040cb4cb057751b86715f3612bc6e7f27cfffea23",
+  "bundleDigest": "sha256:b853554aabadae14df6ddc434d3b7410ac61fa878a0c0984e93afc5cca1a16c9",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1924,7 +1924,7 @@
     {
       "id": "get-started/quickstart",
       "path": "get-started/quickstart.md",
-      "documentDigest": "sha256:ab3a64cec44ac8845e5f5a47d94764b204dacebff9a34149488a2eb0f1f4eed2",
+      "documentDigest": "sha256:fef28eea1ad868385807bce38fe4dbfc21e927272c6445c9ec41ac138d49c631",
       "metadata": {
         "type": "guide",
         "title": "Quickstart: install, publish, and query",
@@ -2485,7 +2485,7 @@
     {
       "id": "guides/query-analyze/gp-devkit-authoring",
       "path": "guides/query-analyze/gp-devkit-authoring.md",
-      "documentDigest": "sha256:7b0252f8b979eb2fa822f4083e0dbad8a2660b1095a42efee7324d7d66852f40",
+      "documentDigest": "sha256:9aa1cb3548a5d9b8c22032f969730eab8af9d68b8a9bdbba8230fd4ac40672de",
       "metadata": {
         "type": "guide",
         "title": "Author a geoprocessing process",
@@ -7600,7 +7600,7 @@
     {
       "id": "reference/configuration/environment-variables",
       "path": "reference/configuration/environment-variables.md",
-      "documentDigest": "sha256:d25e36993fc21e2409894a3678d4c18ce6e398fa4fa8ccad3a80a2c76f368c39",
+      "documentDigest": "sha256:26c6db45490ef4c663a460f16bd735c2639c04a7fa50b368aace80586f676459",
       "metadata": {
         "type": "reference",
         "title": "Environment variables",

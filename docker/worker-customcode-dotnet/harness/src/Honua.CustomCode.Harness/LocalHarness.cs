@@ -24,9 +24,13 @@ public static class LocalHarness
         using var journal = new LocalJournal(UnderRoot(runDirectory, "events.jsonl"));
         var receipt = new JsonObject
         {
-            ["schemaVersion"] = "1.0", ["runId"] = runId, ["entrypoint"] = entrypoint,
-            ["executionMode"] = "local", ["contentClassification"] = "local-development-unsanitized",
-            ["artifacts"] = new JsonArray(), ["events"] = "events.jsonl"
+            ["schemaVersion"] = "1.0",
+            ["runId"] = runId,
+            ["entrypoint"] = entrypoint,
+            ["executionMode"] = "local",
+            ["contentClassification"] = "local-development-unsanitized",
+            ["artifacts"] = new JsonArray(),
+            ["events"] = "events.jsonl"
         };
         var phase = "setup";
         var exitCode = Harness.ExitHarnessError;
@@ -100,8 +104,10 @@ public static class LocalHarness
                 var hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
                 artifacts.Add(new JsonObject
                 {
-                    ["name"] = artifact.Name, ["path"] = "artifacts/" + artifact.Name,
-                    ["sizeBytes"] = stream.Length, ["sha256"] = hash
+                    ["name"] = artifact.Name,
+                    ["path"] = "artifacts/" + artifact.Name,
+                    ["sizeBytes"] = stream.Length,
+                    ["sha256"] = hash
                 });
             }
 
@@ -130,8 +136,11 @@ public static class LocalHarness
         await File.WriteAllTextAsync(receiptPath, receipt.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), CancellationToken.None).ConfigureAwait(false);
         Console.WriteLine(new JsonObject
         {
-            ["runId"] = runId, ["status"] = receipt["status"]!.GetValue<string>(), ["receipt"] = receiptPath,
-            ["failedPhase"] = receipt["failedPhase"]?.DeepClone(), ["error"] = receipt["error"]?.DeepClone()
+            ["runId"] = runId,
+            ["status"] = receipt["status"]!.GetValue<string>(),
+            ["receipt"] = receiptPath,
+            ["failedPhase"] = receipt["failedPhase"]?.DeepClone(),
+            ["error"] = receipt["error"]?.DeepClone()
         }.ToJsonString());
         return exitCode;
     }
@@ -219,8 +228,10 @@ public static class LocalHarness
 
                 _stream.WriteLine(new JsonObject
                 {
-                    ["sequence"] = _sequence++, ["timestamp"] = DateTimeOffset.UtcNow,
-                    ["phase"] = Limit(phase, 500), ["percentComplete"] = percent,
+                    ["sequence"] = _sequence++,
+                    ["timestamp"] = DateTimeOffset.UtcNow,
+                    ["phase"] = Limit(phase, 500),
+                    ["percentComplete"] = percent,
                     ["message"] = message is null ? null : Limit(message, 2000)
                 }.ToJsonString());
             }
