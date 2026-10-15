@@ -13,6 +13,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// truncation entry, credential redaction on event payloads, measured-vs-inferred
 /// timing, and the devkit's local evidence writer.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class HarnessEventsTests
 {
     private const string Journal = """
