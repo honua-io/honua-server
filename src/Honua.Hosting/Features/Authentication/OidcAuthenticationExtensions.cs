@@ -627,10 +627,10 @@ public static partial class OidcAuthenticationExtensions
             else
             {
                 // Configure metadata retrieval for signing-key discovery. With a single
-                // provider the standard Authority-driven configuration manager applies;
-                // with multiple providers the signing keys of every authority must be
-                // merged, otherwise tokens from the second..nth provider pass the
-                // issuer/audience checks above but fail signature validation (IDX10501).
+                // provider the standard Authority-driven configuration manager applies.
+                // With multiple providers every authority's metadata is loaded, but a
+                // token may be signed only by keys from the authority it names
+                // (honua-server#6165). A flat key union would let one IdP sign for another.
                 var authorities = new List<string>();
 
                 if (oidcOptions.AzureAd?.IsValid == true)
@@ -664,8 +664,9 @@ public static partial class OidcAuthenticationExtensions
                 }
                 else if (authorities.Count > 1)
                 {
-                    options.ConfigurationManager =
-                        new MultiAuthorityConfigurationManager(authorities, oidcOptions.RequireHttps);
+                    var manager = new MultiAuthorityConfigurationManager(authorities, oidcOptions.RequireHttps);
+                    options.ConfigurationManager = manager;
+                    manager.BindIssuerSigningKeys(options.TokenValidationParameters);
                 }
             }
 
