@@ -916,16 +916,8 @@ internal sealed class InMemoryCollaborationSessionService
 
     private static int CountPrincipalSessionsLocked(MapChannel channel, string? userId)
     {
-        var count = 0;
-        foreach (var state in channel.Participants.Values)
-        {
-            if (string.Equals(state.Presence.UserId, userId, StringComparison.Ordinal))
-            {
-                count++;
-            }
-        }
-
-        return count;
+        return channel.Participants.Values.Count(state =>
+            string.Equals(state.Presence.UserId, userId, StringComparison.Ordinal));
     }
 
     private static string ResolveDisplayName(
