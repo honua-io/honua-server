@@ -58,8 +58,7 @@ internal static class CliRunner
         var privateOut = options.Get("private-out");
         if (privateOut is not null)
         {
-            File.WriteAllText(privateOut, keyPair.PrivateSeedBase64Url());
-            TryRestrictFilePermissions(privateOut);
+            WritePrivateSeed(privateOut, keyPair.PrivateSeedBase64Url(), options.IsSet("force"));
         }
 
         Console.WriteLine($"keyId:            {keyId}");
@@ -295,6 +294,112 @@ internal static class CliRunner
             $"Could not parse --expires '{value}'. Use an RFC 3339 timestamp or a duration like '365d'.");
     }
 
+    private static void WritePrivateSeed(string path, string seed, bool force)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        if (!force && File.Exists(path))
+        {
+            throw new CliException(RefuseOverwrite(path));
+        }
+
+        UnixFileMode? createMode = OperatingSystem.IsWindows()
+            ? null
+            : UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
+        if (!force)
+        {
+            try
+            {
+                WriteNewFile(path, seed, createMode);
+            }
+            catch (IOException) when (File.Exists(path))
+            {
+                throw new CliException(RefuseOverwrite(path));
+            }
+            catch (IOException)
+            {
+                throw new CliException(WriteFailed(path));
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw new CliException(WriteFailed(path));
+            }
+
+            TryRestrictFilePermissions(path);
+            return;
+        }
+
+        var temp = Path.Combine(
+            string.IsNullOrEmpty(directory) ? Directory.GetCurrentDirectory() : directory,
+            ".honua-license-seed-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            WriteNewFile(temp, seed, createMode);
+            File.Move(temp, path, overwrite: true);
+        }
+        catch (IOException)
+        {
+            throw new CliException(WriteFailed(path));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new CliException(WriteFailed(path));
+        }
+        finally
+        {
+            TryDelete(temp);
+        }
+
+        TryRestrictFilePermissions(path);
+    }
+
+    private static void WriteNewFile(string path, string seed, UnixFileMode? createMode)
+    {
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+        };
+        if (createMode is { } mode)
+        {
+            options.UnixCreateMode = mode;
+        }
+
+        using var stream = new FileStream(path, options);
+        stream.Write(System.Text.Encoding.UTF8.GetBytes(seed));
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+            // The replacement already landed, or the temp file was never created.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Same rationale: leftover temp-file cleanup must not hide a successful write.
+        }
+    }
+
+    private static string RefuseOverwrite(string path)
+        => $"Refusing to overwrite existing signing seed '{path}'. Pass --force to replace it.";
+
+    private static string WriteFailed(string path)
+        => $"Could not write the signing seed to '{path}'.";
+
     private static void TryRestrictFilePermissions(string path)
     {
         if (OperatingSystem.IsWindows())
@@ -343,8 +448,11 @@ internal static class CliRunner
 
             keygen options:
               --key-id <id>          Key identifier (default: honua-<yyyy-MM>).
-              --private-out <path>   Write the private seed (Base64URL) to a file (chmod 600).
+              --private-out <path>   Write the private seed (Base64URL) to a new file (mode 0600).
+                                     Refuses to overwrite an existing file unless --force is set.
                                      When omitted, the private seed is printed to stderr.
+              --force                Replace an existing --private-out file. The replacement is
+                                     written to a new mode-0600 file and then moved into place.
 
             mint options:
               --key-id <id>          Trusted key id; must match a Licensing:TrustedKeys entry. (required)
@@ -385,6 +493,11 @@ internal sealed class CliException : Exception
 /// <summary>Minimal <c>--flag value</c> argument parser for the mint CLI.</summary>
 internal sealed class ArgMap
 {
+    private static readonly HashSet<string> BooleanSwitches = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "force",
+    };
+
     private readonly Dictionary<string, string> _values;
 
     private ArgMap(Dictionary<string, string> values) => _values = values;
@@ -401,6 +514,12 @@ internal sealed class ArgMap
             }
 
             var name = token[2..];
+            if (BooleanSwitches.Contains(name))
+            {
+                values[name] = "true";
+                continue;
+            }
+
             if (i + 1 >= args.Length)
             {
                 throw new CliException($"Option '--{name}' requires a value.");
@@ -413,6 +532,8 @@ internal sealed class ArgMap
     }
 
     public string? Get(string name) => _values.TryGetValue(name, out var value) ? value : null;
+
+    public bool IsSet(string name) => _values.ContainsKey(name);
 
     public string GetOrDefault(string name, string fallback) => Get(name) ?? fallback;
 
