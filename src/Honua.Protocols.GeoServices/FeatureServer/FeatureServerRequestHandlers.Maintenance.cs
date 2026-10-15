@@ -982,7 +982,7 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Managed attribute bags are case-sensitive. Calculate identifiers follow the schema, which is not.
     /// </summary>
-    private static IReadOnlyDictionary<string, object?> ToCaseInsensitiveAttributes(
+    private static Dictionary<string, object?> ToCaseInsensitiveAttributes(
         IReadOnlyDictionary<string, object?> attributes)
     {
         if (attributes is Dictionary<string, object?> dictionary
