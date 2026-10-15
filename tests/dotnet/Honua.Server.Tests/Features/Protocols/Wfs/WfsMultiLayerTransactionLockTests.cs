@@ -220,8 +220,15 @@ public sealed class WfsMultiLayerTransactionLockTests
                 new AuditingFeatureWriter(provider, auditLog, _accessor),
                 _locks, new FeatureEditGuard(_locks), metadata, _accessor);
             var reader = Substitute.For<IFeatureReader>();
-            reader.GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
-                .Returns(call => Task.FromResult<Feature?>(Features.GetValueOrDefault(call.Arg<int>())));
+            reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+                .Returns(call =>
+                {
+                    var feature = Features[call.Arg<int>()];
+                    var query = call.Arg<FeatureQuery>();
+                    query.ObjectIds.Should().Equal(feature.Id);
+                    query.Limit.Should().Be(1);
+                    return Task.FromResult(QueryResult<Feature>.Create(1, [feature]));
+                });
             reader.QueryObjectIdsAsync(0, new FeatureQuery(), CancellationToken.None)
                 .ReturnsForAnyArgs(call => Task.FromResult(ImmutableArray.Create(Features[call.Arg<int>()].Id)));
             var coordinateTransform = Substitute.For<ICoordinateTransformService>();

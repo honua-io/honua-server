@@ -297,10 +297,11 @@ public sealed class GeometryInputBudgetTests
         context.Request.Method = method;
         context.RequestAborted = cancellationToken;
         context.Response.Body = new MemoryStream();
-        if (declared)
-        {
-            context.SetEndpoint(new Endpoint(null, new EndpointMetadataCollection(GeoServicesQueryGeometryMetadata.Instance), "geometry query"));
-        }
+        context.SetEndpoint(new Endpoint(null,
+            declared
+                ? new EndpointMetadataCollection(GeoServicesQueryGeometryMetadata.Instance)
+                : new EndpointMetadataCollection(),
+            "geometry query"));
         if (name == "Authorization")
         {
             context.Request.Headers.Authorization = value;
