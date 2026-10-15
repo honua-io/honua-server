@@ -137,9 +137,8 @@ internal sealed partial class GeoservicesLayerPublicationService
         SourceGeometryCensus? sourceGeometry,
         BoundingBox? queriedSourceExtent)
     {
-        var sourceFieldNames = layerInfo.Fields
-            .Where(static field => !field.IsObjectId && !GeoservicesImportService.IsGeometryField(field))
-            .Select(static field => field.Name.SanitizeFieldName())
+        var sourceFieldNames = GeoservicesImportColumns.Map(layerInfo).Columns
+            .Select(static column => column.ColumnName)
             .Where(static name => !string.IsNullOrWhiteSpace(name))
             .ToArray();
 

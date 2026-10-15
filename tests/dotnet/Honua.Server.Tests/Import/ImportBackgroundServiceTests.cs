@@ -152,6 +152,76 @@ public sealed class ImportBackgroundServiceTests
     }
 
     [UnitTest]
+    public async Task GeoservicesBackgroundService_WhenCancelledAfterCommit_PersistsNeedsReviewInsteadOfCancelled()
+    {
+        var importer = new CommittedCancelGeoservicesImportService();
+        using var provider = CreateGeoservicesProvider(importer);
+        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
+        using var jobManager = new RedisImportJobManager(
+            universalProgressStore,
+            null,
+            NullLogger<RedisImportJobManager>.Instance,
+            new TestHostEnvironment());
+        var service = new GeoservicesImportBackgroundService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            jobManager,
+            NullLogger<GeoservicesImportBackgroundService>.Instance);
+
+        const string jobId = "geoservices-cancel-after-commit";
+        var request = new GeoservicesImportRequest
+        {
+            JobId = jobId,
+            ServiceUrl = "https://8.8.8.8/arcgis/rest/services/Test/FeatureServer",
+            LayerId = 4,
+            TableName = "geoservices_cancel_after_commit",
+            AutoPublish = true,
+            ServiceName = "imported-service"
+        };
+        var progress = GeoservicesImportProgress.CreateInitial(jobId, request.ServiceUrl, request.LayerId, request.TableName);
+
+        await jobManager.RequestStore.SetProgressAsync(jobId, request, TimeSpan.FromMinutes(10));
+        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
+        await jobManager.JobQueue.EnqueueAsync(jobId);
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            await importer.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var running = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
+            running.Should().NotBeNull();
+            await jobManager.ProgressStore.SetProgressAsync(
+                jobId,
+                running! with
+                {
+                    Status = GeoservicesImportStatus.Cancelled,
+                    CurrentPhase = "Cancellation requested"
+                },
+                TimeSpan.FromMinutes(10));
+            importer.Release.TrySetResult(true);
+
+            await WaitForAsync(
+                async () =>
+                {
+                    var stored = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
+                    return stored?.Status is GeoservicesImportStatus.NeedsReview or GeoservicesImportStatus.Failed;
+                },
+                TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+            var completed = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
+            completed.Should().NotBeNull();
+            completed!.Status.Should().Be(GeoservicesImportStatus.NeedsReview);
+            completed.CurrentPhase.Should().Be("Import cancelled after data was committed");
+            completed.FeaturesProcessed.Should().Be(4);
+            completed.FailedFeatures.Should().Be(1);
+            completed.ErrorMessage.Should().Contain("already committed");
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [UnitTest]
     public async Task GeoservicesBackgroundService_DoesNotReprocessTerminalFailedJob_WhenDuplicateDeliveryOccurs()
     {
         using var provider = CreateGeoservicesProvider(new ThrowingGeoservicesImportService(ThrowingBehavior.FailImmediately));
@@ -912,6 +982,56 @@ public sealed class ImportBackgroundServiceTests
             Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphStore? graphStore,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+    }
+
+    private sealed class CommittedCancelGeoservicesImportService : IGeoservicesImportService
+    {
+        public TaskCompletionSource<bool> Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<bool> Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<GeoservicesServiceInfo> DiscoverServiceAsync(
+            GeoservicesDiscoveryRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
+            GeoservicesDiscoveryRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<GeoservicesImportResult> ImportLayerAsync(
+            GeoservicesImportRequest request,
+            CancellationToken cancellationToken = default)
+            => ImportLayerAsync(request, progress: null, cancellationToken);
+
+        public async Task<GeoservicesImportResult> ImportLayerAsync(
+            GeoservicesImportRequest request,
+            IProgress<GeoservicesImportProgress>? progress,
+            CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult(true);
+            await Release.Task.ConfigureAwait(false);
+            return GeoservicesImportResult.CreateFailure(
+                request.TableName,
+                request.ServiceUrl,
+                request.LayerId,
+                "Import was cancelled after the data was committed. Imported rows were already committed; check the target table, its publication, and any partial attachment copy before retrying.") with
+            {
+                NeedsReview = true,
+                DataCommitted = true,
+                FeatureCount = 4,
+                FailedFeatures = 1,
+                ServiceName = request.ServiceName
+            };
+        }
+
+        public Task<MigrationRelationshipApplyOutcome[]> ApplyRelationshipsAsync(
+            MigrationManifestArtifact manifest,
+            IReadOnlyDictionary<string, int> publishedLayerMap,
+            Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphStore? graphStore,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(Array.Empty<MigrationRelationshipApplyOutcome>());
     }
 
     private sealed class SuccessfulGeoservicesImportService : IGeoservicesImportService

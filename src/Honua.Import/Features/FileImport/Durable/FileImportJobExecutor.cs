@@ -108,7 +108,7 @@ internal sealed partial class FileImportJobExecutor(
                     request.TargetSchema,
                     request.TableName,
                     ex => Log.SnapshotRefreshFailed(logger, jobId, ex),
-                    cancellationToken).ConfigureAwait(false);
+                    CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -149,7 +149,7 @@ internal sealed partial class FileImportJobExecutor(
         }
 
         await WriteTerminalAsync(jobId, processing, ImportStatus.Completed, result, result.ErrorMessage).ConfigureAwait(false);
-        await context.ReportProgressAsync(100, "Import completed", cancellationToken).ConfigureAwait(false);
+        await context.ReportProgressAsync(100, "Import completed", CancellationToken.None).ConfigureAwait(false);
         Log.ImportCompleted(logger, jobId, request.TableName, result.FeatureCount);
         return JobExecutionResult.Succeeded(result.Warnings);
     }

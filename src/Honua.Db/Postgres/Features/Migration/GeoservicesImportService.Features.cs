@@ -38,24 +38,35 @@ internal sealed partial class GeoservicesImportService
         string? firstFailureReason = null;
         var higherDimensionCount = 0;
 
-        // Build insert statement
-        var fields = layerInfo.Fields.Where(f => !f.IsObjectId && !IsGeometryField(f)).ToArray();
+        // Build insert statement. Column names follow the same mapping as CREATE TABLE so a
+        // source OBJECTID/GEOM attribute, or two names that sanitize identically, cannot collide
+        // with the surrogate key or with each other. Attribute values are still read by source name.
+        var columnMap = GeoservicesImportColumns.Map(layerInfo);
+        var fields = columnMap.Columns.Select(column => column.Field).ToArray();
         var hasGeometry = !string.IsNullOrEmpty(layerInfo.GeometryType);
         var sourceObjectIdField = layerInfo.Fields.FirstOrDefault(f => f.IsObjectId)?.Name;
         var objectIdMap = new Dictionary<long, long>(features.Length);
         var absentGeometryTargetIds = new HashSet<long>();
         var unconvertedGeometryTargetIds = new HashSet<long>();
 
-        var columnNames = string.Join(", ", fields.Select(f => $"\"{f.Name.SanitizeFieldName()}\""));
+        var columnList = new List<string>(fields.Length + 1);
+        columnList.AddRange(columnMap.Columns.Select(column => $"\"{column.ColumnName}\""));
         if (hasGeometry)
         {
-            columnNames += ", geom";
+            columnList.Add("geom");
         }
+
+        var columnNames = string.Join(", ", columnList);
 
         var parameterPlaceholders = string.Join(", ", fields.Select((_, i) => $"@p{i}"));
         if (hasGeometry)
         {
-            parameterPlaceholders += $", {BuildGeometryInsertExpression(layerInfo.GeometryType, targetSrid)}";
+            // A geometry-only layer has no attribute placeholders. Appending with a comma
+            // would emit VALUES (, geom-expr), which PostgreSQL rejects.
+            var geometryExpression = BuildGeometryInsertExpression(layerInfo.GeometryType, targetSrid);
+            parameterPlaceholders = parameterPlaceholders.Length == 0
+                ? geometryExpression
+                : $"{parameterPlaceholders}, {geometryExpression}";
         }
 
         var insertSql =

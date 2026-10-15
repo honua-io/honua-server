@@ -95,7 +95,8 @@ public sealed class ReplaceCompletenessParserSkipTests : IAsyncLifetime
         {
             result.Success.Should().BeFalse();
             result.FeatureCount.Should().Be(0);
-            result.ErrorMessage.Should().Contain("No features found in file");
+            result.ErrorCode.Should().Be(ImportValidationErrorCodes.AllRowsFailed);
+            result.ErrorMessage.Should().Contain($"all {skipped} feature(s) were skipped or rejected");
             result.Warnings.Should().Contain($"{skipped} record(s) could not be parsed as WKT, EWKT, or WKB and were skipped.");
             (await TableExistsAsync($"imported_{_tableName}")).Should().BeFalse();
             (await StagingExistsAsync()).Should().BeFalse();
