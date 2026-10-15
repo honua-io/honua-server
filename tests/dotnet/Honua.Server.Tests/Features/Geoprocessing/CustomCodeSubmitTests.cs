@@ -13,6 +13,8 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.ProcessRelease;
+using Honua.Geoprocessing.Release;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -56,6 +58,88 @@ public sealed class CustomCodeSubmitTests
             .Returns(ApprovalRequirement.NotRequired());
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
+    }
+
+    [UnitTest]
+    public async Task SubmitJob_LogicalRelease_RequiresCustomCodePermission()
+    {
+        DenyCustomCodePermission();
+        var sut = CreateService();
+        var metadata = new Dictionary<string, string> { [GpProcessReleaseAdmission.ProcessParam] = "buffer-features" };
+
+        var act = () => sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), metadata);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task SubmitJob_LogicalRelease_PreservesPinnedIdentityAcrossDefaultsAndReplay()
+    {
+        var store = new InMemoryGpProcessReleaseStore();
+        var v1 = await store.PublishAsync(ReleaseLock("1.0.0", "a"), "operator");
+        var v2 = await store.PublishAsync(ReleaseLock("2.0.0", "b"), "operator");
+        var environment = new GpProcessReleaseEnvironment
+        {
+            ServerContractVersion = 1, SupportedTargetKinds = ["aws-batch"], CustomCodeMayUseKubernetes = false,
+        };
+        GpProcessBindingActivation Activation(string digest, int version, string revision) => new()
+        {
+            Process = "buffer-features", LockDigest = digest, ExpectedBindingVersion = version,
+            Operation = "deploy", Actor = "operator",
+            Targets = [new GpProcessBindingTargetIdentity
+            {
+                Kind = "aws-batch", JobDefinitionArn = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:" + revision,
+            }],
+        };
+        (await store.ActivateAsync(Activation(v1.Digest, 0, "7"), environment)).Activated.Should().BeTrue();
+        var registry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        registry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "custom-code", WorkloadName = "Custom code", Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch, Backend = "aws-batch",
+                RuntimeProfile = CustomCodeJobContract.RuntimeProfile, ArtifactReference = "worker:latest",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["batch.job_definition_arn.s"] = "arn:aws:batch:us-west-2:123456789012:job-definition/wrong:99",
+                    [CustomCodeJobContract.GitRefParam] = new string('f', 40),
+                },
+            },
+        });
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult { Status = ExecutionJobStatus.Provisioning, ProviderJobId = "provider-job" });
+        var sut = CreateService(workloadRegistry: registry, backends: [backend],
+            releaseAdmission: new GpProcessReleaseAdmission(store, NullLogger<GpProcessReleaseAdmission>.Instance));
+        var metadata = CustomCodeMetadata();
+        metadata.Remove(CustomCodeJobContract.RuntimeParam);
+        metadata.Remove(CustomCodeJobContract.RepoUrlParam);
+        metadata.Remove(CustomCodeJobContract.EntrypointParam);
+        metadata.Remove(CustomCodeJobContract.DepsManifestParam);
+        metadata[CustomCodeJobContract.GitRefParam] = new string('a', 40);
+        metadata[GpProcessReleaseAdmission.ProcessParam] = "buffer-features";
+
+        var queued = await sut.SubmitJobAsync(CustomCodePlan(), "release-replay", OwnerPrincipal(), metadata);
+        queued.Spec.Parameters[CustomCodeJobContract.GitRefParam].Should().Be(new string('a', 40));
+        queued.Spec.Parameters[GpProcessReleaseAdmission.AwsBatchJobDefinitionParam].Should().EndWith(":7");
+        queued.Spec.Parameters.Should().NotContainKey("batch.job_definition_arn.s");
+        queued.Spec.Artifact.Should().Be(v1.Lock.RuntimeImage.Reference);
+        _jobStore.GetAsync(queued.OperationId, Arg.Any<CancellationToken>()).Returns(queued);
+
+        (await store.ActivateAsync(Activation(v2.Digest, 1, "8"), environment)).Activated.Should().BeTrue();
+        var replay = await sut.SubmitJobAsync(CustomCodePlan(), "release-replay", OwnerPrincipal(), metadata);
+        replay.OperationId.Should().Be(queued.OperationId);
+        replay.Spec.Parameters[GpProcessReleaseAdmission.ReleaseLockDigestParam].Should().Be(v1.Digest);
+        await backend.Received(1).StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+
+        metadata[GpProcessReleaseAdmission.ProcessParam] = "another-process";
+        var conflicting = () => sut.SubmitJobAsync(CustomCodePlan(), "release-replay", OwnerPrincipal(), metadata);
+        await conflicting.Should().ThrowAsync<GeoprocessingIdempotencyConflictException>();
     }
 
     // -----------------------------------------------------------------------
@@ -814,7 +898,8 @@ public sealed class CustomCodeSubmitTests
         Action<CustomCodeOptions>? configure = null,
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
         IEnumerable<IBatchComputeBackend>? backends = null,
-        ICustomCodeCommitSignatureVerifier? signatureVerifier = null)
+        ICustomCodeCommitSignatureVerifier? signatureVerifier = null,
+        GpProcessReleaseAdmission? releaseAdmission = null)
     {
         var options = new CustomCodeOptions
         {
@@ -836,7 +921,8 @@ public sealed class CustomCodeSubmitTests
             backends: backends,
             scopedJobTokenIssuer: _issuer,
             customCodeOptions: new StaticOptionsMonitor<CustomCodeOptions>(options),
-            customCodeSignatureVerifier: signatureVerifier);
+            customCodeSignatureVerifier: signatureVerifier,
+            releaseAdmission: releaseAdmission);
     }
 
     /// <summary>
@@ -987,4 +1073,26 @@ public sealed class CustomCodeSubmitTests
         public T Get(string? name) => value;
         public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
+    private static GpProcessReleaseLock ReleaseLock(string version, string shaChar)
+        => new()
+        {
+            Process = new GpReleaseProcess
+            {
+                Name = "buffer-features",
+                Version = version,
+                Runtime = "python",
+                Entrypoint = "buffer_features:execute",
+                Contract = new GpReleaseContract { InputSchemaSha256 = "sha256:" + new string('1', 64), OutputSchemaSha256 = "sha256:" + new string('2', 64) },
+            },
+            Source = new GpReleaseSource { Repository = "honua-io/honua-samples", Sha = new string(shaChar[0], 40), DescriptorPath = "samples/gp-local-dev/honua-gp.yaml" },
+            DependencyLock = new GpReleaseFileDigest { Path = "samples/gp-local-dev/uv.lock", Sha256 = "sha256:" + new string('d', 64) },
+            RuntimeImage = new GpReleaseRuntimeImage { Reference = "ghcr.io/honua-io/honua-gp-worker@sha256:" + new string('b', 64), Digest = "sha256:" + new string('b', 64) },
+            WorkflowVersion = "wf-2026.1-7",
+            ConfigurationReferences = [],
+            Targets = [new GpReleaseTarget { Kind = "aws-batch", WorkerImageDigest = "sha256:" + new string('b', 64), JobDefinitionName = "buffer" }],
+            Compatibility = new GpReleaseCompatibility { ServerContractVersion = new GpReleaseContractWindow { Minimum = 1, Maximum = 2 } },
+            Artifacts = [new GpReleaseArtifact { Name = $"buffer-features-{version}.tar.gz", Sha256 = "sha256:" + new string('e', 64), SizeBytes = 1 }],
+            ValidationReceipts = [new GpReleaseValidationReceipt { Name = "golden-tests.junit.xml", Sha256 = "sha256:" + new string('9', 64), Status = "pass" }],
+            GeneratedAt = "2026-10-15T04:00:00Z",
+        };
 }

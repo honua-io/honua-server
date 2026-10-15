@@ -143,9 +143,6 @@ honua-gp-devkit release verify out/release/process-release-lock.json --artifacts
 Exit codes: `0` success, `1` the release cannot be built or verified (every finding is listed),
 `2` usage error.
 
-## What this does not do yet
+## Binding and admission
 
-Publishing the lock to the server's release store, the environment binding
-(process name → selected release, versioned and concurrency-checked), and admission-time
-pinning of Kubernetes Jobs and AWS Batch jobs are the second half of honua-server#6221.
-Until that lands, honua-release's deploy workflow records `binding.status = pending-server-6221`.
+Publishing the lock to the server, the per-process binding (versioned, compare-and-set activation, rollback to the previous release) and admission-time pinning of AWS Batch job-definition revisions and Kubernetes worker images are described in the [GP process release bindings runbook](../operator/geoprocessing-process-releases.md).

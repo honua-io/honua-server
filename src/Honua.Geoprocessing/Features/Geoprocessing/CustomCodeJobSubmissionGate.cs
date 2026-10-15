@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.ProcessRelease;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
@@ -25,6 +26,7 @@ internal sealed class CustomCodeJobSubmissionGate
     private readonly IScopedJobTokenIssuer? _scopedJobTokenIssuer;
     private readonly IOptionsMonitor<CustomCodeOptions>? _customCodeOptions;
     private readonly CustomCodeSubmitCoordinator? _coordinator;
+    private readonly GpProcessReleaseAdmission? _releaseAdmission;
 
     /// <summary>
     /// Creates the custom-code submit gate. When no scoped-job token issuer is configured the
@@ -34,9 +36,11 @@ internal sealed class CustomCodeJobSubmissionGate
         ILogger<GeoprocessingJobService> logger,
         IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
         IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null,
-        ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null)
+        ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null,
+        GpProcessReleaseAdmission? releaseAdmission = null)
     {
         _logger = logger;
+        _releaseAdmission = releaseAdmission;
         _scopedJobTokenIssuer = scopedJobTokenIssuer;
         _customCodeOptions = customCodeOptions;
         _coordinator = scopedJobTokenIssuer is null
@@ -70,6 +74,19 @@ internal sealed class CustomCodeJobSubmissionGate
             && !principal.IsInRole("admin"))
         {
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        }
+
+        // Release pinning (honua-server#6221): a submission that names a process is resolved
+        // against its live binding before the custom-code parameters are validated, so the
+        // validated repo/ref/entrypoint are the release's and the job keeps them on every retry.
+        if (_releaseAdmission is not null)
+        {
+            await _releaseAdmission.ApplyAsync(specParams, cancellationToken).ConfigureAwait(false);
+        }
+
+        else if (specParams.ContainsKey(GpProcessReleaseAdmission.ProcessParam))
+        {
+            throw new GeoprocessingValidationException("Process release admission is not configured on this server.");
         }
 
         try

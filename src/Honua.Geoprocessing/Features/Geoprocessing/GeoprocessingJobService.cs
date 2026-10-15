@@ -24,6 +24,7 @@ using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
+using Honua.Geoprocessing.ProcessRelease;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
@@ -133,7 +134,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IPrincipalMembershipSource? principalMembershipSource = null,
         Honua.Core.Features.Operations.Abstractions.IOperationEnvelopeFactory? operationEnvelopeFactory = null,
         ExecutionAdmissionCoordinator? admissionCoordinator = null,
-        IEnumerable<IJobTerminalCallback>? terminalCallbacks = null)
+        IEnumerable<IJobTerminalCallback>? terminalCallbacks = null,
+        GpProcessReleaseAdmission? releaseAdmission = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -164,7 +166,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 operationEnvelopeFactory,
                 admissionCoordinator),
             new CustomCodeJobSubmissionGate(
-                logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier),
+                logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier, releaseAdmission),
             new GeoprocessingJobArtifactService(
                 logger,
                 executorOptions,
@@ -1841,6 +1843,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         string? requiredRuntimeProfile,
         GpResourceProfile resourceProfile)
     {
+        var releasePinned = specParams.ContainsKey(GpProcessReleaseAdmission.ReleaseLockDigestParam);
+        if (releasePinned && (workload is null
+            || workload.TargetKind != BatchComputeTargetKind.AwsBatch
+            || !specParams.ContainsKey(GpProcessReleaseAdmission.AwsBatchJobDefinitionParam)))
+        {
+            throw new GeoprocessingValidationException("The active process release requires a compatible AWS Batch custom-code workload.");
+        }
+
         if (workload == null)
         {
             // The no-registered-workload case (the default) is built through the shared
@@ -1863,6 +1873,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         foreach (var kv in workload.Parameters)
         {
+            // A release owns its code and provider revision. In particular, adding the
+            // workload's tier pool here would make AWS Batch ignore the pinned single ARN.
+            if (GpProcessReleaseAdmission.IsPinnedParameter(kv.Key, specParams))
+            {
+                continue;
+            }
+
             if (requestMetadataKeys.Contains(kv.Key))
             {
                 // The workload definition is authoritative for the parameters it declares: a
@@ -1884,7 +1901,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             Backend = workload.Backend,
             WorkloadId = workload.WorkloadId,
             WorkloadName = workload.WorkloadName,
-            Artifact = workload.ArtifactReference,
+            Artifact = releasePinned
+                ? specParams[GpProcessReleaseAdmission.WorkerImageParam]
+                : workload.ArtifactReference,
             // A catalog-required native profile takes precedence over the workload's
             // declared profile so a native gdal.* step still routes to the GDAL worker;
             // otherwise fall back to the workload's own runtime profile.
@@ -2240,6 +2259,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         => ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerWorkspace)
             && ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput)
             && ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerOutSr)
+            && ScalarControlMatches(stored, requested, GpProcessReleaseAdmission.ProcessParam)
             && OutputSelectionMatches(stored, requested);
 
     private static bool ScalarControlMatches(

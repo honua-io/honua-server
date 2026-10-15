@@ -1,0 +1,63 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Geoprocessing.CustomCode;
+
+namespace Honua.Geoprocessing.ProcessRelease;
+
+/// <summary>
+/// Reads what this server can execute, for activation checks and the binding API's
+/// environment projection: the execution contract version it runs and the target kinds that
+/// have an activatable execution workload registered.
+/// </summary>
+public sealed class GpProcessReleaseEnvironmentResolver
+{
+    private readonly IExecutionJobDefinitionRegistry? _workloads;
+
+    /// <summary>Creates the resolver; without a workload registry no remote target is supported.</summary>
+    public GpProcessReleaseEnvironmentResolver(IExecutionJobDefinitionRegistry? workloads = null)
+    {
+        _workloads = workloads;
+    }
+
+    /// <summary>Resolves the environment facts.</summary>
+    public async Task<GpProcessReleaseEnvironment> ResolveAsync(CancellationToken cancellationToken = default)
+    {
+        var kinds = new List<string>();
+        if (_workloads is not null)
+        {
+            var definitions = await _workloads.ListAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var definition in definitions)
+            {
+                if (definition.Kind != ExecutionJobKind.Geoprocessing
+                    || !string.Equals(definition.RuntimeProfile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var kind = definition.TargetKind switch
+                {
+                    BatchComputeTargetKind.AwsBatch => GpProcessReleaseActivationPolicy.AwsBatchTarget,
+                    BatchComputeTargetKind.KubernetesJob => GpProcessReleaseActivationPolicy.KubernetesJobTarget,
+                    _ => null,
+                };
+                if (kind is not null && !kinds.Contains(kind, StringComparer.Ordinal))
+                {
+                    kinds.Add(kind);
+                }
+            }
+        }
+
+        kinds.Sort(StringComparer.Ordinal);
+        return new GpProcessReleaseEnvironment
+        {
+            ServerContractVersion = CustomCodeJobContract.ContractVersion,
+            SupportedTargetKinds = kinds,
+            // ADR-0063: custom-code execution is AWS-Batch-only; there is no operator switch
+            // that admits custom code to Kubernetes Jobs, so the policy refuses that target.
+            CustomCodeMayUseKubernetes = false,
+        };
+    }
+}
