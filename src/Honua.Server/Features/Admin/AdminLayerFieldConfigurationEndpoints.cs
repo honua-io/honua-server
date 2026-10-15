@@ -345,7 +345,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
     /// Applies updates with the same rules as the field store: alias and domain are replaced,
     /// and a null hidden flag preserves the stored value.
     /// </summary>
-    private static IReadOnlyList<LayerFieldConfiguration> MergeFieldConfigurations(
+    private static List<LayerFieldConfiguration> MergeFieldConfigurations(
         IReadOnlyList<LayerFieldConfiguration> existing,
         IReadOnlyList<LayerFieldConfigurationUpdate> updates)
     {
