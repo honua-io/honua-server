@@ -183,6 +183,48 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
     }
 
     [Fact]
+    public void BuildExtentQuery_ByteaOutputReprojection_EvaluatesGeometryExpressionOnce()
+    {
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, new GeometryProcessor());
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 3857
+        };
+
+        var result = queryBuilder.BuildExtentQuery(
+            layerId: 1,
+            query,
+            Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType.Bytea);
+
+        result.Sql.Should().Contain("WITH extent_rows AS MATERIALIZED (");
+        result.Sql.Should().Contain("ST_GeomFromEWKB(geometry)");
+        result.Sql.Should().Contain("ST_Extent(geom)");
+        result.Sql.Should().Contain("MIN(ST_SRID(geom)) FILTER (WHERE NOT ST_IsEmpty(geom))");
+        result.Sql.Should().Contain("MAX(ST_SRID(geom)) FILTER (WHERE NOT ST_IsEmpty(geom))");
+        result.Sql.Should().Contain("WHERE geom IS NOT NULL");
+        result.Sql.Should().NotContain("ST_Extent(ST_");
+        result.Sql.Should().NotContain("ST_SRID(ST_");
+        result.Sql.Should().NotContain("ST_IsEmpty(ST_");
+        CountOccurrences(result.Sql, " AS geom").Should().Be(1);
+    }
+
+    private static int CountOccurrences(string value, string fragment)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = value.IndexOf(fragment, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += fragment.Length;
+        }
+
+        return count;
+    }
+
+    [Fact]
     public void BuildMvtTileQuery_WithDistanceFilter_AddsGeometryAndDistanceParameters()
     {
         var poolProvider = new DefaultObjectPoolProvider();

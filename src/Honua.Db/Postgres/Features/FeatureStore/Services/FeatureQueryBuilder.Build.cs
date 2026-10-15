@@ -487,16 +487,14 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         var sql = _stringBuilderPool.Get();
         try
         {
+            // PostgreSQL does not fold repeated PostGIS calls. Selecting the decoded or
+            // reprojected geometry once in a materialized CTE keeps ST_Extent and the SRID
+            // aggregates from evaluating that expression up to six times per row (#6070).
             sql.Append(CultureInfo.InvariantCulture, $@"
-            SELECT
-                ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent),
-                min_srid, max_srid
-            FROM (
-                SELECT ST_Extent({extentExpression}) as extent,
-                    MIN(ST_SRID({extentExpression})) FILTER (WHERE NOT ST_IsEmpty({extentExpression})) as min_srid,
-                    MAX(ST_SRID({extentExpression})) FILTER (WHERE NOT ST_IsEmpty({extentExpression})) as max_srid
+            WITH extent_rows AS MATERIALIZED (
+                SELECT {extentExpression} AS geom
                 FROM {_tableName}
-                WHERE {DatabaseSchema.LayerIdColumn} = $1 AND {extentExpression} IS NOT NULL");
+                WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
             var paramIndex = 2;
             var parameters = new List<object>();
@@ -505,7 +503,18 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             AppendTemporalFilter(sql, effectiveQuery, ref paramIndex, parameters);
             AppendSpatialFilter(sql, effectiveQuery, geometryStorageType, ref paramIndex, parameters);
 
-            sql.Append(") AS extent_query");
+            sql.Append(@"
+            )
+            SELECT
+                ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent),
+                min_srid, max_srid
+            FROM (
+                SELECT ST_Extent(geom) as extent,
+                    MIN(ST_SRID(geom)) FILTER (WHERE NOT ST_IsEmpty(geom)) as min_srid,
+                    MAX(ST_SRID(geom)) FILTER (WHERE NOT ST_IsEmpty(geom)) as max_srid
+                FROM extent_rows
+                WHERE geom IS NOT NULL
+            ) AS extent_query");
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
         finally
