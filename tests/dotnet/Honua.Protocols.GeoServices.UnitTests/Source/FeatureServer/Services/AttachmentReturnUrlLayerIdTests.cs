@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
@@ -8,7 +9,8 @@ using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -33,8 +35,14 @@ public sealed class AttachmentReturnUrlLayerIdTests
                     DateTime.UtcNow,
                     "blob")
             }));
-        var context = new DefaultHttpContext();
+        using var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
+            .BuildServiceProvider();
+        using var body = new MemoryStream();
+        var context = new DefaultHttpContext { RequestServices = services };
         context.Request.RouteValues["serviceId"] = "parcels";
+        context.Response.Body = body;
 
         var result = await AttachmentHandler.QueryAttachmentsAsync(
             37,
@@ -49,10 +57,17 @@ public sealed class AttachmentReturnUrlLayerIdTests
             publicLayerId: 0);
 
         await store.Received(1).ListAsync(37, 99L, Arg.Any<CancellationToken>());
-        var ok = result.Should().BeOfType<Ok<AttachmentQueryResponse>>().Subject;
-        ok.Value!.AttachmentGroups.Should().ContainSingle();
-        ok.Value.AttachmentGroups[0].ParentObjectId.Should().Be(7);
-        ok.Value.AttachmentGroups[0].AttachmentInfos.Should().ContainSingle()
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        body.Position = 0;
+        var response = JsonSerializer.Deserialize(
+            body,
+            FeatureServerJsonContext.Default.AttachmentQueryResponse);
+        response.Should().NotBeNull();
+        response!.AttachmentGroups.Should().ContainSingle();
+        response.AttachmentGroups[0].ParentObjectId.Should().Be(7);
+        response.AttachmentGroups[0].AttachmentInfos.Should().ContainSingle()
             .Which.Url.Should().Be("/rest/services/parcels/FeatureServer/0/7/attachments/5");
     }
 }
