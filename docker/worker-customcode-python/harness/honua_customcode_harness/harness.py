@@ -21,6 +21,7 @@ error (bad inputs, clone/verify failure), 3 = job cancelled.
 
 from __future__ import annotations
 
+import os
 import signal
 import sys
 import traceback
@@ -35,10 +36,11 @@ from .context import (
     JobCancelled,
     OutputSink,
     OutputSizeExceeded,
-    _LoggingProgressReporter,
     _StdLogger,
 )
+from .context import Artifact
 from .deps import DepsRestoreError, restore_requirements
+from .events import EVENTS_FILE_NAME, EVENTS_PATH_ENV, EventJournal, attempt_from_env
 from .jobspec import JobSpec, JobSpecError, load_job_spec
 from .loader import EntrypointError, load_entrypoint
 from .sandbox import (
@@ -58,6 +60,10 @@ DEFAULT_SOURCE_ROOT = Path("/work/src")
 DEFAULT_WORKDIR = Path("/work/out")
 
 
+EXIT_STATUS = {EXIT_OK: "succeeded", EXIT_TOOL_FAILED: "failed",
+               EXIT_HARNESS_ERROR: "setupFailed", EXIT_CANCELLED: "cancelled"}
+
+
 def run(
     *,
     env: Mapping[str, str] | None = None,
@@ -73,12 +79,62 @@ def run(
 
     Most collaborators are injectable so the whole flow is testable offline.
     In production the defaults wire to git, pip, the real SDK, and boto3.
+
+    Every run also writes the ``honua.gp.events/v1`` journal (``CUSTOMCODE_EVENTS_PATH``,
+    default ``<workdir>/honua-events.v1.jsonl``). The stderr text is unchanged; the
+    journal is the structured channel beside it, uploaded to ``output_prefix`` after
+    the tool's own artifacts so the server can forward it as bounded job events.
     """
-    log = _StdLogger()
+    resolved_env = os.environ if env is None else env
+    journal = EventJournal(
+        resolved_env.get(EVENTS_PATH_ENV) or (workdir / EVENTS_FILE_NAME),
+        attempt=attempt_from_env(resolved_env), mirror=_StdLogger())
+    state: dict[str, Any] = {"phase": "inputs", "uploader": None}
+    code = EXIT_HARNESS_ERROR
+    try:
+        code = _run_steps(
+            journal, state, env=env, source_root=source_root, workdir=workdir,
+            client_factory=client_factory, uploader_factory=uploader_factory,
+            clone_fn=clone_fn, restore_fn=restore_fn, strip_env=strip_env)
+    except JobCancelled:
+        code = EXIT_CANCELLED
+    finally:
+        journal.terminal(EXIT_STATUS.get(code, "failed"), code,
+                         phase=None if code == EXIT_OK else state["phase"])
+        _upload_events(journal, state["uploader"])
+    return code
+
+
+def _upload_events(journal: EventJournal, uploader: Any) -> None:
+    """Best effort: the journal rides along as a reserved artifact after the tool's own."""
+    if uploader is None:
+        return
+    try:
+        size = journal.path.stat().st_size
+        uploader.upload([Artifact(name=EVENTS_FILE_NAME, path=journal.path, size_bytes=size)])
+    except Exception as exc:  # noqa: BLE001 - evidence upload must not change the job outcome
+        print(f"[tool] WARN  event journal upload failed: {exc}", file=sys.stderr, flush=True)
+
+
+def _run_steps(
+    journal: EventJournal,
+    state: dict[str, Any],
+    *,
+    env: Mapping[str, str] | None,
+    source_root: Path,
+    workdir: Path,
+    client_factory: Any,
+    uploader_factory: Any,
+    clone_fn,
+    restore_fn,
+    strip_env: bool,
+) -> int:
+    log = journal
     cancellation = CancellationToken()
     _install_cancellation_handler(cancellation, log)
 
     # --- 1. Inputs ---------------------------------------------------------
+    journal.phase("inputs")
     try:
         spec = load_job_spec(env)
     except JobSpecError as exc:
@@ -86,6 +142,8 @@ def run(
         return EXIT_HARNESS_ERROR
 
     # --- 2. Pinned source --------------------------------------------------
+    state["phase"] = "source"
+    journal.phase("source")
     try:
         log.info(f"cloning {spec.repo_url} @ {spec.git_ref}")
         clone_fn(spec.repo_url, spec.git_ref, source_root)
@@ -94,6 +152,8 @@ def run(
         return EXIT_HARNESS_ERROR
 
     # --- 3. Restore extra deps (SDK + geo already baked in) ----------------
+    state["phase"] = "dependencies"
+    journal.phase("dependencies")
     try:
         manifest = restore_fn(source_root, spec.deps_manifest)
         if manifest is not None:
@@ -103,6 +163,8 @@ def run(
         return EXIT_HARNESS_ERROR
 
     # --- 4. Scoped client, THEN scrub credentials --------------------------
+    state["phase"] = "client"
+    journal.phase("client")
     try:
         client = build_scoped_client(
             spec.base_url, spec.job_token, client_factory=client_factory
@@ -118,6 +180,8 @@ def run(
         assert_credentials_stripped()
 
     # --- 5. Load entrypoint + run -----------------------------------------
+    state["phase"] = "execute"
+    journal.phase("execute")
     workdir.mkdir(parents=True, exist_ok=True)
     output = OutputSink(max_total_bytes=spec.output_max_bytes)
     context = GpContext(
@@ -125,7 +189,7 @@ def run(
         inputs={},
         client=client,
         output=output,
-        progress=_LoggingProgressReporter(log),
+        progress=journal,
         log=log,
         cancellation=cancellation,
         workdir=workdir,
@@ -142,9 +206,10 @@ def run(
     except JobCancelled as exc:
         log.warn(f"job cancelled: {exc}")
         return EXIT_CANCELLED
-    except Exception:  # noqa: BLE001 - any tool error is a tool failure
+    except Exception as exc:  # noqa: BLE001 - any tool error is a tool failure
         log.warn("tool raised an unhandled exception:")
         log.warn(traceback.format_exc())
+        journal.failure(type(exc).__name__, str(exc), phase="execute")
         return EXIT_TOOL_FAILED
     finally:
         _close_quietly(client)
@@ -152,14 +217,19 @@ def run(
     result = _coerce_result(result, log)
     if not result.ok:
         log.warn(f"tool reported failure: {result.message}")
+        journal.failure("GpResult", result.message or "Tool reported failure.", phase="execute")
         return EXIT_TOOL_FAILED
 
     # --- 6. Upload artifacts ----------------------------------------------
+    state["phase"] = "upload"
+    journal.phase("upload")
     try:
         uploader = _build_uploader(spec, uploader_factory)
+        state["uploader"] = uploader
         uploaded = uploader.upload(output.artifacts)
         for u in uploaded:
             log.info(f"uploaded {u.name} -> {u.uri} ({u.size_bytes} bytes)")
+            journal.artifact(u.name, u.size_bytes, uri=u.uri)
     except OutputSizeExceeded as exc:
         log.warn(f"output cap exceeded: {exc}")
         return EXIT_TOOL_FAILED

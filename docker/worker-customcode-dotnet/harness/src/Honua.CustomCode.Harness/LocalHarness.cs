@@ -21,16 +21,21 @@ public static class LocalHarness
         var runDirectory = UnderRoot(Path.GetFullPath(outputDirectory), runId);
         var workDirectory = UnderRoot(runDirectory, "work");
         Directory.CreateDirectory(workDirectory);
-        using var journal = new LocalJournal(UnderRoot(runDirectory, "events.jsonl"));
+        using var journal = new EventJournal(UnderRoot(runDirectory, "events.jsonl"), attempt: "local");
         var receipt = new JsonObject
         {
-            ["schemaVersion"] = "1.0", ["runId"] = runId, ["entrypoint"] = entrypoint,
-            ["executionMode"] = "local", ["contentClassification"] = "local-development-unsanitized",
-            ["artifacts"] = new JsonArray(), ["events"] = "events.jsonl"
+            ["schemaVersion"] = "1.0",
+            ["runId"] = runId,
+            ["entrypoint"] = entrypoint,
+            ["executionMode"] = "local",
+            ["contentClassification"] = "local-development-unsanitized",
+            ["artifacts"] = new JsonArray(),
+            ["events"] = "events.jsonl",
+            ["eventsSchema"] = EventJournal.Schema
         };
         var phase = "setup";
         var exitCode = Harness.ExitHarnessError;
-        journal.Event(phase);
+        journal.Phase(phase);
         try
         {
             if (parameters.ValueKind != JsonValueKind.Object)
@@ -48,7 +53,7 @@ public static class LocalHarness
             var tool = new EntrypointLoader().Load(Path.GetFullPath(assemblyDirectory), entrypoint);
             var context = new GpContext(parameters, localInputs, null, sink, journal, journal, workDirectory);
             phase = "execute";
-            journal.Event(phase);
+            journal.Phase(phase);
             cancellationToken.ThrowIfCancellationRequested();
             var result = await tool.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
@@ -58,7 +63,7 @@ public static class LocalHarness
             }
 
             phase = "artifacts";
-            journal.Event(phase);
+            journal.Phase(phase);
             long total = 0;
             foreach (var artifact in sink.Artifacts)
             {
@@ -100,9 +105,12 @@ public static class LocalHarness
                 var hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
                 artifacts.Add(new JsonObject
                 {
-                    ["name"] = artifact.Name, ["path"] = "artifacts/" + artifact.Name,
-                    ["sizeBytes"] = stream.Length, ["sha256"] = hash
+                    ["name"] = artifact.Name,
+                    ["path"] = "artifacts/" + artifact.Name,
+                    ["sizeBytes"] = stream.Length,
+                    ["sha256"] = hash
                 });
+                journal.Artifact(artifact.Name, stream.Length, sha256: hash);
             }
 
             receipt["artifacts"] = artifacts;
@@ -120,18 +128,23 @@ public static class LocalHarness
             receipt["status"] = phase == "setup" ? "setupFailed" : "failed";
             receipt["failedPhase"] = phase;
             receipt["error"] = new JsonObject { ["type"] = ex.GetType().Name, ["message"] = Limit(ex.Message, 2000) };
+            journal.Failure(ex.GetType().Name, ex.Message, phase);
             exitCode = phase == "setup" ? Harness.ExitHarnessError : Harness.ExitToolFailed;
         }
 
-        journal.Event(receipt["status"]!.GetValue<string>(), terminal: true);
+        journal.Terminal(receipt["status"]!.GetValue<string>(), exitCode, receipt["failedPhase"]?.GetValue<string>());
         receipt["eventsTruncated"] = journal.Truncated;
+        receipt["eventsDropped"] = journal.Dropped;
         receipt["exitCode"] = exitCode;
         var receiptPath = UnderRoot(runDirectory, "receipt.json");
         await File.WriteAllTextAsync(receiptPath, receipt.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), CancellationToken.None).ConfigureAwait(false);
         Console.WriteLine(new JsonObject
         {
-            ["runId"] = runId, ["status"] = receipt["status"]!.GetValue<string>(), ["receipt"] = receiptPath,
-            ["failedPhase"] = receipt["failedPhase"]?.DeepClone(), ["error"] = receipt["error"]?.DeepClone()
+            ["runId"] = runId,
+            ["status"] = receipt["status"]!.GetValue<string>(),
+            ["receipt"] = receiptPath,
+            ["failedPhase"] = receipt["failedPhase"]?.DeepClone(),
+            ["error"] = receipt["error"]?.DeepClone()
         }.ToJsonString());
         return exitCode;
     }
@@ -198,46 +211,5 @@ public static class LocalHarness
         }
 
         return Path.Join(root, segment);
-    }
-
-    private sealed class LocalJournal(string path) : IProgressReporter, IGpLogger, IDisposable
-    {
-        private readonly StreamWriter _stream = new(path) { AutoFlush = true };
-        private readonly object _gate = new();
-        private int _sequence;
-        public bool Truncated { get; private set; }
-
-        public void Event(string phase, double? percent = null, string? message = null, bool terminal = false)
-        {
-            lock (_gate)
-            {
-                if (_sequence >= 1000 && !terminal)
-                {
-                    Truncated = true;
-                    return;
-                }
-
-                _stream.WriteLine(new JsonObject
-                {
-                    ["sequence"] = _sequence++, ["timestamp"] = DateTimeOffset.UtcNow,
-                    ["phase"] = Limit(phase, 500), ["percentComplete"] = percent,
-                    ["message"] = message is null ? null : Limit(message, 2000)
-                }.ToJsonString());
-            }
-        }
-
-        public void Report(double percent, string phase)
-        {
-            if (!double.IsFinite(percent))
-            {
-                throw new ArgumentOutOfRangeException(nameof(percent));
-            }
-
-            Event(phase, Math.Clamp(percent, 0, 100));
-        }
-
-        public void Info(string message) => Event("log", message: message);
-        public void Warn(string message) => Event("warning", message: message);
-        public void Dispose() => _stream.Dispose();
     }
 }
