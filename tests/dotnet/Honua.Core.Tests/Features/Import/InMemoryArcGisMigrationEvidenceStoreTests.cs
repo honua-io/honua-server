@@ -144,6 +144,25 @@ public sealed class InMemoryArcGisMigrationEvidenceStoreTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task SaveManifestAsync_AfterParity_ClearsStaleVerdict()
+    {
+        // #6180: a later manifest must not keep the previous run's pass.
+        var store = new InMemoryArcGisMigrationEvidenceStore();
+        await store.SaveManifestAsync(NewRecord("run-1", "https://example.com/v1"), BuildManifest(targetCount: 1));
+        await store.SaveParityAsync("run-1", BuildParity(ArcGisMigrationParityClassifications.Pass));
+
+        await store.SaveManifestAsync(NewRecord("run-1", "https://example.com/v2"), BuildManifest(targetCount: 4));
+
+        var list = await store.ListAsync(new ArcGisMigrationRunFilter());
+        list.Items.Should().ContainSingle();
+        list.Items[0].Status.Should().Be(ArcGisMigrationRunStatuses.ManifestOnly);
+        list.Items[0].HasParity.Should().BeFalse();
+        list.Items[0].TargetResourceCount.Should().Be(4);
+        (await store.GetParityAsync("run-1")).Should().BeNull();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task SaveManifestAsync_Twice_IsIdempotentUpsert()
     {
         var store = new InMemoryArcGisMigrationEvidenceStore();

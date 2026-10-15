@@ -87,9 +87,11 @@ public class LimitsOptions
     public ConnectionLimits Connections { get; set; } = new();
 
     /// <summary>
-    /// File import limits.
+    /// Upload and preview size ceilings from <c>Limits:Imports:*</c>. The import pipeline
+    /// reads <c>Import:Limits:*</c> into <see cref="Honua.Core.Features.Import.Domain.ImportLimits"/>,
+    /// which is a different type (#3346).
     /// </summary>
-    public ImportLimits Imports { get; set; } = new();
+    public ImportSizeLimits Imports { get; set; } = new();
 
     /// <summary>
     /// Spatial analytics limits.
