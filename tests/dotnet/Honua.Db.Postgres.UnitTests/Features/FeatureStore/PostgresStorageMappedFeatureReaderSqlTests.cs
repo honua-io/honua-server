@@ -457,6 +457,8 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
 
         var sql = sqlBuilder!.ToString();
         sql.Should().Contain("HAVING COUNT(NULLIF((\"objectid\")::text, '')::numeric) > $1");
+        var parameters = (IReadOnlyList<object?>)sqlBuilderType!.GetProperty("Parameters")!.GetValue(sqlBuilder)!;
+        parameters[0].Should().Be(0d);
         sql.Should().Contain("ORDER BY COUNT(NULLIF((\"objectid\")::text, '')::numeric) DESC");
         sql.Should().Contain("LIMIT $2 OFFSET $3");
     }

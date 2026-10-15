@@ -22,11 +22,17 @@ internal static class FilterParserGuard
     // cannot pin down the heap or slow down comparison loops.
     internal const int MaxStringLiteralLength = 64 * 1024;       // 64 KiB per literal
     internal const int MaxIdentifierLength = 256;                // conservative for all backends
-    internal const int MaxInListSize = 10_000;                   // 10k elements per IN(...) list
+
+    // SQL Server rejects a statement above 2100 parameters. objectIds above 2000 are
+    // bound as one JSON parameter; a where IN-list is one parameter per value, so the
+    // same 2000 budget is a client error here instead of a provider 500. The leftover
+    // parameters cover paging and the rest of the statement.
+    internal const int MaxInListSize = 2_000;
 
     // Cap on the size of a parsed expression tree, counted the way recursive walks visit
-    // it (a subtree shared by several parents counts once per reference). Ten full
-    // IN-lists; applies to parser output only, never to server-built expressions.
+    // it (a subtree shared by several parents counts once per reference). Ten IN-list
+    // budgets; applies to parser output only, never to server-built expressions.
+    // IN values themselves share MaxInListSize across the whole expression.
     internal const int MaxExpressionNodes = 10 * MaxInListSize;
 
     public static void EnsureExpressionDepth(int depth)
@@ -54,7 +60,42 @@ internal static class FilterParserGuard
     // depth counters track syntactic nesting only, while folded operator sequences
     // (logical, arithmetic, concatenation) deepen the tree without nesting the input.
     public static void EnsureExpressionTree(FilterExpression expression)
-        => FilterExpressionNormalizer.EnsureWithinBounds(expression, MaxExpressionNodes);
+    {
+        FilterExpressionNormalizer.EnsureWithinBounds(expression, MaxExpressionNodes);
+        EnsureAggregateInListValues(expression);
+    }
+
+    // Each IN/NOT IN value is its own SQL parameter. A single list is already capped;
+    // several lists in one expression share that budget so the statement stays under
+    // the strictest provider parameter limit.
+    private static void EnsureAggregateInListValues(FilterExpression expression)
+    {
+        var total = 0;
+        var stack = new Stack<FilterExpression>();
+        stack.Push(expression);
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (current is BinaryExpression
+                {
+                    Operator: BinaryOperator.In or BinaryOperator.NotIn,
+                    Right: ValueList values
+                })
+            {
+                total += values.Values.Count;
+                if (total > MaxInListSize)
+                {
+                    throw new ArgumentException(
+                        $"Filter IN-lists exceed the maximum of {MaxInListSize} values.");
+                }
+            }
+
+            foreach (var child in FilterExpressionNormalizer.EnumerateChildren(current))
+            {
+                stack.Push(child);
+            }
+        }
+    }
 
     // Rejects NaN and ±Infinity from numeric literals. `double.TryParse(... Float ...)`
     // silently returns Infinity for exponent overflow (e.g. "1e999") and accepts the

@@ -125,6 +125,7 @@ public sealed class FilterExpressionServiceParseBoundsTests
     {
         { FilterLanguage.Cql2Json, $$"""{"op":"=","args":[{"property":"name"},"{{TextAtLimit}}"]}""" },
         { FilterLanguage.Cql2Json, $$"""{"op":"=","args":[{"property":"{{NameAtLimit}}"},"a"]}""" },
+        { FilterLanguage.ArcGisSql, $"name IN ({Values(FilterParserGuard.MaxInListSize)})" },
         { FilterLanguage.Cql2Json, $$"""{"op":"in","args":[{"property":"name"},[{{Values(FilterParserGuard.MaxInListSize)}}]]}""" },
         { FilterLanguage.Cql2Json, $$"""{"op":"=","args":[{"op":"f","args":[{{Values(FilterParserGuard.MaxInListSize)}}]},1]}""" },
         { FilterLanguage.Cql2Text, $"A_CONTAINS(tags, ({Values(FilterParserGuard.MaxInListSize)}))" },
@@ -138,6 +139,32 @@ public sealed class FilterExpressionServiceParseBoundsTests
     public void Parse_InputAtParserLimits_ReturnsExpression(FilterLanguage language, string filter)
     {
         var result = _service.Parse(language, filter);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Expression.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void Parse_ArcGisSqlInListsBeyondSharedBudget_ReturnsFailure()
+    {
+        var half = (FilterParserGuard.MaxInListSize / 2) + 1;
+        var filter = $"name IN ({Values(half)}) OR kind IN ({Values(half)})";
+
+        var result = _service.Parse(FilterLanguage.ArcGisSql, filter);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Expression.Should().BeNull();
+        result.ErrorMessage.Should().Contain(
+            $"maximum of {FilterParserGuard.MaxInListSize.ToString(CultureInfo.InvariantCulture)} values");
+    }
+
+    [UnitTest]
+    public void Parse_ArcGisSqlInListsWithinSharedBudget_ReturnsExpression()
+    {
+        var half = FilterParserGuard.MaxInListSize / 2;
+        var filter = $"name IN ({Values(half)}) OR kind IN ({Values(half)})";
+
+        var result = _service.Parse(FilterLanguage.ArcGisSql, filter);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         result.Expression.Should().NotBeNull();
