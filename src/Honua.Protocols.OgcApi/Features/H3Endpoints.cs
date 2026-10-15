@@ -89,7 +89,9 @@ internal static class H3Endpoints
             context,
             collectionId,
             cancellationToken: cancellationToken,
-            requiredProtocol: OgcFeaturesProtocolName);
+            requiredProtocol: OgcFeaturesProtocolName,
+            preferExactPublicationId: true,
+            preferAdvertisedCollectionId: true);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;

@@ -1568,36 +1568,59 @@ internal static partial class TilesEndpoints
         out MetadataV2Service? service)
     {
         service = null;
-        foreach (var publication in snapshot.Graph.Publications)
+        var selected = SelectTileCollectionPublication(
+            context,
+            snapshot,
+            requireProtocol,
+            publication => string.Equals(
+                LayerValidationHelpers.AdvertisedCollectionId(publication, snapshot.ResolveResource(publication)),
+                collectionId,
+                StringComparison.OrdinalIgnoreCase));
+        selected ??= SelectTileCollectionPublication(
+            context,
+            snapshot,
+            requireProtocol,
+            publication => string.Equals(publication.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase));
+        selected ??= SelectTileCollectionPublication(
+            context,
+            snapshot,
+            requireProtocol,
+            publication => MatchesCollectionId(snapshot, publication, collectionId));
+        if (selected is null ||
+            !snapshot.Index.ServicesById.TryGetValue(selected.ServiceId, out service))
         {
-            if (!MatchesCollectionId(snapshot, publication, collectionId))
-            {
-                continue;
-            }
-
-            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidateService))
-            {
-                continue;
-            }
-
-            if (requireProtocol &&
-                !MetadataV2ServiceProtocols.IsProtocolEnabled(candidateService, OgcApiTilesProtocol))
-            {
-                continue;
-            }
-
-            var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication) ||
-                !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, candidateService))
-            {
-                continue;
-            }
-
-            service = candidateService;
-            return publication;
+            return null;
         }
 
-        return null;
+        return selected;
+    }
+
+    private static MetadataV2Publication? SelectTileCollectionPublication(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        bool requireProtocol,
+        Func<MetadataV2Publication, bool> matches)
+    {
+        return LayerValidationHelpers.SelectMatchingCollectionPublication(
+            snapshot.Graph.Publications,
+            matches,
+            publication =>
+            {
+                if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidateService))
+                {
+                    return false;
+                }
+
+                var resource = snapshot.ResolveResource(publication);
+                return snapshot.IsRoutable(publication) &&
+                    TenantScopeHelpers.IsPublicationVisible(context, publication, resource, candidateService);
+            },
+            publication => !requireProtocol ||
+                (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidateService) &&
+                 MetadataV2ServiceProtocols.IsProtocolEnabled(candidateService, OgcApiTilesProtocol)),
+            publication => MetadataV2ServiceProtocols.IsPreferredPublicationType(
+                OgcApiTilesProtocol,
+                publication.PublicationType));
     }
 
     private static bool MatchesCollectionId(

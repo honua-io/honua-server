@@ -95,7 +95,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 context,
                 collectionId,
                 requiredProtocol: OgcFeaturesProtocolName,
-                cancellationToken: cancellationToken);
+                cancellationToken: cancellationToken,
+                preferExactPublicationId: true,
+                preferAdvertisedCollectionId: true);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
@@ -624,7 +626,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 context,
                 collectionId,
                 requiredProtocol: OgcFeaturesProtocolName,
-                cancellationToken: cancellationToken);
+                cancellationToken: cancellationToken,
+                preferExactPublicationId: true,
+                preferAdvertisedCollectionId: true);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
