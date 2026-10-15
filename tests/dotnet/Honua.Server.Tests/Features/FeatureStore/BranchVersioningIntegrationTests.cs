@@ -605,6 +605,60 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         FieldValue(rows.Items.Single(f => f.Id == feature.Id), "status").Should().Be("ancestor");
     }
 
+    [Fact]
+    public async Task Reconcile_UncommittedDefaultEdit_SurfacesOnPostInsteadOfSkippingGeneration()
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+
+        var feature = await store.CreateAsync(
+            PointsLayerId, BuildFeature("ancestor", 14.0, 14.0), CancellationToken.None);
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest("InFlightDefault", "sde", VersionAccess.Public), CancellationToken.None);
+
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(BuildFeature("branch", 14.5, 14.5, feature.Id)),
+                versionContext: VersionContext.ForVersion(version)),
+            CancellationToken.None);
+
+        await using var held = await OpenSchemaConnectionAsync();
+        await using var heldTransaction = await held.BeginTransactionAsync();
+        await using (var update = new NpgsqlCommand(
+            """
+            UPDATE features
+            SET attributes = jsonb_set(COALESCE(attributes, '{}'::jsonb), '{name}', '"inflight"'::jsonb)
+            WHERE layer_id = @layer AND objectid = @id
+            """,
+            held,
+            heldTransaction))
+        {
+            update.Parameters.AddWithValue("layer", PointsLayerId);
+            update.Parameters.AddWithValue("id", feature.Id);
+            (await update.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+
+        var whileOpen = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
+        whileOpen.CanPost.Should().BeTrue("the uncommitted DEFAULT edit is not visible to reconcile");
+
+        await heldTransaction.CommitAsync();
+
+        var post = await versionManager.PostAsync(version.VersionId, CancellationToken.None);
+        post.Posted.Should().BeFalse();
+        post.BlockedByConflicts.Should().BeTrue();
+
+        var pending = await versionManager.GetPendingConflictsAsync(version.VersionId, CancellationToken.None);
+        pending.Should().Contain(conflict => conflict.ObjectId == feature.Id);
+
+        var again = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
+        again.CanPost.Should().BeFalse();
+        again.Conflicts.Should().Contain(conflict => conflict.ObjectId == feature.Id);
+
+        var stored = await store.QueryAsync(PointsLayerId, new FeatureQuery(), CancellationToken.None);
+        NameOf(stored.Items.Single(item => item.Id == feature.Id)).Should().Be("inflight");
+    }
+
     private static string NameOf(Feature feature)
         => feature.Attributes.TryGetValue("name", out var value) ? value?.ToString() ?? string.Empty : string.Empty;
 

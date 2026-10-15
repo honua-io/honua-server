@@ -84,7 +84,9 @@ internal sealed partial class PostgresVersionManager
         await SetVersionStateAsync(versionId, VersionState.Reconciling, cancellationToken).ConfigureAwait(false);
         try
         {
-            var currentGeneration = await GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
+            // The visible generation and the overlap scan share one REPEATABLE READ snapshot.
+            // last_value includes nextval calls from transactions that have not committed, so advancing
+            // the ancestor to it skips those DEFAULT edits forever (#6139).
             var analysis = await AnalyzeOverlapsAsync(versionId, version.CommonAncestorGeneration, detection, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -116,7 +118,7 @@ internal sealed partial class PostgresVersionManager
             await PersistConflictsAndAdvanceAsync(
                 versionId,
                 unresolved,
-                canPost ? currentGeneration : (long?)null,
+                canPost ? analysis.VisibleGeneration : (long?)null,
                 cancellationToken).ConfigureAwait(false);
 
             activity?.SetTag("honua.version.conflict_count", unresolved.Count);
@@ -128,7 +130,7 @@ internal sealed partial class PostgresVersionManager
             return new VersionReconcileResult(
                 canPost ? ImmutableArray<VersionReconcileConflict>.Empty : unresolved.ToImmutable(),
                 CanPost: canPost,
-                NewCommonAncestorGeneration: canPost ? currentGeneration : version.CommonAncestorGeneration,
+                NewCommonAncestorGeneration: canPost ? analysis.VisibleGeneration : version.CommonAncestorGeneration,
                 AutoResolvedCount: autoResolved);
         }
         finally
@@ -242,6 +244,11 @@ internal sealed partial class PostgresVersionManager
             // divergent keys here so the caller must reconcile again instead of clobbering (#2063).
             if (replay.Conflicted)
             {
+                // The replay transaction has already rolled back. Persist the drifted keys as pending
+                // conflicts on a new connection so the block is visible and a later reconcile, whose
+                // ancestor did not skip the in-flight generation, can refresh the same rows (#6139).
+                await PersistDriftBlockedConflictsAsync(versionId, replay.ConflictingKeys, cancellationToken)
+                    .ConfigureAwait(false);
                 activity?.SetTag("honua.version.conflict_count", replay.ConflictingKeys.Count);
                 activity?.SetTag("honua.version.outcome", "blocked_by_default_drift");
                 activity?.SetStatus(ActivityStatusCode.Ok);
@@ -442,18 +449,11 @@ internal sealed partial class PostgresVersionManager
         return await ReadSingleAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken)
-    {
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand("SELECT last_value FROM honua.sync_generation", connection);
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is long gen ? gen : 0;
-    }
-
     /// <summary>
     /// Loads the three-way (base/DEFAULT/version) images for every overlay row that shadows an
     /// (layer_id, objectid) DEFAULT also changed since the merge base, classifies each as a genuine
-    /// conflict or an auto-mergeable disjoint-field edit, and returns both sets.
+    /// conflict or an auto-mergeable disjoint-field edit, and returns both sets plus the committed
+    /// generation visible to that same snapshot.
     /// </summary>
     private async Task<OverlapAnalysis> AnalyzeOverlapsAsync(
         Guid versionId,
@@ -462,7 +462,26 @@ internal sealed partial class PostgresVersionManager
         CancellationToken cancellationToken)
     {
         var featuresTable = DatabaseSchema.GetFeaturesTableName(_schemaName);
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // OpenTransactionAsync sets search_path before BEGIN, so the first statement starts the snapshot.
+        var (txConnection, dbTransaction) = await _connectionProvider
+            .OpenTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken)
+            .ConfigureAwait(false);
+        await using var txScope = txConnection;
+        var connection = txConnection.RequireNpgsqlConnection();
+        var transaction = (NpgsqlTransaction)dbTransaction;
+        await using var transactionScope = transaction;
+
+        // Committed watermark. Rolled-back nextval leaves holes in last_value, so a gap below last_value
+        // is not proof of an in-flight write. Migration 067 holds pg_advisory_xact_lock across commit,
+        // which makes this MAX gap-free for feature_changes (#6139, same rule as PostgresChangeTracker).
+        long visibleGeneration;
+        await using (var generationCommand = new NpgsqlCommand(
+            "SELECT COALESCE(MAX(generation), 0) FROM honua.feature_changes", connection)
+        { Transaction = transaction })
+        {
+            var result = await generationCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            visibleGeneration = result is long generation ? generation : 0;
+        }
 
         // default_changes: the net DEFAULT operation per (layer_id, objectid) since the merge base.
         // For each overlapping overlay row, join the live DEFAULT row (NULL when DEFAULT deleted it) and
@@ -486,7 +505,8 @@ internal sealed partial class PostgresVersionManager
             JOIN default_changes dc ON dc.layer_id = ve.layer_id AND dc.objectid = ve.objectid
             LEFT JOIN {featuresTable} f ON f.layer_id = ve.layer_id AND f.objectid = ve.objectid
             WHERE ve.version_id = @version
-            """, connection);
+            """, connection)
+        { Transaction = transaction };
         command.Parameters.AddWithValue("ancestor", commonAncestorGen);
         command.Parameters.AddWithValue("version", versionId);
 
@@ -574,7 +594,66 @@ internal sealed partial class PostgresVersionManager
                 baseAttrs, defaultAttrs, versionAttrs, baseGeom, defaultGeom, versionGeom, fieldDiffs));
         }
 
-        return new OverlapAnalysis(conflicts, merges);
+        return new OverlapAnalysis(conflicts, merges, visibleGeneration);
+    }
+
+    /// <summary>
+    /// Records post-time DEFAULT drift as pending conflicts after the replay transaction has rolled
+    /// back. A re-reconcile deletes status 0 and rewrites the set, so this row is what the caller
+    /// sees until that refresh, and only stays if the ancestor still covers the drifted generation.
+    /// </summary>
+    private async Task PersistDriftBlockedConflictsAsync(
+        Guid versionId,
+        IReadOnlyList<(int LayerId, long ObjectId)> keys,
+        CancellationToken cancellationToken)
+    {
+        if (keys.Count == 0)
+        {
+            return;
+        }
+
+        var featuresTable = DatabaseSchema.GetFeaturesTableName(_schemaName);
+        var layers = new int[keys.Count];
+        var objectIds = new long[keys.Count];
+        for (var i = 0; i < keys.Count; i++)
+        {
+            layers[i] = keys[i].LayerId;
+            objectIds[i] = keys[i].ObjectId;
+        }
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand($"""
+            INSERT INTO honua.version_conflicts
+                (version_id, layer_id, objectid, conflict_type, status,
+                 base_attributes, default_attributes, version_attributes,
+                 base_geometry_wkt, default_geometry_wkt, version_geometry_wkt)
+            SELECT ve.version_id, ve.layer_id, ve.objectid, @type, 0,
+                   ve.base_attributes, f.attributes, ve.attributes,
+                   ST_AsText(ve.base_geometry), ST_AsText(f.geometry), ST_AsText(ve.geometry)
+            FROM honua.version_edits ve
+            LEFT JOIN {featuresTable} f
+              ON f.layer_id = ve.layer_id AND f.objectid = ve.objectid
+            JOIN unnest(@layers::int[], @oids::bigint[]) AS drifted(layer_id, objectid)
+              ON drifted.layer_id = ve.layer_id AND drifted.objectid = ve.objectid
+            WHERE ve.version_id = @version
+              AND NOT EXISTS (
+                  SELECT 1 FROM honua.version_conflicts pending
+                  WHERE pending.version_id = ve.version_id
+                    AND pending.layer_id = ve.layer_id
+                    AND pending.objectid = ve.objectid
+                    AND pending.status = 0)
+            """, connection);
+        command.Parameters.AddWithValue("type", (short)ReplicaConflictType.Attribute);
+        command.Parameters.AddWithValue("version", versionId);
+        command.Parameters.Add(new NpgsqlParameter("layers", NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Integer)
+        {
+            Value = layers,
+        });
+        command.Parameters.Add(new NpgsqlParameter("oids", NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Bigint)
+        {
+            Value = objectIds,
+        });
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1072,7 +1151,8 @@ internal sealed partial class PostgresVersionManager
 
     private sealed record OverlapAnalysis(
         IReadOnlyList<OverlapConflict> Conflicts,
-        IReadOnlyList<FieldMerge> AutoMerges);
+        IReadOnlyList<FieldMerge> AutoMerges,
+        long VisibleGeneration);
 
     private sealed record OverlapConflict(
         int LayerId,
