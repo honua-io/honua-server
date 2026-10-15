@@ -70,15 +70,16 @@ public sealed class PgRoutingServiceAreaBreakTests
             CancellationToken cancellationToken = default)
         {
             Sql.Add(sql);
-            if (sql.Contains("ways_vertices_pgr", StringComparison.Ordinal))
-            {
-                return Task.FromResult<T?>(rowMapper(new ScriptedRow([1L])));
-            }
-
+            // The concave-hull query joins ways_vertices_pgr, so match it before the snap.
             if (sql.Contains("pgr_drivingDistance", StringComparison.Ordinal))
             {
                 return Task.FromResult<T?>(rowMapper(new ScriptedRow(
                     ["{\"type\":\"Polygon\",\"coordinates\":[[[0,0],[1,0],[1,1],[0,0]]]}"])));
+            }
+
+            if (sql.Contains("ways_vertices_pgr", StringComparison.Ordinal))
+            {
+                return Task.FromResult<T?>(rowMapper(new ScriptedRow([1L])));
             }
 
             throw new InvalidOperationException("Unexpected routing SQL: " + sql);
