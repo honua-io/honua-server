@@ -865,7 +865,8 @@ internal static partial class WmsRequestHandlers
     /// Parses one WMS FILTER token against the layer's public schema. Unknown properties,
     /// namespaced ValueReferences, and literals the field cannot hold are client errors
     /// (<c>InvalidParameterValue</c>), matching WFS (#6183). Publisher-hidden fields are
-    /// not part of that schema (#6098).
+    /// not part of that schema (#6098). A geometry literal with no <c>srsName</c> uses
+    /// this layer's storage CRS rather than EPSG:4326 (#6184).
     /// </summary>
     internal static (SqlFragment? Filter, IResult? Error) TranslateWmsLayerFilter(
         HttpContext context,
@@ -876,7 +877,9 @@ internal static partial class WmsRequestHandlers
         FilterExpression expression;
         try
         {
-            expression = Fes20Parser.ParseFilter(token);
+            // Per layer: one FILTER token can apply to several layers with different CRSs.
+            var defaultSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+            expression = Fes20Parser.ParseFilter(token, defaultSrid);
         }
         catch (Fes20ParseException ex)
         {

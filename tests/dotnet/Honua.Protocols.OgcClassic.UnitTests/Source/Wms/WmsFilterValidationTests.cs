@@ -92,6 +92,43 @@ public sealed class WmsFilterValidationTests
     [Operation(Operations.Wms)]
     [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public void GeometryWithoutSrsName_UsesLayerCrs()
+    {
+        const string filter =
+            "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\" xmlns:gml=\"http://www.opengis.net/gml/3.2\">" +
+            "<fes:BBOX><fes:ValueReference>shape</fes:ValueReference>" +
+            "<gml:Envelope><gml:lowerCorner>-1000 -1000</gml:lowerCorner><gml:upperCorner>1000 1000</gml:upperCorner></gml:Envelope>" +
+            "</fes:BBOX></fes:Filter>";
+
+        var (parsed, error) = Translate(filter, Layer(3857));
+
+        error.Should().BeNull();
+        parsed.Should().NotBeNull();
+        GeometrySrid(_translated).Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public void GeometryWithSrsName_KeepsDeclaredCrs()
+    {
+        const string filter =
+            "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\" xmlns:gml=\"http://www.opengis.net/gml/3.2\">" +
+            "<fes:BBOX><fes:ValueReference>shape</fes:ValueReference>" +
+            "<gml:Envelope srsName=\"EPSG:4326\"><gml:lowerCorner>0 0</gml:lowerCorner><gml:upperCorner>1 1</gml:upperCorner></gml:Envelope>" +
+            "</fes:BBOX></fes:Filter>";
+
+        var (_, error) = Translate(filter, Layer(3857));
+
+        error.Should().BeNull();
+        GeometrySrid(_translated).Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task HiddenField_IsRejectedAsUnknown()
     {
         var (status, body) = await TranslateAsync(HiddenFieldFilter);
@@ -102,6 +139,9 @@ public sealed class WmsFilterValidationTests
     }
 
     private (SqlFragment? Filter, IResult? Error) Translate(string filter)
+        => Translate(filter, Layer(null));
+
+    private (SqlFragment? Filter, IResult? Error) Translate(string filter, MetadataV2Resource resource)
     {
         var context = new DefaultHttpContext
         {
@@ -111,8 +151,14 @@ public sealed class WmsFilterValidationTests
         return WmsRequestHandlers.TranslateWmsLayerFilter(
             context,
             new FilterExpressionService(new FilterExpressionTranslator(_sql)),
-            Layer(),
+            resource,
             filter);
+    }
+
+    private static int GeometrySrid(FilterExpression? expression)
+    {
+        var spatial = expression.Should().BeOfType<SpatialPredicate>().Subject;
+        return spatial.Right.Should().BeOfType<GeometryLiteral>().Subject.Srid;
     }
 
     private async Task<(int Status, string Body)> TranslateAsync(string filter)
@@ -130,11 +176,24 @@ public sealed class WmsFilterValidationTests
         return (httpContext.Response.StatusCode, await reader.ReadToEndAsync());
     }
 
-    private static MetadataV2Resource Layer()
+    private static MetadataV2Resource Layer(int? srid)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-0", Name = "Test Layer" },
             Type = MetadataV2ResourceType.FeatureDataset,
+            Spatial = srid is null
+                ? null
+                : new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = new MetadataV2SpatialReference
+                    {
+                        Srid = srid.Value,
+                        Crs = $"EPSG:{srid.Value}",
+                        IsGeographic = srid.Value == 4326
+                    },
+                    GeometryType = MetadataV2GeometryType.Point,
+                    PrimaryGeometryField = "shape"
+                },
             SchemaFields =
             [
                 new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Hidden = true },
