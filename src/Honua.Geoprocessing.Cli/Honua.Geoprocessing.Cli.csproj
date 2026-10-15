@@ -55,4 +55,17 @@
     <InternalsVisibleTo Include="Honua.Geoprocessing.Cli.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      `honua-gp-devkit init` (#6217) copies the honua-samples GP templates byte for byte.
+      They are embedded here together with their TEMPLATE-MANIFEST.json (per-file SHA-256),
+      which GpCustomProjectScaffolder.VerifyEmbedded checks, so drift between the devkit and
+      honua-samples trunk is a test failure, not a surprise. Keep the resource names as the
+      template-relative paths.
+    -->
+    <Compile Remove="Templates\**" />
+    <None Remove="Templates\**" />
+    <EmbeddedResource Include="Templates\**\*" LogicalName="Templates/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

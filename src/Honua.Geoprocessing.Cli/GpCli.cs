@@ -1,9 +1,10 @@
-using System.Text.Json;
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
@@ -59,6 +60,7 @@ public static class GpCli
                 "test" => await RunTest(rest).ConfigureAwait(false),
                 "plan" => await RunPlan(rest).ConfigureAwait(false),
                 "new" => await RunNew(rest).ConfigureAwait(false),
+                "init" => RunInit(rest),
                 "publish" => await RunPublish(rest).ConfigureAwait(false),
                 "release" => GpReleaseCommand.Run(rest, Console.Out, Console.Error),
                 "-h" or "--help" or "help" => PrintUsageAndOk(),
@@ -142,25 +144,34 @@ public static class GpCli
 
     private static int RunList(string[] args)
     {
-        if (args.Any(arg => arg != "--json"))
+        if (args.Any(arg => arg is not ("--json" or "--probe-container")))
         {
-            throw new GpCliUsageException("Usage: honua-gp-devkit list [--json]");
+            throw new GpCliUsageException("Usage: honua-gp-devkit list [--json] [--probe-container]");
         }
 
         using var provider = BuildProvider();
         var executors = ResolveExecutors(provider);
         var runner = new GeoprocessingLocalRunner(executors);
         var catalog = provider.GetService<IProcessCatalog>();
+        var probe = BuildProbe(args.Contains("--probe-container", StringComparer.Ordinal));
 
-        if (args.Length > 0)
+        if (args.Contains("--json", StringComparer.Ordinal))
         {
             var definitions = new JsonArray();
             foreach (var id in runner.AvailableProcessIds)
             {
                 var definition = catalog?.GetProcess(id);
-                definitions.Add(definition is null
-                    ? new JsonObject { ["id"] = id, ["dependenciesVerified"] = false }
-                    : JsonNode.Parse(GpDescribeRenderer.RenderJson(definition)));
+                var runnability = GpRunnabilityAssessor.Assess(definition, id, ExecutorProfile(executors, id), probe);
+                if (definition is null)
+                {
+                    var bare = new JsonObject { ["id"] = id, ["dependenciesVerified"] = false };
+                    runnability.WriteTo(bare);
+                    definitions.Add(bare);
+                }
+                else
+                {
+                    definitions.Add(JsonNode.Parse(GpDescribeRenderer.RenderJson(definition, runnability)));
+                }
             }
 
             Console.WriteLine(definitions.ToJsonString());
@@ -168,20 +179,62 @@ public static class GpCli
         }
 
         Console.WriteLine("Available geoprocessing processes:");
+        Console.WriteLine("  (registered; [mode] or [mode, blocked: <prerequisite>] says whether it can run here)");
         foreach (var id in runner.AvailableProcessIds)
         {
             var def = catalog?.GetProcess(id);
-            if (def is not null)
-            {
-                Console.WriteLine($"  {id,-32} {def.Title}");
-            }
-            else
-            {
-                Console.WriteLine($"  {id}");
-            }
+            var runnability = GpRunnabilityAssessor.Assess(def, id, ExecutorProfile(executors, id), probe);
+            var verdict = runnability.RunnableHere ? runnability.ExecutionModeLabel : $"{runnability.ExecutionModeLabel}, blocked: {runnability.BlockedBy}";
+            Console.WriteLine(def is not null ? $"  {id,-32} {def.Title,-48} [{verdict}]" : $"  {id,-32} {"",-48} [{verdict}]");
         }
 
         return 0;
+    }
+
+    /// <summary>The runtime profile the registered executor for <paramref name="processId"/> accepts.</summary>
+    private static string? ExecutorProfile(IEnumerable<IProcessExecutor> executors, string processId)
+    {
+        var executor = executors.FirstOrDefault(e => e.ProcessIds.Contains(processId, StringComparer.Ordinal));
+        if (executor is null)
+        {
+            return null;
+        }
+
+        return executor.AcceptedRuntimeProfiles.Contains(RuntimeProfiles.Native) ? RuntimeProfiles.Native
+            : executor.AcceptedRuntimeProfiles.Contains(CustomCodeJobContract.RuntimeProfile) ? CustomCodeJobContract.RuntimeProfile
+            : null;
+    }
+
+    /// <summary>
+    /// The machine facts runnability is judged against. The container probe shells out to
+    /// the container runtime, so it runs only on request (or when a run already resolved it).
+    /// </summary>
+    private static GpEnvironmentProbe BuildProbe(bool probeContainer, bool? knownImageAvailability = null)
+    {
+        var configuration = GpContainerConfiguration.Create();
+        var image = configuration["GdalContainer:Image"]!;
+        if (knownImageAvailability is { } known)
+        {
+            return new GpEnvironmentProbe(known, image);
+        }
+
+        if (!probeContainer)
+        {
+            return new GpEnvironmentProbe(null, image);
+        }
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        bool available;
+        try
+        {
+            available = GdalContainerProbe.IsImageAvailableAsync(image, configuration["GdalContainer:DockerExecutable"]!, timeout.Token).GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException)
+        {
+            available = false;
+        }
+
+        return new GpEnvironmentProbe(available, image);
     }
 
     private static async Task<int> RunDoctor(string[] args)
@@ -247,13 +300,20 @@ public static class GpCli
 
         var processId = args[0];
         var asJson = false;
+        var probeContainer = false;
         for (var i = 1; i < args.Length; i++)
         {
-            asJson = args[i] switch
+            switch (args[i])
             {
-                "--json" or "-j" => true,
-                _ => throw new GpCliUsageException($"Unknown option '{args[i]}'."),
-            };
+                case "--json" or "-j":
+                    asJson = true;
+                    break;
+                case "--probe-container":
+                    probeContainer = true;
+                    break;
+                default:
+                    throw new GpCliUsageException($"Unknown option '{args[i]}'.");
+            }
         }
 
         // Resolve from the SAME live catalog `list`/`run`/`plan` use, so a described
@@ -271,9 +331,10 @@ public static class GpCli
                 $"Process id '{processId}' is not registered. Run 'honua gp list' to see available processes.");
         }
 
+        var runnability = GpRunnabilityAssessor.Assess(definition, processId, ExecutorProfile(ResolveExecutors(provider), processId), BuildProbe(probeContainer));
         Console.WriteLine(asJson
-            ? GpDescribeRenderer.RenderJson(definition)
-            : GpDescribeRenderer.RenderText(definition));
+            ? GpDescribeRenderer.RenderJson(definition, runnability)
+            : GpDescribeRenderer.RenderText(definition, runnability));
         return 0;
     }
 
@@ -304,6 +365,20 @@ public static class GpCli
         var inputs = new Dictionary<string, string>(parsed.Params, StringComparer.Ordinal);
         var catalog = provider.GetService<IProcessCatalog>();
         await BindFileInputAsync(parsed.ProcessId, parsed.InputPath, catalog, inputs).ConfigureAwait(false);
+
+        // Registered is not runnable. A function whose prerequisite is missing fails here,
+        // naming it; the devkit never turns a local run into a server submission.
+        var runnability = GpRunnabilityAssessor.Assess(
+            catalog?.GetProcess(parsed.ProcessId), parsed.ProcessId, ExecutorProfile(executors, parsed.ProcessId),
+            BuildProbe(probeContainer: false, knownImageAvailability: gdalMode == GdalProcessExecutorMode.Container ? true : null));
+        if (!runnability.RunnableHere)
+        {
+            var blocker = runnability.Prerequisites.First(static p => !p.Satisfied);
+            Console.Error.WriteLine($"error   : '{parsed.ProcessId}' is registered but not runnable here ({runnability.ExecutionModeLabel}).");
+            Console.Error.WriteLine($"needs   : {blocker.Name} — {blocker.Detail}");
+            Console.Error.WriteLine("          The devkit does not submit to a server; satisfy the prerequisite or run it in the integration stack.");
+            return 1;
+        }
 
         var result = await runner.RunAsync(parsed.ProcessId, inputs, capture).ConfigureAwait(false);
         var runnerLabel = gdalMode == GdalProcessExecutorMode.Container ? "container (honua-worker-etl image)" : "in-process";
@@ -782,6 +857,8 @@ public static class GpCli
     {
         string? root = null;
         string? onlyId = null;
+        string? project = null;
+        string? harnessRoot = null;
         var update = false;
 
         for (var i = 0; i < args.Length; i++)
@@ -790,6 +867,12 @@ public static class GpCli
             {
                 case "--root" or "-r":
                     root = NextValue(args, ref i, "--root");
+                    break;
+                case "--project":
+                    project = NextValue(args, ref i, "--project");
+                    break;
+                case "--harness-root":
+                    harnessRoot = NextValue(args, ref i, "--harness-root");
                     break;
                 case "--update" or "-u":
                     update = true;
@@ -808,6 +891,19 @@ public static class GpCli
                     onlyId = args[i];
                     break;
             }
+        }
+
+        // A custom-code project (honua-gp.yaml) is tested through its own local harness, not
+        // the in-checkout executor fixtures.
+        var projectDirectory = project ?? (File.Exists(Path.Join(Directory.GetCurrentDirectory(), GpProjectManifest.FileName)) ? Directory.GetCurrentDirectory() : null);
+        if (projectDirectory is not null)
+        {
+            if (onlyId is not null || root is not null)
+            {
+                throw new GpCliUsageException("A custom-code project test takes --project [--update] [--harness-root <checkout>], not a fixture id or --root.");
+            }
+
+            return await RunProjectTestAsync(projectDirectory, harnessRoot, update).ConfigureAwait(false);
         }
 
         var fixtureRoot = ResolveFixtureRoot(root);
@@ -876,6 +972,111 @@ public static class GpCli
         Console.WriteLine();
         Console.WriteLine($"summary : {passed} passed, {failed} failed, {fixtures.Count} total");
         return failed == 0 ? 0 : 1;
+    }
+
+    private static async Task<int> RunProjectTestAsync(string projectDirectory, string? explicitHarnessRoot, bool update)
+    {
+        var manifestPath = Path.Join(Path.GetFullPath(projectDirectory), GpProjectManifest.FileName);
+        if (!File.Exists(manifestPath))
+        {
+            throw new GpCliUsageException($"{projectDirectory} holds no {GpProjectManifest.FileName}; run `honua-gp-devkit init` first or pass --project <dir>.");
+        }
+
+        GpProjectManifest manifest;
+        try
+        {
+            manifest = GpProjectManifest.Load(manifestPath);
+        }
+        catch (InvalidDataException ex)
+        {
+            throw new GpCliUsageException(ex.Message);
+        }
+
+        var harnessRoot = GpCustomProjectScaffolder.ResolveHarnessRoot(explicitHarnessRoot ?? manifest.HarnessRoot, projectDirectory);
+        if (harnessRoot is null)
+        {
+            Console.Error.WriteLine("error   : the custom-code harness was not found. Pass --harness-root <honua-server checkout>, set HONUA_GP_HARNESS_ROOT, or record harnessRoot in honua-gp.yaml.");
+            return 1;
+        }
+
+        Console.WriteLine($"project : {manifest.Name} ({(manifest.Language == GpProjectLanguage.Python ? "python" : "dotnet")}, {manifest.Entrypoint})");
+        Console.WriteLine($"harness : {harnessRoot}");
+        Console.WriteLine($"mode    : {(update ? "UPDATE (rewriting expected artifacts)" : "assert")}");
+        var result = await GpCustomProjectTester.RunAsync(projectDirectory, harnessRoot, update).ConfigureAwait(false);
+        foreach (var line in result.Lines)
+        {
+            Console.WriteLine(line);
+        }
+
+        if (result.ReceiptPath is not null)
+        {
+            Console.WriteLine($"receipt : {result.ReceiptPath}");
+        }
+
+        if (result.Error is not null)
+        {
+            Console.Error.WriteLine($"error   : {result.Error}");
+        }
+
+        Console.WriteLine(result.Passed ? "summary : passed" : "summary : FAILED");
+        return result.Passed ? 0 : 1;
+    }
+
+    private static int RunInit(string[] args)
+    {
+        string? language = null;
+        string? name = null;
+        string? output = null;
+        string? harnessRoot = null;
+        for (var i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--language" or "-l":
+                    language = NextValue(args, ref i, "--language");
+                    break;
+                case "--name" or "-n":
+                    name = NextValue(args, ref i, "--name");
+                    break;
+                case "--output" or "-o":
+                    output = NextValue(args, ref i, "--output");
+                    break;
+                case "--harness-root":
+                    harnessRoot = NextValue(args, ref i, "--harness-root");
+                    break;
+                default:
+                    throw new GpCliUsageException($"Unknown option '{args[i]}'. Usage: honua-gp-devkit init --language python|dotnet --name <process> [--output <dir>] [--harness-root <checkout>]");
+            }
+        }
+
+        var projectLanguage = (language ?? "").ToLowerInvariant() switch
+        {
+            "python" or "py" => GpProjectLanguage.Python,
+            "dotnet" or "csharp" or "cs" => GpProjectLanguage.Dotnet,
+            _ => throw new GpCliUsageException("--language must be python or dotnet."),
+        };
+        if (!GpCustomProjectScaffolder.TryValidateName(name, out var error))
+        {
+            throw new GpCliUsageException($"--name: {error}");
+        }
+
+        var projectDirectory = Path.GetFullPath(Path.Join(output ?? Directory.GetCurrentDirectory(), name!));
+        var resolvedHarness = GpCustomProjectScaffolder.ResolveHarnessRoot(harnessRoot, projectDirectory);
+        var plan = GpCustomProjectScaffolder.Plan(projectLanguage, name!, resolvedHarness);
+        try
+        {
+            GpCustomProjectScaffolder.Apply(projectDirectory, plan);
+        }
+        catch (IOException ex)
+        {
+            throw new GpCliUsageException(ex.Message);
+        }
+
+        Console.WriteLine($"created : {projectDirectory}");
+        Console.WriteLine($"template: {GpCustomProjectScaffolder.TemplateFor(projectLanguage)} from {GpCustomProjectScaffolder.TemplateSource}@{GpCustomProjectScaffolder.TemplateCommit[..10]} ({plan.Count} files)");
+        Console.WriteLine($"harness : {resolvedHarness ?? "not found — set HONUA_GP_HARNESS_ROOT or pass --harness-root before `test`"}");
+        Console.WriteLine("next    : edit process/, then `honua-gp-devkit test --project " + projectDirectory + "`");
+        return 0;
     }
 
     private static async Task<int> RunNew(string[] args)
@@ -1245,11 +1446,13 @@ public static class GpCli
         Console.WriteLine("Usage:");
         Console.WriteLine("  Installed tool: honua-gp-devkit <command> (equivalent to the honua gp command family below)");
         Console.WriteLine("  honua gp doctor [--managed-only] [--json]");
-        Console.WriteLine("  honua gp list [--json]");
-        Console.WriteLine("  honua gp describe <processId> [--json]");
+        Console.WriteLine("  honua gp list [--json] [--probe-container]");
+        Console.WriteLine("  honua gp describe <processId> [--json] [--probe-container]");
         Console.WriteLine("  honua gp plan <processId> [--input <file>] [--param k=v ...]");
         Console.WriteLine("  honua gp run  <processId> [--input <file>] [--param k=v ...] [--out <file>] [--glass-box] [--real-worker]");
         Console.WriteLine("  honua gp test [<fixtureId>] [--root <dir>] [--update]");
+        Console.WriteLine("  honua gp test --project <dir> [--update] [--harness-root <checkout>]   (custom-code project)");
+        Console.WriteLine("  honua gp init --language python|dotnet --name <process> [--output <dir>] [--harness-root <checkout>]");
         Console.WriteLine("  honua gp new <id> [--kind geometry|gdal] [--output <dir>]");
         Console.WriteLine("  honua gp publish <id> [--server <url>] [--api-key <key>] [--message <m>] [--dry-run] [--publish]");
         Console.WriteLine("  honua gp release [--descriptor honua-gp.yaml] --output <dir> [--source-repository o/n] [--source-sha <sha>] [--runtime-image <ref@sha256:..>] [--json]");
@@ -1276,7 +1479,12 @@ public static class GpCli
         Console.WriteLine("  describe  Show a process's typed parameters, outputs, inputs JSON Schema, and an example (--json for the machine view).");
         Console.WriteLine("  plan  Dry-run: validate params + DAG and estimate output size/cost WITHOUT executing.");
         Console.WriteLine("  run   Execute the process and emit its artifact(s).");
-        Console.WriteLine("  test  Run golden-file fixtures under samples/gp (or --root) and assert outputs.");
+        Console.WriteLine("  test  Run golden-file fixtures under samples/gp (or --root) and assert outputs;");
+        Console.WriteLine("        with --project (or a honua-gp.yaml in the cwd) run a custom-code project through its local harness");
+        Console.WriteLine("        and compare the artifacts with expected/ (first difference + receipt path on failure).");
+        Console.WriteLine("  init  Scaffold a custom-code project (Python or .NET) from the honua-samples templates:");
+        Console.WriteLine("        working process, input schema, fixtures, expected artifacts, dependency lock, VS Code debugging.");
+        Console.WriteLine("  --probe-container   list/describe: also check the GDAL worker image (shells out to the container runtime).");
         Console.WriteLine("  publish  Push an authored workflow to the WorkflowPackage store (GitOps approval-gated promotion).");
         Console.WriteLine();
         Console.WriteLine("Publish options:");

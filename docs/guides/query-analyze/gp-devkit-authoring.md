@@ -122,7 +122,37 @@ anything dropped, and the receipt repeats it as `eventsTruncated` / `eventsDropp
 The job step view labels a duration `measured` only when it comes from these events;
 anything derived from log timestamps is `inferred`.
 
-## Scaffold and test your own function
+## Scaffold a custom-code project
+
+`init` copies the honua-samples GP template for the language (byte for byte, checked
+against its `TEMPLATE-MANIFEST.json`) into a new project directory and adds
+`honua-gp.yaml`, the descriptor the devkit reads for `test` (a placeholder for the
+release descriptor). The project already holds a working process, its input schema,
+fixtures, expected artifacts with a golden digest, the dependency lock, golden tests,
+VS Code launch and task configurations and a container debug recipe:
+
+```bash
+honua-gp-devkit init --language python --name parcel-summary      # or --language dotnet
+cd parcel-summary
+honua-gp-devkit test            # fixtures/ through the local harness, compared with expected/
+honua-gp-devkit test --update   # accept the current artifacts and refresh expected/golden.json
+```
+
+`--name` names the project directory and the descriptor; the sample process stays
+`summary_tool` / `SummaryTool` until you rename it. `test` runs the Python harness from the
+server checkout it finds (`--harness-root`, `HONUA_GP_HARNESS_ROOT`, or a walk up from the
+project) and, for .NET, builds the template's test project first (which also builds the SDK
+and the harness; `Directory.Build.rsp` points them at the checkout). A failure prints the
+first differing value, the receipt path and the artifact; `expected/golden.json` additionally
+pins the artifact bytes. Nothing here submits to a server.
+
+`list` and `describe` report an `executionMode` (managed, native, service-backed, custom),
+the prerequisites checked, `runnableHere` with the missing prerequisite named, the
+supported targets, and a valid example value per parameter. `run` refuses a function that is
+registered but not runnable here with the same prerequisite; it never turns the run into a
+server submission. Add `--probe-container` to also check the GDAL worker image.
+
+## Scaffold and test your own built-in executor
 
 ```bash
 dotnet run --project src/Honua.Geoprocessing.Cli -- new geometry.recenter --kind geometry
