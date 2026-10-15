@@ -20898,6 +20898,68 @@
           }
         }
       }
+    },
+    "/jobs/{jobId}/diagnostics": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Console Job Diagnostics",
+        "description": "Returns the authorized honua.job-diagnostics/v1 projection, including release provenance, lifecycle, attempts, worker liveness, sanitized failures and steps, bounded events, artifact availability, and explicit missing or truncated evidence. Unknown and unreadable jobs both return 404. Responses use Cache-Control: no-store.",
+        "operationId": "getConsoleJobDiagnostics",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsoleJobId"
+          },
+          {
+            "name": "events",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of recent events. Values outside 1–500 are rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Versioned diagnostics for the job.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Job correlation id when available.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobDiagnostics"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Execution job store is unavailable."
+          },
+          "400": {
+            "description": "Invalid job identifier or event limit."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -48499,6 +48561,510 @@
             }
           }
         ]
+      },
+      "ConsoleJobDiagnostics": {
+        "type": "object",
+        "required": [
+          "schema",
+          "jobId",
+          "generatedAt",
+          "view",
+          "identity",
+          "release",
+          "lifecycle",
+          "attempt",
+          "worker",
+          "steps",
+          "events",
+          "artifacts",
+          "evidence",
+          "links"
+        ],
+        "properties": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "honua.job-diagnostics/v1"
+            ]
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string",
+            "nullable": true
+          },
+          "traceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "view": {
+            "type": "string"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticIdentity"
+          },
+          "release": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticRelease"
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticLifecycle"
+          },
+          "attempt": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticAttempt"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticWorker"
+          },
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConsoleJobDiagnosticFailure"
+              }
+            ],
+            "nullable": true
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobStep"
+            }
+          },
+          "events": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticEvents"
+          },
+          "artifacts": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticArtifacts"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticEvidence"
+          },
+          "links": {
+            "$ref": "#/components/schemas/ConsoleJobLinks"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticIdentity": {
+        "type": "object",
+        "required": [
+          "kind",
+          "backend",
+          "targetKind",
+          "workloadName",
+          "priority",
+          "contractVersion",
+          "resourceRefs"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "targetKind": {
+            "type": "string"
+          },
+          "workloadName": {
+            "type": "string"
+          },
+          "workloadId": {
+            "type": "string",
+            "nullable": true
+          },
+          "definitionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "queue": {
+            "type": "string",
+            "nullable": true
+          },
+          "priority": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "providerOperationId": {
+            "type": "string",
+            "nullable": true
+          },
+          "runtimeProfile": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "resourceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ConsoleJobDiagnosticRelease": {
+        "type": "object",
+        "required": [
+          "state",
+          "serverVersion",
+          "processDefinitions",
+          "missing"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "serverVersion": {
+            "type": "string"
+          },
+          "runtime": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceRepository": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "entrypoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "dependencyManifest": {
+            "type": "string",
+            "nullable": true
+          },
+          "planId": {
+            "type": "string",
+            "nullable": true
+          },
+          "processDefinitions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "environment": {
+            "type": "string",
+            "nullable": true
+          },
+          "releaseId": {
+            "type": "string",
+            "nullable": true
+          },
+          "changeSetId": {
+            "type": "string",
+            "nullable": true
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ConsoleJobDiagnosticLifecycle": {
+        "type": "object",
+        "required": [
+          "status",
+          "phase",
+          "createdAt",
+          "updatedAt",
+          "timingSource"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "currentPhase": {
+            "type": "string",
+            "nullable": true
+          },
+          "percentComplete": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "claimedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancellationRequestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "queueDelayMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "executionMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "durationMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "timingSource": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticAttempt": {
+        "type": "object",
+        "required": [
+          "number",
+          "maxAttempts",
+          "retry"
+        ],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxAttempts": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nextRetryAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "retry": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticRetry"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticRetry": {
+        "type": "object",
+        "required": [
+          "allowed",
+          "requiresApproval",
+          "wouldRepeat"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "disabledReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "requiresApproval": {
+            "type": "boolean"
+          },
+          "wouldRepeat": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticWorker": {
+        "type": "object",
+        "required": [
+          "heartbeatIntervalSeconds",
+          "heartbeatTimeoutSeconds",
+          "liveness",
+          "livenessReason"
+        ],
+        "properties": {
+          "claimedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastHeartbeatAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "heartbeatIntervalSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "heartbeatTimeoutSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "liveness": {
+            "type": "string"
+          },
+          "livenessReason": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticFailure": {
+        "type": "object",
+        "required": [
+          "message",
+          "classification",
+          "recovery"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "classification": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string",
+            "nullable": true
+          },
+          "stepOrdinal": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "nativeExitCode": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "stderrExcerpt": {
+            "type": "string",
+            "nullable": true
+          },
+          "recovery": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticEvents": {
+        "type": "object",
+        "required": [
+          "state",
+          "items",
+          "totalCount",
+          "limit",
+          "truncated"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobLogEntry"
+            }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticArtifacts": {
+        "type": "object",
+        "required": [
+          "state",
+          "items",
+          "availableCount",
+          "expiredCount",
+          "unavailableCount"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobArtifact"
+            }
+          },
+          "availableCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "expiredCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unavailableCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticEvidence": {
+        "type": "object",
+        "required": [
+          "missing",
+          "truncated",
+          "notes"
+        ],
+        "properties": {
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "truncated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   }

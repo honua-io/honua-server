@@ -14,10 +14,14 @@ execution log and artifact store the other admin job routes read. It adds
 nothing the server does not hold: evidence that is missing or truncated is
 listed under `evidence`, never filled in.
 
-```bash
-curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-  "$HONUA_BASE_URL/api/v1/admin/jobs/$JOB_ID/diagnostics?events=100" | jq
+In an MCP client connected to Honua, call `honua_diagnose_job` with:
+
+```json
+{"jobId": "your-job-id", "events": 100}
 ```
+
+Read `observed.status` for the job outcome and `evidence` for missing records.
+
 
 `events` bounds the recent event tail (default 50, maximum 500). Responses are
 `no-store`; the `X-Correlation-Id` header carries the job's correlation id.
