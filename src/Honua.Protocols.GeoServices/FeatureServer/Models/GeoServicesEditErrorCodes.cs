@@ -85,7 +85,8 @@ public static class GeoServicesEditErrorCodes
     /// <summary>
     /// The edit was denied by an owner-based edit policy: a non-owning, non-admin principal
     /// (or an anonymous caller, while the policy is active) attempted to modify or delete a row
-    /// owned by another principal. An authorization failure, not a conflict.
+    /// owned by another principal, or the written row would fall outside the caller's
+    /// row-level security partition (honua-server#6103). An authorization failure, not a conflict.
     /// </summary>
     public const int NotPermitted = 1007;
 
@@ -138,6 +139,9 @@ public static class GeoServicesEditErrorCodes
             404 => kind == FeatureEditOperationKind.Delete ? DeleteNotFound : NotFound,
             // HTTP 423 — a lock-aware writer reported the feature as locked.
             423 => FeatureLocked,
+            // HTTP 403 — the written row would fall outside the caller's row-level security
+            // partition (honua-server#6103); an authorization failure, not a conflict.
+            EditOperationResult.NotPermittedErrorCode => NotPermitted,
             _ => GenericFailure,
         };
     }

@@ -9,6 +9,7 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
+using Honua.Core.Queries.Filters;
 using NetTopologySuite.IO;
 using Npgsql;
 using NpgsqlTypes;
@@ -367,6 +368,7 @@ internal sealed partial class FeatureDataAccess
                 editBatch.Creates,
                 connection,
                 transaction,
+                editBatch.RowSecurityWriteCheck,
                 cancellationToken);
             partialCreatedIds = createdIds;
             partialCreateResults = createResults;
@@ -377,6 +379,7 @@ internal sealed partial class FeatureDataAccess
                 connection,
                 transaction,
                 preconditions,
+                editBatch.RowSecurityWriteCheck,
                 cancellationToken);
             partialUpdateResults = updateResults;
 
@@ -689,6 +692,7 @@ internal sealed partial class FeatureDataAccess
                 connection,
                 transaction,
                 preconditions,
+                editBatch.RowSecurityWriteCheck,
                 createdIds,
                 createResults,
                 updateResults,
@@ -854,6 +858,7 @@ internal sealed partial class FeatureDataAccess
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         Dictionary<long, FeatureEditPrecondition>? preconditions,
+        SqlFragment? writeCheck,
         ImmutableArray<long>.Builder createdIds,
         ImmutableArray<EditOperationResult>.Builder createResults,
         ImmutableArray<EditOperationResult>.Builder updateResults,
@@ -879,11 +884,12 @@ internal sealed partial class FeatureDataAccess
                             transaction,
                             async (conn, tx, ct) =>
                             {
-                                var c = await CreateWithConnectionAsync(layerId, feature, conn, tx, ct).ConfigureAwait(false);
+                                var c = await CreateCheckedAsync(layerId, feature, writeCheck, conn, tx, ct).ConfigureAwait(false);
                                 await TryWriteOutboxRowForBatchAsync(conn, tx, c.Id, "create", c, ct).ConfigureAwait(false);
                                 return c;
                             },
-                            cancellationToken).ConfigureAwait(false);
+                            cancellationToken,
+                            requireTransaction: writeCheck is not null).ConfigureAwait(false);
                         createdIds.Add(created.Id);
                         createResults.Add(EditOperationResult.Success(
                             created.Id,
@@ -933,12 +939,12 @@ internal sealed partial class FeatureDataAccess
                                     update = PreserveOmittedAttributes(feature, current.Value);
                                 }
 
-                                var u = await UpdateWithConnectionAsync(layerId, update, conn, tx, ct).ConfigureAwait(false);
+                                var u = await UpdateCheckedAsync(layerId, update, writeCheck, conn, tx, ct).ConfigureAwait(false);
                                 await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
                                 return u;
                             },
                             cancellationToken,
-                            requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry).ConfigureAwait(false);
+                            requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry || writeCheck is not null).ConfigureAwait(false);
                         if (hasPrecondition)
                         {
                             preconditions![updated.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(updated) };
@@ -1464,6 +1470,7 @@ internal sealed partial class FeatureDataAccess
         ImmutableArray<Feature> features,
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        SqlFragment? writeCheck,
         CancellationToken cancellationToken)
     {
         if (features.Length == 0)
@@ -1482,7 +1489,11 @@ internal sealed partial class FeatureDataAccess
         var outboxActive = TryUseTransactionalOutbox(out _);
 
         // Replica uploads also require the row transaction so provenance is stamped atomically.
-        if (transaction == null && features.Length > 1 && !outboxActive && ReplicaUploadOriginScope.Current is null)
+        // A row-level security write check (#6103) does too: each row is re-selected with the
+        // caller's predicate and rolled back when it falls outside it, which the autocommit
+        // bulk INSERT cannot do.
+        if (transaction == null && features.Length > 1 && !outboxActive && ReplicaUploadOriginScope.Current is null &&
+            writeCheck is null)
         {
             return await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
                 features,
@@ -1527,11 +1538,12 @@ internal sealed partial class FeatureDataAccess
                     transaction,
                     async (conn, tx, ct) =>
                     {
-                        var c = await CreateWithConnectionAsync(layerId, feature, conn, tx, ct).ConfigureAwait(false);
+                        var c = await CreateCheckedAsync(layerId, feature, writeCheck, conn, tx, ct).ConfigureAwait(false);
                         await TryWriteOutboxRowForBatchAsync(conn, tx, c.Id, "create", c, ct).ConfigureAwait(false);
                         return c;
                     },
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    requireTransaction: writeCheck is not null).ConfigureAwait(false);
                 createdIds.Add(created.Id);
                 results.Add(EditOperationResult.Success(created.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
@@ -1715,6 +1727,7 @@ internal sealed partial class FeatureDataAccess
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         Dictionary<long, FeatureEditPrecondition>? preconditions,
+        SqlFragment? writeCheck,
         CancellationToken cancellationToken)
     {
         if (features.Length == 0)
@@ -1758,12 +1771,12 @@ internal sealed partial class FeatureDataAccess
                             update = PreserveOmittedAttributes(feature, current.Value);
                         }
 
-                        var u = await UpdateWithConnectionAsync(layerId, update, conn, tx, ct).ConfigureAwait(false);
+                        var u = await UpdateCheckedAsync(layerId, update, writeCheck, conn, tx, ct).ConfigureAwait(false);
                         await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
                         return u;
                     },
                     cancellationToken,
-                    requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry).ConfigureAwait(false);
+                    requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry || writeCheck is not null).ConfigureAwait(false);
                 if (hasPrecondition)
                 {
                     // Later operations on this row in the same batch must observe our
@@ -1986,6 +1999,7 @@ internal sealed partial class FeatureDataAccess
             // GeometryRequiredForCreateException carries a fixed, client-safe message
             // (no provider internals) so it is surfaced verbatim.
             GeometryRequiredForCreateException => GeometryRequiredForCreateMessage,
+            RowSecurityWriteCheckFailedException => RowSecurityWriteCheckFailedMessage,
             ValidationException => "Invalid feature data.",
             ArgumentException => "Invalid feature data.",
             // InvalidOperationException messages raised by this writer are fixed sentences.
@@ -2024,6 +2038,12 @@ internal sealed partial class FeatureDataAccess
         long? objectId = null)
     {
         var errorMessage = GetSafeEditOperationError(exception, operation);
+        if (exception is RowSecurityWriteCheckFailedException)
+        {
+            // The row was rolled back before this was raised (#6103); never report it as possibly committed.
+            return EditOperationResult.Failure(errorMessage, EditOperationResult.NotPermittedErrorCode, objectId);
+        }
+
         return IsKnownNonCommitFailure(exception)
             ? EditOperationResult.Failure(errorMessage, objectId: objectId)
             : EditOperationResult.FailureWithUnknownCommitOutcome(errorMessage, objectId: objectId);
