@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
@@ -298,9 +299,16 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
     // instead of re-scanning the whole retained registry on every miss.
     private const string SeenIdsKey = Prefix + "seen-ids";
 
+    // Ids whose hash index entry has been written. IdsKey minus this set is the backlog a
+    // timer backfills; validation itself never scans it.
+    private const string HashIndexedIdsKey = Prefix + "hash-indexed-ids";
+
     // Bounds the optimistic retries of rotate and revoke. Revocation withdraws the key from
     // authentication first, so only requests already in flight can still contend with it.
     private const int WriteAttempts = 16;
+
+    // LastUsedAt is diagnostic. Rewriting it on every authenticated call is a write per request.
+    private static readonly TimeSpan UsageWriteInterval = TimeSpan.FromMinutes(1);
     private readonly IDatabase _database = redis.GetDatabase();
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
@@ -320,7 +328,9 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         var record = new AdminApiKeyRecord(Guid.NewGuid(), name, key[..Math.Min(12, key.Length)], SHA256.HashData(Encoding.UTF8.GetBytes(key)), permissions.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).DefaultIfEmpty("admin:*").ToArray(), now, now, expiresAt, null, null, null, createdBy);
         await _database.StringSetAsync(BuildKey(record.Id), JsonSerializer.Serialize(record, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(record), When.NotExists).ConfigureAwait(false);
         await PinApprovedExpiryAsync(_database, BuildKey(record.Id), record).ConfigureAwait(false);
+        await WriteHashIndexAsync(record).ConfigureAwait(false);
         await _database.SetAddAsync(IdsKey, record.Id.ToString("D")).ConfigureAwait(false);
+        await _database.SetAddAsync(HashIndexedIdsKey, record.Id.ToString("D")).ConfigureAwait(false);
         await MarkActiveAndSeenAsync(record.Id).ConfigureAwait(false);
         return new(record, key);
     }
@@ -343,6 +353,14 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
             // Conditional on the snapshot just checked: an unconditional write would put an
             // unrevoked record back over a revocation that landed in between.
             if (!await TryReplaceAsync(id, snapshot, updated).ConfigureAwait(false)) continue;
+            // Point the index at the new secret before dropping the old one, so a crash in
+            // between fails closed on the retired secret instead of losing both.
+            await WriteHashIndexAsync(updated).ConfigureAwait(false);
+            if (!CryptographicOperations.FixedTimeEquals(existing.KeyHash, updated.KeyHash))
+            {
+                await _database.KeyDeleteAsync(HashIndexKey(existing.KeyHash)).ConfigureAwait(false);
+            }
+
             // Repairs the index for a record indexed before it existed, or pruned by a racing scan.
             await MarkActiveAndSeenAsync(id).ConfigureAwait(false);
             return new(updated, key);
@@ -367,6 +385,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
             if (await TryReplaceAsync(id, snapshot, updated).ConfigureAwait(false))
             {
                 // A rotation that won the race may have re-indexed the key after the removal above.
+                await _database.KeyDeleteAsync(HashIndexKey(existing.KeyHash)).ConfigureAwait(false);
                 await _database.SetRemoveAsync(ActiveIdsKey, id.ToString("D")).ConfigureAwait(false);
                 return updated;
             }
@@ -390,47 +409,56 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
     {
         cancellationToken.ThrowIfCancellationRequested();
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));
-
-        foreach (var record in await ListActiveAsync(cancellationToken).ConfigureAwait(false))
+        var indexedId = await _database.StringGetAsync(HashIndexKey(hash)).ConfigureAwait(false);
+        if (!indexedId.HasValue || !Guid.TryParse((string?)indexedId, out var id))
         {
-            AdminApiKeyRecord? current = record;
-            for (var attempt = 0; attempt < 3 && current is not null; attempt++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var now = _timeProvider.GetUtcNow();
-                if (current.RevokedAt is not null || (current.ExpiresAt.HasValue && current.ExpiresAt <= now)
-                    || !CryptographicOperations.FixedTimeEquals(hash, current.KeyHash))
-                {
-                    break;
-                }
-
-                var updated = current with { LastUsedAt = now, UpdatedAt = now };
-                var key = BuildKey(current.Id);
-                var transaction = _database.CreateTransaction();
-                // Do not unconditionally rewrite the snapshot read by ListAsync: a concurrent
-                // revoke or rotate must win, rather than being resurrected by validation.
-                transaction.AddCondition(Condition.StringEqual(key, JsonSerializer.Serialize(current, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord)));
-                _ = transaction.StringSetAsync(key, JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated));
-                _ = PinApprovedExpiryAsync(transaction, key, updated);
-                if (await transaction.ExecuteAsync().ConfigureAwait(false))
-                {
-                    return new(updated);
-                }
-
-                // Another valid request may only have updated LastUsedAt. Re-read and
-                // revalidate authority before retrying so benign usage does not cause a 401.
-                var latest = await ReadAsync(record.Id, cancellationToken).ConfigureAwait(false);
-                if (attempt == 2 && latest is not null && IsUsageOnlyChange(current, latest))
-                {
-                    // Out of retries, but the write that beat this one only recorded another request's
-                    // use of this key: its authority is exactly what was just checked, so a burst of
-                    // concurrent requests with one key must not turn into 401s.
-                    return new(latest);
-                }
-
-                current = attempt < 2 ? latest : null;
-            }
+            return null;
         }
+
+        var current = await ReadAsync(id, cancellationToken).ConfigureAwait(false);
+        for (var attempt = 0; attempt < 3 && current is not null; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var now = _timeProvider.GetUtcNow();
+            if (current.RevokedAt is not null || (current.ExpiresAt.HasValue && current.ExpiresAt <= now)
+                || !CryptographicOperations.FixedTimeEquals(hash, current.KeyHash))
+            {
+                break;
+            }
+
+            // A burst of requests for one key shares a single usage write per minute.
+            if (current.LastUsedAt is { } lastUsed && now - lastUsed < UsageWriteInterval)
+            {
+                return new(current);
+            }
+
+            var updated = current with { LastUsedAt = now, UpdatedAt = now };
+            var key = BuildKey(current.Id);
+            var transaction = _database.CreateTransaction();
+            // Do not unconditionally rewrite the snapshot read above: a concurrent
+            // revoke or rotate must win, rather than being resurrected by validation.
+            transaction.AddCondition(Condition.StringEqual(key, JsonSerializer.Serialize(current, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord)));
+            _ = transaction.StringSetAsync(key, JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated));
+            _ = PinApprovedExpiryAsync(transaction, key, updated);
+            if (await transaction.ExecuteAsync().ConfigureAwait(false))
+            {
+                return new(updated);
+            }
+
+            // Another valid request may only have updated LastUsedAt. Re-read and
+            // revalidate authority before retrying so benign usage does not cause a 401.
+            var latest = await ReadAsync(id, cancellationToken).ConfigureAwait(false);
+            if (attempt == 2 && latest is not null && IsUsageOnlyChange(current, latest))
+            {
+                // Out of retries, but the write that beat this one only recorded another request's
+                // use of this key: its authority is exactly what was just checked, so a burst of
+                // concurrent requests with one key must not turn into 401s.
+                return new(latest);
+            }
+
+            current = attempt < 2 ? latest : null;
+        }
+
         return null;
     }
 
@@ -448,78 +476,52 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         string.Equals(latest.CreatedBy, compared.CreatedBy, StringComparison.Ordinal);
 
     /// <summary>
-    /// Returns the records that can still authenticate and prunes the rest from the active
-    /// index. Expired metadata stays in <see cref="IdsKey"/> for administrative reads, so
-    /// authentication cost tracks live keys rather than the retention window.
+    /// Builds <c>hash → id</c> entries for registry ids no instance has indexed yet: a record
+    /// written before this index existed, one written by an old instance mid-rollout, or one
+    /// restored directly. Runs on a timer, never on the authentication path.
     /// </summary>
-    private async Task<IReadOnlyList<AdminApiKeyRecord>> ListActiveAsync(CancellationToken cancellationToken)
+    /// <param name="cancellationToken">Cancellation token.</param>
+    internal async Task ReconcileHashIndexAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await ReconcileUnseenIdsAsync(cancellationToken).ConfigureAwait(false);
-
-        var members = await _database.SetMembersAsync(ActiveIdsKey).ConfigureAwait(false);
-        var ids = members.Where(static member => Guid.TryParse((string?)member, out _)).ToArray();
-        if (ids.Length == 0) return [];
-
-        var values = await _database.StringGetAsync(ids.Select(id => (RedisKey)$"{Prefix}{id}").ToArray()).ConfigureAwait(false);
-        var now = _timeProvider.GetUtcNow();
-        var active = new List<AdminApiKeyRecord>(values.Length);
-        var stale = new List<RedisValue>();
-        for (var index = 0; index < values.Length; index++)
+        var unseen = await _database.SetCombineAsync(SetOperation.Difference, [IdsKey, HashIndexedIdsKey]).ConfigureAwait(false);
+        if (unseen is not { Length: > 0 })
         {
-            var record = Read(values[index]);
-            if (record is not null && CanAuthenticate(record, now))
-            {
-                active.Add(record);
-            }
-            else
-            {
-                // Evicted, revoked or expired: it can never authenticate again, because
-                // RotateAsync refuses to revive it.
-                stale.Add(ids[index]);
-            }
+            return;
         }
 
-        if (stale.Count > 0)
-        {
-            await _database.SetRemoveAsync(ActiveIdsKey, [.. stale]).ConfigureAwait(false);
-        }
-
-        active.Sort(static (left, right) => left.CreatedAt.CompareTo(right.CreatedAt));
-        return active;
-    }
-
-    /// <summary>
-    /// Catches the active index up on any id in <see cref="IdsKey"/> it has never classified:
-    /// a record from before this index existed, one written by an old instance mid-rollout, or
-    /// one restored or written directly. The diff is cheap (server-side set arithmetic) and
-    /// empty in the steady state, so this does not reintroduce a per-request full scan.
-    /// </summary>
-    private async Task ReconcileUnseenIdsAsync(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var unseen = await _database.SetCombineAsync(SetOperation.Difference, [IdsKey, SeenIdsKey]).ConfigureAwait(false);
         var ids = unseen.Where(static member => Guid.TryParse((string?)member, out _)).ToArray();
-        if (ids.Length == 0) return;
+        if (ids.Length == 0)
+        {
+            return;
+        }
 
         var keys = ids.Select(id => (RedisKey)$"{Prefix}{id}").ToArray();
         var values = await _database.StringGetAsync(keys).ConfigureAwait(false);
         var now = _timeProvider.GetUtcNow();
         var active = new List<RedisValue>(ids.Length);
+        var batch = _database.CreateBatch();
+        var writes = new List<Task> { batch.SetAddAsync(HashIndexedIdsKey, ids), batch.SetAddAsync(SeenIdsKey, ids) };
         for (var index = 0; index < values.Length; index++)
         {
             var record = Read(values[index]);
-            if (record is not null && CanAuthenticate(record, now))
+            if (record is null || !CanAuthenticate(record, now))
             {
-                active.Add(ids[index]);
+                continue;
             }
+
+            active.Add(ids[index]);
+            writes.Add(batch.StringSetAsync(HashIndexKey(record.KeyHash), record.Id.ToString("D"), ResolveTtl(record)));
+            writes.Add(PinApprovedExpiryAsync(batch, HashIndexKey(record.KeyHash), record));
         }
 
-        var batch = _database.CreateBatch();
-        var seenTask = batch.SetAddAsync(SeenIdsKey, ids);
-        var activeTask = active.Count > 0 ? batch.SetAddAsync(ActiveIdsKey, [.. active]) : Task.CompletedTask;
+        if (active.Count > 0)
+        {
+            writes.Add(batch.SetAddAsync(ActiveIdsKey, [.. active]));
+        }
+
         batch.Execute();
-        await Task.WhenAll(seenTask, activeTask).ConfigureAwait(false);
+        await Task.WhenAll(writes).ConfigureAwait(false);
     }
 
     private async Task MarkActiveAndSeenAsync(Guid id)
@@ -543,6 +545,21 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
 
     private static AdminApiKeyRecord? Read(RedisValue value) => value.HasValue ? JsonSerializer.Deserialize((string)value!, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord) : null;
     private static string BuildKey(Guid id) => $"{Prefix}{id:D}";
+
+    /// <summary>Redis key for <c>honua:auth:admin-api-key:hash:{sha256}</c> → key id.</summary>
+    /// <param name="hash">SHA-256 of the presented or stored key material.</param>
+    internal static RedisKey HashIndexKey(byte[] hash)
+    {
+        ArgumentNullException.ThrowIfNull(hash);
+        return Prefix + "hash:" + Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private async Task WriteHashIndexAsync(AdminApiKeyRecord record)
+    {
+        var indexKey = HashIndexKey(record.KeyHash);
+        await _database.StringSetAsync(indexKey, record.Id.ToString("D"), ResolveTtl(record)).ConfigureAwait(false);
+        await PinApprovedExpiryAsync(_database, indexKey, record).ConfigureAwait(false);
+    }
 
     // ResolveTtl's relative TTL is measured before the write reaches Redis, so a write delayed by
     // load or contention would keep a replay credential past ExpiresAt by that delay. PEXPIREAT
@@ -570,5 +587,61 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         // for the existing registry retention period after expiry (or the latest write).
         var retention = TimeSpan.FromDays(3650);
         return remaining is { } lifetime && lifetime > TimeSpan.Zero ? lifetime + retention : retention;
+    }
+}
+
+/// <summary>
+/// Backfills the admin API-key hash index off the request path. Authentication reads one
+/// hash entry; this loop is what catches records written before that index existed.
+/// </summary>
+internal sealed class RedisAdminApiKeyIndexMaintenance : BackgroundService
+{
+    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
+    private readonly IAdminApiKeyStore _store;
+
+    /// <summary>
+    /// Creates the maintenance loop.
+    /// </summary>
+    /// <param name="store">The registered admin API-key store.</param>
+    public RedisAdminApiKeyIndexMaintenance(IAdminApiKeyStore store)
+    {
+        _store = store;
+    }
+
+    /// <inheritdoc />
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (_store is not RedisAdminApiKeyStore redis)
+        {
+            return;
+        }
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await redis.ReconcileHashIndexAsync(stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (RedisException)
+            {
+                // The next tick retries. A registry backfill must not take the host down.
+            }
+            catch (TimeoutException)
+            {
+            }
+
+            try
+            {
+                await Task.Delay(Interval, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+        }
     }
 }
