@@ -223,7 +223,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         (await versionManager.ResolveAsync("sde.Lifecycle", CancellationToken.None)).Should().BeNull();
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task ResolveAsync_DottedQualifiedName_MatchesWireIdentity()
     {
         var versionManager = CreateVersionManager();
@@ -251,7 +251,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
             .Value.VersionId.Should().Be(alice.VersionId);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task CreateAsync_InvalidBranchName_ThrowsArgumentException()
     {
         var versionManager = CreateVersionManager();
@@ -564,7 +564,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         FieldValue(rows.Items.Single(f => f.Id == feature.Id), "status").Should().Be("branch");
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task ResolveConflicts_TakeBase_RebasesAndPostsAncestorImage()
     {
         var store = CreateFeatureStore();
@@ -605,7 +605,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         FieldValue(rows.Items.Single(f => f.Id == feature.Id), "status").Should().Be("ancestor");
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task Reconcile_UncommittedDefaultEdit_SurfacesOnPostInsteadOfSkippingGeneration()
     {
         var store = CreateFeatureStore();
