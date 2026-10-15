@@ -222,6 +222,7 @@ public sealed class CsvFormatReaderTests
         {
             await foreach (var _ in CsvFormatReader.ReadStreamingAsync(stream, CancellationToken.None))
             {
+                // Drain the reader. The assertion is that the unclosed quote throws, not that a row is yielded.
             }
         };
 
