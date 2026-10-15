@@ -968,6 +968,44 @@ internal static partial class AttachmentEndpoints
         return false;
     }
 
+    /// <summary>
+    /// Returns a client-safe refusal when the layer does not support attachments, or when a
+    /// write asks for an edit capability the publication does not declare. A read of an
+    /// attachment-capable layer is allowed. Null means the request may proceed.
+    /// </summary>
+    internal static string? DescribeDeniedAttachmentAccess(
+        MetadataV2Service service,
+        MetadataV2Publication? publication,
+        MetadataV2Resource resource,
+        AccessScope scope,
+        AuthorizationOperation? writeOperation)
+    {
+        if (!FeatureServerEndpoints.ResourceSupportsAttachmentsV2(resource))
+        {
+            return "Attachments are not supported for this layer.";
+        }
+
+        if (scope != AccessScope.Write)
+        {
+            return null;
+        }
+
+        var operation = writeOperation switch
+        {
+            AuthorizationOperation.Insert => "Create",
+            AuthorizationOperation.Update => "Update",
+            AuthorizationOperation.Delete => "Delete",
+            _ => null
+        };
+        if (operation is not null &&
+            !FeatureServerEndpoints.ServiceSupportsOperationV2(service, operation, publication))
+        {
+            return $"{operation} edits are not enabled for this service";
+        }
+
+        return null;
+    }
+
     private static async Task<AttachmentAccessContext?> TryValidateLayerAccessAsync(
         HttpContext context,
         AccessScope scope = AccessScope.Read,
@@ -1049,6 +1087,17 @@ internal static partial class AttachmentEndpoints
                 await rbacError.ExecuteAsync(context);
                 return null;
             }
+        }
+
+        // After RBAC, so an unauthenticated caller still receives 401/403. Declared edit
+        // capabilities use the same resolver as applyEdits: silence is Query-only.
+        var attachmentDenial = DescribeDeniedAttachmentAccess(service, publication, resource, scope, writeOperation);
+        if (attachmentDenial is not null)
+        {
+            await StandardErrorHelpers.CreateBadRequest(context, attachmentDenial)
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
+            return null;
         }
 
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
