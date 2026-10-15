@@ -3116,12 +3116,13 @@ internal sealed partial class FeatureServerQueryHandler(
     }
 
     // Parses a GeoServices `having` expression into structured aggregate
-    // conditions. The grammar is deliberately narrow — `AGG(field) OP number`
+    // conditions. The grammar is deliberately narrow — `AGG(field) OP value`
     // terms joined by AND — so the provider can rebuild a fully parameterized
     // HAVING clause without ever concatenating client text into SQL. Each
-    // aggregate must already be declared in outStatistics, mirroring the Esri
-    // contract and reusing the same field-type hints as the SELECT aggregates.
-    private static bool TryParseHavingConditions(
+    // aggregate must already be declared in outStatistics. Count and the numeric
+    // aggregates compare a number. Min/max compare a literal of the statistic
+    // field's type, so a string or date is not sent to the provider as a double.
+    internal static bool TryParseHavingConditions(
         string having,
         ImmutableArray<StatisticDefinition> statistics,
         MetadataV2Resource resource,
@@ -3151,7 +3152,7 @@ internal sealed partial class FeatureServerQueryHandler(
             var match = HavingTermRegex().Match(term);
             if (!match.Success)
             {
-                error = $"Unsupported having condition: '{term}'. Expected 'AGG(field) <op> number' where AGG is one of count, sum, min, max, avg, stddev, var.";
+                error = $"Unsupported having condition: '{term}'. Expected 'AGG(field) <op> value' where AGG is one of count, sum, min, max, avg, stddev, var.";
                 return false;
             }
 
@@ -3187,22 +3188,30 @@ internal sealed partial class FeatureServerQueryHandler(
                 return false;
             }
 
-            if (!double.TryParse(match.Groups["value"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+            var fieldType = matchingStat.FieldType
+                ?? (fieldTypes.TryGetValue(field, out var resolvedType) ? resolvedType : (MetadataV2FieldType?)null);
+            if (!TryParseHavingValue(
+                    match.Groups["value"].Value,
+                    statisticType,
+                    fieldType,
+                    field,
+                    term,
+                    out var parsedValue,
+                    out error))
             {
-                error = $"Invalid numeric value in having condition: '{term}'.";
                 return false;
             }
-
-            var fieldType = fieldTypes.TryGetValue(field, out var resolvedType)
-                ? resolvedType
-                : (MetadataV2FieldType?)null;
 
             parsed.Add(new HavingCondition
             {
                 StatisticType = statisticType,
                 OnStatisticField = field,
                 Operator = op,
-                Value = value,
+                Value = parsedValue.Numeric,
+                TextValue = parsedValue.Text,
+                TimestampValue = parsedValue.Timestamp,
+                DateValue = parsedValue.Date,
+                TimeValue = parsedValue.Time,
                 FieldType = fieldType
             });
         }
@@ -3214,6 +3223,137 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         conditions = parsed.ToImmutableArray();
+        return true;
+    }
+
+    private readonly record struct ParsedHavingValue(
+        double Numeric,
+        string? Text,
+        DateTimeOffset? Timestamp,
+        DateOnly? Date,
+        TimeOnly? Time);
+
+    // Count/sum/avg/stddev/var are numeric even when the source field is not.
+    // Min/max keep the field type: a number against a string or date is a client
+    // error, and a typed literal is bound as that type rather than as a double.
+    private static bool TryParseHavingValue(
+        string raw,
+        StatisticType statisticType,
+        MetadataV2FieldType? fieldType,
+        string field,
+        string term,
+        out ParsedHavingValue parsed,
+        out string? error)
+    {
+        parsed = default;
+        error = null;
+        if (statisticType is not (StatisticType.Min or StatisticType.Max)
+            || fieldType is null
+            || IsNumericFieldType(fieldType.Value))
+        {
+            if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+                || !double.IsFinite(number))
+            {
+                error = $"Invalid numeric value in having condition: '{term}'.";
+                return false;
+            }
+
+            parsed = new ParsedHavingValue(number, null, null, null, null);
+            return true;
+        }
+
+        switch (fieldType.Value)
+        {
+            case MetadataV2FieldType.String:
+                if (raw.Length == 0 || raw[0] != '\'' || !TryReadQuotedHavingLiteral(raw, out var text))
+                {
+                    error = $"having value for string field '{field}' must be a quoted string.";
+                    return false;
+                }
+
+                parsed = new ParsedHavingValue(0, text, null, null, null);
+                return true;
+            case MetadataV2FieldType.DateTime:
+                if (!TryParseHavingTimestamp(raw, out var timestamp))
+                {
+                    error = $"having value for datetime field '{field}' must be an epoch-millisecond integer or a timestamp literal.";
+                    return false;
+                }
+
+                parsed = new ParsedHavingValue(0, null, timestamp, null, null);
+                return true;
+            case MetadataV2FieldType.Date:
+                if (!TryParseHavingDate(raw, out var date))
+                {
+                    error = $"having value for date field '{field}' must be an epoch-millisecond integer or a date literal.";
+                    return false;
+                }
+
+                parsed = new ParsedHavingValue(0, null, null, date, null);
+                return true;
+            case MetadataV2FieldType.Time:
+                if (!TryReadQuotedHavingLiteral(raw, out var timeText)
+                    || !TimeOnly.TryParse(timeText, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
+                {
+                    error = $"having value for time field '{field}' must be a time literal.";
+                    return false;
+                }
+
+                parsed = new ParsedHavingValue(0, null, null, null, time);
+                return true;
+            default:
+                error = $"having comparison is not supported for field '{field}' ({fieldType.Value}).";
+                return false;
+        }
+    }
+
+    private static bool TryParseHavingTimestamp(string raw, out DateTimeOffset timestamp)
+    {
+        timestamp = default;
+        if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var epochMs))
+        {
+            try
+            {
+                timestamp = DateTimeOffset.FromUnixTimeMilliseconds(epochMs);
+                return true;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return false;
+            }
+        }
+
+        return TryReadQuotedHavingLiteral(raw, out var text)
+            && DateTimeOffset.TryParse(
+                text,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out timestamp);
+    }
+
+    private static bool TryParseHavingDate(string raw, out DateOnly date)
+    {
+        date = default;
+        if (TryParseHavingTimestamp(raw, out var timestamp))
+        {
+            date = DateOnly.FromDateTime(timestamp.UtcDateTime);
+            return true;
+        }
+
+        return TryReadQuotedHavingLiteral(raw, out var text)
+            && DateOnly.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+    }
+
+    private static bool TryReadQuotedHavingLiteral(string raw, out string text)
+    {
+        text = string.Empty;
+        var quoteAt = raw.IndexOf('\'', StringComparison.Ordinal);
+        if (quoteAt < 0 || raw[^1] != '\'')
+        {
+            return false;
+        }
+
+        text = raw[(quoteAt + 1)..^1].Replace("''", "'", StringComparison.Ordinal);
         return true;
     }
 
@@ -3572,11 +3712,11 @@ internal sealed partial class FeatureServerQueryHandler(
     [GeneratedRegex(@"\s+AND\s+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex HavingConjunctionRegex();
 
-    // Matches a single 'AGG(field) <op> number' term. The field token is a bare
-    // SQL identifier and the value is a plain decimal literal, so no client text
-    // can reach the SQL string beyond the validated aggregate/field/operator.
+    // Matches one 'AGG(field) <op> value' term. The value is a number, a quoted
+    // string, or a date/time literal. It is validated against the statistic type
+    // and bound as a parameter; none of the token is concatenated into SQL.
     [GeneratedRegex(
-        @"^(?<agg>count|sum|min|max|avg|stddev|var)\s*\(\s*(?<field>[A-Za-z_][A-Za-z0-9_]*)\s*\)\s*(?<op>!=|<>|<=|>=|=|<|>)\s*(?<value>-?\d+(?:\.\d+)?)$",
+        @"^(?<agg>count|sum|min|max|avg|stddev|var)\s*\(\s*(?<field>[A-Za-z_][A-Za-z0-9_]*)\s*\)\s*(?<op>!=|<>|<=|>=|=|<|>)\s*(?<value>-?\d+(?:\.\d+)?|'(?:''|[^'])*'|(?:timestamp|date|time)\s+'(?:''|[^'])*')$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex HavingTermRegex();
 }
