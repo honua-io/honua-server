@@ -70,10 +70,10 @@ internal sealed partial class StreamingFileImportService
     /// Returns null when nothing resolves so the caller reports <c>SourceSridRequired</c>.
     /// </summary>
     private async Task<int?> ResolveFileGdbSridAsync(
-        IReadOnlyList<Honua.Core.Features.FileImport.Services.FileGdb.FileGdbReader.FileGdbLayerInfo> layers,
+        Honua.Core.Features.FileImport.Services.FileGdb.FileGdbReader.FileGdbLayerInfo[] layers,
         CancellationToken cancellationToken)
     {
-        for (var i = 0; i < layers.Count; i++)
+        for (var i = 0; i < layers.Length; i++)
         {
             if (layers[i].Srid > 0)
             {
@@ -81,7 +81,7 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
-        for (var i = 0; i < layers.Count; i++)
+        for (var i = 0; i < layers.Length; i++)
         {
             var wkt = layers[i].SpatialReferenceWkt;
             if (string.IsNullOrWhiteSpace(wkt))
