@@ -97,6 +97,67 @@ internal static class CsvFormatReader
         => ReadStreamingAsync(stream, delimiterOverride, diagnostics, options: null, cancellationToken);
 
     /// <summary>
+    /// Reads the SRID embedded in the first geometry value (EWKT <c>SRID=n;</c> or EWKB),
+    /// the same signal <c>.wkt</c> detection uses. Returns null when the sample has no
+    /// embedded SRID so the caller can keep the geographic default. Malformed samples
+    /// return null rather than failing detection; the streaming reader still reports them.
+    /// </summary>
+    internal static async Task<int?> TryDetectGeometrySridAsync(
+        Stream stream,
+        CancellationToken cancellationToken)
+    {
+        using var reader = new StreamReader(
+            stream,
+            Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: true,
+            leaveOpen: true);
+
+        List<string> sampleRecords;
+        try
+        {
+            sampleRecords = await ReadSampleRecordsAsync(reader, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
+        {
+            return null;
+        }
+
+        if (sampleRecords.Count < 2)
+        {
+            return null;
+        }
+
+        var delimiter = DetectDelimiter(sampleRecords);
+        var headers = NormalizeHeaders(ParseCsvRecord(sampleRecords[0], delimiter));
+        var mapping = BuildMapping(headers, options: null);
+        if (!mapping.WktIndex.HasValue)
+        {
+            return null;
+        }
+
+        var wktReader = new WKTReader();
+        var wkbReader = GeometryValueParser.CreateWkbReader();
+        for (var i = 1; i < sampleRecords.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var fields = ParseCsvRecord(sampleRecords[i], delimiter);
+            var value = GetField(fields, mapping.WktIndex.Value);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            var geometry = GeometryValueParser.TryParse(value, wktReader, wkbReader);
+            if (geometry is { SRID: > 0 })
+            {
+                return geometry.SRID;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Stream features from a CSV file with optional explicit <see cref="CsvImportOptions"/>.
     /// When the options carry explicit longitude/latitude column names they replace the
     /// header auto-detection heuristics; when they carry an address column, each row's

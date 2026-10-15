@@ -34,7 +34,9 @@ internal sealed partial class StreamingFileImportService
                 SupportedFileFormat.EsriJson => await EsriJsonFormatReader.TryDetectSridAsync(stream, cancellationToken) ?? 4326,
                 SupportedFileFormat.Kml => 4326,
                 SupportedFileFormat.Gpx => 4326,
-                SupportedFileFormat.Csv => 4326,
+                // A PostGIS CSV export carries the CRS on each geometry (EWKT/EWKB). Honour
+                // that SRID instead of assuming 4326; lon/lat and plain WKT keep the default (#6171).
+                SupportedFileFormat.Csv => await CsvFormatReader.TryDetectGeometrySridAsync(stream, cancellationToken) ?? 4326,
                 SupportedFileFormat.Gml => await GmlFormatReader.TryDetectSridAsync(stream, cancellationToken),
                 SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
                 SupportedFileFormat.GeoPackage => await DetectGeoPackageSridAsync(stream, cancellationToken),
@@ -158,7 +160,7 @@ internal sealed partial class StreamingFileImportService
             SupportedFileFormat.EsriJson => await EsriJsonFormatReader.TryDetectSridAsync(headerStream, cancellationToken) ?? 4326,
             SupportedFileFormat.Kml => 4326,
             SupportedFileFormat.Gpx => 4326,
-            SupportedFileFormat.Csv => 4326,
+            SupportedFileFormat.Csv => await CsvFormatReader.TryDetectGeometrySridAsync(headerStream, cancellationToken) ?? 4326,
             SupportedFileFormat.Gml => await GmlFormatReader.TryDetectSridAsync(headerStream, cancellationToken),
             SupportedFileFormat.Wkt => await DetectWktSridAsync(headerStream, cancellationToken),
             // Defensive: currently unreachable — FlatGeobuf non-seekable paths spill to

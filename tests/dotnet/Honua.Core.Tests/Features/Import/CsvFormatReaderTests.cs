@@ -37,6 +37,59 @@ public sealed class CsvFormatReaderTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task ReadStreamingAsync_EwktProjectedSrid_KeepsEmbeddedSrid()
+    {
+        // #6171: the per-value SRID is part of the geometry. Callers must not replace it
+        // with the 4326 factory default.
+        var csv = """
+            id,geom
+            1,SRID=3857;POINT(-13627361 4544761)
+            """;
+
+        var (features, _) = await ReadAllAsync(csv);
+
+        var point = features.Should().ContainSingle().Which.Geometry.Should().BeOfType<Point>().Subject;
+        point.SRID.Should().Be(3857);
+        point.X.Should().BeApproximately(-13627361, 0.5);
+        point.Y.Should().BeApproximately(4544761, 0.5);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task TryDetectGeometrySridAsync_EwkbHex_ReturnsEmbeddedSrid()
+    {
+        var writer = new WKBWriter { Strict = false, HandleSRID = true };
+        var hex = Convert.ToHexString(writer.Write(new Point(-13627361, 4544761) { SRID = 3857 }));
+        var csv = $"""
+            id,geom
+            1,{hex}
+            """;
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+
+        var srid = await CsvFormatReader.TryDetectGeometrySridAsync(stream, CancellationToken.None);
+
+        srid.Should().Be(3857);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task TryDetectGeometrySridAsync_PlainWkt_ReturnsNull()
+    {
+        var csv = """
+            id,geom
+            1,POINT(-122.4194 37.7749)
+            """;
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+
+        var srid = await CsvFormatReader.TryDetectGeometrySridAsync(stream, CancellationToken.None);
+
+        srid.Should().BeNull();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task ReadStreamingAsync_PostgisEwkbHexExport_ImportsWithGeometry()
     {
         // #2361: PostGIS also exports geometry as WKB/EWKB hex. This must parse too.
