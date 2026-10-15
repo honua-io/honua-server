@@ -1071,7 +1071,7 @@ public sealed class GrpcFeatureServiceTests
         }, CreateCallContext());
 
         captured.Should().NotBeNull();
-        captured!.Limit.Should().BeNull("ids-only has no exceeded_transfer_limit signal, so it must match FeatureServer returnIdsOnly and stay unbounded");
+        captured!.Value.Limit.Should().BeNull("ids-only has no exceeded_transfer_limit signal, so it must match FeatureServer returnIdsOnly and stay unbounded");
         response.ObjectIds.Should().HaveCount(1500);
         response.ExceededTransferLimit.Should().BeFalse();
     }
@@ -1093,7 +1093,7 @@ public sealed class GrpcFeatureServiceTests
         }, CreateCallContext());
 
         captured.Should().NotBeNull();
-        captured!.Limit.Should().Be(2);
+        captured!.Value.Limit.Should().Be(2);
     }
 
     [UnitTest]
