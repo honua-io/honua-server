@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:4dffcd50c0b7458e725978e040cb4cb057751b86715f3612bc6e7f27cfffea23",
+  "bundleDigest": "sha256:553833da7649dc4840c80124c9f456601048942fc2be60a92eae071347daaa00",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2485,7 +2485,7 @@
     {
       "id": "guides/query-analyze/gp-devkit-authoring",
       "path": "guides/query-analyze/gp-devkit-authoring.md",
-      "documentDigest": "sha256:7b0252f8b979eb2fa822f4083e0dbad8a2660b1095a42efee7324d7d66852f40",
+      "documentDigest": "sha256:2364b5dbb204a78c358a2e21d7021194bc2124c33409165f3636bcb24246992b",
       "metadata": {
         "type": "guide",
         "title": "Author a geoprocessing process",
@@ -7319,7 +7319,7 @@
     {
       "id": "reference/README",
       "path": "reference/README.md",
-      "documentDigest": "sha256:888ebefec76984705d5fa3f6e277df56ee8d797c220e4767da5d6336cbc98636",
+      "documentDigest": "sha256:fbce69fa8acfe43463f90c3199c82b777101e3adce1e494c92e64bc1e3788734",
       "metadata": {
         "type": "index",
         "title": "Reference",
@@ -7682,6 +7682,18 @@
         "resource": "honua://capability/process.geoprocessing"
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/geoprocessing-operations.md"
+    },
+    {
+      "id": "reference/gp-harness-events.v1",
+      "path": "reference/gp-harness-events.v1.md",
+      "documentDigest": "sha256:44122d0c658c037860834a907c64c9ac8113728edb183659393f94f55ae48c28",
+      "metadata": {
+        "type": "reference",
+        "title": "GP harness events (honua.gp.events/v1)",
+        "description": "The structured event journal every custom-code harness run, local runner run, and devkit run writes: record kinds, bounds, truncation disclosure, and how the job step view reads it.",
+        "resource": "honua://capability/process.geoprocessing"
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/gp-harness-events.v1.md"
     },
     {
       "id": "reference/integration-patterns",
@@ -11911,6 +11923,11 @@
       "target": "guides/query-analyze/gp-local-dev-quickstart"
     },
     {
+      "source": "guides/query-analyze/gp-devkit-authoring",
+      "relation": "links_to",
+      "target": "reference/gp-harness-events.v1"
+    },
+    {
       "source": "guides/query-analyze/gp-local-dev-quickstart",
       "relation": "links_to",
       "target": "guides/query-analyze/geoprocessing-with-ai"
@@ -14479,6 +14496,11 @@
       "source": "reference/README",
       "relation": "links_to",
       "target": "reference/geoprocessing-operations"
+    },
+    {
+      "source": "reference/README",
+      "relation": "links_to",
+      "target": "reference/gp-harness-events.v1"
     },
     {
       "source": "reference/README",
