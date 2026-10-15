@@ -395,7 +395,6 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                     continue;
                 }
 
-                var fromBreak = 0.0;
                 foreach (var toBreak in orderedBreaks)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -413,14 +412,14 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                     // polygon. Emitting an empty-rings feature would signal a polygon
                     // that does not exist, so the facility/break pair is omitted and
                     // the absence is surfaced via the adapter's no-solve message.
+                    // An omitted break does not shift the next polygon's label: every
+                    // polygon is the cumulative disk out to its own break (#6026).
                     if (string.IsNullOrEmpty(geometry))
                     {
-                        fromBreak = toBreak;
                         continue;
                     }
 
-                    polygons.Add(new ServiceAreaPolygon(facilityId, fromBreak, toBreak, geometry));
-                    fromBreak = toBreak;
+                    polygons.Add(new ServiceAreaPolygon(facilityId, 0, toBreak, geometry));
                 }
             }
 

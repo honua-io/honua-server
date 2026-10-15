@@ -215,7 +215,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
             await response.Content.ReadAsStringAsync(CancellationToken.None));
         var features = document.RootElement.GetProperty("saPolygons").GetProperty("features");
 
-        // One facility x two breaks => two concentric polygons.
+        // One facility x two breaks => two cumulative disks.
         features.GetArrayLength().Should().Be(2);
 
         var first = features[0].GetProperty("attributes");
@@ -223,7 +223,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
         first.GetProperty("ToBreak").GetDouble().Should().Be(1);
 
         var second = features[1].GetProperty("attributes");
-        second.GetProperty("FromBreak").GetDouble().Should().Be(1);
+        second.GetProperty("FromBreak").GetDouble().Should().Be(0);
         second.GetProperty("ToBreak").GetDouble().Should().Be(2);
 
         features[0].GetProperty("geometry").GetProperty("rings").GetArrayLength().Should().BeGreaterThan(0);
