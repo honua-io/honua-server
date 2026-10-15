@@ -351,9 +351,9 @@ internal static class LayerValidationHelpers
         string collectionId,
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
-        CancellationToken cancellationToken = default,
         bool preferExactPublicationId = false,
-        bool preferAdvertisedCollectionId = false)
+        bool preferAdvertisedCollectionId = false,
+        CancellationToken cancellationToken = default)
         => ValidateCollectionWithAccessV2CoreAsync(
             context,
             collectionId,
@@ -373,11 +373,11 @@ internal static class LayerValidationHelpers
     /// <param name="preferExactPublicationId">Whether a stable publication ID takes precedence over aliases.</param>
     /// <param name="scope">The requested access scope.</param>
     /// <param name="requiredProtocol">The protocol that must be enabled.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
     /// <param name="preferAdvertisedCollectionId">
     /// Whether the collection id advertised by Features and Tiles
     /// (service-local id, else path, else resource name) takes precedence over aliases.
     /// </param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     public static Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2Async(
         HttpContext context,
         string collectionId,
@@ -385,8 +385,8 @@ internal static class LayerValidationHelpers
         bool preferExactPublicationId = false,
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
-        CancellationToken cancellationToken = default,
-        bool preferAdvertisedCollectionId = false)
+        bool preferAdvertisedCollectionId = false,
+        CancellationToken cancellationToken = default)
         => ValidateCollectionWithAccessV2CoreAsync(
             context,
             collectionId,
@@ -1017,7 +1017,7 @@ internal static class LayerValidationHelpers
     }
 
     /// <summary>
-    /// Combines <see cref="ValidateCollectionWithAccessV2Async(HttpContext, string, AccessScope, string, CancellationToken)"/> with the V2 RBAC data-editor
+    /// Combines <see cref="ValidateCollectionWithAccessV2Async(HttpContext, string, AccessScope, string?, bool, bool, CancellationToken)"/> with the V2 RBAC data-editor
     /// helper so OGC API Features CRUD/Transaction handlers can run a single check.
     /// Returns the matched publication + resource + service plus an
     /// <see cref="IResult"/> error when validation or authorization fails.

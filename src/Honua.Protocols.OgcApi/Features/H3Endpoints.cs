@@ -88,10 +88,10 @@ internal static class H3Endpoints
         var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
             context,
             collectionId,
-            cancellationToken: cancellationToken,
             requiredProtocol: OgcFeaturesProtocolName,
             preferExactPublicationId: true,
-            preferAdvertisedCollectionId: true);
+            preferAdvertisedCollectionId: true,
+            cancellationToken: cancellationToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;

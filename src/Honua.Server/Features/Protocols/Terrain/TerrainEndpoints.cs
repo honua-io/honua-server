@@ -173,7 +173,7 @@ internal static class TerrainEndpoints
                 datasetId,
                 AccessScope.Read,
                 TerrainProtocolName,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (!validation.IsValid || validation.Publication?.LayerIndex is not null)
         {

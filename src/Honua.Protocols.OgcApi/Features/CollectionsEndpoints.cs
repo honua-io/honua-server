@@ -326,9 +326,9 @@ internal static class CollectionsEndpoints
                 context,
                 collectionId,
                 requiredProtocol: OgcFeaturesProtocolName,
-                cancellationToken: cancellationToken,
                 preferExactPublicationId: true,
-                preferAdvertisedCollectionId: true);
+                preferAdvertisedCollectionId: true,
+                cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
                 return validation.ErrorResult!;
@@ -454,9 +454,9 @@ internal static class CollectionsEndpoints
                 context,
                 collectionId,
                 requiredProtocol: OgcFeaturesProtocolName,
-                cancellationToken: effectiveToken,
                 preferExactPublicationId: true,
-                preferAdvertisedCollectionId: true);
+                preferAdvertisedCollectionId: true,
+                cancellationToken: effectiveToken);
             if (!validation.IsValid)
             {
                 return validation.ErrorResult!;

@@ -235,9 +235,9 @@ internal static class CollectionsEndpoints
                 context,
                 collectionId,
                 requiredProtocol: OgcApiTilesProtocol,
-                cancellationToken: cancellationToken,
                 preferExactPublicationId: true,
-                preferAdvertisedCollectionId: true).ConfigureAwait(false);
+                preferAdvertisedCollectionId: true,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
             if (!validation.IsValid)
             {
                 return validation.ErrorResult!;
