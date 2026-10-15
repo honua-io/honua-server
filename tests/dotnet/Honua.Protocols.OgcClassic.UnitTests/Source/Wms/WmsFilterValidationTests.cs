@@ -165,9 +165,11 @@ public sealed class WmsFilterValidationTests
     {
         var (_, error) = Translate(filter);
         error.Should().NotBeNull();
+        // Results.Content requires ILoggerFactory when the exception report is written.
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
         var httpContext = new DefaultHttpContext
         {
-            RequestServices = new ServiceCollection().BuildServiceProvider()
+            RequestServices = services
         };
         httpContext.Response.Body = new MemoryStream();
         await error!.ExecuteAsync(httpContext);
