@@ -82,12 +82,17 @@ public sealed class CustomCodeSubmitTests
         var v2 = await store.PublishAsync(ReleaseLock("2.0.0", "b"), "operator");
         var environment = new GpProcessReleaseEnvironment
         {
-            ServerContractVersion = 1, SupportedTargetKinds = ["aws-batch"], CustomCodeMayUseKubernetes = false,
+            ServerContractVersion = 1,
+            SupportedTargetKinds = ["aws-batch"],
+            CustomCodeMayUseKubernetes = false,
         };
         GpProcessBindingActivation Activation(string digest, int version, string revision) => new()
         {
-            Process = "buffer-features", LockDigest = digest, ExpectedBindingVersion = version,
-            Operation = "deploy", Actor = "operator",
+            Process = "buffer-features",
+            LockDigest = digest,
+            ExpectedBindingVersion = version,
+            Operation = "deploy",
+            Actor = "operator",
             Targets = [new GpProcessBindingTargetIdentity
             {
                 Kind = "aws-batch", JobDefinitionArn = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:" + revision,

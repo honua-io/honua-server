@@ -183,8 +183,11 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
         var release = await store.PublishAsync(document, "test-operator");
         var activation = new GpProcessBindingActivation
         {
-            Process = process, LockDigest = release.Digest, ExpectedBindingVersion = 0,
-            Operation = "deploy", Actor = "test-operator",
+            Process = process,
+            LockDigest = release.Digest,
+            ExpectedBindingVersion = 0,
+            Operation = "deploy",
+            Actor = "test-operator",
             Targets = [new GpProcessBindingTargetIdentity
             {
                 Kind = "aws-batch", JobDefinitionArn = JobDefinitionArn.Replace("buffer-features", process, StringComparison.Ordinal),
@@ -192,7 +195,9 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
         };
         var environment = new GpProcessReleaseEnvironment
         {
-            ServerContractVersion = 1, SupportedTargetKinds = ["aws-batch"], CustomCodeMayUseKubernetes = false,
+            ServerContractVersion = 1,
+            SupportedTargetKinds = ["aws-batch"],
+            CustomCodeMayUseKubernetes = false,
         };
 
         var results = await Task.WhenAll(Enumerable.Range(0, 4)
