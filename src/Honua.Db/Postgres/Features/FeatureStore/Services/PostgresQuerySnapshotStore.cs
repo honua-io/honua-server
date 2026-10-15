@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
@@ -13,6 +14,18 @@ internal sealed class PostgresQuerySnapshotStore(IAdoNetDatabaseConnectionProvid
     public async Task SaveAsync(Guid id, byte[] payload, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
     {
         await using var connection = await connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        const string usageSql = """
+            SELECT COUNT(*)::int, COALESCE(SUM(octet_length(payload)), 0)::bigint
+            FROM honua.query_snapshots
+            WHERE expires_at > CURRENT_TIMESTAMP
+            """;
+        await using (var usage = new NpgsqlCommand(usageSql, connection))
+        await using (var reader = await usage.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+            QuerySnapshotQuota.Ensure(reader.GetInt32(0), reader.GetInt64(1), payload.Length);
+        }
+
         // A bounded cleanup batch avoids turning a normal poll into a retention sweep.
         const string cleanupSql = """
             DELETE FROM honua.query_snapshots WHERE id IN (

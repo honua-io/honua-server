@@ -137,7 +137,32 @@ internal sealed class LimitsEnforcementMiddleware(
     }
 
     private long ResolveMaxPayloadSize(HttpContext context)
-        => ImportPayloadSize.Resolve(context.Request.Path.Value, _limits);
+    {
+        // Implicit routing has already run, so a missing endpoint is a path that
+        // only looks like an import (for example /x/admin/import/upload). Those
+        // requests stay on the edit ceiling instead of the 500 MB import grant.
+        if (context.GetEndpoint() is null)
+        {
+            return _limits.Edits.MaxPayloadSize;
+        }
+
+        var classified = ImportPayloadSize.Resolve(context.Request.Path.Value, _limits);
+        if (classified <= _limits.Edits.MaxPayloadSize)
+        {
+            return classified;
+        }
+
+        // Urlencoded bodies are fully buffered by form parsing. Only a real
+        // multipart upload on a matched import route may use the larger ceiling.
+        // Anonymous callers are clamped back to the edit ceiling after authentication.
+        return HasMultipartContentType(context.Request.ContentType)
+            ? classified
+            : _limits.Edits.MaxPayloadSize;
+    }
+
+    private static bool HasMultipartContentType(string? contentType)
+        => !string.IsNullOrEmpty(contentType)
+           && contentType.Contains("multipart/", StringComparison.OrdinalIgnoreCase);
 
     private static void ApplyRequestBodyLimit(HttpContext context, long maxPayloadSize)
     {
@@ -177,4 +202,68 @@ public static class LimitsEnforcementMiddlewareExtensions
         ArgumentNullException.ThrowIfNull(app);
         return app.UseMiddleware<LimitsEnforcementMiddleware>();
     }
+
+    /// <summary>
+    /// After portal-token authentication, drops an anonymous caller off an
+    /// import-scale body ceiling. Authenticated multipart uploads keep the
+    /// limit applied by <see cref="UseLimitsEnforcement"/>.
+    /// </summary>
+    public static IApplicationBuilder UseAnonymousImportPayloadClamp(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.UseMiddleware<AnonymousImportPayloadClampMiddleware>();
+    }
+}
+
+/// <summary>
+/// Rejects anonymous requests that would otherwise inherit an import-scale body limit.
+/// </summary>
+internal sealed class AnonymousImportPayloadClampMiddleware(
+    RequestDelegate next,
+    IOptions<LimitsOptions> limitsOptions)
+{
+    private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
+    private readonly LimitsOptions _limits = limitsOptions?.Value ?? throw new ArgumentNullException(nameof(limitsOptions));
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        if (context.User?.Identity?.IsAuthenticated == true)
+        {
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
+        var classified = ImportPayloadSize.Resolve(context.Request.Path.Value, _limits);
+        if (!IsImportScale(classified))
+        {
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
+        var editCeiling = _limits.Edits.MaxPayloadSize;
+        var feature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (feature is { IsReadOnly: false })
+        {
+            feature.MaxRequestBodySize = editCeiling;
+        }
+
+        if (context.Request.ContentLength is long contentLength && contentLength > editCeiling)
+        {
+            var errorResponse = new StandardErrorResponse(
+                StatusCodes.Status413PayloadTooLarge,
+                "Request payload exceeds maximum allowed size",
+                $"Maximum payload size is {editCeiling:N0} bytes");
+            await StandardErrorResponseFormatter.FormatError(context, errorResponse).ExecuteAsync(context).ConfigureAwait(false);
+            return;
+        }
+
+        await _next(context).ConfigureAwait(false);
+    }
+
+    private bool IsImportScale(long classified)
+        => classified > _limits.Edits.MaxPayloadSize
+           && (classified == _limits.Imports.MaxImportSize
+               || classified == _limits.Imports.MaxTilePackageSize
+               || classified == _limits.Imports.MaxPreviewSize
+               || classified == _limits.Imports.MaxSyncImportSize);
 }

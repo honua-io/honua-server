@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection(RoutingConfiguration.SectionName))
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<RoutingConfiguration>, RoutingConfigurationValidator>();
+        services.AddSingleton<RoutingSolveCapacityLimiter>();
 
         // Network-dataset registry (Phase 0 of #1882): resolves the active dataset's
         // edge/vertex table names. Backed by the honua.network_datasets registry table

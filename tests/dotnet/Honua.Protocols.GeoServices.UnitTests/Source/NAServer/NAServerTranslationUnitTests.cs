@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Protocols.GeoServices.NAServer;
@@ -900,4 +901,107 @@ public sealed class NAServerTranslationUnitTests
         response.SaPolygons.Features[1].Attributes.FromBreak.Should().Be(5);
         response.SaPolygons.Features[1].Attributes.ToBreak.Should().Be(10);
     }
+
+    [UnitTest]
+    [Operation(Operations.ClosestFacility)]
+    public void BuildClosestFacilitySolveRequest_RankedPairsAboveConfiguredBudget_Throws()
+    {
+        var configuration = new RoutingConfiguration();
+        var caps = NAServerInputCaps.FromConfiguration(configuration);
+        const int facilities = 200;
+        var incidents = configuration.MaxSolvePairs / facilities + 1;
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["incidents"] = Points(incidents),
+            ["facilities"] = Points(facilities),
+            ["defaultTargetFacilityCount"] = facilities.ToString(CultureInfo.InvariantCulture),
+        };
+
+        var act = () => NAServerParameterTranslation.BuildClosestFacilitySolveRequest(parameters, caps);
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage($"*maximum of {configuration.MaxSolvePairs}*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ClosestFacility)]
+    public void BuildClosestFacilitySolveRequest_RankedPairsWithinConfiguredBudget_KeepsTarget()
+    {
+        var configuration = new RoutingConfiguration();
+        var caps = NAServerInputCaps.FromConfiguration(configuration);
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["incidents"] = Points(2),
+            ["facilities"] = Points(2),
+            ["defaultTargetFacilityCount"] = "1",
+        };
+
+        var request = NAServerParameterTranslation.BuildClosestFacilitySolveRequest(parameters, caps);
+
+        request.DefaultTargetFacilityCount.Should().Be(1);
+        RoutingSolveBudget.RankedPairCount(request.Incidents.Count, request.Facilities.Count, request.DefaultTargetFacilityCount)
+            .Should().BeLessThanOrEqualTo(configuration.MaxSolvePairs);
+    }
+
+    [UnitTest]
+    [Operation(Operations.ClosestFacility)]
+    public void BuildClosestFacilitySolveRequest_TargetAboveConfiguredFacilityCap_Throws()
+    {
+        var configuration = new RoutingConfiguration();
+        var caps = NAServerInputCaps.FromConfiguration(configuration);
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["incidents"] = Points(1),
+            ["facilities"] = Points(1),
+            ["defaultTargetFacilityCount"] = (configuration.MaxClosestFacilities + 1).ToString(CultureInfo.InvariantCulture),
+        };
+
+        var act = () => NAServerParameterTranslation.BuildClosestFacilitySolveRequest(parameters, caps);
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage($"*maximum of {configuration.MaxClosestFacilities}*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.OdCostMatrix)]
+    public void BuildOdCostMatrixSolveRequest_RankedPairsAboveConfiguredBudget_Throws()
+    {
+        var configuration = new RoutingConfiguration();
+        var caps = NAServerInputCaps.FromConfiguration(configuration);
+        var destinations = configuration.MaxDestinations;
+        var origins = configuration.MaxSolvePairs / destinations + 1;
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["origins"] = Points(origins),
+            ["destinations"] = Points(destinations),
+        };
+
+        var act = () => NAServerParameterTranslation.BuildOdCostMatrixSolveRequest(parameters, caps);
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage($"*maximum of {configuration.MaxSolvePairs}*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.LocationAllocation)]
+    public void BuildLocationAllocationSolveRequest_RankedPairsAboveConfiguredBudget_Throws()
+    {
+        var configuration = new RoutingConfiguration();
+        var caps = NAServerInputCaps.FromConfiguration(configuration);
+        var demandPoints = configuration.MaxDemandPoints;
+        var facilities = configuration.MaxSolvePairs / demandPoints + 1;
+        var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["facilities"] = Points(facilities),
+            ["demandPoints"] = Points(demandPoints),
+        };
+
+        var act = () => NAServerParameterTranslation.BuildLocationAllocationSolveRequest(parameters, caps);
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage($"*maximum of {configuration.MaxSolvePairs}*");
+    }
+
+    private static string Points(int count)
+        => string.Join(';', Enumerable.Range(0, count).Select(i => $"{i.ToString(CultureInfo.InvariantCulture)},0"));
 }

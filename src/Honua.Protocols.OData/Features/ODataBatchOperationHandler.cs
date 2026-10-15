@@ -13,6 +13,7 @@ using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.OData;
@@ -75,6 +76,24 @@ internal sealed partial class ODataBatchOperationHandler(
             {
                 return ODataUtilityService.CreateODataError(context, "InvalidRequest",
                     "Batch request must contain at least one request.");
+            }
+
+            var readBudget = context.RequestServices.GetService<IOptions<ODataOptions>>()?.Value ?? new ODataOptions();
+            var readOperations = 0;
+            foreach (var batchItem in batchRequest.Requests)
+            {
+                if (!IsMutationMethod(batchItem.Method))
+                {
+                    readOperations++;
+                }
+            }
+
+            if (readOperations > readBudget.MaxBatchReadOperations)
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidRequest",
+                    $"Batch request exceeds the maximum of {readBudget.MaxBatchReadOperations} read operations.");
             }
 
             ODataLog.BatchRequested(_logger, batchRequest.Requests.Length);

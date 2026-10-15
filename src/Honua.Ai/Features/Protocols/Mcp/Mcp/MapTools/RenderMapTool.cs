@@ -86,6 +86,14 @@ internal sealed class RenderMapTool : IMcpTool
             throw new GeoprocessingValidationException("'layers' is required and must contain at least one layer.");
         }
 
+        if (argument.Layers.Count > MapToolSchemas.MaxRenderLayers)
+        {
+            throw new GeoprocessingValidationException(
+                $"'layers' exceeds the maximum of {MapToolSchemas.MaxRenderLayers.ToString(CultureInfo.InvariantCulture)}.");
+        }
+
+        var layers = DistinctRenderLayers(argument.Layers);
+
         var bbox = ResolveBbox(argument.Bbox);
         var bboxSrid = argument.BboxSrid ?? 4326;
         if (bboxSrid <= 0)
@@ -106,15 +114,15 @@ internal sealed class RenderMapTool : IMcpTool
         // default. The per-layer styleRendering outcome reports what was actually drawn.
         var styleCatalog = httpContext.RequestServices.GetService<IStyleCatalog>();
 
-        var storageLayerIds = new int[argument.Layers.Count];
-        var renderedLayers = new McpRenderedLayer[argument.Layers.Count];
-        var resolvedLayers = new ResolvedMapLayer[argument.Layers.Count];
+        var storageLayerIds = new int[layers.Count];
+        var renderedLayers = new McpRenderedLayer[layers.Count];
+        var resolvedLayers = new ResolvedMapLayer[layers.Count];
         var appliedStyleJson = new Dictionary<int, string>();
         var hasRasterCoverage = false;
         var hasVectorLayer = false;
-        for (var i = 0; i < argument.Layers.Count; i++)
+        for (var i = 0; i < layers.Count; i++)
         {
-            var layerRef = argument.Layers[i];
+            var layerRef = layers[i];
             var resolved = await MapToolLayerResolver.ResolveForReadAsync(
                 httpContext, snapshot, layerRef.ServiceId, layerRef.LayerId, AuthorizationOperation.Query, cancellationToken)
                 .ConfigureAwait(false);
@@ -402,6 +410,27 @@ internal sealed class RenderMapTool : IMcpTool
     // type or geometry field renders from raster coverage pixels.
     private static bool IsRasterCoverage(MetadataV2Resource resource)
         => resource.ReadGeometryType() == MetadataV2GeometryType.None && resource.FindPrimaryGeometryField() is null;
+
+    private static List<McpRenderLayerRef> DistinctRenderLayers(IReadOnlyList<McpRenderLayerRef> requested)
+    {
+        var distinct = new List<McpRenderLayerRef>(requested.Count);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var layer in requested)
+        {
+            if (string.IsNullOrWhiteSpace(layer.ServiceId) || layer.LayerId is null)
+            {
+                distinct.Add(layer);
+                continue;
+            }
+
+            if (seen.Add(layer.ServiceId.Trim() + "\n" + layer.LayerId.Value.ToString(CultureInfo.InvariantCulture)))
+            {
+                distinct.Add(layer);
+            }
+        }
+
+        return distinct;
+    }
 
     // The renderer resolves each layer's resource by storage layer id, so two requested
     // layers sharing a storage layer id but bound to different Metadata v2 resources

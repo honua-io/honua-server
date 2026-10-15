@@ -199,6 +199,47 @@ public sealed class McpReadableCatalogTests
         result.ErrorKind.Should().Be(SpecGroundingErrorKind.Unresolvable);
     }
 
+    [UnitTest]
+    public void RenderMapSchema_MaxItems_MatchesShippedLayerCap()
+    {
+        MapToolSchemas.RenderMapArgumentSchema
+            .GetProperty("properties")
+            .GetProperty("layers")
+            .GetProperty("maxItems")
+            .GetInt32()
+            .Should().Be(MapToolSchemas.MaxRenderLayers);
+    }
+
+    [UnitTest]
+    public async Task RenderMap_AboveLayerCap_ThrowsBeforeRender()
+    {
+        using var services = CreateServices("allowed");
+        var tool = new RenderMapTool(Substitute.For<IGeoprocessingJobService>(), NullLogger<RenderMapTool>.Instance);
+        var layers = string.Join(',', Enumerable.Range(0, MapToolSchemas.MaxRenderLayers + 1)
+            .Select(_ => """{"serviceId":"svc","layerId":0}"""));
+        using var arguments = JsonDocument.Parse($"{{\"layers\":[{layers}],\"bbox\":[0,0,1,1],\"maxInlineBytes\":1024}}");
+
+        var act = () => tool.InvokeAsync(CreateContext(services), arguments.RootElement, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        await services.GetRequiredService<IRasterMapRenderer>().DidNotReceiveWithAnyArgs()
+            .RenderDatasetMapAsync(default!, default!, default);
+    }
+
+    [UnitTest]
+    public async Task RenderMap_DuplicateLayerRefs_RendersOnce()
+    {
+        using var services = CreateServices("allowed");
+        var tool = new RenderMapTool(Substitute.For<IGeoprocessingJobService>(), NullLogger<RenderMapTool>.Instance);
+        using var arguments = JsonDocument.Parse("""{"layers":[{"serviceId":"svc","layerId":0},{"serviceId":"SVC","layerId":0}],"bbox":[0,0,1,1],"maxInlineBytes":1024}""");
+
+        var result = await tool.InvokeAsync(CreateContext(services), arguments.RootElement, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        await services.GetRequiredService<IRasterMapRenderer>().Received(1).RenderDatasetMapAsync(
+            Arg.Is<int[]>(ids => ids.Length == 1 && ids[0] == 42), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>());
+    }
+
     private static bool IsReadable(string restriction) => restriction is "allowed" or "same-tenant" or "granted" or "layer-grant";
 
     private static readonly ClaimsPrincipal Principal = new(new ClaimsIdentity(

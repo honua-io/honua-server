@@ -34,4 +34,12 @@ public sealed class ODataOptions
     /// </summary>
     [Range(1, 100000)]
     public int MaxApplyInputRows { get; set; } = 10000;
+
+    /// <summary>
+    /// Maximum GET (and other non-mutation) operations accepted in one $batch.
+    /// The batch operation count stays at 1000; this caps the read amplification
+    /// an anonymous caller can trigger with one request.
+    /// </summary>
+    [Range(1, 1000)]
+    public int MaxBatchReadOperations { get; set; } = 32;
 }

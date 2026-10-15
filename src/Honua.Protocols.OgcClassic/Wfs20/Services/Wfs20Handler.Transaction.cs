@@ -281,6 +281,17 @@ internal sealed partial class Wfs20Handler
 
         foreach (var actionElement in root.Elements())
         {
+            if (actionElement.Name.LocalName is "Insert" or "Update" or "Delete" or "Replace"
+                && operations.Count >= _editLimits.MaxEditsPerTransaction)
+            {
+                return TransactionPreparationResult.Failure(
+                    Wfs20ErrorResults.CreateBadRequest(
+                        context,
+                        "InvalidParameterValue",
+                        $"Transaction exceeds the maximum of {_editLimits.MaxEditsPerTransaction.ToString(CultureInfo.InvariantCulture)} edits.",
+                        "Transaction"));
+            }
+
             IResult? errorResult = actionElement.Name.LocalName switch
             {
                 "Insert" => await PrepareInsertOperationsAsync(
@@ -499,9 +510,11 @@ internal sealed partial class Wfs20Handler
         var targetIds = await ResolveTransactionTargetObjectIdsAsync(
             descriptor,
             updateElement,
+            TransactionIdProbeLimit(_editLimits, operations.Count, singleTarget: false),
             cancellationToken).ConfigureAwait(false);
 
-        if (targetIds.Length > _editLimits.MaxFeaturesPerEdit)
+        if (targetIds.Length > _editLimits.MaxFeaturesPerEdit
+            || operations.Count + targetIds.Length > _editLimits.MaxEditsPerTransaction)
         {
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
@@ -510,13 +523,13 @@ internal sealed partial class Wfs20Handler
                 "Filter");
         }
 
+        var existingById = await ReadTransactionTargetsAsync(
+            descriptor.StorageLayerId,
+            targetIds,
+            cancellationToken).ConfigureAwait(false);
         foreach (var objectId in targetIds)
         {
-            var existing = await _featureReader.GetAsync(
-                descriptor.StorageLayerId,
-                objectId,
-                cancellationToken).ConfigureAwait(false);
-            if (!existing.HasValue)
+            if (!existingById.TryGetValue(objectId, out var existing))
             {
                 return Wfs20ErrorResults.CreateBadRequest(
                     context,
@@ -526,7 +539,7 @@ internal sealed partial class Wfs20Handler
             }
 
             var updatedFeature = await BuildTransactionUpdatedFeatureAsync(
-                existing.Value,
+                existing,
                 descriptor.Resource,
                 changes,
                 cancellationToken).ConfigureAwait(false);
@@ -593,9 +606,11 @@ internal sealed partial class Wfs20Handler
         var targetIds = await ResolveTransactionTargetObjectIdsAsync(
             descriptor,
             deleteElement,
+            TransactionIdProbeLimit(_editLimits, operations.Count, singleTarget: false),
             cancellationToken).ConfigureAwait(false);
 
-        if (targetIds.Length > _editLimits.MaxFeaturesPerEdit)
+        if (targetIds.Length > _editLimits.MaxFeaturesPerEdit
+            || operations.Count + targetIds.Length > _editLimits.MaxEditsPerTransaction)
         {
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
@@ -604,13 +619,13 @@ internal sealed partial class Wfs20Handler
                 "Filter");
         }
 
+        var existingById = await ReadTransactionTargetsAsync(
+            descriptor.StorageLayerId,
+            targetIds,
+            cancellationToken).ConfigureAwait(false);
         foreach (var objectId in targetIds)
         {
-            var existing = await _featureReader.GetAsync(
-                descriptor.StorageLayerId,
-                objectId,
-                cancellationToken).ConfigureAwait(false);
-            if (!existing.HasValue)
+            if (!existingById.TryGetValue(objectId, out var existing))
             {
                 return Wfs20ErrorResults.CreateBadRequest(
                     context,
@@ -626,7 +641,7 @@ internal sealed partial class Wfs20Handler
                 FeatureEditOperation.Delete(objectId),
                 handle,
                 null,
-                existing.Value)
+                existing)
             {
                 RequestGeometryChanged = false
             });
@@ -678,6 +693,7 @@ internal sealed partial class Wfs20Handler
         var targetIds = await ResolveTransactionTargetObjectIdsAsync(
             descriptor,
             replaceElement,
+            TransactionIdProbeLimit(_editLimits, operations.Count, singleTarget: true),
             cancellationToken).ConfigureAwait(false);
         if (targetIds.Length != 1)
         {
@@ -688,11 +704,11 @@ internal sealed partial class Wfs20Handler
                 "Filter");
         }
 
-        var existing = await _featureReader.GetAsync(
+        var existingById = await ReadTransactionTargetsAsync(
             descriptor.StorageLayerId,
-            targetIds[0],
+            targetIds,
             cancellationToken).ConfigureAwait(false);
-        if (!existing.HasValue)
+        if (!existingById.TryGetValue(targetIds[0], out var existing))
         {
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
@@ -707,7 +723,7 @@ internal sealed partial class Wfs20Handler
             featureElement,
             cancellationToken).ConfigureAwait(false);
         // Compare the stored target snapshot, rather than the new replacement payload.
-        replacement = replacement with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing.Value) };
+        replacement = replacement with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing) };
         // Replace constructs a fresh feature from the request payload (or null when
         // the body omits geometry), and the operation overwrites the existing row.
         // Mark the change when either side has geometry so a body-less Replace that
@@ -725,7 +741,7 @@ internal sealed partial class Wfs20Handler
             null)
         {
             RequestGeometryChanged = replacement.Geometry is { Length: > 0 }
-                || existing.Value.Geometry is { Length: > 0 }
+                || existing.Geometry is { Length: > 0 }
         });
 
         return null;
@@ -1008,9 +1024,59 @@ internal sealed partial class Wfs20Handler
     }
 
 
+    /// <summary>
+    /// Object-id probe size for one WFS-T action. Update and delete read one past the
+    /// tighter of the per-action and remaining transaction budgets so an oversized
+    /// match is rejected before feature rows are loaded. Replace identifies one feature
+    /// and probes two so a multi-match fails closed.
+    /// </summary>
+    internal static int TransactionIdProbeLimit(EditLimits limits, int preparedCount, bool singleTarget)
+    {
+        ArgumentNullException.ThrowIfNull(limits);
+        if (singleTarget)
+        {
+            return 2;
+        }
+
+        var remaining = Math.Max(0, limits.MaxEditsPerTransaction - Math.Max(0, preparedCount));
+        var window = Math.Min(limits.MaxFeaturesPerEdit, remaining);
+        return checked(window + 1);
+    }
+
+    private async Task<ImmutableDictionary<long, Feature>> ReadTransactionTargetsAsync(
+        int layerId,
+        ImmutableArray<long> targetIds,
+        CancellationToken cancellationToken)
+    {
+        if (targetIds.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<long, Feature>.Empty;
+        }
+
+        var result = await _featureReader.QueryAsync(
+            layerId,
+            new FeatureQuery
+            {
+                ObjectIds = targetIds,
+                Limit = targetIds.Length,
+            },
+            cancellationToken).ConfigureAwait(false);
+        var features = ImmutableDictionary.CreateBuilder<long, Feature>();
+        if (!result.Items.IsDefaultOrEmpty)
+        {
+            foreach (var feature in result.Items)
+            {
+                features[feature.Id] = feature;
+            }
+        }
+
+        return features.ToImmutable();
+    }
+
     private async Task<ImmutableArray<long>> ResolveTransactionTargetObjectIdsAsync(
         WfsFeatureTypeDescriptor descriptor,
         XElement actionElement,
+        int probeLimit,
         CancellationToken cancellationToken)
     {
         var filterElement = actionElement.Elements()
@@ -1067,6 +1133,7 @@ internal sealed partial class Wfs20Handler
             enforceResourceIdTypeMatch: true,
             requireResourceIdQualifier: false,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+        query = query with { Limit = probeLimit };
 
         var objectIds = await _featureReader.QueryObjectIdsAsync(
             descriptor.StorageLayerId,

@@ -887,7 +887,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
+                var objectIdResult = await _queryExecutor.QueryObjectIdsWithValidationAsync(
                     queryLayer.Service,
                     queryLayer.Resource,
                     queryLayer.Publication,
@@ -897,9 +897,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "ids", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
-                var objectIds = result.Items
-                    .Select(feature => GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
-                    .ToArray();
+                var objectIds = objectIdResult.IsDefault ? [] : objectIdResult.ToArray();
                 HonuaTelemetry.SetSuccess(featureActivity, objectIds.Length);
 
                 if (idsIsPbf)
@@ -2095,7 +2093,7 @@ internal sealed partial class FeatureServerQueryHandler(
         if (validatedParams.ReturnIdsOnly)
         {
             var stopwatch = Stopwatch.StartNew();
-            QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
+            var objectIdResult = await _queryExecutor.QueryObjectIdsWithValidationAsync(
                 queryLayer.Service,
                 queryLayer.Resource,
                 queryLayer.Publication,
@@ -2108,9 +2106,7 @@ internal sealed partial class FeatureServerQueryHandler(
             return new QueryResponse
             {
                 ObjectIdFieldName = objectIdFieldName,
-                ObjectIds = result.Items
-                        .Select(feature => GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
-                        .ToArray(),
+                ObjectIds = objectIdResult.IsDefault ? [] : objectIdResult.ToArray(),
                 Features = null
             };
         }
