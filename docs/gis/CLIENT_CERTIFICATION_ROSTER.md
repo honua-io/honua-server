@@ -231,17 +231,17 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Required tier**: none (intended on activation: release)
 - **Roster origin**: artifact; artifact status Built, unrun
 - **Lane binding**: desktop-arcgis (planned-lane)
-- **Client version policy**: Licensed ArcGIS Pro build recorded per run from the self-hosted Windows runner; evidence is entitlement-bound and content-addressed.
+- **Client version policy**: ArcGIS Pro build is the build named on the `desktop-arcgis` evidence identifier in honua-esri-compat. Evidence is content-addressed.
 - **Protocol surfaces**: `featureserver`, `mapserver`, `imageserver`, `geometryserver`, `version-management-server`, `portal`, `ogc-features`, `wfs`, `wms`, `wmts`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-SCHM`, `CERT-QFLT`, `CERT-PAGE`, `CERT-GEOM`, `CERT-ERRH`, `CERT-RNDR`, `CERT-PRTL`
 - **Structurally not applicable**: (none)
 - **Scenario facets**: `positive`, `invalid-credential`, `insufficient-role`, `cross-tenant`, `pagination-limit`, `metadata`, `media-schema`
-- **Licensing**: entitlement-bound - Licensed evidence must be entitlement-bound and content-addressed at release.
+- **Licensing**: entitlement-bound - desktop entitlement detail stays in honua-esri-compat. This roster does not configure it.
 - **Runtime**: windows-license
 - **Fixture projection**: canonical-client-fixture - Esri-owned fixtures must project onto the #3393 canonical fixture before federation.
 - **Evidence producer**: (none)
 - **Owning issue**: https://github.com/honua-io/honua-esri-compat/issues/75
-- **Notes**: Lane code exists and records honest skips because no Windows ArcGIS Pro runner is provisioned. The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane, so activation targets 2026.2 via workstream A of #3389.
+- **Notes**: The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane. Activation targets 2026.2 via workstream A of #3389. No desktop receipt is linked from this repo.
 
 ### `js` - OpenLayers
 

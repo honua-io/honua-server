@@ -16,32 +16,36 @@ Totals combine historical and fresh receipts, not one complete image rerun.
 
 ## Six fresh native operation passes
 
-| Lane / operation | Verified behavior | Qualification |
-| --- | --- | --- |
-| ArcPy GeocodeServer findAddressCandidates | Native Locator.geocode returns ten candidates matching independent HTTP count, ordering, addresses, scores and WGS84 XY, with expected street/city and geographic bounds | Uses configured World locator and /arcgis alias, forStorage=False. Storage-request variant returned authorization error and remains separate |
-| ArcPy GeocodeServer suggest | Native Locator.suggest returns five suggestions matching every independent text, magic key and collection flag | The old claim that ArcPy had no such methods was false |
-| PyQGIS TileJSON descriptor | Stock updateUriSources consumes a remote descriptor referenced by a standard Mapbox GL style; native tile decoder returns the expected feature within actual MVT grid tolerance | Direct descriptor-as-XYZ still fails; not a claim about every TileJSON field |
-| PyQGIS ImageServer service-info | Stock arcgismapserver constructor loads CRS and extent matching independent service metadata | No dedicated arcgisimageserver provider is required |
-| PyQGIS ImageServer exportImage | Native raster block returns ARGB corners matching independent PNG pixels | Dynamic provider dimensions of 0x0 do not prevent rendering; display colors are not elevations |
-| PyQGIS elevation point-query | Stock GDAL AGS numeric sampling returns 10 at [-122.498828125,37.83890625], matching independent ImageServer identify at exactly that point; project reload reproduces it | Same sampling-plus-control criterion used by the existing ArcPy elevation pass; native ImageServer identify remains open |
+Client procedure stays in the evidence repos (ruling R30). These six are passes
+on Development/JIT source `25fa17d9cfa72340c9de4a33a743f19ff0911800`, image
+`sha256:0ad6f6c9d81ead9772cf0f0a2e282321811bc5d059c53dc78570a4f6f07f7780`.
+ArcPy identity retained: 3.7.1, Pro executable 3.7.1.1904. QGIS 3.44.14, GDAL
+3.13.3. They are not a GUI pass.
 
-These use stock ArcPy 3.7.1 (the same installed Pro executable is version
-3.7.1.1904 with a retained SHA-256), QGIS 3.44.14 and bundled GDAL 3.13.3.
-Source `25fa17d9cfa72340c9de4a33a743f19ff0911800`, image
-`sha256:0ad6f6c9d81ead9772cf0f0a2e282321811bc5d059c53dc78570a4f6f07f7780`
-stayed unchanged. These are Development/JIT receipts. No adapter, plugin,
-license checkout or feature-flag change was needed for these six successes.
+| Lane / operation | State | Limit that remains open |
+| --- | --- | --- |
+| ArcPy GeocodeServer findAddressCandidates | pass | Storage-request variant remains separate |
+| ArcPy GeocodeServer suggest | pass | None recorded on this cell |
+| PyQGIS TileJSON descriptor | pass | Direct descriptor-as-XYZ still fails |
+| PyQGIS ImageServer service-info | pass | None recorded beyond this operation |
+| PyQGIS ImageServer exportImage | pass | Display colors are not elevations |
+| PyQGIS elevation point-query | pass | Native ImageServer identify remains open |
+
+Evidence: `honua-esri-compat` commit `b691b03`,
+`evidence/arcpy-exclusion-followup-20260920-d/observations.json`;
+`honua-client-compat` commit `046a74c`,
+`evidence/pyqgis-deep-exclusions-20260920-d`.
 
 ## Review of all 82 remaining exclusions
 
 | Prior category | Cells | Decision and reason |
 | --- | ---: | --- |
-| ArcPy geocode/suggest | 2 | Reopen and resolve with native receipts; Locator exposes both methods |
-| ArcPy attachments/relatedRecords/MapServer identify/legend | 4 | Reopen. Old citation repeated the harness's own exclusion rule; installed attachment tools and factory-returned mapping classes need operation-specific probes |
-| ArcPy FeatureServer replica/sync | 1 | Reopen. CreateReplica and CreateReplicaFromServer input contracts do not exhaust native offline paths; the latter targets GeoDataServer, not FeatureServer |
-| ArcPy WFS property-value, stored queries and transactions | 5 | Reopen. WFSToFeatureClass parameters bound one conversion tool, not every native connection/layer or licensed extension |
-| ArcPy WMS identify | 1 | Reopen. Module-name absence does not cover factory-returned mapping objects |
-| ArcPy GeometryServer | 4 | Reopen. Local geometry methods and a module-name search are not an exhaustive remote-operation inventory |
+| ArcPy geocode/suggest | 2 | Reopen and resolve with the native receipts above |
+| ArcPy attachments/relatedRecords/MapServer identify/legend | 4 | Reopen. The old citation is not operation-specific |
+| ArcPy FeatureServer replica/sync | 1 | Reopen. The cited conversion path does not exhaust offline operations |
+| ArcPy WFS property-value, stored queries and transactions | 5 | Reopen. One conversion tool does not close these operations |
+| ArcPy WMS identify | 1 | Reopen. A module-name absence does not close the cell |
+| ArcPy GeometryServer | 4 | Reopen. Local geometry results are not a remote-operation inventory |
 | Pro SensorThings | 3 | Reopen. An OGC API connection menu list is not an exhaustive SensorThings client review |
 | Pro other OGC API families | 6 | Reopen. The Features/Tiles menu restriction does not review every alternative native representation, saved layer or extension |
 | QGIS/PyQGIS TileJSON | 2 | Reopen; PyQGIS descriptor consumption resolves with the qualified style-source path |
@@ -53,7 +57,7 @@ license checkout or feature-flag change was needed for these six successes.
 | QGIS/PyQGIS SOAP catalog | 2 | Reopen for citation review. Observed REST discovery does not exhaust native SOAP catalog paths; generic HTTP/XML is not a native protocol pass |
 | Pro WFS transactions | 3 | Retain provisionally: current vendor documentation explicitly says native WFS layers are read-only |
 | Pro OGC API Features editing | 1 | Retain provisionally: current vendor documentation explicitly says the native layer is not editable |
-| ArcPy synchronous NAServer solve/service-area | 2 | Retain provisionally for the exact synchronous transport: the existing native nax receipt instead requests asynchronous GP web tools. Honua routing itself exists |
+| ArcPy synchronous NAServer solve/service-area | 2 | Retain provisionally. The retained receipt is not that synchronous transport. Honua routing itself exists |
 | QGIS/PyQGIS WFS GetPropertyValue/ListStoredQueries | 4 | Retain provisionally. Earlier URI controls/request-source audit plus selected pinned GDAL WFS source found no matching request builders |
 | QGIS/PyQGIS FeatureServer attachments/relatedRecords/statistics/replica-sync | 8 | Retain provisionally. Specific prior wire observations and selected pinned native request-source evidence support these narrower provider gaps |
 
@@ -101,9 +105,7 @@ native-client coverage and does not prove every optional protocol parameter.
 
 - Esri: `honua-esri-compat` commit **b691b03**, `docs/reports/arcpy-exclusion-followup-2026-09-20.md` and `evidence/arcpy-exclusion-followup-20260920-d/observations.json`; attempts a-c remain preserved. All 302 tests, fixture-contract validation, template freshness and source-manifest checks passed.
 - QGIS: `honua-client-compat` commit **046a74c**, `docs/reports/pyqgis-deep-exclusion-audit-2026-09-20.md`, final run `evidence/pyqgis-deep-exclusions-20260920-d` and pinned source audit. All 240 tests, shared-snapshot verification and evidence/hash/secret checks passed.
-- [Esri Locator](https://doc.esri.com/en/arcgis-pro/latest/arcpy/geocoding/locator-class.html) documents geocode and suggest.
-- [Esri WFS restrictions](https://doc.esri.com/en/arcgis-pro/latest/help/data/services/use-wfs-services.html) and [OGC API layer restrictions](https://doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html) support the retained edit boundaries.
-- [Pinned QGIS ArcGIS provider](https://github.com/qgis/QGIS/blob/1a4cda5f2620e7374e5926fc955a7d2d06493e15/src/providers/arcgisrest/qgsamsprovider.cpp) and [vector tile utilities](https://github.com/qgis/QGIS/blob/1a4cda5f2620e7374e5926fc955a7d2d06493e15/src/core/vectortile/qgsvectortileutils.cpp) expose the previously overlooked paths.
+Vendor procedure and source-inspection notes stay with those evidence commits.
 
 The generated checklist carries the current operation-by-operation status. The
 [first audit](client-exclusion-audit-2026-09-20.md) and [earlier Python report](python-lane-status-2026-09-20.md)
