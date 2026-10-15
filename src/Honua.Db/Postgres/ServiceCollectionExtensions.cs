@@ -301,8 +301,10 @@ internal static class ServiceCollectionExtensions
         // outlived its row. TryAdd so a host can substitute a durable ledger.
         services.TryAddSingleton<IAttachmentOrphanLedger, LoggingAttachmentOrphanLedger>();
 
-        // Register attachment store implementation (metadata tables live in the honua schema)
-        services.AddScoped<IAttachmentStore>(serviceProvider =>
+        // Register attachment store implementation (metadata tables live in the honua schema).
+        // Feature deletes resolve IFeatureAttachmentCleanup from this same instance so attachment
+        // rows share the feature transaction (#6137).
+        services.AddScoped(serviceProvider =>
             new PostgresAttachmentStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetRequiredService<ICloudFileStorage>(),
@@ -311,6 +313,8 @@ internal static class ServiceCollectionExtensions
                     ? "honua"
                     : configuration["Attachments:Schema"],
                 orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>()));
+        services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
 
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();
 

@@ -10,6 +10,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Queries.Filters;
+using Honua.Db.Postgres.Features.Attachments;
 using NetTopologySuite.IO;
 using Npgsql;
 using NpgsqlTypes;
@@ -171,15 +172,46 @@ internal sealed partial class FeatureDataAccess
                     "delete",
                     deleted.Snapshot,
                     cancellationToken).ConfigureAwait(false);
+                await CaptureDeletedAttachmentsAsync(
+                    layerId,
+                    featureId,
+                    npgsql,
+                    npgsqlTransaction,
+                    npgsqlTransaction,
+                    deleted,
+                    cancellationToken).ConfigureAwait(false);
             }
 
-            await Transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            await CommitAndReleaseAttachmentBlobsAsync(npgsqlTransaction, cancellationToken).ConfigureAwait(false);
             return deleted.Deleted;
         }
 
         await using var conn = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var simpleDelete = await DeleteWithConnectionAsync(layerId, featureId, conn, transaction: null, cancellationToken).ConfigureAwait(false);
-        return simpleDelete.Deleted;
+        if (_attachmentCleanup is null)
+        {
+            var simpleDelete = await DeleteWithConnectionAsync(layerId, featureId, conn, transaction: null, cancellationToken).ConfigureAwait(false);
+            return simpleDelete.Deleted;
+        }
+
+        // The feature row and its attachment rows commit together. Blobs follow that commit,
+        // including when this delete is the only statement in the request (#6137).
+        await using var rowTransaction = await conn.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        var npgsqlRowTransaction = (NpgsqlTransaction)rowTransaction;
+        var deletedRow = await DeleteWithConnectionAsync(layerId, featureId, conn, npgsqlRowTransaction, cancellationToken).ConfigureAwait(false);
+        if (deletedRow.Deleted)
+        {
+            await CaptureDeletedAttachmentsAsync(
+                layerId,
+                featureId,
+                conn,
+                npgsqlRowTransaction,
+                npgsqlRowTransaction,
+                deletedRow,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        await CommitAndReleaseAttachmentBlobsAsync(npgsqlRowTransaction, cancellationToken).ConfigureAwait(false);
+        return deletedRow.Deleted;
     }
 
     private bool TryUseTransactionalOutbox([NotNullWhen(true)] out FeatureMutationOutboxScopeData? scope)
@@ -406,6 +438,7 @@ internal sealed partial class FeatureDataAccess
                 if (transaction != null)
                 {
                     await transaction.RollbackAsync(CancellationToken.None);
+                    DiscardPendingAttachmentBlobs(transaction);
                 }
                 return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
             }
@@ -442,7 +475,9 @@ internal sealed partial class FeatureDataAccess
             // rollbackOnFailure and a keyed receipt share one transaction. Dispose rolls
             // it back, so a partial receipt would name rows that do not stay committed.
             // Autocommit (no transaction) falls through and returns the rows already
-            // committed plus an unknown tail (#6028).
+            // committed plus an unknown tail (#6028). Staged attachment blobs belong to
+            // rows this dispose restores, so they must not be deleted.
+            DiscardPendingAttachmentBlobs(transaction!);
             throw;
         }
         // Intentionally broad: this is the top-level edit-batch error handler; any
@@ -459,6 +494,8 @@ internal sealed partial class FeatureDataAccess
             if (transaction != null)
             {
                 await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
+                // Unknown commit may have restored the feature rows. Keep their blobs.
+                DiscardPendingAttachmentBlobs(transaction);
                 var commitOutcomeUnknown = ex is FeatureEditCommitOutcomeUnknownException;
                 var errorMessage = commitOutcomeUnknown
                     ? "Transaction commit outcome is unknown."
@@ -723,6 +760,7 @@ internal sealed partial class FeatureDataAccess
                     if (manageTransaction && transaction != null)
                     {
                         await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
+                        DiscardPendingAttachmentBlobs(transaction);
                     }
 
                     return FeatureEditResult.Rollback(
@@ -906,13 +944,16 @@ internal sealed partial class FeatureDataAccess
             {
                 await CommitEditTransactionAsync(_transaction, cancellationToken).ConfigureAwait(false);
                 _completed = true;
+                await _owner.FlushPendingAttachmentBlobsAsync(_transaction).ConfigureAwait(false);
                 return FeatureWriterTransactionCommitOutcome.Committed;
             }
             catch (FeatureEditCommitOutcomeUnknownException)
             {
                 // COMMIT may already be durable. Do not let disposal attempt a rollback and
                 // mask the explicit unknown outcome (or imply that the writes were undone).
+                // Do not delete blobs: a rolled-back commit would still reference them.
                 _completed = true;
+                _owner.DiscardPendingAttachmentBlobs(_transaction);
                 return FeatureWriterTransactionCommitOutcome.Unknown;
             }
         }
@@ -925,6 +966,7 @@ internal sealed partial class FeatureDataAccess
                 return;
             }
 
+            _owner.DiscardPendingAttachmentBlobs(_transaction);
             await _transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             _completed = true;
         }
@@ -1100,13 +1142,19 @@ internal sealed partial class FeatureDataAccess
                                 if (d.Deleted)
                                 {
                                     await TryWriteOutboxRowForBatchAsync(conn, tx, objectId, "delete", d.Snapshot, ct).ConfigureAwait(false);
+                                    d = await CaptureDeletedAttachmentsAsync(layerId, objectId, conn, tx, transaction, d, ct).ConfigureAwait(false);
                                 }
                                 return d;
                             },
                             cancellationToken,
-                            requireTransaction: hasPrecondition).ConfigureAwait(false);
+                            requireTransaction: hasPrecondition || _attachmentCleanup is not null).ConfigureAwait(false);
                         if (deleted.Deleted)
                         {
+                            if (transaction is null)
+                            {
+                                await ReleaseCommittedAttachmentBlobsAsync(deleted.AttachmentBlobs).ConfigureAwait(false);
+                            }
+
                             deleteResults.Add(EditOperationResult.Success(objectId));
                             return true;
                         }
@@ -1297,7 +1345,15 @@ internal sealed partial class FeatureDataAccess
             pending.Superseded = staged.SupersededByExistingReceipt;
         }
 
-        return staged.SupersededByExistingReceipt ? FeatureEditResult.Rollback() : result;
+        if (staged.SupersededByExistingReceipt)
+        {
+            // The receipt conflict rolled the edit back, including attachment rows.
+            DiscardPendingAttachmentBlobs(transaction);
+            return FeatureEditResult.Rollback();
+        }
+
+        await FlushPendingAttachmentBlobsAsync(transaction).ConfigureAwait(false);
+        return result;
     }
 
     internal static async Task CommitEditTransactionAsync(
@@ -1529,7 +1585,117 @@ internal sealed partial class FeatureDataAccess
         return new DeleteOutcome(rowsAffected > 0, null);
     }
 
-    private readonly record struct DeleteOutcome(bool Deleted, Feature? Snapshot);
+    private readonly record struct DeleteOutcome(
+        bool Deleted,
+        Feature? Snapshot,
+        IReadOnlyList<DeletedAttachmentBlob>? AttachmentBlobs = null);
+
+    /// <summary>
+    /// Deletes attachment rows for a feature that this statement just removed. An open batch
+    /// transaction keeps the blob paths until that transaction commits. Autocommit returns
+    /// the paths on <see cref="DeleteOutcome.AttachmentBlobs"/> so the caller can remove the
+    /// blobs after <see cref="RunRowMutationAtomicallyAsync{TResult}"/> commits the row.
+    /// </summary>
+    private async Task<DeleteOutcome> CaptureDeletedAttachmentsAsync(
+        int layerId,
+        long featureId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction? statementTransaction,
+        NpgsqlTransaction? batchTransaction,
+        DeleteOutcome deleted,
+        CancellationToken cancellationToken)
+    {
+        if (!deleted.Deleted || _attachmentCleanup is null)
+        {
+            return deleted;
+        }
+
+        var blobs = await _attachmentCleanup.DeleteRowsAsync(
+            connection,
+            statementTransaction,
+            layerId,
+            featureId,
+            cancellationToken).ConfigureAwait(false);
+        if (batchTransaction is not null)
+        {
+            StageAttachmentBlobs(batchTransaction, blobs);
+            return deleted;
+        }
+
+        return blobs.Count == 0 ? deleted : deleted with { AttachmentBlobs = blobs };
+    }
+
+    private void StageAttachmentBlobs(NpgsqlTransaction batchTransaction, IReadOnlyList<DeletedAttachmentBlob> blobs)
+    {
+        if (blobs.Count == 0)
+        {
+            return;
+        }
+
+        if (_attachmentBlobTransaction is not null && !ReferenceEquals(_attachmentBlobTransaction, batchTransaction))
+        {
+            throw new InvalidOperationException(
+                "Attachment cleanup is already staged for a different edit transaction.");
+        }
+
+        _attachmentBlobTransaction = batchTransaction;
+        _pendingAttachmentBlobs.Hold(blobs, batchTransactionOpen: true);
+    }
+
+    private Task ReleaseCommittedAttachmentBlobsAsync(IReadOnlyList<DeletedAttachmentBlob>? blobs)
+    {
+        if (blobs is not { Count: > 0 } || _attachmentCleanup is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        // The feature row and attachment rows are already durable. Blob failure is an orphan,
+        // not an edit failure, and must not replace a partial autocommit receipt (#6028).
+        return _attachmentCleanup.DeleteBlobsAsync(blobs, CancellationToken.None);
+    }
+
+    private Task FlushPendingAttachmentBlobsAsync(NpgsqlTransaction transaction)
+    {
+        if (!ReferenceEquals(_attachmentBlobTransaction, transaction))
+        {
+            return Task.CompletedTask;
+        }
+
+        _attachmentBlobTransaction = null;
+        return ReleaseCommittedAttachmentBlobsAsync(_pendingAttachmentBlobs.TakeForConfirmedCommit());
+    }
+
+    private void DiscardPendingAttachmentBlobs(NpgsqlTransaction transaction)
+    {
+        if (!ReferenceEquals(_attachmentBlobTransaction, transaction))
+        {
+            return;
+        }
+
+        _attachmentBlobTransaction = null;
+        _pendingAttachmentBlobs.Discard();
+    }
+
+    private async Task CommitAndReleaseAttachmentBlobsAsync(
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var committed = false;
+        try
+        {
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            committed = true;
+        }
+        finally
+        {
+            if (!committed)
+            {
+                DiscardPendingAttachmentBlobs(transaction);
+            }
+        }
+
+        await FlushPendingAttachmentBlobsAsync(transaction).ConfigureAwait(false);
+    }
 
     private static void ValidateGeometrySrid(byte[]? geometry, int? layerSrid)
     {
@@ -2014,13 +2180,21 @@ internal sealed partial class FeatureDataAccess
                         if (d.Deleted)
                         {
                             await TryWriteOutboxRowForBatchAsync(conn, tx, featureId, "delete", d.Snapshot, ct).ConfigureAwait(false);
+                            d = await CaptureDeletedAttachmentsAsync(layerId, featureId, conn, tx, transaction, d, ct).ConfigureAwait(false);
                         }
                         return d;
                     },
                     cancellationToken,
-                    requireTransaction: hasPrecondition).ConfigureAwait(false);
+                    requireTransaction: hasPrecondition || _attachmentCleanup is not null).ConfigureAwait(false);
                 if (deleted.Deleted)
                 {
+                    if (transaction is null)
+                    {
+                        // rollbackOnFailure is false: this row already committed. Remove its
+                        // blobs now so a later failed edit cannot leave them behind (#6137).
+                        await ReleaseCommittedAttachmentBlobsAsync(deleted.AttachmentBlobs).ConfigureAwait(false);
+                    }
+
                     deletedCount++;
                     results.Add(EditOperationResult.Success(featureId));
                 }
