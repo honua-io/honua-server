@@ -319,8 +319,11 @@ UI: "Test filter" button runs against the storage backend and shows match count.
 | `Protocols[]` | string[] | ✏️ — multi-select from supported protocols list |
 | `SpatialReference` | SpatialReference | 🔍 — derived from primary resources; operator can pin if the service forces a single CRS |
 | `AccessPolicy` | AccessPolicy | ✏️ — same shape as Resource |
+| `Status.Lifecycle` | enum (`draft` / `active` / `deprecated` / `retired` / `archived`) | ✏️ — omit to serve; default `active` |
 | `Id` | string | ⚙️ |
 | `CreatedAt` / `UpdatedAt` | timestamp | ⚙️ |
+
+`MetadataV2Status.Lifecycle` defaults to `active` when a graph write omits `status` or `status.lifecycle`. That default is shared by services, publications, resources, and storage bindings. An omitted lifecycle stays on GA protocol routes. Set `draft`, `retired`, or `archived` explicitly to keep the entity in the graph for administration while hiding it from serving routes. `deprecated` stays servable. The default is not `draft`: an omitted status must not become a silent protocol-wide 404.
 
 ---
 
@@ -372,6 +375,7 @@ override:
 | `IsPrimary` | bool, default true on first | ✏️ — checkbox |
 | `TitleOverride` | string? | ✏️ — when service needs different display title than resource |
 | `Id` (Metadata.Id) | string | ⚙️ |
+| `Status.Lifecycle` | enum | ✏️ — omit to serve; default `active` (same `MetadataV2Status` default as Service) |
 | `Capabilities` (per-publication overrides) | derived | 🧮 — read-only display showing which Resource capabilities are exposed on this service |
 
 UI flow: "Add layer to service" → picks Resource → auto-suggests Identifier

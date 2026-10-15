@@ -84,9 +84,8 @@ public sealed class FeatureServerLayerListParsingTests
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "service-a", Name = "alpha" },
-            // Explicitly serving: MetadataV2Status defaults to Draft, which makes every
-            // publication on the service non-routable and would mask the publication
-            // lifecycle behaviour this case is proving.
+            // Explicitly serving. An omitted status is active; set it here so this
+            // case does not depend on that default.
             Status = activeStatus,
         };
         var activeResource = new MetadataV2Resource
@@ -220,9 +219,9 @@ public sealed class FeatureServerLayerListParsingTests
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "service-a" },
-            // Explicitly serving: MetadataV2Status defaults to Draft, which makes every
-            // publication on the service non-routable regardless of the publication,
-            // resource, and binding lifecycles this case is proving.
+            // Explicitly serving. An omitted status is active; set it here so this
+            // case proves publication, resource, and binding lifecycles rather than
+            // the service default.
             Status = activeStatus,
         };
         var draftStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft };

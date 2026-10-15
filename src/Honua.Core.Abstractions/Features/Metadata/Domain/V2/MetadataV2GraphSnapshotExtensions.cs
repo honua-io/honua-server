@@ -40,11 +40,13 @@ public static class MetadataV2GraphSnapshotExtensions
     /// <summary>
     /// Returns whether a service may expose protocol routes, including service-only
     /// surfaces that do not have a publication to anchor lifecycle evaluation.
+    /// An omitted status is <see cref="MetadataV2LifecycleStatus.Active"/> and stays
+    /// visible. Explicit draft, retired, and archived lifecycles are not routable.
     /// </summary>
     public static bool IsRoutable(this MetadataV2Service service)
     {
         ArgumentNullException.ThrowIfNull(service);
-        return IsServingLifecycle(service.Status.Lifecycle);
+        return IsServingStatus(service.Status);
     }
 
     /// <summary>
@@ -57,9 +59,9 @@ public static class MetadataV2GraphSnapshotExtensions
         MetadataV2Resource? resource)
     {
         ArgumentNullException.ThrowIfNull(publication);
-        return IsServingLifecycle(publication.Status.Lifecycle) &&
+        return IsServingStatus(publication.Status) &&
                resource is not null &&
-               IsServingLifecycle(resource.Status.Lifecycle);
+               IsServingStatus(resource.Status);
     }
 
     /// <summary>
@@ -71,13 +73,16 @@ public static class MetadataV2GraphSnapshotExtensions
         MetadataV2Resource? resource)
     {
         ArgumentNullException.ThrowIfNull(binding);
-        return IsServingLifecycle(binding.Status.Lifecycle) &&
+        return IsServingStatus(binding.Status) &&
                resource is not null &&
-               IsServingLifecycle(resource.Status.Lifecycle);
+               IsServingStatus(resource.Status);
     }
 
-    private static bool IsServingLifecycle(MetadataV2LifecycleStatus lifecycle)
-        => lifecycle is MetadataV2LifecycleStatus.Active or MetadataV2LifecycleStatus.Deprecated;
+    // A missing status object is an omitted caller value, not an explicit draft.
+    // JSON deserialization can leave the non-nullable property null when the
+    // member is absent; that entity stays routable. Explicit draft does not.
+    private static bool IsServingStatus(MetadataV2Status? status)
+        => status is null || status.Lifecycle is MetadataV2LifecycleStatus.Active or MetadataV2LifecycleStatus.Deprecated;
 
     /// <summary>
     /// Finds a service by case-insensitive name.

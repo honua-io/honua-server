@@ -135,9 +135,9 @@ public sealed class MetadataV2LifecycleRoutingTests
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "service-ogc", Name = "ogc" },
-            // Explicit lifecycle: MetadataV2Status defaults to Draft, which would make the
-            // publication non-routable for service-lifecycle reasons and mask the
-            // publication/binding lifecycle behaviour these cases are proving.
+            // Explicit lifecycle. An omitted status is active; these cases pass the
+            // service lifecycle under test so a retired service is not confused with
+            // that default.
             Status = new MetadataV2Status { Lifecycle = serviceLifecycle },
             Protocols = ["WCS"]
         };
