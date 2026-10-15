@@ -129,6 +129,7 @@
     <InternalsVisibleTo Include="Honua.Protocols.SensorThings.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.SensorThings.UnitTests" />
     <InternalsVisibleTo Include="Honua.Geoprocessing" />
+    <InternalsVisibleTo Include="Honua.Jobs" />
     <InternalsVisibleTo Include="Honua.Worker.Gdal" />
     <InternalsVisibleTo Include="Honua.Scene" />
     <InternalsVisibleTo Include="Honua.OData.TestHost" />

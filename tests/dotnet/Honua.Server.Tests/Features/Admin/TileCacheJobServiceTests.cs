@@ -81,7 +81,7 @@ public sealed class TileCacheJobServiceTests
         var graphProvider = new TestMetadataV2GraphProvider(graph);
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new InMemoryProgressStore();
-        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
         var service = CreateService(jobStore, progressStore, [backend], options, graphProvider: graphProvider);
 
@@ -112,7 +112,7 @@ public sealed class TileCacheJobServiceTests
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new InMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
-        var localBackend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, jobQueue);
@@ -142,7 +142,7 @@ public sealed class TileCacheJobServiceTests
     {
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new InMemoryProgressStore();
-        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
         var service = CreateService(jobStore, progressStore, [backend], options);
 
@@ -203,7 +203,7 @@ public sealed class TileCacheJobServiceTests
         };
 
         // Only the local backend is registered; the requested backend is absent.
-        var localBackend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var service = CreateService(jobStore, progressStore, [localBackend], options);
 
         var act = async () => await service.SubmitAsync(SeedRequest(), schemaName: null);
@@ -220,7 +220,7 @@ public sealed class TileCacheJobServiceTests
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new InMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
-        var localBackend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, jobQueue);
@@ -256,7 +256,7 @@ public sealed class TileCacheJobServiceTests
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new InMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
-        var localBackend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, jobQueue);
@@ -278,7 +278,7 @@ public sealed class TileCacheJobServiceTests
     {
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new InMemoryProgressStore();
-        var localBackend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, Substitute.For<IJobQueue>());
@@ -297,7 +297,7 @@ public sealed class TileCacheJobServiceTests
     {
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new InMemoryProgressStore();
-        var localBackend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, Substitute.For<IJobQueue>());
