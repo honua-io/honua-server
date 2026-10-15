@@ -861,7 +861,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             requiredRuntimeProfile,
             cancellationToken,
             resolvedKey is null ? null : ConfirmKeyedReplayAsync).ConfigureAwait(false);
-        var effectiveProtocolMetadata = ResolveEffectiveProtocolControls(protocolMetadata, workload);
+        // A release replay uses its persisted workload controls, even if the registry's
+        // first matching runtime or the live process binding now points elsewhere.
+        var effectiveProtocolMetadata = protocolMetadata?.ContainsKey(GpProcessReleaseAdmission.ProcessParam) == true
+            ? protocolMetadata
+            : ResolveEffectiveProtocolControls(protocolMetadata, workload);
         var now = DateTimeOffset.UtcNow;
 
         async Task<bool> ConfirmKeyedReplayAsync(CancellationToken replayToken)
@@ -1886,6 +1890,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 // injection) keep their precedence over the workload's baseline.
                 specParams.TryAdd(kv.Key, kv.Value);
             }
+
+            if (releasePinned && IsProtocolControl(kv.Key))
+            {
+                specParams[ReleaseControlDefaultPrefix + kv.Key] = specParams[kv.Key];
+            }
         }
 
         return new ExecutionJobSpec
@@ -2235,10 +2244,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             // These controls are adapter inputs, never server-stamped plan or admission keys.
             // BuildSpec gives a declared workload value precedence whether requested or omitted.
-            if (entry.Key is GeoprocessingProtocolMetadataKeys.GPServerWorkspace
-                or GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput
-                or GeoprocessingProtocolMetadataKeys.GPServerOutSr
-                || IsOutputSelectionKey(entry.Key))
+            if (IsProtocolControl(entry.Key))
             {
                 effective[entry.Key] = entry.Value;
             }
@@ -2247,15 +2253,41 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return effective;
     }
 
+    private const string ReleaseControlDefaultPrefix = "honua.release.workload_control.";
+
+    private static bool IsProtocolControl(string key)
+        => key is GeoprocessingProtocolMetadataKeys.GPServerWorkspace
+            or GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput
+            or GeoprocessingProtocolMetadataKeys.GPServerOutSr
+            || IsOutputSelectionKey(key);
+
     private static bool ProtocolControlsMatch(
         IReadOnlyDictionary<string, string> stored,
         IReadOnlyDictionary<string, string>? requested)
-        => ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerWorkspace)
+    {
+        if (stored.ContainsKey(GpProcessReleaseAdmission.ReleaseLockDigestParam))
+        {
+            var effective = requested is null
+                ? new Dictionary<string, string>()
+                : new Dictionary<string, string>(requested);
+            foreach (var entry in stored)
+            {
+                if (entry.Key.StartsWith(ReleaseControlDefaultPrefix, StringComparison.Ordinal))
+                {
+                    effective[entry.Key[ReleaseControlDefaultPrefix.Length..]] = entry.Value;
+                }
+            }
+
+            requested = effective;
+        }
+
+        return ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerWorkspace)
             && ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput)
             && ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerOutSr)
             && ScalarControlMatches(stored, requested, GpProcessReleaseAdmission.ProcessParam)
             && ReleaseInputsMatch(stored, requested)
             && OutputSelectionMatches(stored, requested);
+    }
 
     private static bool ReleaseInputsMatch(
         IReadOnlyDictionary<string, string> stored,

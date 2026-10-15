@@ -113,7 +113,11 @@ public sealed class CustomCodeSubmitTests
                 WorkloadId = "unrelated", WorkloadName = "Unrelated", Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.AwsBatch, Backend = "aws-batch",
                 RuntimeProfile = CustomCodeJobContract.RuntimeProfile, ArtifactReference = "worker:latest",
-                Parameters = new Dictionary<string, string> { ["batch.queue"] = "wrong-queue" },
+                Parameters = new Dictionary<string, string>
+                {
+                    ["batch.queue"] = "wrong-queue",
+                    [GeoprocessingProtocolMetadataKeys.GPServerWorkspace] = "wrong-workspace",
+                },
             },
             new ExecutionJobDefinition
             {
@@ -123,6 +127,7 @@ public sealed class CustomCodeSubmitTests
                 Parameters = new Dictionary<string, string>
                 {
                     ["batch.queue"] = "release-queue",
+                    [GeoprocessingProtocolMetadataKeys.GPServerWorkspace] = "release-workspace",
                     ["batch.job_definition_arn"] = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:7",
                     ["batch.job_definition_arn.s"] = "arn:aws:batch:us-west-2:123456789012:job-definition/wrong:99",
                     [CustomCodeJobContract.GitRefParam] = new string('f', 40),
@@ -151,6 +156,7 @@ public sealed class CustomCodeSubmitTests
         queued.Spec.Artifact.Should().Be(v1.Lock.RuntimeImage.Reference);
         queued.Spec.WorkloadId.Should().Be("custom-code");
         queued.Spec.Parameters["batch.queue"].Should().Be("release-queue");
+        queued.Spec.Parameters[GeoprocessingProtocolMetadataKeys.GPServerWorkspace].Should().Be("release-workspace");
         _jobStore.GetAsync(queued.OperationId, Arg.Any<CancellationToken>()).Returns(queued);
 
         (await store.ActivateAsync(Activation(v2.Digest, 1, "8"), environment)).Activated.Should().BeTrue();
