@@ -20922,6 +20922,15 @@
               "maximum": 500,
               "default": 50
             }
+          },
+          {
+            "name": "eventCursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Omit for a tail. Use start to page the retained stream from its beginning, then the returned nextCursor. Append order; not a frozen snapshot."
           }
         ],
         "responses": {
@@ -49010,6 +49019,21 @@
           },
           "truncated": {
             "type": "boolean"
+          },
+          "firstCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "tail",
+              "page"
+            ]
           }
         }
       },

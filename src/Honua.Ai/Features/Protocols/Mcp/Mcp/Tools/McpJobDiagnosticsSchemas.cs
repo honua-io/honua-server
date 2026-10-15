@@ -23,6 +23,11 @@ internal static class McpJobDiagnosticsSchemas
           "type": "object",
           "required": ["jobId"],
           "properties": {
+            "eventCursor": {
+              "type": "string",
+              "maxLength": 128,
+              "description": "Omit for the latest events. Use start to page retained events from the beginning, then the returned nextCursor. Pages follow append order and may include events appended since the previous page."
+            },
             "jobId": {
               "type": "string",
               "minLength": 1,
@@ -94,6 +99,11 @@ internal static class McpJobDiagnosticsSchemas
           "type": "object",
           "required": ["jobId"],
           "properties": {
+            "eventCursor": {
+              "type": "string",
+              "maxLength": 128,
+              "description": "Omit for the latest events. Use start to page retained events from the beginning, then the returned nextCursor. Pages follow append order and may include events appended since the previous page."
+            },
             "jobId": {
               "type": "string",
               "minLength": 1,
@@ -129,7 +139,10 @@ internal static class McpJobDiagnosticsSchemas
                 "items": { "type": "array", "items": { "type": "object" } },
                 "totalCount": { "type": "integer" },
                 "limit": { "type": "integer" },
-                "truncated": { "type": "boolean" }
+                "truncated": { "type": "boolean" },
+                "firstCursor": { "type": ["string", "null"] },
+                "nextCursor": { "type": ["string", "null"] },
+                "mode": { "type": "string", "enum": ["tail", "page"] }
               }
             },
             "artifacts": { "type": "object" },

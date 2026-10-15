@@ -51,6 +51,9 @@ internal sealed class McpDiagnoseJobArgument
 
     [JsonPropertyName("events")]
     public int? Events { get; set; }
+
+    [JsonPropertyName("eventCursor")]
+    public string? EventCursor { get; set; }
 }
 
 /// <summary>
@@ -63,6 +66,9 @@ internal sealed class McpJobEvidenceArgument
 
     [JsonPropertyName("events")]
     public int? Events { get; set; }
+
+    [JsonPropertyName("eventCursor")]
+    public string? EventCursor { get; set; }
 }
 
 /// <summary>

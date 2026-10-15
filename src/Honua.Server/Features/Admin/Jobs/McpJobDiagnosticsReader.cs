@@ -36,7 +36,7 @@ internal sealed class McpJobDiagnosticsReader(IConsoleJobService jobs) : IMcpJob
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(argument);
 
-        var projection = await ProjectAsync(principal, argument.JobId, argument.Events, cancellationToken).ConfigureAwait(false);
+        var projection = await ProjectAsync(principal, argument.JobId, argument.Events, argument.EventCursor, cancellationToken).ConfigureAwait(false);
         var diagnosis = new McpJobDiagnosis
         {
             JobId = projection.JobId,
@@ -110,7 +110,7 @@ internal sealed class McpJobDiagnosticsReader(IConsoleJobService jobs) : IMcpJob
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(argument);
 
-        var projection = await ProjectAsync(principal, argument.JobId, argument.Events, cancellationToken).ConfigureAwait(false);
+        var projection = await ProjectAsync(principal, argument.JobId, argument.Events, argument.EventCursor, cancellationToken).ConfigureAwait(false);
         var evidence = new McpJobEvidence
         {
             JobId = projection.JobId,
@@ -131,6 +131,7 @@ internal sealed class McpJobDiagnosticsReader(IConsoleJobService jobs) : IMcpJob
         ClaimsPrincipal principal,
         string? jobId,
         int? events,
+        string? eventCursor,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(jobId))
@@ -138,9 +139,17 @@ internal sealed class McpJobDiagnosticsReader(IConsoleJobService jobs) : IMcpJob
             throw new GeoprocessingValidationException("jobId is required.");
         }
 
-        var projection = await _jobs
-            .GetDiagnosticsAsync(principal, pathBase: string.Empty, jobId.Trim(), events, cancellationToken)
-            .ConfigureAwait(false);
+        ConsoleJobDiagnostics? projection;
+        try
+        {
+            projection = await _jobs
+                .GetDiagnosticsAsync(principal, pathBase: string.Empty, jobId.Trim(), events, eventCursor, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ArgumentException)
+        {
+            throw new GeoprocessingValidationException("Invalid diagnostic event cursor.");
+        }
 
         // Unreadable and unknown jobs are indistinguishable on purpose: the REST route answers
         // 404 for both so a caller cannot probe for job existence, and the tool keeps that.
