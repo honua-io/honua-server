@@ -24,6 +24,7 @@ using NSubstitute;
 
 namespace Honua.Protocols.OData.UnitTests.Services;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataBatchReadBudgetTests
 {
     [Fact]

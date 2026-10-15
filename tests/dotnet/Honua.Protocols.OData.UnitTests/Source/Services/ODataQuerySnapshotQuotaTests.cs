@@ -9,6 +9,7 @@ using Honua.Protocols.OData.Services;
 
 namespace Honua.Protocols.OData.UnitTests.Services;
 
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataQuerySnapshotQuotaTests
 {
     [Fact]
