@@ -741,7 +741,7 @@ public sealed class JobExecutionServiceTests
 
         await jobStore.DidNotReceive().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(job =>
-                job.Status is ExecutionJobStatus.Cancelled or ExecutionJobStatus.Failed),
+                job.Status == ExecutionJobStatus.Cancelled || job.Status == ExecutionJobStatus.Failed),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
     }

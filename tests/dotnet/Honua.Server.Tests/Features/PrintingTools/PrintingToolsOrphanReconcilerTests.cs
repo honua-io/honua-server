@@ -175,7 +175,7 @@ public class PrintingToolsOrphanReconcilerTests
         private readonly object _gate = new();
         private readonly Dictionary<string, IOperationProgress> _items = new(StringComparer.Ordinal);
 
-        public IReadOnlyList<IOperationProgress> Snapshot()
+        public IOperationProgress[] Snapshot()
         {
             lock (_gate)
             {
