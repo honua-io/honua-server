@@ -449,12 +449,6 @@ public sealed class EditProcessor : IEditProcessor
                 warnings.Add("Object ID specified for create operation will be ignored");
             }
 
-            // Validate attributes exist if required
-            if (feature.Attributes?.IsEmpty != false && RequiresAttributes(resource))
-            {
-                return EditValidationResult.Failure("Attributes required for create operation");
-            }
-
             // A spatial layer does not universally require geometry: a nullable geometry
             // column legitimately accepts attribute-only ("null geometry") creates, which
             // ArcGIS FeatureServer and the OGC/OData edit paths all support (see
@@ -463,21 +457,13 @@ public sealed class EditProcessor : IEditProcessor
             // (BH-014, #2423) rejected those valid attribute-only creates; NOT NULL geometry
             // columns are enforced by the database constraint, mapped through the shared
             // error helpers rather than a client-side pre-check.
-
-            // BH2-014: Validate that every required (non-nullable, non-geometry, non-id) field is
-            // present when the caller supplies a partial attribute dictionary. Previously only the
-            // fully-absent case was caught here; a feature that provides some attributes but omits a
-            // required field would pass validation and then fail with an opaque DB NOT NULL error.
-            // (Geometry presence is intentionally NOT pre-checked here — nullable geometry columns
-            // accept attribute-only creates; NOT NULL geometry is enforced by the DB constraint.)
-            if (feature.Attributes?.IsEmpty == false)
+            //
+            // Required attributes are the same per-slot check FeatureServer runs before the
+            // batch is assembled (#6133). Geometry presence is intentionally not pre-checked.
+            var createRejection = DescribeCreateAttributeRejection(resource, feature.Attributes);
+            if (createRejection is not null)
             {
-                var missingFields = FindMissingRequiredFields(resource, feature.Attributes);
-                if (missingFields.Count > 0)
-                {
-                    return EditValidationResult.Failure(
-                        $"Required attribute(s) missing for create operation: {string.Join(", ", missingFields)}");
-                }
+                return EditValidationResult.Failure(createRejection);
             }
         }
 
@@ -803,6 +789,33 @@ public sealed class EditProcessor : IEditProcessor
             && string.Equals(field.Name, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Returns why one create attribute bag fails required-field rules, or <see langword="null"/>
+    /// when the bag is acceptable. Callers that apply a batch with
+    /// <c>rollbackOnFailure=false</c> use this per add slot so one missing field does not fail
+    /// the rest of the batch with a request-level error (honua-server#6133).
+    /// </summary>
+    /// <param name="resource">Layer resource whose schema defines required fields.</param>
+    /// <param name="attributes">Attributes that will be written for the create. Null and empty
+    /// are treated the same.</param>
+    /// <returns>A client-safe rejection, or <see langword="null"/> when the create may proceed.</returns>
+    public static string? DescribeCreateAttributeRejection(
+        MetadataV2Resource resource,
+        IReadOnlyDictionary<string, object?>? attributes)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        if (attributes is null || attributes.Count == 0)
+        {
+            return RequiresAttributes(resource) ? "Attributes required for create operation" : null;
+        }
+
+        var missingFields = FindMissingRequiredFields(resource, attributes);
+        return missingFields.Count > 0
+            ? $"Required attribute(s) missing for create operation: {string.Join(", ", missingFields)}"
+            : null;
+    }
+
     private static bool RequiresAttributes(MetadataV2Resource resource)
     {
         // V2 fields carry Nullable but no DefaultValue — match the v1 contract by
@@ -835,7 +848,7 @@ public sealed class EditProcessor : IEditProcessor
     /// </summary>
     private static List<string> FindMissingRequiredFields(
         MetadataV2Resource resource,
-        ImmutableDictionary<string, object?> attributes)
+        IReadOnlyDictionary<string, object?> attributes)
     {
         var missing = new List<string>();
         var primaryIdFieldName = resource.FindPrimaryIdField()?.Name;

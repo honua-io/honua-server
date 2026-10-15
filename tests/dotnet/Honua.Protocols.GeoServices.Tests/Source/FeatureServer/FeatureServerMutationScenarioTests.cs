@@ -103,6 +103,35 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.BulkCreate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_MissingRequiredField_FailsOnlyThatAddWhenRollbackIsOff()
+    {
+        _fixture.UpdateResourceSchemaField(TestLayerId, new MetadataV2Field
+        {
+            Name = "name",
+            Type = MetadataV2FieldType.String,
+            Nullable = false,
+            Description = "Name"
+        });
+
+        const string payload = """
+            {"rollbackOnFailure":false,"adds":[{"attributes":{"name":"required-ok"},"geometry":{"x":-122.41,"y":37.77}},{"attributes":{"description":"no-name"},"geometry":{"x":-122.42,"y":37.78}}]}
+            """;
+        var response = await PostJsonAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
+            payload);
+        var result = await DeserializeEditsAsync(response);
+
+        result.AddResults.Should().HaveCount(2);
+        result.AddResults![0].Success.Should().BeTrue();
+        result.AddResults[1].Success.Should().BeFalse();
+        result.AddResults[1].Error!.Code.Should().Be(GeoServicesEditErrorCodes.ValidationFailed);
+        (await ReadCountByNameAsync("required-ok")).Should().Be(1);
+        (await ReadCountByWhereAsync("description='no-name'")).Should().Be(0);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
@@ -551,9 +580,12 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         return document.RootElement.GetProperty("count").GetInt32();
     }
 
-    private async Task<int> ReadCountByNameAsync(string name)
+    private Task<int> ReadCountByNameAsync(string name)
+        => ReadCountByWhereAsync($"name='{name}'");
+
+    private async Task<int> ReadCountByWhereAsync(string whereClause)
     {
-        var where = Uri.EscapeDataString($"name='{name}'");
+        var where = Uri.EscapeDataString(whereClause);
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&where={where}&returnCountOnly=true");
         response.Be200Ok();

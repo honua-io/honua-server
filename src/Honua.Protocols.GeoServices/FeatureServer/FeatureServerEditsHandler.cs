@@ -419,6 +419,18 @@ internal sealed class FeatureServerEditsHandler(
         {
             throw;
         }
+        catch (EditBatchValidationException ex)
+        {
+            // A batch-level validation failure is a client error. Mapping it to 500 made one
+            // bad add fail the whole request, including rows that rollbackOnFailure=false
+            // should have kept (#6133). Per-slot failures are reported on the edit result
+            // instead; this is the leftover that never reached a slot.
+            FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
+            scope.RecordException(ex);
+            return StandardErrorHelpers.CreateBadRequest(
+                httpContext,
+                SanitizeEditErrorMessage(ex.Message, "Invalid edit request."));
+        }
         // A read/query-only provider's writer (ReadOnlyFeatureWriter for DuckDB and
         // MySQL/MariaDB) rejects every write with NotSupportedException. That is the
         // provider's documented posture, not an internal failure, so map it through the
@@ -580,6 +592,12 @@ internal sealed class FeatureServerEditsHandler(
                 // identical to the update path.
                 var requestHasGeometry = request.Adds[i].Geometry != null;
                 var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, resource, AttributeRuleEditEvent.Insert, principal, cancellationToken);
+                var createRejection = EditProcessor.DescribeCreateAttributeRejection(resource, newFeature.Attributes);
+                if (createRejection is not null)
+                {
+                    throw new ArgumentException(createRejection);
+                }
+
                 context.CreateFeatures.Add(newFeature);
                 context.CreateIndexes.Add(i);
                 context.CreateGeometryChanged.Add(requestHasGeometry);
@@ -635,12 +653,16 @@ internal sealed class FeatureServerEditsHandler(
         var slotObjectIds = new long?[request.Updates.Length];
         for (var i = 0; i < request.Updates.Length; i++)
         {
-            if (!TryGetObjectId(request.Updates[i].Attributes, resource, out var parsedObjectId))
+            var hasObjectId = TryGetObjectId(request.Updates[i].Attributes, resource, out var parsedObjectId);
+            if (!hasObjectId || parsedObjectId <= 0)
             {
                 context.HasValidationErrors = true;
                 context.UpdateResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.InvalidObjectId,
-                    description: "ObjectId is required for update operations");
+                    description: hasObjectId
+                        ? "Invalid Object ID for update operation"
+                        : "ObjectId is required for update operations",
+                    objectId: hasObjectId ? parsedObjectId : null);
                 continue;
             }
 
@@ -830,12 +852,14 @@ internal sealed class FeatureServerEditsHandler(
         var slotObjectIds = new long?[request.Deletes.Length];
         for (var i = 0; i < request.Deletes.Length; i++)
         {
-            if (!FeatureServerValueParser.TryConvertToLong(request.Deletes[i], out var parsedObjectId))
+            if (!FeatureServerValueParser.TryConvertToLong(request.Deletes[i], out var parsedObjectId) ||
+                parsedObjectId <= 0)
             {
                 context.HasValidationErrors = true;
                 context.DeleteResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.InvalidObjectId,
-                    description: "Invalid ObjectId for delete operation");
+                    description: "Invalid Object ID for delete operation",
+                    objectId: parsedObjectId > 0 ? parsedObjectId : null);
                 continue;
             }
 
@@ -1006,14 +1030,14 @@ internal sealed class FeatureServerEditsHandler(
             cancellationToken);
         if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
         {
-            throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
+            throw new EditBatchValidationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
         }
 
         var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, resource);
         var editValidation = _editProcessor.ValidateEdit(optimizedEdit, resource);
         if (!editValidation.IsValid)
         {
-            throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
+            throw new EditBatchValidationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
@@ -2439,6 +2463,15 @@ internal sealed class FeatureServerEditsHandler(
     /// <see cref="GeoServicesEditErrorCodes.ValidationFailed"/>.
     /// </summary>
     private sealed class EditNotPermittedException(string message) : Exception(message)
+    {
+    }
+
+    /// <summary>
+    /// Batch-level edit validation that must surface as a client error rather than a 500
+    /// (honua-server#6133). Per-feature failures use <see cref="ArgumentException"/> inside
+    /// the slot loop instead.
+    /// </summary>
+    private sealed class EditBatchValidationException(string message) : Exception(message)
     {
     }
 }
