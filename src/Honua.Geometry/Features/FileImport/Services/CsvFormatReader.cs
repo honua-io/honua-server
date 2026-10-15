@@ -312,12 +312,21 @@ internal static class CsvFormatReader
         // geometry to NULL and reporting success (data loss), preserve the raw value as an
         // attribute so it is never discarded and record the occurrence so the import surfaces
         // a warning. Mirrors GeoParquet's skip/warn behaviour for null geometry.
-        if (geometry == null && unparseableGeometryValue != null)
+        // Coordinate columns that failed to parse are restored the same way, including
+        // heuristic lat/lon pairs. Blank cells stay a null geometry with no warning (#6172).
+        var coordinatesUnparseable = geometry == null && HasUnparseableCoordinates(fields, mapping);
+        if (geometry == null && (unparseableGeometryValue != null || coordinatesUnparseable))
         {
             diagnostics?.RecordUnparseableGeometry();
-            if (mapping.WktIndex.HasValue)
+            if (unparseableGeometryValue != null && mapping.WktIndex.HasValue)
             {
                 attributes.Add(headers[mapping.WktIndex.Value], unparseableGeometryValue);
+            }
+
+            if (coordinatesUnparseable)
+            {
+                RestoreUnparseableCoordinate(attributes, headers, fields, mapping.LongitudeIndex);
+                RestoreUnparseableCoordinate(attributes, headers, fields, mapping.LatitudeIndex);
             }
         }
 
@@ -371,15 +380,6 @@ internal static class CsvFormatReader
                 unparseableGeometryValue = null;
                 return geometryFactory.CreatePoint(new Coordinate(longitude, latitude));
             }
-
-            // Caller-specified coordinate columns that carried values but failed to parse
-            // are surfaced (heuristic mappings keep the historical silent-null behavior so
-            // attribute-only CSVs do not suddenly emit warnings).
-            if (mapping.ExplicitCoordinates
-                && (!string.IsNullOrWhiteSpace(longitudeValue) || !string.IsNullOrWhiteSpace(latitudeValue)))
-            {
-                unparseableGeometryValue = $"{longitudeValue},{latitudeValue}".Trim();
-            }
         }
 
         return null;
@@ -421,6 +421,14 @@ internal static class CsvFormatReader
             {
                 latitudeIndex = i;
             }
+        }
+
+        // A point needs both axes. One coordinate-like header (an "x" score, a "long"
+        // description, a lat column with no longitude) is an ordinary attribute (#6172).
+        if (longitudeIndex.HasValue != latitudeIndex.HasValue)
+        {
+            longitudeIndex = null;
+            latitudeIndex = null;
         }
 
         return new CsvColumnMapping(wktIndex, longitudeIndex, latitudeIndex);
@@ -504,6 +512,38 @@ internal static class CsvFormatReader
 
     private static bool IsGeometrySourceColumn(int index, CsvColumnMapping mapping)
         => mapping.WktIndex == index || mapping.LongitudeIndex == index || mapping.LatitudeIndex == index;
+
+    private static bool HasUnparseableCoordinates(IReadOnlyList<string> fields, CsvColumnMapping mapping)
+    {
+        if (mapping.LongitudeIndex is not { } longitudeIndex || mapping.LatitudeIndex is not { } latitudeIndex)
+        {
+            return false;
+        }
+
+        var longitudeValue = GetField(fields, longitudeIndex);
+        var latitudeValue = GetField(fields, latitudeIndex);
+        if (string.IsNullOrWhiteSpace(longitudeValue) && string.IsNullOrWhiteSpace(latitudeValue))
+        {
+            return false;
+        }
+
+        return !double.TryParse(longitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _)
+            || !double.TryParse(latitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+    }
+
+    private static void RestoreUnparseableCoordinate(
+        AttributesTable attributes,
+        string[] headers,
+        IReadOnlyList<string> fields,
+        int? index)
+    {
+        if (index is not { } column || attributes.Exists(headers[column]))
+        {
+            return;
+        }
+
+        attributes.Add(headers[column], GetField(fields, column));
+    }
 
     private static string GetField(IReadOnlyList<string> fields, int index)
         => index < fields.Count ? fields[index] : string.Empty;

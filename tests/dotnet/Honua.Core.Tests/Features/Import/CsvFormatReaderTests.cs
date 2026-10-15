@@ -151,6 +151,65 @@ public sealed class CsvFormatReaderTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task ReadStreamingAsync_SingleCoordinateHeader_KeepsColumnAsAttribute()
+    {
+        // #6172: one coordinate-like header is not half of a point, so its values must
+        // survive as an attribute beside a real geometry column.
+        var csv = """
+            id,x,wkt
+            1,42,POINT(1 2)
+            """;
+
+        var (features, diagnostics) = await ReadAllAsync(csv);
+
+        features.Should().ContainSingle();
+        features[0].Attributes["x"].Should().Be("42");
+        features[0].Attributes["id"].Should().Be("1");
+        var point = features[0].Geometry.Should().BeOfType<Point>().Subject;
+        point.X.Should().BeApproximately(1, 1e-6);
+        point.Y.Should().BeApproximately(2, 1e-6);
+        diagnostics.UnparseableGeometryRows.Should().Be(0);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_UnpairedLongitudeHeader_KeepsColumnAsAttribute()
+    {
+        var csv = """
+            site,long,notes
+            pier,very,north
+            """;
+
+        var (features, _) = await ReadAllAsync(csv);
+
+        features.Should().ContainSingle();
+        features[0].Geometry.Should().BeNull();
+        features[0].Attributes["long"].Should().Be("very");
+        features[0].Attributes["site"].Should().Be("pier");
+        features[0].Attributes["notes"].Should().Be("north");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_HeuristicCoordinates_UnparseableValues_AreKeptAndCounted()
+    {
+        var csv = """
+            name,lon,lat
+            Broken,N/A,37.7
+            """;
+
+        var (features, diagnostics) = await ReadAllAsync(csv);
+
+        diagnostics.UnparseableGeometryRows.Should().Be(1);
+        features.Should().ContainSingle();
+        features[0].Geometry.Should().BeNull();
+        features[0].Attributes["lon"].Should().Be("N/A");
+        features[0].Attributes["lat"].Should().Be("37.7");
+        features[0].Attributes["name"].Should().Be("Broken");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task ReadStreamingAsync_ExplicitCoordinateColumns_OverrideHeuristics()
     {
         // "easting"/"northing" are not auto-detected names; explicit options must map them.
