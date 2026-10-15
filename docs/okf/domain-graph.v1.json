@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:0970c9e71c0da7163897926ccc28fd4d39e0617c86983ee3499bc44fbd50dffc",
+  "bundleDigest": "sha256:b0b70a747e87c2ba57293138c0b5743c61579b9a1273edccb7542550321a7282",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2012,7 +2012,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:84d13e5a75a7ba7a9aea70343bf98a766580bc83ae7f09615580739cfe2f0aa2",
+      "documentDigest": "sha256:48b1a4bd19d00d75eb77e7333461ec45c539e35124b072d1539d6ff025d422cb",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -16166,7 +16166,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:51aa9c12e7df1c3363adc3d15790b7708e9795a24f0d321061c0003f67a2fa34"
+      "contractDigest": "sha256:8165edeb967ef64c4a169a0d6efc98823f696c8b79d59441682f56723a2d8837"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -16239,7 +16239,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:51aa9c12e7df1c3363adc3d15790b7708e9795a24f0d321061c0003f67a2fa34"
+      "contractDigest": "sha256:8165edeb967ef64c4a169a0d6efc98823f696c8b79d59441682f56723a2d8837"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16249,7 +16249,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:51aa9c12e7df1c3363adc3d15790b7708e9795a24f0d321061c0003f67a2fa34"
+      "contractDigest": "sha256:8165edeb967ef64c4a169a0d6efc98823f696c8b79d59441682f56723a2d8837"
     },
     {
       "workflow": "guides/workflows/import-data",
