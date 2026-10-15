@@ -38,7 +38,7 @@ internal sealed class GeoprocessingJobArtifactService
     private readonly GeoprocessingRasterOutputRegistrar? _outputRegistrar;
     private readonly IGeoprocessingOutputObjectStore? _outputStore;
     private readonly TimeProvider _timeProvider;
-    private readonly IReadOnlyList<IJobTerminalCallback> _terminalCallbacks;
+    private readonly IJobTerminalCallback[] _terminalCallbacks;
 
     /// <summary>
     /// Creates the artifact coordinator over the catalog, the optional result-package store,
@@ -79,7 +79,7 @@ internal sealed class GeoprocessingJobArtifactService
     /// </summary>
     internal async Task ReplayTerminalCallbacksAsync(ExecutionJobRecord job)
     {
-        if (_terminalCallbacks.Count == 0
+        if (_terminalCallbacks.Length == 0
             || await HasStoredResultPackageAsync(job).ConfigureAwait(false))
         {
             return;
