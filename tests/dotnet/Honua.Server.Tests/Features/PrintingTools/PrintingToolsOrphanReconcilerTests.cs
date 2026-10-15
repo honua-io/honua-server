@@ -64,29 +64,31 @@ public class PrintingToolsOrphanReconcilerTests
     public async Task FreshHeartbeatFromOtherInstance_StaysSubmitted()
     {
         var store = new MemoryProgressStore();
-        var now = DateTimeOffset.UtcNow;
-        var progress = PrintProgress.CreateInitial("print-live", "PNG32", "MAP_ONLY", 1) with
-        {
-            RequestedBy = "user-1",
-            TenantId = "tenant-a",
-            AnonymousSubmission = false,
-            OwnerInstanceId = "other-instance",
-            HeartbeatAt = now
-        };
-        await store.SetProgressAsync(progress.JobId, progress, TimeSpan.FromHours(24));
-
+        var submitter = Submitter();
         var orphanOptions = new PrintingToolsOrphanOptions
         {
             ReconciliationInterval = TimeSpan.FromMilliseconds(20),
             LeaseTimeout = TimeSpan.FromMinutes(5)
         };
         await using var restarted = BuildProvider(store, new PrintWorkerInstance(), new PrintJobTracker(), orphanOptions);
+        await SubmitAsync(restarted, submitter);
+
+        // Status reads authorize the canonical actor, not the raw name identifier. Keep the
+        // submitter stamp from the real submit path, and only move the lease to another worker.
+        var queued = store.Snapshot().OfType<PrintProgress>().Single();
+        var foreign = queued with
+        {
+            OwnerInstanceId = "other-instance",
+            HeartbeatAt = DateTimeOffset.UtcNow
+        };
+        await store.SetProgressAsync(foreign.JobId, foreign, TimeSpan.FromHours(24));
+
         var reconciler = ActivatorUtilities.CreateInstance<PrintingToolsOrphanReconciler>(restarted);
         await reconciler.StartAsync(CancellationToken.None);
         try
         {
             await Task.Delay(TimeSpan.FromMilliseconds(120));
-            var body = await ReadStatusAsync(restarted, Submitter(), progress.JobId);
+            var body = await ReadStatusAsync(restarted, submitter, foreign.JobId);
             Assert.Contains("esriJobSubmitted", body, StringComparison.Ordinal);
             Assert.DoesNotContain("esriJobFailed", body, StringComparison.Ordinal);
         }
