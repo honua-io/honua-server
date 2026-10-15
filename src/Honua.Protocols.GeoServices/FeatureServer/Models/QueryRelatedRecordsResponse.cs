@@ -52,6 +52,12 @@ public sealed class QueryRelatedRecordsResponse
     public GeoServicesFieldInfo[]? Fields { get; init; }
 
     /// <summary>
+    /// Whether more related records exist beyond the returned window. Always emitted,
+    /// including <c>false</c>, so clients can tell a complete result from a truncated page.
+    /// </summary>
+    public bool ExceededTransferLimit { get; init; }
+
+    /// <summary>
     /// Array of related record groups, one per source object ID
     /// </summary>
     public required RelatedRecordGroup[] RelatedRecordGroups { get; init; }
