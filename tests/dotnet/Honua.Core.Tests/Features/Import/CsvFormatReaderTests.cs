@@ -151,6 +151,57 @@ public sealed class CsvFormatReaderTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task ReadStreamingAsync_StrayQuoteInUnquotedField_DoesNotMergeFollowingRows()
+    {
+        // #6173: an inch mark is not a quoted-field opener. Three physical rows stay three features.
+        var csv = """
+            id,part,code
+            1,12" pipe,a
+            2,coupling,b
+            3,12" valve,c
+            """;
+
+        var (features, _) = await ReadAllAsync(csv);
+
+        features.Should().HaveCount(3);
+        features[0].Attributes["part"].Should().Be("12\" pipe");
+        features[0].Attributes["code"].Should().Be("a");
+        features[1].Attributes["id"].Should().Be("2");
+        features[1].Attributes["part"].Should().Be("coupling");
+        features[2].Attributes["part"].Should().Be("12\" valve");
+        features[2].Attributes["code"].Should().Be("c");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_QuotedFieldWithCommaAndEscapedQuote_StaysOneField()
+    {
+        var csv = """
+            name,address
+            Capitol,"1100 Congress Ave, ""Austin"", TX"
+            """;
+
+        var (features, _) = await ReadAllAsync(csv);
+
+        features.Should().ContainSingle();
+        features[0].Attributes["address"].Should().Be("1100 Congress Ave, \"Austin\", TX");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_QuotedFieldSpanningLines_JoinsUntilClosingQuote()
+    {
+        var csv = "id,note\n1,\"line1\nline2\",tail\n";
+
+        var (features, _) = await ReadAllAsync(csv);
+
+        features.Should().ContainSingle();
+        features[0].Attributes["note"].Should().Be("line1\nline2");
+        features[0].Attributes["id"].Should().Be("1");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task ReadStreamingAsync_SingleCoordinateHeader_KeepsColumnAsAttribute()
     {
         // #6172: one coordinate-like header is not half of a point, so its values must

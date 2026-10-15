@@ -256,7 +256,7 @@ internal static class CsvFormatReader
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var record = await ReadCsvRecordAsync(reader, cancellationToken);
+            var record = await ReadCsvRecordAsync(reader, delimiter, cancellationToken);
             if (record == null)
             {
                 break;
@@ -587,7 +587,7 @@ internal static class CsvFormatReader
         while (sampleRecords.Count < DelimiterProbeRecordCount)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var record = await ReadCsvRecordAsync(reader, cancellationToken);
+            var record = await ReadCsvRecordAsync(reader, delimiter: null, cancellationToken);
             if (record == null)
             {
                 break;
@@ -659,6 +659,7 @@ internal static class CsvFormatReader
         var fields = new List<string>();
         var current = new StringBuilder(record.Length);
         var inQuotes = false;
+        var atFieldStart = true;
 
         for (var i = 0; i < record.Length; i++)
         {
@@ -683,6 +684,7 @@ internal static class CsvFormatReader
                     current.Append(ch);
                 }
 
+                atFieldStart = false;
                 continue;
             }
 
@@ -690,24 +692,32 @@ internal static class CsvFormatReader
             {
                 fields.Add(current.ToString());
                 current.Clear();
+                atFieldStart = true;
                 continue;
             }
 
-            if (ch == '"')
+            // A quote opens a field only when it is the first character of that field.
+            // A stray inch-mark in 12" is literal text, not a multi-line quoted field (#6173).
+            if (ch == '"' && atFieldStart)
             {
                 quotedFields?.Add(fields.Count);
                 inQuotes = true;
+                atFieldStart = false;
                 continue;
             }
 
             current.Append(ch);
+            atFieldStart = false;
         }
 
         fields.Add(current.ToString());
         return fields;
     }
 
-    private static async Task<string?> ReadCsvRecordAsync(StreamReader reader, CancellationToken cancellationToken)
+    private static async Task<string?> ReadCsvRecordAsync(
+        StreamReader reader,
+        char? delimiter,
+        CancellationToken cancellationToken)
     {
         var line = await reader.ReadLineAsync(cancellationToken);
         if (line == null)
@@ -718,7 +728,7 @@ internal static class CsvFormatReader
         var builder = new StringBuilder(line);
         var currentSize = Encoding.UTF8.GetByteCount(line);
 
-        while (!IsCompleteRecord(builder))
+        while (!IsCompleteRecord(builder, delimiter))
         {
             var nextLine = await reader.ReadLineAsync(cancellationToken);
             if (nextLine == null)
@@ -747,27 +757,76 @@ internal static class CsvFormatReader
         return builder.ToString();
     }
 
-    private static bool IsCompleteRecord(StringBuilder record)
+    private static bool IsCompleteRecord(StringBuilder record, char? delimiter)
+        => !CsvQuoteCursor.Start.Advance(record, delimiter).InQuotes;
+
+    /// <summary>
+    /// Quote state for one CSV record. A double quote opens a field only at the
+    /// start of that field; any other quote is literal. <paramref name="delimiter"/>
+    /// null means every probe candidate can separate fields (delimiter not chosen yet).
+    /// </summary>
+    private readonly struct CsvQuoteCursor
     {
-        var inQuotes = false;
-        for (var i = 0; i < record.Length; i++)
+        public bool InQuotes { get; private init; }
+
+        public bool AtFieldStart { get; private init; }
+
+        public static CsvQuoteCursor Start => new() { AtFieldStart = true };
+
+        public CsvQuoteCursor Advance(StringBuilder record, char? delimiter)
         {
-            if (record[i] != '"')
+            var inQuotes = InQuotes;
+            var atFieldStart = AtFieldStart;
+            for (var i = 0; i < record.Length; i++)
             {
-                continue;
+                var ch = record[i];
+                if (inQuotes)
+                {
+                    if (ch == '"')
+                    {
+                        var hasEscapedQuote = i + 1 < record.Length && record[i + 1] == '"';
+                        if (hasEscapedQuote)
+                        {
+                            i++;
+                        }
+                        else
+                        {
+                            inQuotes = false;
+                        }
+                    }
+
+                    atFieldStart = false;
+                    continue;
+                }
+
+                if (IsFieldDelimiter(ch, delimiter))
+                {
+                    atFieldStart = true;
+                    continue;
+                }
+
+                if (ch == '"' && atFieldStart)
+                {
+                    inQuotes = true;
+                    atFieldStart = false;
+                    continue;
+                }
+
+                atFieldStart = false;
             }
 
-            var hasEscapedQuote = inQuotes && i + 1 < record.Length && record[i + 1] == '"';
-            if (hasEscapedQuote)
-            {
-                i++;
-                continue;
-            }
+            return new CsvQuoteCursor { InQuotes = inQuotes, AtFieldStart = atFieldStart };
+        }
+    }
 
-            inQuotes = !inQuotes;
+    private static bool IsFieldDelimiter(char ch, char? delimiter)
+    {
+        if (delimiter.HasValue)
+        {
+            return ch == delimiter.Value;
         }
 
-        return !inQuotes;
+        return ch is ',' or '\t' or ';' or '|';
     }
 
     private static string NormalizeColumnName(string value)
