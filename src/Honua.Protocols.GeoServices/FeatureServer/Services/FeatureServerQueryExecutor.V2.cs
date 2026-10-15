@@ -129,6 +129,28 @@ internal sealed partial class FeatureServerQueryExecutor
         return await ProjectComputedFieldsAsync(result, resource, storageLayerId, actor, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Id-only V2 read. Resolves the same reader as a feature query but calls
+    /// <see cref="IFeatureReader.QueryObjectIdsAsync"/> and does not project computed fields.
+    /// </summary>
+    public async Task<ImmutableArray<long>> QueryObjectIdsWithValidationAsync(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderV2Async(
+            service,
+            resource,
+            publication,
+            storageLayerId,
+            FeatureProviderReadOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        return await QueryObjectIdsWithValidationAsync(reader, storageLayerId, query, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<QueryResult<Feature>> ProjectComputedFieldsAsync(
         QueryResult<Feature> result,
         MetadataV2Resource resource,
@@ -325,13 +347,12 @@ internal sealed partial class FeatureServerQueryExecutor
             return;
         }
 
-        await StreamIdsAsync(
-            routedReader as IStreamingFeatureStore ?? _streamingFeatureStore,
+        var objectIds = await QueryObjectIdsWithValidationAsync(
+            routedReader ?? _featureReader,
             storageLayerId,
             query,
-            objectIdFieldName,
-            context,
             cancellationToken).ConfigureAwait(false);
+        await WriteObjectIdsAsync(objectIds, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task StreamQueryAsync(

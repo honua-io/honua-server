@@ -52,7 +52,8 @@ public sealed class PgRoutingProviderIntegrationTests : IClassFixture<PgRoutingF
             new FixtureDatabaseSessionFactory(connectionProvider),
             NullLogger<PgRoutingProvider>.Instance,
             new ProfiledNetworkDatasetResolver(),
-            Options.Create(new RoutingConfiguration()));
+            Options.Create(new RoutingConfiguration()),
+            new RoutingSolveCapacityLimiter());
     }
 
     [RoutingTest(RoutingTestEnv)]

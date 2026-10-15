@@ -892,7 +892,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 // A provider reader that cannot stream (federated ArcGIS REST) answers ids from
                 // QueryObjectIdsAsync under a hard ceiling instead of materialising every full
-                // feature with geometry (#6113). Streaming readers keep the feature path.
+                // feature with geometry (#6113). Other readers also use their ids-only path.
                 var boundedIds = await _queryExecutor.TryQueryNonStreamingObjectIdsAsync(
                     queryLayer.Service,
                     queryLayer.Resource,
@@ -907,16 +907,14 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
                 else
                 {
-                    QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
+                    var result = await _queryExecutor.QueryObjectIdsWithValidationAsync(
                         queryLayer.Service,
                         queryLayer.Resource,
                         queryLayer.Publication,
                         queryLayer.StorageLayerId,
                         query,
                         cancellationToken).ConfigureAwait(false);
-                    objectIds = result.Items
-                        .Select(feature => GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
-                        .ToArray();
+                    objectIds = result.IsDefault ? [] : result.ToArray();
                 }
 
                 stopwatch.Stop();

@@ -489,7 +489,8 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
                         new FixtureDatabaseConnectionProvider(routing.DataSource, routing.ConnectionString)),
                     NullLogger<PgRoutingProvider>.Instance,
                     resolver,
-                    Options.Create(new RoutingConfiguration())));
+                    Options.Create(new RoutingConfiguration()),
+                    new RoutingSolveCapacityLimiter()));
                 services.RemoveAll<IConnectionMultiplexer>();
                 services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection));
                 services.RemoveAll<IExecutionJobStore>();
