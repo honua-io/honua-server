@@ -63,7 +63,9 @@ internal sealed class PostgresArcGisMigrationEvidenceStore : IArcGisMigrationEvi
                 actor                 = EXCLUDED.actor,
                 created_at            = EXCLUDED.created_at,
                 target_resource_count = EXCLUDED.target_resource_count,
-                manifest_json         = EXCLUDED.manifest_json
+                manifest_json         = EXCLUDED.manifest_json,
+                parity_json           = NULL,
+                parity_classification = NULL
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
