@@ -241,3 +241,5 @@ dotnet run --project src/Honua.Geoprocessing.Cli -- --help
 
 See [automate workflows](automate-workflows.md) for the workflow lifecycle and
 [GP with AI](geoprocessing-with-ai.md) for MCP discovery, validation, and execution.
+
+When a job fails on a server, start from its diagnostics projection rather than the raw logs: [Diagnose a remote geoprocessing job](gp-job-diagnostics.md) explains the failed phase, the attempt, worker liveness, the code identity that ran and whether a retry would help.

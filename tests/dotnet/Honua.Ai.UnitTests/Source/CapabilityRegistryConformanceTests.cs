@@ -410,6 +410,8 @@ public sealed class CapabilityRegistryConformanceTests
             new Honua.Ai.Protocols.Mcp.MapTools.DescribeLayerTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.DescribeLayerTool>.Instance),
             new ListJobsTool(jobService, NullLogger<ListJobsTool>.Instance),
+            new DiagnoseJobTool(NullLogger<DiagnoseJobTool>.Instance),
+            new JobEvidenceTool(NullLogger<JobEvidenceTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(

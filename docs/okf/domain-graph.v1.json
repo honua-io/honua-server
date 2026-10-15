@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:a28a61a346fc51dcfdfce5660242bbd38e048c9b1ccad663dee09b5ab0d1f9b2",
+  "bundleDigest": "sha256:e24c98cef8513daf97e501f9e6b94227413c14bbb3344fc08ceebdcaeedbcf49",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1960,7 +1960,7 @@
     {
       "id": "gis/CLIENT_TEMPLATE_RUNBOOK",
       "path": "gis/CLIENT_TEMPLATE_RUNBOOK.md",
-      "documentDigest": "sha256:5a33d2b483e5e04ceab6aed848f857a9cf8179cc4b148e04536c3d2d3de8acf4",
+      "documentDigest": "sha256:5dc10d8fbd4006a121857bce870af73f6a3f359f9966dfaf8479bd26d4f1f9e9",
       "metadata": {
         "type": "guide",
         "title": "Client template runbook",
@@ -2012,7 +2012,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:48b1a4bd19d00d75eb77e7333461ec45c539e35124b072d1539d6ff025d422cb",
+      "documentDigest": "sha256:d752ae72a032ddc2bcb526f870732165d5887083cc13db28bbf6dd2a54fab3d0",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -2485,7 +2485,7 @@
     {
       "id": "guides/query-analyze/gp-devkit-authoring",
       "path": "guides/query-analyze/gp-devkit-authoring.md",
-      "documentDigest": "sha256:90a76ccdf64c53d38824a98c1bb5f312eccd8735c46e9e45b9b91add891033ca",
+      "documentDigest": "sha256:696c0acb321e0d25aee264e0c14e3192ad1b109c02f2bb050bbbd1bc9d5ae93a",
       "metadata": {
         "type": "guide",
         "title": "Author a geoprocessing process",
@@ -2494,9 +2494,20 @@
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/query-analyze/gp-devkit-authoring.md"
     },
     {
+      "id": "guides/query-analyze/gp-job-diagnostics",
+      "path": "guides/query-analyze/gp-job-diagnostics.md",
+      "documentDigest": "sha256:877ba537c4903a5e1517f5313d26f5f780881ff76dc5964c768c2bc0f3417212",
+      "metadata": {
+        "type": "guide",
+        "title": "Diagnose a remote geoprocessing job",
+        "description": "Read one job diagnostics projection to find the failed phase and attempt, judge whether the worker is alive, see what code ran, and decide whether a retry would help."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/query-analyze/gp-job-diagnostics.md"
+    },
+    {
       "id": "guides/query-analyze/gp-local-dev-quickstart",
       "path": "guides/query-analyze/gp-local-dev-quickstart.md",
-      "documentDigest": "sha256:759b1ed4b9d6530897422b0caa7af3858cade83dc13595c278dcfa80ce4f0088",
+      "documentDigest": "sha256:445e6c83cc1761a63444e6f79705da7ebdc8242241dd2c98906e4063118d08de",
       "metadata": {
         "type": "guide",
         "title": "Local geoprocessing dev quickstart",
@@ -10815,6 +10826,11 @@
     {
       "source": "guides/connect/ai-agents-mcp",
       "relation": "links_to",
+      "target": "guides/query-analyze/gp-job-diagnostics"
+    },
+    {
+      "source": "guides/connect/ai-agents-mcp",
+      "relation": "links_to",
       "target": "guides/query-analyze/run-geoprocessing"
     },
     {
@@ -11920,6 +11936,11 @@
     {
       "source": "guides/query-analyze/gp-devkit-authoring",
       "relation": "links_to",
+      "target": "guides/query-analyze/gp-job-diagnostics"
+    },
+    {
+      "source": "guides/query-analyze/gp-devkit-authoring",
+      "relation": "links_to",
       "target": "guides/query-analyze/gp-local-dev-quickstart"
     },
     {
@@ -11936,6 +11957,11 @@
       "source": "guides/query-analyze/gp-local-dev-quickstart",
       "relation": "links_to",
       "target": "guides/query-analyze/gp-devkit-authoring"
+    },
+    {
+      "source": "guides/query-analyze/gp-local-dev-quickstart",
+      "relation": "links_to",
+      "target": "guides/query-analyze/gp-job-diagnostics"
     },
     {
       "source": "guides/query-analyze/gp-local-dev-quickstart",
@@ -16193,7 +16219,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:8165edeb967ef64c4a169a0d6efc98823f696c8b79d59441682f56723a2d8837"
+      "contractDigest": "sha256:301ef1ce88ac34b7c971a1ce2fa8ca5ab9585bdc789f03dd7ba178f3b9ffb6cb"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -16266,7 +16292,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:8165edeb967ef64c4a169a0d6efc98823f696c8b79d59441682f56723a2d8837"
+      "contractDigest": "sha256:301ef1ce88ac34b7c971a1ce2fa8ca5ab9585bdc789f03dd7ba178f3b9ffb6cb"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16276,7 +16302,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:8165edeb967ef64c4a169a0d6efc98823f696c8b79d59441682f56723a2d8837"
+      "contractDigest": "sha256:301ef1ce88ac34b7c971a1ce2fa8ca5ab9585bdc789f03dd7ba178f3b9ffb6cb"
     },
     {
       "workflow": "guides/workflows/import-data",

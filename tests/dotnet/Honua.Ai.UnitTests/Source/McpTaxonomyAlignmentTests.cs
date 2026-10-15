@@ -82,6 +82,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_propose_metadata_release",
         "honua_propose_platform_release_convergence",
         "honua_list_jobs",
+        "honua_diagnose_job",
+        "honua_job_evidence",
         "honua_list_layers",
         "honua_describe_layer",
         "honua_query_features",
@@ -180,6 +182,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         var services = new ServiceCollection();
         services.AddSingleton(Substitute.For<IMcpOpsObservabilityReader>());
         services.AddSingleton(Substitute.For<IMcpPlatformOpsReader>());
+        services.AddSingleton(Substitute.For<IMcpJobDiagnosticsReader>());
         services.AddSingleton(Substitute.For<Honua.Geocoding.Features.Geocoding.Abstractions.IGeocodeCoordinatorService>());
         services.AddSingleton(Substitute.For<Honua.Core.Features.FileImport.Abstractions.IFileImportService>());
         services.AddSingleton(Substitute.For<Honua.Routing.Features.Routing.Abstractions.IRoutingProvider>());
@@ -394,6 +397,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_list_layers",
         "honua_describe_layer",
         "honua_list_jobs",
+        "honua_diagnose_job",
+        "honua_job_evidence",
         "honua_query_features",
         "honua_render_map",
         "honua_get_style",

@@ -291,6 +291,15 @@ internal static class McpServiceCollectionExtensions
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, OperateEventsTool>());
         }
 
+        // Job diagnosis tools (#6219) read the admin job diagnostics projection through
+        // IMcpJobDiagnosticsReader, which the server composition root registers next to the
+        // ops-observability reader. The same gate keeps tools/list honest in minimal hosts.
+        if (services.Any(d => d.ServiceType == typeof(IMcpJobDiagnosticsReader)))
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DiagnoseJobTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, JobEvidenceTool>());
+        }
+
         // Platform-ops tools (#2566) are thin MCP adapters over the deploy
         // control-plane read/proposal seams. Tool advertisement is gated on the
         // host providing the server-side reader, so minimal compositions stay truthful.
