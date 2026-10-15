@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:87a7b49732649f1b5512dccb1fc99250a0d9ce8b75294d865d6aa878ea3647af",
+  "bundleDigest": "sha256:9dc2ef49748e3af7c5008f50ce8e8d8806f459f0d9e6a6fae266bddc8149e4d5",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7286,7 +7286,7 @@
     {
       "id": "operator/geoprocessing-process-releases",
       "path": "operator/geoprocessing-process-releases.md",
-      "documentDigest": "sha256:0598e6822bc53343535e42f5c131b263b3a0bde0d03a83a1957a9350894377cc",
+      "documentDigest": "sha256:6e9dbc059c59efb06fbb1579f43aeeb12571d1a44bbc701c5c1dc8439de32e53",
       "metadata": {
         "type": "runbook",
         "title": "GP process release bindings",

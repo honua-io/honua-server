@@ -75,11 +75,18 @@ public sealed class CustomCodeSubmitTests
     }
 
     [UnitTest]
-    public async Task SubmitJob_LogicalRelease_PreservesPinnedIdentityAcrossDefaultsAndReplay()
+    public Task SubmitJob_LogicalRelease_PreservesPinnedIdentityAcrossDefaultsAndReplay()
+        => VerifyReleaseAdmissionAsync("python");
+
+    [UnitTest]
+    public Task SubmitJob_DotnetRelease_UsesRegisteredProjectAndPreservesPinsOnReplay()
+        => VerifyReleaseAdmissionAsync("dotnet");
+
+    private async Task VerifyReleaseAdmissionAsync(string runtime)
     {
         var store = new InMemoryGpProcessReleaseStore();
-        var v1 = await store.PublishAsync(ReleaseLock("1.0.0", "a"), "operator");
-        var v2 = await store.PublishAsync(ReleaseLock("2.0.0", "b"), "operator");
+        var v1 = await store.PublishAsync(ReleaseLock("1.0.0", "a", runtime), "operator");
+        var v2 = await store.PublishAsync(ReleaseLock("2.0.0", "b", runtime), "operator");
         var environment = new GpProcessReleaseEnvironment
         {
             ServerContractVersion = 1,
@@ -127,6 +134,7 @@ public sealed class CustomCodeSubmitTests
                 Parameters = new Dictionary<string, string>
                 {
                     ["batch.queue"] = "release-queue",
+                    [CustomCodeJobContract.DepsManifestParam] = "samples/gp-local-dev/Tool.csproj",
                     [GeoprocessingProtocolMetadataKeys.GPServerWorkspace] = "release-workspace",
                     ["batch.job_definition_arn"] = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:7",
                     ["batch.job_definition_arn.s"] = "arn:aws:batch:us-west-2:123456789012:job-definition/wrong:99",
@@ -154,6 +162,9 @@ public sealed class CustomCodeSubmitTests
         queued.Spec.Parameters[GpProcessReleaseAdmission.AwsBatchJobDefinitionParam].Should().EndWith(":7");
         queued.Spec.Parameters.Should().NotContainKey("batch.job_definition_arn.s");
         queued.Spec.Artifact.Should().Be(v1.Lock.RuntimeImage.Reference);
+        queued.Spec.Parameters[CustomCodeJobContract.DepsManifestParam].Should().Be(runtime == "dotnet"
+            ? "samples/gp-local-dev/Tool.csproj"
+            : v1.Lock.DependencyLock.Path);
         queued.Spec.WorkloadId.Should().Be("custom-code");
         queued.Spec.Parameters["batch.queue"].Should().Be("release-queue");
         queued.Spec.Parameters[GeoprocessingProtocolMetadataKeys.GPServerWorkspace].Should().Be("release-workspace");
@@ -187,6 +198,7 @@ public sealed class CustomCodeSubmitTests
             releaseAdmission: new GpProcessReleaseAdmission(store, NullLogger<GpProcessReleaseAdmission>.Instance),
             scopedJobTokenIssuer: refusedIssuer);
         var newMetadata = CustomCodeMetadata();
+        newMetadata[CustomCodeJobContract.RuntimeParam] = runtime;
         newMetadata[GpProcessReleaseAdmission.ProcessParam] = "buffer-features";
         newMetadata.Remove(CustomCodeJobContract.GitRefParam);
         newMetadata.Remove(CustomCodeJobContract.RepoUrlParam);
@@ -197,6 +209,26 @@ public sealed class CustomCodeSubmitTests
         await missingWorker.Should().ThrowAsync<GeoprocessingValidationException>()
             .WithMessage("*pinned image and job-definition revision*");
         await refusedIssuer.DidNotReceive().IssueAsync(Arg.Any<ScopedJobTokenRequest>(), Arg.Any<CancellationToken>());
+
+        if (runtime == "dotnet")
+        {
+            registry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+            {
+                new ExecutionJobDefinition
+                {
+                    WorkloadId = "missing-project", WorkloadName = "Missing project", Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.AwsBatch, Backend = "aws-batch",
+                    RuntimeProfile = CustomCodeJobContract.RuntimeProfile, ArtifactReference = v2.Lock.RuntimeImage.Reference,
+                    Parameters = new Dictionary<string, string>
+                    {
+                        ["batch.job_definition_arn"] = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:8",
+                    },
+                },
+            });
+            var missingProject = () => unavailable.SubmitJobAsync(CustomCodePlan(), "missing-project", OwnerPrincipal(), newMetadata);
+            await missingProject.Should().ThrowAsync<GeoprocessingValidationException>().WithMessage("*naming its .csproj*");
+            await refusedIssuer.DidNotReceive().IssueAsync(Arg.Any<ScopedJobTokenRequest>(), Arg.Any<CancellationToken>());
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1131,19 +1163,19 @@ public sealed class CustomCodeSubmitTests
         public T Get(string? name) => value;
         public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
-    private static GpProcessReleaseLock ReleaseLock(string version, string shaChar)
+    private static GpProcessReleaseLock ReleaseLock(string version, string shaChar, string runtime)
         => new()
         {
             Process = new GpReleaseProcess
             {
                 Name = "buffer-features",
                 Version = version,
-                Runtime = "python",
-                Entrypoint = "buffer_features:execute",
+                Runtime = runtime,
+                Entrypoint = runtime == "dotnet" ? "Tool::Example.BufferTool" : "buffer_features:execute",
                 Contract = new GpReleaseContract { InputSchemaSha256 = "sha256:" + new string('1', 64), OutputSchemaSha256 = "sha256:" + new string('2', 64) },
             },
             Source = new GpReleaseSource { Repository = "honua-io/honua-samples", Sha = new string(shaChar[0], 40), DescriptorPath = "samples/gp-local-dev/honua-gp.yaml" },
-            DependencyLock = new GpReleaseFileDigest { Path = "samples/gp-local-dev/uv.lock", Sha256 = "sha256:" + new string('d', 64) },
+            DependencyLock = new GpReleaseFileDigest { Path = runtime == "dotnet" ? "samples/gp-local-dev/packages.lock.json" : "samples/gp-local-dev/requirements.lock", Sha256 = "sha256:" + new string('d', 64) },
             RuntimeImage = new GpReleaseRuntimeImage { Reference = "ghcr.io/honua-io/honua-gp-worker@sha256:" + new string('b', 64), Digest = "sha256:" + new string('b', 64) },
             WorkflowVersion = "wf-2026.1-7",
             ConfigurationReferences = [],

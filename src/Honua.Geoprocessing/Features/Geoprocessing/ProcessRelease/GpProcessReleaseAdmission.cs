@@ -11,11 +11,11 @@ namespace Honua.Geoprocessing.ProcessRelease;
 /// Admission-time release pinning (honua-server#6221). A custom-code submission that names a
 /// logical process (<c>customcode.process</c>) is resolved against the process's live binding
 /// once, here, and the resolved identity is stamped into the durable spec parameters: the
-/// source commit, entrypoint, runtime and dependency manifest from the lock, the pinned worker
-/// image for a Kubernetes Jobs target, the pinned job-definition revision for an AWS Batch
-/// target, and the release identity under <c>honua.release.*</c>. Retries, requeues and
-/// workflow steps read the persisted spec, so they execute the release the job was admitted
-/// with; a later binding change affects subsequent admissions only.
+/// source commit, entrypoint and runtime from the lock, the pinned AWS Batch worker identity,
+/// and the release identity under <c>honua.release.*</c>. Python uses the lock's requirements
+/// file; .NET resolves its build project from the matching registered workload. Existing job
+/// retries and requeues read the persisted spec. Workflow-run pinning requires a separate
+/// orchestration integration; this admission resolver does not establish it.
 /// </summary>
 public sealed partial class GpProcessReleaseAdmission
 {
@@ -101,7 +101,10 @@ public sealed partial class GpProcessReleaseAdmission
         Stamp(specParams, CustomCodeJobContract.RepoUrlParam, RepositoryUrl(lockDocument.Source.Repository), process);
         Stamp(specParams, CustomCodeJobContract.GitRefParam, lockDocument.Source.Sha, process);
         Stamp(specParams, CustomCodeJobContract.EntrypointParam, lockDocument.Process.Entrypoint, process);
-        Stamp(specParams, CustomCodeJobContract.DepsManifestParam, lockDocument.DependencyLock.Path, process);
+        if (lockDocument.Process.Runtime == CustomCodeJobContract.PythonRuntime)
+        {
+            Stamp(specParams, CustomCodeJobContract.DepsManifestParam, lockDocument.DependencyLock.Path, process);
+        }
 
         specParams[ProcessParam] = process;
         specParams[ReleaseProcessParam] = process;
@@ -126,6 +129,28 @@ public sealed partial class GpProcessReleaseAdmission
 
         Log.ReleasePinned(_logger, process, lockDocument.Process.Version, binding.BindingVersion, binding.Targets.Count);
         return binding;
+    }
+
+    // The v1 lock records a dependency lock, not a .NET build project. Resolve the
+    // project from the matching registered workload and persist it before token issuance;
+    // passing packages.lock.json to dotnet build would fail every .NET release job.
+    internal static void ApplyWorkloadManifest(
+        Dictionary<string, string> specParams,
+        IReadOnlyDictionary<string, string> workloadParameters)
+    {
+        if (specParams.GetValueOrDefault(CustomCodeJobContract.RuntimeParam) != CustomCodeJobContract.DotnetRuntime)
+        {
+            return;
+        }
+
+        if (!workloadParameters.TryGetValue(CustomCodeJobContract.DepsManifestParam, out var project)
+            || string.IsNullOrWhiteSpace(project)
+            || !project.Trim().EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GeoprocessingValidationException("A .NET process release requires customcode.deps_manifest naming its .csproj on the matching registered workload.");
+        }
+
+        Stamp(specParams, CustomCodeJobContract.DepsManifestParam, project.Trim(), specParams[ProcessParam]);
     }
 
     /// <summary>The HTTPS clone URL for an <c>owner/name</c> repository.</summary>

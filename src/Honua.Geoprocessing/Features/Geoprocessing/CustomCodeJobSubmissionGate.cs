@@ -117,6 +117,8 @@ internal sealed class CustomCodeJobSubmissionGate
             {
                 throw new GeoprocessingValidationException("The active process release requires a registered AWS Batch workload with its pinned image and job-definition revision.");
             }
+
+            GpProcessReleaseAdmission.ApplyWorkloadManifest(specParams, workload.Parameters);
         }
 
         try

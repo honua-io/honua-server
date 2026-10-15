@@ -60,11 +60,21 @@ Activation body:
 A submission that names a process (`customcode.process: <name>`) is admitted against the live
 binding once. The server stamps the release into the job's durable spec: `customcode.repo_url`,
 `customcode.git_ref` (the lock's source commit), `customcode.entrypoint`, `customcode.runtime`
-and `customcode.deps_manifest` from the lock; `batch.job_definition_arn` for an AWS Batch target
-and `k8s.image` for a Kubernetes Jobs target; and `honua.release.process`, `honua.release.version`,
+from the lock; `batch.job_definition_arn` for the AWS Batch target; and
+`honua.release.process`, `honua.release.version`,
 `honua.release.lock_digest` and `honua.release.binding_version`. A caller may repeat the same
 values but a different `git_ref`, repository, entrypoint or runtime is refused: a submission that
 names a release cannot also point at other code.
+
+For Python, `customcode.deps_manifest` is the dependency-lock path and must be a pip-compatible
+requirements file (the Python worker does not consume uv/Poetry lock formats). For .NET, the
+matching registered workload must declare `customcode.deps_manifest` as the repository-relative
+`.csproj` path. Admission refuses a missing project or a conflicting caller value before minting
+a token. The v1 release lock records `packages.lock.json`, not a build-project path; the project
+setting is resolved from the registered workload at admission and persisted in that job. A change
+to that workload setting can affect new admissions, even without changing the release binding.
+The dependency-lock digest is recorded as provenance; this API does not independently verify
+the worker's dependency restoration against that digest.
 
 The spec is persisted at admission. Replaying an admitted job or requeueing its persisted
 record keeps that release. Changing the binding affects subsequent admissions only.
