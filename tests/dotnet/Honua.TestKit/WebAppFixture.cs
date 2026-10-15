@@ -329,6 +329,13 @@ public sealed class WebAppFixture : IAsyncLifetime
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceSchemaField(this, layerIndex, field);
 
     /// <summary>
+    /// Sets (or clears with <c>null</c>) editor-tracking and GlobalID bindings on the
+    /// resource published at <paramref name="layerIndex"/>.
+    /// </summary>
+    public void UpdateV2ResourceEditing(int layerIndex, MetadataV2ResourceEditing? editing)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceEditing(this, layerIndex, editing);
+
+    /// <summary>
     /// Sets (or clears with <c>null</c>) the Esri subtype set on the resource published
     /// at <paramref name="layerIndex"/>. Delegates to
     /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.

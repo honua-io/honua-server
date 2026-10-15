@@ -244,6 +244,12 @@ internal static partial class RedshiftFeatureQueryBuilder
         }
 
         var ids = query.ObjectIds.Value;
+        if (ids.Length > 30_000)
+        {
+            throw new NotSupportedException(
+                $"The object id list of {ids.Length.ToString(CultureInfo.InvariantCulture)} values exceeds this provider's parameter limit of 30000.");
+        }
+
         var placeholders = new string[ids.Length];
         for (var i = 0; i < ids.Length; i++)
         {

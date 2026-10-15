@@ -74,6 +74,21 @@ public sealed class EditProcessorCreateValidationTests
     }
 
     [UnitTest]
+    public void DescribeCreateAttributeRejection_NamesOnlyTheMissingField()
+    {
+        var resource = CreateResourceWithRequiredField();
+        var attributes = ImmutableDictionary.Create<string, object?>(StringComparer.OrdinalIgnoreCase)
+            .Add("notes", "some note");
+
+        EditProcessor.DescribeCreateAttributeRejection(resource, attributes)
+            .Should().Be("Required attribute(s) missing for create operation: name");
+        EditProcessor.DescribeCreateAttributeRejection(
+                resource,
+                ImmutableDictionary.Create<string, object?>(StringComparer.OrdinalIgnoreCase).Add("name", "ok"))
+            .Should().BeNull();
+    }
+
+    [UnitTest]
     public void ValidateEdit_CreateWithAllRequiredFields_Succeeds()
     {
         var processor = CreateProcessor();

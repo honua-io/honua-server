@@ -107,7 +107,6 @@ public sealed class EndpointResponseMetadataTests : IDisposable
                      ("POST", "/rest/services/{serviceId}/FeatureServer/unRegisterReplica", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.SuccessResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/append", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.AppendResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/append", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.AppendResponse)),
-                     ("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.CalculateResponse)),
                      ("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate", typeof(Honua.Protocols.GeoServices.FeatureServer.Models.CalculateResponse))
                  })
         {

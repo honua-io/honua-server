@@ -846,7 +846,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
             }
 
-            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometryWkb, cancellationToken);
+            // Enforce the layer geometry type only on a geometry the PATCH supplies; an existing
+            // geometry carried through a property-only patch is not re-typed.
+            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(
+                geometryWkb,
+                patchRequest.HasGeometry
+                    ? FeatureMutationValidator.ResolveLayerGeometryType(resource)
+                    : MetadataV2GeometryType.None,
+                cancellationToken);
             if (!geometryValidation.IsValid)
             {
                 return StandardErrorHelpers.CreateBadRequest(

@@ -106,7 +106,16 @@ internal sealed class RedshiftFeatureStore : IFeatureDataProvider, IFeatureReade
             features = features.RemoveAt(features.Length - 1);
         }
 
-        return QueryResult<Feature>.Create(features.Length, features, hasMore);
+        var offset = query.Offset ?? 0;
+        long exactMatchCount = features.Length;
+        if (hasMore || offset > 0)
+        {
+            var countSql = RedshiftFeatureQueryBuilder.BuildCountQuery(mapping, query);
+            exactMatchCount = await _dataAccess.ExecuteCountAsync(mapping, countSql, _boundConnection, cancellationToken).ConfigureAwait(false);
+        }
+
+        var totalCount = FeatureQueryPageTotals.ResolveReportedTotalCount(features.Length, hasMore, offset, exactMatchCount);
+        return QueryResult<Feature>.Create(totalCount, features, hasMore);
     }
 
     /// <inheritdoc />

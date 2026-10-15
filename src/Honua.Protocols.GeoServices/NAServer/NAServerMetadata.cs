@@ -227,7 +227,9 @@ internal static class NAServerMetadata
                 document["travelDirection"] = "esriNATravelDirectionFromFacility";
                 document["outputPolygons"] = "esriNAOutputPolygonSimplified";
                 document["outputLines"] = "esriNAOutputLineNone";
-                document["splitPolygonsAtBreaks"] = true;
+                // Polygons are cumulative disks (FromBreak 0, ToBreak = the break),
+                // not rings split at each break (#6026).
+                document["splitPolygonsAtBreaks"] = false;
                 document["overlapPolygons"] = true;
                 document["mergeSimilarPolygonRanges"] = false;
                 document["trimOuterPolygon"] = false;

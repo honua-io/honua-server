@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:c7217d4d5381c2f4ff6002ef4e100dd7b5037a11b39d0f6bc900aabd00ea2b38",
+  "bundleDigest": "sha256:73ad672877cd8b803bc3368d6aaeba691fcdc0daaf9e85318cce1ccb5d5b8d15",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2485,7 +2485,7 @@
     {
       "id": "guides/query-analyze/gp-devkit-authoring",
       "path": "guides/query-analyze/gp-devkit-authoring.md",
-      "documentDigest": "sha256:d552a907e233292d22427965558ebc0cf2f4cf11cc966926cc76b1d5a3b68252",
+      "documentDigest": "sha256:4954152279acb5b465958dde0c9a3dd604e2646a8a5fbc33f71200e187f9023c",
       "metadata": {
         "type": "guide",
         "title": "Author a geoprocessing process",
@@ -6368,7 +6368,7 @@
     {
       "id": "okf/capabilities/process.geoprocessing",
       "path": "okf/capabilities/process.geoprocessing.md",
-      "documentDigest": "sha256:02c3c02ea15e42135d6eebac199be8f119398bb60e3ef7c98fec1ebac3ece561",
+      "documentDigest": "sha256:b02253f17f5f1520a844cf952d60b1001849973192fc38af0d433500b65150cd",
       "metadata": {
         "type": "capability",
         "title": "Geoprocessing Task Execution",
@@ -7319,7 +7319,7 @@
     {
       "id": "reference/README",
       "path": "reference/README.md",
-      "documentDigest": "sha256:784a63efeea48c8d04ae35e8ef61a392c68b5559b0fd075c5dc941b3f47fd7b9",
+      "documentDigest": "sha256:43d56cfec3d5db248cb4cd57b2f98ffab90c5dac7d0278521feb78473ec3162c",
       "metadata": {
         "type": "index",
         "title": "Reference",
@@ -7682,6 +7682,18 @@
         "resource": "honua://capability/process.geoprocessing"
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/geoprocessing-operations.md"
+    },
+    {
+      "id": "reference/gp-harness-events.v1",
+      "path": "reference/gp-harness-events.v1.md",
+      "documentDigest": "sha256:44122d0c658c037860834a907c64c9ac8113728edb183659393f94f55ae48c28",
+      "metadata": {
+        "type": "reference",
+        "title": "GP harness events (honua.gp.events/v1)",
+        "description": "The structured event journal every custom-code harness run, local runner run, and devkit run writes: record kinds, bounds, truncation disclosure, and how the job step view reads it.",
+        "resource": "honua://capability/process.geoprocessing"
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/gp-harness-events.v1.md"
     },
     {
       "id": "reference/gp-process-release",
@@ -11924,6 +11936,11 @@
     {
       "source": "guides/query-analyze/gp-devkit-authoring",
       "relation": "links_to",
+      "target": "reference/gp-harness-events.v1"
+    },
+    {
+      "source": "guides/query-analyze/gp-devkit-authoring",
+      "relation": "links_to",
       "target": "reference/gp-process-release"
     },
     {
@@ -14087,6 +14104,11 @@
       "target": "reference/geoprocessing-operations"
     },
     {
+      "source": "okf/capabilities/process.geoprocessing",
+      "relation": "links_to",
+      "target": "reference/gp-harness-events.v1"
+    },
+    {
       "source": "okf/capabilities/process.ogc-api-processes",
       "relation": "links_to",
       "target": "reference/protocols/ogc-apis"
@@ -14495,6 +14517,11 @@
       "source": "reference/README",
       "relation": "links_to",
       "target": "reference/geoprocessing-operations"
+    },
+    {
+      "source": "reference/README",
+      "relation": "links_to",
+      "target": "reference/gp-harness-events.v1"
     },
     {
       "source": "reference/README",

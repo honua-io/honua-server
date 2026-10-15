@@ -136,6 +136,7 @@ public sealed class GeoprocessingLocalRunner
                 Artifacts = context.Artifacts,
                 Logs = context.Logs,
                 Warnings = [],
+                Phases = context.Phases,
                 Elapsed = stopwatch.Elapsed,
                 GlassBox = BuildGlassBox(glassBox, context),
             };
@@ -151,6 +152,7 @@ public sealed class GeoprocessingLocalRunner
             Artifacts = context.Artifacts,
             Logs = context.Logs,
             Warnings = result.Warnings,
+            Phases = context.Phases,
             Elapsed = stopwatch.Elapsed,
             GlassBox = BuildGlassBox(glassBox, context),
         };

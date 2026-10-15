@@ -31,14 +31,25 @@ public sealed class LocalHarnessTests
             var run = Directory.GetDirectories(output).Single();
             using var receipt = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Join(run, "receipt.json")));
             receipt.RootElement.GetProperty("status").GetString().Should().Be(status);
+            receipt.RootElement.GetProperty("eventsSchema").GetString().Should().Be(EventJournal.Schema);
+            var events = EventJournal.Read(Path.Join(run, "events.jsonl")).ToList();
+            events[^1]["kind"]!.GetValue<string>().Should().Be("terminal");
+            events[^1]["status"]!.GetValue<string>().Should().Be(status);
+            events[^1]["exitCode"]!.GetValue<int>().Should().Be(expectedExit);
+            events.Should().OnlyContain(e => e["attempt"]!.GetValue<string>() == "local" && e["v"]!.GetValue<int>() == 1);
             if (expectedExit == 0)
             {
+                events.Should().Contain(e => e["kind"]!.GetValue<string>() == "artifact" && e["artifact"]!["name"]!.GetValue<string>() == "answer.txt");
                 (await File.ReadAllTextAsync(Path.Join(run, "artifacts", "answer.txt"))).Should().Be("HELLO");
                 receipt.RootElement.GetProperty("artifacts")[0].GetProperty("sha256").GetString().Should().HaveLength(64);
             }
             else
             {
                 receipt.RootElement.GetProperty("artifacts").GetArrayLength().Should().Be(0);
+                if (status == "failed")
+                {
+                    events[^2]["kind"]!.GetValue<string>().Should().Be("failure");
+                }
             }
         }
         finally

@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Net.Http;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -77,6 +78,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using StackExchange.Redis;
 
@@ -301,8 +303,10 @@ internal static class ServiceCollectionExtensions
         // outlived its row. TryAdd so a host can substitute a durable ledger.
         services.TryAddSingleton<IAttachmentOrphanLedger, LoggingAttachmentOrphanLedger>();
 
-        // Register attachment store implementation (metadata tables live in the honua schema)
-        services.AddScoped<IAttachmentStore>(serviceProvider =>
+        // Register attachment store implementation (metadata tables live in the honua schema).
+        // Feature deletes resolve IFeatureAttachmentCleanup from this same instance so attachment
+        // rows share the feature transaction (#6137).
+        services.AddScoped(serviceProvider =>
             new PostgresAttachmentStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetRequiredService<ICloudFileStorage>(),
@@ -310,7 +314,11 @@ internal static class ServiceCollectionExtensions
                 schemaName: string.IsNullOrWhiteSpace(configuration["Attachments:Schema"])
                     ? "honua"
                     : configuration["Attachments:Schema"],
-                orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>()));
+                orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
+                attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
+                    ?? new AttachmentLimits()));
+        services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
 
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();
 

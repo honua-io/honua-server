@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import shutil
 import signal
 import sys
@@ -21,39 +20,9 @@ from pathlib import Path
 from typing import Any
 
 from .context import CancellationToken, GpContext, JobCancelled, OutputSink, OutputSizeExceeded
+from .events import SCHEMA, EventJournal
 from .harness import _coerce_result
 from .loader import load_entrypoint
-
-
-class _Journal:
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self.count = 0
-        self.truncated = False
-        self._lock = threading.Lock()
-
-    def event(self, phase: str, *, terminal: bool = False, **values: Any) -> None:
-        with self._lock:
-            if self.count >= 1000 and not terminal:
-                self.truncated = True
-                return
-            event = {"sequence": self.count, "timestamp": datetime.now(timezone.utc).isoformat(),
-                     "phase": str(phase)[:500], **values}
-            with self.path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(event, allow_nan=False) + "\n")
-            self.count += 1
-
-    def report(self, pct: float, phase: str) -> None:
-        pct = float(pct)
-        if not math.isfinite(pct):
-            raise ValueError("Progress must be finite.")
-        self.event(phase, percentComplete=max(0.0, min(100.0, pct)))
-
-    def info(self, message: str) -> None:
-        self.event("log", level="info", message=str(message)[:2000])
-
-    def warn(self, message: str) -> None:
-        self.event("log", level="warning", message=str(message)[:2000])
 
 
 def run_local(*, source: Path, entrypoint: str, params: Mapping[str, Any],
@@ -70,11 +39,11 @@ def run_local(*, source: Path, entrypoint: str, params: Mapping[str, Any],
     run_dir.mkdir(parents=True, exist_ok=False)
     workdir = run_dir / "work"
     workdir.mkdir()
-    journal = _Journal(run_dir / "events.jsonl")
+    journal = EventJournal(run_dir / "events.jsonl", attempt="local")
     result: dict[str, Any] = {
         "schemaVersion": "1.0", "runId": run_id, "entrypoint": entrypoint,
         "executionMode": "local", "contentClassification": "local-development-unsanitized",
-        "artifacts": [], "events": "events.jsonl",
+        "artifacts": [], "events": "events.jsonl", "eventsSchema": SCHEMA,
     }
     phase = "setup"
     cancellation = CancellationToken()
@@ -83,7 +52,7 @@ def run_local(*, source: Path, entrypoint: str, params: Mapping[str, Any],
         for signum in (signal.SIGTERM, signal.SIGINT):
             previous_handlers[signum] = signal.getsignal(signum)
             signal.signal(signum, lambda _signum, _frame: cancellation.cancel())
-    journal.event(phase)
+    journal.phase(phase)
     try:
         source = source.resolve(strict=True)
         if not source.is_dir():
@@ -97,14 +66,14 @@ def run_local(*, source: Path, entrypoint: str, params: Mapping[str, Any],
                             cancellation=cancellation, workdir=workdir)
         func = load_entrypoint(source, entrypoint)
         phase = "execute"
-        journal.event(phase)
+        journal.phase(phase)
         cancellation.raise_if_cancelled()
         outcome = _coerce_result(func(context), journal)
         cancellation.raise_if_cancelled()
         if not outcome.ok:
             raise RuntimeError(outcome.message or "Tool reported failure.")
         phase = "artifacts"
-        journal.event(phase)
+        journal.phase(phase)
         # Recheck size and paths after execution: registration is only intent.
         staged = []
         total = 0
@@ -126,6 +95,7 @@ def run_local(*, source: Path, entrypoint: str, params: Mapping[str, Any],
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
             artifacts.append({"name": name, "path": f"artifacts/{name}",
                               "sizeBytes": destination.stat().st_size, "sha256": digest})
+            journal.artifact(name, destination.stat().st_size, sha256=digest)
         result.update(status="succeeded", artifacts=artifacts)
         code = 0
     except (JobCancelled, KeyboardInterrupt):
@@ -134,12 +104,14 @@ def run_local(*, source: Path, entrypoint: str, params: Mapping[str, Any],
     except Exception as exc:
         result.update(status="setupFailed" if phase == "setup" else "failed",
                       failedPhase=phase, error={"type": type(exc).__name__, "message": str(exc)[:2000]})
+        journal.failure(type(exc).__name__, str(exc), phase=phase)
         code = 2 if phase == "setup" else 1
     finally:
         for signum, handler in previous_handlers.items():
             signal.signal(signum, handler)
-    journal.event(result["status"], terminal=True, exitCode=code)
+    journal.terminal(result["status"], code, phase=result.get("failedPhase"))
     result["eventsTruncated"] = journal.truncated
+    result["eventsDropped"] = journal.dropped
     result["exitCode"] = code
     (run_dir / "receipt.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"runId": run_id, "status": result["status"], "receipt": str(run_dir / "receipt.json"),

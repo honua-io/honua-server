@@ -16,6 +16,7 @@ using CoreBatchGeocodeRequest = Honua.Geocoding.Features.Geocoding.Domain.BatchG
 using CoreGeocodeSuggestion = Honua.Geocoding.Features.Geocoding.Domain.GeocodeSuggestion;
 using CoreGeocodePoint = Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint;
 using CoreGeocodeProviderException = Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderException;
+using GeocodeQueryLimits = Honua.Geocoding.Features.Geocoding.Domain.GeocodeQueryLimits;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Geocoding;
@@ -732,6 +733,23 @@ public sealed class GeocodingEndpointTests
         using var response = await client.GetAsync("/rest/services/NonexistentLocator/GeocodeServer/findAddressCandidates?singleLine=test&f=json");
 
         await response.AssertGeoServicesErrorAsync(404);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_OversizedSingleLine_Returns400()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        var singleLine = new string('a', GeocodeQueryLimits.MaxQueryLength + 1);
+        using var response = await client.GetAsync(
+            $"/rest/services/World/GeocodeServer/findAddressCandidates?singleLine={singleLine}&f=json");
+
+        await response.AssertGeoServicesErrorAsync(400);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("invalid", body, StringComparison.OrdinalIgnoreCase);
     }
 
     [IntegrationTest]
