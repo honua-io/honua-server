@@ -27,9 +27,13 @@ using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Security;
+#if !HONUA_EXCLUDE_GEOSERVICES
 using Honua.Protocols.GeoServices;
+#endif
 using Honua.Protocols.Ogc.Common;
+#if !HONUA_EXCLUDE_STAC
 using Honua.Protocols.Stac.Models;
+#endif
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Startup;
@@ -117,6 +121,7 @@ internal sealed class CapabilityManifestService(
         capabilities = StampRollbackTargets(capabilities, operationCapabilities, policyContext);
         capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
         capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
+        capabilities = ApplyCompiledProtocolProfile(capabilities);
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
             : BuildPackages();
@@ -908,6 +913,30 @@ internal sealed class CapabilityManifestService(
         };
     }
 
+    private static CapabilityManifestCapability[] ApplyCompiledProtocolProfile(
+        CapabilityManifestCapability[] capabilities)
+    {
+        for (var i = 0; i < capabilities.Length; i++)
+        {
+            var capability = capabilities[i];
+            if (Honua.Infrastructure.Hosting.ProtocolProfile.IsCapabilityCompiled(capability.Id))
+            {
+                continue;
+            }
+
+            var reason = Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded;
+            capabilities[i] = capability with
+            {
+                Supported = false,
+                Available = false,
+                ReasonCode = reason,
+                MessageKey = $"capabilities.{capability.Id}.{reason}",
+            };
+        }
+
+        return capabilities;
+    }
+
     private CapabilityManifestTransports BuildTransports()
     {
         var clientCertificate = options.ClientCertificate;
@@ -924,18 +953,52 @@ internal sealed class CapabilityManifestService(
                 // version (ADR-0058 / honua-release#32). The version constant is owned by
                 // the protocol assembly that owns the surface, so the manifest cannot drift
                 // from the surface it describes.
+#if HONUA_EXCLUDE_GEOSERVICES
+                Transport("geoservices-rest", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("geoservices-rest", supported: true, available: true,
                     contractVersion: GeoServicesContract.Version),
+#endif
+#if HONUA_EXCLUDE_OGC_API && HONUA_EXCLUDE_OGC_CLASSIC
+                Transport("ogc-http", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("ogc-http", supported: true, available: true,
                     contractVersion: OgcContract.Version),
+#endif
+#if HONUA_EXCLUDE_ODATA
+                Transport("odata", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("odata", supported: true, available: true),
+#endif
+#if HONUA_EXCLUDE_STAC
+                Transport("stac", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("stac", supported: true, available: true,
                     contractVersion: StacContract.Version),
+#endif
                 Transport("tiles", supported: true, available: true),
+#if HONUA_EXCLUDE_GRPC
+                Transport("grpc", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+                Transport("grpc-web", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+                Transport("native-grpc", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("grpc", supported: true, available: true),
                 Transport("grpc-web", supported: true, available: true),
                 Transport("native-grpc", supported: true, available: true),
+#endif
+#if HONUA_EXCLUDE_MCP
+                Transport("mcp", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("mcp", supported: true, available: true),
+#endif
                 Transport("qgis", supported: true, available: true),
                 Transport("mtls", supported: true, available: mtlsAvailable,
                     mtlsAvailable ? null : Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled)

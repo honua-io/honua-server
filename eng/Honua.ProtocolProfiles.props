@@ -1,0 +1,162 @@
+<Project>
+  <!-- Build-time protocol profiles. Independent of HonuaBuildProfile.
+       Initial support is exactly gsr, ogc-api, ogc-api-classic, and all.
+       Global -p:HonuaInclude* overrides are rejected; they are not a fifth profile. -->
+  <PropertyGroup>
+    <HonuaProtocolProfile Condition="'$(HonuaProtocolProfile)' == ''">all</HonuaProtocolProfile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(HonuaProtocolProfile)' == 'gsr'">
+    <HonuaIncludeGeoServices>true</HonuaIncludeGeoServices>
+    <HonuaIncludeOgcApi>false</HonuaIncludeOgcApi>
+    <HonuaIncludeOgcClassic>false</HonuaIncludeOgcClassic>
+    <HonuaIncludeOData>false</HonuaIncludeOData>
+    <HonuaIncludeStac>false</HonuaIncludeStac>
+    <HonuaIncludeSensorThings>false</HonuaIncludeSensorThings>
+    <HonuaIncludeScene>false</HonuaIncludeScene>
+    <HonuaIncludeGrpc>false</HonuaIncludeGrpc>
+    <HonuaIncludeMcp>false</HonuaIncludeMcp>
+    <DefineConstants>$(DefineConstants);HONUA_PROTOCOL_GSR</DefineConstants>
+    <_HonuaProtocolModulesJson>["geoservices"]</_HonuaProtocolModulesJson>
+    <_HonuaProtocolExcludedJson>["ogc-api","ogc-classic","odata","stac","sensorthings","scene","grpc","mcp"]</_HonuaProtocolExcludedJson>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(HonuaProtocolProfile)' == 'ogc-api'">
+    <HonuaIncludeGeoServices>false</HonuaIncludeGeoServices>
+    <HonuaIncludeOgcApi>true</HonuaIncludeOgcApi>
+    <HonuaIncludeOgcClassic>false</HonuaIncludeOgcClassic>
+    <HonuaIncludeOData>false</HonuaIncludeOData>
+    <HonuaIncludeStac>false</HonuaIncludeStac>
+    <HonuaIncludeSensorThings>false</HonuaIncludeSensorThings>
+    <HonuaIncludeScene>false</HonuaIncludeScene>
+    <HonuaIncludeGrpc>false</HonuaIncludeGrpc>
+    <HonuaIncludeMcp>false</HonuaIncludeMcp>
+    <DefineConstants>$(DefineConstants);HONUA_PROTOCOL_OGC_API</DefineConstants>
+    <_HonuaProtocolModulesJson>["ogc-api"]</_HonuaProtocolModulesJson>
+    <_HonuaProtocolExcludedJson>["geoservices","ogc-classic","odata","stac","sensorthings","scene","grpc","mcp"]</_HonuaProtocolExcludedJson>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(HonuaProtocolProfile)' == 'ogc-api-classic'">
+    <HonuaIncludeGeoServices>false</HonuaIncludeGeoServices>
+    <HonuaIncludeOgcApi>true</HonuaIncludeOgcApi>
+    <HonuaIncludeOgcClassic>true</HonuaIncludeOgcClassic>
+    <HonuaIncludeOData>false</HonuaIncludeOData>
+    <HonuaIncludeStac>false</HonuaIncludeStac>
+    <HonuaIncludeSensorThings>false</HonuaIncludeSensorThings>
+    <HonuaIncludeScene>false</HonuaIncludeScene>
+    <HonuaIncludeGrpc>false</HonuaIncludeGrpc>
+    <HonuaIncludeMcp>false</HonuaIncludeMcp>
+    <DefineConstants>$(DefineConstants);HONUA_PROTOCOL_OGC_API_CLASSIC</DefineConstants>
+    <_HonuaProtocolModulesJson>["ogc-api","ogc-classic"]</_HonuaProtocolModulesJson>
+    <_HonuaProtocolExcludedJson>["geoservices","odata","stac","sensorthings","scene","grpc","mcp"]</_HonuaProtocolExcludedJson>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(HonuaProtocolProfile)' == 'all'">
+    <HonuaIncludeGeoServices>true</HonuaIncludeGeoServices>
+    <HonuaIncludeOgcApi>true</HonuaIncludeOgcApi>
+    <HonuaIncludeOgcClassic>true</HonuaIncludeOgcClassic>
+    <HonuaIncludeOData>true</HonuaIncludeOData>
+    <HonuaIncludeStac>true</HonuaIncludeStac>
+    <HonuaIncludeSensorThings>true</HonuaIncludeSensorThings>
+    <HonuaIncludeScene>true</HonuaIncludeScene>
+    <HonuaIncludeGrpc>true</HonuaIncludeGrpc>
+    <HonuaIncludeMcp>true</HonuaIncludeMcp>
+    <DefineConstants>$(DefineConstants);HONUA_PROTOCOL_ALL</DefineConstants>
+    <_HonuaProtocolModulesJson>["geoservices","ogc-api","ogc-classic","odata","stac","sensorthings","scene","grpc","mcp"]</_HonuaProtocolModulesJson>
+    <_HonuaProtocolExcludedJson>[]</_HonuaProtocolExcludedJson>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <_HonuaProtocolRetainedJson>["Honua.Ai","Honua.Geocoding","Honua.Geoprocessing","Honua.GeoServicesRest","Honua.Protocols.Ogc.Shared","Honua.Routing"]</_HonuaProtocolRetainedJson>
+    <DefineConstants Condition="'$(HonuaIncludeGeoServices)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_GEOSERVICES</DefineConstants>
+    <DefineConstants Condition="'$(HonuaIncludeOgcApi)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_OGC_API</DefineConstants>
+    <DefineConstants Condition="'$(HonuaIncludeOgcClassic)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_OGC_CLASSIC</DefineConstants>
+    <DefineConstants Condition="'$(HonuaIncludeOData)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_ODATA</DefineConstants>
+    <DefineConstants Condition="'$(HonuaIncludeStac)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_STAC</DefineConstants>
+    <DefineConstants Condition="'$(HonuaIncludeSensorThings)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_SENSORTHINGS</DefineConstants>
+    <DefineConstants Condition="'$(HonuaIncludeScene)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_SCENE</DefineConstants>
+    <DefineConstants Condition="'$(HonuaIncludeGrpc)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_GRPC</DefineConstants>
+    <DefineConstants Condition="'$(HonuaIncludeMcp)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_MCP</DefineConstants>
+    <_HonuaProtocolReceiptLine Condition="'$(_HonuaProtocolModulesJson)' != ''">{"format":"honua.protocol-profile/v1","profile":"$(HonuaProtocolProfile)","buildProfile":"$(HonuaBuildProfile)","modules":$(_HonuaProtocolModulesJson),"excluded":$(_HonuaProtocolExcludedJson),"retainedShared":$(_HonuaProtocolRetainedJson)}</_HonuaProtocolReceiptLine>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(HonuaProtocolProfile)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>HonuaProtocolProfile</_Parameter1>
+      <_Parameter2>$(HonuaProtocolProfile)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <Target Name="HonuaExcludeProtocolProfileSources" BeforeTargets="CoreCompile;AssignTargetPaths">
+    <ItemGroup Condition="'$(HonuaIncludeGeoServices)' != 'true'">
+      <Compile Remove="Features\Geocoding\GeocodingHandler.cs" />
+      <Compile Remove="Features\Geocoding\GeocodingEndpoints.cs" />
+      <Compile Remove="Features\PrintingTools\**\*.cs" />
+      <Compile Remove="Features\Protocols\SpatialAnalytics\SpatialAnalyticsRequestHandlers*.cs" />
+      <Compile Remove="Features\Protocols\SpatialAnalytics\SpatialAnalyticsEndpoints.cs" />
+      <Compile Remove="Features\Infrastructure\Analytics\AnalyticsFeatureQueryFactory.cs" />
+      <Compile Remove="Features\Infrastructure\Analytics\AnalyticsLayerSelectionFilterTranslator.cs" />
+      <Compile Remove="Features\Infrastructure\Hosting\Modules\GeoServicesProtocolModule.cs" />
+      <!-- HonuaFeatureService binds SpatialReferenceResolver from Honua.Protocols.GeoServices. -->
+      <Compile Remove="Features\Protocols\Grpc\HonuaFeatureService.cs" />
+    </ItemGroup>
+    <ItemGroup Condition="'$(HonuaIncludeOgcApi)' != 'true'">
+      <Compile Remove="Features\Infrastructure\Hosting\Modules\OgcApiProtocolModule.cs" />
+      <Content Remove="ogc-tiles-openapi.json" />
+      <Content Remove="ogc-maps-openapi.json" />
+      <Content Remove="ogc-coverages-openapi.json" />
+      <Content Remove="ogc-processes-openapi.json" />
+      <Content Remove="ogc-styles-openapi.json" />
+    </ItemGroup>
+    <ItemGroup Condition="'$(HonuaIncludeOgcClassic)' != 'true'">
+      <Compile Remove="Features\Infrastructure\Hosting\Modules\OgcClassicProtocolModule.cs" />
+    </ItemGroup>
+    <ItemGroup Condition="'$(HonuaIncludeOData)' != 'true'">
+      <Compile Remove="Features\Infrastructure\Hosting\Modules\ODataProtocolModule.cs" />
+    </ItemGroup>
+    <ItemGroup Condition="'$(HonuaIncludeScene)' != 'true'">
+      <Compile Remove="Features\Admin\SceneDatasetEndpoints.cs" />
+      <Compile Remove="Features\Admin\SceneGenerationEndpoints.cs" />
+      <Compile Remove="Features\Admin\SceneBimIngestEndpoints.cs" />
+      <Compile Remove="Features\Admin\ScenePointCloudIngestEndpoints.cs" />
+      <Compile Remove="Features\Admin\Scene\GeoprocessingPointCloudDecompressor.cs" />
+      <Compile Remove="Features\Infrastructure\Scene\SceneGenerationServiceCollectionExtensions.cs" />
+      <Content Remove="fixtures\scenes\**\*" />
+      <None Remove="fixtures\scenes\**\*" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="ValidateHonuaProtocolProfile" BeforeTargets="PrepareForBuild;Restore;CollectPackageReferences">
+    <Error
+      Condition="'$(HonuaProtocolProfile)' != 'gsr' and '$(HonuaProtocolProfile)' != 'ogc-api' and '$(HonuaProtocolProfile)' != 'ogc-api-classic' and '$(HonuaProtocolProfile)' != 'all'"
+      Text="Unsupported HonuaProtocolProfile '$(HonuaProtocolProfile)'. Supported profiles: gsr, ogc-api, ogc-api-classic, all." />
+    <Error
+      Condition="'$(HonuaProtocolProfile)' == 'gsr' and ('$(HonuaIncludeGeoServices)' != 'true' or '$(HonuaIncludeOgcApi)' != 'false' or '$(HonuaIncludeOgcClassic)' != 'false' or '$(HonuaIncludeOData)' != 'false' or '$(HonuaIncludeStac)' != 'false' or '$(HonuaIncludeSensorThings)' != 'false' or '$(HonuaIncludeScene)' != 'false' or '$(HonuaIncludeGrpc)' != 'false' or '$(HonuaIncludeMcp)' != 'false')"
+      Text="HonuaProtocolProfile 'gsr' does not allow module overrides (HonuaIncludeGeoServices=$(HonuaIncludeGeoServices), HonuaIncludeOgcApi=$(HonuaIncludeOgcApi), HonuaIncludeOgcClassic=$(HonuaIncludeOgcClassic), HonuaIncludeOData=$(HonuaIncludeOData), HonuaIncludeStac=$(HonuaIncludeStac), HonuaIncludeSensorThings=$(HonuaIncludeSensorThings), HonuaIncludeScene=$(HonuaIncludeScene), HonuaIncludeGrpc=$(HonuaIncludeGrpc), HonuaIncludeMcp=$(HonuaIncludeMcp)). Supported profiles: gsr, ogc-api, ogc-api-classic, all." />
+    <Error
+      Condition="'$(HonuaProtocolProfile)' == 'ogc-api' and ('$(HonuaIncludeGeoServices)' != 'false' or '$(HonuaIncludeOgcApi)' != 'true' or '$(HonuaIncludeOgcClassic)' != 'false' or '$(HonuaIncludeOData)' != 'false' or '$(HonuaIncludeStac)' != 'false' or '$(HonuaIncludeSensorThings)' != 'false' or '$(HonuaIncludeScene)' != 'false' or '$(HonuaIncludeGrpc)' != 'false' or '$(HonuaIncludeMcp)' != 'false')"
+      Text="HonuaProtocolProfile 'ogc-api' does not allow module overrides. Supported profiles: gsr, ogc-api, ogc-api-classic, all." />
+    <Error
+      Condition="'$(HonuaProtocolProfile)' == 'ogc-api-classic' and ('$(HonuaIncludeGeoServices)' != 'false' or '$(HonuaIncludeOgcApi)' != 'true' or '$(HonuaIncludeOgcClassic)' != 'true' or '$(HonuaIncludeOData)' != 'false' or '$(HonuaIncludeStac)' != 'false' or '$(HonuaIncludeSensorThings)' != 'false' or '$(HonuaIncludeScene)' != 'false' or '$(HonuaIncludeGrpc)' != 'false' or '$(HonuaIncludeMcp)' != 'false')"
+      Text="HonuaProtocolProfile 'ogc-api-classic' does not allow module overrides. Supported profiles: gsr, ogc-api, ogc-api-classic, all." />
+    <Error
+      Condition="'$(HonuaProtocolProfile)' == 'all' and ('$(HonuaIncludeGeoServices)' != 'true' or '$(HonuaIncludeOgcApi)' != 'true' or '$(HonuaIncludeOgcClassic)' != 'true' or '$(HonuaIncludeOData)' != 'true' or '$(HonuaIncludeStac)' != 'true' or '$(HonuaIncludeSensorThings)' != 'true' or '$(HonuaIncludeScene)' != 'true' or '$(HonuaIncludeGrpc)' != 'true' or '$(HonuaIncludeMcp)' != 'true')"
+      Text="HonuaProtocolProfile 'all' does not allow module overrides. Supported profiles: gsr, ogc-api, ogc-api-classic, all." />
+  </Target>
+
+  <Target Name="WriteHonuaProtocolProfileReceipt" AfterTargets="Build" Condition="'$(_HonuaProtocolReceiptLine)' != ''">
+    <MakeDir Directories="$(OutputPath)" />
+    <WriteLinesToFile
+      File="$(OutputPath)honua-protocol-profile.json"
+      Lines="$(_HonuaProtocolReceiptLine)"
+      Overwrite="true" />
+  </Target>
+
+  <Target Name="WriteHonuaProtocolProfilePublishReceipt" AfterTargets="Publish" Condition="'$(_HonuaProtocolReceiptLine)' != '' and '$(PublishDir)' != ''">
+    <MakeDir Directories="$(PublishDir)" />
+    <WriteLinesToFile
+      File="$(PublishDir)honua-protocol-profile.json"
+      Lines="$(_HonuaProtocolReceiptLine)"
+      Overwrite="true" />
+  </Target>
+</Project>

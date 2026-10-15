@@ -33,6 +33,11 @@ public static class CapabilityReasonCodes
     public const string DisabledByConfiguration = "disabled-by-configuration";
 
     /// <summary>
+    /// The capability's serving module was left out of the compiled protocol profile.
+    /// </summary>
+    public const string ProtocolProfileExcluded = "protocol-profile-excluded";
+
+    /// <summary>
     /// The active edition does not meet the capability's
     /// <see cref="CapabilityDescriptor.MinimumEdition"/>. Mirrors the existing
     /// license/entitlement reason the <c>/capabilities</c> manifest emits for a

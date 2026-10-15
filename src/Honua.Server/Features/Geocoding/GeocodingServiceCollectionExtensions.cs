@@ -44,8 +44,10 @@ internal static class GeocodingServiceCollectionExtensions
             services.AddLocalGeocodeProvider(configuration);
         }
 
+#if !HONUA_EXCLUDE_GEOSERVICES
         // Register the handler for GeoServices-compatible geocoding endpoints
         services.AddScoped<GeocodingHandler>();
+#endif
 
         return services;
     }
