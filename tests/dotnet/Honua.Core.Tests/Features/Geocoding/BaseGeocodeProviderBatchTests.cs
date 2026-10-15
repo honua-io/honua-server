@@ -3,6 +3,7 @@
 
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Services;
 
 namespace Honua.Core.Tests.Features.Geocoding;
 
