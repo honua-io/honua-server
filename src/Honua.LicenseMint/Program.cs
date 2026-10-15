@@ -366,7 +366,7 @@ internal static class CliRunner
             Access = FileAccess.Write,
             Share = FileShare.None,
         };
-        if (createMode is { } mode)
+        if (!OperatingSystem.IsWindows() && createMode is { } mode)
         {
             options.UnixCreateMode = mode;
         }

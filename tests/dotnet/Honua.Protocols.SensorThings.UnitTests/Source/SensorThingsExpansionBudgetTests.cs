@@ -111,7 +111,7 @@ public sealed class SensorThingsExpansionBudgetTests
 
     private static StaFilterTranslator Translator() => new(Substitute.For<IFilterExpressionService>());
 
-    private static IReadOnlyList<JsonElement> CreateRows()
+    private static JsonElement[] CreateRows()
     {
         var rows = new JsonElement[FanOutRows];
         for (var index = 0; index < rows.Length; index++)
