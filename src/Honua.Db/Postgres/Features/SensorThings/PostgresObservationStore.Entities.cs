@@ -79,7 +79,7 @@ internal sealed partial class PostgresObservationStore
             BindQuery(count, query);
             total = (long)(await ExecuteCatalogScalarAsync(count, cancellationToken).ConfigureAwait(false) ?? 0L);
         }
-        await using var command = new NpgsqlCommand($"SELECT {EntityJsonSql(entitySet)} FROM {EntityTable(entitySet)} d{where} ORDER BY {query.OrderBySql} OFFSET @skip LIMIT @top", lease);
+        await using var command = new NpgsqlCommand($"SELECT {EntityJsonSql(entitySet, includeDerivedIntervals: query.IncludeDerivedDatastreamIntervals)} FROM {EntityTable(entitySet)} d{where} ORDER BY {query.OrderBySql} OFFSET @skip LIMIT @top", lease);
         BindQuery(command, query);
         command.Parameters.AddWithValue("skip", query.Skip);
         command.Parameters.AddWithValue("top", query.Top);
@@ -95,9 +95,9 @@ internal sealed partial class PostgresObservationStore
         if (query.ParentId is { } parent) command.Parameters.AddWithValue("parent", parent);
     }
 
-    private string EntityJsonSql(string set, string alias = "d")
+    private string EntityJsonSql(string set, string alias = "d", bool includeDerivedIntervals = true)
     {
-        if (set != "Datastreams") return $"to_jsonb({alias})";
+        if (set != "Datastreams" || !includeDerivedIntervals) return $"to_jsonb({alias})";
         var geometry = GeoJsonGeometrySql("f.feature", "f.encoding_type");
         return $"""
             to_jsonb({alias}) || (SELECT jsonb_build_object(
@@ -163,7 +163,7 @@ internal sealed partial class PostgresObservationStore
             if (row["phenomenon_time_end"] is { } end) body["phenomenonTime"] = $"{row["phenomenon_time"]!.GetValue<string>()}/{end.GetValue<string>()}";
         }
         if (set == "Sensors") body["metadata"] = (row["metadata_json"] ?? row["metadata"])?.DeepClone();
-        if (set == "Datastreams")
+        if (set == "Datastreams" && row.ContainsKey("computed_phenomenon_start"))
         {
             body.Remove("observedArea");
             foreach (var (property, prefix) in new[] { ("phenomenonTime", "computed_phenomenon"), ("resultTime", "computed_result") })

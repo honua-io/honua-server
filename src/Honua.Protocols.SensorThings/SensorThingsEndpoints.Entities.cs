@@ -20,6 +20,15 @@ namespace Honua.Protocols.SensorThings;
 
 internal static partial class SensorThingsEndpoints
 {
+    /// <summary>Request-wide cap on entities materialized by <c>$expand</c>.</summary>
+    internal const int MaxExpandedEntities = 10_000;
+
+    /// <summary>
+    /// Request-wide cap on entity queries, including the root page. The cap leaves room for a
+    /// one-level expand of a full root page and stops exponential navigation.
+    /// </summary>
+    internal const int MaxExpansionQueries = 8_192;
+
     private sealed record Resource(string Set, long? Id, string? ParentSet = null, long? ParentId = null, string? Navigation = null, string? Property = null, bool Raw = false, bool Reference = false);
 
     private static void MapCoreEntityEndpoints(IEndpointRouteBuilder endpoints)
@@ -210,11 +219,13 @@ internal static partial class SensorThingsEndpoints
             planResult = StaQueryPlan.Create(context.Request, StaEntitySchema.For(resource.Set), translator);
             if (!planResult.IsSuccess) return planResult.StatusCode == 501 ? StandardErrorHelpers.CreateNotImplemented(context, planResult.Error ?? "Unsupported query.") : StandardErrorHelpers.CreateBadRequest(context, planResult.Error ?? "Invalid query.");
             var plan = planResult.Plan!;
+            var budget = new ExpansionBudget();
             if (resource.Id is { } id)
             {
+                budget.ChargeQuery();
                 var entity = await store.GetEntityAsync(resource.Set, id, context.RequestAborted).ConfigureAwait(false);
                 if (entity is null) return StandardErrorHelpers.CreateNotFound(context, "Sensing entity was not found.");
-                var shaped = await ShapeEntityAsync(context, store, translator, resource.Set, entity.Value, plan, 0).ConfigureAwait(false);
+                var shaped = await ShapeEntityAsync(context, store, translator, resource.Set, entity.Value, plan, 0, budget).ConfigureAwait(false);
                 if (resource.Property is { } property)
                 {
                     JsonNode? value = shaped;
@@ -232,12 +243,14 @@ internal static partial class SensorThingsEndpoints
                 if (resource.Reference) return JsonResponse(new JsonObject { ["value"] = new JsonArray(new JsonObject { ["@iot.selfLink"] = $"{StaBase(context)}/{resource.Set}({id.ToString(CultureInfo.InvariantCulture)})" }) });
                 return JsonResponse(shaped);
             }
+            budget.ChargeQuery();
             var page = await store.QueryEntitiesAsync(resource.Set, new(plan.WhereSql, plan.WhereParameters, plan.OrderBySql, plan.Options.Skip, plan.Options.FetchTop,
-                resource.ParentSet, resource.ParentId, resource.Navigation, plan.Options.Count), context.RequestAborted).ConfigureAwait(false);
+                resource.ParentSet, resource.ParentId, resource.Navigation, plan.Options.Count,
+                IncludeDerivedDatastreamIntervals(resource.Set, plan)), context.RequestAborted).ConfigureAwait(false);
             var valueArray = new JsonArray();
             foreach (var entity in page.Entities.Take(plan.Options.Top))
             {
-                var shaped = await ShapeEntityAsync(context, store, translator, resource.Set, entity, plan, 0).ConfigureAwait(false);
+                var shaped = await ShapeEntityAsync(context, store, translator, resource.Set, entity, plan, 0, budget).ConfigureAwait(false);
                 valueArray.Add(resource.Reference ? new JsonObject { ["@iot.selfLink"] = $"{StaBase(context)}/{resource.Set}({entity.GetProperty("@iot.id").GetInt64().ToString(CultureInfo.InvariantCulture)})" } : shaped);
             }
             var result = new JsonObject { ["value"] = valueArray };
@@ -262,7 +275,7 @@ internal static partial class SensorThingsEndpoints
         }
     }
 
-    private static async Task<JsonObject> ShapeEntityAsync(HttpContext context, ISensorThingsEntityStore store, StaFilterTranslator translator, string set, JsonElement entity, StaQueryPlan plan, int depth)
+    private static async Task<JsonObject> ShapeEntityAsync(HttpContext context, ISensorThingsEntityStore store, StaFilterTranslator translator, string set, JsonElement entity, StaQueryPlan plan, int depth, ExpansionBudget budget)
     {
         if (depth > SensorThingsRelationships.MaxRelationshipDepth) throw new SensorThingsValidationException("$expand exceeds the maximum depth.");
         var result = JsonNode.Parse(entity.GetRawText())!.AsObject();
@@ -283,14 +296,25 @@ internal static partial class SensorThingsEndpoints
                 throw new SensorThingsValidationException(nestedResult.Error ?? "Invalid nested query.");
             }
             var nestedPlan = nestedResult.Plan!;
+            budget.ChargeQuery();
             var page = await store.QueryEntitiesAsync(relationship.Target, new(expansion.WhereSql, expansion.WhereParameters, expansion.OrderBySql,
-                expansion.Skip, expansion.Top == 0 ? 0 : expansion.Top + 1, set, id, expansion.Navigation, expansion.Count), context.RequestAborted).ConfigureAwait(false);
+                expansion.Skip, expansion.Top == 0 ? 0 : expansion.Top + 1, set, id, expansion.Navigation, expansion.Count,
+                IncludeDerivedDatastreamIntervals(relationship.Target, nestedPlan)), context.RequestAborted).ConfigureAwait(false);
             if (!relationship.Many)
-                result[expansion.Navigation] = page.Entities.Count == 0 ? null : await ShapeEntityAsync(context, store, translator, relationship.Target, page.Entities[0], nestedPlan, depth + 1).ConfigureAwait(false);
+            {
+                if (page.Entities.Count == 0) result[expansion.Navigation] = null;
+                else
+                {
+                    budget.ChargeEntities(1);
+                    result[expansion.Navigation] = await ShapeEntityAsync(context, store, translator, relationship.Target, page.Entities[0], nestedPlan, depth + 1, budget).ConfigureAwait(false);
+                }
+            }
             else
             {
+                var relatedEntities = page.Entities.Take(expansion.Top).ToArray();
+                budget.ChargeEntities(relatedEntities.Length);
                 var nested = new JsonArray();
-                foreach (var related in page.Entities.Take(expansion.Top)) nested.Add(await ShapeEntityAsync(context, store, translator, relationship.Target, related, nestedPlan, depth + 1).ConfigureAwait(false));
+                foreach (var related in relatedEntities) nested.Add(await ShapeEntityAsync(context, store, translator, relationship.Target, related, nestedPlan, depth + 1, budget).ConfigureAwait(false));
                 result[expansion.Navigation] = nested;
                 if (expansion.Count) result[$"{expansion.Navigation}@iot.count"] = page.Count;
                 if (page.Entities.Count > expansion.Top && expansion.Top > 0)
@@ -307,6 +331,51 @@ internal static partial class SensorThingsEndpoints
             result = StaProjection.ProjectEntity(result, members);
         }
         return result;
+    }
+
+    private static bool IncludeDerivedDatastreamIntervals(string set, StaQueryPlan plan)
+    {
+        if (!string.Equals(set, "Datastreams", StringComparison.Ordinal) || !plan.HasProjection)
+        {
+            return true;
+        }
+
+        foreach (var member in plan.ProjectedMembers)
+        {
+            if (member is "phenomenonTime" or "resultTime" or "observedArea")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Counts expand queries and related entities for one read. The root page is not charged as entities.</summary>
+    private sealed class ExpansionBudget
+    {
+        private int _entitiesRemaining = MaxExpandedEntities;
+        private int _queriesRemaining = MaxExpansionQueries;
+
+        public void ChargeQuery()
+        {
+            if (_queriesRemaining <= 0)
+            {
+                throw new SensorThingsValidationException("$expand exceeds the maximum number of related queries.");
+            }
+
+            _queriesRemaining--;
+        }
+
+        public void ChargeEntities(int count)
+        {
+            if (count > _entitiesRemaining)
+            {
+                throw new SensorThingsValidationException("$expand exceeds the maximum number of related entities.");
+            }
+
+            _entitiesRemaining -= count;
+        }
     }
 
     private static Dictionary<string, string?> ExpansionQuery(StaExpansion expansion) => new()
@@ -384,7 +453,7 @@ internal static partial class SensorThingsEndpoints
             if (resource.Set == "Observations") await PublishCreatedObservationsAsync(context, [id]).ConfigureAwait(false);
             var entity = await store.GetEntityAsync(resource.Set, id, context.RequestAborted).ConfigureAwait(false);
             var plan = StaQueryPlan.Create(new DefaultHttpContext().Request, StaEntitySchema.For(resource.Set), context.RequestServices.GetRequiredService<StaFilterTranslator>()).Plan!;
-            var shaped = await ShapeEntityAsync(context, store, context.RequestServices.GetRequiredService<StaFilterTranslator>(), resource.Set, entity!.Value, plan, 0).ConfigureAwait(false);
+            var shaped = await ShapeEntityAsync(context, store, context.RequestServices.GetRequiredService<StaFilterTranslator>(), resource.Set, entity!.Value, plan, 0, new ExpansionBudget()).ConfigureAwait(false);
             context.Response.Headers.Location = $"{StaBase(context)}/{resource.Set}({id.ToString(CultureInfo.InvariantCulture)})";
             CoreMutationLog.Completed(logger, context.Request.Method, resource.Set, id);
             return JsonResponse(shaped, 201);
