@@ -581,6 +581,111 @@ public sealed class JobSecurityContextCaptureTests
             "deferred coarse-role authorization must match the submitting identity");
     }
 
+    [Theory]
+    [InlineData(LayerScopedWriteKey.ScopedKeyRole)]
+    [InlineData(AdminApiKeyPermission.ScopedAdminRole)]
+    [InlineData(AdminApiKeyPermission.ApprovedOperationRole)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public void Capture_ThenRestore_ScopedApiKeyUnderOidcRoleClaimType_StaysScopeGoverned(string marker)
+    {
+        // The API-key handler stamps its scope-governance marker as ClaimTypes.Role, while the
+        // snapshot records the configured OIDC role claim type ("roles" by default). The restored
+        // identity must still answer IsInRole for the marker and read as scope-governed, or a
+        // scoped key resumed on a deferred lane bypasses its grants (honua-server#6101).
+        var principal = ScopedApiKeyPrincipal(marker, "read:svcA/layer1");
+        var options = new RbacOptions { RoleClaimType = "roles" };
+
+        var restored = JobSecurityContextCapture.Restore(JobSecurityContextCapture.Capture(principal, options));
+
+        restored.Identity.Should().BeOfType<ClaimsIdentity>().Which.RoleClaimType.Should().Be("roles");
+        restored.IsInRole(marker).Should().BeTrue();
+        LayerScopedWriteKey.IsScopeGovernedPrincipal(restored).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Restore_ScopedApiKeyUnderOidcRoleClaimType_RefusesLayerOutsideItsGrant()
+    {
+        var restored = JobSecurityContextCapture.Restore(JobSecurityContextCapture.Capture(
+            ScopedApiKeyPrincipal(LayerScopedWriteKey.ScopedKeyRole, "read:svcA/layer1"),
+            new RbacOptions { RoleClaimType = "roles" }));
+
+        var outOfGrant = AccessPolicyHelpers.EvaluateScopedKeyAccess(
+            restored, "svcB", "layer1", AuthorizationOperation.Query);
+        var inGrant = AccessPolicyHelpers.EvaluateScopedKeyAccess(
+            restored, "svcA", "layer1", AuthorizationOperation.Query);
+
+        outOfGrant.Should().NotBeNull("a restored scoped key must be evaluated against its grants");
+        outOfGrant!.Value.IsAllowed.Should().BeFalse();
+        inGrant.Should().NotBeNull();
+        inGrant!.Value.IsAllowed.Should().BeTrue();
+        new AccessPolicyEvaluator().Evaluate(restored, layerPolicy: null, servicePolicy: null).IsAllowed
+            .Should().BeFalse("the coarse authenticated-user fallback must not admit a scoped key");
+    }
+
+    [UnitTest]
+    public void Restore_LegacySnapshotWithScopedMarkerUnderStandardRoleType_FailsClosedToGoverned()
+    {
+        // Snapshots persisted before the fix hold the marker under ClaimTypes.Role with
+        // RoleClaimType "roles". They must restore as governed, not as an ungoverned principal.
+        var legacySnapshot = new JobSecurityContext(
+            "scoped-api-key",
+            TenantId: null,
+            [
+                new JobSecurityClaim(ClaimTypes.Role, LayerScopedWriteKey.ScopedKeyRole),
+                new JobSecurityClaim("permission", "read:svcA/layer1"),
+                new JobSecurityClaim("honua:job-authenticated", bool.TrueString),
+            ],
+            RoleClaimType: "roles");
+
+        var restored = JobSecurityContextCapture.Restore(legacySnapshot);
+
+        restored.IsInRole(LayerScopedWriteKey.ScopedKeyRole).Should().BeTrue();
+        LayerScopedWriteKey.IsScopeGovernedPrincipal(restored).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void IsScopeGovernedPrincipal_MarkerUnderStandardRoleTypeOnCustomRoleIdentity_IsGoverned()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, LayerScopedWriteKey.ScopedKeyRole)],
+            "Test",
+            ClaimTypes.Name,
+            "roles"));
+
+        principal.IsInRole(LayerScopedWriteKey.ScopedKeyRole).Should().BeFalse();
+        LayerScopedWriteKey.IsScopeGovernedPrincipal(principal).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Restore_OrdinaryOidcRoleUnderStandardRoleType_IsNotMirrored()
+    {
+        // Only the scope-governance markers are mirrored; every other ClaimTypes.Role value keeps
+        // the restored identity's existing IsInRole semantics so restore can never widen access.
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, "admin"), new Claim("roles", "viewer")],
+            "Test",
+            ClaimTypes.Name,
+            "roles"));
+
+        var restored = JobSecurityContextCapture.Restore(
+            JobSecurityContextCapture.Capture(principal, new RbacOptions { RoleClaimType = "roles" }));
+
+        restored.IsInRole("viewer").Should().BeTrue();
+        restored.IsInRole("admin").Should().BeFalse();
+        LayerScopedWriteKey.IsScopeGovernedPrincipal(restored).Should().BeFalse();
+    }
+
+    private static ClaimsPrincipal ScopedApiKeyPrincipal(string marker, string permission)
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "scoped-key"),
+                new Claim(ClaimTypes.Role, marker),
+                new Claim("auth_type", "api_key"),
+                new Claim("permission", permission),
+            ],
+            "ApiKey"));
+
     [UnitTest]
     public void Restore_LegacySnapshot_UsesStandardRoleClaimType()
     {
