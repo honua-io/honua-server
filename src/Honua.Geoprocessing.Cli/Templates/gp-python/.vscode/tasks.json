@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "GP: run fixture",
+      "type": "shell",
+      "command": "honua-gp-python --source process --entrypoint summary_tool:execute --params fixtures/params.json --input features=fixtures/input.geojson --output .honua/runs",
+      "problemMatcher": []
+    },
+    {
+      "label": "GP: golden tests",
+      "type": "shell",
+      "command": "python -m pytest -q tests",
+      "problemMatcher": []
+    }
+  ]
+}

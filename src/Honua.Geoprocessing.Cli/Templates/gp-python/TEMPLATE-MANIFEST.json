@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "honua.gp-template-manifest.v1",
+  "template": "gp-python",
+  "files": [
+    {
+      "path": ".gitignore",
+      "sha256": "70c7388a05d0be30fd78d8f5e7f10a7bfd39a4ccaf56bf98d4d29ee7d53aff55",
+      "sizeBytes": 39
+    },
+    {
+      "path": ".vscode/launch.json",
+      "sha256": "e922db00f57d68294691587dcd64a90deb255735f2c3f5c033c653c84fa83b8f",
+      "sizeBytes": 1188
+    },
+    {
+      "path": ".vscode/tasks.json",
+      "sha256": "14065c5a8e38665651bdfe32d7632302862656cd132af4daf41a51de960a724e",
+      "sizeBytes": 461
+    },
+    {
+      "path": "docker/compose.debug.yaml",
+      "sha256": "9cab83758f8ded179bd78bd2840da7acca0a6692e105ab8b975e3dc5d52092dc",
+      "sizeBytes": 1658
+    },
+    {
+      "path": "expected/golden.json",
+      "sha256": "ccec4a7afb4ac23eed0a50a425a3702250292f6d47bb62151d44b02107e4678b",
+      "sizeBytes": 541
+    },
+    {
+      "path": "expected/summary.json",
+      "sha256": "2bca83266393f329fc95fbbe3168755f425d5bc8c4d20bd8fa867c89d4724300",
+      "sizeBytes": 58
+    },
+    {
+      "path": "fixtures/input.geojson",
+      "sha256": "d038a16effa95e2559d3c55b06d3b16771f8e3e165e4d10bdf81d9098cb358f2",
+      "sizeBytes": 471
+    },
+    {
+      "path": "fixtures/invalid-input.geojson",
+      "sha256": "7d77a05b6873c1cf399a9f36bff8e820780bb3d755965426f2565eaf19bccb1c",
+      "sizeBytes": 108
+    },
+    {
+      "path": "fixtures/params.json",
+      "sha256": "945e652ba663daa4f638dcee7243d157f72827d439256423f0c78536cba6f752",
+      "sizeBytes": 21
+    },
+    {
+      "path": "process/summary_tool.py",
+      "sha256": "b755ce717cbc0e2fcbee74e19b21ec5e61b9d7bc3a07cf5771d6f6b5e612e410",
+      "sizeBytes": 1724
+    },
+    {
+      "path": "README.md",
+      "sha256": "80e25609b814d1b2045e30a0a81d0d2c0cfdf46e00ceadc7682b2e0039271374",
+      "sizeBytes": 5265
+    },
+    {
+      "path": "requirements.lock",
+      "sha256": "a8632809275c89c31bc07e6ee932d6dd2f1fcae22f5c0ff2683513ebdfdf2da8",
+      "sizeBytes": 346
+    },
+    {
+      "path": "schema/inputs.schema.json",
+      "sha256": "51d880cfb6e8711c128ac88ca092df43c476e5ae263ea7d1b3d62f48057ae955",
+      "sizeBytes": 1150
+    },
+    {
+      "path": "tests/test_golden.py",
+      "sha256": "bb3ca725021c0f5e8741beef1a3b99220918071c12d053558b72245275f5328c",
+      "sizeBytes": 4920
+    }
+  ]
+}

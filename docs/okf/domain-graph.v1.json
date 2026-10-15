@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:16fa6ecc62615bc6e9221783d409f783e65904e5127b70a4fc2745005910086b",
+  "bundleDigest": "sha256:7d51e85c0c46c71e041aa0f678e0227aea08383d1d2b7bfa13e88973b339cf7b",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2485,7 +2485,7 @@
     {
       "id": "guides/query-analyze/gp-devkit-authoring",
       "path": "guides/query-analyze/gp-devkit-authoring.md",
-      "documentDigest": "sha256:198f0da6798789938cc961f545d80b5fa6763eb0c8e2fe22c9708607927445e3",
+      "documentDigest": "sha256:696c0acb321e0d25aee264e0c14e3192ad1b109c02f2bb050bbbd1bc9d5ae93a",
       "metadata": {
         "type": "guide",
         "title": "Author a geoprocessing process",

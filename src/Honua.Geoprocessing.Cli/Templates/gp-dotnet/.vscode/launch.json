@@ -1,0 +1,61 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "GP: run with breakpoints (host)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "GP: build",
+      "program": "${workspaceFolder}/tests/SummaryTool.Tests/bin/Debug/net10.0/Honua.CustomCode.Harness.dll",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "local",
+        "--assembly-dir",
+        "process/bin/Debug/net10.0",
+        "--entrypoint",
+        "SummaryTool::Honua.Templates.SummaryTool",
+        "--params",
+        "fixtures/params.json",
+        "--input",
+        "features=fixtures/input.geojson",
+        "--output",
+        ".honua/runs"
+      ],
+      "stopAtEntry": false
+    },
+    {
+      "name": "GP: golden tests (host)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "GP: build",
+      "program": "dotnet",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "test",
+        "tests/SummaryTool.Tests/SummaryTool.Tests.csproj",
+        "--no-build"
+      ],
+      "stopAtEntry": false
+    },
+    {
+      "name": "GP: attach to container (docker/compose.debug.yaml)",
+      "type": "coreclr",
+      "request": "attach",
+      "processName": "dotnet",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": [
+          "exec",
+          "-i",
+          "gp-dotnet-debug"
+        ],
+        "debuggerPath": "/root/vsdbg/vsdbg",
+        "pipeCwd": "${workspaceFolder}",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/work/src": "${workspaceFolder}"
+      }
+    }
+  ]
+}

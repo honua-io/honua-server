@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "honua.gp-template-manifest.v1",
+  "template": "gp-dotnet",
+  "files": [
+    {
+      "path": ".gitignore",
+      "sha256": "70c7388a05d0be30fd78d8f5e7f10a7bfd39a4ccaf56bf98d4d29ee7d53aff55",
+      "sizeBytes": 39
+    },
+    {
+      "path": ".vscode/launch.json",
+      "sha256": "3067aa282c644cb6be683a4742017139a5a9609043d5f729ba60b78fcf51c9bc",
+      "sizeBytes": 1578
+    },
+    {
+      "path": ".vscode/tasks.json",
+      "sha256": "f2eeee7b281407e821e5f1a53439c4ac49533f6350354ebf7608879b61f49543",
+      "sizeBytes": 542
+    },
+    {
+      "path": "Directory.Build.props",
+      "sha256": "c9ebc0546c089a1cfcee1ca9a865ca43866ef06577eb44456c8c17f9aa29c07b",
+      "sizeBytes": 1322
+    },
+    {
+      "path": "docker/compose.debug.yaml",
+      "sha256": "abb96ad132c1aff97f2feefb130e886f156377313dc1320bba40dc5601fe9df2",
+      "sizeBytes": 1297
+    },
+    {
+      "path": "expected/golden.json",
+      "sha256": "c9a7a6a133778a97d6b9993f654416d4a4dcb03ea80a95f2d554f4723fc016b6",
+      "sizeBytes": 575
+    },
+    {
+      "path": "expected/summary.json",
+      "sha256": "d1d562074ff6156481caf9a933e961e25af9483e92c2cb83192c9a77f67574ba",
+      "sizeBytes": 47
+    },
+    {
+      "path": "fixtures/input.geojson",
+      "sha256": "d038a16effa95e2559d3c55b06d3b16771f8e3e165e4d10bdf81d9098cb358f2",
+      "sizeBytes": 471
+    },
+    {
+      "path": "fixtures/invalid-input.geojson",
+      "sha256": "7d77a05b6873c1cf399a9f36bff8e820780bb3d755965426f2565eaf19bccb1c",
+      "sizeBytes": 108
+    },
+    {
+      "path": "fixtures/params.json",
+      "sha256": "945e652ba663daa4f638dcee7243d157f72827d439256423f0c78536cba6f752",
+      "sizeBytes": 21
+    },
+    {
+      "path": "process/packages.lock.json",
+      "sha256": "f8795fde599f0c99846af9ecb2328335320812900ad2b7d1a4c390e51093ebb2",
+      "sizeBytes": 132
+    },
+    {
+      "path": "process/SummaryTool.cs",
+      "sha256": "83e36c2aa083d4f1ac256703656cd1b20e7d4bb25ba312060d8689ef3c64ef89",
+      "sizeBytes": 2560
+    },
+    {
+      "path": "process/SummaryTool.csproj",
+      "sha256": "b84aea52f77e4aabeee3e5258b64f02cadbf99809d75543bcbcb0cb9252f8db7",
+      "sizeBytes": 685
+    },
+    {
+      "path": "README.md",
+      "sha256": "fad89d3bc69b90b65d175ba1678ceca118c855f466a87f23447e931f4e738d46",
+      "sizeBytes": 5603
+    },
+    {
+      "path": "schema/inputs.schema.json",
+      "sha256": "51d880cfb6e8711c128ac88ca092df43c476e5ae263ea7d1b3d62f48057ae955",
+      "sizeBytes": 1150
+    },
+    {
+      "path": "tests/SummaryTool.Tests/GoldenTests.cs",
+      "sha256": "0c7f99a49183d57434d5d1a02c7971946fbe284c3be1b513be577292d1d3126e",
+      "sizeBytes": 6999
+    },
+    {
+      "path": "tests/SummaryTool.Tests/packages.lock.json",
+      "sha256": "0d29691204fb8e1ac926bc6ab6a8b457a4bcac1bbcab7fb83788fa22666ffeaa",
+      "sizeBytes": 4032
+    },
+    {
+      "path": "tests/SummaryTool.Tests/SummaryTool.Tests.csproj",
+      "sha256": "aa322ca0a8b4ad2446d4b3d06827d2fd928974420a22c484316f7314dc2e7be8",
+      "sizeBytes": 770
+    }
+  ]
+}
