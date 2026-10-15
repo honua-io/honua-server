@@ -506,18 +506,27 @@ internal static partial class PrintingToolsEndpoints
             : (IReadOnlyList<string>)[];
 
         var progressStore = context.RequestServices.GetRequiredService<IUniversalProgressStore>();
+        var worker = context.RequestServices.GetService<PrintWorkerInstance>();
+        var tracker = context.RequestServices.GetService<PrintJobTracker>();
         var progress = PrintProgress.CreateInitial(jobId, format, templateName, totalElements) with
         {
             RequestedBy = ResolveOwner(context.User),
             TenantId = submitter.TenantId,
             AnonymousSubmission = context.User.Identity?.IsAuthenticated != true,
-            Warnings = warningDescriptions
+            Warnings = warningDescriptions,
+            OwnerInstanceId = worker?.InstanceId,
+            HeartbeatAt = worker is null ? null : DateTimeOffset.UtcNow
         };
         await progressStore.SetProgressAsync(jobId, progress, PrintingToolsRequestHandlers.ResultTtl, cancellationToken);
+        if (worker is not null)
+        {
+            tracker?.Track(jobId);
+        }
 
         // Attempt non-blocking enqueue; return 503 if queue is full
         if (!channel.Writer.TryWrite(job))
         {
+            tracker?.Forget(jobId);
             await progressStore.DeleteProgressAsync(jobId, cancellationToken);
             return StandardErrorHelpers.CreateServiceUnavailable(context,
                 "Print queue is full. Please retry later.", retryAfterSeconds: 30);

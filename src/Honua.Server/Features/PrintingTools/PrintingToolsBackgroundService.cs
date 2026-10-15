@@ -30,19 +30,22 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly PrintJobCancellationTokens _cancellationTokens;
     private readonly ILogger<PrintingToolsBackgroundService> _logger;
+    private readonly PrintJobTracker? _jobTracker;
 
     public PrintingToolsBackgroundService(
         Channel<PrintJob> channel,
         IServiceScopeFactory scopeFactory,
         PrintJobCancellationTokens cancellationTokens,
         ILogger<PrintingToolsBackgroundService> logger,
-        ILicenseOperationPolicy? licensePolicy = null)
+        ILicenseOperationPolicy? licensePolicy = null,
+        PrintJobTracker? jobTracker = null)
     {
         _licensePolicy = licensePolicy;
         _channel = channel;
         _scopeFactory = scopeFactory;
         _cancellationTokens = cancellationTokens;
         _logger = logger;
+        _jobTracker = jobTracker;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -104,6 +107,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
         finally
         {
             _cancellationTokens.Remove(job.JobId);
+            _jobTracker?.Forget(job.JobId);
         }
     }
 
@@ -135,11 +139,17 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
 
         // Advance to processing state
         var progress = existing is PrintProgress queued
-            ? queued with { Status = OperationStatus.Processing, CurrentPhase = "Rendering map" }
+            ? queued with
+            {
+                Status = OperationStatus.Processing,
+                CurrentPhase = "Rendering map",
+                HeartbeatAt = DateTimeOffset.UtcNow
+            }
             : PrintProgress.CreateInitial(job.JobId, job.Format, job.TemplateName, job.TotalElements) with
             {
                 Status = OperationStatus.Processing,
-                CurrentPhase = "Rendering map"
+                CurrentPhase = "Rendering map",
+                HeartbeatAt = DateTimeOffset.UtcNow
             };
         await progressStore.SetProgressAsync(job.JobId, progress, PrintingToolsRequestHandlers.ResultTtl, cancellationToken);
 
