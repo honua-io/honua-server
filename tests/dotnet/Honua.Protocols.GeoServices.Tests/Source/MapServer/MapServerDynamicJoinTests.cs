@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
@@ -249,12 +250,18 @@ public sealed class MapServerDynamicJoinTests
     internal static WebApplicationFactory<Program> CreateFactory(
         bool rightLayerAnonymous,
         bool temporalFields = false,
-        bool hiddenFields = false)
+        bool hiddenFields = false,
+        IFieldMaskSource? fieldMaskSource = null)
         => new TestWebApplicationFactory().WithWebHostBuilder(builder =>
         {
             builder.ConfigureTestServices(services =>
             {
                 services.AddSingleton<ICoordinateTransformService, WellKnownCoordinateTransformService>();
+                if (fieldMaskSource is not null)
+                {
+                    services.RemoveAll<IFieldMaskSource>();
+                    services.AddSingleton(fieldMaskSource);
+                }
                 if (temporalFields)
                 {
                     // Keep seeded temporal values visible to the HTTP request's scope.
