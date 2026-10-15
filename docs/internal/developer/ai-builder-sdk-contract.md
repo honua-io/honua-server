@@ -36,7 +36,7 @@ The HTTP endpoint for these MCP calls is `POST /mcp` using JSON-RPC 2.0.
 | URI template | Category | Status | Required authorization |
 | --- | --- | --- | --- |
 | `honua://catalog/processes` | processes | Functional. Returns built-in catalog entries with `processId`, `name`, `family`, `description`, and `parameters`. | `Catalog` / `Discover` |
-| `honua://workspaces/{workspaceId}` | schemas/artifacts | Functional when a workspace store and lifecycle service are registered; otherwise returns a stable `status: "degraded"` envelope. | `Workspace` / `Read` |
+| `honua://workspaces/{workspaceId}` | schemas/artifacts | Functional when a workspace store and lifecycle service are registered. A personal workspace is readable by its owner; a workspace with a scope is readable by a caller who holds that scope. Any other authenticated denial is `not_found`. Without a lifecycle service the resource returns a stable `status: "degraded"` envelope after the type-level check. | `Workspace` / `Read`, plus owner or scope |
 | `honua://jobs/{jobId}` | jobs | Functional job status resource. | Job read through shared geoprocessing service |
 | `honua://jobs/{jobId}/results` | artifacts/jobs | Functional result package resource. | Job result read through shared geoprocessing service |
 | `honua://jobs/{jobId}/report` | artifacts | Functional when analysis reporting is registered. | Report read through reporting service |

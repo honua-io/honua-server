@@ -35,6 +35,12 @@ internal static class GpDescribeRenderer
         builder.Append("title       : ").AppendLine(definition.Title);
         builder.Append("category    : ").AppendLine(definition.Category);
         builder.Append("runtime     : ").AppendLine(RuntimeProfiles.Normalize(definition.RuntimeProfile));
+        builder.Append("execution   : ").AppendLine(definition.ExecutionKind.ToString());
+        builder.Append("dependency  : ").AppendLine(definition.ConfigurationDependency ?? "See input requirements; registration does not verify dependencies.");
+        if (definition.ExecutionCapabilityReason is { } reason)
+        {
+            builder.Append("availability: ").AppendLine(reason);
+        }
         builder.Append("description : ").AppendLine(definition.Description);
         builder.AppendLine();
 
@@ -113,6 +119,12 @@ internal static class GpDescribeRenderer
             ["description"] = definition.Description,
             ["category"] = definition.Category,
             ["runtimeProfile"] = RuntimeProfiles.Normalize(definition.RuntimeProfile),
+            ["executionKind"] = definition.ExecutionKind.ToString(),
+            ["supportedExecutionModes"] = definition.SupportedExecutionModes.ToString(),
+            ["supportedEntryPoints"] = definition.SupportedEntryPoints.ToString(),
+            ["configurationDependency"] = definition.ConfigurationDependency,
+            ["executionCapabilityReason"] = definition.ExecutionCapabilityReason,
+            ["dependenciesVerified"] = false,
             ["inputs"] = BuildInputSchema(definition),
             ["outputs"] = outputs,
             ["example"] = BuildExampleCommand(definition),

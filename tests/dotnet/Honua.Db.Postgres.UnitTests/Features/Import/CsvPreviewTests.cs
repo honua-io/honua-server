@@ -86,6 +86,42 @@ public sealed class CsvPreviewTests
     }
 
     [Fact]
+    public async Task PreviewFileAsync_CsvWithEwktSrid_DetectsEmbeddedSridInsteadOf4326()
+    {
+        // #6171: a PostGIS CSV export declares the CRS on the geometry. Detection must
+        // not replace that SRID with the geographic default.
+        var csv = """
+            id,geom
+            1,SRID=3857;POINT(-13627361 4544761)
+            """;
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "webmercator.csv");
+
+        preview.Format.Should().Be(SupportedFileFormat.Csv);
+        preview.DetectedSrid.Should().Be(3857);
+        preview.TotalFeatureCount.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(SupportedFileFormat.Csv, null, 3857, false)]
+    [InlineData(SupportedFileFormat.Csv, null, 0, true)]
+    [InlineData(SupportedFileFormat.Csv, 4326, 3857, true)]
+    [InlineData(SupportedFileFormat.FileGdb, null, 0, true)]
+    [InlineData(SupportedFileFormat.GeoJson, null, 4326, true)]
+    public void ShouldApplyDetectedSourceSrid_PreservesCsvEmbeddedSridOnly(
+        SupportedFileFormat format,
+        int? requestedSourceSrid,
+        int featureSrid,
+        bool apply)
+    {
+        StreamingFileImportService.ShouldApplyDetectedSourceSrid(format, requestedSourceSrid, featureSrid)
+            .Should().Be(apply);
+    }
+
+    [Fact]
     public async Task ReadStreamingAsync_CsvWithExcessivelyLargeRecord_ThrowsInvalidOperationException()
     {
         // Create a CSV with an unbalanced quote that would cause unbounded memory allocation

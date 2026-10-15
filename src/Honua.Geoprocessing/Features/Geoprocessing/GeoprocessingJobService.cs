@@ -191,6 +191,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return _authorizer.EnsureAuthorizedAsync(principal, resourceType, operation, cancellationToken);
     }
 
+    public Task EnsureCallerAuthorizedAsync(
+        ClaimsPrincipal principal,
+        OperatorAuthorizationRequest request,
+        CancellationToken cancellationToken = default)
+        => _authorizer.EnsureAuthorizedAsync(principal, request, cancellationToken);
+
     public Task EnsureGPServerExecutionAuthorizedAsync(
         ClaimsPrincipal principal, GPServerExecutionContext execution, CancellationToken cancellationToken = default)
         => _authorizer.EnsureGPServerExecutionAuthorizedAsync(principal, execution, cancellationToken);

@@ -17,6 +17,19 @@ measurements use the same six-contract class in both variants:
 host isolation class is excluded from cross-host comparison.
 The driver never duplicates or replaces the repository's affected-scope planner.
 
+The checked-in ProjectReference closure of `Honua.Protocols.OData.UnitTests`
+excludes `Honua.Server`, full `Honua.TestKit`, and unrelated protocol assemblies.
+The same exclusion holds for `Honua.OData.TestHost` and the OData component test
+project. The baseline integration project still references `Honua.Server`, and the
+unit candidate closure is at least 50% smaller. `scripts/ci/odata-pilot/test_pilot.py`
+locks this static boundary. It is not the harness's evaluated MSBuild graph,
+timings, peak memory, disk size, or image size. Component measured runs and the
+managed image builder are not implemented, and the Flow reservation parser still
+rejects `-getItem:` and `-getProperty:`. Until those are available, `compare`
+cannot qualify this pilot and it stays opt-in. Do not extend this isolation
+pattern past OData. The runtime image copies a verified publish directory and
+does not compile.
+
 ```bash
 python3 scripts/ci/odata-pilot/pilot.py plan \
   --root /path/to/candidate --variant candidate --selection unit \
@@ -350,10 +363,23 @@ test and measurement receipts outside its worktree, and disposes only its record
 Postgres databases, containers, and temporary image resources. Remove the worker's
 worktree only after confirming it is clean, fully pushed, and no active reservation
 uses it. Keep shared package caches. Record the delivering PR and trunk SHA, removed
-resource IDs/paths, measured bytes reclaimed, and any retained evidence in the
-ledger cleanup receipt. A failed cleanup stays visible for the supervisor or reaper
-to retry; it is not a successful completion receipt. Unmerged branches and foreign
-worktrees are not cleanup targets.
+resource IDs/paths, measured bytes reclaimed, and any retained evidence with:
+
+```bash
+python3 scripts/ci/odata-pilot/pilot.py cleanup-receipt \
+  --root /path/to/merged-worktree \
+  --head "$TRUNK_SHA" \
+  --removal-json /tmp/odata-cleanup-removals.json \
+  --evidence /var/lib/honua-supervisor/evidence/odata-pilot \
+  --output /tmp/odata-cleanup-receipt.json
+```
+
+`--removal-json` is a list of `{id, removed}` objects. The command exits 2 unless
+`HEAD` is that trunk commit and every removal succeeded. The receipt stays
+`promoted: false`; cleanup does not qualify the pilot. A failed receipt is written
+for retry and is not a successful completion receipt. Do not hand-write a success
+receipt before that commit is on trunk. Unmerged branches and foreign worktrees
+are not cleanup targets.
 
 Image selection defaults to `--runtime linux-x64`; `--runtime linux-arm64` is
 also supported. The image-only RID and `SelfContained=false` are applied

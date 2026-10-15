@@ -3,7 +3,6 @@
 
 using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 
@@ -98,6 +97,7 @@ public sealed class OperationDispatcher : IOperationInvoker
                 + "secret-aware executor composed in this runtime.");
         }
 
+        context = BindProvisioningRoot(request, context);
         var createdAt = _clock.GetUtcNow();
         OperationHandle envelope;
         var invocationContext = context;
@@ -105,7 +105,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         // A scope-governed bearer is constrained on EVERY submission, not only on approved
         // replay: read-only operations execute directly and never reach the replay branch, so
         // enforcing there alone let a discover/create-only bearer invoke sensitive inventories.
-        if (ExceedsScopeAuthority(request, context))
+        if (OperationScopeMapping.ExceedsScopeAuthority(request, context))
         {
             return new OperationHandle
             {
@@ -115,6 +115,7 @@ public sealed class OperationDispatcher : IOperationInvoker
                 Status = OperationHandleStatus.Denied,
                 PolicyDecision = PolicyDecisionKind.Deny,
                 AuthorizationOutcome = OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance,
+                RootProvisioningOperationId = context.RootProvisioningOperationId,
                 CreatedAt = createdAt,
                 UpdatedAt = _clock.GetUtcNow(),
                 Reason = string.IsNullOrWhiteSpace(context.ApprovedProposalId)
@@ -142,6 +143,7 @@ public sealed class OperationDispatcher : IOperationInvoker
                     OperationId = request.OperationId,
                     CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
                     Status = OperationHandleStatus.Failed,
+                    RootProvisioningOperationId = context.RootProvisioningOperationId,
                     CreatedAt = createdAt,
                     UpdatedAt = _clock.GetUtcNow(),
                     Reason = "Approved replay proof did not match the durable proposal authority.",
@@ -161,9 +163,35 @@ public sealed class OperationDispatcher : IOperationInvoker
                         ? $"corr-{Guid.NewGuid():N}"
                         : context.CorrelationId,
                     Status = OperationHandleStatus.Failed,
+                    RootProvisioningOperationId = context.RootProvisioningOperationId,
                     CreatedAt = createdAt,
                     UpdatedAt = _clock.GetUtcNow(),
                     Reason = "Approved replay could not resolve the original durable operation instance.",
+                };
+            }
+
+            try
+            {
+                RootProvisioningOperationIds.RejectRelabel(
+                    existing.RootProvisioningOperationId,
+                    context.RootProvisioningOperationId);
+            }
+            catch (ResourceConflictException ex)
+            {
+                return existing with
+                {
+                    Status = OperationHandleStatus.Failed,
+                    UpdatedAt = _clock.GetUtcNow(),
+                    Reason = ex.Message,
+                    Result = new OperationResultSummary
+                    {
+                        Summary = ex.Message,
+                        Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                        {
+                            ["statusCode"] = "409",
+                            ["errorKind"] = "conflict",
+                        },
+                    },
                 };
             }
 
@@ -432,6 +460,19 @@ public sealed class OperationDispatcher : IOperationInvoker
             }
         }
 
+        if (executed.RootProvisioningOperationId is not null &&
+            !string.Equals(
+                executed.RootProvisioningOperationId,
+                envelope.RootProvisioningOperationId,
+                StringComparison.Ordinal))
+        {
+            return await PersistFailureAsync(
+                    envelope,
+                    "The actuation substituted a different provisioning root.",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var completed = executed with
         {
             OperationInstanceId = operationInstanceId,
@@ -443,6 +484,7 @@ public sealed class OperationDispatcher : IOperationInvoker
             UpdatedAt = _clock.GetUtcNow(),
             AuthorizationOutcome = invocationContext.AuthorizationOutcome,
             PolicyDecision = PolicyDecisionKind.Allow,
+            RootProvisioningOperationId = envelope.RootProvisioningOperationId,
             EvidenceRefs = OperationEnvelopeFactory.PreserveRequestBinding(envelope, executed.EvidenceRefs),
         };
         string? terminalAuditId;
@@ -681,19 +723,16 @@ public sealed class OperationDispatcher : IOperationInvoker
                 : $"operationId={envelope.OperationId};status={envelope.Status}",
         }, cancellationToken);
 
-    /// <summary>
-    /// Whether a scope-governed caller lacks the OAuth authority this operation requires. An
-    /// operation with no scope mapping is refused rather than allowed: a bearer cannot invoke
-    /// authority the scope catalog does not describe.
-    /// </summary>
-    private static bool ExceedsScopeAuthority(OperationRequest request, OperationPolicyContext context)
-        => context.ScopeGoverned
-            && (context.RecognizedScopes.Count == 0
-                || context.RecognizedScopes.Any(scope =>
-                    !OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal))
-                || !OperationScopeMapping.TryResolve(request, out var requiredOperation)
-                || !OperatorScopeCatalog.PermitsOperation(
-                    context.RecognizedScopes.ToHashSet(StringComparer.Ordinal), requiredOperation));
+    private static OperationPolicyContext BindProvisioningRoot(OperationRequest request, OperationPolicyContext context)
+    {
+        var root = RootProvisioningOperationIds.PreferCanonical(
+            context.RootProvisioningOperationId,
+            request.GatewayRequest?.RootProvisioningOperationId,
+            RootProvisioningOperationIds.FromParameters(request.Parameters));
+        return string.Equals(root, context.RootProvisioningOperationId, StringComparison.Ordinal)
+            ? context
+            : context with { RootProvisioningOperationId = root };
+    }
 
     private IOperationExecutor ResolveExecutor(string operationId)
         => _executors.TryGetValue(operationId, out var executor)
@@ -767,6 +806,7 @@ public sealed class OperationDispatcher : IOperationInvoker
             UpdatedAt = _clock.GetUtcNow(),
             AuthorizationOutcome = context.AuthorizationOutcome,
             PolicyDecision = decision.Kind,
+            RootProvisioningOperationId = context.RootProvisioningOperationId,
 
             // Only RequireApproval routes to an approval lane; Deny/DryRunFirst carry none.
             ApprovalLane = decision.Kind == PolicyDecisionKind.RequireApproval

@@ -86,6 +86,52 @@ public sealed class McpSessionManagerTests
     }
 
     [UnitTest]
+    public void Terminate_DropsJobAssociations_WhileLiveSessionStillResolves()
+    {
+        var manager = new McpSessionManager();
+        var live = manager.CreateSession();
+        var ending = manager.CreateSession();
+        manager.AssociateJob(live, "job-live");
+        manager.AssociateJob(ending, "job-ending");
+        manager.AssociateJob(ending, "job-ending-2");
+
+        manager.TryGetJobSession("job-live", out var liveResolved).Should().BeTrue();
+        liveResolved.Should().Be(live);
+        manager.TryGetJobSession("job-ending", out var endingResolved).Should().BeTrue();
+        endingResolved.Should().Be(ending);
+
+        manager.Terminate(ending).Should().BeTrue();
+
+        manager.TryGetJobSession("job-ending", out _).Should().BeFalse();
+        manager.TryGetJobSession("job-ending-2", out _).Should().BeFalse();
+        manager.TryGetJobSession("job-live", out liveResolved).Should().BeTrue();
+        liveResolved.Should().Be(live);
+    }
+
+    [UnitTest]
+    public void Evict_DropsJobAssociationsForTheEvictedSession()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var manager = new McpSessionManager(
+            maxSessions: 10,
+            idleTimeout: TimeSpan.FromHours(1),
+            evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
+            timeProvider: time,
+            maxAnonymousSessions: 1);
+
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var evicted).Should().BeTrue();
+        manager.AssociateJob(evicted, "job-evicted");
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var kept).Should().BeTrue();
+        manager.AssociateJob(kept, "job-kept");
+
+        manager.IsValid(evicted).Should().BeFalse();
+        manager.TryGetJobSession("job-evicted", out _).Should().BeFalse();
+        manager.TryGetJobSession("job-kept", out var resolved).Should().BeTrue();
+        resolved.Should().Be(kept);
+    }
+
+    [UnitTest]
     public void ValidateAccess_BindsToPrincipal_AndRejectsDifferentPrincipal()
     {
         var manager = new McpSessionManager();
@@ -155,30 +201,91 @@ public sealed class McpSessionManagerTests
     }
 
     [UnitTest]
-    public void TryCreateSession_AtCapacityWithLruPolicy_EvictsLeastRecentlyUsed()
+    public void TryCreateSession_AtPrincipalQuota_EvictsOnlyThatPrincipalsLeastRecentlyUsed()
     {
         var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
         var manager = new McpSessionManager(
-            maxSessions: 2,
+            maxSessions: 10,
             idleTimeout: TimeSpan.FromHours(1),
             evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
-            timeProvider: time);
+            timeProvider: time,
+            maxSessionsPerPrincipal: 2);
 
         manager.TryCreateSession("sub:a", out var oldest).Should().BeTrue();
         time.Advance(TimeSpan.FromMinutes(1));
-        manager.TryCreateSession("sub:b", out var middle).Should().BeTrue();
+        manager.TryCreateSession("sub:b", out var otherPrincipal).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession("sub:a", out var middle).Should().BeTrue();
 
-        // Touch the oldest so it is no longer the LRU victim.
+        // Touch the oldest so the principal's own middle session is the LRU victim.
         time.Advance(TimeSpan.FromMinutes(1));
         manager.ValidateAccess(oldest, "sub:a").Should().Be(McpSessionValidation.Valid);
 
-        // Admitting a third session evicts the true LRU (now `middle`).
         time.Advance(TimeSpan.FromMinutes(1));
-        manager.TryCreateSession("sub:c", out var newest).Should().BeTrue();
+        manager.TryCreateSession("sub:a", out var newest).Should().BeTrue();
 
-        manager.IsValid(middle).Should().BeFalse("the least-recently-used session is evicted");
+        manager.IsValid(middle).Should().BeFalse("the principal's own least-recently-used session is evicted");
         manager.IsValid(oldest).Should().BeTrue();
+        manager.IsValid(otherPrincipal).Should().BeTrue("another principal is not a victim of this quota");
         manager.IsValid(newest).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryCreateSession_AtGlobalCapacity_DoesNotEvictAnotherPrincipal()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var manager = new McpSessionManager(
+            maxSessions: 3,
+            idleTimeout: TimeSpan.FromHours(1),
+            evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
+            timeProvider: time,
+            maxSessionsPerPrincipal: 2);
+
+        manager.TryCreateSession("sub:a", out var first).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession("sub:a", out var second).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession("sub:b", out var other).Should().BeTrue();
+
+        // The table is full and sub:c is under its own quota. Anonymous sessions are
+        // the only cross-principal victims, and there are none, so the new session
+        // is refused and both existing principals keep their sessions.
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession("sub:c", out var rejected).Should().BeFalse();
+        rejected.Should().BeEmpty();
+        manager.IsValid(first).Should().BeTrue();
+        manager.IsValid(second).Should().BeTrue();
+        manager.IsValid(other).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryCreateSession_AtPrincipalQuotaWithRejectPolicy_RefusesOnlyThatPrincipal()
+    {
+        var manager = new McpSessionManager(
+            maxSessions: 10,
+            evictionPolicy: McpSessionEvictionPolicy.RejectNew,
+            maxSessionsPerPrincipal: 1);
+
+        manager.TryCreateSession("sub:a", out var kept).Should().BeTrue();
+        manager.TryCreateSession("sub:a", out var rejected).Should().BeFalse();
+        rejected.Should().BeEmpty();
+        manager.TryCreateSession("sub:b", out var other).Should().BeTrue();
+        manager.IsValid(kept).Should().BeTrue();
+        manager.IsValid(other).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryCreateSession_PerPrincipalQuotaCannotOccupyEverySlot()
+    {
+        var manager = new McpSessionManager(maxSessions: 2, maxSessionsPerPrincipal: 32);
+
+        manager.TryCreateSession("sub:a", out var first).Should().BeTrue();
+        manager.TryCreateSession("sub:a", out var second).Should().BeTrue();
+
+        manager.IsValid(first).Should().BeFalse("a quota at or above the global cap is clamped to one less");
+        manager.IsValid(second).Should().BeTrue();
+        manager.TryCreateSession("sub:b", out var other).Should().BeTrue();
+        manager.IsValid(other).Should().BeTrue();
     }
 
     [UnitTest]

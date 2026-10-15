@@ -112,6 +112,17 @@ internal static partial class AdminLayerAuthoringEndpoints
             return problem!;
         }
 
+        var preview = AdminLayerConfigurationTargets.Resolve(
+            await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false),
+            layerId);
+        if (preview.IsAmbiguous)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status409Conflict,
+                preview.ConflictDetail ?? "The layer id is published by more than one resource.");
+        }
+
         // An empty/null body clears the document; otherwise it must be a JSON object.
         var clearing = document.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined;
         if (!clearing && document.ValueKind != JsonValueKind.Object)
@@ -121,8 +132,16 @@ internal static partial class AdminLayerAuthoringEndpoints
         }
 
         var stored = clearing ? (JsonElement?)null : document.Clone();
-        await MutateResourceForLayerAsync(
+        var written = await AdminLayerConfigurationTargets.WriteAsync(
             graphStore, layerId, res => WithExtension(res, key, stored), cancellationToken).ConfigureAwait(false);
+        if (written.IsAmbiguous)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status409Conflict,
+                written.ConflictDetail ?? "The layer id is published by more than one resource.");
+        }
+
         await cacheInvalidator.InvalidateServiceCatalogAsync(null, [layerId], cancellationToken).ConfigureAwait(false);
 
         return Results.Json(
@@ -312,66 +331,6 @@ internal static partial class AdminLayerAuthoringEndpoints
         }
 
         return (layerResult.Resource, null);
-    }
-
-    /// <summary>
-    /// Read-modify-write the resource(s) a layer publishes through, with an optimistic-concurrency retry on
-    /// Metadata v2 etag mismatch (background writers can bump the etag between the read and the save).
-    /// </summary>
-    private static async Task MutateResourceForLayerAsync(
-        IMetadataV2GraphStore graphStore, int layerId,
-        Func<MetadataV2Resource, MetadataV2Resource> mutate, CancellationToken cancellationToken)
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            // LayerIndex already encodes numeric routing identity: it is non-null only
-            // when the publication's identifier is a stringified layer index, or when a
-            // legacy snapshot supplied layerIndex directly. Matching on it alone covers
-            // both shapes; the previous `p.Identifier.IsNumeric &&` prefix additionally
-            // dereferenced an Identifier that legacy snapshots leave unset, which made
-            // every PUT to drawing-info, popup-info and relationships return HTTP 500.
-            var targetResourceIds = snapshot.Graph.Publications
-                .Where(p => p.LayerIndex == layerId)
-                .Select(p => p.ResourceId)
-                .ToHashSet(StringComparer.Ordinal);
-            if (targetResourceIds.Count == 0)
-            {
-                return;
-            }
-
-            var resources = snapshot.Graph.Resources.ToArray();
-            var mutated = false;
-            for (var i = 0; i < resources.Length; i++)
-            {
-                if (targetResourceIds.Contains(resources[i].Metadata.Id))
-                {
-                    resources[i] = mutate(resources[i]);
-                    mutated = true;
-                }
-            }
-
-            if (!mutated)
-            {
-                return;
-            }
-
-            var updated = snapshot.Graph with
-            {
-                Resources = resources,
-                Revision = snapshot.Graph.Revision + 1,
-            };
-
-            try
-            {
-                _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
-                return;
-            }
-            catch (Exception ex) when (IsEtagMismatch(ex) && attempt < MetadataMutationMaxAttempts)
-            {
-                // Concurrent etag bump — re-read and re-apply.
-            }
-        }
     }
 
     private static bool IsEtagMismatch(Exception exception) =>

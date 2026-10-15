@@ -26,6 +26,12 @@ internal static partial class EmbedPolicyEndpoints
 
     private const string EmbedKeyHeader = "X-Honua-Embed-Key";
 
+    /// <summary>Maximum events accepted in one analytics POST. One request must not be able to flush the shared buffer.</summary>
+    private const int MaxAnalyticsEventsPerRequest = 100;
+
+    /// <summary>How far a client-supplied <c>occurredAt</c> may sit from ingest time before it is clamped.</summary>
+    private static readonly TimeSpan AnalyticsClockSkew = TimeSpan.FromMinutes(5);
+
     /// <summary>
     /// Registers the public embed policy and analytics ingestion endpoints.
     /// </summary>
@@ -111,11 +117,13 @@ internal static partial class EmbedPolicyEndpoints
         return TypedResults.Ok(ToResponse(policy));
     }
 
-    private static async Task<Results<Ok<ApiResponse<EmbedAnalyticsIngestResponse>>, UnauthorizedHttpResult, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<EmbedAnalyticsIngestResponse>>, UnauthorizedHttpResult, BadRequest<ApiResponse<object>>, JsonHttpResult<ApiResponse<object>>>>
         HandleAnalytics(
             IngestEmbedAnalyticsRequest request,
             [FromServices] IEmbedKeyStore store,
             [FromServices] IEmbedAnalyticsStore analytics,
+            [FromServices] IAuditLog auditLog,
+            [FromServices] ILogger<EmbedPolicyEndpointsLog> logger,
             HttpContext context)
     {
         var validation = await ResolveKeyAsync(store, context);
@@ -124,12 +132,35 @@ internal static partial class EmbedPolicyEndpoints
             return TypedResults.Unauthorized();
         }
 
+        var key = validation.Record;
+        var origin = context.Request.Headers.Origin.ToString();
+        var consumed = await store.RecordRequestAsync(key.Id, key.Scope.RateLimitWindow, context.RequestAborted);
+        var decision = EmbedPolicyEvaluator.Evaluate(key, new EmbedPolicyRequest
+        {
+            Origin = origin,
+            RequestsConsumedInWindow = consumed,
+        }, DateTimeOffset.UtcNow);
+        if (!decision.Allowed)
+        {
+            LogPolicyDenied(logger, key.Id, decision.Reason);
+            await IngestDenialAsync(analytics, key, new EmbedPolicyRequest { Origin = origin }, decision, context.RequestAborted);
+            await EmitDenialAuditAsync(auditLog, context, key.Id, decision);
+
+            var failure = ApiResponse<object>.Failure($"embed policy denied: {decision.Reason}");
+            return TypedResults.Json(failure, statusCode: StatusCodes.Status403Forbidden);
+        }
+
         if (request?.Events is null || request.Events.Count == 0)
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure("at least one analytics event is required"));
         }
 
-        var key = validation.Record;
+        if (request.Events.Count > MaxAnalyticsEventsPerRequest)
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                $"analytics batch exceeds the maximum of {MaxAnalyticsEventsPerRequest} events"));
+        }
+
         var now = DateTimeOffset.UtcNow;
 
         // Validate the ENTIRE batch before persisting anything. Persisting per-event while
@@ -138,7 +169,7 @@ internal static partial class EmbedPolicyEndpoints
         var mapped = new List<EmbedAnalyticsEvent>(request.Events.Count);
         foreach (var dto in request.Events)
         {
-            if (!TryMapEvent(dto, key, now, out var analyticsEvent, out var mapError))
+            if (!TryMapEvent(dto, key, origin, now, out var analyticsEvent, out var mapError))
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(mapError));
             }
@@ -190,6 +221,7 @@ internal static partial class EmbedPolicyEndpoints
     private static bool TryMapEvent(
         EmbedAnalyticsEventDto dto,
         EmbedKeyRecord key,
+        string? requestOrigin,
         DateTimeOffset now,
         out EmbedAnalyticsEvent analyticsEvent,
         out string error)
@@ -227,16 +259,35 @@ internal static partial class EmbedPolicyEndpoints
         {
             EventType = eventType,
             KeyId = key.Id,
-            IntegrationId = string.IsNullOrWhiteSpace(dto.IntegrationId) ? key.Scope.IntegrationId : dto.IntegrationId.Trim(),
-            TenantId = string.IsNullOrWhiteSpace(dto.TenantId) ? key.Scope.TenantId : dto.TenantId.Trim(),
-            Origin = EmbedPolicyEvaluator.NormalizeOrigin(dto.Origin),
+            // The body cannot choose another integration or tenant, or backdate the event.
+            IntegrationId = key.Scope.IntegrationId,
+            TenantId = key.Scope.TenantId,
+            Origin = EmbedPolicyEvaluator.NormalizeOrigin(requestOrigin),
             ServiceId = string.IsNullOrWhiteSpace(dto.ServiceId) ? null : dto.ServiceId.Trim(),
             LayerId = string.IsNullOrWhiteSpace(dto.LayerId) ? null : dto.LayerId.Trim(),
             DenyReason = denyReason,
-            OccurredAt = dto.OccurredAt ?? now,
+            OccurredAt = ClampOccurredAt(dto.OccurredAt, now),
         };
 
         return true;
+    }
+
+    private static DateTimeOffset ClampOccurredAt(DateTimeOffset? occurredAt, DateTimeOffset now)
+    {
+        var value = occurredAt ?? now;
+        var earliest = now - AnalyticsClockSkew;
+        var latest = now + AnalyticsClockSkew;
+        if (value < earliest)
+        {
+            return earliest;
+        }
+
+        if (value > latest)
+        {
+            return latest;
+        }
+
+        return value;
     }
 
     private static Task IngestDenialAsync(

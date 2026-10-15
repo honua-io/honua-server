@@ -25,6 +25,10 @@ internal sealed class ProposalEvidenceVerifier(
     TimeProvider timeProvider)
 {
     internal const string HttpContextItemKey = "honua.mcp.proposal-evidence.verified";
+
+    /// <summary>Invoking tool name for the current tools/call. Cleared with the evidence item.</summary>
+    internal const string InvokingToolItemKey = "honua.mcp.proposal-evidence.invoking-tool";
+
     internal const string MetaProperty = "honua.io/proposal-evidence";
     internal const string PolicyRevision = "separate-human-approval/v1";
 

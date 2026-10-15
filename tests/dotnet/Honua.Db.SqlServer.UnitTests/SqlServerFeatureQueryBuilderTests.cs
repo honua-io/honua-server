@@ -171,8 +171,75 @@ public class SqlServerFeatureQueryBuilderTests
         var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
         Assert.Contains("ORDER BY [name] DESC, [area] ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("[objectid] ASC", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("(SELECT 1)", result.Sql, StringComparison.Ordinal);
         Assert.Contains("FETCH NEXT @p1 ROWS ONLY", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_OrderByPrimaryKey_DoesNotDuplicateTiebreaker()
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Desc("objectid")),
+            Limit = 10
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("ORDER BY [objectid] DESC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("[objectid] DESC, [objectid]", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_OrderByWithoutPaging_OmitsPrimaryKeyTiebreaker()
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc("name"))
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("ORDER BY [name] ASC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("[objectid] ASC", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_Distinct_ProjectsAttributeTuplesAndOrdersThemWhenPaging()
+    {
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ImmutableArray.Create("name"),
+            OrderBy = ImmutableArray.Create(OrderByClause.Desc("name")),
+            Limit = 10
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("SELECT DISTINCT 0 AS [__objectid], CAST(NULL AS varbinary(max)) AS [__geometry], [name]", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY [name] DESC", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ORDER BY [objectid]", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("FETCH NEXT @p1 ROWS ONLY", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildCountQuery_Distinct_CountsProjectedTuples()
+    {
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ImmutableArray.Create("category")
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildCountQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("SELECT COUNT_BIG(*) FROM (SELECT DISTINCT [category] FROM [dbo].[parcels] WHERE 1=1) AS distinct_values", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -480,6 +547,28 @@ public class SqlServerFeatureQueryBuilderTests
 
         Assert.Contains("[objectid] IN (@p0, @p1, @p2)", result.Sql, StringComparison.Ordinal);
         Assert.Equal(3, result.WhereParameters.Count);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_ObjectIdsBeyondTwoThousand_UsesOneOpenJsonParameter()
+    {
+        var mapping = BuildMapping();
+        var ids = new long[2_001];
+        for (var i = 0; i < ids.Length; i++)
+        {
+            ids[i] = i + 1L;
+        }
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(
+            mapping,
+            new FeatureQuery { ObjectIds = ids.ToImmutableArray() },
+            _attributeColumns);
+
+        Assert.Contains("OPENJSON(@p0)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("@p1", result.Sql, StringComparison.Ordinal);
+        Assert.Single(result.WhereParameters);
+        Assert.StartsWith("[1,", (string)result.WhereParameters[0], StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]

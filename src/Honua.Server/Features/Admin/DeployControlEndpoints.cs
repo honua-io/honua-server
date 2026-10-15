@@ -1060,6 +1060,7 @@ internal static class DeployControlEndpoints
             RequestedBy = operation.Audit.RequestedBy,
             Reason = operation.Audit.Reason,
             CorrelationId = operation.Audit.CorrelationId,
+            RootProvisioningOperationId = operation.RootProvisioningOperationId,
             MetadataRelease = operation.MetadataRelease == null ? null : MapMetadataReleaseResponse(operation.MetadataRelease),
             CreatedAt = operation.CreatedAt,
             UpdatedAt = operation.UpdatedAt,
@@ -1099,6 +1100,7 @@ internal static class DeployControlEndpoints
         => new()
         {
             PackageId = metadataRelease.PackageId,
+            RootProvisioningOperationId = metadataRelease.RootProvisioningOperationId,
             GitOperationId = metadataRelease.GitOperationId,
             PrUrl = metadataRelease.PrUrl,
             CommitSha = metadataRelease.CommitSha,

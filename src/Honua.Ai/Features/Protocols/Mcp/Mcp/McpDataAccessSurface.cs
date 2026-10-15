@@ -263,18 +263,21 @@ internal sealed class McpDataAccessSurface
         httpContext.Items[McpWorkflowViewNegotiation.HttpContextItemKey] = requestedView;
 
         var negotiatedVersion = NegotiateProtocolVersion(parameters.ProtocolVersion);
+        // list_changed is delivered only on the optional GET /mcp stream. Advertising
+        // it while that stream is off (the default) tells clients a notification
+        // channel exists that this transport can never send (honua-server#5629).
+        var listChanged = httpContext.RequestServices?.GetService<IOptions<McpOptions>>()
+            ?.Value.ServerInitiatedStreamEnabled == true;
         var result = new McpInitializeResult
         {
             ProtocolVersion = negotiatedVersion,
-            // honua-server#1954: the server now emits notifications/tools/list_changed
-            // and notifications/resources/list_changed over the session SSE stream
-            // (e.g. when a publish mutates the catalog), so advertise the listChanged
-            // capability instead of leaving the flags inert. The prompt catalog stays
-            // static, so prompts.listChanged remains false.
+            // honua-server#1954: when the stream is enabled the server emits
+            // notifications/tools/list_changed and notifications/resources/list_changed.
+            // The prompt catalog stays static, so prompts.listChanged remains false.
             Capabilities = new McpServerCapabilities
             {
-                Tools = new McpCapabilityFlag { ListChanged = true },
-                Resources = new McpCapabilityFlag { ListChanged = true },
+                Tools = new McpCapabilityFlag { ListChanged = listChanged },
+                Resources = new McpCapabilityFlag { ListChanged = listChanged },
                 Prompts = new McpCapabilityFlag { ListChanged = false }
             },
 
@@ -575,6 +578,12 @@ internal sealed class McpDataAccessSurface
         McpJsonRpcRequest request,
         CancellationToken cancellationToken)
     {
+        // A JSON-RPC batch reuses one HttpContext. Drop any evidence left by an
+        // earlier element before this call resolves a tool, and again in the
+        // invoke finally so the next element cannot seal it.
+        httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
+        httpContext.Items.Remove(ProposalEvidenceVerifier.InvokingToolItemKey);
+
         // Per docs/developer/MCP_SERVER.md the authenticated principal gate
         // precedes any protocol-level param or tool-name validation so an
         // anonymous caller sees the `unauthenticated` reauthentication signal
@@ -665,6 +674,8 @@ internal sealed class McpDataAccessSurface
         McpToolsCallResult result;
         try
         {
+            httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
+            httpContext.Items[ProposalEvidenceVerifier.InvokingToolItemKey] = tool.Name;
             if (tool is IEvidenceBoundProposalTool)
             {
                 var tenant = httpContext.RequestServices.GetService<ITenantContext>();
@@ -741,6 +752,11 @@ internal sealed class McpDataAccessSurface
             {
                 McpLog.ToolFailedUnexpected(_logger, tool.Name, ex);
             }
+        }
+        finally
+        {
+            httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
+            httpContext.Items.Remove(ProposalEvidenceVerifier.InvokingToolItemKey);
         }
 
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);

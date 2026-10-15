@@ -80,7 +80,7 @@ internal abstract class StudioDraftToolBase
     /// "studio-compose" grant family; honua-server#3002/#3001). Admin
     /// principals bypass as usual (matches the existing REST Studio lifecycle
     /// surface's admin-tier default posture); the OAuth bearer-scope
-    /// narrowing in <see cref="IGeoprocessingJobService.EnsureCallerAuthorizedAsync"/>
+    /// narrowing in <see cref="IGeoprocessingJobService.EnsureCallerAuthorizedAsync(System.Security.Claims.ClaimsPrincipal, OperatorResourceType, OperatorOperation, System.Threading.CancellationToken)"/>
     /// applies identically to every other <c>/mcp</c> tool.
     /// </summary>
     protected async Task<ClaimsPrincipal> EnsureAuthorizedAsync(

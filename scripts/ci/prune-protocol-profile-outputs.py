@@ -12,7 +12,6 @@ trees. A size over about 8 GiB is a warning, not a reason to delete them.
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import sys
 import time

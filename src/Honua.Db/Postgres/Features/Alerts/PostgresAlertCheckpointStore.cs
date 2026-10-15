@@ -77,6 +77,7 @@ internal sealed class PostgresAlertCheckpointStore : IAlertCheckpointStore
                 last_generation = EXCLUDED.last_generation,
                 last_dwell_sweep_at = EXCLUDED.last_dwell_sweep_at,
                 updated_at = now()
+            WHERE honua.alert_worker_checkpoint.last_generation <= EXCLUDED.last_generation
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);

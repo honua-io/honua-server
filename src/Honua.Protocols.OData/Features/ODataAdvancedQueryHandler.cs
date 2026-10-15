@@ -196,7 +196,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
                 skiptoken: null,
                 count,
                 out var pagination,
-                out _,
+                out var topValue,
                 out _,
                 out var countValue,
                 out _);
@@ -222,7 +222,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
                 layerId,
                 search,
                 baseUrl,
-                pagination.Limit,
+                topValue,
                 pagination.Offset,
                 countValue,
                 filter,
@@ -237,7 +237,8 @@ internal sealed partial class ODataAdvancedQueryHandler(
                 {
                     Context = null,
                     Count = result.Count,
-                    Value = result.Value
+                    Value = result.Value,
+                    NextLink = result.NextLink
                 };
             }
 

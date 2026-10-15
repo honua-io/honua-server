@@ -17,15 +17,18 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b
 ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:da5846024d0008b48259b53a8953d39381fe5b7ec99ef1449ba4ba927f201490
 
 # Build stage with security hardening
-# Extract restore inputs with their directory structure. Source-only edits
-# rerun this inexpensive extraction but leave the downstream restore input tree
-# unchanged, so restoring does not depend on every .cs file.
+# Extract restore inputs with their directory structure. Ordinary source edits,
+# including JSON content, rerun this inexpensive extraction but leave the
+# downstream restore input tree unchanged.
 FROM ${DOTNET_SDK_IMAGE} AS restore-inputs
 RUN --mount=type=bind,target=/context \
     mkdir -p /restore-inputs && cd /context && \
     find . -type d \( -name bin -o -name obj -o -name .git \) -prune -o \
-      -type f \( -name '*.csproj' -o -name '*.props' -o -name '*.targets' \
-        -o -name '*.sln' -o -name '*.json' -o -name '*.config' -o -name '.editorconfig' \) \
+      -type f \( -name '*.csproj' -o -name '*.fsproj' -o -name '*.vbproj' \
+        -o -name '*.props' -o -name '*.targets' \
+        -o -name '*.sln' -o -name '*.slnx' -o -name '*.slnf' \
+        -o -name '*.config' -o -name '.editorconfig' \
+        -o -name 'global.json' -o -name 'packages.lock.json' -o -name 'dotnet-tools.json' \) \
       -exec cp --parents -p '{}' /restore-inputs/ \;
 
 FROM ${DOTNET_SDK_IMAGE} AS build
@@ -44,8 +47,8 @@ RUN apt-get update && \
 
 # Copy the full project graph (all .csproj) plus build/config files first so the
 # RID-specific restore below covers every transitive project the publish needs.
-# The extraction stage discovers project/configuration files automatically;
-# ordinary source edits do not invalidate this restore-input tree.
+# The extraction stage discovers project and package-configuration files only.
+# Ordinary source and JSON content edits do not invalidate this restore-input tree.
 COPY --from=restore-inputs /restore-inputs/ ./
 COPY eng/Honua.BuildProfiles.props eng/
 COPY eng/Honua.ProtocolProfiles.props eng/

@@ -60,6 +60,19 @@ public interface IVersionManager
     Task<VersionContext?> ResolveAsync(string? gdbVersion, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Resolves <paramref name="gdbVersion"/> the same way as
+    /// <see cref="ResolveAsync(string?, CancellationToken)"/>, but a bare branch name prefers
+    /// <paramref name="callerOwner"/> when several owners share it (#6140). A qualified
+    /// <c>owner.name</c> identity, including a name that itself contains dots, matches that
+    /// advertised identity exactly and is not split on the last dot.
+    /// </summary>
+    /// <param name="gdbVersion">Requested version identity, or null/empty for DEFAULT.</param>
+    /// <param name="callerOwner">Authenticated caller, used only to prefer their own bare-name branch.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The resolved context, or null when the named version does not exist.</returns>
+    Task<VersionContext?> ResolveAsync(string? gdbVersion, string? callerOwner, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reconciles a version against DEFAULT, detecting conflicts since the merge base. Under the default
     /// <see cref="VersionConflictDetection.ByAttribute"/> detection, disjoint field-level edits auto-merge
     /// and only genuinely-overlapping edits (overlapping fields, geometry-vs-geometry, or update-vs-delete)

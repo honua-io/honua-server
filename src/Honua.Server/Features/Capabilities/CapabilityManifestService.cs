@@ -118,7 +118,7 @@ internal sealed class CapabilityManifestService(
         var capabilities = options.ManifestFromRegistry
             ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
-        capabilities = StampRollbackTargets(capabilities, operationCapabilities);
+        capabilities = StampRollbackTargets(capabilities, operationCapabilities, policyContext);
         capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
         capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
         capabilities = ApplyCompiledProtocolProfile(capabilities);
@@ -1374,18 +1374,24 @@ internal sealed class CapabilityManifestService(
 
     private static CapabilityManifestCapability[] StampRollbackTargets(
         CapabilityManifestCapability[] capabilities,
-        OperationCapabilitySummary summary)
+        OperationCapabilitySummary summary,
+        CapabilityPolicyContext context)
     {
-        var targets = summary.RollbackTargets
-            .Select(static claim => new CapabilityManifestRollbackTarget
-            {
-                TargetId = claim.TargetId,
-                Backend = claim.Backend,
-                State = claim.State,
-                Executable = claim.Executable,
-                ReasonCode = claim.ReasonCode
-            })
-            .ToArray();
+        var discloseTargets = context.Authenticated
+            && (context.CallerCapabilities.Contains("deploy.rollback")
+                || context.CallerCapabilities.Contains("admin.rbac.write"));
+        var targets = discloseTargets
+            ? summary.RollbackTargets
+                .Select(static claim => new CapabilityManifestRollbackTarget
+                {
+                    TargetId = claim.TargetId,
+                    Backend = claim.Backend,
+                    State = claim.State,
+                    Executable = claim.Executable,
+                    ReasonCode = claim.ReasonCode
+                })
+                .ToArray()
+            : null;
 
         for (var index = 0; index < capabilities.Length; index++)
         {

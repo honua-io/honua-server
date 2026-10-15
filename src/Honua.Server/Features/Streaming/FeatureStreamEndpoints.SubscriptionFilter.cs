@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
@@ -337,6 +338,11 @@ internal static partial class FeatureStreamEndpoints
         return new SubscriptionParseResult(filter, true, mode, null);
     }
 
+    /// <summary>
+    /// Resolves the subscriber's layer access, row-level security and field masks for the
+    /// connect-time snapshot and attaches a refresh source, so the session manager can
+    /// re-resolve them on its periodic tick while the subscription stays open (honua-server#6105).
+    /// </summary>
     private static async Task<StreamSubscriberSecurity> ResolveSubscriberSecurityAsync(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
@@ -344,11 +350,87 @@ internal static partial class FeatureStreamEndpoints
         int[]? layerIds,
         CancellationToken cancellationToken)
     {
-        var rowSource = context.RequestServices.GetRequiredService<IRowLevelSecurityFilterSource>();
-        var fieldSource = context.RequestServices.GetRequiredService<IFieldMaskSource>();
+        var security = await ResolveSubscriberReadPoliciesAsync(
+            context, context.RequestServices, snapshot, scopedService, layerIds, cancellationToken).ConfigureAwait(false);
+
+        // The policy sources read the caller from the ambient request (IHttpContextAccessor).
+        // Capture the request's execution context so a refresh driven by the background tick
+        // evaluates the same principal and tenant instead of an empty, unmasked identity.
+        var executionContext = ExecutionContext.Capture();
+        if (executionContext is not null)
+        {
+            var scopedServiceId = scopedService?.Metadata.Id;
+            security.EnableRefresh(ct => RefreshSubscriberReadPoliciesAsync(
+                context, executionContext, scopedServiceId, layerIds, ct));
+        }
+
+        return security;
+    }
+
+    private static Task<StreamSubscriberSecurity> RefreshSubscriberReadPoliciesAsync(
+        HttpContext context,
+        ExecutionContext executionContext,
+        string? scopedServiceId,
+        int[]? layerIds,
+        CancellationToken cancellationToken)
+    {
+        Task<StreamSubscriberSecurity>? refresh = null;
+        ExecutionContext.Run(
+            executionContext,
+            _ => refresh = ResolveCurrentReadPoliciesAsync(context, scopedServiceId, layerIds, cancellationToken),
+            null);
+        return refresh!;
+    }
+
+    private static async Task<StreamSubscriberSecurity> ResolveCurrentReadPoliciesAsync(
+        HttpContext context,
+        string? scopedServiceId,
+        int[]? layerIds,
+        CancellationToken cancellationToken)
+    {
+        // A fresh scope reads the policy stores as a new REST request would, without sharing
+        // scoped store instances with the streaming request that may be using them concurrently.
+        await using var scope = context.RequestServices.CreateAsyncScope();
+        var accessor = scope.ServiceProvider.GetService<IHttpContextAccessor>();
+        if (accessor is not null && !ReferenceEquals(accessor.HttpContext, context))
+        {
+            // The streaming request has ended (or the ambient caller is not this subscriber).
+            // Resolving now would evaluate no principal, which masks nothing: fail closed.
+            throw new InvalidOperationException("The subscriber request context is no longer current.");
+        }
+
+        var provider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        MetadataV2Service? scopedService = null;
+        if (scopedServiceId is not null &&
+            !snapshot.Index.ServicesById.TryGetValue(scopedServiceId, out scopedService))
+        {
+            // The scoped service was removed. Routability already stops its events; leaving no
+            // readable route keeps the subscriber closed without reporting it as a revocation.
+            return new StreamSubscriberSecurity(
+                snapshot.Graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal),
+                new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>(),
+                new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>());
+        }
+
+        return await ResolveSubscriberReadPoliciesAsync(
+            context, scope.ServiceProvider, snapshot, scopedService, layerIds, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<StreamSubscriberSecurity> ResolveSubscriberReadPoliciesAsync(
+        HttpContext context,
+        IServiceProvider policyServices,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service? scopedService,
+        int[]? layerIds,
+        CancellationToken cancellationToken)
+    {
+        var rowSource = policyServices.GetRequiredService<IRowLevelSecurityFilterSource>();
+        var fieldSource = policyServices.GetRequiredService<IFieldMaskSource>();
         var exact = new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>();
         var named = new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>();
         var deniedNames = new HashSet<(string Service, int Layer)>();
+        var deniedExact = new HashSet<(string Service, int Layer)>();
         var policies = new Dictionary<string, StreamLayerReadPolicy>(StringComparer.Ordinal);
         foreach (var service in snapshot.Graph.Services)
         {
@@ -372,6 +454,7 @@ internal static partial class FeatureStreamEndpoints
                 {
                     // Ambiguous display-name routes must not alias an inaccessible tenant.
                     deniedNames.Add(nameKey);
+                    deniedExact.Add((service.Metadata.Id, layer.LayerId));
                     continue;
                 }
 
@@ -399,7 +482,7 @@ internal static partial class FeatureStreamEndpoints
         }
 
         return new StreamSubscriberSecurity(
-            snapshot.Graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal), exact, named);
+            snapshot.Graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal), exact, named, deniedExact);
     }
 
     private static bool TryResolveFilterLanguage(string? filterLang, out FilterLanguage language, out string error)

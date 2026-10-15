@@ -223,6 +223,13 @@ public sealed record OpsFindingProposalResult
 
     /// <summary>Gets an operator-facing message describing the outcome, when available.</summary>
     public string? Message { get; init; }
+
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff
+    /// (<c>urn:honua:provisioning:</c> plus 32 lowercase hex digits).
+    /// Null when the proposal was not part of a federated handoff.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
 }
 
 /// <summary>

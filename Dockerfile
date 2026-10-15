@@ -16,15 +16,18 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b
 ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac
 
 # Build stage
-# Extract restore inputs with their directory structure. Source-only edits
-# rerun this inexpensive extraction but leave the downstream restore input tree
-# unchanged, so restoring does not depend on every .cs file.
+# Extract restore inputs with their directory structure. Ordinary source edits,
+# including JSON content, rerun this inexpensive extraction but leave the
+# downstream restore input tree unchanged.
 FROM ${DOTNET_SDK_IMAGE} AS restore-inputs
 RUN --mount=type=bind,target=/context \
     mkdir -p /restore-inputs && cd /context && \
     find . -type d \( -name bin -o -name obj -o -name .git \) -prune -o \
-      -type f \( -name '*.csproj' -o -name '*.props' -o -name '*.targets' \
-        -o -name '*.sln' -o -name '*.json' -o -name '*.config' -o -name '.editorconfig' \) \
+      -type f \( -name '*.csproj' -o -name '*.fsproj' -o -name '*.vbproj' \
+        -o -name '*.props' -o -name '*.targets' \
+        -o -name '*.sln' -o -name '*.slnx' -o -name '*.slnf' \
+        -o -name '*.config' -o -name '.editorconfig' \
+        -o -name 'global.json' -o -name 'packages.lock.json' -o -name 'dotnet-tools.json' \) \
       -exec cp --parents -p '{}' /restore-inputs/ \;
 
 FROM ${DOTNET_SDK_IMAGE} AS build

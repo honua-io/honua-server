@@ -147,7 +147,6 @@ public sealed class CloudDemoEndpointsTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/append")]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment")]
@@ -163,7 +162,6 @@ public sealed class CloudDemoEndpointsTests : IAsyncLifetime
             (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/unRegisterReplica"),
             (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/0/applyEdits"),
             (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/0/append"),
-            (HttpMethod.Get, "/rest/services/field-inspections-demo-writable/FeatureServer/0/calculate"),
             (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/0/calculate"),
             (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/0/1/addAttachment"),
             (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/0/1/updateAttachment"),

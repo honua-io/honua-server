@@ -169,7 +169,12 @@ internal sealed partial class StreamingFileImportService
                         continue;
                     }
 
-                    if (format != SupportedFileFormat.FileGdb && feature.Geometry != null)
+                    // FileGDB included: the resolved/explicit source SRID must win over whatever the
+                    // reader's geometry factory carried (#6114). CSV is the exception: an EWKT/EWKB
+                    // value already carries its own SRID, and stamping the 4326 default here stored
+                    // projected coordinates as degrees (#6171). An explicit SourceSrid still wins.
+                    if (feature.Geometry != null &&
+                        ShouldApplyDetectedSourceSrid(format, request.SourceSrid, feature.Geometry.SRID))
                     {
                         feature.Geometry.SRID = sourceSrid;
                     }
@@ -392,6 +397,26 @@ internal sealed partial class StreamingFileImportService
                 await replaceLock.DisposeAsync();
             }
         }
+    }
+
+    /// <summary>
+    /// Whether the resolved source SRID replaces the geometry's own SRID.
+    /// An explicit request SRID always wins. A CSV geometry that already carries an SRID
+    /// (EWKT/EWKB) keeps it so projected coordinates are not stored as EPSG:4326 (#6171).
+    /// Every other geometry, including CSV values with no embedded SRID and FileGDB
+    /// features left at SRID 0, takes the detected source SRID (#6114).
+    /// </summary>
+    internal static bool ShouldApplyDetectedSourceSrid(
+        SupportedFileFormat format,
+        int? requestedSourceSrid,
+        int featureSrid)
+    {
+        if (requestedSourceSrid.HasValue || featureSrid <= 0)
+        {
+            return true;
+        }
+
+        return format != SupportedFileFormat.Csv;
     }
 
     private void RecordImportMetrics(

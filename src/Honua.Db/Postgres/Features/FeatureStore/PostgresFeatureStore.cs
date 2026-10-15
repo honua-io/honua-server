@@ -653,6 +653,42 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
     {
+        editBatch = await PrepareEditBatchAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<FeatureEditApplication> ApplyEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        FeatureEditIdempotencyReceipt receipt,
+        CancellationToken cancellationToken = default)
+    {
+        editBatch = await PrepareEditBatchAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        return await _dataAccess.ApplyEditsAsync(layerId, editBatch, receipt, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IFeatureWriterTransaction> BeginTransactionAsync(
+        IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+        CancellationToken cancellationToken = default)
+    {
+        var inner = await _dataAccess.BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
+        return new SecuredWriterTransaction(this, inner);
+    }
+
+    /// <summary>
+    /// Stamps the request-scoped write policy onto a batch before it reaches the provider
+    /// transaction: masked fields for precondition-preserving updates, and the caller's
+    /// row-level security predicate as the <c>WITH CHECK</c> every written row must satisfy
+    /// (honua-server#6103). Every protocol (GeoServices, OGC API Features, WFS-T, OData,
+    /// gRPC, forms, replica sync) writes through this store, so the check is enforced once
+    /// here rather than per adapter. A caller-supplied predicate is always replaced.
+    /// </summary>
+    private async Task<FeatureEditBatch> PrepareEditBatchAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        CancellationToken cancellationToken)
+    {
         if (!editBatch.Preconditions.IsDefaultOrEmpty)
         {
             // Preserve omitted masked fields inside the provider transaction; the
@@ -666,13 +702,37 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             };
         }
 
-        return await _dataAccess.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+        var writeCheck = await _readSecurity
+            .ResolveRowLevelSecurityFilterAsync(layerId, cancellationToken)
+            .ConfigureAwait(false);
+        return editBatch with { RowSecurityWriteCheck = writeCheck };
     }
 
-    public Task<IFeatureWriterTransaction> BeginTransactionAsync(
-        IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
-        CancellationToken cancellationToken = default)
-        => _dataAccess.BeginTransactionAsync(isolationLevel, cancellationToken);
+    /// <summary>
+    /// Cross-layer writer transaction that stamps each layer's write policy (see
+    /// <see cref="PrepareEditBatchAsync"/>) before delegating to the provider transaction.
+    /// </summary>
+    private sealed class SecuredWriterTransaction(
+        PostgresFeatureStoreRefactored owner,
+        IFeatureWriterTransaction inner) : IFeatureWriterTransaction
+    {
+        public async Task<FeatureEditResult> ApplyEditsAsync(
+            int layerId,
+            FeatureEditBatch editBatch,
+            CancellationToken cancellationToken = default)
+        {
+            editBatch = await owner.PrepareEditBatchAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+            return await inner.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        }
+
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(CancellationToken cancellationToken = default)
+            => inner.CommitAsync(cancellationToken);
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+            => inner.RollbackAsync(cancellationToken);
+
+        public ValueTask DisposeAsync() => inner.DisposeAsync();
+    }
 
     #endregion
 

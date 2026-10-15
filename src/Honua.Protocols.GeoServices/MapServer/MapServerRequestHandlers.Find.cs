@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -186,6 +187,7 @@ internal static partial class MapServerEndpoints
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var geometryConverter = context.RequestServices.GetRequiredService<IGeometryConverter>();
             var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+            var fieldMaskSource = context.RequestServices.GetService<IFieldMaskSource>();
             var maxFindResults = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query.MaxRecordCount;
 
             var results = new List<FindResult>();
@@ -215,7 +217,20 @@ internal static partial class MapServerEndpoints
                     continue;
                 }
 
-                var fieldsToSearch = ResolveSearchFields(layer.Resource, searchFieldNames);
+                var maskedFields = await ResolveFindMaskedFieldsAsync(
+                    fieldMaskSource, layer.Resource, cancellationToken).ConfigureAwait(false);
+                // An omitted searchFields searches every public string field except those
+                // masked for this caller. Naming a masked field explicitly is a 400: the
+                // store would otherwise reject the whole request (#6148).
+                if (searchFieldNames is { Count: > 0 } &&
+                    TryFindExplicitMaskedSearchField(layer.Resource, searchFieldNames, maskedFields, out var maskedSearchField))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"Field '{maskedSearchField}' is not available for search.");
+                }
+
+                var fieldsToSearch = ResolveSearchFields(layer.Resource, searchFieldNames, maskedFields);
                 if (fieldsToSearch.Length == 0)
                 {
                     continue;
@@ -230,6 +245,7 @@ internal static partial class MapServerEndpoints
                 // matching the MapServer identify and FeatureServer query paths (a date field
                 // searched via searchFields would otherwise leak its raw stored shape).
                 var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(layer.Resource);
+                var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
 
                 SqlFragment? layerSqlFilter = null;
                 if (!string.IsNullOrWhiteSpace(layerDef) &&
@@ -281,7 +297,7 @@ internal static partial class MapServerEndpoints
                         var attributes = new Dictionary<string, object?>();
                         foreach (var kvp in feature.Attributes)
                         {
-                            if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+                            if (!IsPublicAttribute(kvp.Key, hiddenFields) || maskedFields.Contains(kvp.Key))
                             {
                                 continue;
                             }
@@ -444,18 +460,68 @@ internal static partial class MapServerEndpoints
             .Any(trimmed => !int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _));
     }
 
-    private static MetadataV2Field[] ResolveSearchFields(MetadataV2Resource resource, HashSet<string>? requestedFields)
+    /// <summary>
+    /// Resolves the string fields find searches. Publisher-hidden fields are never searched:
+    /// a match (and its <c>foundFieldName</c>) would disclose the hidden value (#6098).
+    /// When the caller omits <c>searchFields</c>, fields masked for this principal are
+    /// dropped as well so the pushed-down predicate cannot trip field-level security (#6148).
+    /// </summary>
+    private static MetadataV2Field[] ResolveSearchFields(
+        MetadataV2Resource resource,
+        HashSet<string>? requestedFields,
+        HashSet<string> maskedFields)
     {
         if (requestedFields is { Count: > 0 })
         {
-            return resource.SchemaFields
+            return resource.VisibleSchemaFields()
                 .Where(f => f.Type == MetadataV2FieldType.String && requestedFields.Contains(f.Name))
                 .ToArray();
         }
 
-        return resource.SchemaFields
-            .Where(f => f.Type == MetadataV2FieldType.String)
+        return resource.VisibleSchemaFields()
+            .Where(f => f.Type == MetadataV2FieldType.String && !maskedFields.Contains(f.Name))
             .ToArray();
+    }
+
+    private static async Task<HashSet<string>> ResolveFindMaskedFieldsAsync(
+        IFieldMaskSource? fieldMaskSource,
+        MetadataV2Resource resource,
+        CancellationToken cancellationToken)
+    {
+        if (fieldMaskSource is null)
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var masked = await fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
+        return masked.IsDefaultOrEmpty
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : masked.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// True when an explicit <c>searchFields</c> list names a visible schema field that is
+    /// masked for the caller. Publisher-hidden fields stay on the silent-omission path.
+    /// </summary>
+    private static bool TryFindExplicitMaskedSearchField(
+        MetadataV2Resource resource,
+        HashSet<string> requestedFields,
+        HashSet<string> maskedFields,
+        out string fieldName)
+    {
+        foreach (var field in resource.SchemaFields)
+        {
+            if (field.Hidden || !requestedFields.Contains(field.Name) || !maskedFields.Contains(field.Name))
+            {
+                continue;
+            }
+
+            fieldName = field.Name;
+            return true;
+        }
+
+        fieldName = string.Empty;
+        return false;
     }
 
     private static List<FindLayerDescriptor> ResolveFindLayers(

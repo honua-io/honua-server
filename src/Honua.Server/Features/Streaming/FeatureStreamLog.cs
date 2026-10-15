@@ -148,4 +148,12 @@ internal static partial class FeatureStreamLog
     [LoggerMessage(EventId = 5028, Level = LogLevel.Warning,
         Message = "Feature stream routability refresh failed; scoped subscriptions are failing closed until metadata is readable.")]
     public static partial void RoutabilityRefreshFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 5029, Level = LogLevel.Information,
+        Message = "Feature stream session {SessionId} ended: refreshed read policies deny a layer it was subscribed to.")]
+    public static partial void SubscriberAccessRevoked(ILogger logger, Guid sessionId);
+
+    [LoggerMessage(EventId = 5030, Level = LogLevel.Warning,
+        Message = "Feature stream session {SessionId} ended: its read policies could not be refreshed.")]
+    public static partial void SubscriberPolicyRefreshFailed(ILogger logger, Guid sessionId, Exception exception);
 }

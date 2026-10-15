@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
@@ -13,6 +14,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
@@ -483,6 +485,51 @@ public sealed class ScopedJobTokenIssuerTests
         validation!.JobId.Should().Be("gp-bh028-1");
         validation.Principal.Identity!.IsAuthenticated.Should().BeTrue();
     }
+
+    [UnitTest]
+    public async Task RevokeAsync_DistributedCacheRemoveThrows_ThrowsServiceUnavailable()
+    {
+        var cache = Substitute.For<IDistributedCache>();
+        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect, "redis down")));
+        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task<byte[]?>>(_ => throw new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect, "redis down"));
+        using var memory = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new ScopedJobTokenIssuer(memory, NullLogger<ScopedJobTokenIssuer>.Instance, cache);
+        var issuance = await issuer.IssueAsync(SampleJobToken(), CancellationToken.None);
+
+        var act = () => issuer.RevokeAsync(issuance.Token, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ServiceUnavailableException>();
+    }
+
+    [UnitTest]
+    public async Task RevokeAsync_DistributedCacheRemoveThrowsButKeyIsGone_Succeeds()
+    {
+        var cache = Substitute.For<IDistributedCache>();
+        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect, "delete denied")));
+        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<byte[]?>(null));
+        using var memory = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new ScopedJobTokenIssuer(memory, NullLogger<ScopedJobTokenIssuer>.Instance, cache);
+        var issuance = await issuer.IssueAsync(SampleJobToken(), CancellationToken.None);
+
+        await issuer.RevokeAsync(issuance.Token, CancellationToken.None);
+    }
+
+    private static ScopedJobTokenRequest SampleJobToken()
+        => new(
+            PrincipalId: "alice",
+            TenantId: null,
+            Roles: ["data-editor:parcels"],
+            Grants: [],
+            JobId: "gp-revoke-1",
+            ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Read)],
+            ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30));
 
     // ────────────────────────────────────────────────────────────────────────────
 

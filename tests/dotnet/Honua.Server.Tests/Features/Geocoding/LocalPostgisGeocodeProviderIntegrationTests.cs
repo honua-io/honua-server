@@ -97,6 +97,17 @@ public sealed class LocalPostgisGeocodeProviderIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ForwardGeocodeAsync_SeventyThousandTokens_ThrowsGeocodeRequestException()
+    {
+        var query = string.Join(' ', Enumerable.Repeat("e", 70_000));
+
+        var exception = await Assert.ThrowsAsync<GeocodeRequestException>(() =>
+            _provider.ForwardGeocodeAsync(new ForwardGeocodeRequest(query, 5, 4326), CancellationToken.None));
+
+        Assert.Contains("Invalid", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ForwardGeocodeAsync_StructuredInput_ReturnsCandidate()
     {
         var request = new ForwardGeocodeRequest("ignored", 5, 4326, InputType: GeocodeInputType.Structured)

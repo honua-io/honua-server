@@ -82,6 +82,15 @@ public sealed class LayerReadSecurityResolver
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
+        if (CanResolveCombined(query))
+        {
+            var resource = await FindResourceAsync(layerId, cancellationToken).ConfigureAwait(false);
+            if (resource is not null)
+            {
+                return await ApplyAsync(resource, query, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
         // Resolve each concern independently. A nested caller may already carry one
         // enforced value, but that must not suppress resolution of the other concern.
         if (query.EnforcedSqlFilter is null)
@@ -120,6 +129,27 @@ public sealed class LayerReadSecurityResolver
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(resource);
+
+        if (CanResolveCombined(query))
+        {
+            var permanentFilter = PermanentFilterResolver.Resolve(resource, _filterExpressionService);
+            var combined = await ((ICombinedReadSecuritySource)_rlsFilterSource!)
+                .ResolveCombinedAsync(resource, _fieldMaskSource!, cancellationToken)
+                .ConfigureAwait(false);
+            var filter = SqlFragmentHelpers.CombineSqlFilters(permanentFilter, combined.RowFilter);
+            if (filter is not null)
+            {
+                query = query with { EnforcedSqlFilter = filter };
+            }
+
+            if (!combined.MaskedFields.IsDefaultOrEmpty)
+            {
+                query = query with { EnforcedMaskedFields = combined.MaskedFields };
+            }
+
+            FeatureQuerySecurity.Validate(query);
+            return query;
+        }
 
         if (query.EnforcedSqlFilter is null)
         {
@@ -192,6 +222,32 @@ public sealed class LayerReadSecurityResolver
     }
 
     /// <summary>
+    /// Resolves only the request-scoped row-level security (RLS) predicate for the layer, or
+    /// null when no policy applies (no RLS source, no resolvable resource, no request principal,
+    /// or no matching policy). Writers use it as the <c>WITH CHECK</c> predicate every created or
+    /// updated row must satisfy (honua-server#6103), so an RLS-scoped editor cannot insert or
+    /// move a row outside the partition they can read. The metadata permanent filter is a
+    /// layer-wide view filter, not a per-caller policy, and is intentionally not included.
+    /// </summary>
+    /// <param name="layerId">Storage layer id being written.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The parameterized RLS predicate, or null.</returns>
+    public async Task<SqlFragment?> ResolveRowLevelSecurityFilterAsync(
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        if (_rlsFilterSource is null)
+        {
+            return null;
+        }
+
+        var resource = await FindResourceAsync(layerId, cancellationToken).ConfigureAwait(false);
+        return resource is null
+            ? null
+            : await _rlsFilterSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Refuses the read when a row-level security predicate or a field mask resolves for the
     /// layer and the calling provider cannot apply it. Providers that do not translate the
     /// enforced row filter and do not mask attributes call this on every read path, so a
@@ -254,6 +310,13 @@ public sealed class LayerReadSecurityResolver
                 "Configure field-mask policies only on Postgres layers, or remove the policy that targets this layer.");
         }
     }
+
+    private bool CanResolveCombined(FeatureQuery query)
+        => query.EnforcedSqlFilter is null
+           && query.EnforcedMaskedFields is null
+           && _rlsFilterSource is ICombinedReadSecuritySource combined
+           && _fieldMaskSource is not null
+           && combined.CanResolveWith(_fieldMaskSource);
 
     private async Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(
         MetadataV2Resource resource,

@@ -115,6 +115,83 @@ public class PrintingToolsRequestHandlerTests
         await styles.Received(allowed ? 1 : 0).GetLayerStyleAsync(7, Arg.Any<CancellationToken>());
     }
 
+    [UnitTheory]
+    [InlineData("read:service/resource", true)]
+    [InlineData("read:other-service/resource", false)]
+    [Protocol(TestProtocols.PrintingTools)]
+    public async Task Execute_RestoredScopedApiKeySubmitter_RendersOnlyGrantedLayers(string permission, bool allowed)
+    {
+        // Async print authorizes each layer against the principal restored from the job snapshot.
+        // With the default OIDC role claim type ("roles") the restored scoped key used to read as
+        // an ungoverned authenticated principal, so an auth-only, role-less layer outside its
+        // grant was rendered anyway (honua-server#6101).
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+        };
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "resource" },
+            AccessPolicy = new AccessPolicy { AllowAnonymous = false },
+            StorageBindingIds = ["binding"],
+            PrimaryStorageBindingId = "binding",
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+        };
+        var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph
+        {
+            Revision = 1,
+            Services = [service],
+            Resources = [resource],
+            StorageBindings = [new MetadataV2StorageBinding
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "binding", Name = "binding" },
+                ResourceId = "resource", StorageLayerId = 7,
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+            }],
+            Publications = [new MetadataV2Publication
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "publication" },
+                ServiceId = "service", ResourceId = "resource", StorageBindingId = "binding", LayerIndex = 1,
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+            }]
+        }, "print-test", DateTimeOffset.UnixEpoch);
+        var validator = Substitute.For<IResourceValidator>();
+        validator.ValidateServiceV2Async("service", Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(service));
+        var graph = Substitute.For<IMetadataV2GraphProvider>();
+        graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(snapshot);
+        var styles = Substitute.For<ILayerStyleCatalog>();
+        var rbacOptions = new RbacOptions { RoleClaimType = "roles" };
+        var scopedKey = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "scoped-key"),
+                new Claim(ClaimTypes.Role, LayerScopedWriteKey.ScopedKeyRole),
+                new Claim("auth_type", "api_key"),
+                new Claim("permission", permission),
+            ], "ApiKey"));
+        var restored = JobSecurityContextCapture.Restore(JobSecurityContextCapture.Capture(scopedKey, rbacOptions));
+        var map = new WebMapDefinition
+        {
+            OperationalLayers = [new WebMapOperationalLayer { Url = "/rest/services/service/MapServer/1" }]
+        };
+        var permissions = Substitute.For<IPermissionResolver>();
+        permissions.AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(),
+            Arg.Any<string>(), Arg.Any<AuthorizationOperation>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(PermissionDecision.NoMatch());
+        await using var authorizationServices = new ServiceCollection()
+            .AddSingleton<IOptions<RbacOptions>>(Options.Create(rbacOptions))
+            .AddSingleton(permissions)
+            .AddSingleton<IAccessPolicyEvaluator>(new AccessPolicyEvaluator()).BuildServiceProvider();
+
+        await PrintingToolsRequestHandlers.ExecuteAsync(map, "PNG32", "MAP_ONLY", 96,
+            validator, graph, Substitute.For<IFeatureReader>(), styles, NullLogger.Instance, default,
+            callerPrincipal: restored,
+            authorizationServices: authorizationServices, tenantId: null);
+
+        await styles.Received(allowed ? 1 : 0).GetLayerStyleAsync(7, Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     [Protocol(TestProtocols.PrintingTools)]
     public async Task ProcessPrintJob_SubmitterPrincipal_ReachesFeatureSecurityScope()

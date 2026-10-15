@@ -169,6 +169,37 @@ public readonly record struct ImageServerMosaicRule
             : null;
 
     /// <summary>
+    /// Keeps only rasters named by a lock-raster rule, in caller-pinned
+    /// <see cref="LockRasterIds"/> order. Other methods return the selection unchanged.
+    /// </summary>
+    /// <param name="rasters">Rasters already selected by geometry and time.</param>
+    /// <returns>The rasters the rule allows, in lock order when the method is lock-raster.</returns>
+    public RasterInfo[] RestrictToLockedRasters(IReadOnlyList<RasterInfo> rasters)
+    {
+        ArgumentNullException.ThrowIfNull(rasters);
+        if (Method != MosaicMethod.LockRaster)
+        {
+            return rasters as RasterInfo[] ?? rasters.ToArray();
+        }
+
+        var lockedIds = LockRasterIds ?? [];
+        var byId = new Dictionary<long, RasterInfo>(rasters.Count);
+        foreach (var raster in rasters)
+        {
+            byId.TryAdd(raster.Id, raster);
+        }
+
+        return lockedIds
+            .Where(byId.ContainsKey)
+            .Select(id =>
+            {
+                byId.Remove(id, out var raster);
+                return raster;
+            })
+            .ToArray();
+    }
+
+    /// <summary>
     /// Parses an ImageServer <c>mosaicRule</c> request string.
     /// </summary>
     /// <param name="mosaicRule">The raw <c>mosaicRule</c> query value (Esri JSON or empty).</param>

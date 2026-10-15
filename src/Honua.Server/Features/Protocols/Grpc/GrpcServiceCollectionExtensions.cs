@@ -2,9 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IO.Compression;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
@@ -66,7 +69,12 @@ internal static class GrpcServiceCollectionExtensions
         services.TryAddSingleton<GrpcApplyEditsIdempotencyStore>(sp =>
             new GrpcApplyEditsIdempotencyStore(
                 sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
-                sp.GetService<ILogger<GrpcApplyEditsIdempotencyStore>>()));
+                sp.GetService<ILogger<GrpcApplyEditsIdempotencyStore>>(),
+                sp.GetService<NpgsqlDataSource>() is { } dataSource
+                    ? new PostgresFeatureEditIdempotencyReceipts(
+                        dataSource,
+                        sp.GetService<PostgresSchemaConfiguration>()?.MetadataSchema)
+                    : null));
 #if !HONUA_EXCLUDE_GEOSERVICES
         services.TryAddScoped<SpatialReferenceResolver>();
 #endif

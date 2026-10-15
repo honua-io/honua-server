@@ -63,6 +63,7 @@ internal static partial class MapServerEndpoints
         public static async Task<DynamicJoinLookup> BuildAsync(
             IFeatureReader featureReader,
             int rightStorageLayerId,
+            IReadOnlySet<string> rightHiddenFields,
             string rightKeyField,
             IReadOnlyCollection<object?> leftKeyValues,
             int maxRows,
@@ -130,7 +131,8 @@ internal static partial class MapServerEndpoints
                     var attributes = new Dictionary<string, object?>(feature.Attributes.Count, StringComparer.Ordinal);
                     foreach (var kvp in feature.Attributes)
                     {
-                        if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+                        // Publisher-hidden right-side fields never reach the joined output (#6098).
+                        if (!IsPublicAttribute(kvp.Key, rightHiddenFields))
                         {
                             continue;
                         }
@@ -226,6 +228,14 @@ internal static partial class MapServerEndpoints
             System.Text.Json.JsonValueKind.False => false,
             _ => null,
         };
+
+    /// <summary>
+    /// True when a feature attribute may be emitted by a MapServer read surface: neither an
+    /// internal (<c>__</c>-prefixed) attribute nor a declared publisher-hidden field. Undeclared
+    /// runtime attributes stay visible, matching the FeatureServer query formatter (#6098).
+    /// </summary>
+    private static bool IsPublicAttribute(string attributeName, IReadOnlySet<string> hiddenFields)
+        => !FeatureAttributeVisibility.IsInternalAttribute(attributeName) && !hiddenFields.Contains(attributeName);
 
     private static bool TryGetAttributeCaseInsensitive(
         IReadOnlyDictionary<string, object?> attributes,

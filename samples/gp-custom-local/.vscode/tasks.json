@@ -1,0 +1,26 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build GP harness",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "../../docker/worker-customcode-dotnet/harness/src/Honua.CustomCode.Harness"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Build GP sample",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "dotnet/SummaryTool.csproj"
+      ],
+      "dependsOn": "Build GP harness",
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}

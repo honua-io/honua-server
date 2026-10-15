@@ -720,7 +720,7 @@ internal static class OgcRecordsEndpoints
         }
     }
 
-    private static ImmutableArray<Link> BuildItemsLinks(
+    internal static ImmutableArray<Link> BuildItemsLinks(
         HttpContext context,
         string baseUrl,
         string collectionId,
@@ -733,10 +733,10 @@ internal static class OgcRecordsEndpoints
         links.Add(Link.Create($"{currentPath}{context.Request.QueryString}", RelationTypes.Self, MediaTypes.GeoJson, "Records"));
         links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{Uri.EscapeDataString(collectionId)}", "collection", MediaTypes.Json, "Record collection"));
 
-        var nextOffset = offset + limit;
+        var nextOffset = (long)offset + limit;
         if (nextOffset < numberMatched)
         {
-            links.Add(Link.Create(BuildPagedHref(context, currentPath, limit, nextOffset), "next", MediaTypes.GeoJson, "Next page"));
+            links.Add(Link.Create(BuildPagedHref(context, currentPath, limit, (int)nextOffset), "next", MediaTypes.GeoJson, "Next page"));
         }
 
         if (offset > 0)

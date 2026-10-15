@@ -248,6 +248,23 @@ internal sealed partial class FeatureServerQueryExecutor
         return reader is IPagedRawGeoServicesFeatureStore;
     }
 
+    public async Task<bool> SupportsDistinctValuesAsync(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderV2Async(
+            service,
+            resource,
+            publication,
+            storageLayerId,
+            FeatureProviderReadOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        return reader is IDistinctFeatureReader;
+    }
+
     public async Task<(ReadOnlyMemory<byte> Payload, int Count)> QueryRawGeoServicesPointJsonWithValidationAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
@@ -285,7 +302,7 @@ internal sealed partial class FeatureServerQueryExecutor
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var streamingFeatureStore = await ResolveStreamingFeatureStoreV2Async(
+        var routedReader = await ResolveRoutedReaderV2Async(
             service,
             resource,
             publication,
@@ -293,8 +310,23 @@ internal sealed partial class FeatureServerQueryExecutor
             FeatureProviderReadOperation.Query,
             cancellationToken).ConfigureAwait(false);
 
+        if (routedReader is not null and not IStreamingFeatureStore)
+        {
+            // A reader that cannot stream (federated ArcGIS REST, warehouse providers) must
+            // not be wrapped in MaterializingFeatureStream here: with no limit that pulls
+            // every full feature, geometry included, into memory before the first id is
+            // written (#6113). Ask the reader for object ids only, under a hard ceiling.
+            var bounded = await QueryBoundedObjectIdsAsync(
+                routedReader,
+                storageLayerId,
+                query,
+                cancellationToken).ConfigureAwait(false);
+            await WriteObjectIdsAsync(bounded, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         await StreamIdsAsync(
-            streamingFeatureStore,
+            routedReader as IStreamingFeatureStore ?? _streamingFeatureStore,
             storageLayerId,
             query,
             objectIdFieldName,
@@ -311,7 +343,8 @@ internal sealed partial class FeatureServerQueryExecutor
         QueryParameters queryParams,
         int? outputSrid,
         HttpContext context,
-        CancellationToken cancellationToken)
+        string? negotiatedFormat = null,
+        CancellationToken cancellationToken = default)
     {
         var streamingFeatureStore = await ResolveStreamingFeatureStoreV2Async(
             service,
@@ -329,6 +362,7 @@ internal sealed partial class FeatureServerQueryExecutor
             queryParams,
             outputSrid,
             context,
+            negotiatedFormat,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -340,6 +374,7 @@ internal sealed partial class FeatureServerQueryExecutor
         QueryParameters queryParams,
         int? outputSrid,
         HttpContext context,
+        string? negotiatedFormat,
         CancellationToken cancellationToken)
     {
         var preparedStream = PrepareFeatureStream(streamingFeatureStore, layerId, query, cancellationToken);
@@ -348,7 +383,7 @@ internal sealed partial class FeatureServerQueryExecutor
             ? null
             : [.. queryParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim())];
 
-        var format = queryParams.F ?? "json";
+        var format = negotiatedFormat ?? queryParams.F ?? "json";
         var contentType = format.ToLowerInvariant() switch
         {
             "geojson" => "application/geo+json",
@@ -402,25 +437,104 @@ internal sealed partial class FeatureServerQueryExecutor
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
     {
-        if (_providerQueryRouter == null
-            || _metadataGraphProvider == null
-            || !ShouldRouteProviderReaderV2(publication))
-        {
-            return _streamingFeatureStore;
-        }
-
-        var reader = await ResolveReaderV2Async(
+        var reader = await ResolveRoutedReaderV2Async(
             service,
             resource,
             publication,
             storageLayerId,
             operation,
             cancellationToken).ConfigureAwait(false);
+        if (reader is null)
+        {
+            return _streamingFeatureStore;
+        }
 
         // Federated readers such as ArcGIS REST implement IFeatureReader and page
         // through QueryAsync / QueryObjectIdsAsync. They are not IStreamingFeatureStore.
         // Materialize that page instead of failing the request.
         return reader as IStreamingFeatureStore ?? new MaterializingFeatureStream(reader);
+    }
+
+    /// <summary>
+    /// Resolves the provider reader for a publication routed through the provider router, or
+    /// <see langword="null"/> when the publication uses the shared feature reader and streaming store.
+    /// </summary>
+    private async Task<IFeatureReader?> ResolveRoutedReaderV2Async(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        FeatureProviderReadOperation operation,
+        CancellationToken cancellationToken)
+    {
+        if (_providerQueryRouter == null
+            || _metadataGraphProvider == null
+            || !ShouldRouteProviderReaderV2(publication))
+        {
+            return null;
+        }
+
+        return await ResolveReaderV2Async(
+            service,
+            resource,
+            publication,
+            storageLayerId,
+            operation,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Answers a <c>returnIdsOnly</c> query from <see cref="IFeatureReader.QueryObjectIdsAsync"/> when the
+    /// publication's provider reader cannot stream. Returns <see langword="null"/> when the reader streams
+    /// natively (or the shared reader serves the publication), so the caller keeps its existing path.
+    /// </summary>
+    public async Task<BoundedObjectIds?> TryQueryNonStreamingObjectIdsAsync(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveRoutedReaderV2Async(
+            service,
+            resource,
+            publication,
+            storageLayerId,
+            FeatureProviderReadOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        if (reader is null or IStreamingFeatureStore)
+        {
+            return null;
+        }
+
+        return await QueryBoundedObjectIdsAsync(reader, storageLayerId, query, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads at most <see cref="MaxNonStreamingObjectIds"/> (or the caller's smaller limit) object ids
+    /// from a non-streaming reader. One extra id is probed so a truncated result reports
+    /// <c>exceededTransferLimit</c> instead of silently looking complete.
+    /// </summary>
+    private static async Task<BoundedObjectIds> QueryBoundedObjectIdsAsync(
+        IFeatureReader reader,
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var ceiling = query.Limit is int limit && limit > 0 && limit < MaxNonStreamingObjectIds
+            ? limit
+            : MaxNonStreamingObjectIds;
+        var ids = await reader
+            .QueryObjectIdsAsync(layerId, query with { Limit = ceiling + 1 }, cancellationToken)
+            .ConfigureAwait(false);
+        if (ids.IsDefault)
+        {
+            ids = ImmutableArray<long>.Empty;
+        }
+
+        var exceeded = ids.Length > ceiling;
+        return new BoundedObjectIds(exceeded ? ids[..ceiling] : ids, exceeded);
     }
 
     /// <summary>

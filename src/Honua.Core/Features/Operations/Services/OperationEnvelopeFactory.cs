@@ -39,6 +39,8 @@ public sealed class OperationEnvelopeFactory(
                 ? $"opinst-{Guid.NewGuid():N}"
                 : DeriveIdempotentInstanceId(operationId, context.IdempotencyKey, context.TenantId)
             : context.OperationInstanceId;
+        // Normalize before durable acceptance so a malformed handoff id never becomes a record.
+        var rootProvisioningOperationId = RootProvisioningOperationIds.Normalize(context.RootProvisioningOperationId);
         var acceptanceAttempt = $"acceptance-attempt:{Guid.NewGuid():N}";
         var envelope = new OperationHandle
         {
@@ -52,6 +54,7 @@ public sealed class OperationEnvelopeFactory(
             CreatedAt = now,
             UpdatedAt = now,
             AuthorizationOutcome = context.AuthorizationOutcome,
+            RootProvisioningOperationId = rootProvisioningOperationId,
             EvidenceRefs = context.IdempotencyRequestHash is { } requestHash
                 ? [RequestHashEvidencePrefix + requestHash, acceptanceAttempt]
                 : [acceptanceAttempt],
@@ -259,6 +262,11 @@ public sealed class OperationEnvelopeFactory(
             return Failure(attempted, "The idempotent invocation exists but has not completed durable acceptance.");
         }
 
+        if (ProvisioningRootConflict(existing, context) is { } rootConflict)
+        {
+            return rootConflict;
+        }
+
         var retryAuditId = await auditLog.RecordAsync(new AuditEvent
         {
             Timestamp = clock.GetUtcNow(),
@@ -300,6 +308,11 @@ public sealed class OperationEnvelopeFactory(
             !existing.EvidenceRefs.Contains(RequestHashEvidencePrefix + context.IdempotencyRequestHash, StringComparer.Ordinal))
         {
             return Conflict(existing, "The idempotency key is already bound to a different request.");
+        }
+
+        if (ProvisioningRootConflict(existing, context) is { } rootConflict)
+        {
+            return rootConflict;
         }
 
         if (existing.Status == OperationHandleStatus.Failed && string.IsNullOrWhiteSpace(existing.AuditId))
@@ -344,6 +357,23 @@ public sealed class OperationEnvelopeFactory(
         return current.Status == OperationHandleStatus.Accepted
             ? Conflict(current, "The idempotent invocation is still being accepted or executed; retry later.")
             : current with { EvidenceRefs = [.. current.EvidenceRefs, $"retry-audit:{retryAuditId}"] };
+    }
+
+    private OperationHandle? ProvisioningRootConflict(OperationHandle existing, OperationPolicyContext context)
+    {
+        try
+        {
+            RootProvisioningOperationIds.RejectRelabel(
+                existing.RootProvisioningOperationId,
+                context.RootProvisioningOperationId);
+            return null;
+        }
+        catch (ResourceConflictException ex)
+        {
+            // Return the conflict projection without writing. The outer acceptance catch
+            // would otherwise persist a failure over the recorded root.
+            return Conflict(existing, ex.Message);
+        }
     }
 
     private OperationHandle Conflict(OperationHandle existing, string reason) => Failure(existing, reason) with

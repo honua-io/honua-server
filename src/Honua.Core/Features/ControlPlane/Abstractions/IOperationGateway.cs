@@ -117,6 +117,13 @@ public sealed record OperationGatewayRequest
     public string? CorrelationId { get; init; }
 
     /// <summary>
+    /// Verified provisioning root from the DevOps handoff
+    /// (<c>urn:honua:provisioning:</c> plus 32 lowercase hex digits).
+    /// Null when this request is not part of a federated handoff.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
+
+    /// <summary>
     /// Stable idempotency key for the underlying operation.
     /// </summary>
     public string? IdempotencyKey { get; init; }

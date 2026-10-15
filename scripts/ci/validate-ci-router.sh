@@ -190,6 +190,10 @@ scripts/ci/validate-shell-syntax.sh
 
 echo "Checking local pre-PR change routing..."
 scripts/ci/fixtures/validate-pre-pr-routing.sh
+if [[ -n "${PYTHON_BIN}" ]]; then
+  echo "Checking local FAST dependency closure and changed-contract guards..."
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-pre-pr-closure.py
+fi
 
 # The PR Gate docs-only exit decides which required-gate steps skip, so its
 # classifier is validated with the other routing logic. Offline: scratch git
@@ -1999,6 +2003,9 @@ fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-rename-selection.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-working-tree-manifest.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-pre-push-receipt.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-restore-inputs.py
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then

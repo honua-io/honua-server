@@ -91,6 +91,7 @@ internal static class MetadataReleaseControlEndpoints
                     request.Reason,
                     request.IdempotencyKey,
                     request.CorrelationId,
+                    request.RootProvisioningOperationId,
                     context.RequestAborted)
                 .ConfigureAwait(false);
 
@@ -98,6 +99,13 @@ internal static class MetadataReleaseControlEndpoints
                 DeployControlEndpoints.MapOperationResponse(operation),
                 DeployControlJsonContext.Default.DeployOperationResponse,
                 statusCode: StatusCodes.Status201Created);
+        }
+        catch (ArgumentException ex) when (ex is not ArgumentNullException)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                ex.Message);
         }
         catch (ResourceConflictException)
         {

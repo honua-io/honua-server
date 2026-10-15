@@ -809,6 +809,13 @@ public sealed class DeployOperationResponse
     [JsonPropertyName("correlationId")]
     public string? CorrelationId { get; init; }
 
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff. Canonical field; the nested
+    /// metadata-release context carries the same value when this operation is a release.
+    /// </summary>
+    [JsonPropertyName("rootProvisioningOperationId")]
+    public string? RootProvisioningOperationId { get; init; }
+
     [JsonPropertyName("createdAt")]
     public DateTimeOffset CreatedAt { get; init; }
 
@@ -928,6 +935,13 @@ public sealed class MetadataReleaseContextResponse
 {
     [JsonPropertyName("packageId")]
     public string PackageId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff. Matches the top-level
+    /// <c>rootProvisioningOperationId</c> on the operation response.
+    /// </summary>
+    [JsonPropertyName("rootProvisioningOperationId")]
+    public string? RootProvisioningOperationId { get; init; }
 
     [JsonPropertyName("gitOperationId")]
     public string? GitOperationId { get; init; }

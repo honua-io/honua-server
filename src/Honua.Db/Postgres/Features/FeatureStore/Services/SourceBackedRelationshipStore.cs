@@ -217,7 +217,7 @@ internal sealed class SourceBackedRelationshipStore(
             SqlFilter = sqlFilter,
             EnforcedMaskedFields = InternalJoinMasks(destinationMasks, query.DestinationForeignKeyField),
             OutFields = outFields,
-            Limit = query.Limit,
+            Limit = RelatedQuery.ProbeLimit(query.Limit),
             Offset = query.Offset
         }, cancellationToken).ConfigureAwait(false);
         var matched = ImmutableArray.CreateBuilder<Feature>(children.Items.Length);
@@ -237,7 +237,7 @@ internal sealed class SourceBackedRelationshipStore(
             matched.Add(child with { Attributes = attributes.SetItem(RelatedQuery.OriginObjectIdsAttribute, ids.ToArray()) });
         }
 
-        return children with { Items = matched.ToImmutable() };
+        return RelatedQuery.ApplyProbeWindow(query.Limit, matched.ToImmutable(), children.HasMoreResults);
     }
 
     private static ImmutableArray<string>? InternalJoinMasks(ImmutableArray<string>? masks, string key)

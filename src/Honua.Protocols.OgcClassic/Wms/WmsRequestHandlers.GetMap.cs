@@ -136,6 +136,12 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidParameterValue", "LAYERS must contain at least one layer name.");
         }
 
+        var layerCountError = ValidateWmsLayerTokenCount(context, "LAYERS", layerTokens.Length, GetWmsMaxLayersPerRequest(context));
+        if (layerCountError != null)
+        {
+            return layerCountError;
+        }
+
         if (!TryResolveWmsRequestedLayers(accessibleLayers, layerTokens, out var renderLayers, out var unresolvedLayer))
         {
             var layerLabel = string.IsNullOrWhiteSpace(unresolvedLayer) ? "requested layer" : unresolvedLayer;
@@ -152,7 +158,10 @@ internal static partial class WmsRequestHandlers
         {
             return filterResult.Error;
         }
-        var layerFilters = filterResult.Filters;
+        // STYLES and FILTER are positional against the requested LAYERS list, so they are
+        // validated above before repeated storage layers collapse to their first occurrence.
+        // Each surviving layer is queried and drawn once (#6097).
+        (renderLayers, var layerFilters) = DeduplicateWmsLayers(renderLayers, filterResult.Filters);
         activity?.SetTag("wms.filter_applied", layerFilters is not null);
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();

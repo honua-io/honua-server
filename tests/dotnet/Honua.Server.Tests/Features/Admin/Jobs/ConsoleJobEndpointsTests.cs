@@ -252,7 +252,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 Phase = "Reproject",
                 Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["command"] = "gdalwarp -t_srs EPSG:3857 /tmp/honua-gdal-worker/job-running/input.tif /tmp/honua-gdal-worker/job-running/out.tif",
+                    ["gdal.command"] = "gdalwarp --config AWS_SECRET_ACCESS_KEY worker-secret -t_srs EPSG:3857 /tmp/honua-gdal-worker/job-running/input.tif /tmp/honua-gdal-worker/job-running/out.tif",
                     ["targetSrs"] = "EPSG:3857"
                 }
             },
@@ -272,6 +272,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         var rawBody = await response.Content.ReadAsStringAsync();
         // The unsanitized worker filesystem path must NEVER leak over HTTP.
         rawBody.Should().NotContain("honua-gdal-worker");
+        rawBody.Should().NotContain("worker-secret");
         rawBody.Should().NotContain("/tmp/");
 
         using var doc = JsonDocument.Parse(rawBody);
@@ -294,6 +295,33 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         // Command keys are not duplicated into the generic metadata bag.
         first.GetProperty("metadata").GetProperty("targetSrs").GetString().Should().Be("EPSG:3857");
         first.GetProperty("metadata").TryGetProperty("command", out _).Should().BeFalse();
+        first.GetProperty("metadata").TryGetProperty("gdal.command", out _).Should().BeFalse();
+        first.GetProperty("timingSource").GetString().Should().Be("inferred");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
+    public async Task GetJobSteps_SanitizesFallbackCurrentPhase()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(CreateJob("job-phase-secret", ExecutionJobStatus.Running, now, "corr-phase") with
+        {
+            CurrentPhase = "token=fallback-secret-value /tmp/worker/phase"
+        });
+        _logStore.SetLogs("job-phase-secret", new ExecutionLogEntry
+        {
+            Timestamp = now,
+            Level = ExecutionLogLevel.Info,
+            Message = "Running",
+            Phase = ""
+        });
+
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-phase-secret/steps");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("fallback-secret-value");
+        body.Should().NotContain("/tmp/");
+        body.Should().Contain("[REDACTED]");
     }
 
     [IntegrationTest]

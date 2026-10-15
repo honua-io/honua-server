@@ -37,6 +37,34 @@ public sealed class ODataCloudNativeRegressionTests
             .Should().Be("-123,37,-121,39");
     }
 
+    [Fact]
+    public void NextLink_Search_PreservesSearchAndContinuationTop()
+    {
+        using var services = new ServiceCollection().AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Public:BaseUrl"] = "https://example.test" }).Build()).BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString("example.test");
+        context.Request.Path = "/odata/Layers(4)/Features";
+
+        ODataUtilityService.TryGetContinuationTop(5000, 1000, out var continuationTop).Should().BeTrue();
+        var link = ODataUtilityService.GenerateNextLink(
+            context.Request,
+            nextSkip: 1000,
+            top: continuationTop,
+            filter: "LayerId eq 4",
+            select: null,
+            orderby: null,
+            count: true,
+            search: "harbor");
+
+        var query = QueryHelpers.ParseQuery(new Uri(link).Query);
+        query["$search"].ToString().Should().Be("harbor");
+        query["$skip"].ToString().Should().Be("1000");
+        query["$top"].ToString().Should().Be("4000");
+        query["$filter"].ToString().Should().Be("LayerId eq 4");
+        query["$count"].ToString().Should().Be("true");
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("?bbox=-125,35,-120,40")]

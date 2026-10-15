@@ -25,7 +25,7 @@ namespace Honua.Db.SqlServer.Features.FeatureStore;
 /// <para>Layer/storage configuration flows through the Metadata v2 provider binding passed by
 /// <see cref="FeatureProviderQueryRouter"/>.</para>
 /// </remarks>
-internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider
+internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider, IDistinctFeatureReader
 {
     private static readonly FeatureProviderCapabilities _capabilities = new()
     {
@@ -143,7 +143,16 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
             features = features.RemoveAt(features.Length - 1);
         }
 
-        return QueryResult<Feature>.Create(features.Length, features, hasMore);
+        var offset = query.Offset ?? 0;
+        long exactMatchCount = features.Length;
+        if (hasMore || offset > 0)
+        {
+            var countSql = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query, attributeColumns);
+            exactMatchCount = await _dataAccess.ExecuteCountAsync(mapping, countSql, _boundConnection, cancellationToken).ConfigureAwait(false);
+        }
+
+        var totalCount = FeatureQueryPageTotals.ResolveReportedTotalCount(features.Length, hasMore, offset, exactMatchCount);
+        return QueryResult<Feature>.Create(totalCount, features, hasMore);
     }
 
     /// <inheritdoc />
@@ -168,9 +177,9 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         query = PrepareQuery(query, mapping.PrimaryKeyColumn);
-        var sql = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query);
+        var sql = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 

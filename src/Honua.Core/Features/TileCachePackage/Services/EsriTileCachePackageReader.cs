@@ -425,7 +425,7 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
             // streams are forward-only, so materialize the bundle under the byte cap.
             var bundle = ReadBounded(entry, MaxBundleBytes, budget);
 
-            foreach (var tile in DecodeCompactV2Bundle(bundle, level, baseRow, baseCol, cancellationToken))
+            foreach (var tile in DecodeCompactV2Bundle(bundle, level, baseRow, baseCol, budget, cancellationToken))
             {
                 yield return tile;
             }
@@ -437,6 +437,7 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
         int level,
         int baseRow,
         int baseCol,
+        DecompressionBudget budget,
         CancellationToken cancellationToken)
     {
         if (bundle.Length < CompactV2HeaderSize + CompactV2IndexSize)
@@ -444,6 +445,7 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
             yield break;
         }
 
+        var entries = new List<CompactV2IndexEntry>(64);
         for (var i = 0; i < CompactV2IndexEntries; i++)
         {
             if ((i & 0x3FF) == 0)
@@ -468,12 +470,20 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
                 continue;
             }
 
-            // Index is row-major within the 128x128 block.
-            var rowInBlock = i / CompactV2BlockEdge;
-            var colInBlock = i % CompactV2BlockEdge;
+            entries.Add(new CompactV2IndexEntry(i, offset, size));
+        }
 
-            var content = new byte[size];
-            Array.Copy(bundle, offset, content, 0, size);
+        RejectAliasedBundleEntries(entries, budget);
+
+        foreach (var entry in entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Index is row-major within the 128x128 block.
+            var rowInBlock = entry.Index / CompactV2BlockEdge;
+            var colInBlock = entry.Index % CompactV2BlockEdge;
+            var content = new byte[entry.Size];
+            Array.Copy(bundle, entry.Offset, content, 0, entry.Size);
 
             yield return new TileCachePackageTile
             {
@@ -484,6 +494,46 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
             };
         }
     }
+
+    /// <summary>
+    /// Overlapping index ranges alias the same bundle bytes into many tile rows.
+    /// Reject them, and charge every accepted tile against the package budget,
+    /// before any copy is allocated (#6176).
+    /// </summary>
+    private static void RejectAliasedBundleEntries(
+        List<CompactV2IndexEntry> entries,
+        DecompressionBudget budget)
+    {
+        var ordered = entries.ToArray();
+        Array.Sort(ordered, static (left, right) =>
+        {
+            var byOffset = left.Offset.CompareTo(right.Offset);
+            return byOffset != 0 ? byOffset : left.Index.CompareTo(right.Index);
+        });
+
+        long coveredEnd = 0;
+        long tileBytes = 0;
+        foreach (var entry in ordered)
+        {
+            if (entry.Offset < coveredEnd)
+            {
+                throw new InvalidDataException(
+                    "Compact Cache V2 bundle index contains overlapping tile ranges.");
+            }
+
+            coveredEnd = entry.Offset + entry.Size;
+            tileBytes += entry.Size;
+            if (tileBytes > budget.Remaining)
+            {
+                throw new InvalidDataException(
+                    $"Tile-cache package exceeds the {MaxDecompressedBytes}-byte decompressed limit.");
+            }
+        }
+
+        budget.Remaining -= tileBytes;
+    }
+
+    private readonly record struct CompactV2IndexEntry(int Index, long Offset, int Size);
 
     private static IEnumerable<TileCachePackageTile> ReadExplodedTiles(
         ZipArchive archive,

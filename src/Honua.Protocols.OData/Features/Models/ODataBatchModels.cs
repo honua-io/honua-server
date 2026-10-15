@@ -267,4 +267,10 @@ public sealed class ODataSearchResult
     /// </summary>
     [JsonPropertyName("value")]
     public required object[] Value { get; init; }
+
+    /// <summary>
+    /// Continuation URL when the search page is not the last page.
+    /// </summary>
+    [JsonPropertyName("@odata.nextLink")]
+    public string? NextLink { get; init; }
 }

@@ -129,7 +129,7 @@ public static class SavedMapOperationKinds
 public sealed record SavedMapOperationAppendRequest
 {
     /// <summary>
-    /// Client-generated operation identifier. Duplicates are treated idempotently per map.
+    /// Client-generated operation identifier. Duplicates are treated idempotently per map and actor.
     /// </summary>
     public required SavedMapOperationId OperationId { get; init; }
 
@@ -159,7 +159,7 @@ public sealed record SavedMapOperationAppendRequest
     public JsonElement Payload { get; init; }
 
     /// <summary>
-    /// Optional caller idempotency key. When supplied, duplicates are treated idempotently per map.
+    /// Optional caller idempotency key. When supplied, duplicates are treated idempotently per map and actor.
     /// </summary>
     public string? IdempotencyKey { get; init; }
 }
@@ -238,7 +238,12 @@ public enum SavedMapOperationAppendStatus
     /// <summary>
     /// Caller cursor is outside the replay window or ahead of the current head.
     /// </summary>
-    ResyncRequired
+    ResyncRequired,
+
+    /// <summary>
+    /// The operation id or idempotency key was already stored for this actor with a different kind or payload.
+    /// </summary>
+    IdempotencyMismatch
 }
 
 /// <summary>

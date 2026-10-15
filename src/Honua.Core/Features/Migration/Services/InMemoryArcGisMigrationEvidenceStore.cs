@@ -35,9 +35,9 @@ public sealed class InMemoryArcGisMigrationEvidenceStore : IArcGisMigrationEvide
 
         lock (_gate)
         {
-            _runs[record.RunId] = _runs.TryGetValue(record.RunId, out var existing)
-                ? existing with { Record = record, Manifest = manifest }
-                : new StoredRun(record, manifest, null);
+            // Re-recording a manifest drops the previous parity verdict. The old
+            // pass/fail described a different source scan (#6180).
+            _runs[record.RunId] = new StoredRun(record, manifest, null);
         }
 
         return Task.CompletedTask;

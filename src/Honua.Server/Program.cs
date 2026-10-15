@@ -438,8 +438,10 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
 }
 
 if (connectedRedis is not null &&
-    !builder.Environment.IsDevelopment() &&
-    !builder.Environment.IsEnvironment("Test"))
+    OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+        builder.Environment.IsDevelopment(),
+        isTestEnvironment,
+        redisConnected: true))
 {
     // The operation-secret protector is intentionally backed by the same Redis authority
     // as the proposal/instance stores so every replay node shares a rotation-capable key ring.
@@ -932,6 +934,7 @@ builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeySt
     sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
         ? new Honua.Infrastructure.Authentication.RedisAdminApiKeyStore(redis, sp.GetService<TimeProvider>())
         : new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
+builder.Services.AddHostedService<Honua.Infrastructure.Authentication.RedisAdminApiKeyIndexMaintenance>();
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
 // evaluation, rate accounting, and redacted analytics ingestion. In-memory
 // defaults; durable providers can replace these via TryAdd later.

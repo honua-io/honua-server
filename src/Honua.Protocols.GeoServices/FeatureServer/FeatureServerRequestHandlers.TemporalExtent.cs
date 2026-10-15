@@ -85,7 +85,6 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not configured as time-aware.");
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var storageLayerId = snapshot.ResolveStorageLayerId(publication);
@@ -96,11 +95,23 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
-        var temporalRange = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
-            resource,
-            storageLayerId.Value,
-            featureReader,
-            cancellationToken).ConfigureAwait(false);
+        TemporalExtentHelpers.MetadataV2TemporalRange? temporalRange;
+        try
+        {
+            var featureReader = await ResolveAnalyticsFeatureReaderAsync(
+                context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+            temporalRange = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+                resource,
+                storageLayerId.Value,
+                featureReader,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "temporalExtent is not supported by the configured feature provider for this layer.");
+        }
 
         if (temporalRange is null)
         {

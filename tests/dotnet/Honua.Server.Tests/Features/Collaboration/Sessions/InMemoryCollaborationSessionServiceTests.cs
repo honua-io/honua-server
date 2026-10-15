@@ -192,6 +192,89 @@ public sealed class InMemoryCollaborationSessionServiceTests
     }
 
     [UnitTest]
+    public async Task JoinAsync_NinthJoinBySamePrincipal_IsRefusedAndOverlongDisplayNameIsBadRequest()
+    {
+        var service = CreateService(new FakeCollaborationClock(FixedUtcNow()));
+        var principal = Principal("user-1", "Ada");
+
+        for (var i = 0; i < InMemoryCollaborationSessionService.MaxParticipantsPerPrincipal; i++)
+        {
+            var joined = await service.JoinAsync(
+                "map-a",
+                new CollaborationJoinRequest { DisplayName = $"Ada {i}" },
+                principal);
+            joined.Response.Should().NotBeNull();
+            joined.Refusal.Should().Be(CollaborationJoinRefusal.None);
+        }
+
+        var ninth = await service.JoinAsync(
+            "map-a",
+            new CollaborationJoinRequest { DisplayName = "Ada again" },
+            principal);
+        ninth.Response.Should().BeNull();
+        ninth.Refusal.Should().Be(CollaborationJoinRefusal.CapacityExceeded);
+        ((int)ninth.Refusal).Should().Be(429);
+        service.GetSnapshot("map-a").Participants.Should().HaveCount(
+            InMemoryCollaborationSessionService.MaxParticipantsPerPrincipal);
+
+        var otherPrincipal = await service.JoinAsync(
+            "map-a",
+            new CollaborationJoinRequest { DisplayName = "Bea" },
+            Principal("user-2", "Bea"));
+        otherPrincipal.Response.Should().NotBeNull();
+
+        var otherMap = await service.JoinAsync(
+            "map-b",
+            new CollaborationJoinRequest { DisplayName = "Ada" },
+            principal);
+        otherMap.Response.Should().NotBeNull("the per-principal cap is per map channel");
+
+        var overlong = await service.JoinAsync(
+            "map-c",
+            new CollaborationJoinRequest { DisplayName = new string('x', 10_000) },
+            principal);
+        overlong.Response.Should().BeNull();
+        overlong.Refusal.Should().Be(CollaborationJoinRefusal.InvalidRequest);
+        ((int)overlong.Refusal).Should().Be(400);
+        overlong.Detail.Should().NotContain("xxxx");
+        service.GetSnapshot("map-c").Participants.Should().BeEmpty();
+
+        var overlongClient = await service.JoinAsync(
+            "map-c",
+            new CollaborationJoinRequest
+            {
+                DisplayName = "Ada",
+                ClientInstanceId = new string('c', InMemoryCollaborationSessionService.MaxClientInstanceIdLength + 1)
+            },
+            principal);
+        overlongClient.Refusal.Should().Be(CollaborationJoinRefusal.InvalidRequest);
+        service.GetSnapshot("map-c").Participants.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task JoinAsync_WhenMapParticipantCapReached_RefusesAnotherPrincipal()
+    {
+        var service = CreateService(new FakeCollaborationClock(FixedUtcNow()));
+        for (var i = 0; i < InMemoryCollaborationSessionService.MaxParticipantsPerMap; i++)
+        {
+            var joined = await service.JoinAsync(
+                "map-a",
+                new CollaborationJoinRequest { DisplayName = $"P{i}" },
+                Principal($"user-{i}"));
+            joined.Response.Should().NotBeNull();
+        }
+
+        var overflow = await service.JoinAsync(
+            "map-a",
+            new CollaborationJoinRequest { DisplayName = "Overflow" },
+            Principal("overflow"));
+        overflow.Response.Should().BeNull();
+        overflow.Refusal.Should().Be(CollaborationJoinRefusal.CapacityExceeded);
+        service.GetSnapshot("map-a").Participants.Should().HaveCount(
+            InMemoryCollaborationSessionService.MaxParticipantsPerMap);
+    }
+
+    [UnitTest]
     public async Task JoinAsync_WhenAuthorizerDenies_ReturnsFailureWithoutSession()
     {
         var service = new InMemoryCollaborationSessionService(

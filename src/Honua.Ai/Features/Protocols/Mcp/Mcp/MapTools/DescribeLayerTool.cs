@@ -189,8 +189,8 @@ internal sealed class DescribeLayerTool : IMcpTool
                 ? resource.Metadata.Title!
                 : resource.Metadata.Name);
 
-        var fields = new List<McpLayerField>(resource.SchemaFields.Count);
-        foreach (var field in resource.SchemaFields)
+        var fields = new List<McpLayerField>();
+        foreach (var field in resource.VisibleSchemaFields())
         {
             fields.Add(new McpLayerField
             {

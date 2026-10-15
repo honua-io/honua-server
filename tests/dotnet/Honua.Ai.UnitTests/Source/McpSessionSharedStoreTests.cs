@@ -194,20 +194,52 @@ public sealed partial class McpSessionSharedStoreTests
     {
         // The local LRU order reflects only this replica's traffic, so evicting to
         // admit a new session must not end a session that may be active elsewhere.
+        // The victim is the same principal: another principal is never evicted.
         var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
         var store = new FakeSharedSessionStore(time);
-        var a = new McpSessionManager(maxSessions: 1, idleTimeout: IdleTimeout, timeProvider: time, store: store);
+        var a = new McpSessionManager(
+            maxSessions: 4,
+            idleTimeout: IdleTimeout,
+            timeProvider: time,
+            store: store,
+            maxSessionsPerPrincipal: 1);
         var b = NewManager(store, time);
 
         var first = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(1));
-        var second = await a.TryCreateSessionAsync("sub:bob", false, null, CancellationToken.None);
+        var second = await a.TryCreateSessionAsync("sub:alice", false, null, CancellationToken.None);
 
         second.Should().NotBeNull();
+        a.ActiveSessionIds.Should().NotContain(first!);
         store.Contains(first!).Should().BeTrue();
         (await b.ValidateAccessAsync(first!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Valid);
         b.GetWorkflowView(first!).Should().Be("setup");
         (await a.ValidateAccessAsync(first!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Valid);
+    }
+
+    [UnitTest]
+    public async Task CapacityEviction_DoesNotDropAnotherPrincipalsSession()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var store = new FakeSharedSessionStore(time);
+        var a = new McpSessionManager(
+            maxSessions: 3,
+            idleTimeout: IdleTimeout,
+            timeProvider: time,
+            store: store,
+            maxSessionsPerPrincipal: 2);
+
+        var alice = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
+        var aliceAgain = await a.TryCreateSessionAsync("sub:alice", false, null, CancellationToken.None);
+        var bob = await a.TryCreateSessionAsync("sub:bob", false, null, CancellationToken.None);
+        var carol = await a.TryCreateSessionAsync("sub:carol", false, null, CancellationToken.None);
+
+        carol.Should().BeNull("a full table does not evict another principal to admit a new one");
+        a.ActiveSessionIds.Should().Contain(alice!);
+        a.ActiveSessionIds.Should().Contain(aliceAgain!);
+        a.ActiveSessionIds.Should().Contain(bob!);
+        store.Contains(alice!).Should().BeTrue();
+        store.Contains(bob!).Should().BeTrue();
     }
 
     [UnitTest]

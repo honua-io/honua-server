@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:159bfbc5a73276e2faa75db3a97928be17ebac84aebde67ce9f9ca8bd61f46b1",
+  "bundleDigest": "sha256:4dffcd50c0b7458e725978e040cb4cb057751b86715f3612bc6e7f27cfffea23",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1290,7 +1290,7 @@
     {
       "id": "concepts/domain/semantic-contracts",
       "path": "concepts/domain/semantic-contracts.md",
-      "documentDigest": "sha256:f911835d14e23da1b4ca75b3de9739ae30725c369ebfa0e00c78449846c1d11e",
+      "documentDigest": "sha256:46206b5cf6cfa5b2d693f0131d650ef5c65338280d0c84978824383641b2b7a9",
       "metadata": {
         "type": "concept",
         "title": "GIS semantic contracts and verification",
@@ -1924,7 +1924,7 @@
     {
       "id": "get-started/quickstart",
       "path": "get-started/quickstart.md",
-      "documentDigest": "sha256:1c41ed6052a23b03161a43fd87473c531515d6de3445b81e8067ff2b733b0c26",
+      "documentDigest": "sha256:ab3a64cec44ac8845e5f5a47d94764b204dacebff9a34149488a2eb0f1f4eed2",
       "metadata": {
         "type": "guide",
         "title": "Quickstart: install, publish, and query",
@@ -2012,7 +2012,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:84d13e5a75a7ba7a9aea70343bf98a766580bc83ae7f09615580739cfe2f0aa2",
+      "documentDigest": "sha256:48b1a4bd19d00d75eb77e7333461ec45c539e35124b072d1539d6ff025d422cb",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -2190,7 +2190,7 @@
     {
       "id": "guides/deploy/troubleshooting",
       "path": "guides/deploy/troubleshooting.md",
-      "documentDigest": "sha256:7f297b6646d1a8eb32b36cc65426dad0ef8d0302178ce2235ac66201ad494ab6",
+      "documentDigest": "sha256:43e502205d4b88831cad0f49a7546d9c6877cf0181ae56810a01284267d45543",
       "metadata": {
         "type": "runbook",
         "title": "Troubleshoot Honua Server",
@@ -2474,7 +2474,7 @@
     {
       "id": "guides/query-analyze/geoprocessing-with-ai",
       "path": "guides/query-analyze/geoprocessing-with-ai.md",
-      "documentDigest": "sha256:d2e15abdd8202059e52cc3dde8c9b6e64b3b0c0a52c87df759c361b98ab5e80f",
+      "documentDigest": "sha256:dafc32787a5bff85e748bdf0c5111727f1ad04dd77454ff2bcd942313b18722e",
       "metadata": {
         "type": "guide",
         "title": "Geoprocessing with AI",
@@ -2485,7 +2485,7 @@
     {
       "id": "guides/query-analyze/gp-devkit-authoring",
       "path": "guides/query-analyze/gp-devkit-authoring.md",
-      "documentDigest": "sha256:b4a38c9c7f435047d7d23bde82ab344b395723031a5b307729e0e4a45d652fab",
+      "documentDigest": "sha256:7b0252f8b979eb2fa822f4083e0dbad8a2660b1095a42efee7324d7d66852f40",
       "metadata": {
         "type": "guide",
         "title": "Author a geoprocessing process",
@@ -2496,7 +2496,7 @@
     {
       "id": "guides/query-analyze/gp-local-dev-quickstart",
       "path": "guides/query-analyze/gp-local-dev-quickstart.md",
-      "documentDigest": "sha256:46028087cc875fd937a2f4090b5aaeec821069bce501e3c442557b88716cdb5f",
+      "documentDigest": "sha256:759b1ed4b9d6530897422b0caa7af3858cade83dc13595c278dcfa80ce4f0088",
       "metadata": {
         "type": "guide",
         "title": "Local geoprocessing dev quickstart",
@@ -5214,7 +5214,7 @@
     {
       "id": "okf/README",
       "path": "okf/README.md",
-      "documentDigest": "sha256:926e02c6a2f01f52fbbe0a4c500ffcd0b2e3cdc5e5370053b96e2dcfb2ff5162",
+      "documentDigest": "sha256:9061f66df729791fed0c760386832fe9f6e4880f353420f680fe77dd1d3b0c32",
       "metadata": {
         "type": "index",
         "title": "Open Knowledge Format in honua-server",
@@ -5246,7 +5246,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:00c52e4a8bf6b9fd4b9dc1edb2de7326d6b9916e01eddb892626a930e0f5c081",
+      "documentDigest": "sha256:1c9f86efe7ed8103ab5c211789c4649bb4c0794764b21b918f8d5fc2f580a069",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -6640,7 +6640,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:34f8bbdb08ae1d7cf4ac58347085786cb15a31125eb88c81dba5b6712d888be9",
+      "documentDigest": "sha256:c8693e34303a5f3c33c0f6f521dc6968955c80d4a777666f40a2d8c3bc111f5f",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
@@ -6708,7 +6708,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-mapserver",
       "path": "okf/capabilities/serve.geoservices-mapserver.md",
-      "documentDigest": "sha256:5ab5e0887496bcb3ecc78ce41539493b6ae9ea5f6bcb653ab9eac0d9f295b050",
+      "documentDigest": "sha256:6457cfa7d84e73ea7f45ce70602cb5a17129493777fac4b82f8a2c314bfde33e",
       "metadata": {
         "type": "capability",
         "title": "MapServer",
@@ -6844,7 +6844,7 @@
     {
       "id": "okf/capabilities/serve.ogc-api-features",
       "path": "okf/capabilities/serve.ogc-api-features.md",
-      "documentDigest": "sha256:974d0f6367c9cc6f9adceba92d5c02ebf949534676969c3ed67993b87506cd77",
+      "documentDigest": "sha256:c935347766b566373bf7093958cc30837e8c1fca119224860076335723f9f6f1",
       "metadata": {
         "type": "capability",
         "title": "OGC API Features",
@@ -11883,6 +11883,11 @@
     {
       "source": "guides/query-analyze/geoprocessing-with-ai",
       "relation": "links_to",
+      "target": "guides/query-analyze/gp-devkit-authoring"
+    },
+    {
+      "source": "guides/query-analyze/geoprocessing-with-ai",
+      "relation": "links_to",
       "target": "guides/query-analyze/gp-local-dev-quickstart"
     },
     {
@@ -16161,7 +16166,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:51aa9c12e7df1c3363adc3d15790b7708e9795a24f0d321061c0003f67a2fa34"
+      "contractDigest": "sha256:8165edeb967ef64c4a169a0d6efc98823f696c8b79d59441682f56723a2d8837"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -16234,7 +16239,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:51aa9c12e7df1c3363adc3d15790b7708e9795a24f0d321061c0003f67a2fa34"
+      "contractDigest": "sha256:8165edeb967ef64c4a169a0d6efc98823f696c8b79d59441682f56723a2d8837"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16244,7 +16249,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:51aa9c12e7df1c3363adc3d15790b7708e9795a24f0d321061c0003f67a2fa34"
+      "contractDigest": "sha256:8165edeb967ef64c4a169a0d6efc98823f696c8b79d59441682f56723a2d8837"
     },
     {
       "workflow": "guides/workflows/import-data",

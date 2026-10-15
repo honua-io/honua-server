@@ -81,12 +81,22 @@ internal static partial class CollaborationSessionStreamEndpoint
         // Authorize and register the participant BEFORE upgrading so an unauthorized join fails
         // with a typed HTTP status (401/403) instead of an opaque socket close. The authorizer is
         // the same fail-closed Studio identity/RBAC seam used by the HTTP join endpoint.
+        var displayName = context.Request.Query["displayName"].ToString() is { Length: > 0 } dn ? dn : null;
+        var clientInstanceId = context.Request.Query["clientInstanceId"].ToString() is { Length: > 0 } ci ? ci : null;
+        if (!InMemoryCollaborationSessionService.TryValidateJoinFields(displayName, clientInstanceId, out var fieldError))
+        {
+            await StandardErrorHelpers.CreateBadRequest(context, fieldError!)
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
+            return;
+        }
+
         var join = await sessions.JoinAsync(
                 mapId,
                 new CollaborationJoinRequest
                 {
-                    DisplayName = context.Request.Query["displayName"].ToString() is { Length: > 0 } dn ? dn : null,
-                    ClientInstanceId = context.Request.Query["clientInstanceId"].ToString() is { Length: > 0 } ci ? ci : null
+                    DisplayName = displayName,
+                    ClientInstanceId = clientInstanceId
                 },
                 context.User,
                 context.RequestAborted)
@@ -94,17 +104,9 @@ internal static partial class CollaborationSessionStreamEndpoint
 
         if (join.Response is null)
         {
-            var failure = join.Authorization.Status switch
-            {
-                SavedMapCollaborationAuthorizationStatus.RequiresAuthentication =>
-                    StandardErrorHelpers.CreateUnauthorized(
-                        context,
-                        join.Authorization.Detail ?? "Authentication is required to join this collaboration session."),
-                _ => StandardErrorHelpers.CreateForbidden(
-                    context,
-                    join.Authorization.Detail ?? "You are not allowed to join this collaboration session.")
-            };
-            await failure.ExecuteAsync(context).ConfigureAwait(false);
+            await CollaborationSessionEndpoints.MapJoinFailure(join, context)
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
             return;
         }
 

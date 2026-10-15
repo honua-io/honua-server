@@ -10,7 +10,10 @@ namespace Honua.Core.Features.RateLimiting.Domain;
 /// </summary>
 public sealed record RateLimitRequestDescriptor
 {
-    /// <summary>The authenticated API-key identity for the request, if any.</summary>
+    /// <summary>
+    /// Stable <c>api_key_id</c> of an API-key principal. Other schemes, including a user whose
+    /// display name matches a key, leave this null so an api-key policy cannot be borrowed by name.
+    /// </summary>
     public string? ApiKey { get; init; }
 
     /// <summary>The resolved tenant identifier for the request, if any.</summary>

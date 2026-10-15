@@ -199,8 +199,19 @@ internal static partial class FeatureServerEndpoints
 
         query = filteredQuery;
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var rows = await featureReader.QueryDateBinsAsync(storageLayerId.Value, query, dateBin, cancellationToken);
+        var featureReader = await ResolveAnalyticsFeatureReaderAsync(
+            context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+        ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
+        try
+        {
+            rows = await featureReader.QueryDateBinsAsync(storageLayerId.Value, query, dateBin, cancellationToken);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "queryDateBins is not supported by the configured feature provider for this layer.");
+        }
 
         var responseFeatures = rows.Select(row => new GeoServicesFeature
         {

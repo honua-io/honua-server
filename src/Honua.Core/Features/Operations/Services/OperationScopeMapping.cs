@@ -63,6 +63,24 @@ public static class OperationScopeMapping
         return operation != default;
     }
 
+    /// <summary>
+    /// Whether a scope-governed caller lacks the OAuth authority this operation requires.
+    /// An operation with no scope mapping is refused rather than allowed: a bearer cannot
+    /// invoke authority the scope catalog does not describe.
+    /// </summary>
+    public static bool ExceedsScopeAuthority(OperationRequest request, OperationPolicyContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+        return context.ScopeGoverned
+            && (context.RecognizedScopes.Count == 0
+                || context.RecognizedScopes.Any(scope =>
+                    !OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal))
+                || !TryResolve(request, out var requiredOperation)
+                || !OperatorScopeCatalog.PermitsOperation(
+                    context.RecognizedScopes.ToHashSet(StringComparer.Ordinal), requiredOperation));
+    }
+
     private static bool IsStudioOperation(string operationId)
         => ResolveStudioOperation(operationId) != default;
 

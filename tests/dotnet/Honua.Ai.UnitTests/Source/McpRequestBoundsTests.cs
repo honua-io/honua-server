@@ -63,6 +63,30 @@ public sealed class McpRequestBoundsTests
         options.MaxBatchSize.Should().Be(50);
         options.MaxRequestBodyBytes.Should().Be(10L * 1024 * 1024);
         options.MaxAnonymousSessions.Should().Be(1_000);
+        options.MaxSessionsPerPrincipal.Should().Be(McpOptions.DefaultMaxSessionsPerPrincipal);
+    }
+
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Initialize_AdvertisesListChangedOnlyWhenTheServerStreamIsEnabled(bool streamEnabled)
+    {
+        var source = new CountingToolSource();
+        var context = CreateContext(
+            source,
+            new McpOptions { ServerInitiatedStreamEnabled = streamEnabled },
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+              "protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"tests","version":"1"}}}
+            """);
+
+        await McpEndpointExtensions.HandlePostAsync(context, CancellationToken.None);
+
+        using var document = ReadResponse(context);
+        var capabilities = document.RootElement.GetProperty("result").GetProperty("capabilities");
+        capabilities.GetProperty("tools").GetProperty("listChanged").GetBoolean().Should().Be(streamEnabled);
+        capabilities.GetProperty("resources").GetProperty("listChanged").GetBoolean().Should().Be(streamEnabled);
+        capabilities.GetProperty("prompts").GetProperty("listChanged").GetBoolean().Should().BeFalse();
     }
 
     [UnitTest]

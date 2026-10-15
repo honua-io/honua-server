@@ -354,7 +354,8 @@ internal sealed partial class ODataStreamingQueryHandler(
                     {
                         Context = null,
                         Count = result.Count,
-                        Value = result.Value
+                        Value = result.Value,
+                        NextLink = result.NextLink
                     };
                 }
 

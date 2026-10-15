@@ -26,10 +26,19 @@ public interface IOpsFindingsService
     /// recommended action through the operation gateway (idempotency-keyed on the finding id).
     /// </summary>
     /// <param name="findingId">The deterministic finding identifier to propose.</param>
+    /// <param name="rootProvisioningOperationId">
+    /// Verified provisioning root from the DevOps handoff, or <see langword="null"/> when the
+    /// proposal is not part of a federated handoff. A root that disagrees with the finding's
+    /// linked workflow operation is rejected.
+    /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>
     /// The proposal outcome, including the created proposal id when the gateway required approval,
     /// or a not-found/no-action status when the finding vanished or has no recommended action.
+    /// The accepted root is echoed on the result.
     /// </returns>
-    Task<OpsFindingProposalResult> ProposeAsync(string findingId, CancellationToken cancellationToken = default);
+    Task<OpsFindingProposalResult> ProposeAsync(
+        string findingId,
+        string? rootProvisioningOperationId = null,
+        CancellationToken cancellationToken = default);
 }

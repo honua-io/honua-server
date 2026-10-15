@@ -100,6 +100,9 @@ internal sealed partial class MySqlFeatureQueryBuilder
                 clauses.Add($"{MySqlIdentifier.Quote(clause.Field)} {direction}");
             }
 
+            // Caller ORDER BY is kept as supplied. Appending the primary key would change
+            // tie-breaking the caller did not request. Distinct selects do not call this
+            // method; unpaged and paged caller sorts share this path.
             sb.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", clauses)}");
             return;
         }
@@ -116,6 +119,49 @@ internal sealed partial class MySqlFeatureQueryBuilder
             sb.Append(CultureInfo.InvariantCulture,
                 $" ORDER BY {mapping.QuotedPrimaryKeyColumn} ASC");
         }
+    }
+
+    /// <summary>
+    /// Orders a DISTINCT projection by columns that appear in the select list. MySQL
+    /// rejects ORDER BY expressions outside that list, and the primary key is omitted
+    /// so it cannot uniquify every distinct tuple.
+    /// </summary>
+    private static void AppendDistinctOrderBy(StringBuilder sb, FeatureQuery query, IReadOnlyList<string> projectedAttributes)
+    {
+        var clauses = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (query.OrderBy is { IsDefaultOrEmpty: false } orderBy)
+        {
+            foreach (var clause in orderBy)
+            {
+                var match = projectedAttributes.FirstOrDefault(column =>
+                    string.Equals(column, clause.Field, StringComparison.OrdinalIgnoreCase));
+                if (match is null || !seen.Add(match))
+                {
+                    continue;
+                }
+
+                MySqlIdentifier.ValidateAttributeName(match);
+                var direction = clause.Ascending ? "ASC" : "DESC";
+                clauses.Add($"{MySqlIdentifier.Quote(match)} {direction}");
+            }
+        }
+
+        foreach (var column in projectedAttributes)
+        {
+            if (!seen.Add(column))
+            {
+                continue;
+            }
+
+            MySqlIdentifier.ValidateAttributeName(column);
+            clauses.Add($"{MySqlIdentifier.Quote(column)} ASC");
+        }
+
+        sb.Append(" ORDER BY ");
+        sb.Append(clauses.Count == 0
+            ? "1"
+            : string.Join(", ", clauses));
     }
 
     private static void AppendPagination(

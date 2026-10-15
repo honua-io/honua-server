@@ -5,7 +5,16 @@
 
 set -euo pipefail
 
+# Default to the repository that contains this script. HONUA_MANIFEST_ROOT lets
+# local selectors and fixtures classify another checkout with the same script.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ -n "${HONUA_MANIFEST_ROOT:-}" ]]; then
+  if [[ ! -d "${HONUA_MANIFEST_ROOT}" ]]; then
+    echo "UNKNOWN"
+    exit 0
+  fi
+  REPO_ROOT="$(cd "${HONUA_MANIFEST_ROOT}" && pwd)"
+fi
 cd "${REPO_ROOT}"
 
 base_ref="${1:-${BASE_REF:-origin/trunk}}"

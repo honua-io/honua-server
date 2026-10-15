@@ -18,8 +18,10 @@
       ProjectReferences) never pulls it in. The tool itself is NOT AOT-published.
     -->
     <PackAsTool>true</PackAsTool>
-    <ToolCommandName>honua-gp</ToolCommandName>
-    <IsPackable>false</IsPackable>
+    <ToolCommandName>honua-gp-devkit</ToolCommandName>
+    <IsPackable>true</IsPackable>
+    <PackageId>Honua.Geoprocessing.Cli</PackageId>
+    <Description>Local Honua geoprocessing runner, discovery, validation, and golden tests.</Description>
     <PublishAot>false</PublishAot>
 
     <!-- Console front-end intentionally writes to stdout/stderr. -->

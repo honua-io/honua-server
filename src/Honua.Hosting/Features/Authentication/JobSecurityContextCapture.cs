@@ -284,6 +284,33 @@ internal static class JobSecurityContextCapture
             ? ClaimTypes.Role
             : context.RoleClaimType;
 
+        // The API-key handler stamps its scope-governance markers (scoped-api-key,
+        // scoped-admin-key, approved-operation) as ClaimTypes.Role, while the snapshot records
+        // the configured RBAC role claim type (OIDC "roles" by default). Restoring with that type
+        // made IsInRole miss the markers, so a scoped key resumed on a deferred lane (async print,
+        // GP approval resume, workflow firing) read as an ungoverned authenticated principal and
+        // bypassed its permission grants. Mirror each marker found under either type onto the
+        // restored role claim type. This also covers snapshots written before the fix, and it can
+        // only narrow access: the markers restrict a principal to its grants (honua-server#6101).
+        if (!string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase))
+        {
+            var governanceMarkers = claims
+                .Where(claim => (string.Equals(claim.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase))
+                    && LayerScopedWriteKey.ScopeGovernanceRoles.Contains(claim.Value, StringComparer.Ordinal))
+                .Select(static claim => claim.Value)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            foreach (var marker in governanceMarkers)
+            {
+                if (!claims.Exists(claim => string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(claim.Value, marker, StringComparison.Ordinal)))
+                {
+                    claims.Add(new Claim(roleClaimType, marker));
+                }
+            }
+        }
+
         // Older snapshots predate anonymous print submissions and retain their authentication
         // behavior. New snapshots preserve the actual submission authentication state.
         var authenticated = context.Claims

@@ -39,6 +39,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.LicenseMint.Tests" />
   </ItemGroup>
 
 </Project>

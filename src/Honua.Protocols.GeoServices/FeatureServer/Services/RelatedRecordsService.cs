@@ -123,11 +123,14 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
 {
     private readonly IRelationshipStore _relationshipStore;
     private readonly GeometryLimits _geometryLimits;
+    private readonly int _maxRecordCount;
 
     public RelatedRecordsService(IRelationshipStore relationshipStore, IOptions<LimitsOptions> limitsOptions)
     {
         _relationshipStore = relationshipStore ?? throw new ArgumentNullException(nameof(relationshipStore));
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+        var maxRecordCount = limitsOptions?.Value?.Query?.MaxRecordCount ?? 0;
+        _maxRecordCount = maxRecordCount > 0 ? maxRecordCount : new QueryLimits().MaxRecordCount;
     }
 
     /// <summary>
@@ -151,7 +154,9 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         {
             Where = queryParams.Where,
             SqlFilter = sqlFilter,
-            Limit = queryParams.ReturnCountOnly ? null : queryParams.ResultRecordCount,
+            // One global window across every origin. An omitted resultRecordCount uses
+            // maxRecordCount; the stores probe one extra row and set HasMoreResults.
+            Limit = queryParams.ReturnCountOnly ? null : queryParams.ResultRecordCount ?? _maxRecordCount,
             Offset = queryParams.ReturnCountOnly ? null : queryParams.ResultOffset
         };
 

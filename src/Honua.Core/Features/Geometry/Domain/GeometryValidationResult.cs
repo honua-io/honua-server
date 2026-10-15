@@ -36,6 +36,13 @@ public sealed record GeometryValidationResult
     public bool WasRepaired => RepairedWkb != null;
 
     /// <summary>
+    /// Whether the repair changed the geometry type (for example a collapsed polygon repaired
+    /// into a line string or a geometry collection). Callers that enforce a layer's declared
+    /// geometry type must re-check the repaired geometry when this is set.
+    /// </summary>
+    public bool GeometryTypeChanged { get; init; }
+
+    /// <summary>
     /// Statistics about the validated geometry.
     /// </summary>
     public GeometryStats? Stats { get; init; }

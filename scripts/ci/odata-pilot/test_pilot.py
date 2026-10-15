@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import unittest
+import xml.etree.ElementTree as ET
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("odata_pilot", Path(__file__).with_name("pilot.py"))
@@ -427,6 +428,118 @@ class ContainmentTests(unittest.TestCase):
         finally:
             foreign.terminate()
             foreign.wait()
+
+
+def static_project_closure(root, project):
+    pending = [project]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        path = root / current
+        if not path.is_file():
+            raise ValueError(f"missing project {current}")
+        for reference in ET.parse(path).iter("ProjectReference"):
+            include = reference.get("Include")
+            if not include or "$(" in include or "@(" in include:
+                raise ValueError(f"{current} has an unresolved ProjectReference")
+            resolved = (path.parent / include.replace("\\", "/")).resolve()
+            if not resolved.is_file() or not resolved.is_relative_to(root):
+                raise ValueError(f"{current} references {include} outside the repository")
+            pending.append(resolved.relative_to(root).as_posix())
+    return seen
+
+
+def unrelated_protocols(paths):
+    return sorted(path for path in paths
+                  if Path(path).name.startswith("Honua.Protocols.")
+                  and not Path(path).name.startswith("Honua.Protocols.OData"))
+
+
+class StaticCompositionTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[3]
+        self.server = "src/Honua.Server/Honua.Server.csproj"
+        self.full_testkit = "tests/dotnet/Honua.TestKit/Honua.TestKit.csproj"
+
+    def closure(self, project):
+        return static_project_closure(self.root, project)
+
+    def assert_isolated(self, project):
+        paths = self.closure(project)
+        self.assertNotIn(self.server, paths)
+        self.assertNotIn(self.full_testkit, paths)
+        self.assertEqual([], unrelated_protocols(paths))
+        return paths
+
+    def test_unit_closure_is_at_least_half_the_integration_graph(self):
+        baseline = self.closure(pilot.PROJECTS["baseline"]["unit"])
+        candidate = self.assert_isolated(pilot.PROJECTS["candidate"]["unit"])
+        self.assertEqual({
+            "Honua.Core.Abstractions", "Honua.Core", "Honua.Geometry", "Honua.ServiceDefaults",
+            "Honua.Hosting", "Honua.Protocols.OData", "Honua.TestKit.Abstractions",
+            "Honua.Protocols.OData.UnitTests"}, {Path(path).stem for path in candidate})
+        self.assertIn(self.server, baseline)
+        self.assertIn(self.full_testkit, baseline)
+        self.assertTrue(unrelated_protocols(baseline))
+        self.assertGreaterEqual((len(baseline) - len(candidate)) / len(baseline), 0.50)
+
+    def test_host_and_component_closures_stay_on_odata_and_postgres(self):
+        host = self.assert_isolated(pilot.PROJECTS["candidate"]["image"])
+        component = self.assert_isolated(pilot.PROJECTS["candidate"]["component"])
+        self.assertTrue(any(path.endswith("Honua.Protocols.OData.csproj") for path in host))
+        self.assertTrue(any(path.endswith("Honua.Postgres.csproj") for path in host))
+        self.assertTrue(any(path.endswith("Honua.TestKit.Postgres.csproj") for path in component))
+        self.assertTrue(component.issuperset(host))
+
+    def test_runtime_image_does_not_compile_and_publish_reuses_the_build(self):
+        planned = pilot.plan(self.root, "candidate", "image", "Release", "full", "")
+        self.assertIn("--no-build", planned["commands"][-1])
+        self.assertIn("--no-restore", planned["commands"][-1])
+        text = (self.root / "docker/odata-pilot/Dockerfile").read_text()
+        self.assertNotIn("dotnet/sdk", text)
+        self.assertNotIn("dotnet build", text)
+        self.assertNotIn("dotnet publish", text)
+        self.assertIn("COPY --chown=1654:1654 publish/", text)
+
+
+class CleanupReceiptTests(unittest.TestCase):
+    def test_cleanup_fails_closed_unless_head_and_every_removal_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.check_call(["git", "init", "-q"], cwd=root)
+            subprocess.check_call(["git", "config", "user.email", "fixture@example.invalid"], cwd=root)
+            subprocess.check_call(["git", "config", "user.name", "Fixture"], cwd=root)
+            (root / "kept.txt").write_text("kept")
+            subprocess.check_call(["git", "add", "kept.txt"], cwd=root)
+            subprocess.check_call(["git", "commit", "-qm", "baseline"], cwd=root)
+            head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+            mismatch = pilot.cleanup_receipt(root, "a" * 40, [{"id": "db", "removed": True}], ["evidence/run"])
+            self.assertFalse(mismatch["success"])
+            self.assertFalse(mismatch["promoted"])
+            self.assertTrue(mismatch["issues"])
+            failed = pilot.cleanup_receipt(root, head, [{"id": "db", "removed": False}], ["evidence/run"])
+            self.assertFalse(failed["success"])
+            self.assertFalse(failed["promoted"])
+            empty = pilot.cleanup_receipt(root, head, [], ["evidence/run"])
+            self.assertFalse(empty["success"])
+            ok = pilot.cleanup_receipt(root, head, [{"id": "db", "removed": True}, {"id": "image", "removed": True}], ["evidence/run"])
+            self.assertTrue(ok["success"])
+            self.assertFalse(ok["promoted"])
+            self.assertEqual([], ok["issues"])
+            with self.assertRaises(ValueError):
+                pilot.cleanup_receipt(root, head, [{"id": "db", "removed": 1}], ["evidence/run"])
+            removals = root / "removals.json"
+            output = root / "receipt.json"
+            removals.write_text(json.dumps([{"id": "db", "removed": False}]))
+            completed = subprocess.run([sys.executable, str(Path(__file__).with_name("pilot.py")), "cleanup-receipt",
+                                        "--root", str(root), "--head", head, "--removal-json", str(removals),
+                                        "--evidence", "evidence/run", "--output", str(output)],
+                                       text=True, capture_output=True, check=False)
+            self.assertEqual(2, completed.returncode, completed.stderr)
+            self.assertFalse(json.loads(output.read_text())["success"])
 
 
 if __name__ == "__main__":

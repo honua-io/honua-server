@@ -189,6 +189,7 @@ When `ConnectionStrings__Redis` is set, MCP session records are shared through R
 | `Limits__Query__MaxOffset` | `1000000` | Max pagination offset. |
 | `Limits__Query__QueryTimeout` | `00:00:30` | Per-query timeout. |
 | `Limits__Query__MaxBboxAreaSqKm` | `100000` | Max bounding-box query area. |
+| `Limits__Query__MaxMapLayersPerRequest` | `50` | Max layer tokens in one WMS GetMap/GetFeatureInfo `LAYERS` or `QUERY_LAYERS` list; larger lists are rejected with `InvalidParameterValue`. |
 | `Limits__Replica__MaxChangesPerLayer` | `50000` | Max adds, updates, or deletes per layer in one offline replica response. Larger backlogs are delivered in consecutive generation windows (`exceededTransferLimit: true`), never rejected. |
 | `Limits__Geometry__MaxVerticesPerGeometry` | `50000` | Max vertices accepted per geometry. |
 | `Limits__Geometry__MaxGeometrySize` | `5242880` (5 MiB) | Max geometry payload size. |
