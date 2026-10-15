@@ -65,7 +65,7 @@ public sealed class PackageGovernanceTests
     // so their PackageReference versions must stay inline. They are not built by this repo.
     private static bool IsEmbeddedProjectTemplate(string repositoryRoot, string path)
     {
-        var relative = Path.GetRelativePath(repositoryRoot, path).Replace('\', '/');
+        var relative = Path.GetRelativePath(repositoryRoot, path).Replace('\\', '/');
         return relative.StartsWith("src/Honua.Geoprocessing.Cli/Templates/", StringComparison.Ordinal);
     }
 
