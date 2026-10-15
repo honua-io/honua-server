@@ -1,0 +1,5 @@
+.honua/
+.venv*/
+__pycache__/
+bin/
+obj/

@@ -5,23 +5,12 @@ using Honua.CustomCode.Harness;
 
 // The image ENTRYPOINT. Reads CUSTOMCODE_* / HONUA_* from the Batch container env (or
 // a CUSTOMCODE_JOB_SPEC file), runs one custom-code job, and exits with the terminal
-// code. SIGTERM/SIGINT request cooperative cancellation so an in-flight tool can stop.
+// code. Ctrl+C, SIGTERM (Batch sends it on cancel/timeout) and process exit request
+// cooperative cancellation so an in-flight tool can stop. The registration is declared
+// after the source so `using` disposes it first: a late exit event never reaches a
+// disposed source (that used to throw after every successful local run).
 using var cts = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) =>
-{
-    e.Cancel = true;
-    cts.Cancel();
-};
-AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();
-
-// Honor SIGTERM (Batch sends it on cancel/timeout) as cooperative cancellation.
-using var sigtermRegistration = OperatingSystem.IsWindows() ? null : System.Runtime.InteropServices.PosixSignalRegistration.Create(
-    System.Runtime.InteropServices.PosixSignal.SIGTERM,
-    ctx =>
-    {
-        ctx.Cancel = true;
-        cts.Cancel();
-    });
+using var lifetime = HarnessLifetime.Register(cts);
 
 if (args.Length > 0 && args[0] == "local")
 {

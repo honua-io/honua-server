@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "honua.gp-template-golden.v1",
+  "artifact": "summary.json",
+  "sha256": "d1d562074ff6156481caf9a933e961e25af9483e92c2cb83192c9a77f67574ba",
+  "harness": "Honua.CustomCode.Harness local (in-process from the tests)",
+  "harnessVersion": "honua-server 7fe4ed3641",
+  "harnessSource": "honua-server docker/worker-customcode-dotnet/harness",
+  "producedWith": {
+    "honua-server": "7fe4ed36410ca2792171baceccf57cfe7e9b6aad"
+  },
+  "note": "Regenerate after an intentional output change: copy the new artifact over expected/summary.json and update sha256."
+}
