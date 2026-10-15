@@ -25,6 +25,21 @@ internal sealed class InMemoryCollaborationSessionService
     // singleton service without bound, so the oldest events are dropped once the cap is reached.
     internal const int MaxOutboxDepth = 256;
 
+    /// <summary>Maximum stored display name length. Longer join names are rejected, not truncated.</summary>
+    internal const int MaxDisplayNameLength = 128;
+
+    /// <summary>Maximum stored client-instance id length.</summary>
+    internal const int MaxClientInstanceIdLength = 128;
+
+    /// <summary>
+    /// Sessions one principal may hold on a single map. Each join is otherwise a new participant,
+    /// and the join response plus fan-out both copy every display name.
+    /// </summary>
+    internal const int MaxParticipantsPerPrincipal = 8;
+
+    /// <summary>Participants a single map channel will hold, across every principal.</summary>
+    internal const int MaxParticipantsPerMap = 64;
+
     private readonly ConcurrentDictionary<string, MapChannel> _channels = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Guid, string> _sessionMapIndex = new();
     private readonly ISavedMapCollaborationAuthorizer _authorizer;
@@ -77,6 +92,16 @@ internal sealed class InMemoryCollaborationSessionService
             return new CollaborationJoinResult { Authorization = authorization };
         }
 
+        if (!TryValidateJoinFields(request.DisplayName, request.ClientInstanceId, out var validationDetail))
+        {
+            return new CollaborationJoinResult
+            {
+                Authorization = authorization,
+                Refusal = CollaborationJoinRefusal.InvalidRequest,
+                Detail = validationDetail
+            };
+        }
+
         var now = _clock.UtcNow;
         var sessionId = Guid.NewGuid();
         var userId = ResolveUserId(principal);
@@ -105,6 +130,26 @@ internal sealed class InMemoryCollaborationSessionService
                     // would make the session invisible to every later TryResolveSession lookup and
                     // permanently leak its _sessionMapIndex entry, so re-resolve and retry.
                     continue;
+                }
+
+                if (channel.Participants.Count >= MaxParticipantsPerMap)
+                {
+                    return new CollaborationJoinResult
+                    {
+                        Authorization = authorization,
+                        Refusal = CollaborationJoinRefusal.CapacityExceeded,
+                        Detail = "This map has reached its collaboration participant limit."
+                    };
+                }
+
+                if (CountPrincipalSessionsLocked(channel, userId) >= MaxParticipantsPerPrincipal)
+                {
+                    return new CollaborationJoinResult
+                    {
+                        Authorization = authorization,
+                        Refusal = CollaborationJoinRefusal.CapacityExceeded,
+                        Detail = "You already have the maximum number of collaboration sessions on this map."
+                    };
                 }
 
                 channel.Participants.Add(sessionId, new ParticipantState(participant));
@@ -847,6 +892,42 @@ internal sealed class InMemoryCollaborationSessionService
         }
     }
 
+    /// <summary>
+    /// Rejects join fields that would be stored and fanned out verbatim. Callers map a false
+    /// result to HTTP 400. Length is checked before trim so a multi-megabyte value is not copied.
+    /// </summary>
+    internal static bool TryValidateJoinFields(string? displayName, string? clientInstanceId, out string? detail)
+    {
+        if (displayName is { Length: > MaxDisplayNameLength })
+        {
+            detail = $"displayName must be {MaxDisplayNameLength.ToString(CultureInfo.InvariantCulture)} characters or fewer.";
+            return false;
+        }
+
+        if (clientInstanceId is { Length: > MaxClientInstanceIdLength })
+        {
+            detail = $"clientInstanceId must be {MaxClientInstanceIdLength.ToString(CultureInfo.InvariantCulture)} characters or fewer.";
+            return false;
+        }
+
+        detail = null;
+        return true;
+    }
+
+    private static int CountPrincipalSessionsLocked(MapChannel channel, string? userId)
+    {
+        var count = 0;
+        foreach (var state in channel.Participants.Values)
+        {
+            if (string.Equals(state.Presence.UserId, userId, StringComparison.Ordinal))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
     private static string ResolveDisplayName(
         CollaborationJoinRequest request,
         ClaimsPrincipal principal,
@@ -861,7 +942,7 @@ internal sealed class InMemoryCollaborationSessionService
         var name = NormalizeOptional(principal.FindFirstValue(ClaimTypes.Name));
         if (name is not null)
         {
-            return name;
+            return name.Length <= MaxDisplayNameLength ? name : name[..MaxDisplayNameLength];
         }
 
         return $"participant-{sessionId:N}"[..44];
