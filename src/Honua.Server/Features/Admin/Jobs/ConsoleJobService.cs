@@ -889,6 +889,7 @@ internal sealed partial class ConsoleJobService(
             Artifacts = $"{basePath}/artifacts",
             Actions = $"{basePath}/actions",
             Steps = $"{basePath}/steps",
+            Diagnostics = $"{basePath}/diagnostics",
             Cancel = $"{basePath}/cancel",
             Retry = $"{basePath}/retry",
             EventsByJob = $"{pathBase}/api/v1/admin/observability/events?kind=job&operationId={Uri.EscapeDataString(job.OperationId)}",

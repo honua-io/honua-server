@@ -135,6 +135,7 @@ reset this stack's database and jobs.
 | Async submission refused or job stays queued | Redis is healthy and the matching managed/native worker is running. |
 | Native command unavailable | The heavy image was built and the chosen tag exists locally. |
 | Unknown process | Describe it on the running server; rebuild the catalog or use the plan process where required. |
+| A submitted job failed or stalled | Read `GET /api/v1/admin/jobs/{jobId}/diagnostics`; see [Diagnose a remote geoprocessing job](gp-job-diagnostics.md). |
 
 After local verification, promote images through the release process described
 in [From local to environments](gp-devkit-authoring.md#from-local-to-environments).

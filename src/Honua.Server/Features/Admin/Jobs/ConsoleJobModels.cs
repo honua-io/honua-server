@@ -95,6 +95,7 @@ internal sealed record ConsoleJobLinks
     public required string Artifacts { get; init; }
     public required string Actions { get; init; }
     public required string Steps { get; init; }
+    public string? Diagnostics { get; init; }
     public string? Cancel { get; init; }
     public string? Retry { get; init; }
     public string? EventsByJob { get; init; }

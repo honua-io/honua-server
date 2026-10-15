@@ -26,6 +26,17 @@ namespace Honua.Server.Features.Admin.Jobs;
 [JsonSerializable(typeof(ConsoleJobArtifactPageResponse))]
 [JsonSerializable(typeof(ConsoleJobArtifact))]
 [JsonSerializable(typeof(ConsoleJobControlResponse))]
+[JsonSerializable(typeof(ConsoleJobDiagnostics))]
+[JsonSerializable(typeof(ConsoleJobDiagnosticIdentity))]
+[JsonSerializable(typeof(ConsoleJobDiagnosticRelease))]
+[JsonSerializable(typeof(ConsoleJobDiagnosticLifecycle))]
+[JsonSerializable(typeof(ConsoleJobDiagnosticAttempt))]
+[JsonSerializable(typeof(ConsoleJobDiagnosticRetry))]
+[JsonSerializable(typeof(ConsoleJobDiagnosticWorker))]
+[JsonSerializable(typeof(ConsoleJobDiagnosticFailure))]
+[JsonSerializable(typeof(ConsoleJobDiagnosticEvents))]
+[JsonSerializable(typeof(ConsoleJobDiagnosticArtifacts))]
+[JsonSerializable(typeof(ConsoleJobDiagnosticEvidence))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 internal sealed partial class ConsoleJobJsonContext : JsonSerializerContext
 {

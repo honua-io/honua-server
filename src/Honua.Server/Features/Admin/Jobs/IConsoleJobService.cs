@@ -39,6 +39,12 @@ internal interface IConsoleJobService
         string jobId,
         CancellationToken cancellationToken);
 
+    Task<ConsoleJobDiagnostics?> GetDiagnosticsAsync(
+        HttpContext context,
+        string jobId,
+        int? eventLimit,
+        CancellationToken cancellationToken);
+
     Task<ConsoleJobControlResponse?> CancelAsync(
         HttpContext context,
         string jobId,
