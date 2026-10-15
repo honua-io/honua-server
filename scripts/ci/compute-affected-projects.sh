@@ -53,7 +53,9 @@ global.json
 NuGet.config
 .github/
 scripts/ci/
-src/Honua.Analyzers/'
+src/Honua.Analyzers/
+eng/Honua.ProtocolProfiles.props
+eng/protocol-profiles.v1.json'
 force_full_paths="${FORCE_FULL_BUILD_PATHS:-${default_force_full}}"
 
 # Diff the working tree against base. Tolerate the case where the base ref

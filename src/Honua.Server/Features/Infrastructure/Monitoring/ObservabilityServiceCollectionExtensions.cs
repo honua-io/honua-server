@@ -3,6 +3,7 @@
 
 using System.IO.Compression;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Server.Features.Admin.Jobs;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Infrastructure.Caching;
@@ -92,6 +93,7 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddScoped<IOpsFindingsEvidenceSource>(sp => sp.GetRequiredService<OpsFindingsService>());
         services.AddScoped<IOpsAutonomyEvaluator, OpsAutonomyEvaluator>();
         services.AddScoped<IMcpOpsObservabilityReader, McpOpsObservabilityReader>();
+        services.AddScoped<IMcpJobDiagnosticsReader, McpJobDiagnosticsReader>();
         services.AddScoped<IMcpPlatformOpsReader, McpPlatformOpsReader>();
 
         // Persisted ops-health rollup store + per-replica sampler (#2553). The store itself is registered by

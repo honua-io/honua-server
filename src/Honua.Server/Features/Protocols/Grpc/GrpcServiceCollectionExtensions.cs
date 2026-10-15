@@ -75,7 +75,9 @@ internal static class GrpcServiceCollectionExtensions
                         dataSource,
                         sp.GetService<PostgresSchemaConfiguration>()?.MetadataSchema)
                     : null));
+#if !HONUA_EXCLUDE_GEOSERVICES
         services.TryAddScoped<SpatialReferenceResolver>();
+#endif
 
         services.AddGrpcHealthChecks();
         services.AddGrpcReflection();

@@ -197,6 +197,9 @@ public sealed partial class McpTaxonomyAlignmentTests
             // so coverage stays honest until the standard defines them.
             "honua_describe_layer",
             "honua_list_jobs",
+            // Job diagnostics are Honua extensions over the admin job projection (#6219).
+            "honua_diagnose_job",
+            "honua_job_evidence",
             // Studio draft lifecycle + composition tools (honua-server#3002) are
             // Honua extensions with vendored index.json entries (family "Studio
             // composition and lifecycle (Honua extension)") but no published

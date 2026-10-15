@@ -26,6 +26,23 @@
 
   <!-- Build-profile defaults and compile constants for custom Docker images. -->
   <Import Project="..\..\eng\Honua.BuildProfiles.props" />
+  <!-- Protocol profiles are a separate axis from provider/cloud presets. -->
+  <Import Project="..\..\eng\Honua.ProtocolProfiles.props" />
+  <PropertyGroup Condition="'$(HonuaIncludeGeoServices)' != 'true'">
+    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Geocoding/GeocodingHandler.cs;Features/Geocoding/GeocodingEndpoints.cs;Features/PrintingTools/**/*.cs;Features/Protocols/SpatialAnalytics/SpatialAnalyticsRequestHandlers*.cs;Features/Protocols/SpatialAnalytics/SpatialAnalyticsEndpoints.cs;Features/Infrastructure/Analytics/AnalyticsFeatureQueryFactory.cs;Features/Infrastructure/Analytics/AnalyticsLayerSelectionFilterTranslator.cs;Features/Infrastructure/Hosting/Modules/GeoServicesProtocolModule.cs;Features/Protocols/Grpc/HonuaFeatureService.cs</DefaultItemExcludes>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(HonuaIncludeOgcApi)' != 'true'">
+    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/OgcApiProtocolModule.cs</DefaultItemExcludes>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(HonuaIncludeOgcClassic)' != 'true'">
+    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/OgcClassicProtocolModule.cs</DefaultItemExcludes>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(HonuaIncludeOData)' != 'true'">
+    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/ODataProtocolModule.cs</DefaultItemExcludes>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(HonuaIncludeScene)' != 'true'">
+    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Admin/SceneDatasetEndpoints.cs;Features/Admin/SceneGenerationEndpoints.cs;Features/Admin/SceneBimIngestEndpoints.cs;Features/Admin/ScenePointCloudIngestEndpoints.cs;Features/Admin/Scene/GeoprocessingPointCloudDecompressor.cs;Features/Infrastructure/Scene/SceneGenerationServiceCollectionExtensions.cs</DefaultItemExcludes>
+  </PropertyGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server.Tests" />
@@ -70,7 +87,7 @@
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
     <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />
-    <ProjectReference Include="..\Honua.Protocols.OData\Honua.Protocols.OData.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.OData\Honua.Protocols.OData.csproj" Condition="'$(HonuaIncludeOData)' == 'true'" />
     <ProjectReference Include="..\Honua.Geocoding\Honua.Geocoding.csproj" />
 
     <ProjectReference Include="..\Honua.Cloud\Aws\Honua.Aws.csproj" Condition="'$(HonuaIncludeAws)' == 'true'" />
@@ -83,27 +100,56 @@
     <ProjectReference Include="..\Honua.Io\Honua.Io.csproj" />
     <ProjectReference Include="..\Honua.Import\Honua.Import.csproj" />
 
-    <ProjectReference Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj" Condition="'$(HonuaIncludeStacOpsDemo)' != 'false' and ('$(PublishAot)' != 'true' or '$(RuntimeIdentifier)' == '')" GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
+    <ProjectReference Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj" Condition="'$(HonuaIncludeStacOpsDemo)' != 'false' and '$(HonuaIncludeStac)' == 'true' and ('$(PublishAot)' != 'true' or '$(RuntimeIdentifier)' == '')" GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
 
-    <ProjectReference Include="..\Honua.Protocols.Scene\Honua.Protocols.Scene.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.Scene\Honua.Protocols.Scene.csproj" Condition="'$(HonuaIncludeScene)' == 'true'" />
 
     <ProjectReference Include="..\Honua.Protocols.Ogc.Shared\Honua.Protocols.Ogc.Shared.csproj" />
 
-    <ProjectReference Include="..\Honua.Protocols.OgcApi\Honua.Protocols.OgcApi.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.OgcApi\Honua.Protocols.OgcApi.csproj" Condition="'$(HonuaIncludeOgcApi)' == 'true'" />
 
-    <ProjectReference Include="..\Honua.Protocols.OgcClassic\Honua.Protocols.OgcClassic.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.OgcClassic\Honua.Protocols.OgcClassic.csproj" Condition="'$(HonuaIncludeOgcClassic)' == 'true'" />
 
-    <ProjectReference Include="..\Honua.Protocols.Stac\Honua.Protocols.Stac.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.Stac\Honua.Protocols.Stac.csproj" Condition="'$(HonuaIncludeStac)' == 'true'" />
 
-    <ProjectReference Include="..\Honua.Protocols.SensorThings\Honua.Protocols.SensorThings.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.SensorThings\Honua.Protocols.SensorThings.csproj" Condition="'$(HonuaIncludeSensorThings)' == 'true'" />
 
-    <ProjectReference Include="..\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" Condition="'$(HonuaIncludeGeoServices)' == 'true'" />
 
     <ProjectReference Include="..\Honua.Plugins\Honua.Plugins.csproj" />
 
     <ProjectReference Include="..\Honua.Routing\Honua.Routing.csproj" />
 
-    <ProjectReference Include="..\Honua.Scene\Honua.Scene.csproj" />
+    <ProjectReference Include="..\Honua.Scene\Honua.Scene.csproj" Condition="'$(HonuaIncludeScene)' == 'true'" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HonuaIncludeGeoServices)' != 'true'">
+    <Compile Remove="Features\Geocoding\GeocodingHandler.cs" />
+    <Compile Remove="Features\Geocoding\GeocodingEndpoints.cs" />
+    <Compile Remove="Features\PrintingTools\**\*.cs" />
+    <Compile Remove="Features\Protocols\SpatialAnalytics\SpatialAnalyticsRequestHandlers*.cs" />
+    <Compile Remove="Features\Protocols\SpatialAnalytics\SpatialAnalyticsEndpoints.cs" />
+    <Compile Remove="Features\Infrastructure\Analytics\AnalyticsFeatureQueryFactory.cs" />
+    <Compile Remove="Features\Infrastructure\Analytics\AnalyticsLayerSelectionFilterTranslator.cs" />
+    <Compile Remove="Features\Infrastructure\Hosting\Modules\GeoServicesProtocolModule.cs" />
+    <Compile Remove="Features\Protocols\Grpc\HonuaFeatureService.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(HonuaIncludeOgcApi)' != 'true'">
+    <Compile Remove="Features\Infrastructure\Hosting\Modules\OgcApiProtocolModule.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(HonuaIncludeOgcClassic)' != 'true'">
+    <Compile Remove="Features\Infrastructure\Hosting\Modules\OgcClassicProtocolModule.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(HonuaIncludeOData)' != 'true'">
+    <Compile Remove="Features\Infrastructure\Hosting\Modules\ODataProtocolModule.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(HonuaIncludeScene)' != 'true'">
+    <Compile Remove="Features\Admin\SceneDatasetEndpoints.cs" />
+    <Compile Remove="Features\Admin\SceneGenerationEndpoints.cs" />
+    <Compile Remove="Features\Admin\SceneBimIngestEndpoints.cs" />
+    <Compile Remove="Features\Admin\ScenePointCloudIngestEndpoints.cs" />
+    <Compile Remove="Features\Admin\Scene\GeoprocessingPointCloudDecompressor.cs" />
+    <Compile Remove="Features\Infrastructure\Scene\SceneGenerationServiceCollectionExtensions.cs" />
   </ItemGroup>
 
 
@@ -204,6 +250,18 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HonuaIncludeOgcApi)' != 'true'">
+    <Content Remove="ogc-tiles-openapi.json" />
+    <Content Remove="ogc-maps-openapi.json" />
+    <Content Remove="ogc-coverages-openapi.json" />
+    <Content Remove="ogc-processes-openapi.json" />
+    <Content Remove="ogc-styles-openapi.json" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(HonuaIncludeScene)' != 'true'">
+    <Content Remove="fixtures\scenes\**\*" />
+    <None Remove="fixtures\scenes\**\*" />
   </ItemGroup>
 
 </Project>

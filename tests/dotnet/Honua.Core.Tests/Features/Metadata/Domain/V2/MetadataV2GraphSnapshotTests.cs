@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -337,6 +338,142 @@ public sealed class MetadataV2GraphSnapshotTests
         binding.IsRoutable(resource with { Status = archived }).Should().BeFalse();
         binding.IsRoutable(resource: null).Should().BeFalse();
     }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void OmittedStatus_StaysRoutable_ExplicitDraftStaysHidden()
+    {
+        new MetadataV2Status().Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+
+        var omitted = StatuslessServingGraph();
+        var omittedSnapshot = new MetadataV2GraphSnapshot(omitted, "\"omitted\"", DateTimeOffset.UtcNow);
+        var publication = omitted.Publications.Single();
+        omitted.Services.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        omitted.Resources.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        omitted.StorageBindings.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        publication.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        omitted.Services.Single().IsRoutable().Should().BeTrue();
+        omittedSnapshot.IsRoutable(publication).Should().BeTrue(
+            "a caller that omits status must not silently become draft and disappear");
+
+        var draftService = omitted.Services.Single() with
+        {
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft }
+        };
+        new MetadataV2GraphSnapshot(
+                omitted with { Services = [draftService] },
+                "\"draft-service\"",
+                DateTimeOffset.UtcNow)
+            .IsRoutable(publication).Should().BeFalse();
+
+        var fromJson = JsonSerializer.Deserialize(StatuslessGraphJson, MetadataV2JsonContext.Default.MetadataV2Graph);
+        fromJson.Should().NotBeNull();
+        AssertServingOmission(fromJson!);
+
+        const string statusWithoutLifecycle =
+            """
+            {"catalogs":[],"connections":[],"policies":[],"projectionProfiles":[],"roles":[],"services":[{"metadata":{"id":"svc","name":"parcels"},"status":{"state":"ready"}}],"resources":[{"metadata":{"id":"res","name":"parcels"},"status":{}}],"storageBindings":[{"metadata":{"id":"binding","name":"binding"},"resourceId":"res","status":{"lifecycle":null}}],"publications":[{"metadata":{"id":"pub","name":"parcels"},"serviceId":"svc","resourceId":"res","storageBindingId":"binding"}]}
+            """;
+        var lifecycleOmitted = JsonSerializer.Deserialize(
+            statusWithoutLifecycle,
+            MetadataV2JsonContext.Default.MetadataV2Graph);
+        lifecycleOmitted.Should().NotBeNull();
+        lifecycleOmitted!.Services.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        lifecycleOmitted.Services.Single().Status.State.Should().Be(MetadataV2OperationalState.Ready);
+        lifecycleOmitted.Resources.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        lifecycleOmitted.StorageBindings.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        new MetadataV2GraphSnapshot(lifecycleOmitted, "\"lifecycle-omitted\"", DateTimeOffset.UtcNow)
+            .IsRoutable(lifecycleOmitted.Publications.Single()).Should().BeTrue();
+
+        var explicitDraft = JsonSerializer.Deserialize(
+            StatuslessGraphJson.Replace(
+                """{"metadata":{"id":"svc","name":"parcels"}""",
+                """{"metadata":{"id":"svc","name":"parcels"},"status":{"lifecycle":"draft","state":"ready"}""",
+                StringComparison.Ordinal),
+            MetadataV2JsonContext.Default.MetadataV2Graph);
+        explicitDraft.Should().NotBeNull();
+        explicitDraft!.Services.Single().Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Draft);
+        explicitDraft.Services.Single().Status.State.Should().Be(MetadataV2OperationalState.Ready);
+        explicitDraft.Services.Single().IsRoutable().Should().BeFalse();
+        new MetadataV2GraphSnapshot(explicitDraft, "\"json-draft\"", DateTimeOffset.UtcNow)
+            .IsRoutable(explicitDraft.Publications.Single()).Should().BeFalse();
+
+        var drafted = explicitDraft.Services.Single().Status with
+        {
+            Conditions =
+            [
+                new MetadataV2Condition
+                {
+                    Type = "Ready",
+                    Status = "False",
+                    Reason = "held",
+                    Message = "explicit draft"
+                }
+            ]
+        };
+        var roundTripped = JsonSerializer.Deserialize(
+            JsonSerializer.Serialize(drafted, MetadataV2JsonContext.Default.MetadataV2Status),
+            MetadataV2JsonContext.Default.MetadataV2Status);
+        roundTripped.Should().NotBeNull();
+        roundTripped!.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Draft);
+        roundTripped.State.Should().Be(MetadataV2OperationalState.Ready);
+        roundTripped.Conditions.Should().ContainSingle();
+        roundTripped.Conditions[0].Reason.Should().Be("held");
+        roundTripped.Conditions[0].Message.Should().Be("explicit draft");
+    }
+
+    private static void AssertServingOmission(MetadataV2Graph graph)
+    {
+        // An omitted status member deserializes as null. That is still serving:
+        // it must not materialize as draft and disappear from the catalog gate.
+        graph.Services.Single().IsRoutable().Should().BeTrue();
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"json-omitted\"", DateTimeOffset.UtcNow);
+        snapshot.IsRoutable(graph.Publications.Single()).Should().BeTrue();
+    }
+
+    private static MetadataV2Graph StatuslessServingGraph()
+        => new()
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "svc", Name = "parcels" }
+                }
+            ],
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "res", Name = "parcels" },
+                    StorageBindingIds = ["binding"],
+                    PrimaryStorageBindingId = "binding"
+                }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding", Name = "binding" },
+                    ResourceId = "res"
+                }
+            ],
+            Publications =
+            [
+                new MetadataV2Publication
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "pub", Name = "parcels" },
+                    ServiceId = "svc",
+                    ResourceId = "res",
+                    StorageBindingId = "binding"
+                }
+            ]
+        };
+
+    private const string StatuslessGraphJson =
+        """
+        {"catalogs":[],"connections":[],"policies":[],"projectionProfiles":[],"roles":[],"services":[{"metadata":{"id":"svc","name":"parcels"}}],"resources":[{"metadata":{"id":"res","name":"parcels"},"storageBindingIds":["binding"],"primaryStorageBindingId":"binding"}],"storageBindings":[{"metadata":{"id":"binding","name":"binding"},"resourceId":"res"}],"publications":[{"metadata":{"id":"pub","name":"parcels"},"serviceId":"svc","resourceId":"res","storageBindingId":"binding"}]}
+        """;
 
     private static MetadataV2Graph SampleGraph()
     {

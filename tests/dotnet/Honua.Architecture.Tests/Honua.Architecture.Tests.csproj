@@ -10,6 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Runtime profile checks construct IConfiguration. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Db\Postgres\Honua.Postgres.csproj" />

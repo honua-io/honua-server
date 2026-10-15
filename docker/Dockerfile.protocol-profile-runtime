@@ -1,0 +1,13 @@
+# Packaging shim for an already published protocol profile. The context is the
+# publish directory. This image does not restore, build, or publish. It is not
+# the production read-only image: do not add security.read-only-root here.
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac
+FROM ${DOTNET_ASPNET_IMAGE}
+ARG HONUA_PROTOCOL_PROFILE=all
+WORKDIR /app
+COPY . /app
+RUN test -s /app/honua-protocol-profile.json \
+    && grep -F "\"profile\":\"${HONUA_PROTOCOL_PROFILE}\"" /app/honua-protocol-profile.json
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "Honua.Server.dll"]

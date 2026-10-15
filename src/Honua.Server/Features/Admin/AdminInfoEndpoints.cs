@@ -26,7 +26,8 @@ internal static class AdminInfoEndpoints
         // the contract versions this server actually serves.
         ContractVersionsStartupCheck.Validate(
             ComponentVersionsDeclaration.Embedded.ContractVersions,
-            ServedContractVersions.Current);
+            ServedContractVersions.Current,
+            ProtocolProfile.ExcludedContractNames);
 
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin")
             .WithApiVersionSet()
