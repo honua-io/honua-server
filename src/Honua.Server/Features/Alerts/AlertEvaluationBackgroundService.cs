@@ -67,10 +67,11 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         }
 
         var workerName = _options.Evaluation.WorkerName;
-        var checkpoint = await GetCheckpointAsync(workerName, stoppingToken).ConfigureAwait(false);
+        AlertWorkerCheckpoint? checkpoint = null;
+        var leading = false;
 
-        LogStarting(_logger, workerName, checkpoint.LastGeneration);
-
+        // The checkpoint read stays inside the loop. A database blip at startup must
+        // retry here instead of escaping ExecuteAsync and stopping the host (#6190).
         _isRunning = true;
         try
         {
@@ -86,22 +87,35 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                     UpdateLeaderAcquisitionState();
                     if (!isLeader)
                     {
+                        leading = false;
                         await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
                         continue;
+                    }
+
+                    AlertWorkerCheckpoint activeCheckpoint;
+                    if (leading && checkpoint is not null)
+                    {
+                        activeCheckpoint = checkpoint;
+                    }
+                    else
+                    {
+                        activeCheckpoint = await GetCheckpointAsync(workerName, stoppingToken).ConfigureAwait(false);
+                        leading = true;
+                        LogStarting(_logger, workerName, activeCheckpoint.LastGeneration);
                     }
 
                     await using var scope = _scopeFactory.CreateAsyncScope();
                     var pipeline = scope.ServiceProvider.GetRequiredService<IAlertPipeline>();
                     var checkpointStore = scope.ServiceProvider.GetRequiredService<IAlertCheckpointStore>();
 
-                    var previousGeneration = checkpoint.LastGeneration;
+                    var previousGeneration = activeCheckpoint.LastGeneration;
                     var nextGeneration = await pipeline
                         .ProcessChangesAsync(previousGeneration, _options.Evaluation.ChangeBatchSize, stoppingToken)
                         .ConfigureAwait(false);
 
                     var now = DateTimeOffset.UtcNow;
-                    var shouldSweep = !checkpoint.LastDwellSweepAt.HasValue ||
-                        now - checkpoint.LastDwellSweepAt.Value >= _options.Evaluation.DwellSweepInterval;
+                    var shouldSweep = !activeCheckpoint.LastDwellSweepAt.HasValue ||
+                        now - activeCheckpoint.LastDwellSweepAt.Value >= _options.Evaluation.DwellSweepInterval;
 
                     if (shouldSweep)
                     {
@@ -109,14 +123,16 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                             .SweepDwellAsync(now, _options.Evaluation.ChangeBatchSize, stoppingToken)
                             .ConfigureAwait(false);
                         LogDwellSweep(_logger, evaluated);
-                        checkpoint = checkpoint with { LastDwellSweepAt = now };
+                        activeCheckpoint = activeCheckpoint with { LastDwellSweepAt = now };
                     }
 
                     if (nextGeneration != previousGeneration || shouldSweep)
                     {
-                        checkpoint = checkpoint with { LastGeneration = nextGeneration };
-                        await checkpointStore.SetAsync(checkpoint, stoppingToken).ConfigureAwait(false);
+                        activeCheckpoint = activeCheckpoint with { LastGeneration = nextGeneration };
+                        await checkpointStore.SetAsync(activeCheckpoint, stoppingToken).ConfigureAwait(false);
                     }
+
+                    checkpoint = activeCheckpoint;
 
                     // Record a productive leader-pass heartbeat: this node holds leadership and
                     // completed a pass, so a stale value here means the leader is wedged.

@@ -27,6 +27,13 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Strictly older than the stored generation is a replay. Equal generation is
+        // how dwell sweeps re-evaluate the same state, so it must still run (#6190).
+        if (currentState is not null && change.Generation < currentState.LastGeneration)
+        {
+            return Task.FromResult(new AlertEvaluationResult());
+        }
+
         var previousInside = currentState?.Inside ?? false;
         var insideNow = DetermineInside(change, feature, zone, previousInside);
         var enteredAt = ResolveEnteredAt(previousInside, insideNow, currentState?.EnteredAt, evaluatedAt);
