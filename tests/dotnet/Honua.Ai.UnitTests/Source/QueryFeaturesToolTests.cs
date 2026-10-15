@@ -200,6 +200,7 @@ public sealed class QueryFeaturesToolTests
                 new Feature
                 {
                     Id = 7,
+                    Geometry = null,
                     Attributes = ImmutableDictionary<string, object?>.Empty
                         .Add("name", "Lot 7")
                         .Add(HiddenField, HiddenValue)
