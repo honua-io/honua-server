@@ -20,7 +20,10 @@ internal sealed record SavedMapOperationAppendApiRequest
     [StringLength(200, MinimumLength = 1)]
     public string? OperationId { get; init; }
 
-    /// <summary>Actor submitting the operation. When omitted, the authenticated principal is used.</summary>
+    /// <summary>
+    /// Ignored. The server attributes the operation to <c>ConsolePrincipal.ResolveActorId</c>.
+    /// Retained so existing clients that still send it are not rejected as unknown JSON.
+    /// </summary>
     public string? ActorId { get; init; }
 
     /// <summary>Client base cursor/revision the edit was authored against. Defaults to the empty-log base.</summary>
