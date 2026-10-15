@@ -9,6 +9,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Cli.Publish;
+using Honua.Geoprocessing.Cli.Release;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.LocalRunner;
 using Honua.Geoprocessing.Testing;
@@ -61,6 +62,7 @@ public static class GpCli
                 "new" => await RunNew(rest).ConfigureAwait(false),
                 "init" => RunInit(rest),
                 "publish" => await RunPublish(rest).ConfigureAwait(false),
+                "release" => GpReleaseCommand.Run(rest, Console.Out, Console.Error),
                 "-h" or "--help" or "help" => PrintUsageAndOk(),
                 _ => Fail($"Unknown command '{verb}'."),
             };
@@ -1453,6 +1455,8 @@ public static class GpCli
         Console.WriteLine("  honua gp init --language python|dotnet --name <process> [--output <dir>] [--harness-root <checkout>]");
         Console.WriteLine("  honua gp new <id> [--kind geometry|gdal] [--output <dir>]");
         Console.WriteLine("  honua gp publish <id> [--server <url>] [--api-key <key>] [--message <m>] [--dry-run] [--publish]");
+        Console.WriteLine("  honua gp release [--descriptor honua-gp.yaml] --output <dir> [--source-repository o/n] [--source-sha <sha>] [--runtime-image <ref@sha256:..>] [--json]");
+        Console.WriteLine("  honua gp release verify <lock.json> [--artifacts <dir>] [--json]");
         Console.WriteLine();
         Console.WriteLine("Run options:");
         Console.WriteLine("  --input, -i <file>  Read a file and bind it (base64) to the process's primary input.");

@@ -536,7 +536,7 @@
       "shardRouted": false
     },
     "tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj": {
-      "role": "mixed",
+      "role": "component",
       "runtimeOwners": [
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
@@ -556,7 +556,7 @@
         "redis"
       ],
       "isolated": false,
-      "coverageRequired": false,
+      "coverageRequired": true,
       "shardRouted": true
     },
     "tests/dotnet/Honua.Geoprocessing.Testing.Tests/Honua.Geoprocessing.Testing.Tests.csproj": {

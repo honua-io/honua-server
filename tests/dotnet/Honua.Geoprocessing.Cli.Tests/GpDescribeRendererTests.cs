@@ -16,6 +16,7 @@ namespace Honua.Geoprocessing.Cli.Tests;
 /// Pure string/JSON transforms over a hand-built <see cref="ProcessDefinition"/>; no Redis,
 /// catalog, or control plane.
 /// </summary>
+[global::Xunit.Trait("Tier", "Fast")]
 public sealed class GpDescribeRendererTests
 {
     private static ProcessDefinition SampleDefinition() => new()
