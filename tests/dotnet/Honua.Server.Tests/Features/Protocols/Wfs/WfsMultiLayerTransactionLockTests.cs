@@ -225,7 +225,8 @@ public sealed class WfsMultiLayerTransactionLockTests
                 {
                     var feature = Features[call.Arg<int>()];
                     var query = call.Arg<FeatureQuery>();
-                    query.ObjectIds.Should().Equal(feature.Id);
+                    query.ObjectIds.Should().NotBeNull();
+                    query.ObjectIds!.Value.Should().Equal(feature.Id);
                     query.Limit.Should().Be(1);
                     return Task.FromResult(QueryResult<Feature>.Create(1, [feature]));
                 });
