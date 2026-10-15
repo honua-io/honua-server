@@ -315,7 +315,7 @@ internal sealed class StaQueryPlan
                         return null;
                     }
 
-                    top = Math.Min(top, StaQueryOptions.MaxTop);
+                    top = Math.Min(top, StaQueryOptions.NestedMaxTop);
                     break;
                 case "$skip":
                     if (!int.TryParse(value, out skip) || skip < 0)

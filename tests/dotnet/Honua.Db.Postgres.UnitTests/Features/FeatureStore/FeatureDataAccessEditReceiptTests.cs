@@ -105,6 +105,7 @@ public sealed class FeatureDataAccessEditReceiptTests
             "src", "Honua.Server", "Migrations", "130_CreateGrpcApplyEditsReceipt.sql"));
         var insert = PostgresGrpcApplyEditsReceipt.InsertSql("honua.grpc_apply_edits_receipt");
         var select = PostgresGrpcApplyEditsReceipt.SelectSql("honua.grpc_apply_edits_receipt");
+        var deleteExpired = PostgresGrpcApplyEditsReceipt.DeleteExpiredSql("honua.grpc_apply_edits_receipt");
 
         migration.Should().Contain("grpc_apply_edits_receipt");
         migration.Should().Contain("scope_key");
@@ -115,6 +116,12 @@ public sealed class FeatureDataAccessEditReceiptTests
         insert.Should().Contain("ON CONFLICT (scope_key) DO UPDATE");
         insert.Should().Contain("existing.expires_at <= now()");
         select.Should().Contain("WHERE scope_key = $1 AND expires_at > now()");
+        deleteExpired.Should().Contain("DELETE FROM honua.grpc_apply_edits_receipt");
+        deleteExpired.Should().Contain("WHERE expires_at <= now()");
+        deleteExpired.Should().Contain("ORDER BY expires_at");
+        deleteExpired.Should().Contain("LIMIT 32");
+        migration.Should().Contain("ix_grpc_apply_edits_receipt_expires");
+        PostgresGrpcApplyEditsReceipt.ExpiredDeleteBatchSize.Should().Be(32);
         PostgresGrpcApplyEditsReceipt.MaxReceiptBytes.Should().Be(16 * 1024 * 1024);
         PostgresGrpcApplyEditsReceipt.MaxScopeLength.Should().Be(128);
     }

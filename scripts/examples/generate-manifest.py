@@ -84,6 +84,12 @@ def entry(kind: str, path: str, suffix: str = "", **extra: object) -> dict[str, 
             "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh gp-local-dev",
             "evidence": PRIOR_EVIDENCE,
         }
+    elif path == "samples/gp-local-dev/submit-buffer.py":
+        validation = {
+            "status": "unvalidated",
+            "reason": "Runnable Python GP sample has no matching execution evidence.",
+            "check": "explicit-execution-evidence",
+        }
     elif path == "scripts/demos/run-mobile-offline-demo.sh":
         validation = {
             "status": "passed",
