@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization;
@@ -1882,7 +1883,7 @@ internal sealed partial class JobExecutionContext(
     /// executor stops; a missing record does not, because a transient read miss is not
     /// proof the lease moved.
     /// </summary>
-    private bool TryObserveLease(ExecutionJobRecord? job)
+    private bool TryObserveLease([NotNullWhen(true)] ExecutionJobRecord? job)
     {
         if (job == null)
         {

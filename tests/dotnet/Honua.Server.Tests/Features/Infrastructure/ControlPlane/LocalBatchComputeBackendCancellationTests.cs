@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.ControlPlane;
 using Honua.Server.Features.PrintingTools;
 using Honua.TestKit.Attributes;
@@ -22,7 +23,7 @@ public sealed class LocalBatchComputeBackendCancellationTests
     {
         var progressStore = Substitute.For<IUniversalProgressStore>();
         progressStore.GetProgressAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((IOperationProgress?)null);
+            .Returns(_ => Task.FromResult<IOperationProgress?>(null));
 
         var executionTokens = new ExecutionJobCancellationTokens();
         var printTokens = new PrintJobCancellationTokens();
