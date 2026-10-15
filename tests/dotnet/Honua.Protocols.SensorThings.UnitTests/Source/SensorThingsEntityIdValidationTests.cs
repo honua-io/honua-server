@@ -3,11 +3,12 @@
 
 using System.Text;
 using System.Text.Json;
-using FluentAssertions;
 using Honua.Core.Features.SensorThings.Abstractions;
+using Honua.Infrastructure.Models;
 using Honua.Protocols.SensorThings;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -32,17 +33,14 @@ public sealed class SensorThingsEntityIdValidationTests
         context.Request.Host = new HostString("sensor.example.test");
         context.Request.ContentType = "application/json";
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(json));
-        context.Response.Body = new MemoryStream();
 
         var result = await SensorThingsEndpoints.HandleCoreWrite(
             context, store, NullLogger<SensorThingsEndpoints.SensorThingsEndpointsLog>.Instance);
 
-        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        var problem = Assert.IsType<JsonHttpResult<ProblemDetailsResponse>>(result);
+        Assert.Equal(StatusCodes.Status400BadRequest, problem.StatusCode);
+        Assert.Equal("@iot.id must be a positive integer.", problem.Value?.Detail);
         await store.DidNotReceive().CreateEntityAsync(Arg.Any<string>(), Arg.Any<JsonElement>(), Arg.Any<CancellationToken>());
         await store.DidNotReceive().PatchEntityAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<JsonElement>(), Arg.Any<CancellationToken>());
-        await result.ExecuteAsync(context);
-        context.Response.Body.Position = 0;
-        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
-        body.Should().Contain("@iot.id must be a positive integer.");
     }
 }
