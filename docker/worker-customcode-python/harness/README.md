@@ -14,6 +14,10 @@ honua-gp-python --source ./my-tool --entrypoint main:execute \
 ```
 
 Use `--help` for options. Local evidence is unsanitized and stays on disk.
+The `events.jsonl` journal follows `honua.gp.events/v1`
+(`docs/reference/gp-harness-events.v1.md`); the production harness writes the same
+journal to `CUSTOMCODE_EVENTS_PATH` (default `/work/out/honua-events.v1.jsonl`) and
+uploads it beside the tool's artifacts.
 Tools requiring server access must use the configured integration runtime.
 
 The repository's `samples/gp-custom-local` contains executable Python and .NET

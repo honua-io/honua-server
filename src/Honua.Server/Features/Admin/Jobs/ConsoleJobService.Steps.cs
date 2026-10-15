@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Geoprocessing.CustomCode;
 
 namespace Honua.Server.Features.Admin.Jobs;
 
@@ -68,7 +69,7 @@ internal sealed partial class ConsoleJobService
             // A step's end is bounded by the next entry's timestamp (it ran until the next
             // logged event); the final step's end is the job's terminal time when known.
             var nextTimestamp = isLast ? job.CompletedAt : entries[i + 1].Timestamp;
-            steps[i] = MapStep(job, entries[i], i, workspace, artifactSummary, isLast, nextTimestamp);
+            steps[i] = MapStep(job, entries[i], isLast ? null : entries[i + 1], i, workspace, artifactSummary, isLast, nextTimestamp);
         }
 
         return new ConsoleJobStepsResponse
@@ -83,15 +84,20 @@ internal sealed partial class ConsoleJobService
     private static ConsoleJobStep MapStep(
         ExecutionJobRecord job,
         ExecutionLogEntry entry,
+        ExecutionLogEntry? next,
         int ordinal,
         string? workspace,
         ConsoleJobStepArtifact[]? artifactSummary,
         bool isLast,
         DateTimeOffset? completedAt)
     {
-        var duration = completedAt.HasValue && completedAt.Value >= entry.Timestamp
+        // A harness-forwarded event (honua.gp.events/v1) carries the producer's monotonic
+        // clock, so the gap to the next event is a measured duration. Everything else is
+        // inferred from log timestamps and labelled as such.
+        var measured = HarnessEvents.MeasuredDurationMs(entry, next);
+        var duration = measured ?? (completedAt.HasValue && completedAt.Value >= entry.Timestamp
             ? (long?)(completedAt.Value - entry.Timestamp).TotalMilliseconds
-            : null;
+            : null);
 
         return new ConsoleJobStep
         {
@@ -106,7 +112,7 @@ internal sealed partial class ConsoleJobService
             StartedAt = entry.Timestamp,
             CompletedAt = completedAt,
             DurationMs = duration,
-            TimingSource = "inferred",
+            TimingSource = measured is null ? "inferred" : "measured",
             Message = WorkspacePathSanitizer.SanitizeForClient(entry.Message, workspace),
             Command = ExtractSanitizedCommand(entry, workspace),
             Artifacts = isLast ? artifactSummary : null,

@@ -53,7 +53,9 @@ The .NET launch task builds both the harness and sample with debug symbols.
 
 Each run creates a fresh directory containing `work/`, published `artifacts/`,
 `events.jsonl`, and `receipt.json`. The receipt records the outcome, failed phase,
-artifact hashes, and whether the bounded event log was truncated. These are
+artifact hashes, and whether the bounded event log was truncated. The event log is
+the [`honua.gp.events/v1`](../../docs/reference/gp-harness-events.v1.md) journal, the
+same shape a remote job uploads. These are
 **unsanitized local development files**, not shareable support bundles.
 
 Try a missing input, a property name absent from the fixture, and an output cap

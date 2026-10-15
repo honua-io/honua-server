@@ -40,7 +40,13 @@ public sealed class Harness
         _options = options ?? new HarnessOptions();
     }
 
-    /// <summary>Run one custom-code job end-to-end.</summary>
+    /// <summary>
+    /// Run one custom-code job end-to-end. Every run also writes the
+    /// <c>honua.gp.events/v1</c> journal (<c>CUSTOMCODE_EVENTS_PATH</c>, default
+    /// <c>&lt;WorkDir&gt;/honua-events.v1.jsonl</c>): the stderr text is unchanged and the
+    /// journal is the structured channel beside it, uploaded to <c>output_prefix</c> after
+    /// the tool's own artifacts so the server can forward it as bounded job events.
+    /// </summary>
     /// <param name="env">The job environment (defaults to the process environment).</param>
     /// <param name="cancellationToken">Cooperative cancellation for the whole run.</param>
     /// <returns>The terminal process exit code.</returns>
@@ -48,9 +54,72 @@ public sealed class Harness
         IReadOnlyDictionary<string, string?>? env = null,
         CancellationToken cancellationToken = default)
     {
-        var log = _options.Logger ?? new HarnessLogger();
+        using var journal = new EventJournal(
+            EventJournal.PathFromEnvironment(env, Path.Join(_options.WorkDir, EventJournal.FileName)),
+            EventJournal.AttemptFromEnvironment(env),
+            mirror: _options.Logger ?? new HarnessLogger());
+        var state = new RunState();
+        var exit = ExitHarnessError;
+        try
+        {
+            exit = await RunCoreAsync(journal, state, env, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            exit = ExitCancelled;
+        }
+        finally
+        {
+            journal.Terminal(StatusFor(exit), exit, exit == ExitOk ? null : state.Phase);
+            UploadEvents(journal, state.Uploader);
+        }
+
+        return exit;
+    }
+
+    private static string StatusFor(int exit) => exit switch
+    {
+        ExitOk => "succeeded",
+        ExitToolFailed => "failed",
+        ExitCancelled => "cancelled",
+        _ => "setupFailed",
+    };
+
+    /// <summary>Best effort: the journal rides along as a reserved artifact after the tool's own.</summary>
+    private static void UploadEvents(EventJournal journal, ArtifactUploader? uploader)
+    {
+        if (uploader is null)
+        {
+            return;
+        }
+
+        try
+        {
+            uploader.Upload([new Artifact(EventJournal.FileName, journal.Path, new FileInfo(journal.Path).Length)]);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Evidence upload must not change the job outcome; the stderr line is the only trace.
+            Console.Error.WriteLine($"[tool] WARN  event journal upload failed: {ex.Message}");
+        }
+    }
+
+    private sealed class RunState
+    {
+        public string Phase { get; set; } = "inputs";
+        public ArtifactUploader? Uploader { get; set; }
+    }
+
+    private async Task<int> RunCoreAsync(
+        EventJournal journal,
+        RunState state,
+        IReadOnlyDictionary<string, string?>? env,
+        CancellationToken cancellationToken)
+    {
+        IGpLogger log = journal;
 
         // --- 1. Inputs ------------------------------------------------------
+        journal.Phase("inputs");
         JobSpec spec;
         try
         {
@@ -63,6 +132,8 @@ public sealed class Harness
         }
 
         // --- 2. Pinned source ----------------------------------------------
+        state.Phase = "source";
+        journal.Phase("source");
         try
         {
             log.Info($"cloning {spec.RepoUrl} @ {spec.GitRef}");
@@ -75,6 +146,8 @@ public sealed class Harness
         }
 
         // --- 3. Build the user project (NTS + SDK already warm-cached) ------
+        state.Phase = "build";
+        journal.Phase("build");
         UserBuildResult build;
         try
         {
@@ -88,6 +161,8 @@ public sealed class Harness
         }
 
         // --- 4. Scoped client, THEN scrub credentials ----------------------
+        state.Phase = "client";
+        journal.Phase("client");
         object? client;
         try
         {
@@ -111,6 +186,8 @@ public sealed class Harness
         }
 
         // --- 5. Load + activate the entrypoint, then run -------------------
+        state.Phase = "execute";
+        journal.Phase("execute");
         Directory.CreateDirectory(_options.WorkDir);
         var output = new OutputSink(spec.OutputMaxBytes);
         var context = new GpContext(
@@ -118,7 +195,7 @@ public sealed class Harness
             new Dictionary<string, string>(),
             client,
             output,
-            new LoggingProgressReporter(log),
+            journal,
             log,
             _options.WorkDir);
 
@@ -159,6 +236,7 @@ public sealed class Harness
                 // "tool failed" exit code rather than crash the harness process.
                 log.Warn("tool raised an unhandled exception:");
                 log.Warn(ex.ToString());
+                journal.Failure(ex.GetType().Name, ex.Message, "execute");
                 return ExitToolFailed;
             }
         }
@@ -166,18 +244,23 @@ public sealed class Harness
         if (!result.Ok)
         {
             log.Warn($"tool reported failure: {result.Message}");
+            journal.Failure("GpResult", result.Message ?? "Tool reported failure.", "execute");
             return ExitToolFailed;
         }
 
         // --- 6. Upload artifacts -------------------------------------------
+        state.Phase = "upload";
+        journal.Phase("upload");
         try
         {
             var uploader = _options.UploaderFactory is { } factory
                 ? factory(spec.OutputPrefix)
                 : new ArtifactUploader(spec.OutputPrefix);
+            state.Uploader = uploader;
             foreach (var uploaded in uploader.Upload(output.Artifacts))
             {
                 log.Info($"uploaded {uploaded.Name} -> {uploaded.Uri} ({uploaded.SizeBytes} bytes)");
+                journal.Artifact(uploaded.Name, uploaded.SizeBytes, uri: uploaded.Uri);
             }
         }
         catch (OutputSizeExceededException ex)
