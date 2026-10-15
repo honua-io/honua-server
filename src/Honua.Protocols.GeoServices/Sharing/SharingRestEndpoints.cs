@@ -272,7 +272,7 @@ public static class SharingRestEndpoints
         return Results.Content(document.ToString(SaveOptions.DisableFormatting), "application/xml", Encoding.UTF8);
     }
 
-    private static async Task<IResult> HandleGenerateTokenAsync(
+    internal static async Task<IResult> HandleGenerateTokenAsync(
         HttpContext context,
         [FromServices] IPortalTokenIssuer tokenIssuer,
         [FromServices] IPortalCredentialVerifier credentialVerifier,
@@ -362,9 +362,13 @@ public static class SharingRestEndpoints
                 "Username and password are required.");
         }
 
-        // A federated exchange without client/referer inherits the validated portal
-        // token's stored binding. Credential issuance still requires its own binding.
-        var inheritBinding = exchangeRequested && requestedClientType is null;
+        // A federated exchange inherits the validated portal token's stored binding
+        // only when both client and referer are absent. A supplied referer with no
+        // client is the referer binding (the default client type), not a request to
+        // keep the old referer or to pass a binding value without a binding type.
+        var inheritBinding = exchangeRequested
+            && requestedClientType is null
+            && string.IsNullOrWhiteSpace(refererInput);
         var binding = inheritBinding ? null : ResolveBinding(context, clientType, refererInput);
         if (!inheritBinding && binding is null)
         {
