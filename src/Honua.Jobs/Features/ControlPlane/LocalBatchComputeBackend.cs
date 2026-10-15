@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Infrastructure;
 
 namespace Honua.ControlPlane;
 
@@ -16,7 +17,7 @@ namespace Honua.ControlPlane;
 /// </summary>
 internal sealed class LocalBatchComputeBackend(
     IUniversalProgressStore progressStore,
-    IJobCancellationNotifier cancellationNotifier) : IBatchComputeBackend
+    IEnumerable<IJobCancellationNotifier> cancellationNotifiers) : IBatchComputeBackend
 {
     internal const string BackendId = "local";
 
@@ -56,7 +57,9 @@ internal sealed class LocalBatchComputeBackend(
         ExecutionJobRecord job,
         CancellationToken cancellationToken = default)
     {
-        cancellationNotifier.Cancel(job.OperationId);
+        // A single IJobCancellationNotifier parameter binds the last DI registration
+        // (export) and never signals the execution-job token (#6156).
+        cancellationNotifiers.CancelAny(job.OperationId);
 
         if (job.Status == ExecutionJobStatus.Queued)
         {

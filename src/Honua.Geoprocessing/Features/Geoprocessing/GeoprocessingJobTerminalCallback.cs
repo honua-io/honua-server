@@ -31,11 +31,30 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
     ILogger<GeoprocessingJobTerminalCallback> logger,
     IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
     GeoprocessingRasterOutputRegistrar? outputRegistrar = null,
-    IExecutionJobStore? executionJobStore = null) : IJobTerminalCallback
+    IExecutionJobStore? executionJobStore = null) : IReplayableJobTerminalCallback
 {
     private TimeSpan ProgressRetention => executorOptions.CurrentValue.ResultRetention;
 
-    public async ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    /// <summary>
+    /// First terminal transition: a persistence failure fails the Succeeded job closed
+    /// (durable status, admin progress, and the other terminal callbacks).
+    /// </summary>
+    public ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+        => OnTerminalCoreAsync(job, isReplay: false, cancellationToken);
+
+    /// <summary>
+    /// Read-side replay (#6107): the same idempotent result-package healing, but
+    /// non-destructive. A persistence failure never rewrites the durable record or fires
+    /// the Failed callbacks; it surfaces as a retryable
+    /// <see cref="GeoprocessingStoreUnavailableException"/> so the reader retries.
+    /// </summary>
+    public ValueTask ReplayAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+        => OnTerminalCoreAsync(job, isReplay: true, cancellationToken);
+
+    private async ValueTask OnTerminalCoreAsync(
+        ExecutionJobRecord job,
+        bool isReplay,
+        CancellationToken cancellationToken)
     {
         if (job.Spec.Kind != ExecutionJobKind.Geoprocessing)
         {
@@ -139,6 +158,17 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
             // whose result package was never written does not report Completed to callers.
             artifactPersistenceError = "Failed to persist the result package; results may be unavailable.";
             Log.ResultPackageSyncFailed(logger, job.OperationId, ex);
+        }
+
+        if (isReplay && artifactPersistenceError is not null && job.Status == ExecutionJobStatus.Succeeded)
+        {
+            // A read must never change a job that already reached a terminal state: the
+            // replay is a repair attempt, so a (possibly transient) store error is the
+            // reader's retryable failure, not the job's. Nothing below runs, so neither the
+            // durable record nor the admin progress is flipped to Failed.
+            Log.ReplayPersistenceDeferred(logger, job.OperationId);
+            throw new GeoprocessingStoreUnavailableException(
+                $"Results for job '{job.OperationId}' are temporarily unavailable; retry the request.");
         }
 
         await TryFailDurableJobAfterArtifactPersistenceAsync(job, artifactPersistenceError).ConfigureAwait(false);
@@ -427,5 +457,8 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
 
         [LoggerMessage(8034, LogLevel.Warning, "Failed to re-notify terminal callbacks after job {OperationId} was marked Failed")]
         public static partial void StatusCorrectionNotifyFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(8045, LogLevel.Warning, "Result persistence failed while replaying terminal callbacks for job {OperationId}; the job status is unchanged and the read is reported as retryable")]
+        public static partial void ReplayPersistenceDeferred(ILogger logger, string operationId);
     }
 }

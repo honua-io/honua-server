@@ -7,6 +7,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -71,6 +72,79 @@ public sealed partial class GeoprocessingJobServiceTests
 
         await act.Should().ThrowAsync<GeoprocessingValidationException>().WithMessage("*native*");
     }
+
+    [UnitTest]
+    public async Task ResolveWorkload_ConfirmedKeyedReplay_SkipsIncompatibleImageRejection()
+    {
+        var registry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        registry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            RuntimeWorkload("managed", "managed", "honua-aws-batch"),
+        });
+        var dispatcher = new GeoprocessingJobDispatcher(
+            NullLogger<GeoprocessingJobService>.Instance, DefaultExecutorOptions, _progressStore,
+            workloadRegistry: registry);
+        var consulted = 0;
+
+        var selected = await dispatcher.ResolveWorkloadAsync(
+            false,
+            "native",
+            CancellationToken.None,
+            _ =>
+            {
+                consulted++;
+                return Task.FromResult(true);
+            });
+
+        selected.Should().BeNull();
+        consulted.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task SubmitJob_KeyedReplay_ReturnsAcceptedJobWhenWorkloadBecomesIncompatible()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var workloads = new List<ExecutionJobDefinition>
+        {
+            RuntimeWorkload("local", null, "local"),
+        };
+        var registry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        registry.ListAsync(Arg.Any<CancellationToken>()).Returns(_ => workloads.ToArray());
+        var service = CreateStoreBackedService(store, registry);
+        var plan = NativeGdalPlan();
+        var principal = CreateStablePrincipal();
+
+        var first = await service.SubmitJobAsync(plan, "native-key", principal);
+
+        workloads.Clear();
+        workloads.Add(RuntimeWorkload("managed-remote", "managed", "honua-aws-batch"));
+
+        var replay = await service.SubmitJobAsync(plan, "native-key", principal);
+        replay.OperationId.Should().Be(first.OperationId);
+
+        var act = () => service.SubmitJobAsync(plan, "other-key", principal);
+        await act.Should().ThrowAsync<GeoprocessingValidationException>().WithMessage("*native*");
+    }
+
+    private static AnalysisPlan NativeGdalPlan() => new()
+    {
+        PlanId = "plan-native",
+        IntentId = "intent-native",
+        Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "step-1",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = "gdal.gdalwarp",
+                Inputs = new Dictionary<string, string>
+                {
+                    ["source"] = "AAAA",
+                    ["targetSrs"] = "3857"
+                }
+            }
+        ]
+    };
 
     private static ExecutionJobDefinition RuntimeWorkload(string id, string? profile, string backend)
         => new()
