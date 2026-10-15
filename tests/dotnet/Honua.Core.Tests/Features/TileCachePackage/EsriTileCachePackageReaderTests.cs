@@ -330,7 +330,63 @@ public sealed class EsriTileCachePackageReaderTests
         await act.Should().ThrowAsync<InvalidDataException>();
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadTiles_AliasedCompactV2Index_ThrowsBeforeExceedingDecompressedBudget()
+    {
+        // #6176: every index slot points at the same 16 MB payload. Copying each
+        // slot would write about 256 GiB. The reader must fail before that.
+        const int tileSize = 0xFFFFFF;
+        const int dataStart = CompactV2HeaderSize + CompactV2IndexSize;
+        var bundle = new byte[dataStart + tileSize];
+        var packed = ((long)tileSize << 40) | dataStart;
+        for (var i = 0; i < CompactV2IndexEntries; i++)
+        {
+            BinaryPrimitives.WriteInt64LittleEndian(bundle.AsSpan(CompactV2HeaderSize + (i * 8), 8), packed);
+        }
+
+        using var package = BuildCompactV2PackageWithBundle(bundle);
+        var reader = new EsriTileCachePackageReader();
+        var descriptor = await reader.ReadDescriptorAsync(package);
+
+        var yieldedBytes = 0L;
+        var act = async () =>
+        {
+            await foreach (var tile in reader.ReadTilesAsync(package, descriptor, 0, 0))
+            {
+                yieldedBytes += tile.Content.LongLength;
+            }
+        };
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+        yieldedBytes.Should().BeLessThanOrEqualTo(EsriTileCachePackageReader.MaxDecompressedBytes);
+    }
+
     // -------- fixture builders --------
+
+    private static MemoryStream BuildCompactV2PackageWithBundle(byte[] bundle)
+    {
+        var buffer = new MemoryStream();
+        using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            WriteEntry(archive, "root.json", Encoding.UTF8.GetBytes($$"""
+                {
+                  "name": "aliased",
+                  "tileBundlesPath": "./tile",
+                  "storageInfo": { "storageFormat": "esriMapCacheStorageModeCompactV2", "packetSize": 128 },
+                  "tileInfo": {
+                    "rows": 256, "cols": 256, "format": "PNG",
+                    "spatialReference": { "wkid": 3857, "latestWkid": 3857 },
+                    {{SchemeJson(3857, 0)}}
+                  }
+                }
+                """));
+            WriteEntry(archive, "tile/L00/R0000C0000.bundle", bundle);
+        }
+
+        buffer.Position = 0;
+        return buffer;
+    }
 
     private static MemoryStream BuildCompactV2Package(
         string prefix,
