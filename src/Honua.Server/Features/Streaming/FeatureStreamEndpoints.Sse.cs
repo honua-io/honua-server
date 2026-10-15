@@ -360,6 +360,12 @@ internal static partial class FeatureStreamEndpoints
             // For fresh sessions, grace was already cleared above.
             bool handoffDone = !hasReplay;
 
+            // Default-subscription delivery fence (honua-server#6104). replayCursor is the
+            // durable-store sweep floor and only advances through store sweeps; live sends
+            // are remembered per cursor instead of raising a high-water mark, so a frame
+            // that arrives after a higher cursor is still delivered once.
+            var liveDelivered = new FeatureStreamDeliveredCursorWindow(replayCursor);
+
             // Deadline-based poll scheduling: nextPollAt advances by exactly one
             // interval per fire, regardless of how many channel-traffic loop
             // iterations elapsed in between. Without an absolute deadline,
@@ -399,7 +405,9 @@ internal static partial class FeatureStreamEndpoints
                         sessionManager,
                         linkedCts.Token,
                         subscriptionFilter,
-                        FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
+                        FeatureStreamSessionManager.DefaultSubscriptionId,
+                        liveDelivered: liveDelivered).ConfigureAwait(false);
+                    liveDelivered.AdvanceFloor(replayCursor);
                     nextPollAt = DateTimeOffset.UtcNow + options.CrossNodeSyncInterval;
                     continue;
                 }
@@ -441,7 +449,9 @@ internal static partial class FeatureStreamEndpoints
                                 linkedCts.Token,
                                 subscriptionFilter,
                                 FeatureStreamSessionManager.DefaultSubscriptionId,
-                                defaultGeneration).ConfigureAwait(false);
+                                defaultGeneration,
+                                liveDelivered).ConfigureAwait(false);
+                            liveDelivered.AdvanceFloor(replayCursor);
                             if (replayCursor > prev)
                             {
                                 progress = true;
@@ -453,7 +463,10 @@ internal static partial class FeatureStreamEndpoints
                         continue;
                     }
 
-                    if (!message.IsHeartbeat && replayCursor > 0 && message.Envelope.Cursor <= replayCursor)
+                    // Drop only frames already handled: at or below the swept floor, or
+                    // already delivered live. A lower cursor that was never delivered is
+                    // still sent (honua-server#6104).
+                    if (!message.IsHeartbeat && liveDelivered.IsHandled(message.Envelope.Cursor))
                     {
                         continue;
                     }
@@ -489,7 +502,7 @@ internal static partial class FeatureStreamEndpoints
                             liveEnvelope.Cursor,
                             linkedCts.Token).ConfigureAwait(false);
 
-                        replayCursor = liveEnvelope.Cursor;
+                        liveDelivered.MarkDelivered(liveEnvelope.Cursor);
                     }
 
                     await context.Response.Body.FlushAsync(linkedCts.Token).ConfigureAwait(false);
@@ -511,7 +524,9 @@ internal static partial class FeatureStreamEndpoints
                         sessionManager,
                         linkedCts.Token,
                         subscriptionFilter,
-                        FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
+                        FeatureStreamSessionManager.DefaultSubscriptionId,
+                        liveDelivered: liveDelivered).ConfigureAwait(false);
+                    liveDelivered.AdvanceFloor(replayCursor);
                     nextPollAt = DateTimeOffset.UtcNow + options.CrossNodeSyncInterval;
                 }
             }
