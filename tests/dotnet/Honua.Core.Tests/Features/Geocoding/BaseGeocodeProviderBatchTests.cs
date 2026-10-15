@@ -76,17 +76,35 @@ public sealed class BaseGeocodeProviderBatchTests
         Assert.All(results, candidate => Assert.True(candidate.IsMatch));
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task BatchGeocodeAsync_OverAdvertisedCap_ThrowsBeforeForwardFanOut()
+    {
+        var provider = new RecordingBatchProvider { MaxBatchSize = 1 };
+
+        var exception = await Assert.ThrowsAsync<GeocodeRequestException>(() =>
+            provider.BatchGeocodeAsync(new BatchGeocodeRequest(["one", "two"], 4326), CancellationToken.None));
+
+        Assert.Contains(GeocodeLimitMetadata.BatchSizeMarker, exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(provider.ForwardCalls);
+    }
+
     private sealed class RecordingBatchProvider : BaseGeocodeProvider
     {
         public List<ForwardGeocodeRequest> ForwardCalls { get; } = [];
 
         public int CandidatesPerInput { get; init; } = 1;
 
+        public int MaxBatchSize { get; init; } = 100;
+
         public override string Name => "recording";
 
         public override GeocodeProviderCapabilities Capabilities => new(
             SupportsForwardGeocode: true,
-            SupportsBatch: true);
+            SupportsBatch: true)
+        {
+            MaxBatchSize = MaxBatchSize,
+        };
 
         public override Task<IReadOnlyList<GeocodeCandidate>> ForwardGeocodeAsync(
             ForwardGeocodeRequest request,
