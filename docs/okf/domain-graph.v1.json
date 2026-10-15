@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:72488c9f076043da1f33549c3753e182a705da4324dd5d5548c68cf834d6a364",
+  "bundleDigest": "sha256:ba01bd520d9386117a4888c00d95ea98c073abbb99dab3500f9c9bbb6d61a216",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1982,7 +1982,7 @@
     {
       "id": "guides/README",
       "path": "guides/README.md",
-      "documentDigest": "sha256:ada03892c46b6d2fb6dac13c8a3219f69b53ca581e1e37aff4e6b7a987a2fec1",
+      "documentDigest": "sha256:00083bb2251c08b9efa9124ef0c03b1defdd3c6f11b82582a1ee8d209ce14eef",
       "metadata": {
         "type": "index",
         "title": "Guides",
@@ -2371,6 +2371,18 @@
         "resource": "honua://capability/import.geoservices"
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/publish/import-from-arcgis-services.md"
+    },
+    {
+      "id": "guides/publish/import-from-object-storage",
+      "path": "guides/publish/import-from-object-storage.md",
+      "documentDigest": "sha256:60f1671633e2cca7a2b93212ad346da96717abbd6e5af9f51733006439514f11",
+      "metadata": {
+        "type": "guide",
+        "title": "Import a layer from object storage",
+        "description": "Import an s3:// object with the host's cloud identity, without a presigned URL or a credential in the request.",
+        "resource": "honua://capability/import.file"
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/publish/import-from-object-storage.md"
     },
     {
       "id": "guides/publish/publish-3d-scenes",
@@ -5257,7 +5269,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:1c9f86efe7ed8103ab5c211789c4649bb4c0794764b21b918f8d5fc2f580a069",
+      "documentDigest": "sha256:343535fd3eabf102a6e73b570098b729e0b4d67450a516fc1e03db10f256132b",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -5512,7 +5524,7 @@
     {
       "id": "okf/capabilities/analytics.h3",
       "path": "okf/capabilities/analytics.h3.md",
-      "documentDigest": "sha256:54e56b5104fea181fd89ac11274d6d88bd6b8997d08768344b8eb8c82308da44",
+      "documentDigest": "sha256:453520565bffd5bf0a0cb77024c7d670b38ab1838289c6be3671fbd614f89495",
       "metadata": {
         "type": "capability",
         "title": "H3 Aggregation",
@@ -5784,7 +5796,7 @@
     {
       "id": "okf/capabilities/collaboration.map-sessions",
       "path": "okf/capabilities/collaboration.map-sessions.md",
-      "documentDigest": "sha256:71f995533fe1b3607de49169e6ce0001727a216673bf123fee757d85beece8cf",
+      "documentDigest": "sha256:bd62d814a61b10398e5b1e81f2553ccb8317769e23e0959477388721db6faf96",
       "metadata": {
         "type": "capability",
         "title": "Map Collaboration Sessions",
@@ -5818,7 +5830,7 @@
     {
       "id": "okf/capabilities/discovery.capability-manifest",
       "path": "okf/capabilities/discovery.capability-manifest.md",
-      "documentDigest": "sha256:a61e73d6a732f88c0226fa1781e4ec1c95b730075e165d050308b826a75b5b73",
+      "documentDigest": "sha256:59e8967b7cecbbcbd688de78bf3c3c69ece9a5364876036c7ac81c67675af3f2",
       "metadata": {
         "type": "capability",
         "title": "Capability Manifest",
@@ -5920,7 +5932,7 @@
     {
       "id": "okf/capabilities/editing.featureserver-edits",
       "path": "okf/capabilities/editing.featureserver-edits.md",
-      "documentDigest": "sha256:1f02158e9ab0eb10261c0886c50eae4d881842382e00e8ba05fe81252a9f8ca6",
+      "documentDigest": "sha256:028d7b61d2a0e08674d8a2dc1e55a453b5f6d972701a6efe906a21c7969d6f14",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Editing",
@@ -6039,7 +6051,7 @@
     {
       "id": "okf/capabilities/geocoding.forward",
       "path": "okf/capabilities/geocoding.forward.md",
-      "documentDigest": "sha256:ae7692577acd168ca74e7b955e2cbe2c81b8024a631becd06b289aba732bb35b",
+      "documentDigest": "sha256:1914f80cbeeaddcfecf9df605b6de84d6d956861b51641666889467bb6fe4329",
       "metadata": {
         "type": "capability",
         "title": "Forward Geocoding",
@@ -6209,7 +6221,7 @@
     {
       "id": "okf/capabilities/import.file",
       "path": "okf/capabilities/import.file.md",
-      "documentDigest": "sha256:e106b19edc1b37589aceda21daafdb2b50c6172d7a145e6fd63ae908f61e0204",
+      "documentDigest": "sha256:9ac72dceae822d7ebcefdf81ca9608e38b16f1a8a9a6cc56556bbd575a9bad94",
       "metadata": {
         "type": "capability",
         "title": "File Import",
@@ -6651,7 +6663,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:c8693e34303a5f3c33c0f6f521dc6968955c80d4a777666f40a2d8c3bc111f5f",
+      "documentDigest": "sha256:6d4908a645c92c9237d2cf162583a8c04f8114ff7632ef5f70a3da090e324c53",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
@@ -6685,7 +6697,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-geometry-service",
       "path": "okf/capabilities/serve.geoservices-geometry-service.md",
-      "documentDigest": "sha256:0e6bb924347d3fb8e944ad8f6b8674d1fa0c7682c4a1ed1f62c5dd3be0a700b2",
+      "documentDigest": "sha256:c951f55bc5849b86f604b08bdf2bb9feb09c1809e5f1a68d1d50da1e72ce454b",
       "metadata": {
         "type": "capability",
         "title": "Geometry Service",
@@ -6719,7 +6731,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-mapserver",
       "path": "okf/capabilities/serve.geoservices-mapserver.md",
-      "documentDigest": "sha256:6457cfa7d84e73ea7f45ce70602cb5a17129493777fac4b82f8a2c314bfde33e",
+      "documentDigest": "sha256:77e8e38a09abcf5e8346e9a89071094f9415aacc95ae0bfb84b470c2707ff7b8",
       "metadata": {
         "type": "capability",
         "title": "MapServer",
@@ -6855,7 +6867,7 @@
     {
       "id": "okf/capabilities/serve.ogc-api-features",
       "path": "okf/capabilities/serve.ogc-api-features.md",
-      "documentDigest": "sha256:c935347766b566373bf7093958cc30837e8c1fca119224860076335723f9f6f1",
+      "documentDigest": "sha256:a037948f40bdf48c9656dc66416cc4e0f9f43e287f3e026ecffe5b5fdf3f160b",
       "metadata": {
         "type": "capability",
         "title": "OGC API Features",
@@ -6940,7 +6952,7 @@
     {
       "id": "okf/capabilities/serve.stac",
       "path": "okf/capabilities/serve.stac.md",
-      "documentDigest": "sha256:12d2ddbf353f6b522cc1b248ca8c09267214fc32ce9b9841ad003d7c62319de8",
+      "documentDigest": "sha256:f5a99345c528dabebfff1d32b8412f035e25e91a1e950e3a8e86ac5ab80d2cd0",
       "metadata": {
         "type": "capability",
         "title": "STAC API",
@@ -6991,7 +7003,7 @@
     {
       "id": "okf/capabilities/serve.wfs",
       "path": "okf/capabilities/serve.wfs.md",
-      "documentDigest": "sha256:3c9e21d1e7d235b64f84e62d5384b84eeeef434669081c9939a7ff6d17cbd693",
+      "documentDigest": "sha256:b2b7c180f9aecf5aa0d8444323df7494b65b29f424d84e28e84479ab04cbe8f7",
       "metadata": {
         "type": "capability",
         "title": "WFS 2.0",
@@ -7008,7 +7020,7 @@
     {
       "id": "okf/capabilities/serve.wms",
       "path": "okf/capabilities/serve.wms.md",
-      "documentDigest": "sha256:4abfdd68bedac334224b101480b961df68092e4ba2f556b9f2bbb075d235dd24",
+      "documentDigest": "sha256:264a1c62e5640c562746d2b7bbf45a337545b7cf940f96842adda95cfc13a108",
       "metadata": {
         "type": "capability",
         "title": "WMS 1.3",
@@ -7110,7 +7122,7 @@
     {
       "id": "okf/capabilities/streaming.feature-subscriptions",
       "path": "okf/capabilities/streaming.feature-subscriptions.md",
-      "documentDigest": "sha256:baf46f34d4085495b02d8f212b7b35073f54c113cbc7459f3e9903e71230c077",
+      "documentDigest": "sha256:c172b103a987b443fec5fad7f4f311f5359fc9be0f166fb78538bd41caeb674a",
       "metadata": {
         "type": "capability",
         "title": "Real-Time Feature Streams",
@@ -7127,7 +7139,7 @@
     {
       "id": "okf/capabilities/styling.auto-suggest",
       "path": "okf/capabilities/styling.auto-suggest.md",
-      "documentDigest": "sha256:1382cc1b39c92a0732d6da6521aa06b62a4be3976726035f3c39f194281dd080",
+      "documentDigest": "sha256:4821fb71489eca5191c1beff8bbb5e0761c2c3cb4ab4eea9dadf23186f35d0d0",
       "metadata": {
         "type": "capability",
         "title": "Auto-Cartographic Styling",
@@ -7229,7 +7241,7 @@
     {
       "id": "okf/capabilities/temporal.histogram",
       "path": "okf/capabilities/temporal.histogram.md",
-      "documentDigest": "sha256:a0f6ddb2068d6707bb86df387f15385a6c344786eed29e2c5599ba4af951334c",
+      "documentDigest": "sha256:c0991433361f24b1c120df880c094e52e547acdcaf5efb121470fd55c7a922c3",
       "metadata": {
         "type": "capability",
         "title": "Temporal Histogram (Date Bins)",
@@ -7379,7 +7391,7 @@
     {
       "id": "reference/admin-api/imports-and-jobs",
       "path": "reference/admin-api/imports-and-jobs.md",
-      "documentDigest": "sha256:fe6b59a98ac9ea5efddde1caa2912f08ed1bb3bf4d1eefc13edff8ccc548ad45",
+      "documentDigest": "sha256:e5aff15405460da2238fea79f4a43b2f948d5cf115cd1affe13349fa21c0bdd3",
       "metadata": {
         "type": "reference",
         "title": "Imports and jobs",
@@ -7622,7 +7634,7 @@
     {
       "id": "reference/configuration/environment-variables",
       "path": "reference/configuration/environment-variables.md",
-      "documentDigest": "sha256:26c6db45490ef4c663a460f16bd735c2639c04a7fa50b368aace80586f676459",
+      "documentDigest": "sha256:3ad4e6f823af3b5f9a7353294cad738e000b1fef988538993debdea6742a6906",
       "metadata": {
         "type": "reference",
         "title": "Environment variables",
@@ -10680,6 +10692,11 @@
     {
       "source": "guides/README",
       "relation": "links_to",
+      "target": "guides/publish/import-from-object-storage"
+    },
+    {
+      "source": "guides/README",
+      "relation": "links_to",
       "target": "guides/publish/publish-3d-scenes"
     },
     {
@@ -11651,6 +11668,21 @@
       "source": "guides/publish/import-from-arcgis-services",
       "relation": "links_to",
       "target": "reference/openapi-and-explorer"
+    },
+    {
+      "source": "guides/publish/import-from-object-storage",
+      "relation": "links_to",
+      "target": "get-started/quickstart"
+    },
+    {
+      "source": "guides/publish/import-from-object-storage",
+      "relation": "links_to",
+      "target": "guides/publish/publish-layers"
+    },
+    {
+      "source": "guides/publish/import-from-object-storage",
+      "relation": "links_to",
+      "target": "guides/secure/authentication"
     },
     {
       "source": "guides/publish/publish-3d-scenes",
@@ -14080,6 +14112,11 @@
     {
       "source": "okf/capabilities/import.file",
       "relation": "links_to",
+      "target": "guides/publish/import-from-object-storage"
+    },
+    {
+      "source": "okf/capabilities/import.file",
+      "relation": "links_to",
       "target": "reference/admin-api/imports-and-jobs"
     },
     {
@@ -14701,6 +14738,11 @@
       "source": "reference/admin-api/imports-and-jobs",
       "relation": "links_to",
       "target": "guides/publish/import-from-arcgis-services"
+    },
+    {
+      "source": "reference/admin-api/imports-and-jobs",
+      "relation": "links_to",
+      "target": "guides/publish/import-from-object-storage"
     },
     {
       "source": "reference/admin-api/imports-and-jobs",
@@ -16278,7 +16320,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:bf59a21b1f833d1a272b8872234a0826abe508142fccbb241a819fecb10b9506"
+      "contractDigest": "sha256:950fea6dd18bf7ad4307aa90d2af927ddc6af5425f102cf8aff30d772b8f1597"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -16351,7 +16393,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:bf59a21b1f833d1a272b8872234a0826abe508142fccbb241a819fecb10b9506"
+      "contractDigest": "sha256:950fea6dd18bf7ad4307aa90d2af927ddc6af5425f102cf8aff30d772b8f1597"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16361,7 +16403,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:bf59a21b1f833d1a272b8872234a0826abe508142fccbb241a819fecb10b9506"
+      "contractDigest": "sha256:950fea6dd18bf7ad4307aa90d2af927ddc6af5425f102cf8aff30d772b8f1597"
     },
     {
       "workflow": "guides/workflows/import-data",

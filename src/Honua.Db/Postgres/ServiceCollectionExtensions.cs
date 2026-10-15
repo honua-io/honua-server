@@ -670,6 +670,9 @@ internal static class ServiceCollectionExtensions
                     BackgroundJobThresholdBytes = ParsePositiveLongOrDefault(
                         section["BackgroundJobThresholdBytes"],
                         limits.BackgroundJobThresholdBytes),
+                    MaxObjectStoreImportBytes = ParsePositiveLongOrDefault(
+                        section["MaxObjectStoreImportBytes"],
+                        limits.MaxObjectStoreImportBytes),
                     MaxPreviewSizeBytes = ParsePositiveLongOrDefault(section["MaxPreviewSizeBytes"], limits.MaxPreviewSizeBytes),
                     MaxPreviewFeatures = ParsePositiveIntOrDefault(section["MaxPreviewFeatures"], limits.MaxPreviewFeatures),
                     MaxPreviewCountScan = ParsePositiveIntOrDefault(section["MaxPreviewCountScan"], limits.MaxPreviewCountScan),

@@ -70,7 +70,7 @@ internal sealed class AdminConnectImportOperationExecutor(
         }.Uri;
         using var message = new HttpRequestMessage(definition.Method, uri);
         message.Headers.Host = current.Request.Host.Value;
-        var authorizedUrlImport = OperationId == "admin.import.upload-url" &&
+        var authorizedUrlImport = (OperationId is "admin.import.upload-url" or "admin.import.upload-object") &&
             current.User.Identity?.IsAuthenticated == true &&
             !string.IsNullOrWhiteSpace(context.OperationInstanceId) &&
             !string.IsNullOrWhiteSpace(context.AuditId) &&

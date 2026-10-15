@@ -7,7 +7,7 @@ namespace Honua.Server.Features.Operations;
 
 /// <summary>
 /// The closed operator MCP roster published beside the audited Admin API projection.
-/// <c>Mcp:PublishOperations:Enabled</c> stays false; these four ids join the default projection.
+/// <c>Mcp:PublishOperations:Enabled</c> stays false; these ids join the default projection.
 /// </summary>
 internal sealed class OperatorJourneyMcpProjection : IAuditedAdminMcpProjection
 {
@@ -19,5 +19,6 @@ internal sealed class OperatorJourneyMcpProjection : IAuditedAdminMcpProjection
             "admin.connections.create",
             "admin.connections.test",
             "admin.import.upload-url",
+            "admin.import.upload-object",
         };
 }

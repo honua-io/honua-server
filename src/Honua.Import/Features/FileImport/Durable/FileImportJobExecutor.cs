@@ -7,6 +7,7 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Import.FileImport.Durable;
@@ -95,21 +96,81 @@ internal sealed partial class FileImportJobExecutor(
         cancellationToken = linked.Token;
 
         ImportResult result;
+        Stream? materializedStream = null;
+        string? materializedTemp = null;
         try
         {
-            await using var scope = scopeFactory.CreateAsyncScope();
-            var importService = scope.ServiceProvider.GetRequiredService<IFileImportService>();
-            result = await importService.ImportFileAsync(request, progress, cancellationToken).ConfigureAwait(false);
-
-            if (result.Success)
+            try
             {
-                await ImportedSnapshotRefresher.RefreshAsync(
-                    scope.ServiceProvider,
-                    request.TargetSchema,
-                    request.TableName,
-                    ex => Log.SnapshotRefreshFailed(logger, jobId, ex),
-                    CancellationToken.None).ConfigureAwait(false);
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var active = request;
+                if (active.UsesObjectStore)
+                {
+                    var reader = scope.ServiceProvider.GetRequiredService<IImportObjectStoreReader>();
+                    var cloud = scope.ServiceProvider.GetService<ICloudFileStorage>();
+                    var storeOptions = scope.ServiceProvider
+                        .GetRequiredService<Microsoft.Extensions.Options.IOptions<ImportObjectStoreOptions>>().Value;
+                    var materialized = await ImportObjectStoreMaterializer.MaterializeAsync(
+                        active, reader, cloud, storeOptions, cancellationToken).ConfigureAwait(false);
+                    active = materialized.Request;
+                    if (materialized.DisposeStream)
+                    {
+                        materializedStream = active.FileStream;
+                    }
+
+                    if (materialized.DeleteLocalFile)
+                    {
+                        materializedTemp = active.LocalFilePath;
+                    }
+                }
+
+                var importService = scope.ServiceProvider.GetRequiredService<IFileImportService>();
+                result = await importService.ImportFileAsync(active, progress, cancellationToken).ConfigureAwait(false);
+
+                if (result.Success)
+                {
+                    // None, not the job token: a committed import still refreshes its snapshot when
+                    // the worker token is already cancelled (trunk #6256).
+                    await ImportedSnapshotRefresher.RefreshAsync(
+                        scope.ServiceProvider,
+                        request.TargetSchema,
+                        request.TableName,
+                        ex => Log.SnapshotRefreshFailed(logger, jobId, ex),
+                        CancellationToken.None).ConfigureAwait(false);
+                }
             }
+            finally
+            {
+                if (materializedStream is not null)
+                {
+                    await materializedStream.DisposeAsync().ConfigureAwait(false);
+                }
+
+                if (materializedTemp is not null)
+                {
+                    try
+                    {
+                        File.Delete(materializedTemp);
+                    }
+                    catch (Exception cleanupEx) when (cleanupEx is IOException or UnauthorizedAccessException)
+                    {
+                        Log.ImportFaulted(logger, jobId, cleanupEx);
+                    }
+                }
+            }
+        }
+        catch (ImportObjectStoreException ex)
+        {
+            Log.ImportFaulted(logger, jobId, ex);
+            await writer.CloseAndDrainAsync().ConfigureAwait(false);
+            var failed = ImportResult.CreateFailure(
+                request.TableName,
+                SupportedFileFormat.GeoJson,
+                SafeImportFailureMessage,
+                errorCode: ex.Code);
+            await WriteTerminalAsync(jobId, processing, ImportStatus.Failed, failed, SafeImportFailureMessage)
+                .ConfigureAwait(false);
+            return NonRetryableFailure(SafeImportFailureMessage);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

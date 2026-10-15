@@ -1600,6 +1600,16 @@
     {
       "spec": "admin-api",
       "method": "POST",
+      "path": "/api/v1/admin/import/upload-object",
+      "operationId": "uploadImportFileFromObjectStore",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-upload-object"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
       "path": "/api/v1/admin/import/upload-url",
       "operationId": "uploadImportFileFromUrl",
       "capability": "import.file",

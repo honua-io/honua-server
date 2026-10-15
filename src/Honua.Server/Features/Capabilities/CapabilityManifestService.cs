@@ -69,6 +69,8 @@ internal sealed class CapabilityManifestService(
 {
     internal const string BackgroundImportCapabilityId = "import.background";
 
+    internal const string ObjectStoreImportCapabilityId = "import.objectStore";
+
     private const string AuthorizationNotice =
         "Manifest availability is informational only; operation endpoints remain the source of truth for authorization, tenant, environment, license, and resource checks.";
 
@@ -120,6 +122,7 @@ internal sealed class CapabilityManifestService(
             : BuildCapabilities(policyContext, operationCapabilities);
         capabilities = StampRollbackTargets(capabilities, operationCapabilities, policyContext);
         capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
+        capabilities = [.. capabilities, BuildObjectStoreImportCapability(policyContext)];
         capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
         capabilities = ApplyCompiledProtocolProfile(capabilities);
         var packages = options.ManifestFromRegistry
@@ -1370,6 +1373,23 @@ internal sealed class CapabilityManifestService(
                 ? runner.Runner
                 : Honua.Core.Features.FileImport.Domain.ImportJobRunners.Unavailable,
         };
+    }
+
+    /// <summary>
+    /// <c>import.objectStore</c> (honua-server#5888): <c>s3://</c> imports that use the host
+    /// identity. Disabled until at least one bucket is allow-listed. <c>schemes</c> stays
+    /// <c>["s3"]</c> either way so callers can see the supported scheme before it is enabled.
+    /// </summary>
+    private CapabilityManifestCapability BuildObjectStoreImportCapability(CapabilityPolicyContext context)
+    {
+        var capability = Capability(
+            ObjectStoreImportCapabilityId,
+            "import",
+            context,
+            configured: options.ObjectStoreConfigured,
+            entitlementKey: "import.file",
+            policyCapability: "metadata.write");
+        return capability with { Schemes = ["s3"] };
     }
 
     private static CapabilityManifestCapability[] StampRollbackTargets(

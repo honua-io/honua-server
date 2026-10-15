@@ -147,6 +147,10 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         {
             tempFilePath = request.LocalFilePath;
         }
+        else if (request.UsesObjectStore)
+        {
+            backgroundRequest = request;
+        }
         else if (!request.UsesCloudStorage)
         {
             // Copy stream to a temp file for background processing
@@ -259,6 +263,12 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                     };
                 }
             });
+
+            if (request.UsesObjectStore)
+            {
+                throw new InvalidOperationException(
+                    "Object-store imports are opened by the universal import runner at execution time.");
+            }
 
             var result = await _importService.ImportFileAsync(request, progress, cancellationToken);
 

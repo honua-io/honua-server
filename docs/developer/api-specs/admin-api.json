@@ -2446,6 +2446,100 @@
         }
       }
     },
+    "/import/upload-object": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Import a Geospatial File from Object Storage",
+        "description": "Imports one supported object from an allow-listed s3:// bucket using the host identity. The request carries no credentials. Large objects return a background job without an in-request download.",
+        "operationId": "uploadImportFileFromObjectStore",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportFileFromObjectStoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import completed synchronously.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Import accepted for background processing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The object or bucket was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The object changed after the preflight ETag was recorded, or the importer refused the target.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The object exceeds MaxObjectStoreImportBytes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Background import dependencies are unavailable, or this host has no object-store reader.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/imports": {
       "post": {
         "tags": [
@@ -21774,6 +21868,46 @@
             "default": false
           },
           "trackProgress": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "ImportFileFromObjectStoreRequest": {
+        "type": "object",
+        "required": [
+          "sourceUri",
+          "tableName"
+        ],
+        "properties": {
+          "sourceUri": {
+            "type": "string",
+            "description": "s3://bucket/key object to import. Credentials, queries, and fragments are rejected."
+          },
+          "assumeRoleArn": {
+            "type": "string",
+            "description": "Optional allow-listed role ARN. The host assumes it with the configured external id. Omit to use the host identity."
+          },
+          "tableName": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+          },
+          "targetSchema": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "sourceSrid": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "targetSrid": {
+            "type": "integer",
+            "format": "int32",
+            "default": 4326
+          },
+          "overwriteExisting": {
             "type": "boolean",
             "default": false
           }

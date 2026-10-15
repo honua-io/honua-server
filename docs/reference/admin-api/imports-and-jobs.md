@@ -19,6 +19,7 @@ All endpoints require admin authentication — see [Authentication](../../guides
 | POST | `/api/v1/admin/import/preview-url` | Preview data from a supported public object URL |
 | POST | `/api/v1/admin/import/upload` | Upload and import data |
 | POST | `/api/v1/admin/import/upload-url` | Import data from a supported public object URL |
+| POST | `/api/v1/admin/import/upload-object` | Import an allow-listed `s3://` object with the host identity |
 | GET | `/api/v1/admin/import/limits` | Get import size and concurrency limits |
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/import/upload` and attach `parcels.geojson` to the `file` form field.
@@ -150,6 +151,7 @@ Run `GET /api/v1/admin/operations/{operationId}` with the operation id returned 
 ## Related guides
 
 - [Import files](../../guides/publish/import-files.md)
+- [Import from object storage](../../guides/publish/import-from-object-storage.md)
 - [Import from ArcGIS services](../../guides/publish/import-from-arcgis-services.md)
 - [Migrate from GeoServer](../../guides/migrate/from-geoserver.md) and [from ArcGIS Server](../../guides/migrate/from-arcgis-server.md)
 - [Publish rasters](../../guides/publish/publish-rasters.md)

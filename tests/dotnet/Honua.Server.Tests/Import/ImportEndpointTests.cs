@@ -211,6 +211,64 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload-object")]
+    public async Task ImportFileFromObjectStore_WithUnsupportedScheme_ReturnsTypedProblem()
+    {
+        using var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/import/upload-object",
+            new { sourceUri = "https://example.com/parcels.geojson", tableName = "parcels" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("import.source_unsupported_scheme");
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileFromObjectStore_WithBucketOutsideAllowList_ReturnsForbidden()
+    {
+        using var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/import/upload-object",
+            new { sourceUri = "s3://not-allow-listed/parcels.geojson", tableName = "parcels" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("import.source_forbidden");
+        body.Should().Contain("not-allow-listed");
+    }
+
+    [IntegrationTest]
+    public async Task CapabilityManifest_ObjectStore_IsDisabledUntilABucketIsAllowListed()
+    {
+        using var response = await _client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var capability = document.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "import.objectStore");
+        capability.GetProperty("available").GetBoolean().Should().BeFalse();
+        capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
+        capability.GetProperty("schemes").EnumerateArray().Select(item => item.GetString())
+            .Should().Equal("s3");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/import/upload-object")]
+    [Endpoint("PUT /api/v1/admin/import/upload-object")]
+    [Endpoint("DELETE /api/v1/admin/import/upload-object")]
+    [Endpoint("PATCH /api/v1/admin/import/upload-object")]
+    public async Task ImportFileFromObjectStore_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
+        {
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/upload-object");
+            using var response = await _client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("POST");
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/import/upload-url")]
     [Endpoint("PUT /api/v1/admin/import/upload-url")]
     [Endpoint("DELETE /api/v1/admin/import/upload-url")]

@@ -11,9 +11,16 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Xunit.SkippableFact" />
+    <PackageReference Include="Testcontainers" />
+    <!-- Direct pin of Testcontainers' transitive SSH.NET to the patched release
+         (GHSA-q939-rpr3-3284). -->
+    <PackageReference Include="SSH.NET" />
+    <PackageReference Include="AWSSDK.IdentityManagement" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../../src/Honua.Cloud/Aws/Honua.Aws.csproj" />
+    <ProjectReference Include="../../../src/Honua.Import/Honua.Import.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
     <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
