@@ -63,6 +63,14 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "MissingParameterValue", "QUERY_LAYERS parameter is required.");
         }
 
+        var maxLayers = GetWmsMaxLayersPerRequest(context);
+        var layerCountError = ValidateWmsLayerTokenCount(context, "LAYERS", mapLayerTokens.Length, maxLayers)
+            ?? ValidateWmsLayerTokenCount(context, "QUERY_LAYERS", queryLayerTokens.Length, maxLayers);
+        if (layerCountError != null)
+        {
+            return layerCountError;
+        }
+
         if (!TryGetRequiredQueryValue(query, "BBOX", out var bboxValue))
         {
             return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
@@ -135,6 +143,10 @@ internal static partial class WmsRequestHandlers
             var layerLabel = string.IsNullOrWhiteSpace(unresolvedQueryLayer) ? "requested layer" : unresolvedQueryLayer;
             return CreateWmsServiceException(context, "LayerNotDefined", $"Layer '{layerLabel}' is not defined.");
         }
+
+        // Query each storage layer once: repeated QUERY_LAYERS tokens would otherwise repeat
+        // the temporal resolution and the identify scan per token (#6097).
+        queryLayers = [.. queryLayers.DistinctBy(layer => layer.StorageLayerId)];
 
         var mapLayerStorageIds = new HashSet<int>(mapLayers.Select(layer => layer.StorageLayerId));
         if (queryLayers.Any(layer => !mapLayerStorageIds.Contains(layer.StorageLayerId)))
@@ -232,6 +244,7 @@ internal static partial class WmsRequestHandlers
 
             // Per-layer source SRID — see ResolveServiceSrid for the resolution order.
             var serviceSrid = ResolveServiceSrid(service, layer.Resource);
+            var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
 
             var layerClickExtent = clickExtent;
             if (requestSrid != serviceSrid)
@@ -287,7 +300,7 @@ internal static partial class WmsRequestHandlers
 
                 remaining--;
                 var layerName = GetWmsLayerDisplayName(layer);
-                var attributes = BuildVisibleFeatureInfoAttributes(item);
+                var attributes = BuildVisibleFeatureInfoAttributes(item, hiddenFields);
 
                 if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
                 {

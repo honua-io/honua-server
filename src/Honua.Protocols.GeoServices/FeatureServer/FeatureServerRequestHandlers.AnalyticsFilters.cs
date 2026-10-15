@@ -81,6 +81,15 @@ internal static partial class FeatureServerEndpoints
         return (query, null);
     }
 
+    /// <summary>
+    /// True when the geometry included a horizontal spatial reference.
+    /// A missing object, an empty object, or wkid 0 is absent.
+    /// </summary>
+    private static bool GeometryCarriesSpatialReference(GeoServicesSpatialReference? spatialReference)
+        => spatialReference is { Wkid: > 0 }
+            || spatialReference?.LatestWkid is > 0
+            || !string.IsNullOrWhiteSpace(spatialReference?.Wkt);
+
     private static bool HasAnalyticsFilter(IReadOnlyDictionary<string, StringValues> values)
     {
         foreach (var key in values.Keys)
@@ -142,6 +151,17 @@ internal static partial class FeatureServerEndpoints
             return (query, StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid input spatial reference",
                 ["inSR is not a supported spatial reference."]));
+        }
+
+        // A geometry spatial reference that cannot be resolved is a client error,
+        // matching /query (#6146). An empty or missing spatial reference still
+        // falls back to the layer SR. queryBins, queryDateBins, and queryTopFeatures
+        // share this path; queryH3 does not accept a geometry spatial reference.
+        if (!inputSrid.HasValue && GeometryCarriesSpatialReference(parsedGeometry.SpatialReference))
+        {
+            return (query, StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid input spatial reference",
+                ["geometry.spatialReference is not a supported spatial reference."]));
         }
 
         inputSrid ??= resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
