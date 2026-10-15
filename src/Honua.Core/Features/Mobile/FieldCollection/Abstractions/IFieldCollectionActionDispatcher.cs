@@ -14,7 +14,9 @@ public interface IFieldCollectionActionDispatcher
 {
     /// <summary>
     /// Enqueues <paramref name="invocation"/> for background delivery. Returns once
-    /// the invocation is accepted; the actual handler runs out of band.
+    /// the invocation is accepted, or immediately when the bounded queue is full
+    /// and the invocation is dropped. The handler runs out of band. This method
+    /// does not wait for queue capacity.
     /// </summary>
     ValueTask EnqueueAsync(
         FieldCollectionActionInvocation invocation,

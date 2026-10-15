@@ -251,6 +251,7 @@ internal static partial class MapServerEndpoints
 
                     var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
                     var displayField = ResolveDisplayField(resource, objectIdField);
+                    var hiddenFields = resource.HiddenSchemaFieldNames();
 
                     writer.WriteStartElement("Folder");
                     writer.WriteElementString("name", renderLayer.Name);
@@ -263,7 +264,7 @@ internal static partial class MapServerEndpoints
                         foreach (var feature in queryResult.Items)
                         {
                             var displayValue = GetDisplayFieldValue(feature, displayField);
-                            if (WritePlacemark(writer, feature, displayValue))
+                            if (WritePlacemark(writer, feature, displayValue, hiddenFields))
                             {
                                 totalPlacemarkCount++;
                             }
@@ -282,7 +283,7 @@ internal static partial class MapServerEndpoints
                             }
 
                             var displayValue = GetDisplayFieldValue(feature, displayField);
-                            if (WritePlacemark(writer, feature, displayValue, geometry!))
+                            if (WritePlacemark(writer, feature, displayValue, geometry!, hiddenFields))
                             {
                                 totalPlacemarkCount++;
                             }
@@ -528,18 +529,19 @@ internal static partial class MapServerEndpoints
 
     private static string ResolveDisplayField(MetadataV2Resource resource, string objectIdField)
     {
+        // A publisher-hidden field is never the display field: identify/find "value" and
+        // the KML placemark name would otherwise carry its value (#6098).
         var configuredDisplayField = resource.Display?.DisplayField;
         if (!string.IsNullOrWhiteSpace(configuredDisplayField))
         {
-            var field = resource.SchemaFields.FirstOrDefault(field =>
-                field.Name.Equals(configuredDisplayField, StringComparison.OrdinalIgnoreCase));
+            var field = resource.FindVisibleSchemaField(configuredDisplayField);
             if (field is not null)
             {
                 return field.Name;
             }
         }
 
-        var stringField = resource.SchemaFields
+        var stringField = resource.VisibleSchemaFields()
             .FirstOrDefault(static field => field.Type == MetadataV2FieldType.String);
         return stringField?.Name ?? objectIdField;
     }
@@ -812,7 +814,12 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    private static bool WritePlacemark(XmlWriter writer, Feature feature, string? displayValue, NtsGeometry geometry)
+    private static bool WritePlacemark(
+        XmlWriter writer,
+        Feature feature,
+        string? displayValue,
+        NtsGeometry geometry,
+        IReadOnlySet<string> hiddenFields)
     {
         writer.WriteStartElement("Placemark");
         writer.WriteElementString(
@@ -821,7 +828,7 @@ internal static partial class MapServerEndpoints
                 ? feature.Id.ToString(CultureInfo.InvariantCulture)
                 : displayValue);
 
-        WriteExtendedData(feature.Attributes, writer);
+        WriteExtendedData(feature.Attributes, hiddenFields, writer);
 
         // KML polygons follow the right-hand rule (exterior CCW, holes CW). This in-memory writer
         // emits rings as stored, and stored data is frequently CW-exterior (Esri applyEdits,
@@ -832,7 +839,11 @@ internal static partial class MapServerEndpoints
         return wroteGeometry;
     }
 
-    private static bool WritePlacemark(XmlWriter writer, KmlFeature feature, string? displayValue)
+    private static bool WritePlacemark(
+        XmlWriter writer,
+        KmlFeature feature,
+        string? displayValue,
+        IReadOnlySet<string> hiddenFields)
     {
         writer.WriteStartElement("Placemark");
         writer.WriteElementString(
@@ -841,7 +852,7 @@ internal static partial class MapServerEndpoints
                 ? feature.Id.ToString(CultureInfo.InvariantCulture)
                 : displayValue);
 
-        WriteExtendedData(feature.Attributes, writer);
+        WriteExtendedData(feature.Attributes, hiddenFields, writer);
 
         var wroteGeometry = !string.IsNullOrWhiteSpace(feature.GeometryKml);
         if (wroteGeometry)
@@ -855,6 +866,7 @@ internal static partial class MapServerEndpoints
 
     private static void WriteExtendedData(
         ImmutableDictionary<string, object?> attributes,
+        IReadOnlySet<string> hiddenFields,
         XmlWriter writer)
     {
         if (attributes.Count == 0)
@@ -870,7 +882,8 @@ internal static partial class MapServerEndpoints
                 continue;
             }
 
-            if (FeatureAttributeVisibility.IsInternalAttribute(key))
+            // Internal attributes and publisher-hidden fields stay out of ExtendedData (#6098).
+            if (!IsPublicAttribute(key, hiddenFields))
             {
                 continue;
             }

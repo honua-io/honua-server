@@ -142,8 +142,11 @@ internal static class FileGdbReader
                 yield break;
             }
 
-            var srid = geomDef.Srid > 0 ? geomDef.Srid : 4326;
-            var geometryFactory = new GeometryFactory(new PrecisionModel(), srid);
+            // An unresolved spatial reference stays SRID 0 (unknown) rather than defaulting to
+            // 4326: ESRI WKT without an AUTHORITY node (State Plane, UTM, ...) is resolved by the
+            // import service through ICrsDetectionService or an explicit SourceSrid, and a 4326
+            // stamp here would silently store projected coordinates as degrees (#6114).
+            var geometryFactory = new GeometryFactory(new PrecisionModel(), Math.Max(geomDef.Srid, 0));
             var geomReader = new GdbGeometryReader(geometryFactory, geomDef);
 
             // Find the geometry field index.
@@ -347,7 +350,7 @@ internal static class FileGdbReader
                 return null;
             }
 
-            return new FileGdbLayerInfo(tableName, tableReader.RowCount, geomDef.Srid, fileNumber);
+            return new FileGdbLayerInfo(tableName, tableReader.RowCount, geomDef.Srid, fileNumber, geomDef.WktSpatialReference);
         }
     }
 
@@ -396,6 +399,13 @@ internal static class FileGdbReader
 
     /// <summary>
     /// Represents a discovered feature class layer in the geodatabase.
+    /// <c>Srid</c> is 0 when the WKT carries no recognizable authority; callers resolve
+    /// <c>SpatialReferenceWkt</c> through the CRS detection service in that case (#6114).
     /// </summary>
-    internal readonly record struct FileGdbLayerInfo(string Name, int RowCount, int Srid, int FileNumber);
+    internal readonly record struct FileGdbLayerInfo(
+        string Name,
+        int RowCount,
+        int Srid,
+        int FileNumber,
+        string? SpatialReferenceWkt = null);
 }

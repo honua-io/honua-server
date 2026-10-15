@@ -83,48 +83,62 @@ public sealed class InMemoryEmbedKeyStore : IEmbedKeyStore
     /// <inheritdoc />
     public Task<EmbedKeyCreateResult?> RotateAsync(Guid id, CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (!_keys.TryGetValue(id, out var existing) || existing.RevokedAt is not null)
+        while (true)
         {
-            return Task.FromResult<EmbedKeyCreateResult?>(null);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!_keys.TryGetValue(id, out var existing) || existing.RevokedAt is not null)
+            {
+                return Task.FromResult<EmbedKeyCreateResult?>(null);
+            }
+
+            var now = _timeProvider.GetUtcNow();
+            var generated = EmbedKeyMaterial.Generate();
+            var updated = existing with
+            {
+                KeyPrefix = EmbedKeyMaterial.DisplayPrefix(generated),
+                KeyHash = EmbedKeyMaterial.Hash(generated),
+                UpdatedAt = now,
+                RotatedAt = now,
+                LastUsedAt = null,
+            };
+
+            // Replace only the snapshot checked above. An unconditional write would put the
+            // previous secret back over a concurrent revoke or a newer rotation.
+            if (_keys.TryUpdate(id, updated, existing))
+            {
+                _windows.TryRemove(id, out _);
+                return Task.FromResult<EmbedKeyCreateResult?>(new EmbedKeyCreateResult(updated, generated));
+            }
         }
-
-        var now = _timeProvider.GetUtcNow();
-        var generated = EmbedKeyMaterial.Generate();
-        var updated = existing with
-        {
-            KeyPrefix = EmbedKeyMaterial.DisplayPrefix(generated),
-            KeyHash = EmbedKeyMaterial.Hash(generated),
-            UpdatedAt = now,
-            RotatedAt = now,
-            LastUsedAt = null,
-        };
-
-        _keys[id] = updated;
-        _windows.TryRemove(id, out _);
-        return Task.FromResult<EmbedKeyCreateResult?>(new EmbedKeyCreateResult(updated, generated));
     }
 
     /// <inheritdoc />
     public Task<EmbedKeyRecord?> RevokeAsync(Guid id, CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (!_keys.TryGetValue(id, out var existing))
+        while (true)
         {
-            return Task.FromResult<EmbedKeyRecord?>(null);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!_keys.TryGetValue(id, out var existing))
+            {
+                return Task.FromResult<EmbedKeyRecord?>(null);
+            }
+
+            var now = _timeProvider.GetUtcNow();
+            var updated = existing with
+            {
+                UpdatedAt = now,
+                RevokedAt = existing.RevokedAt ?? now,
+            };
+
+            // A concurrent usage or rotation write replaced the snapshot: revoke the current
+            // record rather than report a revocation that was never stored.
+            if (_keys.TryUpdate(id, updated, existing))
+            {
+                return Task.FromResult<EmbedKeyRecord?>(updated);
+            }
         }
-
-        var now = _timeProvider.GetUtcNow();
-        var updated = existing with
-        {
-            UpdatedAt = now,
-            RevokedAt = existing.RevokedAt ?? now,
-        };
-
-        _keys[id] = updated;
-        return Task.FromResult<EmbedKeyRecord?>(updated);
     }
 
     /// <inheritdoc />
@@ -140,25 +154,29 @@ public sealed class InMemoryEmbedKeyStore : IEmbedKeyStore
         var providedHash = EmbedKeyMaterial.Hash(keyMaterial);
         var now = _timeProvider.GetUtcNow();
 
-        foreach (var record in _keys.Values)
+        // Retries a contended key update and returns the first winning record.
+        foreach (var candidate in _keys.Values)
         {
-            if (record.GetStatus(now) != EmbedKeyStatus.Active)
+            var record = candidate;
+            while (record is not null
+                && record.GetStatus(now) == EmbedKeyStatus.Active
+                && CryptographicOperations.FixedTimeEquals(providedHash, record.KeyHash))
             {
-                continue;
-            }
+                var updated = record with
+                {
+                    LastUsedAt = now,
+                    UpdatedAt = now,
+                };
+                if (_keys.TryUpdate(record.Id, updated, record))
+                {
+                    return Task.FromResult<EmbedKeyValidationResult?>(new EmbedKeyValidationResult(updated));
+                }
 
-            if (!CryptographicOperations.FixedTimeEquals(providedHash, record.KeyHash))
-            {
-                continue;
+                // A concurrent write won the update. Never return the stale snapshot: re-check
+                // the current record, so a revoke or rotate still denies while a sibling
+                // request's usage write does not.
+                record = _keys.TryGetValue(record.Id, out var current) ? current : null;
             }
-
-            var updated = record with
-            {
-                LastUsedAt = now,
-                UpdatedAt = now,
-            };
-            _keys[record.Id] = updated;
-            return Task.FromResult<EmbedKeyValidationResult?>(new EmbedKeyValidationResult(updated));
         }
 
         return Task.FromResult<EmbedKeyValidationResult?>(null);

@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Mobile.FieldCollection;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
+using Honua.Infrastructure.Events;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Mobile.FieldCollection.Automations;
@@ -38,6 +40,17 @@ internal static class FieldCollectionAutomationServiceCollectionExtensions
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IFieldCollectionActionHandler, WebhookFieldCollectionActionHandler>());
+
+        // Same outbound posture as the alert and feature-change webhooks: no
+        // redirects, DNS pinned at connect time, and a bounded client timeout.
+        // An unregistered name would otherwise use SocketsHttpHandler defaults
+        // (follow redirects, no connect callback, 100s timeout) (#6126).
+        services.AddResilientHttpClient(
+            WebhookFieldCollectionActionHandler.HttpClientName,
+            WebhookFieldCollectionActionHandler.HttpClientName,
+            HttpResiliencePolicies.FastApiDefaults,
+            configureClient: static client => client.Timeout = TimeSpan.FromSeconds(30),
+            configureHandler: static () => WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 
         services.AddHostedService<FieldCollectionAutomationDispatchBackgroundService>();
 

@@ -8,11 +8,13 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
 /// Reads and writes <c>grpc_apply_edits_receipt</c>. Writes join the caller's edit transaction.
+/// Each read and write also deletes a bounded batch of expired rows so expiry is removal, not only a filter.
 /// </summary>
 internal static class PostgresGrpcApplyEditsReceipt
 {
     internal const int MaxScopeLength = 128;
     internal const int MaxReceiptBytes = 16 * 1024 * 1024;
+    internal const int ExpiredDeleteBatchSize = 32;
 
     internal static string InsertSql(string qualifiedTable) =>
         $"""
@@ -32,6 +34,17 @@ internal static class PostgresGrpcApplyEditsReceipt
         WHERE scope_key = $1 AND expires_at > now()
         """;
 
+    internal static string DeleteExpiredSql(string qualifiedTable) =>
+        $"""
+        DELETE FROM {qualifiedTable}
+        WHERE scope_key IN (
+            SELECT scope_key FROM {qualifiedTable}
+            WHERE expires_at <= now()
+            ORDER BY expires_at
+            LIMIT {ExpiredDeleteBatchSize}
+        )
+        """;
+
     internal static async Task<bool> TryWriteAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -45,6 +58,9 @@ internal static class PostgresGrpcApplyEditsReceipt
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(transaction);
         ArgumentException.ThrowIfNullOrWhiteSpace(qualifiedTable);
+
+        await DeleteExpiredAsync(connection, transaction, qualifiedTable, commandTimeoutSeconds, cancellationToken)
+            .ConfigureAwait(false);
 
         await using var command = new NpgsqlCommand(InsertSql(qualifiedTable), connection)
         {
@@ -76,6 +92,9 @@ internal static class PostgresGrpcApplyEditsReceipt
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentException.ThrowIfNullOrWhiteSpace(qualifiedTable);
 
+        await DeleteExpiredAsync(connection, transaction: null, qualifiedTable, commandTimeoutSeconds, cancellationToken)
+            .ConfigureAwait(false);
+
         await using var command = new NpgsqlCommand(SelectSql(qualifiedTable), connection);
         if (commandTimeoutSeconds > 0)
         {
@@ -85,5 +104,24 @@ internal static class PostgresGrpcApplyEditsReceipt
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Text, Value = scope });
         var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return value is byte[] bytes ? bytes : null;
+    }
+
+    private static async Task DeleteExpiredAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        string qualifiedTable,
+        int commandTimeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(DeleteExpiredSql(qualifiedTable), connection)
+        {
+            Transaction = transaction,
+        };
+        if (commandTimeoutSeconds > 0)
+        {
+            command.CommandTimeout = commandTimeoutSeconds;
+        }
+
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 }

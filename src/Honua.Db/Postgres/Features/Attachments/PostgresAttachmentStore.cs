@@ -21,7 +21,7 @@ namespace Honua.Db.Postgres.Features.Attachments;
 /// Marked as internal to prevent exposure of database-specific implementations
 /// outside the Infrastructure layer (Clean Architecture principle).
 /// </remarks>
-internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImportedAttachmentStore
+internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImportedAttachmentStore, IFeatureAttachmentCleanup
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICloudFileStorage _fileStorage;

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Configuration;
@@ -332,6 +333,34 @@ public sealed partial class PbfQueryFormatterTests
     }
 
     [Fact]
+    public void FormatAsPbf_WithoutQuantizationParameters_DecodesPositiveY()
+    {
+        var layer = CreatePointLayer();
+        var feature = Feature.Create(1, CreatePointWkb(10, 45),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+        var result = QueryResult<Feature>.Create(1, [feature]);
+
+        var (response, _) = _sut.FormatAsPbf(
+            result, layer, returnGeometry: true, outputSrid: null,
+            returnZ: false, returnM: false, geometryPrecision: null,
+            maxAllowableOffset: null, outFields: null);
+
+        var featureResult = GetFirstLengthDelimitedField(GetFirstLengthDelimitedField(response, 2), 1);
+        var transform = GetFirstLengthDelimitedField(featureResult, 12);
+        var origin = TryGetVarintField(transform, 1, out var originValue) ? originValue : 0UL;
+        var scale = GetFirstLengthDelimitedField(transform, 2);
+        var translate = GetFirstLengthDelimitedField(transform, 3);
+        var coords = ExtractGeometryCoords(response);
+        var worldX = ReadDoubleField(translate, 1) + (coords[0] * ReadDoubleField(scale, 1));
+        var worldY = origin == 1
+            ? ReadDoubleField(translate, 2) + (coords[1] * ReadDoubleField(scale, 2))
+            : ReadDoubleField(translate, 2) - (coords[1] * ReadDoubleField(scale, 2));
+
+        worldX.Should().BeApproximately(10d, 1e-6);
+        worldY.Should().BeApproximately(45d, 1e-6);
+    }
+
+    [Fact]
     public void FormatAsPbf_WithClientQuantization_PreservesIndependentZmScale()
     {
         var layer = CreatePointLayer();
@@ -636,6 +665,75 @@ public sealed partial class PbfQueryFormatterTests
         var geometry = GetFirstLengthDelimitedField(feature, fieldNumber: 2);
         var packedCoords = GetFirstLengthDelimitedField(geometry, fieldNumber: 3);
         return DecodePackedSInt64Values(packedCoords);
+    }
+
+    private static bool TryGetVarintField(ReadOnlySpan<byte> message, int fieldNumber, out ulong value)
+    {
+        var offset = 0;
+        while (offset < message.Length)
+        {
+            var tag = ReadVarint(message, ref offset);
+            switch (tag & 7)
+            {
+                case 0:
+                    var current = ReadVarint(message, ref offset);
+                    if ((int)(tag >> 3) == fieldNumber)
+                    {
+                        value = current;
+                        return true;
+                    }
+
+                    break;
+                case 1:
+                    offset += 8;
+                    break;
+                case 2:
+                    offset += checked((int)ReadVarint(message, ref offset));
+                    break;
+                case 5:
+                    offset += 4;
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected protobuf wire type.");
+            }
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static double ReadDoubleField(ReadOnlySpan<byte> message, int fieldNumber)
+    {
+        var offset = 0;
+        while (offset < message.Length)
+        {
+            var tag = ReadVarint(message, ref offset);
+            switch (tag & 7)
+            {
+                case 0:
+                    _ = ReadVarint(message, ref offset);
+                    break;
+                case 1:
+                    var current = BinaryPrimitives.ReadDoubleLittleEndian(message.Slice(offset, 8));
+                    offset += 8;
+                    if ((int)(tag >> 3) == fieldNumber)
+                    {
+                        return current;
+                    }
+
+                    break;
+                case 2:
+                    offset += checked((int)ReadVarint(message, ref offset));
+                    break;
+                case 5:
+                    offset += 4;
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected protobuf wire type.");
+            }
+        }
+
+        throw new InvalidOperationException($"Double field {fieldNumber} was not found.");
     }
 
 }

@@ -57,7 +57,7 @@ internal static class SharingCommunityEndpoints
         endpoints.MapGet("/sharing/rest/community/groups/{groupId}", HandleGetGroupAsync)
             .WithDisplayName("ArcGIS Portal Group")
             .WithName("SharingRestCommunityGroup")
-            .WithSummary("Fetch a community group and its membership")
+            .WithSummary("Fetch a community group. Membership is limited to the owner, members, or an administrator.")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
             .Produces<GroupResponse>(StatusCodes.Status200OK, JsonContentType)
@@ -172,12 +172,12 @@ internal static class SharingCommunityEndpoints
         {
             Success = true,
             GroupId = record.Id,
-            Group = ToGroup(record),
+            Group = ToGroup(record, includeMembers: true),
         };
         return Results.Json(response, SharingRestJsonContext.Default.GroupOperationResponse, contentType: JsonContentType);
     }
 
-    private static async Task<IResult> HandleGetGroupAsync(
+    internal static async Task<IResult> HandleGetGroupAsync(
         HttpContext context,
         string groupId,
         [FromServices] IPortalGroupStore groupStore,
@@ -197,7 +197,10 @@ internal static class SharingCommunityEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "Group does not exist or is inaccessible.");
         }
 
-        return Results.Json(ToGroup(record), SharingRestJsonContext.Default.GroupResponse, contentType: JsonContentType);
+        return Results.Json(
+            ToGroup(record, CanSeeMembers(record, context.User)),
+            SharingRestJsonContext.Default.GroupResponse,
+            contentType: JsonContentType);
     }
 
     internal static async Task<IReadOnlyList<GroupResponse>> GetUserGroupsAsync(
@@ -214,7 +217,7 @@ internal static class SharingCommunityEndpoints
                 && (string.Equals(group.Owner, username, StringComparison.OrdinalIgnoreCase)
                     || group.Members.Contains(username, StringComparer.OrdinalIgnoreCase)))
             .OrderBy(group => group.Id, StringComparer.Ordinal)
-            .Select(ToGroup).ToArray();
+            .Select(group => ToGroup(group, includeMembers: true)).ToArray();
     }
 
     private static async Task<IResult> HandleGroupContentAsync(
@@ -532,6 +535,23 @@ internal static class SharingCommunityEndpoints
         return record.Members.Contains(user, StringComparer.OrdinalIgnoreCase) || IsAdmin(principal);
     }
 
+    private static bool CanSeeMembers(PortalGroupRecord record, ClaimsPrincipal principal)
+    {
+        if (principal.Identity?.IsAuthenticated != true)
+        {
+            return false;
+        }
+
+        if (IsAdmin(principal))
+        {
+            return true;
+        }
+
+        var user = ResolveUsername(principal);
+        return string.Equals(record.Owner, user, StringComparison.OrdinalIgnoreCase)
+            || record.Members.Contains(user, StringComparer.OrdinalIgnoreCase);
+    }
+
     private static bool CanAdministerGroup(PortalGroupRecord record, string caller, ClaimsPrincipal principal)
         => string.Equals(record.Owner, caller, StringComparison.OrdinalIgnoreCase) || IsAdmin(principal);
 
@@ -555,7 +575,7 @@ internal static class SharingCommunityEndpoints
             ?? principal.Identity?.Name
             ?? "user";
 
-    private static GroupResponse ToGroup(PortalGroupRecord record) => new()
+    private static GroupResponse ToGroup(PortalGroupRecord record, bool includeMembers) => new()
     {
         Id = record.Id,
         Title = record.Title,
@@ -563,7 +583,7 @@ internal static class SharingCommunityEndpoints
         Owner = record.Owner,
         Access = record.Access,
         Tags = record.Tags,
-        Members = record.Members,
+        Members = includeMembers ? record.Members : null,
         Created = record.Created.ToUnixTimeMilliseconds(),
         Modified = record.Modified.ToUnixTimeMilliseconds(),
     };

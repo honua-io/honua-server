@@ -90,6 +90,10 @@ public sealed class ConfigurationDocumentationService
             sections.AddRange(contributor.GetSections());
         }
 
+        // Contributors set CurrentValue themselves and do not pass through GetCurrentValue.
+        // Mask credential-bearing strings here so a token= URL is not returned in clear text.
+        MaskCredentialBearingValues(sections);
+
         var envVars = BuildEnvironmentVariableQuickReference(sections);
         var version = typeof(ConfigurationDocumentationService).Assembly.GetName().Version?.ToString() ?? "unknown";
 
@@ -806,7 +810,6 @@ public sealed class ConfigurationDocumentationService
         object? defaultValue, object? currentValue, string? validation = null, bool isSensitive = false)
     {
         var source = DetermineSource(path, envVar);
-        var displayValue = isSensitive && currentValue != null ? "***" : currentValue;
 
         return new ConfigurationProperty
         {
@@ -816,7 +819,7 @@ public sealed class ConfigurationDocumentationService
             Type = type,
             Description = description,
             DefaultValue = defaultValue,
-            CurrentValue = displayValue,
+            CurrentValue = MaskCurrentValue(currentValue, isSensitive),
             IsRequired = false,
             IsSensitive = isSensitive,
             Validation = validation,
@@ -827,17 +830,47 @@ public sealed class ConfigurationDocumentationService
     private string? GetCurrentValue(string path, string envVar, bool isSensitive)
     {
         var value = GetResolvedValue(path, envVar);
-        if (value == null)
+        return MaskCurrentValue(value, isSensitive) as string;
+    }
+
+    /// <summary>
+    /// Masks sensitive and credential-bearing current values. Default values and
+    /// environment-variable examples are left unchanged.
+    /// </summary>
+    private static void MaskCredentialBearingValues(IEnumerable<ConfigurationSection> sections)
+    {
+        foreach (var section in sections)
+        {
+            foreach (var property in section.Properties)
+            {
+                property.CurrentValue = MaskCurrentValue(property.CurrentValue, property.IsSensitive);
+            }
+
+            if (section.SubSections.Count > 0)
+            {
+                MaskCredentialBearingValues(section.SubSections);
+            }
+        }
+    }
+
+    private static object? MaskCurrentValue(object? currentValue, bool isSensitive)
+    {
+        if (currentValue is null)
         {
             return null;
         }
 
         if (isSensitive)
         {
-            return "***";
+            return ConfigurationSecretRedactor.Mask;
         }
 
-        return value;
+        if (currentValue is string text && ConfigurationSecretRedactor.LooksCredentialBearing(text))
+        {
+            return ConfigurationSecretRedactor.Mask;
+        }
+
+        return currentValue;
     }
 
     private string DetermineSource(string path, string envVar)

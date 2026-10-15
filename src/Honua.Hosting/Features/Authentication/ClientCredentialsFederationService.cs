@@ -14,12 +14,13 @@ namespace Honua.Infrastructure.Authentication;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Operators who centralise machine identity in an external IdP can delegate the
-/// <c>client_credentials</c> credential check to that IdP's token endpoint instead
-/// of the in-tree client registry / Admin API-key store. This service forwards the
-/// presented <c>client_id</c>/<c>client_secret</c> to the configured token endpoint
-/// with <c>grant_type=client_credentials</c>; a successful exchange means the IdP
-/// has authenticated the machine identity.
+/// Operators who centralise machine identity in an external IdP can delegate a
+/// <c>client_credentials</c> credential check to that IdP's token endpoint when the
+/// in-tree client registry and Admin API-key store both miss (#6166). This service
+/// forwards the presented <c>client_id</c>/<c>client_secret</c> to the configured
+/// token endpoint with <c>grant_type=client_credentials</c>; a successful exchange
+/// means the IdP has authenticated the machine identity. The caller must not invoke
+/// it for a secret a local store has already accepted.
 /// </para>
 /// <para>
 /// Per ADR-0049 Honua never holds a second token store: on success it discards the
@@ -55,10 +56,11 @@ internal sealed class ClientCredentialsFederationService(
     /// <summary>
     /// Delegates a <c>client_credentials</c> exchange to the external IdP token
     /// endpoint. Returns the roles to stamp on the minted Honua token when the IdP
-    /// accepts the credentials, otherwise <see langword="null"/> (the caller falls
-    /// back to the in-tree client registry / API-key path, then to
-    /// <c>invalid_client</c>). Never throws on an auth failure — a non-2xx response
-    /// or transport error is a federation miss, not a server error.
+    /// accepts the credentials, otherwise <see langword="null"/>. The caller invokes
+    /// this only after the in-tree client registry and API-key store miss, and then
+    /// returns <c>invalid_client</c>. Never throws on an auth failure — a non-2xx
+    /// response, a non-JSON success body, or a transport error is a federation miss,
+    /// not a server error.
     /// </summary>
     public async Task<IReadOnlyList<string>?> TryAuthenticateAsync(
         string? clientId,
@@ -120,6 +122,11 @@ internal sealed class ClientCredentialsFederationService(
             }
 
             return options.GrantedRoles;
+        }
+        catch (JsonException)
+        {
+            // A 2xx body that is not a token document is a federation miss (#6166).
+            return null;
         }
         catch (HttpRequestException)
         {

@@ -736,5 +736,11 @@ internal enum FeatureStreamDisconnectReason
     AdminDisconnect,
 
     /// <summary>Client failed to keep up with the event stream.</summary>
-    SlowConsumer
+    SlowConsumer,
+
+    /// <summary>
+    /// The subscriber's refreshed read policies deny a layer it was reading, or could not be
+    /// re-resolved; the client must re-subscribe through normal admission.
+    /// </summary>
+    PolicyRevoked
 }

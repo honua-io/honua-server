@@ -487,16 +487,14 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         var sql = _stringBuilderPool.Get();
         try
         {
+            // PostgreSQL does not fold repeated PostGIS calls. Selecting the decoded or
+            // reprojected geometry once in a materialized CTE keeps ST_Extent and the SRID
+            // aggregates from evaluating that expression up to six times per row (#6070).
             sql.Append(CultureInfo.InvariantCulture, $@"
-            SELECT
-                ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent),
-                min_srid, max_srid
-            FROM (
-                SELECT ST_Extent({extentExpression}) as extent,
-                    MIN(ST_SRID({extentExpression})) FILTER (WHERE NOT ST_IsEmpty({extentExpression})) as min_srid,
-                    MAX(ST_SRID({extentExpression})) FILTER (WHERE NOT ST_IsEmpty({extentExpression})) as max_srid
+            WITH extent_rows AS MATERIALIZED (
+                SELECT {extentExpression} AS geom
                 FROM {_tableName}
-                WHERE {DatabaseSchema.LayerIdColumn} = $1 AND {extentExpression} IS NOT NULL");
+                WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
             var paramIndex = 2;
             var parameters = new List<object>();
@@ -505,7 +503,18 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             AppendTemporalFilter(sql, effectiveQuery, ref paramIndex, parameters);
             AppendSpatialFilter(sql, effectiveQuery, geometryStorageType, ref paramIndex, parameters);
 
-            sql.Append(") AS extent_query");
+            sql.Append(@"
+            )
+            SELECT
+                ST_XMin(extent), ST_YMin(extent), ST_XMax(extent), ST_YMax(extent),
+                min_srid, max_srid
+            FROM (
+                SELECT ST_Extent(geom) as extent,
+                    MIN(ST_SRID(geom)) FILTER (WHERE NOT ST_IsEmpty(geom)) as min_srid,
+                    MAX(ST_SRID(geom)) FILTER (WHERE NOT ST_IsEmpty(geom)) as max_srid
+                FROM extent_rows
+                WHERE geom IS NOT NULL
+            ) AS extent_query");
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
         finally
@@ -648,13 +657,17 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 var layerSrid = query.Value.SpatialReferenceSrid.Value;
                 if (layerSrid != targetTileSrid)
                 {
-                    geometryForTile = $"ST_Transform({geometryOperand}, {targetTileSrid})";
+                    // Route through the shared clamp so a polar vertex in a geographic layer
+                    // cannot abort the Web Mercator tile statement (#6109).
+                    geometryForTile = DatumTransformSql.BuildTransformExpression(
+                        geometryOperand, targetTileSrid, selection: null, fromSrid: layerSrid);
                     tileEnvelopeForFilter = $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})";
                 }
             }
             else
             {
-                geometryForTile = $"ST_Transform({geometryOperand}, {targetTileSrid})";
+                // Layer SRID unknown: clamp geographic rows by their runtime SRID (#6109).
+                geometryForTile = DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
                 filterGeometryOperand = geometryForTile;
             }
 
@@ -771,7 +784,11 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             // Reproject the stored geometry into the gridset SRID for tile rasterization, and push
             // the spatial filter down in the layer's storage SRID so the GiST index is usable.
-            var geometryForTile = $"ST_Transform({geometryOperand}, {targetTileSrid})";
+            // A geographic layer aimed at a Web Mercator gridset is clamped first (#6109).
+            var geometryForTile = query?.SpatialReferenceSrid is { } storageSrid
+                ? DatumTransformSql.BuildTransformExpression(
+                    geometryOperand, targetTileSrid, selection: null, fromSrid: storageSrid)
+                : DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
             string filterGeometryOperand;
             string tileEnvelopeForFilter;
             if (query.HasValue && query.Value.SpatialReferenceSrid is { } layerSrid && layerSrid != targetTileSrid)

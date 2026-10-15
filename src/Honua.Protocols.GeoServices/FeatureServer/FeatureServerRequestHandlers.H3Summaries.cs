@@ -489,6 +489,16 @@ internal static partial class FeatureServerEndpoints
                     return false;
                 }
 
+                // Grouping by a publisher-hidden field would list its distinct values (#6098).
+                if (resource.IsHiddenSchemaField(field))
+                {
+                    error = StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "Invalid groupBy parameter",
+                        [$"groupBy field '{field}' does not exist on the layer."]);
+                    return false;
+                }
+
                 builder.Add(new ParsedGroupBy(field, alias, label, limit, nullLabel));
             }
 

@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using NetTopologySuite.LinearReferencing;
 
 namespace Honua.Protocols.GeoServices.GeometryService.Services;
 
@@ -2470,7 +2471,8 @@ internal sealed class GeometryServiceHandler(
 
     // Trims a polyline at its intersection with the trim line, or extends the polyline's
     // terminal segment to reach the trim line when they do not currently intersect.
-    private static Geometry TrimOrExtend(Geometry polyline, Geometry trimLine)
+    // Esri keeps the part to the left of the oriented trim line (#6131).
+    internal static Geometry TrimOrExtend(Geometry polyline, Geometry trimLine)
     {
         var factory = polyline.Factory;
         var coords = polyline.Coordinates;
@@ -2479,36 +2481,63 @@ internal sealed class GeometryServiceHandler(
             return polyline;
         }
 
-        if (polyline.Intersects(trimLine))
+        if (polyline.Intersects(trimLine) && trimLine.Coordinates.Length >= 2)
         {
-            // Trim: keep the portion of the polyline up to its first intersection point.
-            var intersection = polyline.Intersection(trimLine);
-            var cutPoint = intersection.IsEmpty ? null : intersection.Coordinate;
-            if (cutPoint is not null)
-            {
-                var kept = new List<Coordinate> { coords[0] };
-                for (var i = 1; i < coords.Length; i++)
-                {
-                    var segment = factory.CreateLineString(new[] { coords[i - 1], coords[i] });
-                    if (segment.Intersects(trimLine))
-                    {
-                        kept.Add(cutPoint);
-                        break;
-                    }
-
-                    kept.Add(coords[i]);
-                }
-
-                if (kept.Count >= 2)
-                {
-                    return factory.CreateLineString(kept.ToArray());
-                }
-            }
-
-            return polyline;
+            return TrimToLeftOfLine(polyline, trimLine, factory, coords);
         }
 
-        // Extend: project the final segment forward until it meets the trim line.
+        return ExtendToTrimLine(polyline, trimLine, factory, coords);
+    }
+
+    private static Geometry TrimToLeftOfLine(
+        Geometry polyline,
+        Geometry trimLine,
+        GeometryFactory factory,
+        Coordinate[] coords)
+    {
+        var trimCoords = trimLine.Coordinates;
+        var kept = new List<List<Coordinate>>();
+        var current = new List<Coordinate> { coords[0] };
+        for (var i = 1; i < coords.Length; i++)
+        {
+            var segment = factory.CreateLineString(new[] { coords[i - 1], coords[i] });
+            foreach (var cut in CutPointsAlongSegment(segment, trimLine))
+            {
+                if (SamePoint(cut, current[^1]))
+                {
+                    continue;
+                }
+
+                current.Add(cut);
+                if (IsLeftOfTrim(current, trimCoords))
+                {
+                    kept.Add(current);
+                }
+
+                current = [new Coordinate(cut.X, cut.Y)];
+            }
+
+            if (!SamePoint(coords[i], current[^1]))
+            {
+                current.Add(coords[i]);
+            }
+        }
+
+        if (current.Count >= 2 && IsLeftOfTrim(current, trimCoords))
+        {
+            kept.Add(current);
+        }
+
+        return AssembleKeptPieces(kept, factory, polyline);
+    }
+
+    // Extend: project the final segment forward until it meets the trim line.
+    private static Geometry ExtendToTrimLine(
+        Geometry polyline,
+        Geometry trimLine,
+        GeometryFactory factory,
+        Coordinate[] coords)
+    {
         var last = coords[^1];
         var prev = coords[^2];
         var dx = last.X - prev.X;
@@ -2533,6 +2562,122 @@ internal sealed class GeometryServiceHandler(
         Array.Copy(coords, extended, coords.Length);
         extended[^1] = hit.Coordinate;
         return factory.CreateLineString(extended);
+    }
+
+    private static List<Coordinate> CutPointsAlongSegment(LineString segment, Geometry trimLine)
+    {
+        var points = new List<Coordinate>();
+        AppendCoordinates(segment.Intersection(trimLine), points);
+        if (points.Count > 1)
+        {
+            var origin = segment.GetCoordinateN(0);
+            points.Sort((left, right) => DistanceSquared(origin, left).CompareTo(DistanceSquared(origin, right)));
+        }
+
+        return points;
+    }
+
+    private static double DistanceSquared(Coordinate origin, Coordinate point)
+    {
+        var dx = point.X - origin.X;
+        var dy = point.Y - origin.Y;
+        return (dx * dx) + (dy * dy);
+    }
+
+    private static bool IsLeftOfTrim(List<Coordinate> piece, Coordinate[] trim)
+    {
+        if (piece.Count < 2 || trim.Length < 2)
+        {
+            return false;
+        }
+
+        var (origin, destination) = AbuttingTrimSegment(piece, trim);
+        for (var i = 1; i < piece.Count; i++)
+        {
+            var probe = new Coordinate(
+                (piece[i - 1].X + piece[i].X) / 2,
+                (piece[i - 1].Y + piece[i].Y) / 2);
+            var side = NetTopologySuite.Algorithm.Orientation.Index(origin, destination, probe);
+            if (side == NetTopologySuite.Algorithm.OrientationIndex.CounterClockwise)
+            {
+                return true;
+            }
+
+            if (side == NetTopologySuite.Algorithm.OrientationIndex.Clockwise)
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    private static (Coordinate Origin, Coordinate Destination) AbuttingTrimSegment(
+        List<Coordinate> piece,
+        Coordinate[] trim)
+    {
+        var best = 1;
+        var bestDistance = double.MaxValue;
+        for (var end = 0; end < 2; end++)
+        {
+            var point = end == 0 ? piece[0] : piece[^1];
+            for (var i = 1; i < trim.Length; i++)
+            {
+                var distance = new LineSegment(trim[i - 1], trim[i]).Distance(point);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = i;
+                }
+            }
+        }
+
+        return (trim[best - 1], trim[best]);
+    }
+
+    private static Geometry AssembleKeptPieces(
+        List<List<Coordinate>> kept,
+        GeometryFactory factory,
+        Geometry original)
+    {
+        var merged = new List<List<Coordinate>>();
+        foreach (var piece in kept)
+        {
+            if (piece.Count < 2)
+            {
+                continue;
+            }
+
+            if (merged.Count > 0 && SamePoint(merged[^1][^1], piece[0]))
+            {
+                for (var i = 1; i < piece.Count; i++)
+                {
+                    merged[^1].Add(piece[i]);
+                }
+            }
+            else
+            {
+                merged.Add(piece);
+            }
+        }
+
+        if (merged.Count == 0)
+        {
+            return original;
+        }
+
+        if (merged.Count == 1)
+        {
+            return factory.CreateLineString(merged[0].ToArray());
+        }
+
+        var lines = new LineString[merged.Count];
+        for (var i = 0; i < merged.Count; i++)
+        {
+            lines[i] = factory.CreateLineString(merged[i].ToArray());
+        }
+
+        return factory.CreateMultiLineString(lines);
     }
 
     private IResult ExecuteOffset(OffsetParameters parameters, HonuaTelemetryScope scope)
@@ -2640,59 +2785,394 @@ internal sealed class GeometryServiceHandler(
     }
 
     // Reshapes a polygon or polyline using a reshaper line. The reshaper must cross the
-    // target boundary; the portion of the boundary between the two crossing points is
-    // replaced by the reshaper line, yielding a modified geometry.
-    private static Geometry ReshapeGeometry(Geometry target, Geometry reshaper)
+    // target; the boundary between the reshaper's first and last crossings is replaced
+    // by the reshaper.
+    internal static Geometry ReshapeGeometry(Geometry target, Geometry reshaper)
     {
-        if (target is IPolygonal)
+        if (target is Polygon polygon)
         {
-            var boundary = target.Boundary;
-            if (!boundary.Intersects(reshaper))
-            {
-                return target;
-            }
+            return ReshapePolygon(polygon, reshaper);
+        }
 
-            var nodedEdges = boundary.Union(reshaper);
-            var polygonizer = new NetTopologySuite.Operation.Polygonize.Polygonizer();
-            polygonizer.Add(nodedEdges);
-            var candidates = polygonizer.GetPolygons().Cast<Geometry>().ToArray();
-            if (candidates.Length == 0)
-            {
-                return target;
-            }
-
-            // Choose the candidate whose area is closest to (target area +/- the reshaper lobe);
-            // in practice the largest candidate that uses the reshaper edge is the reshaped result.
-            var reshaped = candidates
-                .Where(c => c.Intersects(reshaper))
-                .OrderByDescending(c => c.Area)
-                .FirstOrDefault() ?? candidates.OrderByDescending(c => c.Area).First();
-            return reshaped;
+        if (target is MultiPolygon multiPolygon)
+        {
+            return ReshapeMultiPolygon(multiPolygon, reshaper);
         }
 
         if (target is ILineal)
         {
-            var intersection = target.Intersection(reshaper);
-            if (intersection.IsEmpty)
-            {
-                return target;
-            }
-
-            // Merge the reshaper into the line and pick the longest connected result.
-            var merger = new NetTopologySuite.Operation.Linemerge.LineMerger();
-            merger.Add(target.Difference(reshaper.Buffer(target.Length * 1e-9)));
-            merger.Add(reshaper);
-            var merged = merger.GetMergedLineStrings().Cast<Geometry>().ToArray();
-            if (merged.Length == 0)
-            {
-                return target;
-            }
-
-            return merged.OrderByDescending(m => m.Length).First();
+            return ReshapeLine(target, reshaper);
         }
 
         return target;
     }
+
+    // Keep the target before the first crossing, splice in the reshaper oriented from
+    // that crossing to the last, then keep the target after the last crossing (#6129).
+    // Fewer than two crossings leaves the target unchanged.
+    private static Geometry ReshapeLine(Geometry target, Geometry reshaper)
+    {
+        if (reshaper is not ILineal || reshaper.IsEmpty)
+        {
+            return target;
+        }
+
+        if (target is MultiLineString multiLine)
+        {
+            var parts = new LineString[multiLine.NumGeometries];
+            var changed = false;
+            for (var i = 0; i < parts.Length; i++)
+            {
+                var part = (LineString)multiLine.GetGeometryN(i);
+                var reshaped = ReshapeLineString(part, reshaper);
+                parts[i] = reshaped;
+                changed |= !ReferenceEquals(reshaped, part);
+            }
+
+            return changed ? multiLine.Factory.CreateMultiLineString(parts) : target;
+        }
+
+        return target is LineString line ? ReshapeLineString(line, reshaper) : target;
+    }
+
+    private static LineString ReshapeLineString(LineString line, Geometry reshaper)
+    {
+        if (line.NumPoints < 2 || !line.Intersects(reshaper))
+        {
+            return line;
+        }
+
+        var lineIndexed = new LengthIndexedLine(line);
+        var reshaperIndexed = new LengthIndexedLine(reshaper);
+        var points = new List<Coordinate>();
+        AppendCoordinates(line.Intersection(reshaper), points);
+        var crossings = new List<(double LineIndex, double ReshaperIndex)>();
+        var lineEpsilon = RingIndexEpsilon(line.Length);
+        var reshaperEpsilon = RingIndexEpsilon(reshaper.Length);
+        foreach (var point in points)
+        {
+            var lineIndex = lineIndexed.Project(point);
+            var reshaperIndex = reshaperIndexed.Project(point);
+            var duplicate = false;
+            foreach (var existing in crossings)
+            {
+                if (NumericTolerance.NearlyEqual(existing.LineIndex, lineIndex, lineEpsilon))
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+
+            if (!duplicate)
+            {
+                crossings.Add((lineIndex, reshaperIndex));
+            }
+        }
+
+        if (crossings.Count < 2)
+        {
+            return line;
+        }
+
+        crossings.Sort(static (left, right) => left.LineIndex.CompareTo(right.LineIndex));
+        var first = crossings[0];
+        var last = crossings[^1];
+        if (NumericTolerance.NearlyEqual(first.LineIndex, last.LineIndex, lineEpsilon))
+        {
+            return line;
+        }
+
+        var head = LineCoordinates(lineIndexed.ExtractLine(lineIndexed.StartIndex, first.LineIndex));
+        var splice = LineCoordinates(reshaperIndexed.ExtractLine(first.ReshaperIndex, last.ReshaperIndex));
+        var tail = LineCoordinates(lineIndexed.ExtractLine(last.LineIndex, lineIndexed.EndIndex));
+        var combined = AppendChain(AppendChain(head, splice), tail);
+        var coordinates = new List<Coordinate>(combined.Count);
+        foreach (var coordinate in combined)
+        {
+            if (coordinates.Count == 0 || !SamePoint(coordinates[^1], coordinate))
+            {
+                coordinates.Add(coordinate);
+            }
+        }
+
+        if (coordinates.Count < 2)
+        {
+            return line;
+        }
+
+        return line.Factory.CreateLineString(coordinates.ToArray());
+    }
+
+    // Esri preserves the longest portion of the original ring between the reshaper's
+    // first and last boundary crossings and replaces the shorter portion. An outward
+    // reshaper therefore adds its lobe, and an inward one removes the bite on the
+    // shorter boundary even when that bite is the larger face (#6128). Reshaper
+    // orientation is not consulted.
+    private static Polygon ReshapePolygon(Polygon polygon, Geometry reshaper)
+    {
+        if (reshaper is not ILineal || reshaper.IsEmpty || NumericTolerance.IsEffectivelyZero(polygon.Length))
+        {
+            return polygon;
+        }
+
+        var shell = polygon.ExteriorRing;
+        if (!shell.Intersects(reshaper))
+        {
+            return polygon;
+        }
+
+        var perimeter = shell.Length;
+        var boundaryIndexed = new LengthIndexedLine(shell);
+        var reshaperIndexed = new LengthIndexedLine(reshaper);
+        var crossings = CollectRingCrossings(shell, reshaper, boundaryIndexed, reshaperIndexed, perimeter);
+        if (crossings.Count < 2)
+        {
+            return polygon;
+        }
+
+        crossings.Sort(static (left, right) => left.ReshaperIndex.CompareTo(right.ReshaperIndex));
+        var first = crossings[0];
+        var last = crossings[^1];
+        var indexEpsilon = RingIndexEpsilon(perimeter);
+        if (NumericTolerance.NearlyEqual(first.BoundaryIndex, last.BoundaryIndex, indexEpsilon)
+            || NumericTolerance.NearlyEqual(first.ReshaperIndex, last.ReshaperIndex, RingIndexEpsilon(reshaper.Length)))
+        {
+            return polygon;
+        }
+
+        Coordinate[] preserved;
+        Coordinate[] splice;
+        var forward = ForwardRingLength(first.BoundaryIndex, last.BoundaryIndex, perimeter);
+        if (forward >= perimeter - forward)
+        {
+            preserved = ExtractRingForward(boundaryIndexed, first.BoundaryIndex, last.BoundaryIndex, perimeter);
+            splice = LineCoordinates(reshaperIndexed.ExtractLine(last.ReshaperIndex, first.ReshaperIndex));
+        }
+        else
+        {
+            preserved = ExtractRingForward(boundaryIndexed, last.BoundaryIndex, first.BoundaryIndex, perimeter);
+            splice = LineCoordinates(reshaperIndexed.ExtractLine(first.ReshaperIndex, last.ReshaperIndex));
+        }
+
+        var ringCoordinates = CloseRing(AppendChain(preserved, splice));
+        if (ringCoordinates.Length < 4)
+        {
+            return polygon;
+        }
+
+        LinearRing ring;
+        try
+        {
+            ring = polygon.Factory.CreateLinearRing(ringCoordinates);
+        }
+        catch (ArgumentException)
+        {
+            return polygon;
+        }
+
+        return RebuildPolygon(polygon, ring);
+    }
+
+    private static MultiPolygon ReshapeMultiPolygon(MultiPolygon multiPolygon, Geometry reshaper)
+    {
+        var parts = new Polygon[multiPolygon.NumGeometries];
+        var changed = false;
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var part = (Polygon)multiPolygon.GetGeometryN(i);
+            if (!changed && part.ExteriorRing.Intersects(reshaper))
+            {
+                var reshaped = ReshapePolygon(part, reshaper);
+                parts[i] = reshaped;
+                changed = !ReferenceEquals(reshaped, part);
+                continue;
+            }
+
+            parts[i] = part;
+        }
+
+        return changed ? multiPolygon.Factory.CreateMultiPolygon(parts) : multiPolygon;
+    }
+
+    private readonly record struct RingCrossing(double BoundaryIndex, double ReshaperIndex);
+
+    private static List<RingCrossing> CollectRingCrossings(
+        Geometry shell,
+        Geometry reshaper,
+        LengthIndexedLine boundaryIndexed,
+        LengthIndexedLine reshaperIndexed,
+        double perimeter)
+    {
+        var points = new List<Coordinate>();
+        AppendCoordinates(shell.Intersection(reshaper), points);
+        var crossings = new List<RingCrossing>();
+        var boundaryEpsilon = RingIndexEpsilon(perimeter);
+        var reshaperEpsilon = RingIndexEpsilon(reshaper.Length);
+        foreach (var point in points)
+        {
+            var boundaryIndex = NormalizeRingIndex(boundaryIndexed.Project(point), perimeter);
+            var reshaperIndex = reshaperIndexed.Project(point);
+            var duplicate = false;
+            foreach (var existing in crossings)
+            {
+                if (NumericTolerance.NearlyEqual(existing.BoundaryIndex, boundaryIndex, boundaryEpsilon)
+                    && NumericTolerance.NearlyEqual(existing.ReshaperIndex, reshaperIndex, reshaperEpsilon))
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+
+            if (!duplicate)
+            {
+                crossings.Add(new RingCrossing(boundaryIndex, reshaperIndex));
+            }
+        }
+
+        return crossings;
+    }
+
+    private static double ForwardRingLength(double from, double to, double length)
+    {
+        from = NormalizeRingIndex(from, length);
+        to = NormalizeRingIndex(to, length);
+        return to >= from ? to - from : (length - from) + to;
+    }
+
+    private static Coordinate[] ExtractRingForward(LengthIndexedLine indexed, double from, double to, double length)
+    {
+        from = NormalizeRingIndex(from, length);
+        to = NormalizeRingIndex(to, length);
+        if (to > from)
+        {
+            return LineCoordinates(indexed.ExtractLine(from, to));
+        }
+
+        var head = LineCoordinates(indexed.ExtractLine(from, length));
+        if (NumericTolerance.IsEffectivelyZero(to))
+        {
+            return head;
+        }
+
+        return AppendChain(head, LineCoordinates(indexed.ExtractLine(0, to))).ToArray();
+    }
+
+    private static double NormalizeRingIndex(double index, double length)
+    {
+        if (length <= 0)
+        {
+            return 0;
+        }
+
+        var epsilon = RingIndexEpsilon(length);
+        if (index <= epsilon || length - index <= epsilon)
+        {
+            return 0;
+        }
+
+        return index;
+    }
+
+    private static double RingIndexEpsilon(double length)
+        => Math.Max(1e-8, length * 1e-10);
+
+    private static Polygon RebuildPolygon(Polygon polygon, LinearRing shell)
+    {
+        var factory = polygon.Factory;
+        if (polygon.NumInteriorRings == 0)
+        {
+            return factory.CreatePolygon(shell);
+        }
+
+        var shellPolygon = factory.CreatePolygon(shell);
+        var holes = new List<LinearRing>();
+        for (var i = 0; i < polygon.NumInteriorRings; i++)
+        {
+            var hole = (LinearRing)polygon.GetInteriorRingN(i);
+            if (shellPolygon.Covers(hole))
+            {
+                holes.Add(hole);
+            }
+        }
+
+        return holes.Count == 0
+            ? shellPolygon
+            : factory.CreatePolygon(shell, holes.ToArray());
+    }
+
+    private static void AppendCoordinates(Geometry geometry, List<Coordinate> points)
+    {
+        if (geometry.IsEmpty)
+        {
+            return;
+        }
+
+        if (geometry is GeometryCollection collection)
+        {
+            for (var i = 0; i < collection.NumGeometries; i++)
+            {
+                AppendCoordinates(collection.GetGeometryN(i), points);
+            }
+
+            return;
+        }
+
+        foreach (var coordinate in geometry.Coordinates)
+        {
+            if (double.IsFinite(coordinate.X) && double.IsFinite(coordinate.Y))
+            {
+                points.Add(coordinate);
+            }
+        }
+    }
+
+    private static Coordinate[] LineCoordinates(Geometry geometry)
+        => geometry.IsEmpty ? Array.Empty<Coordinate>() : geometry.Coordinates;
+
+    private static List<Coordinate> AppendChain(IReadOnlyList<Coordinate> head, Coordinate[] tail)
+    {
+        var combined = new List<Coordinate>(head.Count + tail.Length);
+        combined.AddRange(head);
+        var start = combined.Count > 0 && tail.Length > 0 && SamePoint(combined[^1], tail[0]) ? 1 : 0;
+        for (var i = start; i < tail.Length; i++)
+        {
+            combined.Add(tail[i]);
+        }
+
+        return combined;
+    }
+
+    private static Coordinate[] CloseRing(List<Coordinate> coordinates)
+    {
+        var cleaned = new List<Coordinate>(coordinates.Count + 1);
+        foreach (var coordinate in coordinates)
+        {
+            if (cleaned.Count == 0 || !SamePoint(cleaned[^1], coordinate))
+            {
+                cleaned.Add(coordinate);
+            }
+        }
+
+        if (cleaned.Count == 0)
+        {
+            return Array.Empty<Coordinate>();
+        }
+
+        if (!SamePoint(cleaned[0], cleaned[^1]))
+        {
+            cleaned.Add(new Coordinate(cleaned[0].X, cleaned[0].Y));
+        }
+        else
+        {
+            cleaned[^1] = new Coordinate(cleaned[0].X, cleaned[0].Y);
+        }
+
+        return cleaned.ToArray();
+    }
+
+    private static bool SamePoint(Coordinate left, Coordinate right)
+        => NumericTolerance.NearlyEqual(left.X, right.X, 1e-8)
+            && NumericTolerance.NearlyEqual(left.Y, right.Y, 1e-8);
 
     private bool TryGeographicGeometryEnvelope(
         string[] geometryJson,

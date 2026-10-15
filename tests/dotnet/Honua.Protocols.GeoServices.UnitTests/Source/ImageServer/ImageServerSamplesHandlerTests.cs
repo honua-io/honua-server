@@ -220,6 +220,96 @@ public class ImageServerSamplesHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public async Task GetSamplesAsync_LockRasterMosaicRule_SamplesOnlyTheLockedRaster()
+    {
+        _rasterStore.QueryRastersAsync(default, default!, default)
+            .ReturnsForAnyArgs([SampleRaster(1), SampleRaster(2)]);
+        _rasterStore.IdentifyAsync(
+                1,
+                2,
+                Arg.Any<double>(),
+                Arg.Any<double>(),
+                Arg.Any<int?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 0,
+                Y = 0,
+                Srid = 4326,
+                HasData = true,
+                BandValues = new Dictionary<int, object?> { [1] = 2.0 },
+            });
+        var handler = CreateHandler(Substitute.For<IZarrStore>());
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"points\":[[0,0]]}",
+            ["mosaicRule"] = "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[2]}",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await handler.GetSamplesAsync(context, 1, values, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.Body.Position = 0;
+        using var json = await JsonDocument.ParseAsync(context.Response.Body);
+        json.RootElement.GetProperty("samples")[0].GetProperty("rasterId").GetInt64().Should().Be(2);
+        await _rasterStore.DidNotReceive().IdentifyAsync(
+            1,
+            1,
+            Arg.Any<double>(),
+            Arg.Any<double>(),
+            Arg.Any<int?>(),
+            Arg.Any<RasterIdentifyRendering?>(),
+            Arg.Any<CancellationToken>());
+        await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyMosaicAsync(
+            default, default!, default, default, default, default, default, default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task GetSamplesAsync_NonTrivialMosaicWhere_ReturnsNotImplemented()
+    {
+        var handler = CreateHandler(Substitute.For<IZarrStore>());
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"points\":[[0,0]]}",
+            ["mosaicRule"] = "{\"where\":\"Name='scene-b'\"}",
+        };
+
+        var context = CreateImageServerContext();
+        await AssertGeoServicesErrorAsync(
+            context,
+            await handler.GetSamplesAsync(context, 1, values, CancellationToken.None),
+            StatusCodes.Status501NotImplemented);
+        await _rasterStore.DidNotReceiveWithAnyArgs().QueryRastersAsync(default, default!, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task GetSamplesAsync_UnsupportedMosaicMethodOverSeveralRasters_ReturnsNotImplemented()
+    {
+        _rasterStore.QueryRastersAsync(default, default!, default)
+            .ReturnsForAnyArgs([SampleRaster(1), SampleRaster(2)]);
+        var handler = CreateHandler(Substitute.For<IZarrStore>());
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"x\":0,\"y\":0}",
+            ["mosaicRule"] = "{\"mosaicMethod\":\"esriMosaicCenter\"}",
+        };
+
+        var context = CreateImageServerContext();
+        await AssertGeoServicesErrorAsync(
+            context,
+            await handler.GetSamplesAsync(context, 1, values, CancellationToken.None),
+            StatusCodes.Status501NotImplemented);
+        await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyMosaicAsync(
+            default, default!, default, default, default, default, default, default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public async Task GetSamplesAsync_WithUnknownDimension_ReturnsBadRequest()
     {
         var (store, _) = await BuildVerticalZarrStoreAsync();
@@ -280,6 +370,19 @@ public class ImageServerSamplesHandlerTests
             Metadata = metadata,
             CreatedAt = DateTimeOffset.UtcNow,
         };
+
+    private static RasterInfo SampleRaster(long id) => new()
+    {
+        Id = id,
+        LayerId = 1,
+        Name = $"raster-{id}",
+        Width = 4,
+        Height = 4,
+        BandCount = 1,
+        PixelType = "8BUI",
+        Srid = 4326,
+        CreatedAt = DateTimeOffset.UtcNow,
+    };
 
     private static DefaultHttpContext CreateImageServerContext()
     {

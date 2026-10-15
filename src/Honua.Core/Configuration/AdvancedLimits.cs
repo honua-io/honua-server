@@ -3,9 +3,14 @@ using System.ComponentModel.DataAnnotations;
 namespace Honua.Core.Configuration;
 
 /// <summary>
-/// Limits for file preview and import operations.
+/// Size ceilings bound from <c>Limits:Imports:*</c>: preview size, synchronous import size,
+/// package cap, and the preview batch size. This is not
+/// <see cref="Honua.Core.Features.Import.Domain.ImportLimits"/>, the import pipeline record bound from
+/// <c>Import:Limits:*</c>. The two types share property names such as <c>BatchSize</c> and
+/// <c>MaxPreviewFeatures</c> but different defaults, and neither is derived from the other.
+/// Those names stay independent so each section keeps the value operators already set (#3346).
 /// </summary>
-public class ImportLimits
+public class ImportSizeLimits
 {
     /// <summary>
     /// Maximum file size that can be previewed.

@@ -148,8 +148,8 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Calculate is exposed as GET for GeoServices compatibility but performs a bulk update.
-    /// HEAD must therefore stop before the handler instead of inheriting its GET semantics.
+    /// Calculate performs a bulk update and is POST-only (#6100), so HEAD (like GET) must be
+    /// refused by routing before the handler runs.
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
@@ -162,7 +162,7 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
         using var response = await client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
-        response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "POST"]);
+        response.Content.Headers.Allow.Should().BeEquivalentTo(["POST"]);
     }
 
     private static readonly (string Path, string[] AllowedMethods)[] MutatingGetRoutes =

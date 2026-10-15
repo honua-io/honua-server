@@ -72,4 +72,117 @@ public sealed class FeatureDataAccessCreateBatchFallbackTests
         result.results[3].IsSuccess.Should().BeTrue();
         singleCreateAttempts.Should().Equal([3, 4]);
     }
+
+    [Fact]
+    public async Task ExecuteAdaptiveNonTransactionalCreateBatchAsync_CancelledBatchInsert_DoesNotSplit()
+    {
+        using var cts = new CancellationTokenSource();
+
+        var act = () => FeatureDataAccess.ExecuteAdaptiveNonTransactionalCreateBatchAsync(
+            ImmutableArray.Create(1, 2, 3, 4),
+            (_, ct) =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(ct);
+            },
+            (_, _) => throw new Xunit.Sdk.XunitException("a cancelled batch insert must not be split"),
+            static (item, createdId) => EditOperationResult.Success(createdId, item.ToString(CultureInfo.InvariantCulture)),
+            cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task ExecuteAdaptiveNonTransactionalCreateBatchAsync_CancelledRightHalf_KeepsCommittedLeftPrefix()
+    {
+        using var cts = new CancellationTokenSource();
+
+        var result = await FeatureDataAccess.ExecuteAdaptiveNonTransactionalCreateBatchAsync(
+            ImmutableArray.Create(1, 2, 3, 4),
+            (batch, _) =>
+            {
+                if (batch.Length > 2)
+                {
+                    throw new InvalidOperationException("simulated batch failure");
+                }
+
+                if (batch.Contains(3))
+                {
+                    cts.Cancel();
+                    throw new OperationCanceledException(cts.Token);
+                }
+
+                return Task.FromResult(batch.Select(static item => (long)item * 10).ToImmutableArray());
+            },
+            (_, _) => throw new Xunit.Sdk.XunitException("single-item fallback should not be used"),
+            static (item, createdId) => EditOperationResult.Success(createdId, item.ToString(CultureInfo.InvariantCulture)),
+            cts.Token);
+
+        result.createdIds.Should().Equal([10L, 20L]);
+        result.results.Should().HaveCount(2);
+        result.results.Should().OnlyContain(static outcome => outcome.IsSuccess);
+        result.results.Should().OnlyContain(static outcome => !outcome.IsCommitOutcomeUnknown);
+    }
+
+    [Fact]
+    public async Task ExecuteAdaptiveNonTransactionalCreateBatchAsync_CancelledSingleRow_StopsTheRemainder()
+    {
+        using var cts = new CancellationTokenSource();
+        var singleCreateAttempts = new List<int>();
+
+        var result = await FeatureDataAccess.ExecuteAdaptiveNonTransactionalCreateBatchAsync(
+            ImmutableArray.Create(1, 2, 3, 4),
+            (_, _) => throw new InvalidOperationException("simulated batch failure"),
+            (item, ct) =>
+            {
+                singleCreateAttempts.Add(item);
+                if (item == 2)
+                {
+                    cts.Cancel();
+                    throw new OperationCanceledException(ct);
+                }
+
+                return Task.FromResult(((long?)item * 10, EditOperationResult.Success(
+                    item * 10L,
+                    item.ToString(CultureInfo.InvariantCulture))));
+            },
+            static (item, createdId) => EditOperationResult.Success(createdId, item.ToString(CultureInfo.InvariantCulture)),
+            cts.Token);
+
+        result.createdIds.Should().Equal([10L]);
+        result.results.Should().ContainSingle().Which.IsSuccess.Should().BeTrue();
+        singleCreateAttempts.Should().Equal([1, 2]);
+    }
+
+    [Fact]
+    public void CancelledAutocommitOrderedResult_NamesCommittedRowsAndMarksTheTailUnknown()
+    {
+        var batch = FeatureEditBatch.Create(
+            operations: ImmutableArray.Create(
+                FeatureEditOperation.Create(Feature.Create(0, null)),
+                FeatureEditOperation.Update(Feature.Create(7, null)),
+                FeatureEditOperation.Delete(9)));
+
+        var result = FeatureDataAccess.CancelledAutocommitOrderedResult(
+            batch,
+            firstUnrecordedIndex: 1,
+            createdIds: ImmutableArray.Create(42L),
+            createResults: ImmutableArray.Create(EditOperationResult.Success(42)),
+            updateResults: ImmutableArray<EditOperationResult>.Empty,
+            deleteResults: ImmutableArray<EditOperationResult>.Empty);
+
+        result.WasRolledBack.Should().BeFalse();
+        result.MayHaveCommitted.Should().BeTrue();
+        result.CreatedCount.Should().Be(1);
+        result.CreatedIds.Should().Equal([42L]);
+        result.CreateResults.Should().ContainSingle().Which.ObjectId.Should().Be(42);
+        result.UpdateResults.Should().ContainSingle();
+        result.UpdateResults[0].IsSuccess.Should().BeFalse();
+        result.UpdateResults[0].IsCommitOutcomeUnknown.Should().BeTrue();
+        result.UpdateResults[0].ObjectId.Should().Be(7);
+        result.UpdateResults[0].ErrorMessage.Should().Be("Edit cancelled.");
+        result.DeleteResults.Should().ContainSingle();
+        result.DeleteResults[0].IsCommitOutcomeUnknown.Should().BeTrue();
+        result.DeleteResults[0].ObjectId.Should().Be(9);
+    }
 }

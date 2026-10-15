@@ -87,9 +87,11 @@ public class LimitsOptions
     public ConnectionLimits Connections { get; set; } = new();
 
     /// <summary>
-    /// File import limits.
+    /// Upload and preview size ceilings from <c>Limits:Imports:*</c>. The import pipeline
+    /// reads <c>Import:Limits:*</c> into <see cref="Honua.Core.Features.Import.Domain.ImportLimits"/>,
+    /// which is a different type (#3346).
     /// </summary>
-    public ImportLimits Imports { get; set; } = new();
+    public ImportSizeLimits Imports { get; set; } = new();
 
     /// <summary>
     /// Spatial analytics limits.
@@ -223,6 +225,20 @@ public class QueryLimits
     /// </summary>
     [Range(100, 1000000)]
     public int MaxH3CellsPerQuery { get; set; } = 100000;
+
+    /// <summary>
+    /// Default for <see cref="MaxMapLayersPerRequest"/>.
+    /// </summary>
+    public const int DefaultMaxMapLayersPerRequest = 50;
+
+    /// <summary>
+    /// Maximum number of layer tokens accepted in a single map request (WMS GetMap
+    /// <c>LAYERS</c>, GetFeatureInfo <c>LAYERS</c>/<c>QUERY_LAYERS</c>). Each distinct
+    /// layer costs one bounded feature scan and render, so the list is capped to keep one
+    /// request from monopolizing shared render capacity.
+    /// </summary>
+    [Range(1, 1000)]
+    public int MaxMapLayersPerRequest { get; set; } = DefaultMaxMapLayersPerRequest;
 
     /// <summary>
     /// Query timeout duration.

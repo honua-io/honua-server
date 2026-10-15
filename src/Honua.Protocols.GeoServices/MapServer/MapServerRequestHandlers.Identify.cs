@@ -419,6 +419,14 @@ internal static partial class MapServerEndpoints
                         return StandardErrorHelpers.CreateBadRequest(context, joinError ?? "Invalid join source.");
                     }
 
+                    // A join keyed on a publisher-hidden field would turn row matching into a
+                    // value oracle for that field, so hidden keys are refused (#6098).
+                    if (layer.Resource.IsHiddenSchemaField(join.LeftKey) ||
+                        rightLayer!.Resource.IsHiddenSchemaField(join.RightKey))
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(context, "dynamicLayers join references an unavailable key field.");
+                    }
+
                     foreach (var field in GeoServicesFieldConventions.ResolveTemporalFieldTypes(rightLayer!.Resource))
                     {
                         temporalFieldTypes[$"{join.RightQualifier}.{field.Key}"] = field.Value;
@@ -427,6 +435,7 @@ internal static partial class MapServerEndpoints
                     joinLookup = await DynamicJoinLookup.BuildAsync(
                         featureReader,
                         rightLayer!.StorageLayerId,
+                        rightLayer.Resource.HiddenSchemaFieldNames(),
                         join.RightKey,
                         ExtractJoinKeyValues(queryResult.Items, join.LeftKey),
                         maxIdentifyResults,
@@ -435,6 +444,7 @@ internal static partial class MapServerEndpoints
 
                 var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer.Resource);
                 var displayField = ResolveDisplayField(layer.Resource, objectIdField);
+                var hiddenFields = layer.Resource.HiddenSchemaFieldNames();
                 // Normalize both left and qualified right temporal fields using the
                 // same calendar-date/timestamp conventions as query.
 
@@ -460,7 +470,7 @@ internal static partial class MapServerEndpoints
                     var attributes = new Dictionary<string, object?>();
                     foreach (var kvp in sourceAttributes)
                     {
-                        if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+                        if (!IsPublicAttribute(kvp.Key, hiddenFields))
                         {
                             continue;
                         }

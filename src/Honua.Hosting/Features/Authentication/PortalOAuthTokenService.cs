@@ -95,15 +95,85 @@ internal sealed class PortalOAuthTokenService(
             return PortalOAuthTokenResult.Failure("invalid_client", "client_secret is required for the client_credentials grant.");
         }
 
-        // Increment 3 (ADR-0053, #1889): optional pluggable IdP/OIDC federation. When
-        // configured, the presented client_id/client_secret are delegated to the
-        // operator's external token endpoint first. A successful federated exchange
-        // means the IdP authenticated the machine identity; Honua then mints its own
-        // token carrying the operator-configured roles (no second token store —
-        // ADR-0049). A federation miss falls through to the in-tree resolution below,
-        // so federation is purely additive. The credential is resolved before the
-        // IP-binding check (below) so an unknown/bad credential always returns
-        // invalid_client (RFC 6749 §5.2), never the binding-resolution failure mode.
+        // Local stores run before federation (#6166). A valid Honua client secret or
+        // Admin API key is never posted to the external IdP. Federation runs only when
+        // both stores miss. IP binding stays after a successful credential check so an
+        // unknown secret is invalid_client (RFC 6749 §5.2), never a binding failure.
+        // ValidateSecret cannot tell an unknown client from a wrong secret, so a miss
+        // still falls through; only a secret the registry or key store accepts is kept
+        // on the server.
+
+        // Increment 2 (ADR-0053, #1888): the first-class OAuth client registry. The
+        // secret is matched against the per-application registry (SHA-256-hashed at
+        // rest, revocable, expiry-aware). Roles come from the scope catalogue.
+        OAuthClientRecord? client = null;
+        if (!string.IsNullOrWhiteSpace(request.ClientId))
+        {
+            client = await _clientStore
+                .ValidateSecretAsync(request.ClientId, secret, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (client is not null)
+        {
+            var registeredIp = RequireClientIp(request);
+            if (registeredIp is null)
+            {
+                return PortalOAuthTokenResult.Failure("invalid_request", "Client IP could not be determined for token binding.");
+            }
+
+            return await IssueClientCredentialsAsync(client, request.Scope, registeredIp, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // Increment 1 backward-compatible fallback (ADR-0053): when no first-class
+        // client matches, the client_secret is validated against the existing Admin
+        // API-key store — the same SHA-256-hashed, expiry-aware, revocable key that
+        // X-API-Key automation already uses. client_id is a human-readable label; the
+        // secret alone authenticates.
+        var validation = await _apiKeyStore.ValidateAsync(secret, cancellationToken).ConfigureAwait(false);
+        if (validation is not null)
+        {
+            // A token carries roles only, so the key goes through the same canonical
+            // rule as the generateToken bridge (#4577): a full-admin key maps to the
+            // admin role; a constrained key, whose authority lives in claims a token
+            // cannot hold, is refused rather than having its permission labels
+            // turned into roles. Refusal happens before federation so the key is not
+            // disclosed to the IdP.
+            var keyRoles = ManagedKeyExchangeAuthority.ResolveTokenRoles(validation.Record.Permissions);
+            if (keyRoles is null)
+            {
+                return PortalOAuthTokenResult.Failure(
+                    "unauthorized_client",
+                    "This API key cannot be exchanged for a portal token; use it with X-API-Key.");
+            }
+
+            var keyIp = RequireClientIp(request);
+            if (keyIp is null)
+            {
+                return PortalOAuthTokenResult.Failure("invalid_request", "Client IP could not be determined for token binding.");
+            }
+
+            var roles = ResolveRoles(keyRoles, request.Scope);
+            return await MintClientCredentialsTokenAsync(
+                principalId: validation.Record.Name,
+                roles: roles,
+                clientIp: keyIp,
+                grantedScope: null,
+                cancellationToken,
+                // Same managed key, same rule as the generateToken bridge: the minted token is
+                // clamped to the key's expiry and stops when the key is revoked or rotated (SEC-9).
+                source: new PortalCredentialSource(
+                    PortalCredentialSourceKind.ManagedApiKey,
+                    Reference: validation.Record.Id.ToString("D"),
+                    Version: PortalCredentialSourceVersion.ForManagedKey(validation.Record),
+                    ExpiresAt: validation.Record.ExpiresAt)).ConfigureAwait(false);
+        }
+
+        // Increment 3 (ADR-0053, #1889): optional IdP federation, only for a credential
+        // neither store accepted. A successful exchange means the IdP authenticated the
+        // machine identity; Honua mints its own token with the operator-configured roles
+        // (no second token store — ADR-0049).
         if (_federation.FederationEnabled)
         {
             var federatedRoles = await _federation
@@ -126,88 +196,8 @@ internal sealed class PortalOAuthTokenService(
             }
         }
 
-        // Increment 2 (ADR-0053, #1888): prefer the first-class OAuth client registry.
-        // A client presents a real client_id/client_secret pair; the secret is matched
-        // against the per-application registry (SHA-256-hashed at rest, revocable,
-        // expiry-aware). Roles come from the scope catalogue: the requested scope is
-        // resolved to RBAC permissions, bounded by the client's allowed scopes. The
-        // credential is validated before the IP-binding check so an unknown/bad
-        // credential always returns invalid_client (RFC 6749 §5.2), never leaking the
-        // binding-resolution failure mode.
-        OAuthClientRecord? client = null;
-        if (!string.IsNullOrWhiteSpace(request.ClientId))
-        {
-            client = await _clientStore
-                .ValidateSecretAsync(request.ClientId, secret, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        // Increment 1 backward-compatible fallback (ADR-0053): when no first-class
-        // client matches, the client_secret is validated against the existing Admin
-        // API-key store — the same SHA-256-hashed, expiry-aware, revocable key that
-        // X-API-Key automation already uses. client_id is a human-readable label; the
-        // secret alone authenticates. This keeps every flag-gated Increment-1
-        // deployment working byte-for-byte.
-        AdminApiKeyValidationResult? validation = null;
-        IReadOnlyList<string>? keyRoles = null;
-        if (client is null)
-        {
-            validation = await _apiKeyStore.ValidateAsync(secret, cancellationToken).ConfigureAwait(false);
-            if (validation is null)
-            {
-                // Do not distinguish unknown-client from bad-secret (RFC 6749 §5.2).
-                return PortalOAuthTokenResult.Failure("invalid_client", "Client authentication failed.");
-            }
-
-            // A token carries roles only, so the key goes through the same canonical
-            // rule as the generateToken bridge (#4577): a full-admin key maps to the
-            // admin role; a constrained key, whose authority lives in claims a token
-            // cannot hold, is refused rather than having its permission labels
-            // turned into roles.
-            keyRoles = ManagedKeyExchangeAuthority.ResolveTokenRoles(validation.Record.Permissions);
-            if (keyRoles is null)
-            {
-                return PortalOAuthTokenResult.Failure(
-                    "unauthorized_client",
-                    "This API key cannot be exchanged for a portal token; use it with X-API-Key.");
-            }
-        }
-
-        // The credential is valid; now bind the token to the issuing client's IP.
-        // Service clients have no browser referer, so an IP binding mirrors how API-key
-        // automation reaches the request path and is validated by
-        // PortalTokenAuthenticationHandler (binding.ClientIp). This is checked AFTER
-        // credential validation so an unknown/bad secret returns invalid_client, never
-        // leaking the binding-resolution failure mode (ADR-0053).
-        var clientIp = RequireClientIp(request);
-        if (clientIp is null)
-        {
-            return PortalOAuthTokenResult.Failure("invalid_request", "Client IP could not be determined for token binding.");
-        }
-
-        if (client is not null)
-        {
-            return await IssueClientCredentialsAsync(client, request.Scope, clientIp, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        // Identity is the API-key record: its name labels the principal and its
-        // canonically projected roles (resolved above) are all the token may carry.
-        var roles = ResolveRoles(keyRoles!, request.Scope);
-
-        return await MintClientCredentialsTokenAsync(
-            principalId: validation!.Record.Name,
-            roles: roles,
-            clientIp: clientIp,
-            grantedScope: null,
-            cancellationToken,
-            // Same managed key, same rule as the generateToken bridge: the minted token is
-            // clamped to the key's expiry and stops when the key is revoked or rotated (SEC-9).
-            source: new PortalCredentialSource(
-                PortalCredentialSourceKind.ManagedApiKey,
-                Reference: validation.Record.Id.ToString("D"),
-                Version: PortalCredentialSourceVersion.ForManagedKey(validation.Record),
-                ExpiresAt: validation.Record.ExpiresAt)).ConfigureAwait(false);
+        // Do not distinguish unknown-client from bad-secret (RFC 6749 §5.2).
+        return PortalOAuthTokenResult.Failure("invalid_client", "Client authentication failed.");
     }
 
     private async Task<PortalOAuthTokenResult> IssueClientCredentialsAsync(
