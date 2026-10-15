@@ -107,7 +107,7 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_MissingRequiredField_FailsOnlyThatAddWhenRollbackIsOff()
     {
-        _fixture.UpdateResourceSchemaField(TestLayerId, new MetadataV2Field
+        _fixture.UpdateV2ResourceSchemaField(TestLayerId, new MetadataV2Field
         {
             Name = "name",
             Type = MetadataV2FieldType.String,
@@ -129,6 +129,68 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         result.AddResults[1].Error!.Code.Should().Be(GeoServicesEditErrorCodes.ValidationFailed);
         (await ReadCountByNameAsync("required-ok")).Should().Be(1);
         (await ReadCountByWhereAsync("description='no-name'")).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.BulkCreate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task ApplyEdits_AddWithoutGlobalId_AssignsServerGlobalIdAndCreator()
+    {
+        _fixture.UpdateV2ResourceSchemaField(TestLayerId, new MetadataV2Field
+        {
+            Name = "GlobalID",
+            Type = MetadataV2FieldType.Uuid,
+            Nullable = true,
+            Description = "Global ID",
+        });
+        _fixture.UpdateV2ResourceSchemaField(TestLayerId, new MetadataV2Field
+        {
+            Name = "created_user",
+            Type = MetadataV2FieldType.String,
+            Nullable = true,
+            Description = "Creator",
+        });
+        _fixture.UpdateV2ResourceEditing(TestLayerId, new MetadataV2ResourceEditing
+        {
+            GlobalIdField = "GlobalID",
+            CreatorField = "created_user",
+            CreatedAtField = "created_date",
+            EditorField = "created_user",
+            UpdatedAtField = "created_date",
+        });
+
+        const string clientGlobalId = "11111111-1111-1111-1111-111111111111";
+        var payload = $$"""
+            {"adds":[{"attributes":{"name":"tracked-add","GlobalID":"{{clientGlobalId}}","created_user":"forged-editor"},"geometry":{"x":-122.41,"y":37.77}}]}
+            """;
+        var response = await PostJsonAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
+            payload);
+        var result = await DeserializeEditsAsync(response);
+        result.AddResults.Should().ContainSingle();
+        var added = result.AddResults![0];
+        added.Success.Should().BeTrue();
+        added.GlobalId.Should().NotBeNullOrWhiteSpace();
+        added.GlobalId.Should().NotBe(clientGlobalId);
+        Guid.TryParse(added.GlobalId, out _).Should().BeTrue();
+
+        var objectId = added.ObjectId!.Value;
+        var (storedGlobalId, storedCreator) = await ReadTrackedAttributesAsync(objectId);
+        storedGlobalId.Should().Be(added.GlobalId);
+        // The Test host authenticates through the dev bypass, whose api_key_id is the
+        // subject EditOwnerSubject prefers over the display name "admin".
+        storedCreator.Should().Be("00000000-0000-0000-0000-000000000001");
+
+        using var metadataResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}?f=json");
+        metadataResponse.Be200Ok();
+        using var metadata = JsonDocument.Parse(await metadataResponse.Content.ReadAsStringAsync());
+        var editFields = metadata.RootElement.GetProperty("editFieldsInfo");
+        editFields.GetProperty("creatorField").GetString().Should().Be("created_user");
+        editFields.GetProperty("creationDateField").GetString().Should().Be("created_date");
+        editFields.GetProperty("editorField").GetString().Should().Be("created_user");
+        editFields.GetProperty("editDateField").GetString().Should().Be("created_date");
     }
 
     [IntegrationTest]
@@ -578,6 +640,22 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         response.Be200Ok();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return document.RootElement.GetProperty("count").GetInt32();
+    }
+
+    private async Task<(string? GlobalId, string? Creator)> ReadTrackedAttributesAsync(long objectId)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT attributes->>'GlobalID', attributes->>'created_user'
+            FROM features WHERE layer_id = 0 AND objectid = @objectId;
+            """;
+        command.Parameters.AddWithValue("objectId", objectId);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        return (
+            reader.IsDBNull(0) ? null : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1));
     }
 
     private Task<int> ReadCountByNameAsync(string name)

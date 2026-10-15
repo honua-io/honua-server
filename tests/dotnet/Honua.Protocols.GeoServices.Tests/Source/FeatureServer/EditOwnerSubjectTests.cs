@@ -119,6 +119,101 @@ public sealed class EditOwnerSubjectTests
     }
 
     [UnitTest]
+    public async Task Insert_AssignsGlobalIdAndReplacesClientEditorTracking()
+    {
+        var clock = new DateTimeOffset(2026, 10, 14, 3, 4, 5, TimeSpan.Zero);
+        var clientGlobalId = "11111111-1111-1111-1111-111111111111";
+        var inserted = await CreateHandler().BuildFeatureFromGeoServicesAsync(
+            new GeoServicesFeature
+            {
+                Attributes = new Dictionary<string, object?>
+                {
+                    ["name"] = "tracked",
+                    ["GlobalID"] = clientGlobalId,
+                    ["created_user"] = "forged-editor",
+                    ["created_date"] = 0L,
+                    ["locked_code"] = "client",
+                },
+            },
+            0,
+            TrackedResource(),
+            AttributeRuleEditEvent.Insert,
+            new EditPrincipal("subject-a", IsAuthenticated: true, IsAdmin: false),
+            CancellationToken.None,
+            timeProvider: new FixedTimeProvider(clock));
+
+        inserted.Attributes["GlobalID"].Should().BeOfType<string>();
+        inserted.Attributes["GlobalID"].Should().NotBe(clientGlobalId);
+        Guid.TryParse(inserted.Attributes["GlobalID"]!.ToString(), out _).Should().BeTrue();
+        inserted.Attributes["created_user"].Should().Be("subject-a");
+        inserted.Attributes["editor"].Should().Be("subject-a");
+        inserted.Attributes["created_date"].Should().Be(clock.ToUnixTimeMilliseconds());
+        inserted.Attributes["updated_date"].Should().Be(clock.ToUnixTimeMilliseconds());
+        inserted.Attributes.ContainsKey("locked_code").Should().BeFalse();
+
+        var kept = await CreateHandler().BuildFeatureFromGeoServicesAsync(
+            new GeoServicesFeature
+            {
+                Attributes = new Dictionary<string, object?>
+                {
+                    ["name"] = "tracked",
+                    ["GlobalID"] = clientGlobalId,
+                },
+            },
+            0,
+            TrackedResource(),
+            AttributeRuleEditEvent.Insert,
+            new EditPrincipal("subject-a", IsAuthenticated: true, IsAdmin: false),
+            CancellationToken.None,
+            useGlobalIds: true,
+            timeProvider: new FixedTimeProvider(clock));
+        kept.Attributes["GlobalID"].Should().Be(clientGlobalId);
+    }
+
+    [UnitTest]
+    public async Task Update_RestoresCreatorAndGlobalId_AndStampsEditor()
+    {
+        var clock = new DateTimeOffset(2026, 10, 14, 8, 0, 0, TimeSpan.Zero);
+        var storedGlobalId = "22222222-2222-2222-2222-222222222222";
+        var existing = Feature.Create(7, null, ImmutableDictionary.CreateRange(
+            StringComparer.OrdinalIgnoreCase,
+            new KeyValuePair<string, object?>[]
+            {
+                new("name", "before"),
+                new("GlobalID", storedGlobalId),
+                new("created_user", "subject-a"),
+                new("created_date", 10L),
+            }));
+
+        var updated = await CreateHandler().BuildFeatureFromGeoServicesAsync(
+            new GeoServicesFeature
+            {
+                Attributes = new Dictionary<string, object?>
+                {
+                    ["objectid"] = 7L,
+                    ["name"] = "after",
+                    ["GlobalID"] = "33333333-3333-3333-3333-333333333333",
+                    ["created_user"] = "forged-editor",
+                    ["editor"] = "forged-editor",
+                },
+            },
+            7,
+            TrackedResource(),
+            AttributeRuleEditEvent.Update,
+            new EditPrincipal("subject-b", IsAuthenticated: true, IsAdmin: false),
+            CancellationToken.None,
+            existing,
+            timeProvider: new FixedTimeProvider(clock));
+
+        updated.Attributes["GlobalID"].Should().Be(storedGlobalId);
+        updated.Attributes["created_user"].Should().Be("subject-a");
+        updated.Attributes["created_date"].Should().Be(10L);
+        updated.Attributes["editor"].Should().Be("subject-b");
+        updated.Attributes["updated_date"].Should().Be(clock.ToUnixTimeMilliseconds());
+        updated.Attributes["name"].Should().Be("after");
+    }
+
+    [UnitTest]
     public async Task NonAdminReplacement_ChangedOrOmittedOwner_IsRejected()
     {
         var feature = FeatureWith("after", "subject-b", replaceAttributes: true);
@@ -178,6 +273,41 @@ public sealed class EditOwnerSubjectTests
         }
 
         return new GeoServicesFeature { Attributes = attributes, ReplaceAttributes = replaceAttributes };
+    }
+
+    private static MetadataV2Resource TrackedResource()
+        => new()
+        {
+            Editing = new MetadataV2ResourceEditing
+            {
+                GlobalIdField = "GlobalID",
+                CreatorField = "created_user",
+                CreatedAtField = "created_date",
+                EditorField = "editor",
+                UpdatedAtField = "updated_date",
+            },
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
+                new MetadataV2Field { Name = "GlobalID", Type = MetadataV2FieldType.Uuid, Nullable = true },
+                new MetadataV2Field { Name = "created_user", Type = MetadataV2FieldType.String, Nullable = true },
+                new MetadataV2Field { Name = "editor", Type = MetadataV2FieldType.String, Nullable = true },
+                new MetadataV2Field { Name = "created_date", Type = MetadataV2FieldType.DateTime, Nullable = true },
+                new MetadataV2Field { Name = "updated_date", Type = MetadataV2FieldType.DateTime, Nullable = true },
+                new MetadataV2Field
+                {
+                    Name = "locked_code",
+                    Type = MetadataV2FieldType.String,
+                    Nullable = true,
+                    Editable = false,
+                },
+            ],
+        };
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
     private static MetadataV2Resource OwnerResource()

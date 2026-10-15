@@ -343,9 +343,9 @@ internal static class MetadataV2AttributeValidation
 
             // Non-editable fields and the bound GlobalID are read-only on update.
             // Enforce the binding even for older schemas that mark its field editable.
-            // On insert we still
-            // accept supplied values (mirrors the v1 behaviour where Editable
-            // didn't gate writes).
+            // On insert this validator still accepts supplied values. GeoServices
+            // applyEdits drops those client values and stamps server-owned GlobalID
+            // and editor-tracking fields before validation (#6134).
             if (isUpdate && (!field.Editable ||
                 field.Name.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase)))
             {

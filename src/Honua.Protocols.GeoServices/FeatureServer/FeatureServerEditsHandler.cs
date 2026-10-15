@@ -591,7 +591,14 @@ internal sealed class FeatureServerEditsHandler(
                 // request's, but using request.Adds[i].Geometry directly keeps the rule
                 // identical to the update path.
                 var requestHasGeometry = request.Adds[i].Geometry != null;
-                var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, resource, AttributeRuleEditEvent.Insert, principal, cancellationToken);
+                var newFeature = await BuildFeatureFromGeoServicesAsync(
+                    request.Adds[i],
+                    0,
+                    resource,
+                    AttributeRuleEditEvent.Insert,
+                    principal,
+                    cancellationToken,
+                    useGlobalIds: request.UseGlobalIds);
                 var createRejection = EditProcessor.DescribeCreateAttributeRejection(resource, newFeature.Attributes);
                 if (createRejection is not null)
                 {
@@ -789,7 +796,8 @@ internal sealed class FeatureServerEditsHandler(
                     principal,
                     cancellationToken,
                     existingFeature,
-                    ownerSnapshots).ConfigureAwait(false);
+                    ownerSnapshots,
+                    request.UseGlobalIds).ConfigureAwait(false);
                 context.UpdateFeatures.Add(updateFeature);
                 // The full merged row above serves rules, validation, hooks and events. The
                 // DEFAULT writer receives only what this request changes, so the row it locks
@@ -1767,7 +1775,9 @@ internal sealed class FeatureServerEditsHandler(
         EditPrincipal principal,
         CancellationToken cancellationToken,
         Feature? existingFeature = null,
-        IReadOnlyDictionary<long, OwnerFieldSnapshot>? ownerSnapshots = null)
+        IReadOnlyDictionary<long, OwnerFieldSnapshot>? ownerSnapshots = null,
+        bool useGlobalIds = false,
+        TimeProvider? timeProvider = null)
     {
         byte[]? geometry = existingFeature?.Geometry;
         if (feature.ClearGeometry)
@@ -1876,6 +1886,14 @@ internal sealed class FeatureServerEditsHandler(
                 .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
         }
 
+        // Drop client GlobalID, editor-tracking, and (on insert) other non-editable
+        // values before validation. Stamp replaces them after rules run (#6134).
+        attributesToValidate = ServerMaintainedEditFields.OmitClientValues(
+            resource,
+            attributesToValidate,
+            isUpdate: existingFeature is not null,
+            useGlobalIds);
+
         var attributesResult = _mutationValidator.ValidateAttributes(
             resource,
             attributesToValidate,
@@ -1981,6 +1999,18 @@ internal sealed class FeatureServerEditsHandler(
                 }
             }
         }
+
+        var clock = timeProvider
+            ?? _httpContextAccessor.HttpContext?.RequestServices.GetService<TimeProvider>()
+            ?? TimeProvider.System;
+        ServerMaintainedEditFields.Stamp(
+            resource,
+            attributes,
+            isInsert: editEvent == AttributeRuleEditEvent.Insert,
+            principal,
+            clock.GetUtcNow(),
+            useGlobalIds,
+            existingFeature?.Attributes);
 
         // Contingent-value enforcement (#2133): the effective merged attribute row (existing
         // values + this edit) must satisfy the resource's restrictive contingent-value groups.
