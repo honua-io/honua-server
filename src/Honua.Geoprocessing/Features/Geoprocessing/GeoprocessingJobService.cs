@@ -959,7 +959,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             (ownerScope, mintedCustomCodeToken, workload) = await _customCodeGate.ValidateMintAndInjectAsync(
                 jobId, principal, specParams, workload, cancellationToken).ConfigureAwait(false);
-            effectiveProtocolMetadata = ResolveEffectiveProtocolControls(protocolMetadata, workload);
         }
         else
         {
