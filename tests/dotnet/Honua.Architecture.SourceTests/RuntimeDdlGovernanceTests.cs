@@ -11,7 +11,7 @@ namespace Honua.Architecture.Tests;
 /// <summary>
 /// Inventories production C# that can issue DDL. Core Honua schema evolution belongs only in the
 /// numbered migration roots; the allowlist is restricted to bounded generated/output targets,
-/// attempt-scoped routing shadows, session-local helper functions, and the audited retention-maintenance transaction.
+/// attempt-scoped routing shadows, session-local helper functions and tables, and the audited retention-maintenance transaction.
 /// </summary>
 [Trait("Category", "Architecture")]
 public sealed partial class RuntimeDdlGovernanceTests
@@ -56,6 +56,8 @@ public sealed partial class RuntimeDdlGovernanceTests
                 new(RuntimeDdlCategory.RoutingShadow, 2, "PostgresNetworkTopologyPromotionStore owns trigger suspension/re-enable in the promotion transaction."),
             ["src/Honua.Db/Postgres/Features/AuditLog/PostgresAuditLogRetentionPruner.cs"] =
                 new(RuntimeDdlCategory.RetentionMaintenance, 2, "PostgresAuditLogRetentionPruner owns rule suspension/re-enable in its audited retention transaction."),
+            ["src/Honua.Routing/Features/Routing/Providers/PgRoutingProvider.cs"] =
+                new(RuntimeDdlCategory.SessionTemporaryTable, 1, "PgRoutingProvider owns one session-local pg_temp.honua_blocked_edges table for the current solve's barrier gids. Pool reset discards it; no persistent schema is modified (#6158)."),
         };
 
     [ArchitectureTest]
@@ -133,7 +135,7 @@ public sealed partial class RuntimeDdlGovernanceTests
     }
 
     [GeneratedRegex(
-        @"(?:^|[;'\r\n])\s*(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:MATERIALIZED\s+)?(?:TABLE|SCHEMA|INDEX|VIEW|TYPE|DOMAIN|SEQUENCE|FUNCTION|PROCEDURE|TRIGGER|RULE|EXTENSION|POLICY)|ALTER\s+(?:TABLE|SCHEMA|INDEX|VIEW|TYPE|DOMAIN|SEQUENCE|FUNCTION|PROCEDURE|TRIGGER|RULE|EXTENSION|POLICY)|DROP\s+(?:TABLE|SCHEMA|INDEX|VIEW|TYPE|DOMAIN|SEQUENCE|FUNCTION|PROCEDURE|TRIGGER|RULE|EXTENSION|POLICY)|TRUNCATE\s+TABLE)\b",
+        @"(?:^|[;'\r\n])\s*(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMP(?:ORARY)?\s+)?(?:MATERIALIZED\s+)?(?:TABLE|SCHEMA|INDEX|VIEW|TYPE|DOMAIN|SEQUENCE|FUNCTION|PROCEDURE|TRIGGER|RULE|EXTENSION|POLICY)|ALTER\s+(?:TABLE|SCHEMA|INDEX|VIEW|TYPE|DOMAIN|SEQUENCE|FUNCTION|PROCEDURE|TRIGGER|RULE|EXTENSION|POLICY)|DROP\s+(?:TABLE|SCHEMA|INDEX|VIEW|TYPE|DOMAIN|SEQUENCE|FUNCTION|PROCEDURE|TRIGGER|RULE|EXTENSION|POLICY)|TRUNCATE\s+TABLE)\b",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex RuntimeDdlPattern();
 
@@ -150,5 +152,6 @@ public sealed partial class RuntimeDdlGovernanceTests
         ExportArtifact,
         RetentionMaintenance,
         SessionTemporaryFunction,
+        SessionTemporaryTable,
     }
 }
