@@ -3,9 +3,13 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
+#if !HONUA_EXCLUDE_GEOSERVICES
 using Honua.Protocols.GeoServices;
+#endif
 using Honua.Protocols.Ogc.Common;
+#if !HONUA_EXCLUDE_STAC
 using Honua.Protocols.Stac.Models;
+#endif
 using GrpcServiceDescriptor = Google.Protobuf.Reflection.ServiceDescriptor;
 using Proto = Geospatial.V1;
 
@@ -159,6 +163,7 @@ internal sealed class ComponentVersionsDeclaration
 /// </summary>
 internal static class ServedContractVersions
 {
+#if !HONUA_EXCLUDE_GRPC
     // The gRPC services Program maps (feature, process, spec, scene, tile, elevation).
     private static readonly GrpcServiceDescriptor[] GrpcServices =
     [
@@ -169,16 +174,25 @@ internal static class ServedContractVersions
         Proto.TileService.Descriptor,
         Proto.ElevationService.Descriptor
     ];
+#endif
 
     /// <summary>Contract name (the keys of <c>release/component-versions.json</c>) to served version.</summary>
     public static IReadOnlyDictionary<string, string> Current { get; } = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
         ["admin"] = AdminInfoEndpoints.AdminApiMajor,
         ["metadata"] = MetadataV2Constants.ApiVersion,
+#if !HONUA_EXCLUDE_GEOSERVICES
         ["geoservices"] = GeoServicesContract.Version,
+#endif
+#if !(HONUA_EXCLUDE_OGC_API && HONUA_EXCLUDE_OGC_CLASSIC)
         ["ogc"] = OgcContract.Version,
+#endif
+#if !HONUA_EXCLUDE_STAC
         ["stac"] = StacContract.Version,
+#endif
+#if !HONUA_EXCLUDE_GRPC
         ["grpc"] = GrpcPackageMajor(GrpcServices)
+#endif
     };
 
     /// <summary>
@@ -222,7 +236,8 @@ internal static class ContractVersionsStartupCheck
     /// <summary>Throws when the declared and served contract-version maps differ.</summary>
     internal static void Validate(
         IReadOnlyDictionary<string, string> declared,
-        IReadOnlyDictionary<string, string> served)
+        IReadOnlyDictionary<string, string> served,
+        IReadOnlySet<string>? profileExcluded = null)
     {
         ArgumentNullException.ThrowIfNull(declared);
         ArgumentNullException.ThrowIfNull(served);
@@ -232,6 +247,16 @@ internal static class ContractVersionsStartupCheck
         {
             var isDeclared = declared.TryGetValue(name, out var declaredVersion);
             var isServed = served.TryGetValue(name, out var servedVersion);
+            if (profileExcluded is not null && profileExcluded.Contains(name))
+            {
+                if (isServed)
+                {
+                    mismatches.Add($"'{name}' is served as '{servedVersion}' but the compiled protocol profile excludes it");
+                }
+
+                continue;
+            }
+
             if (!isServed)
             {
                 mismatches.Add($"'{name}' is declared as '{declaredVersion}' but this server does not serve it");

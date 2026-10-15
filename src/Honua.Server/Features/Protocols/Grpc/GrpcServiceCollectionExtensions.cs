@@ -67,7 +67,9 @@ internal static class GrpcServiceCollectionExtensions
             new GrpcApplyEditsIdempotencyStore(
                 sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
                 sp.GetService<ILogger<GrpcApplyEditsIdempotencyStore>>()));
+#if !HONUA_EXCLUDE_GEOSERVICES
         services.TryAddScoped<SpatialReferenceResolver>();
+#endif
 
         services.AddGrpcHealthChecks();
         services.AddGrpcReflection();

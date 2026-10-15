@@ -783,6 +783,7 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "::notice::Warnings-as-errors build mode: ${mode}${projects:+ (${projects})}"
+          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git
 
       - name: Select managed producer outputs and build graph
         id: managed-plan

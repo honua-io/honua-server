@@ -38,7 +38,9 @@ using Honua.Server.Features.Console.Collaboration;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Infrastructure.Logging;
 using Honua.Io.Export;
+#if !HONUA_EXCLUDE_GEOSERVICES
 using Honua.Server.Features.PrintingTools;
+#endif
 using Honua.Server.Features.Provisioner;
 using Honua.ControlPlane;
 using Honua.FileStorage;
@@ -120,6 +122,7 @@ var builder = WebApplication.CreateBuilder(args);
 // resolution steps so aws:secretsmanager: references inside the document resolve exactly as if
 // they had come from the environment. Precedence: appsettings < document < env vars < command line.
 await SettingsDocumentConfiguration.AddSettingsDocumentAsync(builder.Configuration);
+Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configuration);
 
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute
 // backend launched for one execution job (HONUA_OPERATION_ID et al.) is composed as a single-job
@@ -976,9 +979,11 @@ builder.Services.AddScoped<Honua.Server.Features.Console.Services.ICatalogDiscov
 // it with durable storage when Postgres is active.
 Honua.Core.Features.Publishing.Content.ContentPublishingServiceCollectionExtensions.AddContentPublishingServices(builder.Services);
 
-// Register shared Infrastructure services
+// Geometry conversion is implemented in Honua.Protocols.GeoServices.
+#if !HONUA_EXCLUDE_GEOSERVICES
 builder.Services.AddScoped<Honua.Infrastructure.Services.IGeometryConverter,
     Honua.Infrastructure.Services.GeometryConverter>();
+#endif
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.IOgcStyleProjection,
     Honua.Server.Features.Styling.OgcStyleProjection>();
@@ -1028,8 +1033,10 @@ builder.Services.AddAdminAccessOperations();
 // stays opt-in via Mcp:PublishOperations:Enabled=true. Audited secret/session Admin
 // operations never publish. Wired after the operations toolset so the tool source can
 // resolve the canonical IOperationCatalog.
+#if !HONUA_EXCLUDE_MCP
 Honua.Ai.Protocols.Mcp.McpServiceCollectionExtensions.AddMcpPublishedOperationTools(
     builder.Services, builder.Configuration);
+#endif
 builder.Services.AddAdminRealtime(builder.Configuration);
 if (!isTestEnvironment)
 {
@@ -1037,6 +1044,7 @@ if (!isTestEnvironment)
 }
 
 var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "sync.offline");
+#if !HONUA_EXCLUDE_GEOSERVICES
 if (offlineSyncEnabled)
 {
     builder.Services.AddSingleton<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(sp =>
@@ -1044,6 +1052,7 @@ if (offlineSyncEnabled)
             sp.GetService<IDistributedCache>(),
             sp.GetRequiredService<ILogger<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>>()));
 }
+#endif
 // Replica/change-tracking services are provider-specific: Postgres registers concrete
 // implementations; DuckDB and MySQL (both read-only) register no-op stubs via their own
 // AddXxxServices extensions. Skip the Postgres registration for those providers so the
@@ -1104,10 +1113,12 @@ builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVer
     Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
 if (offlineSyncEnabled)
 {
+#if !HONUA_EXCLUDE_GEOSERVICES
     builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
         new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
             sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
             sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
+#endif
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
         Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
 }
@@ -1587,11 +1598,13 @@ app.Use(async (context, next) =>
 });
 
 // Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
+#if !HONUA_EXCLUDE_GRPC
 app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 
 // Record each gRPC call's grpc-status for the serving-latency sample while the gRPC-Web trailers
 // are still attached; the outer CorrelationIdMiddleware cannot see them (#5473).
 app.UseGrpcServingStatusCapture();
+#endif
 
 // Add CORS middleware before the exception handler so error responses (4xx/5xx) carry
 // Access-Control-Allow-Origin headers; otherwise browsers report every server error as
@@ -1658,7 +1671,9 @@ app.UseOperationLineageAttestation();
 // MCP bearer credentials must be fully validated before tenant context, schema
 // routing, or tenant status observes the request. The endpoint filter remains
 // defense-in-depth for non-standard hosting pipelines.
+#if !HONUA_EXCLUDE_MCP
 Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions.UseMcpBearerAuthentication(app);
+#endif
 
 // Audit enters after the bearer has been validated, so its actor context is the
 // canonical validated principal. Invalid bearer responses are deferred until the
@@ -1668,6 +1683,7 @@ app.UseHonuaAuditLog();
 // Invalid bearer validation attempts use the normal application rate limiter,
 // partitioned by source IP because there is no trusted actor/tenant. The branch
 // terminates before tenant context, schema routing, status checks, or endpoints.
+#if !HONUA_EXCLUDE_MCP
 app.UseWhen(
     static context => Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions
         .HasAuthenticationFailure(context),
@@ -1677,6 +1693,7 @@ app.UseWhen(
         Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions
             .UseMcpBearerAuthenticationRejection(invalidBearer);
     });
+#endif
 
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal
@@ -1931,6 +1948,7 @@ app.MapCspViolationReportEndpoint();
 // Configure FeatureServer, OGC, and OData endpoints
 app.MapServerFeatureEndpoints();
 
+#if !HONUA_EXCLUDE_GRPC
 // Configure gRPC feature service endpoint (gRPC-Web enabled via middleware)
 app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
@@ -1952,6 +1970,7 @@ if (app.Environment.IsDevelopment())
 {
     app.MapGrpcReflectionService();
 }
+#endif
 
 // Configure file import endpoints
 app.MapImportEndpoints();

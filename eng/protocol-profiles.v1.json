@@ -1,0 +1,134 @@
+{
+  "format": "honua.protocol-profiles/v1",
+  "defaultProfile": "all",
+  "supportedProfiles": ["gsr", "ogc-api", "ogc-api-classic", "all"],
+  "profiles": {
+    "gsr": {
+      "modules": ["geoservices"]
+    },
+    "ogc-api": {
+      "modules": ["ogc-api"]
+    },
+    "ogc-api-classic": {
+      "modules": ["ogc-api", "ogc-classic"]
+    },
+    "all": {
+      "modules": ["geoservices", "ogc-api", "ogc-classic", "odata", "stac", "sensorthings", "scene", "grpc", "mcp"]
+    }
+  },
+  "modules": {
+    "geoservices": {
+      "projects": ["src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj"],
+      "routes": [
+        "/rest/services",
+        "/rest/services/{serviceId}/FeatureServer",
+        "/rest/services/{serviceId}/MapServer",
+        "/rest/services/{serviceId}/ImageServer",
+        "/rest/services/{serviceId}/VectorTileServer",
+        "/rest/services/{serviceId}/GPServer",
+        "/rest/services/{serviceId}/NAServer",
+        "/rest/services/Geometry/GeometryServer",
+        "/rest/services/GeocodeServer",
+        "/rest/services/Utilities/PrintingTools/GPServer"
+      ],
+      "assets": [],
+      "capabilityPrefixes": ["serve.geoservices-", "edit.geoservices-", "versioning.branch", "analysis.spatial"],
+      "note": "GeoServices family only. SceneServer and I3S are the scene module. Import clients stay on every profile."
+    },
+    "ogc-api": {
+      "projects": ["src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj"],
+      "routes": ["/ogc/features", "/ogc/tiles", "/ogc/maps", "/ogc/coverages", "/edr", "/ogc/records", "/ogc/processes", "/ogc/styles"],
+      "assets": [
+        "src/Honua.Server/ogc-tiles-openapi.json",
+        "src/Honua.Server/ogc-maps-openapi.json",
+        "src/Honua.Server/ogc-coverages-openapi.json",
+        "src/Honua.Server/ogc-processes-openapi.json",
+        "src/Honua.Server/ogc-styles-openapi.json"
+      ],
+      "capabilityPrefixes": ["serve.ogc-api-", "process.ogc-api-", "styling.ogc-api-"]
+    },
+    "ogc-classic": {
+      "projects": ["src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj"],
+      "routes": ["/wfs", "/wps", "/ogc/services/{serviceId}/wms", "/ogc/services/{serviceId}/wmts", "/ogc/services/{serviceId}/wcs", "/ogc/wcs/{serviceId}"],
+      "assets": [],
+      "capabilityPrefixes": ["serve.wfs", "serve.wms", "serve.wmts", "serve.wcs", "serve.wps"],
+      "note": "Included only with ogc-api. ogc-api-classic is OGC API plus these classic services."
+    },
+    "odata": {
+      "projects": ["src/Honua.Protocols.OData/Honua.Protocols.OData.csproj"],
+      "routes": ["/odata"],
+      "assets": [],
+      "capabilityPrefixes": ["serve.odata"]
+    },
+    "stac": {
+      "projects": ["src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj"],
+      "routes": ["/stac"],
+      "assets": [],
+      "capabilityPrefixes": ["serve.stac"]
+    },
+    "sensorthings": {
+      "projects": ["src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj"],
+      "routes": ["/sta/v1.1"],
+      "assets": [],
+      "capabilityPrefixes": ["serve.sensorthings"]
+    },
+    "scene": {
+      "projects": [
+        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
+        "src/Honua.Scene/Honua.Scene.csproj"
+      ],
+      "routes": ["/api/scenes", "/scenes/{sceneId}/tileset.json", "/rest/services/{sceneId}/SceneServer", "/scenes/{sceneId}/SceneServer"],
+      "assets": ["src/Honua.Server/fixtures/scenes"],
+      "capabilityPrefixes": ["serve.3d-tiles-scene", "serve.i3s-scene", "scene.catalog", "scene.bim-ingest", "scene.pointcloud-ingest"],
+      "note": "SceneServer, I3S, and the scene dataset, generation, BIM, and point-cloud admin endpoints compile only with this module. Elevation HTTP in Honua.Server stays on every profile."
+    },
+    "grpc": {
+      "projects": [],
+      "routes": [],
+      "assets": [],
+      "capabilityPrefixes": ["serve.grpc", "transport.grpc", "transport.grpc-web", "transport.native-grpc"],
+      "note": "gRPC is not a separate project. MapGrpcService, UseGrpcWeb, reflection, and serving-status capture are compile-gated. HonuaFeatureService is omitted when GeoServices is excluded because it binds SpatialReferenceResolver. Grpc NuGet packages stay. HonuaProcessService stays in Honua.Geoprocessing."
+    },
+    "mcp": {
+      "projects": [],
+      "routes": ["/mcp"],
+      "assets": [],
+      "capabilityPrefixes": ["transport.mcp"],
+      "note": "MCP types live in Honua.Ai with NL query and studio AI. Endpoint mapping is compile-gated. The assembly stays. Default MCP admin projection must not block a restricted startup."
+    }
+  },
+  "retainedShared": [
+    {
+      "id": "Honua.Protocols.Ogc.Shared",
+      "reason": "Admin, styling, streaming, and the capability manifest use OGC common contracts. This is not the OGC API serving surface."
+    },
+    {
+      "id": "Honua.Geoprocessing",
+      "reason": "Processing stays on every profile. GeoServices GPServer mapping is gsr-only; OGC API processes mapping is ogc-api-only."
+    },
+    {
+      "id": "Honua.Ai",
+      "reason": "NL query, studio AI, and analysis stay. MCP routes are compile-gated inside this assembly."
+    },
+    {
+      "id": "Honua.Routing",
+      "reason": "Admin network topology, AI, and geoprocessing reference it. NAServer mapping is gsr-only."
+    },
+    {
+      "id": "Honua.GeoServicesRest",
+      "reason": "Import client. Serving GeoServices exclusion does not remove import."
+    },
+    {
+      "id": "Honua.Geocoding",
+      "reason": "Admin geocoding stays. The GeoServices GeocodeServer adapter is gsr-only."
+    }
+  ],
+  "serverProject": "src/Honua.Server/Honua.Server.csproj",
+  "limitations": [
+    "Geometry, objectId, and time filter translation for spatial analytics and GP layer selection binds the GeoServices query grammar and is omitted when geoservices is excluded. OGC profiles still execute geoprocessing.",
+    "Printing Tools GPServer and the GeocodeServer adapter are part of the gsr closure.",
+    "Esri catalog discovery returns no entries when geoservices is excluded. The store stays registered.",
+    "Data enrichment where-filters use the shared filter service when geoservices is excluded.",
+    "Import endpoints for GeoServices, OGC API Features, WFS, and coverages stay on every profile."
+  ]
+}

@@ -13,7 +13,12 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
+#if HONUA_EXCLUDE_GEOSERVICES
+using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
+#else
 using Honua.Infrastructure.Analytics;
+#endif
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
@@ -278,6 +283,10 @@ internal static class DataEnrichmentRequestHandlers
         var joinLayerSrid = datasetValidation.Resource!.ReadSrid() ?? SpatialReference.WGS84.ToSrid();
 
         // ----- Build the source-layer FeatureQuery (where filter only) -----
+#if HONUA_EXCLUDE_GEOSERVICES
+        var (featureQuery, filterError) = BuildWhereOnlyFeatureQuery(
+            context, sourceValidation.Resource!, request.Where);
+#else
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(request.Where))
         {
@@ -286,6 +295,7 @@ internal static class DataEnrichmentRequestHandlers
 
         var (featureQuery, filterError) = await AnalyticsFeatureQueryFactory.TryBuildAsync(
             context, values, sourceValidation.Resource!, cancellationToken);
+#endif
         if (featureQuery is null)
         {
             return filterError!;
@@ -620,4 +630,42 @@ internal static class DataEnrichmentRequestHandlers
     /// the predicate resolver can signal both 400 and 501 outcomes.
     /// </summary>
     private sealed record EnrichmentError(int Status, string Title, IReadOnlyList<string> Details);
+
+#if HONUA_EXCLUDE_GEOSERVICES
+    private static (FeatureQuery? Query, IResult? Error) BuildWhereOnlyFeatureQuery(
+        HttpContext context, MetadataV2Resource resource, string? where)
+    {
+        var srid = resource.ReadSrid() ?? SpatialReference.WGS84.ToSrid();
+        if (string.IsNullOrWhiteSpace(where))
+        {
+            return (new FeatureQuery { SpatialReferenceSrid = srid }, null);
+        }
+
+        var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, where);
+        if (!parseResult.IsSuccess || parseResult.Expression is null)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(
+                context,
+                ErrorMessages.Validation.InvalidParameter,
+                [parseResult.ErrorMessage ?? "Invalid filter syntax."]));
+        }
+
+        var translation = filterService.Translate(parseResult.Expression, resource);
+        if (!translation.IsSuccess)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(
+                context,
+                ErrorMessages.Validation.InvalidParameter,
+                [translation.ErrorMessage ?? "Invalid filter syntax."]));
+        }
+
+        return (new FeatureQuery
+        {
+            Where = where,
+            SqlFilter = translation.SqlFilter,
+            SpatialReferenceSrid = srid,
+        }, null);
+    }
+#endif
 }

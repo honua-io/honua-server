@@ -1,0 +1,12 @@
+<Project>
+  <!-- Closest Directory.Build.props wins. Import the repository file, then isolate non-all profiles before Microsoft.Common.props. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)..'))" />
+  <PropertyGroup Condition="'$(HonuaProtocolProfile)' != '' and '$(HonuaProtocolProfile)' != 'all'">
+    <BaseOutputPath>$(MSBuildThisFileDirectory)bin/protocol-$(HonuaProtocolProfile)/</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj/protocol-$(HonuaProtocolProfile)/</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <!-- The SDK excludes only the redirected base paths. Keep the default bin/ and obj/ trees,
+         including another profile's intermediates, out of this compilation. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>
