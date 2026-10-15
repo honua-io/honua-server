@@ -202,6 +202,7 @@
 - [Data formats](reference/data-formats.md)
 - [CQL2 & filtering](reference/cql2-and-filtering.md)
 - [Geoprocessing operations](reference/geoprocessing-operations.md)
+- [GP process release descriptor and lock](reference/gp-process-release.md)
 - [Analysis content, artifacts & reports](reference/analysis-artifacts-and-reports.md)
 - [Spec plan/apply engine](reference/spec-engine.md)
 - [Spec grammar v1.0](developer/spec-grammar/spec-grammar-v1.0.md)

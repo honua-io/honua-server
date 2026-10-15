@@ -46,6 +46,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- honua-gp.yaml descriptor parsing for `release` (#6221); the devkit is not AOT-published. -->
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The publish-command pipeline is internal; the offline unit tests exercise it directly. -->
     <InternalsVisibleTo Include="Honua.Geoprocessing.Cli.Tests" />
   </ItemGroup>
