@@ -56,7 +56,6 @@ public static partial class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{jobId}"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/append"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/append"),
-        new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/queryDomains"),
         // queryDomains also accepts POST so clients can submit large layers arrays (#1825).

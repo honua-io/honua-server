@@ -23,6 +23,15 @@ internal sealed class AdminAuthSessionAuthenticationHandler(
             return AuthenticateResult.NoResult();
         }
 
+        // #6100: the SAML ACS issues this cookie SameSite=Lax, so a cross-site unsafe
+        // request must not authenticate as the cookie's principal. Safe methods stay
+        // authenticated; non-browser clients send neither Sec-Fetch-Site nor Origin.
+        if (AdminSessionCrossSiteRequestGuard.IsCrossSiteUnsafeRequest(Request))
+        {
+            AdminAuthSessionLog.CrossSiteUnsafeRequestRefused(Logger);
+            return AuthenticateResult.Fail("Cross-site admin session requests are not allowed.");
+        }
+
         var session = await _sessionStore.GetAuthenticatedSessionAsync(sessionId, Context.RequestAborted).ConfigureAwait(false);
         if (session is null || session.Claims is null || session.Claims.Length == 0)
         {

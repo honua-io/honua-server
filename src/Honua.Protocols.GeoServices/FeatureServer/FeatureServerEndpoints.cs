@@ -362,18 +362,10 @@ internal static partial class FeatureServerEndpoints
             .Produces(400)
             .Produces(404);
 
-        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/calculate", HandleCalculate)
-            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
-            .WithDisplayName("Calculate")
-            .WithName("Calculate")
-            .WithSummary("Calculate field values for features")
-            .WithDescription("Calculates new field values using expressions for matching features")
-            .WithTags("FeatureServer")
-            .AllowAnonymous()
-            .Produces<CalculateResponse>(200, "application/json")
-            .Produces(400)
-            .Produces(404);
-
+        // calculate is a bulk field rewrite, so it is POST-only like the ArcGIS REST contract
+        // and every other FeatureServer edit route (#6100): a GET mapping let a cross-site
+        // top-level navigation carrying a SameSite=Lax session cookie rewrite layer data, and
+        // bypassed the degraded-startup write block, which only refuses unsafe methods.
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/calculate", HandleCalculate)
             .WithDisplayName("Calculate (POST)")
             .WithName("CalculatePost")
