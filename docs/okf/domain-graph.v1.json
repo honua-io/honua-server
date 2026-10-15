@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:553833da7649dc4840c80124c9f456601048942fc2be60a92eae071347daaa00",
+  "bundleDigest": "sha256:962af78e0db00072f1d267600babad2bd88c0597a245c156886bab3caac52e26",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -6368,7 +6368,7 @@
     {
       "id": "okf/capabilities/process.geoprocessing",
       "path": "okf/capabilities/process.geoprocessing.md",
-      "documentDigest": "sha256:02c3c02ea15e42135d6eebac199be8f119398bb60e3ef7c98fec1ebac3ece561",
+      "documentDigest": "sha256:b02253f17f5f1520a844cf952d60b1001849973192fc38af0d433500b65150cd",
       "metadata": {
         "type": "capability",
         "title": "Geoprocessing Task Execution",
@@ -14086,6 +14086,11 @@
       "source": "okf/capabilities/process.geoprocessing",
       "relation": "links_to",
       "target": "reference/geoprocessing-operations"
+    },
+    {
+      "source": "okf/capabilities/process.geoprocessing",
+      "relation": "links_to",
+      "target": "reference/gp-harness-events.v1"
     },
     {
       "source": "okf/capabilities/process.ogc-api-processes",
