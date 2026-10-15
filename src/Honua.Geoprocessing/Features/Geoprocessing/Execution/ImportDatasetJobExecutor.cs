@@ -186,6 +186,8 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         // duplicate that logic.
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(15, "Validating and importing source", cancellationToken).ConfigureAwait(false);
+        // Fence before the overwrite import commits into the target table (#6154).
+        await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
 
         ImportResult importResult;
         try
@@ -230,6 +232,8 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         // the MVT materialization (#1628).
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(55, "Flattening to typed layer", cancellationToken).ConfigureAwait(false);
+        // Fence again immediately before publish; a lost claim must not overwrite the layer (#6154).
+        await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
 
         // The streaming importer is the single source of truth for the physical staging
         // table it actually created (provider-prefixed, e.g. imported_<table>) and the
