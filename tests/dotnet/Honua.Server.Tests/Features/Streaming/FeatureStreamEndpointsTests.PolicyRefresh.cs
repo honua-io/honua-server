@@ -115,28 +115,40 @@ public sealed partial class FeatureStreamEndpointsTests
             }, cts.Token);
 
             const string path = "/api/v1/streaming/features?layers=0&clientLabel=policy-refresh";
-            WebSocket? socket = null;
-            HttpClient? client = null;
-            HttpResponseMessage? response = null;
-            StreamReader? reader = null;
-            try
+            using var socket = webSocket
+                ? await fixture.CreateWebSocketClient().ConnectAsync(new Uri("ws://localhost" + path), cts.Token)
+                : null;
+            if (socket is not null)
             {
-                if (webSocket)
+                _ = await ReceiveWebSocketJsonAsync(socket, cts.Token);
+            }
+
+            using var client = webSocket ? null : fixture.CreateAdminClient();
+
+            async Task<HttpResponseMessage?> OpenSseAsync(HttpClient? http)
+            {
+                if (http is null)
                 {
-                    socket = await fixture.CreateWebSocketClient().ConnectAsync(new Uri("ws://localhost" + path), cts.Token);
-                    _ = await ReceiveWebSocketJsonAsync(socket, cts.Token);
-                }
-                else
-                {
-                    client = fixture.CreateAdminClient();
-                    using var request = new HttpRequestMessage(HttpMethod.Get, path);
-                    request.Headers.Accept.ParseAdd("text/event-stream");
-                    response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-                    response.StatusCode.Should().Be(HttpStatusCode.OK);
-                    reader = new StreamReader(await response.Content.ReadAsStreamAsync(cts.Token));
-                    _ = await ReadNextSseEventAsync(reader, cts.Token);
+                    return null;
                 }
 
+                using var request = new HttpRequestMessage(HttpMethod.Get, path);
+                request.Headers.Accept.ParseAdd("text/event-stream");
+                var opened = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+                opened.StatusCode.Should().Be(HttpStatusCode.OK);
+                return opened;
+            }
+
+            using var response = await OpenSseAsync(client);
+            using var reader = response is null
+                ? null
+                : new StreamReader(await response.Content.ReadAsStreamAsync(cts.Token));
+            if (reader is not null)
+            {
+                _ = await ReadNextSseEventAsync(reader, cts.Token);
+            }
+
+            {
                 async Task<JsonElement> NextFeatureChangeAsync()
                 {
                     while (true)
@@ -176,13 +188,6 @@ public sealed partial class FeatureStreamEndpointsTests
                 masked.GetProperty("attributes").EnumerateObject().Select(p => p.Name).Should().Equal("name");
                 masked.GetProperty("changedAttributes").EnumerateObject().Select(p => p.Name).Should().Equal("name");
                 masked.GetRawText().Should().NotContain("secret-");
-            }
-            finally
-            {
-                socket?.Dispose();
-                reader?.Dispose();
-                response?.Dispose();
-                client?.Dispose();
             }
         }
         finally
