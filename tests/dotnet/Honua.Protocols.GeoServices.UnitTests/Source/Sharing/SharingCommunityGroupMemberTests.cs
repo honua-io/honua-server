@@ -13,6 +13,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -89,6 +90,7 @@ public sealed class SharingCommunityGroupMemberTests
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddSingleton(license);
         services.AddSingleton(tenant);
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
 
         return new DefaultHttpContext
         {

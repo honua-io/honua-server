@@ -12,6 +12,7 @@ using Honua.Protocols.GeoServices.Sharing;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -79,6 +80,7 @@ public sealed class PortalTokenRefererExchangeTests
             string.Empty));
         var services = new ServiceCollection();
         services.AddSingleton(license);
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
 
         var context = new DefaultHttpContext
         {
