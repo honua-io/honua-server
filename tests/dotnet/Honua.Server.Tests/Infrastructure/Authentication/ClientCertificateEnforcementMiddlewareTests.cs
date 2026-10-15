@@ -359,18 +359,25 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
     }
 
     [Theory]
-    [InlineData(ClientCertificateAuthenticationMode.RequiredForAdmin, "/api/v1/admin/api-keys")]
-    [InlineData(ClientCertificateAuthenticationMode.RequiredForAdmin, "/api/v1.0/admin/api-keys")]
-    [InlineData(ClientCertificateAuthenticationMode.RequiredForAdmin, "/api/V1.0/Admin/oidc/providers")]
-    [InlineData(ClientCertificateAuthenticationMode.RequiredForAdmin, "/api/v1.0/admin")]
-    [InlineData(ClientCertificateAuthenticationMode.RequiredForEnvironment, "/api/v1.0/admin/api-keys")]
+    [InlineData("RequiredForAdmin", "/api/v1/admin/api-keys")]
+    [InlineData("RequiredForAdmin", "/api/v1.0/admin/api-keys")]
+    [InlineData("RequiredForAdmin", "/api/V1.0/Admin/oidc/providers")]
+    [InlineData("RequiredForAdmin", "/api/v1.0/admin")]
+    [InlineData("RequiredForEnvironment", "/api/v1.0/admin/api-keys")]
     public async Task InvokeAsync_RequiredForAdmin_AnyAdminVersionSpellingWithoutCertificate_RejectsAndAudits(
-        ClientCertificateAuthenticationMode mode,
+        string mode,
         string path)
     {
         // #6106: admin groups are mapped as /api/v{version:apiVersion}/admin and URL-segment
         // versioning accepts /api/v1.0/admin, so RequiredForAdmin must not bind to the literal
-        // /api/v1/admin prefix only.
+        // /api/v1/admin prefix only. The mode arrives as a string because
+        // ClientCertificateAuthenticationMode is internal and cannot appear on this public signature.
+        var certificateMode = mode switch
+        {
+            "RequiredForAdmin" => ClientCertificateAuthenticationMode.RequiredForAdmin,
+            "RequiredForEnvironment" => ClientCertificateAuthenticationMode.RequiredForEnvironment,
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported client-certificate mode."),
+        };
         var auditLog = new CapturingAuditLog();
         var services = new ServiceCollection();
         services.AddLogging();
@@ -387,7 +394,7 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
             new StubValidator(null),
             new ClientCertificateAuthenticationOptions
             {
-                Mode = mode,
+                Mode = certificateMode,
                 EnvironmentId = "prod",
             },
             _ =>
