@@ -787,17 +787,48 @@ internal sealed partial class PostgresVersionManager
             return;
         }
 
-        // TakeBase: rewrite the overlay to the captured base image (an UPDATE that restores the
-        // common-ancestor state on post).
-        await using var baseCommand = new NpgsqlCommand("""
-            UPDATE honua.version_edits
-            SET operation = 2, geometry = base_geometry, attributes = base_attributes, modified_at = now()
-            WHERE version_id = @version AND layer_id = @layer AND objectid = @objectid
+        // TakeBase: the value to post is the captured ancestor image, and the captured base must move
+        // onto the live DEFAULT row in the same statement. SET reads the pre-update ve.base_* columns,
+        // so geometry/attributes become the ancestor while base_* becomes DEFAULT. Without that rebase
+        // the post drift guard (f.* IS NOT DISTINCT FROM ve.base_*) blocks forever, and a later
+        // reconcile treats the unresolved DEFAULT divergence as an auto-merge back onto DEFAULT (#6138).
+        // PostgreSQL evaluates SET against the old row, so the ancestor image is copied before base_* moves.
+        await using (var baseCommand = new NpgsqlCommand($"""
+            UPDATE honua.version_edits ve
+            SET operation = 2,
+                geometry = ve.base_geometry,
+                attributes = ve.base_attributes,
+                base_geometry = f.geometry,
+                base_attributes = f.attributes,
+                modified_at = now()
+            FROM {featuresTable} f
+            WHERE ve.version_id = @version AND ve.layer_id = @layer AND ve.objectid = @objectid
+              AND f.layer_id = ve.layer_id AND f.objectid = ve.objectid
+            """, connection))
+        {
+            baseCommand.Parameters.AddWithValue("version", versionId);
+            baseCommand.Parameters.AddWithValue("layer", layerId);
+            baseCommand.Parameters.AddWithValue("objectid", objectId);
+            await baseCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // DEFAULT deleted the row, so there is nothing to rebase onto. Post the ancestor as an insert;
+        // inserts are not drift-guarded and recreate the row DEFAULT removed.
+        await using var insertBaseCommand = new NpgsqlCommand($"""
+            UPDATE honua.version_edits ve
+            SET operation = 1,
+                geometry = ve.base_geometry,
+                attributes = ve.base_attributes,
+                modified_at = now()
+            WHERE ve.version_id = @version AND ve.layer_id = @layer AND ve.objectid = @objectid
+              AND NOT EXISTS (
+                  SELECT 1 FROM {featuresTable} f
+                  WHERE f.layer_id = ve.layer_id AND f.objectid = ve.objectid)
             """, connection);
-        baseCommand.Parameters.AddWithValue("version", versionId);
-        baseCommand.Parameters.AddWithValue("layer", layerId);
-        baseCommand.Parameters.AddWithValue("objectid", objectId);
-        await baseCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        insertBaseCommand.Parameters.AddWithValue("version", versionId);
+        insertBaseCommand.Parameters.AddWithValue("layer", layerId);
+        insertBaseCommand.Parameters.AddWithValue("objectid", objectId);
+        await insertBaseCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

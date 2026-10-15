@@ -564,6 +564,47 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         FieldValue(rows.Items.Single(f => f.Id == feature.Id), "status").Should().Be("branch");
     }
 
+    [Fact]
+    public async Task ResolveConflicts_TakeBase_RebasesAndPostsAncestorImage()
+    {
+        var store = CreateFeatureStore();
+        var versionManager = CreateVersionManager();
+
+        var feature = await store.CreateAsync(
+            PointsLayerId, BuildFeatureWithFields(13.0, 13.0, ("name", "Base"), ("status", "ancestor")), CancellationToken.None);
+        var version = await versionManager.CreateAsync(
+            new CreateVersionRequest("TakeBase", "sde", VersionAccess.Public), CancellationToken.None);
+
+        await store.ApplyEditsAsync(
+            PointsLayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(BuildFeatureWithFields(13.0, 13.0, feature.Id, ("name", "Base"), ("status", "branch"))),
+                versionContext: VersionContext.ForVersion(version)),
+            CancellationToken.None);
+        await store.UpdateAsync(
+            PointsLayerId, BuildFeatureWithFields(13.0, 13.0, feature.Id, ("name", "Base"), ("status", "default")), CancellationToken.None);
+
+        var reconcile = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
+        reconcile.CanPost.Should().BeFalse();
+
+        var resolution = new VersionConflictResolution(PointsLayerId, feature.Id, VersionConflictResolutionChoice.TakeBase);
+        var outcome = await versionManager.ResolveConflictsAsync(
+            version.VersionId, new[] { resolution }, CancellationToken.None);
+        outcome.CanPost.Should().BeTrue();
+
+        // A second reconcile must keep the ancestor image. Replaying DEFAULT here was the bug.
+        var again = await versionManager.ReconcileAsync(version.VersionId, cancellationToken: CancellationToken.None);
+        again.CanPost.Should().BeTrue();
+        again.Conflicts.Should().BeEmpty();
+
+        var post = await versionManager.PostAsync(version.VersionId, CancellationToken.None);
+        post.Posted.Should().BeTrue();
+        post.BlockedByConflicts.Should().BeFalse();
+
+        var rows = await store.QueryAsync(PointsLayerId, new FeatureQuery(), CancellationToken.None);
+        FieldValue(rows.Items.Single(f => f.Id == feature.Id), "status").Should().Be("ancestor");
+    }
+
     private static string NameOf(Feature feature)
         => feature.Attributes.TryGetValue("name", out var value) ? value?.ToString() ?? string.Empty : string.Empty;
 
