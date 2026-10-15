@@ -438,6 +438,10 @@ public static class VersionManagementServerEndpoints
                 ex.Message,
                 [$"Version '{ex.VersionName}' already exists. Choose a different name or delete the existing version first."]);
         }
+        catch (ArgumentException)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "versionName is not a valid branch name.");
+        }
     }
 
     private static async Task<IResult> HandleDelete(
@@ -564,7 +568,16 @@ public static class VersionManagementServerEndpoints
         VersionAccess? access = string.IsNullOrWhiteSpace(accessRaw) ? null : ParseAccess(accessRaw);
 
         var request = new AlterVersionRequest(versionId, newName, access, description);
-        var altered = await versionManager.AlterAsync(request, cancellationToken).ConfigureAwait(false);
+        GdbVersion? altered;
+        try
+        {
+            altered = await versionManager.AlterAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "versionName is not a valid branch name.");
+        }
+
         if (altered is null)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");

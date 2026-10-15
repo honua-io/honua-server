@@ -224,6 +224,45 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ResolveAsync_DottedQualifiedName_MatchesWireIdentity()
+    {
+        var versionManager = CreateVersionManager();
+
+        // alice.x is older, so a bare-name lookup that ignores the caller would bind to it.
+        var alice = await versionManager.CreateAsync(
+            new CreateVersionRequest("x", "alice", VersionAccess.Public), CancellationToken.None);
+        var bobDotted = await versionManager.CreateAsync(
+            new CreateVersionRequest("Q4.edits", "bob", VersionAccess.Public), CancellationToken.None);
+        var bobBare = await versionManager.CreateAsync(
+            new CreateVersionRequest("x", "bob", VersionAccess.Public), CancellationToken.None);
+
+        var dotted = await versionManager.ResolveAsync("bob.Q4.edits", "bob", CancellationToken.None);
+        dotted.Should().NotBeNull();
+        dotted!.Value.VersionId.Should().Be(bobDotted.VersionId);
+
+        (await versionManager.ResolveAsync("bob.Q4.edits", CancellationToken.None))!
+            .Value.VersionId.Should().Be(bobDotted.VersionId);
+
+        var bareForBob = await versionManager.ResolveAsync("x", "bob", CancellationToken.None);
+        bareForBob.Should().NotBeNull();
+        bareForBob!.Value.VersionId.Should().Be(bobBare.VersionId);
+
+        (await versionManager.ResolveAsync("x", CancellationToken.None))!
+            .Value.VersionId.Should().Be(alice.VersionId);
+    }
+
+    [Fact]
+    public async Task CreateAsync_InvalidBranchName_ThrowsArgumentException()
+    {
+        var versionManager = CreateVersionManager();
+
+        var act = () => versionManager.CreateAsync(
+            new CreateVersionRequest("Q4..edits", "bob", VersionAccess.Public), CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
     public async Task Reconcile_NoOverlappingDefaultEdits_IsCleanAndCanPost()
     {
         var store = CreateFeatureStore();
