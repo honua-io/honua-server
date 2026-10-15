@@ -224,6 +224,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
     public async Task ResolveAsync_DottedQualifiedName_MatchesWireIdentity()
     {
         var versionManager = CreateVersionManager();
@@ -252,6 +253,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
     public async Task CreateAsync_InvalidBranchName_ThrowsArgumentException()
     {
         var versionManager = CreateVersionManager();
@@ -565,6 +567,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
     public async Task ResolveConflicts_TakeBase_RebasesAndPostsAncestorImage()
     {
         var store = CreateFeatureStore();
@@ -606,6 +609,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
     public async Task Reconcile_UncommittedDefaultEdit_SurfacesOnPostInsteadOfSkippingGeneration()
     {
         var store = CreateFeatureStore();
