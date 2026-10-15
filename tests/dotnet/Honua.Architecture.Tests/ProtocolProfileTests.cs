@@ -142,7 +142,8 @@ public sealed class ProtocolProfileTests
             contents.Should().Contain("-p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}");
         }
 
-        var shim = File.ReadAllText(Path.Combine(repositoryRoot, "docker", "Dockerfile.protocol-profile-runtime"));
+        var shim = string.Join('\n', File.ReadLines(Path.Combine(repositoryRoot, "docker", "Dockerfile.protocol-profile-runtime"))
+            .Where(line => !line.TrimStart().StartsWith('#')));
         shim.Should().Contain("honua-protocol-profile.json");
         shim.Should().NotContain("dotnet publish");
         shim.Should().NotContain("dotnet build");
@@ -221,7 +222,7 @@ public sealed class ProtocolProfileTests
 
         var mismatch = () => ProtocolProfile.ValidateRuntime(Config(("HONUA_PROTOCOL_PROFILE", "gsr")));
         mismatch.Should().Throw<InvalidOperationException>()
-            .WithMessage("*compiled profile 'all'*gsr*HonuaProtocolProfile*");
+            .WithMessage("*HONUA_PROTOCOL_PROFILE is 'gsr'*compiled profile 'all'*HonuaProtocolProfile=gsr*");
 
         var unknown = () => ProtocolProfile.ValidateRuntime(Config(("Protocols:Enabled", "not-a-protocol")));
         unknown.Should().Throw<InvalidOperationException>()
@@ -335,11 +336,11 @@ public sealed class ProtocolProfileTests
         var argument = $"-p:HonuaProtocolProfile={profile}";
         var names = GetProjectReferenceNames(argument);
         names.Should().Contain(included);
-        names.Should().NotContain(excluded);
+        names.Intersect(excluded).Should().BeEmpty();
         var defined = GetMsBuildProperty("DefineConstants", argument)
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         defined.Should().Contain(constants);
-        defined.Should().NotContain(absentConstants);
+        defined.Intersect(absentConstants).Should().BeEmpty();
     }
 
     private static string DefinitionPath()
