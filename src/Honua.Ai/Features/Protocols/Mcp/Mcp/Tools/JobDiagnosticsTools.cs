@@ -57,6 +57,11 @@ internal sealed class DiagnoseJobTool(ILogger<DiagnoseJobTool> logger) : IMcpToo
             throw new GeoprocessingValidationException("jobId is required.");
         }
 
+        if (argument.Events is < 1 or > McpJobDiagnosticsSchemas.MaxEvents)
+        {
+            throw new GeoprocessingValidationException($"events must be between 1 and {McpJobDiagnosticsSchemas.MaxEvents}.");
+        }
+
         var payload = await ResolveReader(httpContext)
             .DiagnoseJobAsync(principal, argument, cancellationToken)
             .ConfigureAwait(false);

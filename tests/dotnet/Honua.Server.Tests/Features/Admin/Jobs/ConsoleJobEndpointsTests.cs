@@ -810,9 +810,13 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         }
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("https://user:token=repo-secret@git.example.com/org/tools.git")]
+    [InlineData("https://user:opaque-value@git.example.com/org/tools.git")]
+    [InlineData("https://opaque-value@git.example.com/org/tools.git")]
+    [InlineData("https://user:p%40ss%3Aword@git.example.com/org/tools.git")]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
-    public async Task GetJobDiagnostics_ForCustomCodeJob_ReportsCompleteReleaseIdentityWithoutCredentials()
+    public async Task GetJobDiagnostics_ForCustomCodeJob_ReportsCompleteReleaseIdentityWithoutCredentials(string repositoryUrl)
     {
         var now = DateTimeOffset.UtcNow;
         _jobStore.Set(CreateJob("job-diag-customcode", ExecutionJobStatus.Failed, now.AddMinutes(-20), "corr-diag-customcode") with
@@ -827,7 +831,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             Spec = CreateSpec("customcode-workload", new Dictionary<string, string>
             {
                 [CustomCodeJobContract.RuntimeParam] = "python",
-                [CustomCodeJobContract.RepoUrlParam] = "https://user:token=repo-secret@git.example.com/org/tools.git",
+                [CustomCodeJobContract.RepoUrlParam] = repositoryUrl,
                 [CustomCodeJobContract.GitRefParam] = "0123456789abcdef0123456789abcdef01234567",
                 [CustomCodeJobContract.EntrypointParam] = "tools.buffer:execute",
                 [CustomCodeJobContract.DepsManifestParam] = "requirements.lock"
@@ -845,6 +849,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(rawBody);
         var root = doc.RootElement;
         var release = root.GetProperty("release");
+        release.GetProperty("sourceRepository").GetString().Should().Be("[REDACTED]");
         release.GetProperty("state").GetString().Should().Be("complete");
         release.GetProperty("runtime").GetString().Should().Be("python");
         release.GetProperty("sourceRef").GetString().Should().Be("0123456789abcdef0123456789abcdef01234567");

@@ -647,14 +647,18 @@ internal sealed partial class ConsoleJobService
             ? code
             : null;
 
-    // Identity-like values (refs, entry points, repository URLs) are short and never
-    // secrets, but a caller-supplied repository URL may embed credentials: run the
-    // credential and path redaction and withhold the value if a secret token survives.
+    // Caller-supplied identities can embed credentials. Withhold URI userinfo
+    // before truncation or path redaction, then apply the general secret filters.
     private static string? SafeIdentity(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             return null;
+        }
+
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return "[REDACTED]";
         }
 
         var sanitized = WorkspacePathSanitizer.SanitizeForClient(value, null, MaxMetadataValueLength);

@@ -54,6 +54,41 @@ public sealed class McpJobDiagnosticsToolTests
         reader.DiagnoseCalls.Should().Be(0);
     }
 
+    [UnitTheory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(501)]
+    public async Task DiagnoseJobTool_Invoke_WithInvalidEventLimit_RejectsBeforeReadingAnything(int events)
+    {
+        var reader = new FakeJobDiagnosticsReader();
+        var context = BuildContext(reader);
+        var tool = new DiagnoseJobTool(NullLogger<DiagnoseJobTool>.Instance);
+
+        var act = () => tool.InvokeAsync(context, Json($$"""{ "jobId": "gp-1", "events": {{events}} }"""), CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        reader.DiagnoseCalls.Should().Be(0);
+    }
+
+    [UnitTheory]
+    [InlineData(null)]
+    [InlineData(1)]
+    [InlineData(500)]
+    public async Task DiagnoseJobTool_Invoke_WithValidEventLimit_ReadsDiagnosis(int? events)
+    {
+        var reader = new FakeJobDiagnosticsReader();
+        var context = BuildContext(reader);
+        var tool = new DiagnoseJobTool(NullLogger<DiagnoseJobTool>.Instance);
+        var arguments = events.HasValue
+            ? Json($$"""{ "jobId": "gp-1", "events": {{events.Value}} }""")
+            : Json("""{ "jobId": "gp-1" }""");
+
+        var result = await tool.InvokeAsync(context, arguments, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        reader.DiagnoseCalls.Should().Be(1);
+    }
+
     [UnitTest]
     public async Task JobEvidenceTool_Invoke_BoundsEventsAndReturnsReaderPayload()
     {
