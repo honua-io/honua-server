@@ -632,6 +632,7 @@ internal sealed class RedisAdminApiKeyIndexMaintenance : BackgroundService
             }
             catch (TimeoutException)
             {
+                // Redis command timeouts are TimeoutException, not RedisException. The next tick retries.
             }
 
             try

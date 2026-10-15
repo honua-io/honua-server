@@ -334,8 +334,10 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, victimUsage.StatusCode);
         var victimReport = JsonSerializer.Deserialize<ApiResponse<EmbedUsageResponse>>(
             await victimUsage.Content.ReadAsStringAsync(), _jsonOptions);
-        Assert.NotNull(victimReport?.Data);
-        Assert.Equal(0L, victimReport.Data.Total);
+        Assert.NotNull(victimReport);
+        var victimData = victimReport.Data;
+        Assert.NotNull(victimData);
+        Assert.Equal(0L, victimData.Total);
 
         var ownerBeforeOverCap = await UsageTotalAsync("site-owner");
         Assert.True(ownerBeforeOverCap >= 1);
@@ -416,7 +418,9 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, usage.StatusCode);
         var report = JsonSerializer.Deserialize<ApiResponse<EmbedUsageResponse>>(
             await usage.Content.ReadAsStringAsync(), _jsonOptions);
-        Assert.NotNull(report?.Data);
-        return report.Data.Total;
+        Assert.NotNull(report);
+        var data = report.Data;
+        Assert.NotNull(data);
+        return data.Total;
     }
 }
