@@ -2657,26 +2657,106 @@ internal sealed class GeometryServiceHandler(
 
         if (target is ILineal)
         {
-            var intersection = target.Intersection(reshaper);
-            if (intersection.IsEmpty)
-            {
-                return target;
-            }
-
-            // Merge the reshaper into the line and pick the longest connected result.
-            var merger = new NetTopologySuite.Operation.Linemerge.LineMerger();
-            merger.Add(target.Difference(reshaper.Buffer(target.Length * 1e-9)));
-            merger.Add(reshaper);
-            var merged = merger.GetMergedLineStrings().Cast<Geometry>().ToArray();
-            if (merged.Length == 0)
-            {
-                return target;
-            }
-
-            return merged.OrderByDescending(m => m.Length).First();
+            return ReshapeLine(target, reshaper);
         }
 
         return target;
+    }
+
+    // Keep the target before the first crossing, splice in the reshaper oriented from
+    // that crossing to the last, then keep the target after the last crossing (#6129).
+    // Fewer than two crossings leaves the target unchanged.
+    private static Geometry ReshapeLine(Geometry target, Geometry reshaper)
+    {
+        if (reshaper is not ILineal || reshaper.IsEmpty)
+        {
+            return target;
+        }
+
+        if (target is MultiLineString multiLine)
+        {
+            var parts = new LineString[multiLine.NumGeometries];
+            var changed = false;
+            for (var i = 0; i < parts.Length; i++)
+            {
+                var part = (LineString)multiLine.GetGeometryN(i);
+                var reshaped = ReshapeLineString(part, reshaper);
+                parts[i] = reshaped;
+                changed |= !ReferenceEquals(reshaped, part);
+            }
+
+            return changed ? multiLine.Factory.CreateMultiLineString(parts) : target;
+        }
+
+        return target is LineString line ? ReshapeLineString(line, reshaper) : target;
+    }
+
+    private static LineString ReshapeLineString(LineString line, Geometry reshaper)
+    {
+        if (line.NumPoints < 2 || !line.Intersects(reshaper))
+        {
+            return line;
+        }
+
+        var lineIndexed = new LengthIndexedLine(line);
+        var reshaperIndexed = new LengthIndexedLine(reshaper);
+        var points = new List<Coordinate>();
+        AppendCoordinates(line.Intersection(reshaper), points);
+        var crossings = new List<(double LineIndex, double ReshaperIndex)>();
+        var lineEpsilon = RingIndexEpsilon(line.Length);
+        var reshaperEpsilon = RingIndexEpsilon(reshaper.Length);
+        foreach (var point in points)
+        {
+            var lineIndex = lineIndexed.Project(point);
+            var reshaperIndex = reshaperIndexed.Project(point);
+            var duplicate = false;
+            foreach (var existing in crossings)
+            {
+                if (NumericTolerance.NearlyEqual(existing.LineIndex, lineIndex, lineEpsilon))
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+
+            if (!duplicate)
+            {
+                crossings.Add((lineIndex, reshaperIndex));
+            }
+        }
+
+        if (crossings.Count < 2)
+        {
+            return line;
+        }
+
+        crossings.Sort(static (left, right) => left.LineIndex.CompareTo(right.LineIndex));
+        var first = crossings[0];
+        var last = crossings[^1];
+        if (NumericTolerance.NearlyEqual(first.LineIndex, last.LineIndex, lineEpsilon))
+        {
+            return line;
+        }
+
+        var head = LineCoordinates(lineIndexed.ExtractLine(lineIndexed.StartIndex, first.LineIndex));
+        var splice = LineCoordinates(reshaperIndexed.ExtractLine(first.ReshaperIndex, last.ReshaperIndex));
+        var tail = LineCoordinates(lineIndexed.ExtractLine(last.LineIndex, lineIndexed.EndIndex));
+        var combined = AppendChain(AppendChain(head, splice), tail);
+        var coordinates = new List<Coordinate>(combined.Count);
+        foreach (var coordinate in combined)
+        {
+            if (coordinates.Count == 0 || !SamePoint(coordinates[^1], coordinate))
+            {
+                coordinates.Add(coordinate);
+            }
+        }
+
+        if (coordinates.Count < 2)
+        {
+            return line;
+        }
+
+        return line.Factory.CreateLineString(coordinates.ToArray());
     }
 
     // Esri preserves the longest portion of the original ring between the reshaper's

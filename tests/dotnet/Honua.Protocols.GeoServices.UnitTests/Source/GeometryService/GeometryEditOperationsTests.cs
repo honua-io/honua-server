@@ -48,6 +48,35 @@ public sealed class GeometryEditOperationsTests
         reshaped.Contains(Factory.CreatePoint(new Coordinate(0.5, 0.1))).Should().BeFalse();
     }
 
+    [UnitTest]
+    [Operation(Operations.Reshape)]
+    public void Reshape_Polyline_KeepsSectionsOutsideCrossings()
+    {
+        var target = Line((0, 0), (10, 0));
+        var reshaper = Line((3, 0), (3, 2), (7, 2), (7, 0));
+
+        var reshaped = GeometryServiceHandler.ReshapeGeometry(target, reshaper);
+
+        reshaped.Length.Should().BeApproximately(14, 1e-9);
+        reshaped.Coordinates[0].X.Should().BeApproximately(0, 1e-9);
+        reshaped.Coordinates[0].Y.Should().BeApproximately(0, 1e-9);
+        reshaped.Coordinates[^1].X.Should().BeApproximately(10, 1e-9);
+        reshaped.Coordinates[^1].Y.Should().BeApproximately(0, 1e-9);
+        reshaped.Covers(Factory.CreatePoint(new Coordinate(3, 2))).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Reshape)]
+    public void Reshape_PolylineWithOneCrossing_ReturnsTarget()
+    {
+        var target = Line((0, 0), (10, 0));
+        var reshaper = Line((3, 0), (3, 2));
+
+        var reshaped = GeometryServiceHandler.ReshapeGeometry(target, reshaper);
+
+        reshaped.Coordinates.Should().Equal(target.Coordinates);
+    }
+
     private static Polygon Square()
         => Factory.CreatePolygon(
         [

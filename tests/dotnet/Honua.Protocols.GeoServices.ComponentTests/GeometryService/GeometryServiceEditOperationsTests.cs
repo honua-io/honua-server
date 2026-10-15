@@ -443,6 +443,44 @@ public sealed class GeometryServiceEditOperationsTests
 
     [IntegrationTest]
     [Operation(Operations.Reshape)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/reshape")]
+    public async Task Reshape_PostPolylineWithReshaper_KeepsOuterSections()
+    {
+        // Keep (0,0)-(3,0), splice the reshaper, then keep (7,0)-(10,0). Length is
+        // 3+2+4+2+3 = 14. Returning only the reshaper (length 8) drops the line.
+        var body = """
+        {
+            "target": {
+                "paths": [[[0,0],[10,0]]]
+            },
+            "reshaper": {
+                "paths": [[[3,0],[3,2],[7,2],[7,0]]]
+            },
+            "sr": "3857"
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/reshape",
+            requestContent);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceGeometryResponse);
+        result.Should().NotBeNull();
+        result!.Geometry.TryGetProperty("paths", out var paths).Should().BeTrue();
+        var path = paths[0];
+        PathLength(path).Should().BeApproximately(14, 1e-6);
+        path[0][0].GetDouble().Should().BeApproximately(0, 1e-6);
+        path[0][1].GetDouble().Should().BeApproximately(0, 1e-6);
+        var last = path[path.GetArrayLength() - 1];
+        last[0].GetDouble().Should().BeApproximately(10, 1e-6);
+        last[1].GetDouble().Should().BeApproximately(0, 1e-6);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Reshape)]
     [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/reshape")]
     public async Task Reshape_GetMissingReshaper_Returns400()
     {
@@ -551,5 +589,20 @@ public sealed class GeometryServiceEditOperationsTests
         }
 
         return sum / 2;
+    }
+
+    private static double PathLength(JsonElement path)
+    {
+        double length = 0;
+        for (var i = 1; i < path.GetArrayLength(); i++)
+        {
+            var start = path[i - 1];
+            var end = path[i];
+            var dx = end[0].GetDouble() - start[0].GetDouble();
+            var dy = end[1].GetDouble() - start[1].GetDouble();
+            length += Math.Sqrt((dx * dx) + (dy * dy));
+        }
+
+        return length;
     }
 }
