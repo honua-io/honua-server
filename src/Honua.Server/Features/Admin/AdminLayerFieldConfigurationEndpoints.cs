@@ -302,7 +302,8 @@ internal static class AdminLayerFieldConfigurationEndpoints
 
     /// <summary>
     /// Persists field configuration for the single resource that <paramref name="layerId"/> addresses.
-    /// An ambiguous id is refused before either store is written.
+    /// An ambiguous id is refused before either store is written. The graph is written before the
+    /// field store so a graph failure does not leave alias, domain, and hidden rows committed.
     /// </summary>
     internal static async Task<AdminLayerFieldApplyResult> ApplyUpdatedFieldConfigurationsAsync(
         IMetadataV2GraphStore graphStore,
@@ -319,12 +320,9 @@ internal static class AdminLayerFieldConfigurationEndpoints
             return AdminLayerFieldApplyResult.Ambiguous(preview.ConflictDetail!);
         }
 
-        var configurations = await fieldConfigurationStore.UpdateFieldConfigurationsAsync(
-                layerId,
-                updates,
-                cancellationToken)
+        var existing = await fieldConfigurationStore.GetFieldConfigurationsAsync(layerId, cancellationToken)
             .ConfigureAwait(false);
-
+        var configurations = MergeFieldConfigurations(existing, updates);
         var written = await AdminLayerConfigurationTargets.WriteAsync(
             graphStore,
             layerId,
@@ -335,7 +333,46 @@ internal static class AdminLayerFieldConfigurationEndpoints
             return AdminLayerFieldApplyResult.Ambiguous(written.ConflictDetail!);
         }
 
-        return new AdminLayerFieldApplyResult(false, null, configurations);
+        var stored = await fieldConfigurationStore.UpdateFieldConfigurationsAsync(
+                layerId,
+                updates,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new AdminLayerFieldApplyResult(false, null, stored);
+    }
+
+    /// <summary>
+    /// Applies updates with the same rules as the field store: alias and domain are replaced,
+    /// and a null hidden flag preserves the stored value.
+    /// </summary>
+    private static IReadOnlyList<LayerFieldConfiguration> MergeFieldConfigurations(
+        IReadOnlyList<LayerFieldConfiguration> existing,
+        IReadOnlyList<LayerFieldConfigurationUpdate> updates)
+    {
+        var updateMap = new Dictionary<string, LayerFieldConfigurationUpdate>(StringComparer.OrdinalIgnoreCase);
+        foreach (var update in updates)
+        {
+            updateMap[update.Name] = update;
+        }
+
+        var merged = new List<LayerFieldConfiguration>(existing.Count);
+        foreach (var field in existing)
+        {
+            if (!updateMap.TryGetValue(field.Name, out var update))
+            {
+                merged.Add(field);
+                continue;
+            }
+
+            merged.Add(field with
+            {
+                Alias = update.Alias,
+                Domain = update.Domain,
+                Hidden = update.Hidden ?? field.Hidden,
+            });
+        }
+
+        return merged;
     }
 
     private static MetadataV2Resource ApplyFieldConfigurations(
