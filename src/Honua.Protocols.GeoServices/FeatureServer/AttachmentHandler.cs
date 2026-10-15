@@ -423,19 +423,43 @@ internal static partial class AttachmentHandler
 
             foreach (var attachmentId in attachmentIds)
             {
-                var success = await attachmentStore.DeleteAsync(layerId, storageId, attachmentId, cancellationToken);
-                deleteResults.Add(new DeleteAttachmentResult
+                try
                 {
-                    ObjectId = attachmentId,
-                    Success = success,
-                    Error = success
-                        ? null
-                        : new EditError
+                    var success = await attachmentStore.DeleteAsync(layerId, storageId, attachmentId, cancellationToken);
+                    deleteResults.Add(new DeleteAttachmentResult
+                    {
+                        ObjectId = attachmentId,
+                        Success = success,
+                        Error = success
+                            ? null
+                            : new EditError
+                            {
+                                Code = 1000,
+                                Description = "Attachment not found."
+                            }
+                    });
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                // Each DeleteAsync commits on its own. A later failure must not hide the
+                // ids that already succeeded, and the client message must not include the
+                // provider exception.
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    LogDeleteAttachmentsError(logger, layerId, featureId, ex);
+                    deleteResults.Add(new DeleteAttachmentResult
+                    {
+                        ObjectId = attachmentId,
+                        Success = false,
+                        Error = new EditError
                         {
-                            Code = 1000,
-                            Description = "Attachment not found."
+                            Code = 500,
+                            Description = "Failed to delete attachment."
                         }
-                });
+                    });
+                }
             }
 
             var response = new DeleteAttachmentsResponse
