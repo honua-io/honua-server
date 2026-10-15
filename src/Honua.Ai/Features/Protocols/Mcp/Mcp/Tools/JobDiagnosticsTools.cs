@@ -62,6 +62,11 @@ internal sealed class DiagnoseJobTool(ILogger<DiagnoseJobTool> logger) : IMcpToo
             throw new GeoprocessingValidationException($"events must be between 1 and {McpJobDiagnosticsSchemas.MaxEvents}.");
         }
 
+        if (argument.EventCursor?.Length > 128)
+        {
+            throw new GeoprocessingValidationException("eventCursor must be at most 128 characters.");
+        }
+
         var payload = await ResolveReader(httpContext)
             .DiagnoseJobAsync(principal, argument, cancellationToken)
             .ConfigureAwait(false);
@@ -101,7 +106,7 @@ internal sealed class JobEvidenceTool(ILogger<JobEvidenceTool> logger) : IMcpToo
         Description =
             "Read-only retrieval of the recorded evidence behind a job diagnosis: sanitized per-step "
             + "commands and timings (timingSource distinguishes measured harness durations from inferred log timings), the most recent events "
-            + "(bounded by events, maximum 500; truncated reports when older events exist), and artifact "
+            + "(bounded by events, maximum 500; use eventCursor=start, then nextCursor to page the retained stream), and artifact "
             + "availability. Paths and credentials are redacted before they leave the server. No "
             + "explanations are added; use honua_diagnose_job for the inferred layer.",
         InputSchema = McpJobDiagnosticsSchemas.JobEvidenceInputSchema,
@@ -127,6 +132,11 @@ internal sealed class JobEvidenceTool(ILogger<JobEvidenceTool> logger) : IMcpToo
         if (argument.Events is < 1 or > McpJobDiagnosticsSchemas.MaxEvents)
         {
             throw new GeoprocessingValidationException($"events must be between 1 and {McpJobDiagnosticsSchemas.MaxEvents}.");
+        }
+
+        if (argument.EventCursor?.Length > 128)
+        {
+            throw new GeoprocessingValidationException("eventCursor must be at most 128 characters.");
         }
 
         var payload = await ResolveReader(httpContext)

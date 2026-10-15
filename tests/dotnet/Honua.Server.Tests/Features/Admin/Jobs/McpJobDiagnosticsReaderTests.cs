@@ -64,9 +64,10 @@ public sealed class McpJobDiagnosticsReaderTests
         var jobs = new StubConsoleJobService(Projection("gp-42"));
         var reader = new McpJobDiagnosticsReader(jobs);
 
-        var result = await reader.GetJobEvidenceAsync(Principal(), new McpJobEvidenceArgument { JobId = "gp-42", Events = 500 }, CancellationToken.None);
+        var result = await reader.GetJobEvidenceAsync(Principal(), new McpJobEvidenceArgument { JobId = "gp-42", Events = 500, EventCursor = "start" }, CancellationToken.None);
 
         jobs.LastEventLimit.Should().Be(500);
+        jobs.LastEventCursor.Should().Be("start");
         result.GetProperty("schema").GetString().Should().Be(McpJobDiagnosticsReader.EvidenceSchemaId);
         result.GetProperty("steps").GetArrayLength().Should().Be(1);
         result.GetProperty("events").GetProperty("totalCount").GetInt32().Should().Be(3);
@@ -225,22 +226,26 @@ public sealed class McpJobDiagnosticsReaderTests
 
         public int? LastEventLimit { get; private set; }
 
+        public string? LastEventCursor { get; private set; }
+
         public Task<ConsoleJobDiagnostics?> GetDiagnosticsAsync(
             ClaimsPrincipal user,
             string pathBase,
             string jobId,
             int? eventLimit,
+            string? eventCursor,
             CancellationToken cancellationToken)
         {
             Calls++;
             LastPrincipal = user;
             LastJobId = jobId;
             LastEventLimit = eventLimit;
+            LastEventCursor = eventCursor;
             return Task.FromResult(projection);
         }
 
-        public Task<ConsoleJobDiagnostics?> GetDiagnosticsAsync(HttpContext context, string jobId, int? eventLimit, CancellationToken cancellationToken)
-            => GetDiagnosticsAsync(context.User, string.Empty, jobId, eventLimit, cancellationToken);
+        public Task<ConsoleJobDiagnostics?> GetDiagnosticsAsync(HttpContext context, string jobId, int? eventLimit, string? eventCursor, CancellationToken cancellationToken)
+            => GetDiagnosticsAsync(context.User, string.Empty, jobId, eventLimit, eventCursor, cancellationToken);
 
         public Task<ConsoleJobListResponse> ListAsync(HttpContext context, ConsoleJobQueryRequest request, CancellationToken cancellationToken)
             => throw new NotSupportedException();

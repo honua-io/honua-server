@@ -678,6 +678,53 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_PagesRetainedEventsWithoutReadingTheWholeStream()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(CreateJob("job-diag-paged", ExecutionJobStatus.Succeeded, now, "corr-paged") with { CompletedAt = now.AddMinutes(20) });
+        _logStore.SetLogs("job-diag-paged", Enumerable.Range(0, 603).Select(i => new ExecutionLogEntry
+        {
+            Timestamp = now.AddSeconds(i),
+            Level = ExecutionLogLevel.Info,
+            Message = $"event {i}",
+            Phase = "Run",
+        }).ToArray());
+        var fullReads = _logStore.FullReads;
+        using var tailResponse = await _client.GetAsync("/api/v1/admin/jobs/job-diag-paged/diagnostics?events=2");
+        tailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var tail = await ReadJsonAsync(tailResponse);
+        tail.RootElement.GetProperty("events").GetProperty("items")[0].GetProperty("message").GetString().Should().Be("event 601");
+        tail.RootElement.GetProperty("steps").GetArrayLength().Should().Be(500);
+        tail.RootElement.GetProperty("evidence").GetProperty("truncated").EnumerateArray()
+            .Select(x => x.GetString()).Should().Contain(x => x!.StartsWith("steps and failure details:", StringComparison.Ordinal));
+        var cursor = tail.RootElement.GetProperty("events").GetProperty("firstCursor").GetString();
+        var messages = new List<string>();
+        do
+        {
+            using var response = await _client.GetAsync("/api/v1/admin/jobs/job-diag-paged/diagnostics?events=200&eventCursor=" + Uri.EscapeDataString(cursor!));
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var page = await ReadJsonAsync(response);
+            var events = page.RootElement.GetProperty("events");
+            events.GetProperty("mode").GetString().Should().Be("page");
+            messages.AddRange(events.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("message").GetString()!));
+            cursor = events.TryGetProperty("nextCursor", out var next) ? next.GetString() : null;
+        }
+        while (cursor is not null);
+
+        messages.Should().Equal(Enumerable.Range(0, 603).Select(i => $"event {i}"));
+        _logStore.FullReads.Should().Be(fullReads, "diagnostics must never materialize the complete log stream");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_RejectsMalformedEventCursor()
+    {
+        using var response = await _client.GetAsync("/api/v1/admin/jobs/job-failed/diagnostics?eventCursor=invalid!");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
     public async Task GetJobDiagnostics_ForFailedJob_ProjectsSanitizedFailureAndDisclosesMissingProvenance()
     {
         var now = DateTimeOffset.UtcNow;
@@ -1262,6 +1309,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
     private sealed class InMemoryLogStore : IExecutionLogStore
     {
+        public int FullReads { get; private set; }
+
         private readonly Dictionary<string, ExecutionLogEntry[]> _logs = new(StringComparer.Ordinal);
 
         public void SetLogs(string operationId, params ExecutionLogEntry[] entries) => _logs[operationId] = entries;
@@ -1274,7 +1323,10 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         }
 
         public Task<IReadOnlyList<ExecutionLogEntry>> GetLogsAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<ExecutionLogEntry>>(_logs.TryGetValue(operationId, out var entries) ? entries : Array.Empty<ExecutionLogEntry>());
+        {
+            FullReads++;
+            return Task.FromResult<IReadOnlyList<ExecutionLogEntry>>(_logs.TryGetValue(operationId, out var entries) ? entries : Array.Empty<ExecutionLogEntry>());
+        }
 
         public Task<ExecutionLogTail> TailAsync(
             string operationId,

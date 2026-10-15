@@ -92,7 +92,9 @@ internal sealed partial class RedisExecutionLogStore(
         }
 
         var start = Math.Max(0, length - boundedLimit);
-        var values = await _database.ListRangeAsync(key, start, -1).ConfigureAwait(false);
+        // Bound both endpoints to the observed length. An open-ended range would
+        // include concurrent appends and could exceed the caller's requested limit.
+        var values = await _database.ListRangeAsync(key, start, length - 1).ConfigureAwait(false);
         var entries = new List<ExecutionLogEntry>(values.Length);
 
         foreach (var value in values)
