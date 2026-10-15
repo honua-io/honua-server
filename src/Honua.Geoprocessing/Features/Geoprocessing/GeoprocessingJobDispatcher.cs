@@ -252,10 +252,16 @@ internal sealed class GeoprocessingJobDispatcher
     /// Resolves the execution workload (job definition) a submission should run under, routing
     /// custom-code jobs to the custom-code runtime profile and preferring a configured remote
     /// geoprocessing workload over the always-present local baseline. Returns <c>null</c> when
-    /// no workload registry is configured.
+    /// no workload registry is configured. When the current workloads cannot run
+    /// <paramref name="requiredRuntimeProfile"/>, <paramref name="confirmKeyedReplay"/> reports
+    /// whether an already-accepted keyed job exists; a confirmed replay returns <c>null</c>
+    /// instead of rejecting the submission (#6069).
     /// </summary>
     public async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(
-        bool isCustomCode, string? requiredRuntimeProfile, CancellationToken cancellationToken)
+        bool isCustomCode,
+        string? requiredRuntimeProfile,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task<bool>>? confirmKeyedReplay = null)
     {
         if (_workloadRegistry == null)
         {
@@ -298,6 +304,14 @@ internal sealed class GeoprocessingJobDispatcher
             ?? compatible.FirstOrDefault();
         if (selected is null && geoprocessingWorkloads.Length > 0)
         {
+            // An exact retry of a job accepted under the previous workload set does not
+            // need a compatible image selected again (#6069).
+            if (confirmKeyedReplay != null
+                && await confirmKeyedReplay(cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
             throw new GeoprocessingValidationException(
                 $"No geoprocessing workload supports runtime profile '{profile}'. Configure a compatible worker image and runtime profile.");
         }

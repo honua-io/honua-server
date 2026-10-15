@@ -38,7 +38,7 @@ internal sealed class GeoprocessingJobArtifactService
     private readonly GeoprocessingRasterOutputRegistrar? _outputRegistrar;
     private readonly IGeoprocessingOutputObjectStore? _outputStore;
     private readonly TimeProvider _timeProvider;
-    private readonly IReadOnlyList<IJobTerminalCallback> _terminalCallbacks;
+    private readonly IJobTerminalCallback[] _terminalCallbacks;
 
     /// <summary>
     /// Creates the artifact coordinator over the catalog, the optional result-package store,
@@ -67,22 +67,78 @@ internal sealed class GeoprocessingJobArtifactService
     }
 
     /// <summary>
-    /// Replays terminal callbacks against the job as stored, before a result package is read.
+    /// Replays terminal callbacks against the job as stored, before a result package is read,
+    /// so a job whose first transition never ran them (for example one finalized by another
+    /// process) is healed. The replay is skipped when the job's result package is already
+    /// stored: that package is only written after its artifacts persisted, so there is nothing
+    /// to heal and a status poll must not re-persist anything (#6107).
     /// Callbacks use <see cref="CancellationToken.None"/> so a cancelled result read cannot
-    /// skip the durability notification that may flip the job to failed.
+    /// leave a replay half-done. The replay is non-destructive: replay-aware callbacks never
+    /// rewrite the terminal job, and a failed repair is rethrown as a retryable
+    /// <see cref="GeoprocessingStoreUnavailableException"/> after every callback has run.
     /// </summary>
     internal async Task ReplayTerminalCallbacksAsync(ExecutionJobRecord job)
     {
+        if (_terminalCallbacks.Length == 0
+            || await HasStoredResultPackageAsync(job).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        GeoprocessingStoreUnavailableException? retryable = null;
         foreach (var callback in _terminalCallbacks)
         {
             try
             {
-                await callback.OnTerminalAsync(job, CancellationToken.None).ConfigureAwait(false);
+                if (callback is IReplayableJobTerminalCallback replayable)
+                {
+                    await replayable.ReplayAsync(job, CancellationToken.None).ConfigureAwait(false);
+                }
+                else
+                {
+                    await callback.OnTerminalAsync(job, CancellationToken.None).ConfigureAwait(false);
+                }
+            }
+            catch (GeoprocessingStoreUnavailableException ex) when (callback is IReplayableJobTerminalCallback)
+            {
+                GeoprocessingServiceLog.TerminalCallbackReplayFailed(_logger, job.OperationId, ex);
+                retryable ??= ex;
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 GeoprocessingServiceLog.TerminalCallbackReplayFailed(_logger, job.OperationId, ex);
             }
+        }
+
+        if (retryable is not null)
+        {
+            throw retryable;
+        }
+    }
+
+    private async Task<bool> HasStoredResultPackageAsync(ExecutionJobRecord job)
+    {
+        if (_resultPackageStore is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var stored = await _resultPackageStore
+                .GetAsync(job.OperationId, CancellationToken.None)
+                .ConfigureAwait(false);
+            return stored is not null
+                && string.Equals(
+                    stored.ResultPackageId,
+                    GeoprocessingResultPackageFactory.CreateResultPackageId(job),
+                    StringComparison.Ordinal);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Unknown is treated as missing: the replay is idempotent and non-destructive.
+            GeoprocessingServiceLog.JobResultsStoreReadFailed(_logger, job.OperationId, ex);
+            return false;
         }
     }
 

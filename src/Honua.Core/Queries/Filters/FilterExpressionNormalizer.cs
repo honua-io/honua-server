@@ -137,7 +137,7 @@ public static class FilterExpressionNormalizer
         }
     }
 
-    private static IEnumerable<FilterExpression> EnumerateChildren(FilterExpression expression)
+    internal static IEnumerable<FilterExpression> EnumerateChildren(FilterExpression expression)
     {
         switch (expression)
         {

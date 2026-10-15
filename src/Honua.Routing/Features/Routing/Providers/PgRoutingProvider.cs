@@ -34,6 +34,10 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     private readonly ILogger<PgRoutingProvider> _logger;
     private readonly INetworkDatasetResolver _datasetResolver;
     private readonly string _networkDatasetId;
+    private readonly int _maxSolvePairs;
+    private readonly int _maxClosestFacilities;
+    private readonly int _maxDestinations;
+    private readonly RoutingSolveCapacityLimiter _capacityLimiter;
 
     // Declared physical unit of the topology's cost/reverse_cost weights. All
     // time conversions (route time outputs, isochrone @break_cost, and the
@@ -58,7 +62,11 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             logger,
             new DefaultNetworkDatasetResolver(),
             NetworkDataset.DefaultId,
-            RoutingCostUnit.Minutes)
+            RoutingCostUnit.Minutes,
+            new RoutingConfiguration().MaxSolvePairs,
+            new RoutingConfiguration().MaxClosestFacilities,
+            new RoutingConfiguration().MaxDestinations,
+            new RoutingSolveCapacityLimiter())
     {
     }
 
@@ -71,17 +79,23 @@ internal sealed class PgRoutingProvider : IRoutingProvider
     /// <param name="logger">Logger.</param>
     /// <param name="datasetResolver">Network-dataset resolver.</param>
     /// <param name="options">Bound routing configuration (selects the dataset id).</param>
+    /// <param name="capacityLimiter">Process-wide gate on concurrent solves.</param>
     public PgRoutingProvider(
         IDatabaseSessionFactory sessionFactory,
         ILogger<PgRoutingProvider> logger,
         INetworkDatasetResolver datasetResolver,
-        IOptions<RoutingConfiguration> options)
+        IOptions<RoutingConfiguration> options,
+        RoutingSolveCapacityLimiter capacityLimiter)
         : this(
             sessionFactory,
             logger,
             datasetResolver,
             (options ?? throw new ArgumentNullException(nameof(options))).Value.NetworkDatasetId,
-            options.Value.CostUnit)
+            options.Value.CostUnit,
+            options.Value.MaxSolvePairs,
+            options.Value.MaxClosestFacilities,
+            options.Value.MaxDestinations,
+            capacityLimiter)
     {
     }
 
@@ -90,7 +104,11 @@ internal sealed class PgRoutingProvider : IRoutingProvider
         ILogger<PgRoutingProvider> logger,
         INetworkDatasetResolver datasetResolver,
         string networkDatasetId,
-        RoutingCostUnit costUnit)
+        RoutingCostUnit costUnit,
+        int maxSolvePairs,
+        int maxClosestFacilities,
+        int maxDestinations,
+        RoutingSolveCapacityLimiter capacityLimiter)
     {
         _sessionFactory = sessionFactory ?? throw new ArgumentNullException(nameof(sessionFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -99,6 +117,12 @@ internal sealed class PgRoutingProvider : IRoutingProvider
             ? NetworkDataset.DefaultId
             : networkDatasetId;
         _costUnit = costUnit;
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxSolvePairs);
+
+        _maxSolvePairs = maxSolvePairs;
+        _maxClosestFacilities = maxClosestFacilities;
+        _maxDestinations = maxDestinations;
+        _capacityLimiter = capacityLimiter ?? throw new ArgumentNullException(nameof(capacityLimiter));
     }
 
     /// <summary>
@@ -228,6 +252,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 return new RouteSolveResult(string.Empty, 0, 0, []);
             }
 
+            using var capacity = await _capacityLimiter.AcquireAsync(cancellationToken).ConfigureAwait(false);
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
             var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.dataset", dataset.Id);
@@ -361,6 +386,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 return new ServiceAreaSolveResult([]);
             }
 
+            using var capacity = await _capacityLimiter.AcquireAsync(cancellationToken).ConfigureAwait(false);
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
             var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.dataset", dataset.Id);
@@ -448,13 +474,25 @@ internal sealed class PgRoutingProvider : IRoutingProvider
 
         try
         {
-            var targetCount = Math.Max(1, request.DefaultTargetFacilityCount);
             if (request.Incidents.Count == 0 || request.Facilities.Count == 0)
             {
                 activity?.SetTag("honua.routing.solved", false);
                 return new ClosestFacilitySolveResult([]);
             }
 
+            var targetCount = Math.Max(1, request.DefaultTargetFacilityCount);
+            if (targetCount > _maxClosestFacilities)
+            {
+                throw new RoutingSolveBudgetExceededException(
+                    $"defaultTargetFacilityCount {targetCount} exceeds the maximum of {_maxClosestFacilities}.");
+            }
+
+            RoutingSolveBudget.Ensure(
+                RoutingSolveBudget.RankedPairCount(request.Incidents.Count, request.Facilities.Count, targetCount),
+                _maxSolvePairs,
+                "Closest facility");
+
+            using var capacity = await _capacityLimiter.AcquireAsync(cancellationToken).ConfigureAwait(false);
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
             var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.dataset", dataset.Id);
@@ -473,7 +511,7 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 : OutboundEdgesSql(dataset, profile);
             var edgesSql = ApplyBlockedEdgeFilter(baseEdgesSql, blockedEdgeCount);
 
-            // Snap facilities once; reused across incidents.
+            // Snap facilities once; reused across incidents. targetCount was capped above.
             var facilityVertices = await SnapAllAsync(
                 session, dataset, request.Facilities, request.InSrid, cancellationToken).ConfigureAwait(false);
 
@@ -593,6 +631,21 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 return new OdCostMatrixSolveResult([]);
             }
 
+            var destinationCount = request.DestinationCount is > 0
+                ? Math.Min(request.DestinationCount.Value, request.Destinations.Count)
+                : request.Destinations.Count;
+            if (request.DestinationCount is > 0 && request.DestinationCount.Value > _maxDestinations)
+            {
+                throw new RoutingSolveBudgetExceededException(
+                    $"defaultTargetDestinationCount {request.DestinationCount.Value} exceeds the maximum of {_maxDestinations}.");
+            }
+
+            RoutingSolveBudget.Ensure(
+                RoutingSolveBudget.RankedPairCount(request.Origins.Count, request.Destinations.Count, destinationCount),
+                _maxSolvePairs,
+                "OD cost matrix");
+
+            using var capacity = await _capacityLimiter.AcquireAsync(cancellationToken).ConfigureAwait(false);
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
             var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.dataset", dataset.Id);
@@ -786,6 +839,12 @@ internal sealed class PgRoutingProvider : IRoutingProvider
                 return new LocationAllocationSolveResult([], [], 0, 0);
             }
 
+            RoutingSolveBudget.Ensure(
+                RoutingSolveBudget.RankedPairCount(request.Facilities.Count, request.DemandPoints.Count, null),
+                _maxSolvePairs,
+                "Location allocation");
+
+            using var capacity = await _capacityLimiter.AcquireAsync(cancellationToken).ConfigureAwait(false);
             await using var session = await _sessionFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
             var dataset = await ResolveDatasetAsync(cancellationToken).ConfigureAwait(false);
             activity?.SetTag("honua.routing.dataset", dataset.Id);

@@ -1,23 +1,13 @@
-# ArcGIS Pro `.aprx` Template Instructions
+# ArcGIS Pro desktop smoke artifact
 
-This template produces `Honua-Desktop-Smoke.aprx`.
+The project artifact name is `Honua-Desktop-Smoke.aprx`. How that project is
+built, and any runner or licence setup, stays in private `honua-esri-compat`
+(ruling R30).
 
-## Endpoint Targets
+Public evidence identifier: lane `desktop-arcgis`, envelopes
+`*-desktop-arcgis-featureserver.cert.json` and
+`*-desktop-arcgis-mapserver.cert.json`. The historical schema examples under
+`docs/gis/certification-evidence/20260402T000000Z/` are not certified.
 
-- Feature data endpoint: `${HONUA_BASE_URL}/rest/services/${HONUA_SERVICE_ID}/FeatureServer`
-- Map rendering endpoint: `${HONUA_BASE_URL}/rest/services/${HONUA_SERVICE_ID}/MapServer`
-
-## Build Steps
-
-1. Create a new ArcGIS Pro project.
-2. Add a FeatureServer connection using the feature data endpoint.
-3. Add a MapServer connection using the map rendering endpoint.
-4. Authenticate using API key/OIDC/Basic as required for the environment.
-5. Add at least one feature layer and one map layer to the map view.
-6. Save the project as `Honua-Desktop-Smoke.aprx`.
-
-## Suggested Validation Layer Names
-
-Use stable names in customer demos to keep screenshots and runbooks consistent:
-- `Honua Features`
-- `Honua Map`
+Customer connection steps that are not a certification recipe stay in
+[Connect ArcGIS Pro](../../../guides/connect/arcgis-pro.md).

@@ -72,7 +72,7 @@ public sealed class ProvisionerBuildJobServiceTests
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new InMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
-        var localBackend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new ProvisionerBuildBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, jobQueue);
@@ -139,7 +139,7 @@ public sealed class ProvisionerBuildJobServiceTests
         };
 
         // Only the local backend is registered; the requested backend is absent.
-        var localBackend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var service = CreateService(jobStore, progressStore, [localBackend], options);
 
         var act = async () => await service.SubmitGeocoderBuildAsync(GeocoderRequest());
@@ -153,7 +153,7 @@ public sealed class ProvisionerBuildJobServiceTests
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new InMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
-        var localBackend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new ProvisionerBuildBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, jobQueue);
@@ -174,7 +174,7 @@ public sealed class ProvisionerBuildJobServiceTests
     {
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new InMemoryProgressStore();
-        var localBackend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new ProvisionerBuildBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, Substitute.For<IJobQueue>());
@@ -191,7 +191,7 @@ public sealed class ProvisionerBuildJobServiceTests
     {
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new InMemoryProgressStore();
-        var localBackend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new ProvisionerBuildBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, Substitute.For<IJobQueue>());
@@ -204,7 +204,7 @@ public sealed class ProvisionerBuildJobServiceTests
     {
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new InMemoryProgressStore();
-        var localBackend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
 
         CreateService(jobStore, progressStore, [localBackend], new ProvisionerBuildBatchOptions { Enabled = false })
             .IsEnabled.Should().BeFalse();

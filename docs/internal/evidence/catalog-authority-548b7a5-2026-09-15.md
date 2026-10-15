@@ -79,7 +79,7 @@ Rerun for a later pin: `HONUA_SERVER_IMAGE=<ref@digest> HONUA_SERVER_REVISION=<s
 
 ### Installed ArcGIS API for Python and ArcPy replay
 
-honua-esri-compat `gp-toolbox-replay.yml` on trunk, [run 34915379462](https://github.com/honua-io/honua-esri-compat/actions/runs/34915379462) (2026-09-15, success, workflow commit `78bd077c`). It ran on the licensed Windows runner against an owned fixture whose container image the workflow asserts equal to `sha256:29974ee7…`. Artifact `focused-gp-replay` (id 10375769912, digest `sha256:6e49e698…`) is retained here as `gp-toolbox-replay-548b7a5-2026-09-15-licensed-execution.json`.
+honua-esri-compat `gp-toolbox-replay.yml` on trunk, [run 34915379462](https://github.com/honua-io/honua-esri-compat/actions/runs/34915379462) (2026-09-15, success, workflow commit `78bd077c`). The fixture image is `sha256:29974ee7…`. Artifact `focused-gp-replay` (id 10375769912, digest `sha256:6e49e698…`) is retained here as `gp-toolbox-replay-548b7a5-2026-09-15-licensed-execution.json`. Runner and licence setup stay in honua-esri-compat.
 
 | Receipt field | Value |
 |---|---|
@@ -87,11 +87,11 @@ honua-esri-compat `gp-toolbox-replay.yml` on trunk, [run 34915379462](https://gi
 | `tls_verified` | `true` |
 | `arcgis` / `arcpy` | `2.4.3` / `3.7.1` |
 | `sdk_import` | passed, `advertised_task_count` 119 |
-| `sdk_remote_area` | passed; decoded `MeasureResult` `value` 12 for a 3 × 4 rectangle (EPSG:3857) the oracle encodes from the OGC WKB byte layout |
+| `sdk_remote_area` | passed; decoded `MeasureResult` `value` 12 (EPSG:3857) |
 | `arcpy_import` | passed |
 | `arcpy_remote_area` | passed, `job_status` 4 `Completed`, decoded `value` 12 |
 
-The `Windows fatal exception: code 0xe0000001` stacks in the job log come from ArcPy's own import path (`arcpy/geoprocessing/_base.py`, reached through `arcgis._impl._geometry_engine`). Python's `faulthandler` prints them for first-chance exceptions that ArcPy handles itself. The run completed and wrote the passing receipt.
+The job log records Windows fatal exception `0xe0000001` during import. The run still completed and wrote the passing receipt. That log line is not a failed result for this receipt. Import-path detail stays in honua-esri-compat.
 
 ### Typed defaults across the full callable catalog
 

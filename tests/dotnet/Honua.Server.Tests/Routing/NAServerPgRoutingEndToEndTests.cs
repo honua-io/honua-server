@@ -69,7 +69,8 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
                             routingFixture.ConnectionString)),
                     NullLogger<PgRoutingProvider>.Instance,
                     new ProfiledNetworkDatasetResolver(),
-                    Options.Create(new RoutingConfiguration())));
+                    Options.Create(new RoutingConfiguration()),
+                    new RoutingSolveCapacityLimiter()));
             });
     }
 

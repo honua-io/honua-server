@@ -993,6 +993,32 @@ public sealed class FeatureServerQueryExecutorTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public async Task QueryObjectIdsWithValidationAsync_ReadsIdsWithoutMaterializingFeatures()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        featureReader.QueryObjectIdsAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create(4L, 9L));
+        var pipeline = new StubComputedFieldPipeline("computed", "value");
+        var sut = CreateSut(featureReader, computedFieldPipeline: pipeline);
+        var service = CreateService();
+        var resource = CreateResource();
+        var publication = CreatePublication(service, resource);
+
+        var ids = await sut.QueryObjectIdsWithValidationAsync(
+            service,
+            resource,
+            publication,
+            7,
+            new FeatureQuery(),
+            CancellationToken.None);
+
+        ids.Should().Equal(4L, 9L);
+        pipeline.LastContext.Should().BeNull();
+        await featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public async Task StreamQueryAsync_NonStreamingReader_MaterializesPage()
     {
         var featureReader = Substitute.For<IFeatureReader>();

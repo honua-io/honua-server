@@ -16,7 +16,7 @@ adding inventory rows does not establish a complete executable test suite.
 |---|---|
 | This checklist and its JSON | Four-client scope, open coverage work and completion criteria |
 | [honua-client-compat inventory](https://github.com/honua-io/honua-client-compat/blob/main/desktop/certification-matrix.json) | QGIS capabilities, providers, algorithms, authentication and workflow review obligations; QGIS/PyQGIS execution belongs there |
-| [honua-esri-compat](https://github.com/honua-io/honua-esri-compat) | Esri operation/parameter inventories, Pro/ArcPy runners and native evidence |
+| [honua-esri-compat](https://github.com/honua-io/honua-esri-compat) | Esri operation/parameter inventories and native evidence. Runner and licence setup stay there |
 | [Shared CERT vocabulary](CROSS_CLIENT_CERTIFICATION_MATRIX.md) | Common evidence IDs across desktop, SDK and other clients |
 | [Platform roster](data/client-certification-roster.v1.json) | Governed platform identities and release projection; platform release policy remains owned by honua-release |
 | Dated plans and receipts | Historical observations and provenance, not competing current completion rules |
@@ -44,9 +44,9 @@ Verify installed versions before running and create a new target revision for a
 different build. ArcGIS Pro/ArcPy's updated 3.7.2 installation remains an open target
 binding; 3.7.1 receipts retain their historical identities.
 
-Bind each execution profile to the installed license, extensions, portal
-entitlements, server configuration and enabled features. Supported advertised
-workflows, security and data integrity take priority. Preview and experimental
+Licence, extension, and portal-entitlement detail stays in the client evidence
+repositories. Supported advertised workflows, security and data integrity take
+priority. Preview and experimental
 features have a separate, lower-priority readiness profile. SensorThings is
 **Preview** and opt-in, despite its `Capabilities:Experimental` configuration
 section. ImageServer, WMTS and offline sync also have Preview classifications;
