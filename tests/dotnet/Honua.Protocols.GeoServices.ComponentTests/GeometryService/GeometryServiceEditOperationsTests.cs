@@ -192,6 +192,45 @@ public sealed class GeometryServiceEditOperationsTests
 
     [IntegrationTest]
     [Operation(Operations.TrimExtend)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/trimExtend")]
+    public async Task TrimExtend_TrimLineOrientedSouth_KeepsEastPart()
+    {
+        // A south-oriented trim line has the east half on its left. The previous
+        // implementation always kept the start of the line, so the first vertex was (0,0).
+        var body = """
+        {
+            "polylines": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [
+                    {"paths": [[[0,0],[10,0]]]}
+                ]
+            },
+            "trimExtendTo": {
+                "paths": [[[3,2],[3,-2]]]
+            },
+            "sr": "3857"
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/trimExtend",
+            requestContent);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+
+        var paths = result.Geometries![0].GetProperty("paths");
+        var firstVertex = paths[0][0];
+        firstVertex[0].GetDouble().Should().BeApproximately(3.0, 0.001);
+        firstVertex[1].GetDouble().Should().BeApproximately(0.0, 0.001);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TrimExtend)]
     [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/trimExtend")]
     public async Task TrimExtend_GetMissingTrimLine_Returns400()
     {

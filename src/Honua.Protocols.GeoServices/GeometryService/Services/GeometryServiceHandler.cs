@@ -2471,7 +2471,8 @@ internal sealed class GeometryServiceHandler(
 
     // Trims a polyline at its intersection with the trim line, or extends the polyline's
     // terminal segment to reach the trim line when they do not currently intersect.
-    private static Geometry TrimOrExtend(Geometry polyline, Geometry trimLine)
+    // Esri keeps the part to the left of the oriented trim line (#6131).
+    internal static Geometry TrimOrExtend(Geometry polyline, Geometry trimLine)
     {
         var factory = polyline.Factory;
         var coords = polyline.Coordinates;
@@ -2480,36 +2481,63 @@ internal sealed class GeometryServiceHandler(
             return polyline;
         }
 
-        if (polyline.Intersects(trimLine))
+        if (polyline.Intersects(trimLine) && trimLine.Coordinates.Length >= 2)
         {
-            // Trim: keep the portion of the polyline up to its first intersection point.
-            var intersection = polyline.Intersection(trimLine);
-            var cutPoint = intersection.IsEmpty ? null : intersection.Coordinate;
-            if (cutPoint is not null)
-            {
-                var kept = new List<Coordinate> { coords[0] };
-                for (var i = 1; i < coords.Length; i++)
-                {
-                    var segment = factory.CreateLineString(new[] { coords[i - 1], coords[i] });
-                    if (segment.Intersects(trimLine))
-                    {
-                        kept.Add(cutPoint);
-                        break;
-                    }
-
-                    kept.Add(coords[i]);
-                }
-
-                if (kept.Count >= 2)
-                {
-                    return factory.CreateLineString(kept.ToArray());
-                }
-            }
-
-            return polyline;
+            return TrimToLeftOfLine(polyline, trimLine, factory, coords);
         }
 
-        // Extend: project the final segment forward until it meets the trim line.
+        return ExtendToTrimLine(polyline, trimLine, factory, coords);
+    }
+
+    private static Geometry TrimToLeftOfLine(
+        Geometry polyline,
+        Geometry trimLine,
+        GeometryFactory factory,
+        Coordinate[] coords)
+    {
+        var trimCoords = trimLine.Coordinates;
+        var kept = new List<List<Coordinate>>();
+        var current = new List<Coordinate> { coords[0] };
+        for (var i = 1; i < coords.Length; i++)
+        {
+            var segment = factory.CreateLineString(new[] { coords[i - 1], coords[i] });
+            foreach (var cut in CutPointsAlongSegment(segment, trimLine))
+            {
+                if (SamePoint(cut, current[^1]))
+                {
+                    continue;
+                }
+
+                current.Add(cut);
+                if (IsLeftOfTrim(current, trimCoords))
+                {
+                    kept.Add(current);
+                }
+
+                current = [new Coordinate(cut.X, cut.Y)];
+            }
+
+            if (!SamePoint(coords[i], current[^1]))
+            {
+                current.Add(coords[i]);
+            }
+        }
+
+        if (current.Count >= 2 && IsLeftOfTrim(current, trimCoords))
+        {
+            kept.Add(current);
+        }
+
+        return AssembleKeptPieces(kept, factory, polyline);
+    }
+
+    // Extend: project the final segment forward until it meets the trim line.
+    private static Geometry ExtendToTrimLine(
+        Geometry polyline,
+        Geometry trimLine,
+        GeometryFactory factory,
+        Coordinate[] coords)
+    {
         var last = coords[^1];
         var prev = coords[^2];
         var dx = last.X - prev.X;
@@ -2534,6 +2562,122 @@ internal sealed class GeometryServiceHandler(
         Array.Copy(coords, extended, coords.Length);
         extended[^1] = hit.Coordinate;
         return factory.CreateLineString(extended);
+    }
+
+    private static List<Coordinate> CutPointsAlongSegment(LineString segment, Geometry trimLine)
+    {
+        var points = new List<Coordinate>();
+        AppendCoordinates(segment.Intersection(trimLine), points);
+        if (points.Count > 1)
+        {
+            var origin = segment.GetCoordinateN(0);
+            points.Sort((left, right) => DistanceSquared(origin, left).CompareTo(DistanceSquared(origin, right)));
+        }
+
+        return points;
+    }
+
+    private static double DistanceSquared(Coordinate origin, Coordinate point)
+    {
+        var dx = point.X - origin.X;
+        var dy = point.Y - origin.Y;
+        return (dx * dx) + (dy * dy);
+    }
+
+    private static bool IsLeftOfTrim(IReadOnlyList<Coordinate> piece, Coordinate[] trim)
+    {
+        if (piece.Count < 2 || trim.Length < 2)
+        {
+            return false;
+        }
+
+        var (origin, destination) = AbuttingTrimSegment(piece, trim);
+        for (var i = 1; i < piece.Count; i++)
+        {
+            var probe = new Coordinate(
+                (piece[i - 1].X + piece[i].X) / 2,
+                (piece[i - 1].Y + piece[i].Y) / 2);
+            var side = NetTopologySuite.Algorithm.Orientation.Index(origin, destination, probe);
+            if (side == NetTopologySuite.Algorithm.OrientationIndex.CounterClockwise)
+            {
+                return true;
+            }
+
+            if (side == NetTopologySuite.Algorithm.OrientationIndex.Clockwise)
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    private static (Coordinate Origin, Coordinate Destination) AbuttingTrimSegment(
+        IReadOnlyList<Coordinate> piece,
+        Coordinate[] trim)
+    {
+        var best = 1;
+        var bestDistance = double.MaxValue;
+        for (var end = 0; end < 2; end++)
+        {
+            var point = end == 0 ? piece[0] : piece[^1];
+            for (var i = 1; i < trim.Length; i++)
+            {
+                var distance = new LineSegment(trim[i - 1], trim[i]).Distance(point);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = i;
+                }
+            }
+        }
+
+        return (trim[best - 1], trim[best]);
+    }
+
+    private static Geometry AssembleKeptPieces(
+        List<List<Coordinate>> kept,
+        GeometryFactory factory,
+        Geometry original)
+    {
+        var merged = new List<List<Coordinate>>();
+        foreach (var piece in kept)
+        {
+            if (piece.Count < 2)
+            {
+                continue;
+            }
+
+            if (merged.Count > 0 && SamePoint(merged[^1][^1], piece[0]))
+            {
+                for (var i = 1; i < piece.Count; i++)
+                {
+                    merged[^1].Add(piece[i]);
+                }
+            }
+            else
+            {
+                merged.Add(piece);
+            }
+        }
+
+        if (merged.Count == 0)
+        {
+            return original;
+        }
+
+        if (merged.Count == 1)
+        {
+            return factory.CreateLineString(merged[0].ToArray());
+        }
+
+        var lines = new LineString[merged.Count];
+        for (var i = 0; i < merged.Count; i++)
+        {
+            lines[i] = factory.CreateLineString(merged[i].ToArray());
+        }
+
+        return factory.CreateMultiLineString(lines);
     }
 
     private IResult ExecuteOffset(OffsetParameters parameters, HonuaTelemetryScope scope)

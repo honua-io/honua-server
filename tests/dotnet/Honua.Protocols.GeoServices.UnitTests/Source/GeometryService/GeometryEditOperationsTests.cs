@@ -77,6 +77,47 @@ public sealed class GeometryEditOperationsTests
         reshaped.Coordinates.Should().Equal(target.Coordinates);
     }
 
+    [UnitTest]
+    [Operation(Operations.TrimExtend)]
+    public void TrimExtend_TrimLineOrientedNorth_KeepsWestPart()
+    {
+        var line = Line((0, 0), (10, 0));
+        var trim = Line((3, -2), (3, 2));
+
+        var trimmed = GeometryServiceHandler.TrimOrExtend(line, trim);
+
+        trimmed.Coordinates[0].X.Should().BeApproximately(0, 1e-9);
+        trimmed.Coordinates[^1].X.Should().BeApproximately(3, 1e-9);
+        trimmed.Coordinates[^1].Y.Should().BeApproximately(0, 1e-9);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TrimExtend)]
+    public void TrimExtend_TrimLineOrientedSouth_KeepsEastPart()
+    {
+        var line = Line((0, 0), (10, 0));
+        var trim = Line((3, 2), (3, -2));
+
+        var trimmed = GeometryServiceHandler.TrimOrExtend(line, trim);
+
+        trimmed.Coordinates[0].X.Should().BeApproximately(3, 1e-9);
+        trimmed.Coordinates[0].Y.Should().BeApproximately(0, 1e-9);
+        trimmed.Coordinates[^1].X.Should().BeApproximately(10, 1e-9);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TrimExtend)]
+    public void TrimExtend_DisjointTrimLine_ExtendsEndToLine()
+    {
+        var line = Line((0, 0), (2, 0));
+        var trim = Line((5, -2), (5, 2));
+
+        var extended = GeometryServiceHandler.TrimOrExtend(line, trim);
+
+        extended.Coordinates[^1].X.Should().BeApproximately(5, 1e-9);
+        extended.Coordinates[^1].Y.Should().BeApproximately(0, 1e-9);
+    }
+
     private static Polygon Square()
         => Factory.CreatePolygon(
         [
