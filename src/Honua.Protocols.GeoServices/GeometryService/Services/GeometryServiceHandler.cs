@@ -2584,7 +2584,7 @@ internal sealed class GeometryServiceHandler(
         return (dx * dx) + (dy * dy);
     }
 
-    private static bool IsLeftOfTrim(IReadOnlyList<Coordinate> piece, Coordinate[] trim)
+    private static bool IsLeftOfTrim(List<Coordinate> piece, Coordinate[] trim)
     {
         if (piece.Count < 2 || trim.Length < 2)
         {
@@ -2973,7 +2973,7 @@ internal sealed class GeometryServiceHandler(
         return RebuildPolygon(polygon, ring);
     }
 
-    private static Geometry ReshapeMultiPolygon(MultiPolygon multiPolygon, Geometry reshaper)
+    private static MultiPolygon ReshapeMultiPolygon(MultiPolygon multiPolygon, Geometry reshaper)
     {
         var parts = new Polygon[multiPolygon.NumGeometries];
         var changed = false;
@@ -3129,7 +3129,7 @@ internal sealed class GeometryServiceHandler(
     private static Coordinate[] LineCoordinates(Geometry geometry)
         => geometry.IsEmpty ? Array.Empty<Coordinate>() : geometry.Coordinates;
 
-    private static List<Coordinate> AppendChain(IReadOnlyList<Coordinate> head, IReadOnlyList<Coordinate> tail)
+    private static List<Coordinate> AppendChain(IReadOnlyList<Coordinate> head, Coordinate[] tail)
     {
         var combined = new List<Coordinate>(head.Count + tail.Count);
         combined.AddRange(head);
