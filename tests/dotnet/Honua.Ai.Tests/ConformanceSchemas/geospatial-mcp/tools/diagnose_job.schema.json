@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/diagnose_job.schema.json",
+  "title": "diagnose_job inputSchema",
+  "description": "Read-only diagnosis of a caller-readable geoprocessing job, separating recorded observations, inferred explanations, and evidence gaps. Honua extension (#6219), advertised as honua_diagnose_job. This reference contract is not a finalized geospatial-mcp standard tool.",
+  "x-honua-extension": true,
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": [
+    "jobId"
+  ],
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of a geoprocessing job the caller can read (from a submission result or honua_list_jobs)."
+    },
+    "events": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 50,
+      "description": "How many of the most recent recorded events to include in observed.events."
+    }
+  },
+  "additionalProperties": false
+}
