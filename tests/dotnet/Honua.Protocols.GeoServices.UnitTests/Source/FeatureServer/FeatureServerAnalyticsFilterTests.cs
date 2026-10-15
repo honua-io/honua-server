@@ -134,12 +134,92 @@ public sealed class FeatureServerAnalyticsFilterTests
         query.ObjectIds!.Value.Should().Equal(7L);
     }
 
-    private static MetadataV2Resource Layer(string objectIdField)
+    [UnitTheory]
+    [InlineData("""{"x":1,"y":2,"spatialReference":{"wkid":999999}}""")]
+    [InlineData("""{"x":1,"y":2,"spatialReference":{"latestWkid":999999}}""")]
+    [InlineData("""{"x":1,"y":2,"spatialReference":{"wkt":"PROJCS[\"custom_local\"]"}}""")]
+    public async Task ApplyAnalyticsFilters_UnresolvableGeometrySpatialReference_ReturnsBadRequest(string geometry)
+    {
+        var context = AnalyticsContext(resolvedSrid: null);
+        var values = new Dictionary<string, StringValues>
+        {
+            ["geometry"] = geometry,
+            ["geometryType"] = "esriGeometryPoint"
+        };
+
+        var (_, error) = await FeatureServerEndpoints.ApplyAnalyticsFiltersAsync(
+            context,
+            Layer("objectid", srid: 3857),
+            values,
+            new FeatureQuery(),
+            CancellationToken.None);
+
+        error.Should().NotBeNull();
+        await GeoServicesErrorAssertions.AssertGeoServicesErrorAsync(context, error!, 400);
+        context.Response.Body.Position = 0;
+        using var reader = new StreamReader(context.Response.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        body.Should().Contain("Invalid input spatial reference");
+    }
+
+    [UnitTheory]
+    [InlineData("""{"x":1,"y":2}""")]
+    [InlineData("""{"x":1,"y":2,"spatialReference":{}}""")]
+    [InlineData("""{"x":1,"y":2,"spatialReference":{"wkid":0}}""")]
+    [InlineData("""{"x":1,"y":2,"spatialReference":{"wkt":" "}}""")]
+    public async Task ApplyAnalyticsFilters_EmptyGeometrySpatialReference_UsesLayerSrid(string geometry)
+    {
+        var context = AnalyticsContext(resolvedSrid: null);
+        var values = new Dictionary<string, StringValues>
+        {
+            ["geometry"] = geometry,
+            ["geometryType"] = "esriGeometryPoint"
+        };
+
+        var (query, error) = await FeatureServerEndpoints.ApplyAnalyticsFiltersAsync(
+            context,
+            Layer("objectid", srid: 3857),
+            values,
+            new FeatureQuery(),
+            CancellationToken.None);
+
+        error.Should().BeNull();
+        query.SpatialFilter.Should().NotBeNull();
+        query.SpatialFilter!.Value.Srid.Should().Be(3857);
+    }
+
+    private static DefaultHttpContext AnalyticsContext(int? resolvedSrid)
+    {
+        var queryServices = Substitute.For<IFeatureServerQueryServices>();
+        queryServices.ResolveSridAsync(
+                Arg.Any<string?>(),
+                Arg.Any<GeoServicesSpatialReference?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(resolvedSrid));
+        return new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection()
+                .AddLogging()
+                .AddSingleton(queryServices)
+                .BuildServiceProvider(),
+            Request = { Path = "/rest/services/test/FeatureServer/0/queryBins" },
+            Response = { Body = new MemoryStream() }
+        };
+    }
+
+    private static MetadataV2Resource Layer(string objectIdField, int? srid = null)
         => new()
         {
             SchemaFields =
             [
                 new MetadataV2Field { Name = objectIdField, Type = MetadataV2FieldType.BigInteger }
-            ]
+            ],
+            Spatial = srid is null
+                ? null
+                : new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = new MetadataV2SpatialReference { Srid = srid },
+                    GeometryType = MetadataV2GeometryType.Point
+                }
         };
 }

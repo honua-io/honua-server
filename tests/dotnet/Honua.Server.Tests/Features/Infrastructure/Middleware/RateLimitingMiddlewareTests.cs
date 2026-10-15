@@ -322,6 +322,89 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     [UnitTest]
+    public async Task InvokeAsync_JwtPrincipalNamedLikeApiKey_UsesPlanNotApiKeyQuota()
+    {
+        var store = new TestRateLimitPolicyStore(
+            new RateLimitPolicy
+            {
+                Name = "partner-feed-key",
+                Scope = RateLimitScopes.ApiKey,
+                Key = "partner-feed",
+                RequestsPerWindow = 100_000,
+                WindowDuration = TimeSpan.FromMinutes(1),
+            },
+            new RateLimitPolicy
+            {
+                Name = "standard-plan",
+                Scope = RateLimitScopes.Plan,
+                Key = "standard",
+                RequestsPerWindow = 1,
+                WindowDuration = TimeSpan.FromMinutes(1),
+            });
+        var middleware = CreateMiddleware(limit: 50, policyStore: store);
+
+        var first = CreateContext(
+            "198.51.100.131",
+            user: "partner-feed",
+            authenticationType: "Bearer",
+            extraClaims: [new Claim("plan", "standard")]);
+        await middleware.InvokeAsync(first);
+        var second = CreateContext(
+            "198.51.100.131",
+            user: "partner-feed",
+            authenticationType: "Bearer",
+            extraClaims: [new Claim("plan", "standard")]);
+        await middleware.InvokeAsync(second);
+
+        first.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        first.Response.Headers["X-RateLimit-Limit"].ToString().Should().Be("1");
+        second.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        second.Response.Headers["X-RateLimit-Limit"].ToString().Should().Be("1");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_ApiKeyPrincipal_MatchesQuotaByApiKeyIdNotName()
+    {
+        var apiKeyId = Guid.NewGuid().ToString("D");
+        var store = new TestRateLimitPolicyStore(
+            new RateLimitPolicy
+            {
+                Name = "by-name",
+                Scope = RateLimitScopes.ApiKey,
+                Key = "partner-feed",
+                RequestsPerWindow = 1,
+                WindowDuration = TimeSpan.FromMinutes(1),
+            },
+            new RateLimitPolicy
+            {
+                Name = "by-id",
+                Scope = RateLimitScopes.ApiKey,
+                Key = apiKeyId,
+                RequestsPerWindow = 5,
+                WindowDuration = TimeSpan.FromMinutes(1),
+            });
+        var middleware = CreateMiddleware(limit: 1, policyStore: store);
+
+        var first = CreateContext(
+            "198.51.100.132",
+            user: "partner-feed",
+            authenticationType: "ApiKey",
+            extraClaims: [new Claim("api_key_id", apiKeyId)]);
+        await middleware.InvokeAsync(first);
+        var second = CreateContext(
+            "198.51.100.132",
+            user: "partner-feed",
+            authenticationType: "ApiKey",
+            extraClaims: [new Claim("api_key_id", apiKeyId)]);
+        await middleware.InvokeAsync(second);
+
+        first.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        first.Response.Headers["X-RateLimit-Limit"].ToString().Should().Be("5");
+        second.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        second.Response.Headers["X-RateLimit-Limit"].ToString().Should().Be("5");
+    }
+
+    [UnitTest]
     public async Task InvokeAsync_PartitionsByEndpointPolicy_DoesNotDrainAnotherEndpointAllowance()
     {
         // Global limit is generous; each endpoint declares its own 1/min override. A single
@@ -704,7 +787,9 @@ public sealed class RateLimitingMiddlewareTests
         string? tenantId = null,
         string? endpointName = null,
         int endpointLimit = 0,
-        string httpMethod = "GET")
+        string httpMethod = "GET",
+        string authenticationType = "Test",
+        IReadOnlyList<Claim>? extraClaims = null)
     {
         var context = new DefaultHttpContext();
         context.Request.Method = httpMethod;
@@ -743,9 +828,14 @@ public sealed class RateLimitingMiddlewareTests
                 claims.Add(new Claim("iss", issuer));
             }
 
+            if (extraClaims is not null)
+            {
+                claims.AddRange(extraClaims);
+            }
+
             var identity = new ClaimsIdentity(
                 claims,
-                authenticationType: "Test");
+                authenticationType: authenticationType);
             context.User = new ClaimsPrincipal(identity);
         }
 

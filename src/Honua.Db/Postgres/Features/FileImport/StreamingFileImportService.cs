@@ -419,9 +419,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     return result;
                 }
 
-                detectedSrid = layers.Length == 1 && layers[0].Srid > 0
-                    ? layers[0].Srid
-                    : FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
+                // A geodatabase with no feature classes has nothing to georeference (the import
+                // reports NoFeaturesFound), so only then is the target SRID an acceptable source.
+                // Otherwise an unresolvable CRS must fail with SourceSridRequired like every other
+                // format instead of silently assuming the target SRID (#6114).
+                detectedSrid = request.SourceSrid
+                    ?? (layers.Length == 0
+                        ? request.TargetSrid
+                        : await ResolveFileGdbSridAsync(layers, cancellationToken));
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
             }
             else if (format.Value == SupportedFileFormat.GeoParquet)
@@ -500,10 +505,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 fileStream.Position = 0;
             }
 
-            // For FileGDB with no detectable SRID, fall back to TargetSrid (coordinates
-            // may not need transformation if the GDB has no spatial features).
-            var sourceSrid = request.SourceSrid ?? detectedSrid
-                ?? (format.Value == SupportedFileFormat.FileGdb ? request.TargetSrid : null);
+            var sourceSrid = request.SourceSrid ?? detectedSrid;
             if (!sourceSrid.HasValue)
             {
                 errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";

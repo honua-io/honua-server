@@ -218,11 +218,29 @@ internal static class LayerScopedWriteKey
     /// Determines whether resource access for an API-key principal is governed by
     /// its permission claims rather than by the coarse authenticated-user fallback.
     /// </summary>
+    /// <remarks>
+    /// The API-key handler stamps these markers as <see cref="ClaimTypes.Role"/> claims, but a
+    /// principal restored from a durable job snapshot is built with the configured RBAC role
+    /// claim type (for example OIDC <c>roles</c>), so <see cref="ClaimsPrincipal.IsInRole"/>
+    /// alone would miss a marker held under <see cref="ClaimTypes.Role"/>. Either claim type
+    /// marks the principal as governed: the check only ever narrows access (honua-server#6101).
+    /// </remarks>
     public static bool IsScopeGovernedPrincipal(ClaimsPrincipal? principal)
         => principal is not null &&
-           (IsScopedWritePrincipal(principal) || principal.IsInRole(ScopedKeyRole)
-            || principal.IsInRole(AdminApiKeyPermission.ScopedAdminRole)
-            || principal.IsInRole(AdminApiKeyPermission.ApprovedOperationRole));
+           (IsScopedWritePrincipal(principal)
+            || ScopeGovernanceRoles.Any(role =>
+                principal.IsInRole(role) || principal.HasClaim(ClaimTypes.Role, role)));
+
+    /// <summary>
+    /// Role markers the API-key handler stamps on credentials whose resource access is governed
+    /// by their <c>permission</c> grants rather than by the coarse authenticated-user fallback.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> ScopeGovernanceRoles =
+    [
+        ScopedKeyRole,
+        AdminApiKeyPermission.ScopedAdminRole,
+        AdminApiKeyPermission.ApprovedOperationRole,
+    ];
 
     /// <summary>
     /// Determines whether a scoped API key has a read grant for a resource.

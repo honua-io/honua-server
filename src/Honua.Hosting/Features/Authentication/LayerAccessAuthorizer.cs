@@ -245,9 +245,9 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         // caller could already do interactively (honua-server#3046 review).
         var candidates = new List<(MetadataV2Resource Resource, MetadataV2Service? Service)>();
         var hasLivePublication = false;
+        var publications = snapshot.Index.PublicationsByResource[storageResource.Metadata.Id].ToList();
 
-        foreach (var publication in snapshot.Index.PublicationsByResource[storageResource.Metadata.Id]
-            .Where(snapshot.IsRoutable))
+        foreach (var publication in publications.Where(snapshot.IsRoutable))
         {
             hasLivePublication = true;
             var service = snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId);
@@ -268,6 +268,8 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
             candidates.Add((storageResource, service));
         }
 
+        var requestCache = new Dictionary<object, object?>();
+
         if (candidates.Count == 0)
         {
             if (hasLivePublication)
@@ -278,13 +280,38 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
                 return AccessDecision.Forbidden(DenialReason);
             }
 
-            // A resource with no live publication is still authorized, just without service-level
-            // policy — the executor reads it by storage id regardless of publication state.
+            if (publications.Count > 0)
+            {
+                // The resource IS published, but only through draft or retired services or
+                // publications. The executor still reads it by storage id, so staging,
+                // unpublishing or retiring a restricted service must never WIDEN access to
+                // it: evaluating `(resource, null)` here dropped the service policy, the
+                // per-service RBAC grants and the service-scoped API-key check, and let any
+                // authenticated caller read or mutate a role-restricted layer
+                // (honua-server#6102). Every publication's service still governs the data,
+                // so EACH must allow — ANY-grant is reserved for live publications, where the
+                // caller could already reach the layer interactively through that service.
+                return await EvaluateAllPublicationsAsync(
+                    services,
+                    principal,
+                    tenantId,
+                    applyTenantScope,
+                    snapshot,
+                    storageResource,
+                    publications,
+                    operation,
+                    requestCache,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            // A resource with NO publication at all is authorized against its own policy only,
+            // because no service policy exists to apply. The executor reads it by storage id
+            // regardless. Scoped API keys fail closed here: their grants name a service, and
+            // there is none to match (AccessPolicyHelpers.EvaluateScopedKeyAccess).
             candidates.Add((storageResource, null));
         }
 
         AccessDecision? lastDenial = null;
-        var requestCache = new Dictionary<object, object?>();
 
         foreach (var (candidateResource, candidateService) in candidates)
         {
@@ -309,6 +336,57 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
 
         // Denied through every publication of the resource, so the caller has no route to it.
         return lastDenial ?? AccessDecision.Forbidden(DenialReason);
+    }
+
+    /// <summary>
+    /// Authorizes a resource that has publications but none routable (draft or retired
+    /// services/publications). Each distinct publishing service is evaluated through the shared
+    /// decision core — scoped API keys, per-operation RBAC grants, resource and service
+    /// policy — and every one must allow (honua-server#6102).
+    /// </summary>
+    private static async Task<AccessDecision> EvaluateAllPublicationsAsync(
+        IServiceProvider services,
+        ClaimsPrincipal principal,
+        string? tenantId,
+        bool applyTenantScope,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Resource storageResource,
+        IReadOnlyList<MetadataV2Publication> publications,
+        AuthorizationOperation operation,
+        IDictionary<object, object?> requestCache,
+        CancellationToken cancellationToken)
+    {
+        AccessDecision? allowed = null;
+        var evaluatedServiceIds = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var publication in publications)
+        {
+            if (!evaluatedServiceIds.Add(publication.ServiceId))
+            {
+                continue;
+            }
+
+            var service = snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId);
+            var decision = await AccessPolicyHelpers.EvaluateResourceAccessCoreAsync(
+                services,
+                principal,
+                tenantId,
+                applyTenantScope,
+                storageResource,
+                service,
+                operation,
+                cancellationToken,
+                requestCache).ConfigureAwait(false);
+
+            if (!decision.IsAllowed)
+            {
+                return decision;
+            }
+
+            allowed ??= decision;
+        }
+
+        return allowed ?? AccessDecision.Forbidden(DenialReason);
     }
 
     /// <summary>

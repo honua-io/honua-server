@@ -10,6 +10,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Protocols.Stac;
+using Honua.Protocols.Stac.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -135,6 +136,70 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
         await _reader.DidNotReceiveWithAnyArgs().QueryAsync(default, default!, default);
         await _reader.DidNotReceiveWithAnyArgs().CountAsync(default, default!, default);
     }
+
+    [IntegrationTheory]
+    [InlineData("get-offset", "100000000", 2)]
+    [InlineData("get-offset", "9999", 2)]
+    [InlineData("get-next", "2147483647", 10000)]
+    [InlineData("get-token", "2000000000", 10000)]
+    [InlineData("post", "2000000000", 10000)]
+    [InlineData("post", "2147483647", 1)]
+    [Endpoint("GET /stac/search")]
+    [Endpoint("POST /stac/search")]
+    [Operation(Operations.StacSearch)]
+    public async Task CrossCollectionSortBy_OffsetBeyondWindowBudget_IsRejectedBeforeAnyRead(string route, string offset, int limit)
+    {
+        var response = route switch
+        {
+            "get-offset" => await _fixture.Client.GetAsync($"/stac/search?collections=0,1&sortby=name&limit={limit}&offset={offset}"),
+            "get-next" => await _fixture.Client.GetAsync($"/stac/search?collections=0,1&sortby=name&limit={limit}&next=offset:{offset}"),
+            "get-token" => await _fixture.Client.GetAsync($"/stac/search?sortby=name&limit={limit}&token=offset:{offset}"),
+            _ => await _fixture.Client.PostAsJsonAsync("/stac/search", new
+            {
+                sortby = new[] { new { field = "name", direction = "asc" } },
+                limit,
+                token = $"offset:{offset}"
+            })
+        };
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("Narrow collections to a single collection");
+        RequestedLimits().Should().BeEmpty("an out-of-budget cross-collection sort must not read any collection");
+    }
+
+    [IntegrationTheory]
+    [InlineData("get", 0, 2)]
+    [InlineData("get", 9999, 1)]
+    [InlineData("post", 9998, 2)]
+    [Endpoint("GET /stac/search")]
+    [Endpoint("POST /stac/search")]
+    [Operation(Operations.StacSearch)]
+    public async Task CrossCollectionSortBy_WithinWindowBudget_ReadsAtMostOneBoundedWindowPerCollection(string route, int offset, int limit)
+    {
+        var response = route == "get"
+            ? await _fixture.Client.GetAsync($"/stac/search?collections=0,1&sortby=name&limit={limit}&offset={offset}")
+            : await _fixture.Client.PostAsJsonAsync("/stac/search", new
+            {
+                collections = SearchCollections,
+                sortby = new[] { new { field = "name", direction = "asc" } },
+                limit,
+                token = $"offset:{offset}"
+            });
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var limits = RequestedLimits();
+        limits.Should().HaveCount(2, "each collection contributes one ordered prefix");
+        limits.Should().AllSatisfy(requested => requested.Should().Be(offset + limit + 1)
+            .And.BeLessThanOrEqualTo(StacConstants.MaxSearchLimit + 1));
+    }
+
+    private int?[] RequestedLimits()
+        => _reader.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name is nameof(IFeatureReader.QueryAsync) or nameof(IPagedFeatureReader.QueryPageAsync))
+            .Select(call => call.GetArguments().OfType<FeatureQuery>().Single().Limit)
+            .ToArray();
 
     private static PagedQueryResult<Feature> Page(int layerId, FeatureQuery query)
     {

@@ -84,7 +84,10 @@ internal static class ItemEndpoints
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-                context, collectionId, requiredProtocol: StacProtocolConstants.ProtocolName, cancellationToken: cancellationToken);
+                context,
+                collectionId,
+                requiredProtocol: StacProtocolConstants.ProtocolName,
+                cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
                 StacTelemetry.SetFailed(activity, "collection_not_found_or_forbidden");
@@ -265,7 +268,10 @@ internal static class ItemEndpoints
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-                context, collectionId, requiredProtocol: StacProtocolConstants.ProtocolName, cancellationToken: cancellationToken);
+                context,
+                collectionId,
+                requiredProtocol: StacProtocolConstants.ProtocolName,
+                cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
                 StacTelemetry.SetFailed(activity, "collection_not_found_or_forbidden");

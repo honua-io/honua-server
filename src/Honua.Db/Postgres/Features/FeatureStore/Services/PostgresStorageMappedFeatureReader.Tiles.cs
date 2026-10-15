@@ -69,7 +69,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
         var geometry = $"{_geometryColumn}::geometry";
         var geometryForTile = _storageSrid == targetSrid
             ? geometry
-            : $"ST_Transform({geometry}, {targetSrid})";
+            : DatumTransformSql.BuildTransformExpression(
+                geometry, targetSrid, selection: null, fromSrid: _storageSrid);
         var envelopeForFilter = _storageSrid == targetSrid
             ? bufferedEnvelope
             : $"ST_Transform({bufferedEnvelope}, {_storageSrid})";

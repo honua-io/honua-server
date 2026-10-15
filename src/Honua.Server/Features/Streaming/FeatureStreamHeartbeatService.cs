@@ -26,6 +26,11 @@ internal sealed class FeatureStreamHeartbeatService : BackgroundService
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        => await Task.WhenAll(
+            RunHeartbeatsAsync(stoppingToken),
+            RunSubscriberPolicyRefreshAsync(stoppingToken)).ConfigureAwait(false);
+
+    private async Task RunHeartbeatsAsync(CancellationToken stoppingToken)
     {
         var interval = _options.Value.HeartbeatInterval;
         FeatureStreamLog.HeartbeatServiceStarted(_logger, interval);
@@ -51,5 +56,25 @@ internal sealed class FeatureStreamHeartbeatService : BackgroundService
         }
 
         FeatureStreamLog.HeartbeatServiceStopped(_logger);
+    }
+
+    /// <summary>
+    /// Re-resolves open subscribers' access, row-level security and field masks on a fixed
+    /// tick so policy changes reach already-connected clients (honua-server#6105).
+    /// </summary>
+    private async Task RunSubscriberPolicyRefreshAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(_options.Value.SubscriberPolicyRefreshInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
+            {
+                await _sessionManager.RefreshSubscriberSecurityAsync(stoppingToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Normal shutdown.
+        }
     }
 }

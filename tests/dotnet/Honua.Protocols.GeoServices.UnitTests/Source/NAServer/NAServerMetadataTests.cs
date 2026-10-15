@@ -45,6 +45,20 @@ public sealed class NAServerMetadataTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
+    public void ServiceAreaLayer_DoesNotAdvertiseSplitPolygons()
+    {
+        var document = NAServerMetadata.BuildLayerResource(
+            "ServiceArea",
+            new RoutingProviderCapabilities(SupportsServiceArea: true),
+            NetworkDataset.Default,
+            new RoutingConfiguration());
+
+        document.Should().NotBeNull();
+        document!["splitPolygonsAtBreaks"]!.GetValue<bool>().Should().BeFalse();
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
     public void GetToolInfo_LocationAllocation_UsesItsOwnConfiguredLimits()
     {
         var configuration = new RoutingConfiguration

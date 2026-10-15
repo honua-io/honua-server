@@ -400,6 +400,74 @@ public sealed class GrpcFeatureServiceTests
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_PointIntoPolygonLayer_IsRejected()
+    {
+        var polygon = CreateResource() with
+        {
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                GeometryType = MetadataV2GeometryType.Polygon,
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+            },
+        };
+        _resourceValidator
+            .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(_testService, polygon)));
+
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "point" } },
+            Geometry = new Proto.Geometry
+            {
+                Point = new Proto.PointGeometry { X = -157.85, Y = 21.30 },
+            },
+        });
+
+        var act = () => _sut.ApplyEdits(request, CreateCallContext());
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        exception.Which.Status.Detail.Should().Contain("Polygon");
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_UnknownOrInvalidAttribute_IsRejected()
+    {
+        var unknown = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        unknown.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["not_a_field"] = new Proto.AttributeValue { StringValue = "nope" } },
+        });
+
+        var unknownAct = () => _sut.ApplyEdits(unknown, CreateCallContext());
+        var unknownException = await unknownAct.Should().ThrowAsync<RpcException>();
+        unknownException.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        unknownException.Which.Status.Detail.Should().Contain("not_a_field");
+
+        var invalid = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        invalid.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { Int32Value = 7 } },
+        });
+
+        var invalidAct = () => _sut.ApplyEdits(invalid, CreateCallContext());
+        var invalidException = await invalidAct.Should().ThrowAsync<RpcException>();
+        invalidException.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        invalidException.Which.Status.Detail.Should().Contain("name");
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_PartialUpdate_KeepsStoredGeometryAndOmittedAttributes()
     {
         var storedGeometry = new byte[] { 1, 2, 3, 4 };
@@ -1048,6 +1116,52 @@ public sealed class GrpcFeatureServiceTests
         response.Features.Should().BeEmpty();
         await _featureReader.Received(1).QueryObjectIdsAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
         _ = _featureReader.DidNotReceive().QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_IdsOnly_WithoutRecordCount_DoesNotTruncateAtDefaultPageSize()
+    {
+        FeatureQuery? captured = null;
+        var allIds = Enumerable.Range(1, 1500).Select(i => (long)i).ToImmutableArray();
+        _featureReader.QueryObjectIdsAsync(0, Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var limit = call.ArgAt<FeatureQuery>(1).Limit;
+                return limit.HasValue ? allIds.Take(limit.Value).ToImmutableArray() : allIds;
+            });
+
+        var response = await _sut.QueryFeatures(new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ReturnIdsOnly = true
+        }, CreateCallContext());
+
+        captured.Should().NotBeNull();
+        captured!.Value.Limit.Should().BeNull("ids-only has no exceeded_transfer_limit signal, so it must match FeatureServer returnIdsOnly and stay unbounded");
+        response.ObjectIds.Should().HaveCount(1500);
+        response.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_IdsOnly_WithRecordCount_KeepsRequestedLimit()
+    {
+        FeatureQuery? captured = null;
+        _featureReader.QueryObjectIdsAsync(0, Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create<long>(1, 2));
+
+        await _sut.QueryFeatures(new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ReturnIdsOnly = true,
+            ResultRecordCountLong = 2
+        }, CreateCallContext());
+
+        captured.Should().NotBeNull();
+        captured!.Value.Limit.Should().Be(2);
     }
 
     [UnitTest]

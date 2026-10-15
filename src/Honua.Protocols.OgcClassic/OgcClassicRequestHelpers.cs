@@ -47,12 +47,20 @@ internal static class OgcClassicRequestHelpers
         return true;
     }
 
-    internal static Dictionary<string, object?> BuildVisibleFeatureInfoAttributes(Feature feature)
+    /// <summary>
+    /// Builds the GetFeatureInfo attribute set for one feature: internal attributes and the
+    /// resource's publisher-hidden fields are omitted (matching WFS GetFeature), while
+    /// undeclared runtime attributes pass through (#6098).
+    /// </summary>
+    internal static Dictionary<string, object?> BuildVisibleFeatureInfoAttributes(
+        Feature feature,
+        IReadOnlySet<string> hiddenFields)
     {
         var attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var attribute in feature.Attributes)
         {
-            if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
+            if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key) ||
+                hiddenFields.Contains(attribute.Key))
             {
                 continue;
             }

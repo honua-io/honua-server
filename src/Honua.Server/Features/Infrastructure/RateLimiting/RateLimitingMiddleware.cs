@@ -14,6 +14,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Server.Features.Operations;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.RateLimiting;
@@ -653,10 +654,14 @@ internal sealed partial class RateLimitingMiddleware
     /// </summary>
     private static RateLimitRequestDescriptor BuildRequestDescriptor(HttpContext context)
     {
-        var identity = context.User?.Identity;
-        var apiKey = identity?.IsAuthenticated == true && !string.IsNullOrEmpty(identity.Name)
-            ? identity.Name
-            : null;
+        // Only an API-key principal carries an api-key tier, and the tier key is the stable
+        // api_key_id. Identity.Name is a display name: an OIDC user (or a second key) with the
+        // same name must not inherit another key's quota.
+        var apiKeyIdentity = context.User?.Identities.FirstOrDefault(identity =>
+            identity.IsAuthenticated
+            && string.Equals(identity.AuthenticationType, AuthenticationExtensions.ApiKeyScheme, StringComparison.Ordinal));
+        var apiKeyId = apiKeyIdentity?.FindFirst("api_key_id")?.Value;
+        var apiKey = string.IsNullOrEmpty(apiKeyId) ? null : apiKeyId;
 
         var tenantContext = context.RequestServices?.GetService(typeof(ITenantContext)) as ITenantContext;
         var tenantId = string.IsNullOrEmpty(tenantContext?.TenantId) ? null : tenantContext.TenantId;

@@ -44,8 +44,13 @@ public interface ISensorThingsEntityStore
 /// <param name="ParentId">Parent identifier.</param>
 /// <param name="Navigation">Navigation property.</param>
 /// <param name="Count">When true, the store runs an exact <c>count(*)</c>. Ordinary pages leave this false.</param>
+/// <param name="IncludeDerivedDatastreamIntervals">
+/// When <see langword="false"/>, a Datastream page skips the observation aggregate subquery.
+/// Full entities and filters keep the default and still compute phenomenonTime, resultTime, and observedArea.
+/// </param>
 public sealed record SensorThingsEntityQuery(string? WhereSql, IReadOnlyList<object?> Parameters,
-    string OrderBySql, int Skip, int Top, string? ParentSet = null, long? ParentId = null, string? Navigation = null, bool Count = false);
+    string OrderBySql, int Skip, int Top, string? ParentSet = null, long? ParentId = null, string? Navigation = null, bool Count = false,
+    bool IncludeDerivedDatastreamIntervals = true);
 
 /// <summary>Entities and the total matching count before paging.</summary>
 /// <param name="Entities">The returned page.</param>

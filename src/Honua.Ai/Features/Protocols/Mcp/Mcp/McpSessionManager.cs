@@ -727,6 +727,11 @@ internal sealed class McpSessionManager
             return false;
         }
 
+        foreach (var jobId in session.Jobs.Keys)
+        {
+            _jobSessions.TryRemove(new KeyValuePair<string, string>(jobId, sessionId));
+        }
+
         session.Channel.Writer.TryComplete();
         session.Lifetime.Cancel();
         session.Lifetime.Dispose();
@@ -852,11 +857,22 @@ internal sealed class McpSessionManager
             return;
         }
 
-        if (_sessions.TryGetValue(sessionId, out var session))
+        if (!_sessions.TryGetValue(sessionId, out var session))
         {
-            session.Jobs[jobId] = 0;
-            _jobSessions[jobId] = sessionId;
+            return;
         }
+
+        session.Jobs[jobId] = 0;
+        _jobSessions[jobId] = sessionId;
+        if (_sessions.ContainsKey(sessionId))
+        {
+            return;
+        }
+
+        // Terminate won the race after the index insert. Drop the association so
+        // the job map does not retain a session that has already ended.
+        session.Jobs.TryRemove(jobId, out _);
+        _jobSessions.TryRemove(new KeyValuePair<string, string>(jobId, sessionId));
     }
 
     /// <summary>
@@ -867,8 +883,13 @@ internal sealed class McpSessionManager
     {
         if (!string.IsNullOrEmpty(jobId) && _jobSessions.TryGetValue(jobId, out var resolved))
         {
-            sessionId = resolved;
-            return true;
+            if (_sessions.ContainsKey(resolved))
+            {
+                sessionId = resolved;
+                return true;
+            }
+
+            _jobSessions.TryRemove(new KeyValuePair<string, string>(jobId, resolved));
         }
 
         sessionId = string.Empty;

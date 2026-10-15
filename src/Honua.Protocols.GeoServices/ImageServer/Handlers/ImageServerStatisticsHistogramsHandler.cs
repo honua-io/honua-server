@@ -174,6 +174,19 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 selectionSrid = aoi.Srid;
             }
 
+            // Parse before selection so a lock, an unsupported where, or an unsupported
+            // method constrains the rasters the same way exportImage and identify do.
+            var rawMosaicRule = GetString(values, "mosaicRule");
+            if (!ImageServerMosaicRule.TryParse(rawMosaicRule, out var mosaicRule, out var mosaicError, out var mosaicNotImplemented))
+            {
+                ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, mosaicError);
+                return mosaicNotImplemented
+                    ? StandardErrorHelpers.CreateNotImplemented(context, mosaicError)
+                    : StandardErrorHelpers.CreateBadRequest(context, mosaicError);
+            }
+
+            var isLockRaster = mosaicRule.Method == MosaicMethod.LockRaster;
+
             // Resolve the catalog rasters to analyse. When rasterIds is omitted we fall back to the
             // selected layer mosaic instead of arbitrarily picking the newest raster.
             var targetRasters = new List<RasterInfo>();
@@ -202,8 +215,8 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                     layerId,
                     new RasterSelectionQuery
                     {
-                        Timestamp = timestamp,
-                        TimeStart = timeStart,
+                        Timestamp = isLockRaster ? null : timestamp,
+                        TimeStart = isLockRaster ? null : timeStart,
                         Geometry = selectionGeometry,
                         GeometrySrid = selectionSrid,
                     },
@@ -217,13 +230,18 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 targetRasters.AddRange(selected);
             }
 
-            var rawMosaicRule = GetString(values, "mosaicRule");
-            if (!ImageServerMosaicRule.TryParse(rawMosaicRule, out var mosaicRule, out var mosaicError, out var mosaicNotImplemented))
+            targetRasters = mosaicRule.RestrictToLockedRasters(targetRasters).ToList();
+            if (targetRasters.Count == 0)
             {
-                ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, mosaicError);
-                return mosaicNotImplemented
-                    ? StandardErrorHelpers.CreateNotImplemented(context, mosaicError)
-                    : StandardErrorHelpers.CreateBadRequest(context, mosaicError);
+                ImageServerLog.NoRastersFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+            }
+
+            if (mosaicRule.Method == MosaicMethod.Unsupported && targetRasters.Count > 1)
+            {
+                const string unsupportedMessage = "mosaicRule mosaicMethod is not implemented on this service.";
+                ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, unsupportedMessage);
+                return StandardErrorHelpers.CreateNotImplemented(context, unsupportedMessage);
             }
 
             var mergeStrategy = mosaicRule.Operation

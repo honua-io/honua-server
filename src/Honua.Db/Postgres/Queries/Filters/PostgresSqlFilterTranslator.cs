@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 
 namespace Honua.Db.Postgres.Queries.Filters;
@@ -307,7 +308,13 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
                     var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
                     if (geometry.Srid != context.Wkid)
                     {
-                        geometryExpression = $"ST_Transform({geometryExpression}, {context.Wkid})";
+                        // A geographic literal at latitude ±90 aborts ST_Transform into Web Mercator.
+                        // The shared helper clamps that band; other CRS pairs stay a bare transform (#6186).
+                        geometryExpression = DatumTransformSql.BuildTransformExpression(
+                            geometryExpression,
+                            context.Wkid,
+                            selection: null,
+                            fromSrid: geometry.Srid);
                     }
 
                     return geometryExpression;

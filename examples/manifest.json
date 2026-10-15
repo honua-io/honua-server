@@ -14,10 +14,10 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1178,
+    "total": 1191,
     "byStatus": {
-      "not-executable": 1164,
-      "unvalidated": 11,
+      "not-executable": 1176,
+      "unvalidated": 12,
       "passed": 3
     }
   },
@@ -4049,9 +4049,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 4,
-      "line": 174,
+      "line": 176,
       "language": "bash",
-      "contentSha256": "d9f4e4e53a09e719f57800181dd2d47ccb40c1bd4757c8444eb31d148667fa16"
+      "contentSha256": "142b489d21e352b98f65c71c0bee97c32a9105ffd071c8453d35c126319b377a"
     },
     {
       "id": "057001304ec19ecc",
@@ -4063,7 +4063,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 5,
-      "line": 193,
+      "line": 196,
       "language": "bash",
       "contentSha256": "37314c95ec829697032de866c421070bfe92182cd343ade5ac1cfa146586d850"
     },
@@ -4105,7 +4105,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 7,
-      "line": 228,
+      "line": 231,
       "language": "bash",
       "contentSha256": "f2f3b5befdfb216e981bbb9599d853c6991eb71224800473e8616bc7ce67e4fc"
     },
@@ -4119,7 +4119,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 10,
-      "line": 294,
+      "line": 297,
       "language": "bash",
       "contentSha256": "668c8bf3ed79497ec0e9ea2c5960cd3bb6f056f01d550717218bff11a7116cae"
     },
@@ -4147,7 +4147,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 9,
-      "line": 266,
+      "line": 269,
       "language": "bash",
       "contentSha256": "1dbf290131afb98991c4335fd6204e47f3c7f44b7f47f479b1740c85b17721fd"
     },
@@ -4161,7 +4161,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 6,
-      "line": 213,
+      "line": 216,
       "language": "bash",
       "contentSha256": "0081c527235bda649a7a3ceedcf66d1aef0b45bbd9dff73c6b069a1d0b89dee1"
     },
@@ -4175,7 +4175,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 8,
-      "line": 236,
+      "line": 239,
       "language": "python",
       "contentSha256": "a0ef49bd299165f48617571fefec6b7dc6a36a6519317ac847fe938599feba01"
     },
@@ -4553,7 +4553,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 321,
+      "line": 322,
       "language": "jsonc"
     },
     {
@@ -5559,7 +5559,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 229,
+      "line": 254,
       "language": "sql"
     },
     {
@@ -6599,7 +6599,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 59,
+      "line": 70,
       "language": "json"
     },
     {
@@ -6612,7 +6612,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 49,
+      "line": 42,
       "language": "bash"
     },
     {
@@ -6625,7 +6625,20 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 130,
+      "line": 110,
+      "language": "bash"
+    },
+    {
+      "id": "78a0fba92770ac20",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-devkit-authoring.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 7,
+      "line": 173,
       "language": "bash"
     },
     {
@@ -6638,7 +6651,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 67,
+      "line": 62,
       "language": "bash"
     },
     {
@@ -6651,7 +6664,20 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 83,
+      "line": 92,
+      "language": "bash"
+    },
+    {
+      "id": "cb84f13d60c8b2b7",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/gp-devkit-authoring.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 6,
+      "line": 126,
       "language": "bash"
     },
     {
@@ -6664,7 +6690,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 31,
+      "line": 33,
       "language": "bash"
     },
     {
@@ -6677,7 +6703,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 56,
+      "line": 61,
       "language": "python"
     },
     {
@@ -6690,7 +6716,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 97,
+      "line": 102,
       "language": "bash"
     },
     {
@@ -6703,7 +6729,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 27,
+      "line": 32,
       "language": "bash"
     },
     {
@@ -6716,7 +6742,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 78,
+      "line": 83,
       "language": "bash"
     },
     {
@@ -6729,7 +6755,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 118,
+      "line": 123,
       "language": "bash"
     },
     {
@@ -6742,7 +6768,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 39,
+      "line": 44,
       "language": "bash"
     },
     {
@@ -6755,7 +6781,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 17,
+      "line": 22,
       "language": "bash"
     },
     {
@@ -7821,7 +7847,20 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 60,
+      "line": 73,
+      "language": "bash"
+    },
+    {
+      "id": "207b2695aaa08fc9",
+      "kind": "docs-fence",
+      "path": "docs/internal/ci/odata-modular-pilot.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 8,
+      "line": 368,
       "language": "bash"
     },
     {
@@ -7834,7 +7873,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 131,
+      "line": 144,
       "language": "bash"
     },
     {
@@ -7847,7 +7886,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 219,
+      "line": 232,
       "language": "bash"
     },
     {
@@ -7860,7 +7899,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 20,
+      "line": 33,
       "language": "bash"
     },
     {
@@ -7873,7 +7912,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 284,
+      "line": 297,
       "language": "bash"
     },
     {
@@ -7886,7 +7925,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 107,
+      "line": 120,
       "language": "bash"
     },
     {
@@ -7899,7 +7938,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 195,
+      "line": 208,
       "language": "bash"
     },
     {
@@ -10915,7 +10954,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 94,
+      "line": 103,
       "language": "plain"
     },
     {
@@ -15072,6 +15111,106 @@
       }
     },
     {
+      "id": "2996c096d028dc7c",
+      "kind": "sample-asset",
+      "path": "samples/gp-custom-local/.gitignore",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      }
+    },
+    {
+      "id": "9c28573266acd2b0",
+      "kind": "sample-asset",
+      "path": "samples/gp-custom-local/.vscode/launch.json",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      }
+    },
+    {
+      "id": "baee67035fa67484",
+      "kind": "sample-asset",
+      "path": "samples/gp-custom-local/.vscode/tasks.json",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      }
+    },
+    {
+      "id": "9f8183d191d5093e",
+      "kind": "sample-asset",
+      "path": "samples/gp-custom-local/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      }
+    },
+    {
+      "id": "c0ecdd3576c3e8c2",
+      "kind": "sample-asset",
+      "path": "samples/gp-custom-local/dotnet/Directory.Build.props",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      }
+    },
+    {
+      "id": "c3ac126ba1b54593",
+      "kind": "sample-asset",
+      "path": "samples/gp-custom-local/dotnet/SummaryTool.cs",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      }
+    },
+    {
+      "id": "973068b3f8f5e3ab",
+      "kind": "sample-asset",
+      "path": "samples/gp-custom-local/dotnet/SummaryTool.csproj",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      }
+    },
+    {
+      "id": "f8def4130da180b9",
+      "kind": "sample-asset",
+      "path": "samples/gp-custom-local/input.geojson",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      }
+    },
+    {
+      "id": "8551a0176c8cedcb",
+      "kind": "sample-asset",
+      "path": "samples/gp-custom-local/params.json",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      }
+    },
+    {
+      "id": "8b6a5446a650e8f0",
+      "kind": "sample-asset",
+      "path": "samples/gp-custom-local/python/summary_tool.py",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      }
+    },
+    {
       "id": "2bbd7cc74897c092",
       "kind": "sample-asset",
       "path": "samples/gp-local-dev/README.md",
@@ -15116,9 +15255,9 @@
       "kind": "sample-asset",
       "path": "samples/gp-local-dev/submit-buffer.py",
       "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
+        "status": "unvalidated",
+        "reason": "Runnable Python GP sample has no matching execution evidence.",
+        "check": "explicit-execution-evidence"
       }
     },
     {

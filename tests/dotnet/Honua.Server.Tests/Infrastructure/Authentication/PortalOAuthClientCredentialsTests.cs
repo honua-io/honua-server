@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using System.Net.Http;
 using System.Security.Claims;
+using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Authentication;
@@ -377,6 +379,102 @@ public sealed class PortalOAuthClientCredentialsTests
         result.RefreshToken.Should().BeNull();
     }
 
+    [UnitTest]
+    public async Task Exchange_ValidAdminApiKey_WithFederationEnabled_DoesNotCallIdp()
+    {
+        // #6166: a Honua admin API key is accepted locally. The stub answers 200
+        // text/html so a federation-first regression cannot mint a token and is visible
+        // as a call.
+        var handler = new RecordingHandler(_ => HtmlOk());
+        var (service, _, secret, _, _) = await CreateKeyBoundServiceAsync(
+            enableClientCredentials: true,
+            permissions: AdminAll,
+            httpClientFactory: new RecordingHttpClientFactory(handler),
+            federationOptions: FederationOn());
+
+        var result = await service.ExchangeAsync(
+            ClientCredentialsRequest(secret),
+            requestBinding: "x",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        result.Error.Should().BeNull();
+        handler.Calls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task Exchange_FirstClassClientSecret_WithFederationEnabled_DoesNotCallIdp()
+    {
+        var handler = new RecordingHandler(_ => HtmlOk());
+        var (service, _, clientId, secret) = await CreateFirstClassServiceAsync(
+            allowedGrantTypes: ClientCredentialsGrantTypes,
+            allowedScopes: ReadOnlyScopes,
+            scopeDefinitions: [("features:read", ServicesRead)],
+            httpClientFactory: new RecordingHttpClientFactory(handler),
+            federationOptions: FederationOn());
+
+        var result = await service.ExchangeAsync(
+            FirstClassRequest(clientId, secret) with { Scope = "features:read" },
+            requestBinding: "x",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        handler.Calls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task Exchange_ConstrainedApiKey_WithFederationEnabled_IsRefusedWithoutCallingIdp()
+    {
+        var handler = new RecordingHandler(_ => HtmlOk());
+        var (service, _, secret, _, _) = await CreateKeyBoundServiceAsync(
+            enableClientCredentials: true,
+            permissions: ["field-editor"],
+            httpClientFactory: new RecordingHttpClientFactory(handler),
+            federationOptions: FederationOn());
+
+        var result = await service.ExchangeAsync(
+            ClientCredentialsRequest(secret),
+            requestBinding: "x",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().Be("unauthorized_client");
+        handler.Calls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task Exchange_FederationHtmlSuccessBody_ReturnsInvalidClient()
+    {
+        var handler = new RecordingHandler(_ => HtmlOk());
+        var (service, _, _, _, _) = await CreateKeyBoundServiceAsync(
+            enableClientCredentials: true,
+            httpClientFactory: new RecordingHttpClientFactory(handler),
+            federationOptions: FederationOn());
+
+        var result = await service.ExchangeAsync(
+            ClientCredentialsRequest("not-a-local-secret"),
+            requestBinding: "x",
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().Be("invalid_client");
+        handler.Calls.Should().Be(1);
+    }
+
+    private static PortalOAuthClientCredentialsFederationOptions FederationOn()
+        => new()
+        {
+            Enabled = true,
+            TokenEndpoint = "https://idp.example/oauth/token",
+            GrantedRoles = ["services:read"],
+        };
+
+    private static HttpResponseMessage HtmlOk()
+        => new(HttpStatusCode.OK)
+        {
+            Content = new StringContent("<html><body>ok</body></html>", Encoding.UTF8, "text/html"),
+        };
+
     private static PortalOAuthAuthorizationCode AuthorizationCode(DateTimeOffset sourceExpires)
         => new()
         {
@@ -435,7 +533,9 @@ public sealed class PortalOAuthClientCredentialsTests
         CreateFirstClassServiceAsync(
             IReadOnlyList<string> allowedGrantTypes,
             IReadOnlyList<string> allowedScopes,
-            IReadOnlyList<(string Scope, string[] Permissions)> scopeDefinitions)
+            IReadOnlyList<(string Scope, string[] Permissions)> scopeDefinitions,
+            IHttpClientFactory? httpClientFactory = null,
+            PortalOAuthClientCredentialsFederationOptions? federationOptions = null)
     {
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
@@ -464,11 +564,15 @@ public sealed class PortalOAuthClientCredentialsTests
 
         var options = Options.Create(new PortalTokenAuthenticationOptions
         {
-            OAuth2 = new PortalOAuth2Options { EnableClientCredentials = true },
+            OAuth2 = new PortalOAuth2Options
+            {
+                EnableClientCredentials = true,
+                ClientCredentialsFederation = federationOptions ?? new PortalOAuthClientCredentialsFederationOptions(),
+            },
         });
 
         var jwtService = new PortalJwtAccessTokenService(issuer, options);
-        var federation = new ClientCredentialsFederationService(new NullHttpClientFactory(), options);
+        var federation = new ClientCredentialsFederationService(httpClientFactory ?? new NullHttpClientFactory(), options);
         var service = new PortalOAuthTokenService(issuer, store, apiKeyStore, clientStore, scopeCatalogue, jwtService, federation, options);
         return (service, issuer, created.Record.ClientId, created.Secret!);
     }
@@ -503,7 +607,9 @@ public sealed class PortalOAuthClientCredentialsTests
         CreateKeyBoundServiceAsync(
             bool enableClientCredentials,
             IReadOnlyList<string>? permissions = null,
-            DateTimeOffset? keyExpiresAt = null)
+            DateTimeOffset? keyExpiresAt = null,
+            IHttpClientFactory? httpClientFactory = null,
+            PortalOAuthClientCredentialsFederationOptions? federationOptions = null)
     {
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var apiKeyStore = new InMemoryAdminApiKeyStore();
@@ -516,7 +622,11 @@ public sealed class PortalOAuthClientCredentialsTests
 
         var options = Options.Create(new PortalTokenAuthenticationOptions
         {
-            OAuth2 = new PortalOAuth2Options { EnableClientCredentials = enableClientCredentials },
+            OAuth2 = new PortalOAuth2Options
+            {
+                EnableClientCredentials = enableClientCredentials,
+                ClientCredentialsFederation = federationOptions ?? new PortalOAuthClientCredentialsFederationOptions(),
+            },
             SourceRevalidationSeconds = 0,
         });
 
@@ -530,7 +640,7 @@ public sealed class PortalOAuthClientCredentialsTests
         var clientStore = new InMemoryOAuthClientStore();
         var scopeCatalogue = new InMemoryOAuthScopeCatalogue();
         var jwtService = new PortalJwtAccessTokenService(issuer, options);
-        var federation = new ClientCredentialsFederationService(new NullHttpClientFactory(), options);
+        var federation = new ClientCredentialsFederationService(httpClientFactory ?? new NullHttpClientFactory(), options);
         var service = new PortalOAuthTokenService(issuer, store, apiKeyStore, clientStore, scopeCatalogue, jwtService, federation, options);
         return (service, issuer, created.Key, apiKeyStore, created.Record.Id);
     }
@@ -543,5 +653,21 @@ public sealed class PortalOAuthClientCredentialsTests
     private sealed class NullHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();
+    }
+
+    private sealed class RecordingHttpClientFactory(RecordingHandler handler) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+    }
+
+    private sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
+    {
+        public int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(responder(request));
+        }
     }
 }

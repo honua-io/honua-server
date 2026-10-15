@@ -775,8 +775,10 @@ internal sealed partial class FeatureServerQueryHandler
 
     private static bool TryResolveField(MetadataV2Resource resource, string fieldName, out MetadataV2FieldType fieldType)
     {
-        var match = resource.SchemaFields.FirstOrDefault(
-            field => string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
+        // Publisher-hidden fields resolve exactly like unknown fields, matching /query
+        // outStatistics: classifying or listing distinct values of a hidden column would
+        // otherwise disclose it (#6098).
+        var match = resource.FindVisibleSchemaField(fieldName);
         if (match is not null)
         {
             fieldType = match.Type;

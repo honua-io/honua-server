@@ -23,6 +23,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private static readonly TimeSpan ClusterBroadcastRecoveryInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan RoutabilityRefreshInterval = TimeSpan.FromSeconds(1);
     private const int RecentEventIdCapacity = 128;
+    private const int SubscriberSecurityRefreshParallelism = 8;
 
     /// <summary>
     /// Upper bound on retained cluster-broadcast payloads while Redis publish is
@@ -190,6 +191,75 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
             _routabilityRefreshGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Re-resolves layer access, row-level security and field masks for every open subscription
+    /// and swaps the result into its filter, so later matches use the current policies
+    /// (honua-server#6105). A session whose previously readable layer is now denied, or whose
+    /// policies cannot be re-resolved, is terminated like an admin disconnect; the client
+    /// reconnects through normal admission. Policy stores are read once per subscription per
+    /// tick, never per event.
+    /// </summary>
+    public async Task RefreshSubscriberSecurityAsync(CancellationToken cancellationToken = default)
+    {
+        var work = new List<(Guid SessionId, StreamSubscriberSecurity Security)>();
+        foreach (var (sessionId, entry) in _sessions)
+        {
+            foreach (var security in entry.GetRefreshableSubscriberSecurities())
+            {
+                work.Add((sessionId, security));
+            }
+        }
+
+        if (work.Count == 0)
+        {
+            return;
+        }
+
+        var timeout = _options.Value.SubscriberPolicyRefreshInterval;
+        await Parallel.ForEachAsync(
+            work,
+            new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = SubscriberSecurityRefreshParallelism
+            },
+            async (item, token) =>
+            {
+                if (!_sessions.ContainsKey(item.SessionId))
+                {
+                    return;
+                }
+
+                StreamSubscriberSecurityRefreshOutcome outcome;
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+                deadline.CancelAfter(timeout);
+                try
+                {
+                    outcome = await item.Security.RefreshAsync(deadline.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // Fail closed: the filter already denies every route, and the session ends.
+                    if (TryRemoveSession(item.SessionId, FeatureStreamDisconnectReason.PolicyRevoked))
+                    {
+                        FeatureStreamLog.SubscriberPolicyRefreshFailed(_logger, item.SessionId, ex);
+                    }
+
+                    return;
+                }
+
+                if (outcome == StreamSubscriberSecurityRefreshOutcome.Revoked &&
+                    TryRemoveSession(item.SessionId, FeatureStreamDisconnectReason.PolicyRevoked))
+                {
+                    FeatureStreamLog.SubscriberAccessRevoked(_logger, item.SessionId);
+                }
+            }).ConfigureAwait(false);
     }
 
     private bool CanReuseRoutabilityRefresh(long now)
@@ -1126,6 +1196,20 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 }
             }
         }
+
+        public StreamSubscriberSecurity[] GetRefreshableSubscriberSecurities()
+        {
+            lock (_subscriptionLock)
+            {
+                return _subscriptions.Values
+                    .Select(state => (state.Filter as StreamSubscriptionFilter)?.SubscriberSecurity)
+                    .OfType<StreamSubscriberSecurity>()
+                    .Where(static security => security.IsRefreshable)
+                    .Distinct()
+                    .ToArray();
+            }
+        }
+
         public volatile bool DrainStarted;
         public long LastQueuedCursor => Interlocked.Read(ref _lastQueuedCursor);
 

@@ -52,10 +52,15 @@ internal static partial class AttachmentHandler
         ILogger<AttachmentOperations> logger,
         HttpContext context,
         CancellationToken cancellationToken,
-        IReadOnlyDictionary<long, long>? storageIdByPublicObjectId = null)
+        IReadOnlyDictionary<long, long>? storageIdByPublicObjectId = null,
+        int? publicLayerId = null)
     {
         try
         {
+            // Store calls keep the storage layer id. URLs use the route layer id, which is
+            // what download routes resolve (#6136). Omitting it preserves callers that pass
+            // one id for both.
+            var urlLayerId = publicLayerId ?? layerId;
             var uniqueFeatureIds = featureIds
                 .Distinct()
                 .ToArray();
@@ -76,7 +81,7 @@ internal static partial class AttachmentHandler
                     attachments = Array.FindAll(attachments, filter.Matches);
                 }
 
-                var infos = MapAttachmentInfos(attachments, context, layerId, featureId, returnUrl);
+                var infos = MapAttachmentInfos(attachments, context, urlLayerId, featureId, returnUrl);
 
                 groups.Add(new AttachmentGroup
                 {
@@ -254,6 +259,12 @@ internal static partial class AttachmentHandler
             LogAddAttachmentSuccess(logger, layerId, featureId, attachment.Id);
             return Results.Ok(response);
         }
+        catch (ValidationException ex)
+        {
+            // The store re-checks the quota inside the insert transaction. That refusal is a
+            // client error, and the message is the same limit text the pre-check returns.
+            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
@@ -412,19 +423,43 @@ internal static partial class AttachmentHandler
 
             foreach (var attachmentId in attachmentIds)
             {
-                var success = await attachmentStore.DeleteAsync(layerId, storageId, attachmentId, cancellationToken);
-                deleteResults.Add(new DeleteAttachmentResult
+                try
                 {
-                    ObjectId = attachmentId,
-                    Success = success,
-                    Error = success
-                        ? null
-                        : new EditError
+                    var success = await attachmentStore.DeleteAsync(layerId, storageId, attachmentId, cancellationToken);
+                    deleteResults.Add(new DeleteAttachmentResult
+                    {
+                        ObjectId = attachmentId,
+                        Success = success,
+                        Error = success
+                            ? null
+                            : new EditError
+                            {
+                                Code = 1000,
+                                Description = "Attachment not found."
+                            }
+                    });
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                // Each DeleteAsync commits on its own. A later failure must not hide the
+                // ids that already succeeded, and the client message must not include the
+                // provider exception.
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    LogDeleteAttachmentsError(logger, layerId, featureId, ex);
+                    deleteResults.Add(new DeleteAttachmentResult
+                    {
+                        ObjectId = attachmentId,
+                        Success = false,
+                        Error = new EditError
                         {
-                            Code = 1000,
-                            Description = "Attachment not found."
+                            Code = 500,
+                            Description = "Failed to delete attachment."
                         }
-                });
+                    });
+                }
             }
 
             var response = new DeleteAttachmentsResponse

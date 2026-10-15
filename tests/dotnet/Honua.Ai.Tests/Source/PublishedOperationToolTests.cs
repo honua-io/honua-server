@@ -527,6 +527,61 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
+    public async Task Invoke_NarrowedScope_DoesNotReceiveCachedAllow()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle("studio.draft.validate"));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(
+            DeterministicReadOnlyDescriptor() with { OperationId = "studio.draft.validate" },
+            "cat-v1",
+            NullLogger.Instance);
+
+        var first = await tool.InvokeAsync(
+            Context(invoker, cache, scopes: [OperatorScopeCatalog.Read], principalName: "agent-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        first.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Completed");
+        first.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
+        invoker.SubmitCount.Should().Be(1);
+
+        var second = await tool.InvokeAsync(
+            Context(invoker, cache, scopes: [OperatorScopeCatalog.Discover], principalName: "agent-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        var body = second.StructuredContent!.Value;
+        body.GetProperty("status").GetString().Should().Be("Denied");
+        body.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
+        invoker.SubmitCount.Should().Be(1, "a narrowed token must not be served the cached allow");
+
+        var third = await tool.InvokeAsync(
+            Context(invoker, cache, scopes: [OperatorScopeCatalog.Read], principalName: "agent-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        third.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeTrue();
+        invoker.SubmitCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task Invoke_DifferentConnection_MissesCache()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
+
+        await tool.InvokeAsync(
+            Context(invoker, cache),
+            Args("""{"layerId":"7","connectionId":"conn-a"}"""),
+            CancellationToken.None);
+        var second = await tool.InvokeAsync(
+            Context(invoker, cache),
+            Args("""{"layerId":"7","connectionId":"conn-b","serviceName":"roads"}"""),
+            CancellationToken.None);
+
+        invoker.SubmitCount.Should().Be(2, "connection and service are part of the cache key");
+        second.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
+    }
+
+    [UnitTest]
     public void BuildKey_DelimiterBearingComponents_AreCollisionFree()
     {
         // The pre-image is assembled from caller-influenced values (tenant, schema,
@@ -839,7 +894,8 @@ public sealed class PublishedOperationToolTests
         string[]? roles = null,
         string principalName = "agent-x",
         string? tenantId = null,
-        ApprovalRequirement? gateApproval = null)
+        ApprovalRequirement? gateApproval = null,
+        string[]? scopes = null)
     {
         var services = new ServiceCollection();
         if (invoker is not null)
@@ -884,6 +940,10 @@ public sealed class PublishedOperationToolTests
             new(ClaimTypes.NameIdentifier, $"subject-{principalName}"),
         };
         claims.AddRange((roles ?? []).Select(r => new Claim(ClaimTypes.Role, r)));
+        if (scopes is { Length: > 0 })
+        {
+            claims.Add(new Claim(OperatorScopeCatalog.ScopeClaimType, string.Join(' ', scopes)));
+        }
 
         return new DefaultHttpContext
         {

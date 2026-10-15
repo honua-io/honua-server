@@ -213,12 +213,19 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Returns whether the field exists on the layer schema (or is the layer's
+    /// Returns whether the field exists on the layer's public schema (or is the layer's
     /// resolved object-id field, which may be internal rather than schema-listed).
+    /// Publisher-hidden fields are treated as absent, matching /query outStatistics, so
+    /// bins, date bins and H3 summaries cannot aggregate a hidden column (#6098).
     /// </summary>
     private static bool IsSchemaField(MetadataV2Resource resource, string fieldName)
     {
-        return resource.SchemaFields.Any(field => string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+        if (resource.IsHiddenSchemaField(fieldName))
+        {
+            return false;
+        }
+
+        return resource.FindVisibleSchemaField(fieldName) is not null
             || string.Equals(
                 GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
                 fieldName,

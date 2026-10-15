@@ -56,7 +56,8 @@ internal static partial class FeatureStreamEndpoints
         IStreamSubscriptionFilter? subscriptionFilter = null,
         string? subscriptionId = null,
         FeatureStreamSessionManager? sessionManager = null,
-        long subscriptionGeneration = 0)
+        long subscriptionGeneration = 0,
+        FeatureStreamDeliveredCursorWindow? liveDelivered = null)
     {
         var cursor = fromCursor;
         var requiredThroughCursor = fromCursor;
@@ -72,6 +73,14 @@ internal static partial class FeatureStreamEndpoints
             {
                 var envelope = FeatureStreamPublisher.ToEnvelope(evt) with { SubscriptionId = subscriptionId };
                 cursor = evt.Cursor;
+
+                // The live path already sent this cursor (it arrived ahead of the sweep, or
+                // out of order below the live high-water mark): skip it so the sweep that
+                // resumes from the swept floor does not re-send it (honua-server#6104).
+                if (liveDelivered is not null && liveDelivered.WasDeliveredLive(evt.Cursor))
+                {
+                    continue;
+                }
 
                 // Apply subscription filter during replay — advance cursor past filtered events.
                 if (subscriptionFilter is not null
@@ -159,7 +168,8 @@ internal static partial class FeatureStreamEndpoints
         CancellationToken cancellationToken,
         IStreamSubscriptionFilter? subscriptionFilter = null,
         string? subscriptionId = null,
-        long subscriptionGeneration = 0)
+        long subscriptionGeneration = 0,
+        FeatureStreamDeliveredCursorWindow? liveDelivered = null)
     {
         var cursor = fromCursor;
         var requiredThroughCursor = fromCursor;
@@ -175,6 +185,14 @@ internal static partial class FeatureStreamEndpoints
             {
                 var envelope = FeatureStreamPublisher.ToEnvelope(evt) with { SubscriptionId = subscriptionId };
                 cursor = evt.Cursor;
+
+                // The live path already sent this cursor (it arrived ahead of the sweep, or
+                // out of order below the live high-water mark): skip it so the sweep that
+                // resumes from the swept floor does not re-send it (honua-server#6104).
+                if (liveDelivered is not null && liveDelivered.WasDeliveredLive(evt.Cursor))
+                {
+                    continue;
+                }
 
                 // Apply subscription filter during replay — advance cursor past filtered events.
                 if (subscriptionFilter is not null

@@ -57,6 +57,13 @@ public readonly record struct Feature
     public ImmutableArray<string> ExplicitAttributeRemovals { get; init; }
 
     /// <summary>
+    /// Whether this partial update omitted geometry, so the writer keeps the geometry of the
+    /// row it locks inside the write transaction instead of <see cref="Geometry"/> (#6094).
+    /// </summary>
+    [JsonIgnore]
+    public bool PreserveOmittedGeometry { get; init; }
+
+    /// <summary>
     /// Creates a new feature with the specified properties
     /// </summary>
     /// <param name="id">Feature identifier</param>

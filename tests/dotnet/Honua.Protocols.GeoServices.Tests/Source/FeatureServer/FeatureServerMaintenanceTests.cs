@@ -9,7 +9,10 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -178,7 +181,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Calculate)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_ValidRequest_ReturnsSuccess()
     {
         var calcExpression = JsonSerializer.Serialize(new[]
@@ -186,8 +189,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
             new { field = "name", sqlExpression = "'Updated'" }
         });
 
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/calculate?calcExpression={Uri.EscapeDataString(calcExpression)}&f=json");
+        var response = await PostCalculateAsync(calcExpression);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -197,6 +199,132 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
 
         root.GetProperty("success").GetBoolean().Should().BeTrue();
         root.TryGetProperty("updatedFeatureCount", out _).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// #6100: calculate is a bulk field rewrite, so it must be POST-only. A GET mapping let a
+    /// cross-site top-level navigation (which carries a SameSite=Lax session cookie) rewrite
+    /// every matching row as the victim. GET must be refused by routing and leave rows untouched;
+    /// the same expression over POST is the positive control that the row is reachable.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Calculate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_Get_IsRefusedAndLeavesRowsUnchanged()
+    {
+        const string originalName = "calc-6100-original";
+        const string attackerName = "calc-6100-rewritten";
+        var objectId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, originalName);
+        var where = Uri.EscapeDataString($"objectid = {objectId}");
+        var calcExpression = JsonSerializer.Serialize(new[]
+        {
+            new { field = "name", value = attackerName }
+        });
+
+        var getResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/calculate?where={where}&calcExpression={Uri.EscapeDataString(calcExpression)}&f=json");
+
+        getResponse.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        getResponse.Content.Headers.Allow.Should().BeEquivalentTo(["POST"]);
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+            .Should().Be(originalName, "a GET to calculate must never reach the edit pipeline");
+
+        var postResponse = await PostCalculateAsync(calcExpression, $"objectid = {objectId}");
+
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+            .Should().Be(attackerName, "the same calculate over POST is the supported write path");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Calculate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_SourceExpressionReferencingHiddenField_ReturnsBadRequest()
+    {
+        const string originalName = "calc-6141-original";
+        _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId, new MetadataV2Field
+        {
+            Name = "secret",
+            Type = MetadataV2FieldType.String,
+            Hidden = true,
+            Nullable = true,
+        });
+        var objectId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, originalName);
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(schema))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE features
+                SET attributes = jsonb_set(attributes, '{secret}', to_jsonb(@secret::text))
+                WHERE layer_id = @layerId AND objectid = @objectId
+                """;
+            command.Parameters.AddWithValue("secret", "hidden-value");
+            command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+            command.Parameters.AddWithValue("objectId", objectId);
+            (await command.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+
+        var sourceExpression = JsonSerializer.Serialize(new[]
+        {
+            new { field = "name", sqlExpression = "secret" }
+        });
+        var sourceResponse = await PostCalculateAsync(sourceExpression, $"objectid = {objectId}");
+        var sourceBody = await sourceResponse.Content.ReadAsStringAsync();
+        sourceBody.Should().Contain("not available for calculate");
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+            .Should().Be(originalName);
+
+        var targetExpression = JsonSerializer.Serialize(new[]
+        {
+            new { field = "secret", value = "exposed" }
+        });
+        var targetResponse = await PostCalculateAsync(targetExpression, $"objectid = {objectId}");
+        var targetBody = await targetResponse.Content.ReadAsStringAsync();
+        targetBody.Should().Contain("not available for calculate");
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+            .Should().Be(originalName);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Calculate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_UnknownSourceField_ReturnsBadRequestAndLeavesRowsUnchanged()
+    {
+        const string originalName = "calc-6142-original";
+        var objectId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, originalName);
+        var calcExpression = JsonSerializer.Serialize(new[]
+        {
+            new { field = "name", sqlExpression = "not_a_field" }
+        });
+
+        var response = await PostCalculateAsync(calcExpression, $"objectid = {objectId}");
+        var body = await response.Content.ReadAsStringAsync();
+
+        body.Should().Contain("does not exist in layer");
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+            .Should().Be(originalName);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Calculate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_MixedCaseSourceField_WritesMatchedValue()
+    {
+        const string originalName = "Ada";
+        var objectId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, originalName);
+        var calcExpression = JsonSerializer.Serialize(new[]
+        {
+            new { field = "name", sqlExpression = "NAME || '_ok'" }
+        });
+
+        var response = await PostCalculateAsync(calcExpression, $"objectid = {objectId}");
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+            .Should().Be("Ada_ok");
     }
 
     [IntegrationTest]
@@ -226,11 +354,16 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Calculate)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_MissingCalcExpression_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/calculate?f=json");
+        using var form = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("f", "json")
+        });
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/calculate",
+            form);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -241,14 +374,31 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Calculate)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_InvalidCalcExpression_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/calculate?calcExpression=not-json&f=json");
+        var response = await PostCalculateAsync("not-json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    private async Task<HttpResponseMessage> PostCalculateAsync(string calcExpression, string? where = null)
+    {
+        var fields = new List<KeyValuePair<string, string>>
+        {
+            new("calcExpression", calcExpression),
+            new("f", "json"),
+        };
+        if (where is not null)
+        {
+            fields.Add(new("where", where));
+        }
+
+        using var form = new FormUrlEncodedContent(fields);
+        return await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/calculate",
+            form);
     }
 
     [IntegrationTest]
