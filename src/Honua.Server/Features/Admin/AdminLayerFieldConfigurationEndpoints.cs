@@ -21,7 +21,6 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class AdminLayerFieldConfigurationEndpoints
 {
-    private const int MetadataMutationMaxAttempts = 5;
     private const int MaxFieldAliasLength = 256;
     private const int MaxDomainNameLength = 128;
     private const int MaxDomainLabelLength = 256;
@@ -86,6 +85,17 @@ internal static class AdminLayerFieldConfigurationEndpoints
             return layerResult.Problem!;
         }
 
+        var preview = AdminLayerConfigurationTargets.Resolve(
+            await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false),
+            layerId);
+        if (preview.IsAmbiguous)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status409Conflict,
+                preview.ConflictDetail ?? "The layer id is published by more than one resource.");
+        }
+
         var validationError = ValidateRequest(layerId, layerResult.Resource, request);
         if (validationError != null)
         {
@@ -100,17 +110,22 @@ internal static class AdminLayerFieldConfigurationEndpoints
                 field.Hidden))
             .ToArray();
 
-        var configurations = await fieldConfigurationStore.UpdateFieldConfigurationsAsync(
+        var applied = await ApplyUpdatedFieldConfigurationsAsync(
+                graphStore,
+                fieldConfigurationStore,
                 layerId,
                 updates,
                 cancellationToken)
             .ConfigureAwait(false);
+        if (applied.IsAmbiguous)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status409Conflict,
+                applied.ConflictDetail ?? "The layer id is published by more than one resource.");
+        }
 
-        await WriteResourceFieldConfigurationsAsync(
-            graphStore,
-            layerId,
-            configurations,
-            cancellationToken).ConfigureAwait(false);
+        var configurations = applied.Configurations;
         await cacheInvalidator.InvalidateServiceCatalogAsync(null, [layerId], cancellationToken).ConfigureAwait(false);
 
         var response = BuildResponse(layerId, layerResult.Resource, configurations);
@@ -286,82 +301,78 @@ internal static class AdminLayerFieldConfigurationEndpoints
     }
 
     /// <summary>
-    /// Read-modify-write the resource(s) a layer publishes through, with an optimistic-concurrency retry on
-    /// Metadata v2 etag mismatch (background writers can bump the etag between the read and the save),
-    /// mirroring <c>AdminLayerAuthoringEndpoints.MutateResourceForLayerAsync</c>.
+    /// Persists field configuration for the single resource that <paramref name="layerId"/> addresses.
+    /// An ambiguous id is refused before either store is written.
     /// </summary>
-    private static async Task WriteResourceFieldConfigurationsAsync(
+    internal static async Task<AdminLayerFieldApplyResult> ApplyUpdatedFieldConfigurationsAsync(
         IMetadataV2GraphStore graphStore,
+        ILayerFieldConfigurationStore fieldConfigurationStore,
         int layerId,
-        IReadOnlyList<LayerFieldConfiguration> configurations,
+        IReadOnlyList<LayerFieldConfigurationUpdate> updates,
         CancellationToken cancellationToken)
     {
-        var configurationMap = configurations.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
-        for (var attempt = 1; ; attempt++)
+        var preview = AdminLayerConfigurationTargets.Resolve(
+            await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false),
+            layerId);
+        if (preview.IsAmbiguous)
         {
-            var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var targetResourceIds = snapshot.Graph.Publications
-                .Where(publication => publication.Identifier.IsNumeric && publication.LayerIndex == layerId)
-                .Select(publication => publication.ResourceId)
-                .ToHashSet(StringComparer.Ordinal);
-            if (targetResourceIds.Count == 0)
-            {
-                return;
-            }
-
-            var resources = snapshot.Graph.Resources.ToArray();
-            var mutated = false;
-            for (var i = 0; i < resources.Length; i++)
-            {
-                if (!targetResourceIds.Contains(resources[i].Metadata.Id))
-                {
-                    continue;
-                }
-
-                var fields = resources[i].SchemaFields
-                    .Select(field => configurationMap.TryGetValue(field.Name, out var configuration)
-                        ? field with
-                        {
-                            Alias = configuration.Alias,
-                            Domain = configuration.Domain,
-                            Hidden = configuration.Hidden
-                        }
-                        : field)
-                    .ToArray();
-                resources[i] = resources[i] with { SchemaFields = fields };
-                mutated = true;
-            }
-
-            if (!mutated)
-            {
-                return;
-            }
-
-            var updated = snapshot.Graph with
-            {
-                Resources = resources,
-                Revision = snapshot.Graph.Revision + 1,
-            };
-
-            try
-            {
-                _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
-                return;
-            }
-            catch (Exception ex) when (IsEtagMismatch(ex) && attempt < MetadataMutationMaxAttempts)
-            {
-                // Concurrent etag bump — re-read and re-apply.
-            }
+            return AdminLayerFieldApplyResult.Ambiguous(preview.ConflictDetail!);
         }
+
+        var configurations = await fieldConfigurationStore.UpdateFieldConfigurationsAsync(
+                layerId,
+                updates,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var written = await AdminLayerConfigurationTargets.WriteAsync(
+            graphStore,
+            layerId,
+            resource => ApplyFieldConfigurations(resource, configurations),
+            cancellationToken).ConfigureAwait(false);
+        if (written.IsAmbiguous)
+        {
+            return AdminLayerFieldApplyResult.Ambiguous(written.ConflictDetail!);
+        }
+
+        return new AdminLayerFieldApplyResult(false, null, configurations);
     }
 
-    private static bool IsEtagMismatch(Exception exception) =>
-        exception is InvalidOperationException
-        && exception.Message.Contains("etag mismatch", StringComparison.OrdinalIgnoreCase);
+    private static MetadataV2Resource ApplyFieldConfigurations(
+        MetadataV2Resource resource,
+        IReadOnlyList<LayerFieldConfiguration> configurations)
+    {
+        var configurationMap = configurations.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var fields = resource.SchemaFields
+            .Select(field => configurationMap.TryGetValue(field.Name, out var configuration)
+                ? field with
+                {
+                    Alias = configuration.Alias,
+                    Domain = configuration.Domain,
+                    Hidden = configuration.Hidden
+                }
+                : field)
+            .ToArray();
+        return resource with { SchemaFields = fields };
+    }
 
     private static string? NormalizeAlias(string? alias)
     {
         var trimmed = alias?.Trim();
         return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }
+}
+
+/// <summary>Result of applying a layer field-configuration update.</summary>
+/// <param name="IsAmbiguous">True when the layer id addresses more than one resource and nothing was written.</param>
+/// <param name="ConflictDetail">Conflict explanation when <paramref name="IsAmbiguous"/> is true.</param>
+/// <param name="Configurations">Field configurations written when the layer id was unique.</param>
+internal readonly record struct AdminLayerFieldApplyResult(
+    bool IsAmbiguous,
+    string? ConflictDetail,
+    IReadOnlyList<LayerFieldConfiguration> Configurations)
+{
+    /// <summary>Creates a conflict result that did not write.</summary>
+    public static AdminLayerFieldApplyResult Ambiguous(string detail)
+        => new(true, detail, Array.Empty<LayerFieldConfiguration>());
 }
