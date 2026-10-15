@@ -110,6 +110,8 @@ public sealed class TileCacheExpiryHostedServiceTests
             clock);
 
         await service.StartAsync(CancellationToken.None);
+        // BackgroundService.StartAsync queues ExecuteAsync, so the sweep timer does not exist yet.
+        await WaitUntilAsync(() => clock.HasTimer);
         clock.HasTimer.Should().BeTrue();
 
         clock.Advance(TimeSpan.FromSeconds(TileCacheExpiryHostedService.MinIntervalSeconds));
