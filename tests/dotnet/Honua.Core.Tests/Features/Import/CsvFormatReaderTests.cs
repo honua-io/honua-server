@@ -202,6 +202,35 @@ public sealed class CsvFormatReaderTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task ReadStreamingAsync_OpenQuoteWithManyContinuationLines_FinishesWithinOneSecond()
+    {
+        // #6174: an unclosed quote must not rescan the whole record on every continuation line.
+        const int continuationLines = 200_000;
+        var csv = new StringBuilder(continuationLines * 2 + 8);
+        csv.Append('"');
+        csv.Append('\n');
+        for (var i = 0; i < continuationLines; i++)
+        {
+            csv.Append('a');
+            csv.Append('\n');
+        }
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv.ToString()));
+        var started = System.Diagnostics.Stopwatch.StartNew();
+
+        var act = async () =>
+        {
+            await foreach (var _ in CsvFormatReader.ReadStreamingAsync(stream, CancellationToken.None))
+            {
+            }
+        };
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+        started.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task ReadStreamingAsync_SingleCoordinateHeader_KeepsColumnAsAttribute()
     {
         // #6172: one coordinate-like header is not half of a point, so its values must

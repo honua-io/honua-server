@@ -725,10 +725,18 @@ internal static class CsvFormatReader
             return null;
         }
 
+        // Quote state advances once per physical line. Rescanning the accumulated
+        // record made one multi-line field quadratic in its length (#6174).
+        var cursor = CsvQuoteCursor.Start.Advance(line, delimiter);
+        if (!cursor.InQuotes)
+        {
+            return line;
+        }
+
         var builder = new StringBuilder(line);
         var currentSize = Encoding.UTF8.GetByteCount(line);
 
-        while (!IsCompleteRecord(builder, delimiter))
+        while (cursor.InQuotes)
         {
             var nextLine = await reader.ReadLineAsync(cancellationToken);
             if (nextLine == null)
@@ -752,18 +760,16 @@ internal static class CsvFormatReader
             builder.Append('\n');
             builder.Append(nextLine);
             currentSize += additionalSize;
+            cursor = cursor.Advance(nextLine, delimiter);
         }
 
         return builder.ToString();
     }
 
-    private static bool IsCompleteRecord(StringBuilder record, char? delimiter)
-        => !CsvQuoteCursor.Start.Advance(record, delimiter).InQuotes;
-
     /// <summary>
     /// Quote state for one CSV record. A double quote opens a field only at the
-    /// start of that field; any other quote is literal. <paramref name="delimiter"/>
-    /// null means every probe candidate can separate fields (delimiter not chosen yet).
+    /// start of that field; any other quote is literal. A null delimiter means every
+    /// probe candidate can separate fields, used before the delimiter is chosen.
     /// </summary>
     private readonly struct CsvQuoteCursor
     {
@@ -773,18 +779,18 @@ internal static class CsvFormatReader
 
         public static CsvQuoteCursor Start => new() { AtFieldStart = true };
 
-        public CsvQuoteCursor Advance(StringBuilder record, char? delimiter)
+        public CsvQuoteCursor Advance(ReadOnlySpan<char> text, char? delimiter)
         {
             var inQuotes = InQuotes;
             var atFieldStart = AtFieldStart;
-            for (var i = 0; i < record.Length; i++)
+            for (var i = 0; i < text.Length; i++)
             {
-                var ch = record[i];
+                var ch = text[i];
                 if (inQuotes)
                 {
                     if (ch == '"')
                     {
-                        var hasEscapedQuote = i + 1 < record.Length && record[i + 1] == '"';
+                        var hasEscapedQuote = i + 1 < text.Length && text[i + 1] == '"';
                         if (hasEscapedQuote)
                         {
                             i++;
