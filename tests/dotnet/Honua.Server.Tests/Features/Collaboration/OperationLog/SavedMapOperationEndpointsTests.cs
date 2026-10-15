@@ -115,6 +115,36 @@ public sealed class SavedMapOperationEndpointsTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    public async Task Append_SameOperationIdDifferentPayload_Returns409AndLeavesHeadUnchanged()
+    {
+        using var factory = CreateFactory(allowEdit: true);
+        using var client = CreateAdminClient(factory);
+
+        var first = await AppendAsync(client, "op-mismatch", baseCursor: 0);
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        var firstBody = await ReadJsonAsync(first);
+        var head = firstBody.GetProperty("data").GetProperty("headCursor").GetInt64();
+        head.Should().Be(1);
+
+        var mismatch = await AppendAsync(client, "op-mismatch", baseCursor: 0, zoom: 9);
+        mismatch.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var mismatchBody = await ReadJsonAsync(mismatch);
+        mismatchBody.GetProperty("data").GetProperty("status").GetString().Should().Be("idempotencyMismatch");
+        mismatchBody.GetProperty("data").GetProperty("headCursor").GetInt64().Should().Be(head);
+        mismatchBody.GetProperty("data").GetProperty("isDuplicate").GetBoolean().Should().BeFalse();
+
+        using var replay = await client.GetAsync(
+            $"/api/v1/saved-maps/{MapId}/collaboration/operations?since=0");
+        replay.StatusCode.Should().Be(HttpStatusCode.OK);
+        var replayBody = await ReadJsonAsync(replay);
+        replayBody.GetProperty("data").GetProperty("headCursor").GetInt64().Should().Be(head);
+        replayBody.GetProperty("data").GetProperty("operations").GetArrayLength().Should().Be(1);
+        replayBody.GetProperty("data").GetProperty("operations")[0].GetProperty("payload").GetProperty("zoom").GetInt32()
+            .Should().Be(8);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
     public async Task Append_WithoutAuthentication_ReturnsUnauthorized()
     {
         using var factory = CreateFactory(allowEdit: true);
@@ -153,7 +183,8 @@ public sealed class SavedMapOperationEndpointsTests
         HttpClient client,
         string operationId,
         long baseCursor,
-        string? actorId = null)
+        string? actorId = null,
+        int zoom = 8)
     {
         var actorProperty = actorId is null ? string.Empty : $"""
             "actorId": "{actorId}",
@@ -164,7 +195,7 @@ public sealed class SavedMapOperationEndpointsTests
               {{actorProperty}}
               "kind": "SetViewport",
               "baseCursor": {{baseCursor}},
-              "payload": { "zoom": 8 }
+              "payload": { "zoom": {{zoom}} }
             }
             """;
         using var content = new StringContent(body, Encoding.UTF8, "application/json");

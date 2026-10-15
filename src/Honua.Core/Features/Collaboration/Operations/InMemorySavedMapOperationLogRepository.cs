@@ -76,9 +76,19 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
             var state = GetOrCreateState(request.MapId);
             var headCursor = new SavedMapOperationCursor(state.HeadCursor);
 
-            if (state.ByOperationId.TryGetValue(request.OperationId, out var existingOperation) ||
-                TryFindByIdempotencyKey(state, request.IdempotencyKey, out existingOperation))
+            if (TryFindIdempotent(state, request, out var existingOperation))
             {
+                if (!SavedMapOperationIdempotency.Matches(existingOperation, request))
+                {
+                    return Task.FromResult(new SavedMapOperationAppendResult
+                    {
+                        Status = SavedMapOperationAppendStatus.IdempotencyMismatch,
+                        Operation = existingOperation,
+                        HeadCursor = headCursor,
+                        Message = SavedMapOperationIdempotency.MismatchMessage,
+                    });
+                }
+
                 return Task.FromResult(new SavedMapOperationAppendResult
                 {
                     Status = SavedMapOperationAppendStatus.Accepted,
@@ -125,10 +135,10 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
 
             state.HeadCursor = nextCursor.Value;
             state.Operations.Add(operation);
-            state.ByOperationId[operation.OperationId] = operation;
+            state.ByOperationId[(operation.ActorId, operation.OperationId)] = operation;
             if (!string.IsNullOrWhiteSpace(operation.IdempotencyKey))
             {
-                state.ByIdempotencyKey[operation.IdempotencyKey] = operation;
+                state.ByIdempotencyKey[(operation.ActorId, operation.IdempotencyKey)] = operation;
             }
 
             PruneRetainedOperations(state);
@@ -330,10 +340,10 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
         {
             foreach (var prunedOperation in state.Operations.Take(excess))
             {
-                state.ByOperationId.Remove(prunedOperation.OperationId);
+                state.ByOperationId.Remove((prunedOperation.ActorId, prunedOperation.OperationId));
                 if (!string.IsNullOrWhiteSpace(prunedOperation.IdempotencyKey))
                 {
-                    state.ByIdempotencyKey.Remove(prunedOperation.IdempotencyKey);
+                    state.ByIdempotencyKey.Remove((prunedOperation.ActorId, prunedOperation.IdempotencyKey));
                 }
             }
 
@@ -341,13 +351,18 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
         }
     }
 
-    private static bool TryFindByIdempotencyKey(
+    private static bool TryFindIdempotent(
         MapLogState state,
-        string? idempotencyKey,
+        SavedMapOperationAppendRequest request,
         out SavedMapOperationEnvelope operation)
     {
-        if (!string.IsNullOrWhiteSpace(idempotencyKey) &&
-            state.ByIdempotencyKey.TryGetValue(idempotencyKey, out operation!))
+        if (state.ByOperationId.TryGetValue((request.ActorId, request.OperationId), out operation!))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.IdempotencyKey) &&
+            state.ByIdempotencyKey.TryGetValue((request.ActorId, request.IdempotencyKey), out operation!))
         {
             return true;
         }
@@ -377,9 +392,9 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
     {
         public List<SavedMapOperationEnvelope> Operations { get; } = [];
 
-        public Dictionary<SavedMapOperationId, SavedMapOperationEnvelope> ByOperationId { get; } = [];
+        public Dictionary<(SavedMapActorId ActorId, SavedMapOperationId OperationId), SavedMapOperationEnvelope> ByOperationId { get; } = [];
 
-        public Dictionary<string, SavedMapOperationEnvelope> ByIdempotencyKey { get; } = new(StringComparer.Ordinal);
+        public Dictionary<(SavedMapActorId ActorId, string Key), SavedMapOperationEnvelope> ByIdempotencyKey { get; } = [];
 
         public long HeadCursor { get; set; }
 

@@ -50,10 +50,7 @@ public sealed class InMemorySavedMapOperationLogRepositoryTests
         var repository = CreateRepository();
 
         var first = await repository.AppendAsync(CreateRequest("op-1", SavedMapOperationCursor.Empty));
-        var duplicate = await repository.AppendAsync(CreateRequest(
-            "op-1",
-            SavedMapOperationCursor.Empty,
-            kind: SavedMapOperationKind.PatchStyle));
+        var duplicate = await repository.AppendAsync(CreateRequest("op-1", SavedMapOperationCursor.Empty));
 
         Assert.Equal(SavedMapOperationAppendStatus.Accepted, duplicate.Status);
         Assert.True(duplicate.IsDuplicate);
@@ -64,23 +61,91 @@ public sealed class InMemorySavedMapOperationLogRepositoryTests
 
     [UnitTest]
     [Operation(TestOperations.Append)]
+    public async Task AppendAsync_SameOperationIdDifferentRequest_ReturnsIdempotencyMismatch()
+    {
+        var repository = CreateRepository();
+        var first = await repository.AppendAsync(CreateRequest("op-1", SavedMapOperationCursor.Empty));
+
+        var mismatch = await repository.AppendAsync(CreateRequest(
+            "op-1",
+            SavedMapOperationCursor.Empty,
+            kind: SavedMapOperationKind.PatchStyle));
+
+        Assert.Equal(SavedMapOperationAppendStatus.IdempotencyMismatch, mismatch.Status);
+        Assert.False(mismatch.IsDuplicate);
+        Assert.Equal(first.Operation?.ServerCursor, mismatch.Operation?.ServerCursor);
+        Assert.Equal(1, mismatch.HeadCursor.Value);
+        var replay = await repository.ReplayAsync(new SavedMapId("map-1"), SavedMapOperationCursor.Empty);
+        Assert.Single(replay.Operations);
+    }
+
+    [UnitTest]
+    [Operation(TestOperations.Append)]
+    public async Task AppendAsync_SameOperationIdDifferentActor_AppendsIndependently()
+    {
+        var repository = CreateRepository();
+        var first = await repository.AppendAsync(CreateRequest("op-1", SavedMapOperationCursor.Empty));
+        var other = await repository.AppendAsync(CreateRequest(
+            "op-1",
+            new SavedMapOperationCursor(1),
+            actorId: "actor-2"));
+
+        Assert.Equal(SavedMapOperationAppendStatus.Accepted, first.Status);
+        Assert.Equal(SavedMapOperationAppendStatus.Accepted, other.Status);
+        Assert.False(other.IsDuplicate);
+        Assert.Equal(2, other.HeadCursor.Value);
+        Assert.Equal("actor-2", other.Operation?.ActorId.Value);
+    }
+
+    [UnitTest]
+    [Operation(TestOperations.Append)]
+    public async Task AppendAsync_DuplicatePayload_IgnoresObjectKeyOrder()
+    {
+        var repository = CreateRepository();
+        var firstPayload = JsonSerializer.SerializeToElement(new { zoom = 8, bearing = 1 });
+        using var reordered = JsonDocument.Parse("""{"bearing":1,"zoom":8}""");
+        await repository.AppendAsync(CreateRequest("op-1", SavedMapOperationCursor.Empty, payload: firstPayload));
+
+        var duplicate = await repository.AppendAsync(CreateRequest(
+            "op-1",
+            SavedMapOperationCursor.Empty,
+            payload: reordered.RootElement.Clone()));
+
+        Assert.Equal(SavedMapOperationAppendStatus.Accepted, duplicate.Status);
+        Assert.True(duplicate.IsDuplicate);
+        Assert.Equal(1, duplicate.HeadCursor.Value);
+    }
+
+    [UnitTest]
+    [Operation(TestOperations.Append)]
     public async Task AppendAsync_DuplicateIdempotencyKey_ReturnsOriginalOperationWithoutAdvancingHead()
     {
         var repository = CreateRepository();
 
+        var payload = JsonSerializer.SerializeToElement(new { zoom = 8 });
         var first = await repository.AppendAsync(CreateRequest(
             "op-1",
             SavedMapOperationCursor.Empty,
-            idempotencyKey: "idem-1"));
+            idempotencyKey: "idem-1",
+            payload: payload));
         var duplicate = await repository.AppendAsync(CreateRequest(
             "op-2",
             new SavedMapOperationCursor(1),
-            idempotencyKey: "idem-1"));
+            idempotencyKey: "idem-1",
+            payload: payload));
 
         Assert.Equal(SavedMapOperationAppendStatus.Accepted, duplicate.Status);
         Assert.True(duplicate.IsDuplicate);
         Assert.Equal(first.Operation?.OperationId, duplicate.Operation?.OperationId);
         Assert.Equal(1, duplicate.HeadCursor.Value);
+
+        var mismatch = await repository.AppendAsync(CreateRequest(
+            "op-3",
+            new SavedMapOperationCursor(1),
+            idempotencyKey: "idem-1",
+            payload: JsonSerializer.SerializeToElement(new { zoom = 9 })));
+        Assert.Equal(SavedMapOperationAppendStatus.IdempotencyMismatch, mismatch.Status);
+        Assert.Equal(1, mismatch.HeadCursor.Value);
     }
 
     [UnitTest]
@@ -215,14 +280,16 @@ public sealed class InMemorySavedMapOperationLogRepositoryTests
         string operationId,
         SavedMapOperationCursor baseCursor,
         SavedMapOperationKind kind = SavedMapOperationKind.SetViewport,
-        string? idempotencyKey = null) => new()
+        string? idempotencyKey = null,
+        string actorId = "actor-1",
+        JsonElement? payload = null) => new()
         {
             OperationId = new SavedMapOperationId(operationId),
             MapId = new SavedMapId("map-1"),
-            ActorId = new SavedMapActorId("actor-1"),
+            ActorId = new SavedMapActorId(actorId),
             BaseCursor = baseCursor,
             Kind = kind,
-            Payload = JsonSerializer.SerializeToElement(new { operationId, kind = kind.ToString() }),
+            Payload = payload ?? JsonSerializer.SerializeToElement(new { operationId, kind = kind.ToString() }),
             IdempotencyKey = idempotencyKey,
         };
 

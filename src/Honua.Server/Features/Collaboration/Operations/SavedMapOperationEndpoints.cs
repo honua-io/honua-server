@@ -173,6 +173,11 @@ internal static class SavedMapOperationEndpoints
                     result.Message ?? "The operation conflicts with concurrent edits.", response),
                 SavedMapOperationJsonContext.Default.ApiResponseSavedMapOperationAppendApiResponse,
                 statusCode: StatusCodes.Status409Conflict),
+            SavedMapOperationAppendStatus.IdempotencyMismatch => Results.Json(
+                ApiResponse<SavedMapOperationAppendApiResponse>.Failure(
+                    result.Message ?? SavedMapOperationIdempotency.MismatchMessage, response),
+                SavedMapOperationJsonContext.Default.ApiResponseSavedMapOperationAppendApiResponse,
+                statusCode: StatusCodes.Status409Conflict),
             _ => Results.Json(
                 ApiResponse<SavedMapOperationAppendApiResponse>.Failure(
                     result.Message ?? "The base cursor is outside the retained replay window.", response),
@@ -270,6 +275,7 @@ internal static class SavedMapOperationEndpoints
     {
         SavedMapOperationAppendStatus.Accepted => "accepted",
         SavedMapOperationAppendStatus.Conflict => "conflict",
+        SavedMapOperationAppendStatus.IdempotencyMismatch => "idempotencyMismatch",
         _ => "resyncRequired"
     };
 
