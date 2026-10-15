@@ -169,7 +169,9 @@ encrypts that key ring, so a copy of Redis does not hold both the secrets and th
 file is not a license. Generate a local RSA PKCS#12 and keep it private on the host. The
 published image runs as uid 1001 and gid 1001. Before the server starts, Compose runs a
 one-shot root step that sets the mount to owner root, group 1001, mode `0640`. That mode
-has no other-read. The export password still encrypts the PKCS#12.
+has no other-read, and `openssl` cannot replace a root-owned `0640` file. The directory
+stays yours, so the block removes `secrets/keyring.pfx` before the export. The export
+password still encrypts the PKCS#12.
 
 ```bash
 mkdir -p secrets
@@ -177,6 +179,7 @@ HONUA_KEYRING_PASSWORD="$(grep '^HONUA_KEYRING_PASSWORD=' .env | cut -d= -f2)"
 openssl req -x509 -newkey rsa:2048 \
   -keyout secrets/keyring.pem -out secrets/keyring.crt \
   -days 3650 -nodes -subj "/CN=honua-quickstart"
+rm -f secrets/keyring.pfx
 openssl pkcs12 -export \
   -inkey secrets/keyring.pem -in secrets/keyring.crt \
   -out secrets/keyring.pfx -passout "pass:${HONUA_KEYRING_PASSWORD}"
@@ -309,8 +312,11 @@ a backup.
   switch to the Development environment or disable preflight to get past a
   startup failure; it is telling you something.
 - **`KeyRingCertificatePath` is required** — the key-ring PKCS#12 from step 2 is
-  missing or not readable. Re-run that `openssl` block so `secrets/keyring.pfx`
-  exists, then `docker compose up` so the root-owned mode `0640` mount is applied
+  missing or not readable. Re-run that `openssl` block. It removes
+  `secrets/keyring.pfx` before the export, which is what makes a second run work
+  after Compose has set the file to root, group 1001, mode `0640`. If `rm` is
+  denied, run `sudo chown "$USER" secrets secrets/keyring.pfx` and then the block
+  again. Then `docker compose up` so the root-owned mode `0640` mount is applied
   before the server starts. Do not grant other-read on the file.
 - **A pull fails** — these pins need no credentials, so it is network or proxy
   policy. The optional .NET client uses a different registry; see
