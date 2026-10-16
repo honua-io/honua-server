@@ -14,6 +14,7 @@ on:
       - 'src/Honua.Server/Features/Admin/GpProcessReleaseJobEndpoints.cs'
       - 'src/Honua.Server/Features/Admin/Models/GpProcessReleaseJobModels.cs'
       - 'tests/dotnet/Honua.Server.Tests/Features/Admin/GpProcessReleaseJobEndpointsTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/CustomCodeArtifactIngestorTests.cs'
       - 'src/Honua.Protocols.GeoServices/GPServer/**'
       - 'tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/**'
       - 'tests/dotnet/Honua.Geoprocessing.UnitTests/**'
@@ -63,6 +64,12 @@ jobs:
             project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
             filter: FullyQualifiedName~GpProcessReleaseJobEndpointsTests
             source: tests/dotnet/Honua.Server.Tests/Features/Admin/GpProcessReleaseJobEndpointsTests.cs
+            prefix: ''
+          - name: custom-code-durable-recovery
+            needs_postgres: false
+            project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+            filter: FullyQualifiedName~CustomCodeArtifactIngestorTests
+            source: tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/CustomCodeArtifactIngestorTests.cs
             prefix: ''
           - name: file-sink-ownership-and-effects
             needs_postgres: false
