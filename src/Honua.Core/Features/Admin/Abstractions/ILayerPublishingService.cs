@@ -283,4 +283,24 @@ public interface ILayerPublishingService
         Guid? connectionId,
         CancellationToken cancellationToken = default)
         => RefreshMaterializedFeaturesForSourceTableAsync(connectionString, schema, table, cancellationToken);
+
+    /// <summary>
+    /// Replaces the published field metadata of an existing layer with the columns of its
+    /// current source table. A replacement import keeps the layer row and swaps the table
+    /// underneath it; without this rewrite the catalog keeps the previous schema.
+    /// </summary>
+    /// <param name="connectionString">PostgreSQL connection string.</param>
+    /// <param name="layerId">Existing published layer identifier.</param>
+    /// <param name="request">Publication request describing the replaced table and captured field metadata.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// The updated summary, or <see langword="null"/> when this publisher cannot rewrite fields
+    /// or the layer does not back the requested table.
+    /// </returns>
+    Task<PublishedLayerSummary?> RewritePublishedLayerFieldsAsync(
+        string connectionString,
+        int layerId,
+        LayerPublishRequest request,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<PublishedLayerSummary?>(null);
 }
