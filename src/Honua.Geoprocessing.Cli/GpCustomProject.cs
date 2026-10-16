@@ -850,17 +850,36 @@ public static class GpCustomProjectTester
 
     private static string ResolvePhysicalDirectory(string directory)
     {
-        var fullPath = Path.GetFullPath(directory);
-        var current = Path.GetPathRoot(fullPath)!;
-        // Resolve each ancestor: resolving only the leaf misses symlinks such as /var.
-        foreach (var segment in fullPath[current.Length..].Split(
-            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
-        {
-            current = Path.Join(current, segment);
-            current = new DirectoryInfo(current).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? current;
-        }
+        var remainingLinks = 64;
+        return Resolve(directory);
 
-        return current;
+        string Resolve(string path)
+        {
+            var fullPath = Path.GetFullPath(path);
+            var current = Path.GetPathRoot(fullPath)!;
+            // Resolve each ancestor: resolving only the leaf misses symlinks such as /var.
+            foreach (var segment in fullPath[current.Length..].Split(
+                [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Join(current, segment);
+                var target = new DirectoryInfo(current).ResolveLinkTarget(returnFinalTarget: false);
+                if (target is null)
+                {
+                    continue;
+                }
+
+                if (--remainingLinks < 0)
+                {
+                    throw new IOException("The authoring directory contains too many symbolic links or a link cycle.");
+                }
+
+                // An absolute link target can itself contain aliased ancestors. Restart
+                // from its root instead of reintroducing /var after resolving /private/var.
+                current = Resolve(target.FullName);
+            }
+
+            return current;
+        }
     }
 
     private static async Task<Command> DotnetCommandAsync(GpProjectManifest manifest, string root, string harnessRoot, string runsDirectory, CancellationToken cancellationToken)
