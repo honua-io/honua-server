@@ -99,7 +99,7 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             var rasterId = (long)(await command.ExecuteScalarAsync())!;
 
             // Use an independent pool so the bounded SQL setting cannot affect other tests.
-            var settings = new NpgsqlConnectionStringBuilder(fixture.DataSource.ConnectionString);
+            var settings = new NpgsqlConnectionStringBuilder(fixture.ConnectionString);
             settings.Options = $"{settings.Options} -c statement_timeout=15000".Trim();
             settings.CommandTimeout = 20;
             await using var dataSource = NpgsqlDataSource.Create(settings.ConnectionString);
