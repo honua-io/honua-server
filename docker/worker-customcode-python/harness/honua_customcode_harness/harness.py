@@ -183,7 +183,8 @@ def _run_steps(
     journal.phase("client")
     try:
         client = build_scoped_client(
-            spec.base_url, spec.job_token, client_factory=client_factory
+            spec.base_url, spec.job_token, client_factory=client_factory,
+            job_id=(os.environ if env is None else env).get("HONUA_JOB_ID")
         )
     except Exception as exc:  # noqa: BLE001 - surface SDK construction errors
         log.warn(f"failed to construct scoped client: {exc}")

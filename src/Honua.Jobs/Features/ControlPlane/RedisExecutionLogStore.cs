@@ -38,8 +38,8 @@ internal sealed partial class RedisExecutionLogStore(
         redis.call('HINCRBY', KEYS[2], 'offset', dropped)
         redis.call('HSET', KEYS[2], 'total', total + 1)
         if ARGV[4] ~= '' then redis.call('HSET', KEYS[2], 'event:' .. ARGV[4], '1') end
-        redis.call('EXPIRE', KEYS[1], ARGV[3], 'NX')
-        redis.call('EXPIRE', KEYS[2], ARGV[3], 'NX')
+        if redis.call('TTL', KEYS[1]) < 0 then redis.call('EXPIRE', KEYS[1], ARGV[3]) end
+        if redis.call('TTL', KEYS[2]) < 0 then redis.call('EXPIRE', KEYS[2], ARGV[3]) end
         return 1
         """;
     private const string ReadScript = """

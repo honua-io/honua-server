@@ -195,7 +195,8 @@ public sealed class Harness
         object? client;
         try
         {
-            client = CredentialSandbox.BuildScopedClient(spec.BaseUrl, spec.JobToken, _options.ClientFactory);
+            client = CredentialSandbox.BuildScopedClient(spec.BaseUrl, spec.JobToken, _options.ClientFactory,
+                jobId: env is null ? Environment.GetEnvironmentVariable("HONUA_JOB_ID") : env.GetValueOrDefault("HONUA_JOB_ID"));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
