@@ -45,6 +45,7 @@ public sealed class ScopedJobCallbackAuthenticationTests
     private const string EditPath = "/rest/services/beta/FeatureServer/1/applyEdits";
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task CurrentCapability_ReadsProtectedData_AndCannotReachAnotherLayerOrService()
     {
         using var fixture = await CallbackFixture.CreateAsync(JobResourceAccess.Read);
@@ -69,6 +70,8 @@ public sealed class ScopedJobCallbackAuthenticationTests
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /api/v1/admin/connections")]
     public async Task ReadOnlyCapability_CannotWrite_OrUseAnAccompanyingAdminKey()
     {
         using var fixture = await CallbackFixture.CreateAsync(JobResourceAccess.Read);
@@ -83,6 +86,8 @@ public sealed class ScopedJobCallbackAuthenticationTests
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /api/v1/admin/connections")]
     public async Task WriteCapability_UsesCanonicalFeatureEditPipeline_AndStillCannotAdminister()
     {
         using var fixture = await CallbackFixture.CreateAsync(JobResourceAccess.Write);
@@ -96,6 +101,8 @@ public sealed class ScopedJobCallbackAuthenticationTests
     }
 
     [IntegrationTheory]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /healthz/live")]
     [InlineData("wrong-job")]
     [InlineData("wrong-attempt")]
     [InlineData("rotated-token")]
