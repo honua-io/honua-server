@@ -12,6 +12,7 @@ on:
       - 'tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/**'
       - 'tests/dotnet/Honua.TestKit.Postgres.Hosting/**'
       - 'tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/OgcFeaturesClientDiscoveryTests.cs'
+      - 'tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/WfsLegacyEndpointsTests.cs'
       - 'tests/dotnet/Honua.Geoprocessing.UnitTests/**'
       - 'src/Honua.Db/Postgres/Features/Geoprocessing/**'
       - 'tests/dotnet/Honua.Db.Postgres.Tests/Features/Geoprocessing/**'
@@ -48,6 +49,11 @@ jobs:
             project: tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/Honua.Protocols.OgcApi.ComponentTests.csproj
             filter: FullyQualifiedName~OgcFeaturesClientDiscoveryTests
             source: tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/OgcFeaturesClientDiscoveryTests.cs
+            prefix: ''
+          - name: wfs-component-composition
+            project: tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/Honua.Protocols.OgcClassic.ComponentTests.csproj
+            filter: FullyQualifiedName~WfsLegacyEndpointsTests
+            source: tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/WfsLegacyEndpointsTests.cs
             prefix: ''
           - name: shared-full-host-authorization
             project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
