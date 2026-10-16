@@ -287,9 +287,10 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
 
         var result = await _featureStore.QueryAsync(TestLayerId, query);
 
-        // This change preserves the existing matching-source-row count contract.
-        // In particular, that count must not cause a false continuation on the last distinct page.
-        Assert.Equal(3, result.TotalCount);
+        // Distinct totals follow the projected tuples (#6196): TypeA and TypeB, not the
+        // three source rows. Continuation stays on the extra-row probe, so a full last
+        // page does not report another page.
+        Assert.Equal(2, result.TotalCount);
         Assert.Equal(expectedItems, result.Items.Length);
         Assert.Equal(expectedHasMore, result.HasMoreResults);
         Assert.Equal(new[] { "TypeA", "TypeB" }.Skip(offset).Take(limit ?? 2),
