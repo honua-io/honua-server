@@ -52,10 +52,26 @@ public sealed class PostgresRasterStoreStretchTests
             "raster",
             new[] { new StretchBounds(0, 100), new StretchBounds(5, 95), new StretchBounds(1, 99) });
 
-        sql.Should().StartWith("ST_AddBand(ST_MapAlgebra(raster, 1, '8BUI',");
-        sql.Should().Contain("ST_MapAlgebra(raster, 2, '8BUI',");
-        sql.Should().Contain("ST_MapAlgebra(raster, 3, '8BUI',");
+        sql.Should().StartWith("(WITH stretch_input AS MATERIALIZED (SELECT raster AS rast)");
+        sql.Should().Contain("ST_AddBand(ST_MapAlgebra(stretch_input.rast, 1, '8BUI',");
+        sql.Should().Contain("ST_MapAlgebra(stretch_input.rast, 2, '8BUI',");
+        sql.Should().Contain("ST_MapAlgebra(stretch_input.rast, 3, '8BUI',");
         sql.Should().Contain("]::raster[])");
+    }
+
+    [UnitTest]
+    public void BuildStretchedRasterExpression_CompleteSamplerOccursOnceForMultipleBands()
+    {
+        var sampler = RasterCorrectedNearestSql.Sample("source.rast", "target.rast");
+        var sql = PostgresRasterStore.BuildStretchedRasterExpression(
+            sampler, new[] { new StretchBounds(-17.25, 101), new StretchBounds(-4.5, 1100) });
+
+        // Exercise the actual large production input, rather than a simple column.
+        sql.Split(sampler, StringSplitOptions.None).Should().HaveCount(2);
+        sql.Should().Contain("AS MATERIALIZED");
+        sql.Should().Contain(PostgresRasterStore.BuildStretchMapAlgebraExpression(-17.25, 101));
+        sql.Should().Contain(PostgresRasterStore.BuildStretchMapAlgebraExpression(-4.5, 1100));
+        sql.Should().Contain("ST_MapAlgebra(stretch_input.rast, 2, '8BUI'");
     }
 
     [UnitTest]
