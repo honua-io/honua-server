@@ -636,13 +636,29 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
             if (importedCount == 0)
             {
-                errorMessage = "No features found in file";
-                result = ImportResult.CreateFailure(
-                    request.TableName,
-                    format.Value,
-                    errorMessage,
-                    stopwatch.Elapsed,
-                    warnings);
+                if (failedCount > 0)
+                {
+                    errorMessage = FormattableString.Invariant(
+                        $"Import failed: all {failedCount} feature(s) were skipped or rejected and no rows were loaded.");
+                    result = ImportResult.CreateFailure(
+                        request.TableName,
+                        format.Value,
+                        errorMessage,
+                        stopwatch.Elapsed,
+                        warnings,
+                        ImportValidationErrorCodes.AllRowsFailed);
+                }
+                else
+                {
+                    errorMessage = "No features found in file";
+                    result = ImportResult.CreateFailure(
+                        request.TableName,
+                        format.Value,
+                        errorMessage,
+                        stopwatch.Elapsed,
+                        warnings);
+                }
+
                 return result;
             }
 
@@ -688,6 +704,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         {
             // Preserve cancellation for UniversalImportJobService, which records the
             // terminal Cancelled state and uses a non-cancelled token for its receipt.
+            // The metric and the finally log otherwise stay on the failed path.
+            status = "cancelled";
             throw;
         }
         catch (ImportGeometryTooLargeException ex)

@@ -110,6 +110,7 @@ internal sealed partial class GeoservicesLayerPublicationService
                 featuresProcessed,
                 layerInfo.Name);
 
+            var columnMap = GeoservicesImportColumns.Map(layerInfo);
             var publishRequest = new LayerPublishRequest
             {
                 Schema = targetSchema,
@@ -127,22 +128,16 @@ internal sealed partial class GeoservicesLayerPublicationService
                 HasM = layerInfo.HasM,
                 Srid = request.TargetSrid,
                 PrimaryKey = FieldNames.ObjectId,
-                GlobalIdField = ResolveImportedGlobalIdField(layerInfo),
+                GlobalIdField = ResolveImportedGlobalIdField(layerInfo, columnMap),
                 SupportsAttachments = supportsAttachments,
                 Fields = [],
                 ServiceName = request.ServiceName,
                 Enabled = true,
-                FieldDomains = BuildFieldDomainMap(layerInfo),
-                // Carry the captured Esri subtype set through publish. The subtype field
-                // is the canonical 'type' column on the imported layer; the publish path
-                // only attaches the subtypes when that column is actually published, so a
-                // subtype set referencing a dropped column never false-fails reconciliation.
-                Subtypes = layerInfo.Subtypes,
-                // Carry the captured Esri attribute rules through publish so calculation /
-                // constraint / validation rules fire on applyEdits. Calculation rules whose
-                // target column is not published are pruned in the projection so a rule
-                // referencing a dropped field never fails graph validation.
-                AttributeRules = layerInfo.AttributeRules
+                FieldDomains = GeoservicesImportColumns.BuildFieldDomainMap(layerInfo),
+                // Physical column names, including reserved-name disambiguation, so publish
+                // matches the introspected table.
+                Subtypes = GeoservicesImportColumns.RemapSubtypes(layerInfo.Subtypes, columnMap),
+                AttributeRules = GeoservicesImportColumns.RemapAttributeRules(layerInfo.AttributeRules, columnMap)
             };
 
             var published = await _layerPublishingService.PublishLayerAsync(
@@ -219,30 +214,13 @@ internal sealed partial class GeoservicesLayerPublicationService
         }
     }
 
-    private static string? ResolveImportedGlobalIdField(GeoservicesLayerInfo layerInfo)
+    private static string? ResolveImportedGlobalIdField(GeoservicesLayerInfo layerInfo, GeoservicesImportColumnMap columnMap)
     {
         var declared = layerInfo.GlobalIdField;
         var field = !string.IsNullOrWhiteSpace(declared)
             ? layerInfo.Fields.FirstOrDefault(field => field.Name.Equals(declared, StringComparison.OrdinalIgnoreCase))
             : layerInfo.Fields.FirstOrDefault(field => field.Type.Equals("esriFieldTypeGlobalID", StringComparison.OrdinalIgnoreCase));
-        return field?.Name.SanitizeFieldName();
-    }
-
-    // Projects the captured per-field Esri domains onto the publish request, keyed
-    // by source field name. Coded-value domains over the capture cap are not present
-    // here (the source parser omitted them and the inventory raised the truncation
-    // warning), so they intentionally publish without a domain rather than as a
-    // misleading partial lookup.
-    private static Dictionary<string, MetadataV2FieldDomain> BuildFieldDomainMap(
-        GeoservicesLayerInfo layerInfo)
-    {
-        var map = new Dictionary<string, MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase);
-        foreach (var field in layerInfo.Fields.Where(field => field.Domain is not null && !string.IsNullOrWhiteSpace(field.Name)))
-        {
-            map[field.Name] = field.Domain!;
-        }
-
-        return map;
+        return field is null ? null : columnMap.MapReference(field.Name);
     }
 
     private async Task TryAttachLayerStyleAsync(

@@ -98,6 +98,89 @@ public sealed class GeoservicesImportServiceSqlTests
     }
 
     [Fact]
+    public void BuildCreateTableSql_RenamesReservedAndCollidingAttributeNames()
+    {
+        var layerInfo = new GeoservicesLayerInfo
+        {
+            Id = 2,
+            Name = "Reserved",
+            GeometryType = "esriGeometryPoint",
+            Fields =
+            [
+                new GeoservicesFieldInfo { Name = "FID", Type = "esriFieldTypeOID" },
+                new GeoservicesFieldInfo { Name = "OBJECTID", Type = "esriFieldTypeInteger" },
+                new GeoservicesFieldInfo { Name = "GEOM", Type = "esriFieldTypeString", Length = 20 },
+                new GeoservicesFieldInfo { Name = "A-B", Type = "esriFieldTypeString", Length = 10 },
+                new GeoservicesFieldInfo { Name = "a_b", Type = "esriFieldTypeString", Length = 10 }
+            ]
+        };
+
+        var method = typeof(GeoservicesImportService).GetMethod(
+            "BuildCreateTableSql",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        var sql = (string)method!.Invoke(null, new object[] { "honua_data", "reserved_names", layerInfo, 4326 })!;
+
+        sql.Should().Contain("objectid BIGSERIAL PRIMARY KEY");
+        sql.Should().Contain("\"objectid_src\" INTEGER");
+        sql.Should().Contain("\"geom_src\" VARCHAR(20)");
+        sql.Should().Contain("geom geometry(POINT, 4326)");
+        sql.Should().NotContain("\"objectid\" INTEGER");
+        sql.Should().NotContain("\"geom\" ");
+        var aB = sql.IndexOf("\"a_b\"", StringComparison.Ordinal);
+        var aBSrc = sql.IndexOf("\"a_b_src\"", StringComparison.Ordinal);
+        aB.Should().BeGreaterThan(0);
+        aBSrc.Should().BeGreaterThan(aB);
+    }
+
+    [Fact]
+    public void Map_NonSpatialGeomAttribute_KeepsGeomColumnName()
+    {
+        var map = GeoservicesImportColumns.Map(new GeoservicesLayerInfo
+        {
+            Id = 3,
+            Name = "Table",
+            Fields =
+            [
+                new GeoservicesFieldInfo { Name = "OBJECTID", Type = "esriFieldTypeOID" },
+                new GeoservicesFieldInfo { Name = "GEOM", Type = "esriFieldTypeString" }
+            ]
+        });
+
+        map.Spatial.Should().BeFalse();
+        map.Columns.Should().ContainSingle().Which.ColumnName.Should().Be("geom");
+        map.Columns[0].Renamed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void MapReference_RemapsSubtypeAndDomainNames()
+    {
+        var layer = new GeoservicesLayerInfo
+        {
+            Id = 4,
+            Name = "Domains",
+            GeometryType = "esriGeometryPoint",
+            GlobalIdField = "OBJECTID",
+            Fields =
+            [
+                new GeoservicesFieldInfo { Name = "FID", Type = "esriFieldTypeOID" },
+                new GeoservicesFieldInfo
+                {
+                    Name = "OBJECTID",
+                    Type = "esriFieldTypeInteger",
+                    Domain = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2FieldDomain { Name = "codes" }
+                }
+            ]
+        };
+        var map = GeoservicesImportColumns.Map(layer);
+        var domains = GeoservicesImportColumns.BuildFieldDomainMap(layer);
+
+        map.MapReference("OBJECTID").Should().Be("objectid_src");
+        map.MapReference("FID").Should().Be("fid");
+        domains.Should().ContainKey("objectid_src");
+        domains.Should().NotContainKey("OBJECTID");
+    }
+
+    [Fact]
     public void BuildGeometryInsertExpression_ForPolygon_RepairsInvalidSourceRings()
     {
         var method = typeof(GeoservicesImportService).GetMethod(

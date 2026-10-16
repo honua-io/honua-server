@@ -227,6 +227,68 @@ internal sealed partial class StreamingFileImportService
     }
 
     /// <summary>
+    /// Copies every staged row into the live target and drops the staging sibling in one
+    /// transaction. A failure rolls the insert back and leaves the live table unchanged.
+    /// </summary>
+    private static async Task AppendStagingIntoTargetAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string liveTableName,
+        string stagingTableName,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var insertSql =
+                $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(liveTableName)} (geometry, properties) " +
+                $"SELECT geometry, properties FROM {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)}";
+            await using (var insert = new NpgsqlCommand(insertSql, connection, transaction))
+            {
+                await insert.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var drop = new NpgsqlCommand(DropImportStagingTableSql, connection, transaction))
+            {
+                drop.Parameters.AddWithValue("schema_name", schemaName);
+                drop.Parameters.AddWithValue("table_name", liveTableName);
+                await drop.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitSafelyAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// True when <paramref name="tableName"/> exists and carries the importer ownership marker.
+    /// A missing table and a table the importer does not own both return false; the latter is not
+    /// an error here because append still has a direct write path for those tables.
+    /// This is a read of the ownership comment only. <see cref="ImportTableOwnership.AssertOwnedAsync"/>
+    /// takes <c>LOCK TABLE</c>, which PostgreSQL rejects outside a transaction (SQLSTATE 25P01),
+    /// and this check runs before the load transaction starts.
+    /// </summary>
+    private static async Task<bool> TargetIsImporterOwnedAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            "SELECT obj_description(to_regclass(@relation), 'pg_class')",
+            connection);
+        command.Parameters.AddWithValue(
+            "relation",
+            $"{QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)}");
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is string marker
+            && marker == ImportTableOwnership.Marker;
+    }
+
+    /// <summary>
     /// Drops the never-promoted <c>&lt;table&gt;__staging</c> sibling of <paramref name="tableName"/>.
     /// Used when a replace's load left features out (skip/continue) and the live target must not
     /// be swapped for an incomplete dataset (#4006); the staging table is otherwise dead weight

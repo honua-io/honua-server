@@ -787,7 +787,7 @@ internal static partial class ImportEndpoints
                     context,
                     snapshotSchema,
                     snapshotTable,
-                    cancellationToken);
+                    CancellationToken.None);
             }
 
             IResult syncResult = Results.Json(importResult, ImportJsonContext.Default.ImportResult,

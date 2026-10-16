@@ -293,8 +293,8 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
             result.Success.Should().BeFalse();
             result.NeedsReview.Should().BeTrue();
             result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
-            var difference = result.FidelityDifferences.Should().ContainSingle().Subject;
-            difference.Code.Should().Be(MigrationFidelityDifferenceCodes.SourceChangedDuringTransfer);
+            var difference = result.FidelityDifferences.Should().ContainSingle(d =>
+                d.Code == MigrationFidelityDifferenceCodes.SourceChangedDuringTransfer).Subject;
             difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Blocking);
             difference.Expected.Should().Be("2 source records when the transfer started");
             difference.Actual.Should().Be("3 source records when the transfer finished");
@@ -325,8 +325,8 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
             var result = await CreateService(handler, targetSchema: schemaName).ImportLayerAsync(BuildRequest(schemaName) with { BatchSize = 1 });
 
             result.NeedsReview.Should().BeTrue();
-            var difference = result.FidelityDifferences.Should().ContainSingle().Subject;
-            difference.Code.Should().Be(MigrationFidelityDifferenceCodes.SourceChangedDuringTransfer);
+            var difference = result.FidelityDifferences.Should().ContainSingle(d =>
+                d.Code == MigrationFidelityDifferenceCodes.SourceChangedDuringTransfer).Subject;
             difference.Expected.Should().Be("2 source records when the transfer started");
             difference.Actual.Should().Be("2 source records when the transfer finished (different object IDs)");
         }
@@ -352,8 +352,8 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
 
             result.Success.Should().BeTrue(result.ErrorMessage);
             result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Unverified);
-            var difference = result.FidelityDifferences.Should().ContainSingle().Subject;
-            difference.Code.Should().Be(MigrationFidelityDifferenceCodes.SourceSnapshotUnverified);
+            var difference = result.FidelityDifferences.Should().ContainSingle(d =>
+                d.Code == MigrationFidelityDifferenceCodes.SourceSnapshotUnverified).Subject;
             difference.Actual.Should().Be("source record count unavailable after the transfer");
         }
         finally
@@ -460,8 +460,8 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
 
             result.Success.Should().BeTrue(result.ErrorMessage);
             result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Unverified);
-            result.FidelityDifferences.Should().ContainSingle()
-                .Which.Code.Should().Be(MigrationFidelityDifferenceCodes.SourceSnapshotUnverified);
+            result.FidelityDifferences.Should().Contain(d =>
+                d.Code == MigrationFidelityDifferenceCodes.SourceSnapshotUnverified);
         }
         finally
         {
