@@ -7,7 +7,7 @@
     "catalogSourceRevision": "14d101ec17f4b7ccdc6106ee2cb5bd4d621d779f",
     "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848",
     "layerReceiptEnforcement": "PR Gate step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all.",
-    "catalogSourceContentDigest": "sha256:cf6f0ace4fab3f39595aea02b2e7a0d0c09a685bb23bf644a76e95ba8699ea82",
+    "catalogSourceContentDigest": "sha256:4c6d066cebae264d85a4c5a4d0542bc9deac4559e8b09e2384ba6338966907bb",
     "gpCorrectnessAudit": "certification/gp-correctness-audit-20261016.md",
     "releaseBindingRegistrationAudit": "certification/gp-release-binding-audit-20261015.md",
     "securityRemediationAudit": "certification/gp-security-remediation-audit-20261009.md",
@@ -15,7 +15,8 @@
     "workspaceRetryAudit": "certification/gp-workspace-retry-audit-20260914.md",
     "workspaceStoreAudit": "certification/gp-workspace-store-audit-20260914.md",
     "workspaceOwnerAudit": "certification/gp-workspace-owner-audit-20261003.md",
-    "routingWebToolsAudit": "certification/gp-routing-webtool-audit-20261012.md"
+    "routingWebToolsAudit": "certification/gp-routing-webtool-audit-20261012.md",
+    "managedFeatureStreamAudit": "docs/reference/gp-managed-feature-streams.md"
   },
   "scope": "Every process returned by BuiltInProcessCatalog.ListProcesses(). A proven row requires concrete input, the production operation/executor path, and a semantic output-content assertion.",
   "statusDefinitions": {
