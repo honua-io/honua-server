@@ -79,6 +79,7 @@ def _default_client_factory(base_url: str, job_token: str, job_id: str) -> Any:
 
     class JobContextTransport(httpx.HTTPTransport):
         _startup = True
+        _startup_deadline: float | None = None
 
         def handle_request(self, request: httpx.Request) -> httpx.Response:
             request.headers.pop("X-Honua-Job-Id", None)
@@ -90,7 +91,9 @@ def _default_client_factory(base_url: str, job_token: str, job_id: str) -> Any:
             # credential to authenticate on a plain-status route before any operation;
             # readiness retries never replay a potentially side-effecting SDK request.
             if self._startup:
-                deadline = time.monotonic() + 30
+                if self._startup_deadline is None:
+                    self._startup_deadline = time.monotonic() + 30
+                deadline = self._startup_deadline
                 while True:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
@@ -117,7 +120,7 @@ def _default_client_factory(base_url: str, job_token: str, job_id: str) -> Any:
             return super().handle_request(request)
 
     auth = StaticAuthProvider({"Authorization": f"Bearer {job_token}"})
-    return HonuaClient(base_url, auth_provider=auth, transport=JobContextTransport())
+    return HonuaClient(base_url, auth_provider=auth, transport=JobContextTransport(), max_retries=0)
 
 
 def assert_credentials_stripped(env: Mapping[str, str] | None = None) -> None:

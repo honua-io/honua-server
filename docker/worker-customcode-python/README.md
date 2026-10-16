@@ -133,4 +133,4 @@ cd docker/worker-customcode-python/harness
 with-build-lock python3 -m pytest
 ```
 
-Before the first typed SDK operation, the harness authenticates the job capability at `/healthz/live` with a 30-second startup budget. This waits for the provider-to-server Running transition using ordinary HTTP status codes, including when the eventual operation uses GeoServices error envelopes. Only the read-only readiness probe is retried; the SDK operation is sent once.
+Before the first typed SDK operation, the harness authenticates the job capability at `/healthz/live` within a single 30-second retry window. Connect/read/write/pool timeouts are each capped to the remaining window; HTTPX enforces per-phase inactivity timeouts, so this is not a strict total wall-clock deadline against a slowly trickling response. This waits for the provider-to-server Running transition using ordinary HTTP status codes, including when the eventual operation uses GeoServices error envelopes. Only the read-only readiness probe is retried. The factory disables SDK automatic retries, and a failed readiness window is never restarted by the transport.

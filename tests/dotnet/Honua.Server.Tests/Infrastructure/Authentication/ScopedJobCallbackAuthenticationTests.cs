@@ -172,7 +172,7 @@ public sealed class ScopedJobCallbackAuthenticationTests
         }
 
         using var response = await client.GetAsync(QueryPath);
-        await response.AssertGeoServicesErrorAsync(401);
+        await response.AssertGeoServicesErrorAsync(499);
         // Anonymous endpoints must not silently ignore a malformed explicit credential.
         using var anonymousRoute = await client.GetAsync("/healthz/live");
         anonymousRoute.StatusCode.Should().Be(HttpStatusCode.Unauthorized, reason);
