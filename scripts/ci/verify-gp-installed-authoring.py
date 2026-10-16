@@ -45,6 +45,12 @@ def main():
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300)
             print(result.stdout)
             if result.returncode != expected:
+                # Preserve concrete dependency-resolution evidence on consumer-only runners.
+                for artifact in sorted(root.rglob('*')):
+                    if artifact.is_file() and (artifact.name.endswith(('.deps.json', '.runtimeconfig.json')) or artifact.name == 'Honua.CustomCode.Sdk.dll'):
+                        print(f'DEPENDENCY {artifact.relative_to(root)} ({artifact.stat().st_size} bytes)')
+                        if artifact.suffix == '.json':
+                            print(artifact.read_text())
                 raise RuntimeError(f'{command[0]} exited {result.returncode}, expected {expected}')
             return result.stdout
         for language in ('python', 'dotnet'):
