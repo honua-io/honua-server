@@ -96,6 +96,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(sizeBytes);
+        RefuseReservedStreamRegistration(uri, metadata);
 
         var workspace = await _workspaceStore.GetAsync(workspaceId, cancellationToken);
         if (workspace is null)
@@ -154,6 +155,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
         ArgumentOutOfRangeException.ThrowIfNegative(sizeBytes);
+        RefuseReservedStreamRegistration(uri, metadata);
 
         if (_artifactStore is IAtomicWorkspaceStore atomicStore)
         {
@@ -230,6 +232,18 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         }
         var identity = string.Create(CultureInfo.InvariantCulture,
             $"{publication.WorkspaceId.Length}:{publication.WorkspaceId}{publication.OperationId.Length}:{publication.OperationId}:{publication.OutputSlot}");
+        var streamMetadata = new Dictionary<string, string>();
+        if (Execution.DurableFeatureStream.TryParse(publication.Reference, out var stream))
+        {
+            if (_artifactStore is not IWorkspaceStreamReferenceStore || stream!.JobId != publication.OperationId
+                || stream.WorkspaceArtifactId is not null || stream.WorkspaceId is not null)
+            {
+                throw new InvalidOperationException("Managed stream workspace publication requires trusted producer identity and durable retention support.");
+            }
+            streamMetadata[WorkspaceStreamProvenance.Published] = "v1";
+            streamMetadata[WorkspaceStreamProvenance.ObjectKey] = stream.ObjectKey;
+            streamMetadata[WorkspaceStreamProvenance.StoreReference] = stream.StoreReference;
+        }
         var artifact = new Artifact
         {
             ArtifactId = "output-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity))),
@@ -240,8 +254,9 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             Uri = publication.Reference,
             // Account for the stored reference, including inline data. External resource
             // sizes are not fetched or represented as physical storage consumption.
-            SizeBytes = Encoding.UTF8.GetByteCount(publication.Reference),
-            CreatedAt = _timeProvider.GetUtcNow()
+            SizeBytes = stream?.Bytes ?? Encoding.UTF8.GetByteCount(publication.Reference),
+            CreatedAt = _timeProvider.GetUtcNow(),
+            Metadata = streamMetadata
         };
         return atomicStore.PublishAsync(artifact, publication.Overwrite, EffectiveQuota, publishReference, cancellationToken);
     }
@@ -345,13 +360,27 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         if (artifact.State != ArtifactLifecycleState.Available)
             return ArtifactPromotionResult.Failure($"Artifact in state {artifact.State} cannot be promoted");
 
+        var promotedId = Guid.NewGuid().ToString("N");
+        var promotedReference = artifact.Uri;
+        if (Execution.DurableFeatureStream.TryParse(artifact.Uri, out var stream))
+        {
+            if (!artifact.Metadata.TryGetValue(WorkspaceStreamProvenance.Published, out var marker) || marker != "v1")
+            {
+                return ArtifactPromotionResult.Failure("Only server-published managed streams can be promoted.");
+            }
+            promotedReference = (stream! with
+            {
+                WorkspaceArtifactId = promotedId,
+                WorkspaceId = targetWorkspace.WorkspaceId
+            }).Serialize();
+        }
         var promoted = new Artifact
         {
-            ArtifactId = Guid.NewGuid().ToString("N"),
+            ArtifactId = promotedId,
             Kind = artifact.Kind,
             Label = request.NewLabel ?? artifact.Label,
             State = ArtifactLifecycleState.Available,
-            Uri = artifact.Uri,
+            Uri = promotedReference,
             ContentType = artifact.ContentType,
             SizeBytes = artifact.SizeBytes,
             CreatedAt = now,
@@ -390,6 +419,15 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             request.SourceWorkspaceId, request.TargetWorkspaceId);
 
         return ArtifactPromotionResult.Success(created.ArtifactId);
+    }
+
+    private static void RefuseReservedStreamRegistration(string? uri, IReadOnlyDictionary<string, string>? metadata)
+    {
+        if (uri?.StartsWith(Execution.DurableFeatureStream.Prefix, StringComparison.Ordinal) == true
+            || metadata?.Keys.Any(key => key.StartsWith(WorkspaceStreamProvenance.Prefix, StringComparison.Ordinal)) == true)
+        {
+            throw new ArgumentException("Managed stream references and provenance require server-owned publication.");
+        }
     }
 
     private async Task<ArtifactPromotionResult> RollbackPromotedCopyAsync(

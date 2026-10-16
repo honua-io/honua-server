@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:e608cacd4bb29ff9e435f9d4008dc412f92e5a58cca6b7eb0d5c9338b6654f75",
+  "bundleDigest": "sha256:6a5061de388ef763686da453061cd7f87a327cbe66b426feec1ad4ba2bca9055",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7740,6 +7740,17 @@
         "resource": "honua://capability/process.geoprocessing"
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/gp-harness-events.v1.md"
+    },
+    {
+      "id": "reference/gp-managed-feature-streams",
+      "path": "reference/gp-managed-feature-streams.md",
+      "documentDigest": "sha256:58ffd04b5432003e5827162146f032bbd696f67bfda0da4c952e0099cade9b74",
+      "metadata": {
+        "type": "reference",
+        "title": "Managed GP feature streams",
+        "description": "Shared staging, immutable receipts and operational requirements for large managed GeoETL outputs."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/gp-managed-feature-streams.md"
     },
     {
       "id": "reference/gp-process-release",
