@@ -1,17 +1,8 @@
-"""Credential-stripping + scoped Honua client construction.
+"""Environment hygiene and job-scoped typed SDK construction.
 
-The harness builds the scoped :class:`HonuaClient` from ``HONUA_JOB_TOKEN`` and
-then SCRUBS the process environment *before* importing/calling user code, so a
-tool cannot:
-
-  * read the raw scoped bearer token (``HONUA_JOB_TOKEN`` is deleted), nor
-  * reach the ECS/Batch task role via the container credential provider or IMDS
-    (``AWS_CONTAINER_CREDENTIALS_*`` / ``ECS_CONTAINER_METADATA_URI*`` deleted).
-
-The only capability the tool keeps to talk to Honua is the pre-authed scoped
-client, whose token is least-privilege and job-bound. AWS SDK calls the user
-makes will then fall back to whatever (if anything) the operator chose to leave
-in place — by default nothing, so user code is denied the task role.
+Same-process user code can inspect the intended job capability. Deleting environment
+entries is not isolation; deployment must be credential-free and the server enforces
+frozen resource scope and the current running attempt.
 """
 
 from __future__ import annotations
@@ -57,7 +48,7 @@ def strip_credential_env(env: MutableMapping[str, str] | None = None) -> tuple[s
     return tuple(sorted(removed))
 
 
-def build_scoped_client(base_url: str, job_token: str, *, client_factory: Any = None) -> Any:
+def build_scoped_client(base_url: str, job_token: str, *, client_factory: Any = None, job_id: str | None = None) -> Any:
     """Construct the scoped :class:`HonuaClient` from the job-bound bearer token.
 
     ``client_factory`` is injectable for tests; in production it defaults to the
@@ -68,19 +59,20 @@ def build_scoped_client(base_url: str, job_token: str, *, client_factory: Any = 
     if not job_token:
         raise ValueError("job_token is required to build the scoped client.")
 
-    if client_factory is None:
-        client_factory = _default_client_factory
+    if client_factory is not None:
+        return client_factory(base_url, job_token)
+    if not job_id:
+        raise ValueError("job_id is required for the production SDK client.")
+    return _default_client_factory(base_url, job_token, job_id)
 
-    return client_factory(base_url, job_token)
 
-
-def _default_client_factory(base_url: str, job_token: str) -> Any:
+def _default_client_factory(base_url: str, job_token: str, job_id: str) -> Any:
     # Imported lazily so the harness package imports without the SDK present
     # (tests inject a fake factory). The image always installs honua-sdk.
     from honua_sdk import HonuaClient
     from honua_sdk.auth import StaticAuthProvider
 
-    auth = StaticAuthProvider({"Authorization": f"Bearer {job_token}"})
+    auth = StaticAuthProvider({"Authorization": f"Bearer {job_token}", "X-Honua-Job-Id": job_id})
     return HonuaClient(base_url, auth_provider=auth)
 
 
