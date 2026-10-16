@@ -11,6 +11,9 @@ on:
       - 'src/Honua.Hosting/Features/Authentication/ScopedJob*.cs'
       - 'src/Honua.Hosting/Features/Middleware/TenantContextMiddleware.cs'
       - 'tests/dotnet/Honua.Server.Tests/Infrastructure/Authentication/ScopedJobCallbackAuthenticationTests.cs'
+      - 'src/Honua.Server/Features/Admin/GpProcessReleaseJobEndpoints.cs'
+      - 'src/Honua.Server/Features/Admin/Models/GpProcessReleaseJobModels.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Admin/GpProcessReleaseJobEndpointsTests.cs'
       - 'src/Honua.Protocols.GeoServices/GPServer/**'
       - 'tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/**'
       - 'tests/dotnet/Honua.Geoprocessing.UnitTests/**'
@@ -55,6 +58,11 @@ jobs:
             project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
             filter: FullyQualifiedName~CustomCodeArtifactEndpointsTests
             source: tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/CustomCodeArtifactEndpointsTests.cs
+            prefix: ''
+          - name: release-submission-http
+            project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+            filter: FullyQualifiedName~GpProcessReleaseJobEndpointsTests
+            source: tests/dotnet/Honua.Server.Tests/Features/Admin/GpProcessReleaseJobEndpointsTests.cs
             prefix: ''
           - name: file-sink-ownership-and-effects
             needs_postgres: false

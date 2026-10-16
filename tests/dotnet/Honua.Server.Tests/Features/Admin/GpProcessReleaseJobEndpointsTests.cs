@@ -173,7 +173,7 @@ public sealed class GpProcessReleaseJobEndpointsTests : IAsyncLifetime
         unauthenticated.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         _denyCustomCode = true;
         using var forbidden = await _client.PostAsJsonAsync("/api/v1/admin/gp/process-releases/bindings/buffer-features/jobs", new { @params = new { } });
-        forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden, await forbidden.Content.ReadAsStringAsync());
         _jobs.Should().BeEmpty();
         await _backend.DidNotReceive().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
     }
