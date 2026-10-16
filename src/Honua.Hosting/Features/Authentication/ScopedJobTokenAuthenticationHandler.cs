@@ -8,6 +8,7 @@ using System.Text.Encodings.Web;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Infrastructure.MultiTenancy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
@@ -63,7 +64,7 @@ internal sealed class ScopedJobTokenAuthenticationHandler(
                 return Reject();
             }
 
-            if (Request.Headers.TryGetValue("X-Honua-Tenant", out var tenant) &&
+            if (Request.Headers.TryGetValue(TenantContextOptions.TenantHeaderName, out var tenant) &&
                 (tenant.Count != 1 || !string.Equals(tenant[0], owner.TenantId, StringComparison.Ordinal)))
             {
                 return Reject();

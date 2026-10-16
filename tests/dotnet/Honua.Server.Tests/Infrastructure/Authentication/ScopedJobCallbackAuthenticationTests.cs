@@ -9,9 +9,13 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Caching.Memory;
@@ -190,6 +194,37 @@ public sealed class ScopedJobCallbackAuthenticationTests
         transformed.IsInRole("admin").Should().BeFalse();
         transformed.FindAll("permission").Select(claim => claim.Value).Should().Equal("read:beta/Beta Layer");
         source.ReceivedCalls().Should().BeEmpty("the frozen capability must not rehydrate its owner's live role set");
+    }
+
+    [UnitTheory]
+    [InlineData("tenant-a")]
+    [InlineData(null)]
+    public async Task FrozenTenant_IgnoresOidcClaimMappingAndAnonymousDefault(string? tenantId)
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new ScopedJobTokenIssuer(cache, NullLogger<ScopedJobTokenIssuer>.Instance);
+        var token = await issuer.IssueAsync(Request(JobResourceAccess.Read) with { TenantId = tenantId }, CancellationToken.None);
+        var validation = await issuer.ValidateAsync(token.Token, JobId, CancellationToken.None);
+        var tenant = new RequestTenantContext();
+        using var services = new ServiceCollection().AddSingleton<ITenantContext>(tenant).BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services, User = validation!.Principal };
+        var called = false;
+        var middleware = new TenantContextMiddleware(_ =>
+        {
+            called = true;
+            return Task.CompletedTask;
+        }, Options.Create(new TenantContextOptions
+        {
+            TenantClaimTypes = ["organization"],
+            DefaultTenantId = "other-public-tenant"
+        }), NullLogger<TenantContextMiddleware>.Instance);
+
+        await middleware.InvokeAsync(context);
+
+        called.Should().BeTrue();
+        tenant.TenantId.Should().Be(tenantId);
+        tenant.Source.Should().Be(TenantContextSource.Claim);
+        tenant.RequireTenantId(out _, out _).Should().Be(tenantId is not null);
     }
 
     private static ScopedJobTokenRequest Request(JobResourceAccess access) => new(
