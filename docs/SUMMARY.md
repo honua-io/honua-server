@@ -89,6 +89,7 @@
   - [Design a map application through prompt and preview](guides/workflows/design-studio.md)
 - Publish data
   - [Import files](guides/publish/import-files.md)
+  - [Import from object storage](guides/publish/import-from-object-storage.md)
   - [Import from ArcGIS services](guides/publish/import-from-arcgis-services.md)
   - [Serve existing databases](guides/publish/serve-existing-databases.md)
   - [Publish layers](guides/publish/publish-layers.md)

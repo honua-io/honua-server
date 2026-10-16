@@ -6,7 +6,7 @@ using Honua.Core.Features.Operations.Domain;
 namespace Honua.Server.Features.Operations;
 
 /// <summary>
-/// Approval assignment for the closed 2026.1 operator roster. These four writes execute for an
+/// Approval assignment for the closed 2026.1 operator roster. These writes execute for an
 /// authorized admin. Every other destructive admin operation stays on the operator gate.
 /// </summary>
 internal static class OperatorJourneyApproval
@@ -15,6 +15,7 @@ internal static class OperatorJourneyApproval
     public static bool IsDirectExecute(string operationId) => operationId is
         "admin.connections.create" or
         "admin.import.upload-url" or
+        "admin.import.upload-object" or
         "admin.layer.publish" or
         "admin.services.access-policy.set";
 

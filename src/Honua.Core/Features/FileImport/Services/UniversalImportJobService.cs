@@ -8,6 +8,7 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
@@ -187,6 +188,10 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         {
             tempFilePath = request.LocalFilePath;
         }
+        else if (request.UsesObjectStore)
+        {
+            backgroundRequest = request;
+        }
         else if (!request.UsesCloudStorage)
         {
             // Copy stream to a temp file for background processing
@@ -317,6 +322,25 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             }));
 
             using var scope = _scopeFactory.CreateScope();
+            if (request.UsesObjectStore)
+            {
+                var reader = scope.ServiceProvider.GetRequiredService<IImportObjectStoreReader>();
+                var cloud = scope.ServiceProvider.GetService<ICloudFileStorage>();
+                var storeOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ImportObjectStoreOptions>>().Value;
+                var materialized = await ImportObjectStoreMaterializer.MaterializeAsync(
+                    request, reader, cloud, storeOptions, cancellationToken).ConfigureAwait(false);
+                request = materialized.Request;
+                if (materialized.DisposeStream)
+                {
+                    stream = request.FileStream;
+                }
+
+                if (materialized.DeleteLocalFile)
+                {
+                    tempFilePath = request.LocalFilePath;
+                }
+            }
+
             var importService = scope.ServiceProvider.GetRequiredService<IFileImportService>();
             var result = await importService.ImportFileAsync(request, progress, cancellationToken);
 
@@ -454,6 +478,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                     {
                         Status = ImportStatus.Failed,
                         CompletedAt = DateTimeOffset.UtcNow,
+                        ErrorCode = ex is ImportObjectStoreException storeFailure ? storeFailure.Code : null,
                         ErrorMessage = licenseCancellation.IsCancellationRequested ? "license expired" : SafeImportFailureMessage
                     };
                     await _progressStore.SetProgressAsync(jobId, failedProgress, TimeSpan.FromDays(1), CancellationToken.None);

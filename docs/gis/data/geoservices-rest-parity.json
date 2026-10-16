@@ -373,7 +373,6 @@
               "/FeatureServer/{layerId}/calculate"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate",
               "POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate"
             ],
             "capabilityMaturity": [

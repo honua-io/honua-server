@@ -177,6 +177,11 @@ internal sealed record CapabilityManifestCapability
     /// only on <c>import.background</c> (honua-server#5916).
     /// </summary>
     public string? Runner { get; init; }
+
+    /// <summary>
+    /// Object-store URI schemes this host can import. Present on <c>import.objectStore</c>.
+    /// </summary>
+    public string[]? Schemes { get; init; }
 }
 
 /// <summary>

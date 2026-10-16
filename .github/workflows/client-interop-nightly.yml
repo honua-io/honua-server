@@ -4,7 +4,7 @@ name: Real-Client Interop Matrix (Nightly)
 # nightly passes are observed across all lanes (#806 design).
 #
 # Exercises Honua against the actual GIS clients customers use (QGIS, GDAL,
-# OpenLayers, Cesium, ArcGIS Pro stub) and the canonical analyst clients
+# OpenLayers, Cesium, arcgis-stub) and the canonical analyst clients
 # (GeoPandas, OWSLib, DuckDB Spatial, R sf/ows4R, pystac-client — #3392)
 # via Docker harnesses under
 # docker/client-compat/. CITE conformance suites prove spec compliance; this

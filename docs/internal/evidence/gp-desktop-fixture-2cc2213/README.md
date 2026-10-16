@@ -13,7 +13,6 @@ Runner, licence, and session setup stay in private `honua-esri-compat`.
 | Image revision label | `2cc221388ea47d78c29e79eaee62737e4c792351`, `honua.runtime.compilation=native-aot` |
 | Previous fixture image (superseded) | `sha256:0b16046533e5…` (candidate 8862065, [`../gp-desktop-fixture-8862065/`](../gp-desktop-fixture-8862065/README.md)) |
 | Catalog schema | 120 (`120_AddStudioTenantOwnership`) |
-| Environment recorded on the fixture | `Production`, `Licensing__Mode=Disabled` |
 
 ## Receipts
 

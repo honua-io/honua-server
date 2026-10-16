@@ -36,6 +36,7 @@ internal static class AdminConnectImportOperationCatalog
         new("admin.import.preview-url", "Preview import URL", HttpMethod.Post, "/import/preview-url", "previewImportFileFromUrl", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/import/preview-url"),
         Write("admin.import.upload", "Import uploaded file", HttpMethod.Post, "/import/upload", "uploadImportFile", OperationSideEffectClass.CreatesMetadata, "multipart/form-data"),
         Write("admin.import.upload-url", "Import file from URL", HttpMethod.Post, "/import/upload-url", "uploadImportFileFromUrl", OperationSideEffectClass.CreatesMetadata),
+        Write("admin.import.upload-object", "Import file from object store", HttpMethod.Post, "/import/upload-object", "uploadImportFileFromObjectStore", OperationSideEffectClass.CreatesMetadata),
         Read("admin.import.limits", "Get import limits", "/import/limits", "getImportLimits"),
         Read("admin.import.jobs.list", "List import jobs", "/import/jobs", "getActiveImportJobs"),
         Read("admin.import.jobs.get", "Get import job", "/import/jobs/{jobId}", "getImportJobStatus"),

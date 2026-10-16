@@ -14,7 +14,6 @@ Runner, licence, and session setup stay in private `honua-esri-compat`.
 | Image revision label | `886206527cc97bad1bbaa5fa6358910ebc45e9c0`, `honua.runtime.compilation=native-aot` |
 | Previous fixture pin (superseded) | `sha256:29974ee7b722…` (548b7a5) |
 | Catalog schema | 119 |
-| Environment recorded on the fixture | `Production`, `Licensing__Mode=Disabled` |
 
 ## Receipts
 

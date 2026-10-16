@@ -16,7 +16,7 @@ param(
     [string]$BaseUrl = $env:HONUA_CLIENT_COMPAT_BASE_URL,
     [string]$Service = "compat",
     [string]$OutputDir = "client-compat-results",
-    [ValidateSet("all", "qgis", "arcgis-pro", "excel", "powerbi")]
+    [ValidateSet("all", "qgis", "excel", "powerbi")]
     [string]$Client = "all"
 )
 
@@ -177,78 +177,6 @@ if ($Client -eq "all" -or $Client -eq "qgis") {
         "Identify tool returns attributes for a city feature"
     )
     Add-Result "QGIS" $passed
-}
-
-# ═══════════════════════════════════════════════════════════════════════════
-# ArcGIS Pro
-# ═══════════════════════════════════════════════════════════════════════════
-if ($Client -eq "all" -or $Client -eq "arcgis-pro") {
-    Write-Host ""
-    Write-Host "-------------------------------------------" -ForegroundColor DarkGray
-    Write-Host "ArcGIS Pro" -ForegroundColor Cyan
-
-    # Generate ArcPy script for Pro's Python window
-    $arcpyScript = Join-Path $ConnFilesDir "add-honua-layers.py"
-    $fsUrl = "$BaseUrl/rest/services/$Service/FeatureServer"
-
-    $arcpyContent = @"
-# Paste this into ArcGIS Pro's Python window (View > Python)
-# It adds the Honua compat FeatureServer layers to the current map.
-
-import arcpy
-
-aprx = arcpy.mp.ArcGISProject("CURRENT")
-m = aprx.listMaps()[0]
-
-layers = [
-    "$fsUrl/0",  # Cities (Point, 1200 features)
-    "$fsUrl/1",  # Rivers (LineString)
-    "$fsUrl/2",  # Counties (Polygon)
-]
-
-for url in layers:
-    try:
-        m.addDataFromPath(url)
-        print(f"Added: {url}")
-    except Exception as e:
-        print(f"Failed: {url} - {e}")
-
-print("Done. Check the Contents pane for the new layers.")
-"@
-    $arcpyContent | Set-Content -Path $arcpyScript -Encoding UTF8
-    Write-Host "  Generated: $arcpyScript"
-
-    # Find ArcGIS Pro
-    $proExe = @(
-        "C:\Program Files\ArcGIS\Pro\bin\ArcGISPro.exe"
-    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-    if ($proExe) {
-        Write-Host "  Launching ArcGIS Pro..." -ForegroundColor Yellow
-        Start-Process -FilePath $proExe
-    }
-    else {
-        Write-Host "  ArcGIS Pro not found. Open it manually." -ForegroundColor Yellow
-    }
-
-    Write-Host ""
-    Write-Host "  Steps:" -ForegroundColor DarkGray
-    Write-Host "    1. Create a new Map project in ArcGIS Pro"
-    Write-Host "    2. Open Python window (View > Python)"
-    Write-Host "    3. Paste contents of: $((Resolve-Path $arcpyScript).Path)"
-    Write-Host "    4. Or: Add Data > From Path > $fsUrl/0"
-    Write-Host ""
-    Write-Host "  Connection URLs:" -ForegroundColor DarkGray
-    Write-Host "    FeatureServer: $fsUrl"
-    Write-Host "    MapServer:     $BaseUrl/rest/services/$Service/MapServer"
-
-    $passed = Prompt-PassFail "ArcGIS Pro" @(
-        "FeatureServer layers appear in Contents pane"
-        "Cities (Point), Rivers (Line), Counties (Polygon) render on map"
-        "Attribute table shows data (right-click layer > Attribute Table)"
-        "Definition query filters correctly (e.g., population > 500000)"
-    )
-    Add-Result "ArcGIS Pro" $passed
 }
 
 # ═══════════════════════════════════════════════════════════════════════════

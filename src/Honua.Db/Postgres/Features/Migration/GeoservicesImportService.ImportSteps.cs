@@ -16,6 +16,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
 
@@ -381,7 +382,9 @@ internal sealed partial class GeoservicesImportService
                     _connectionProvider.GetConnectionString(),
                     cancellationToken,
                     supportsAttachments: layerInfo.HasAttachments && request.ImportAttachments && _attachmentStore is not null,
-                    replacingExistingTarget: replacingExistingTarget)
+                    replacingExistingTarget: replacingExistingTarget,
+                    replacedSourceObjectIds: replacingExistingTarget ? objectIdMap : null,
+                    importedAttachmentStore: _attachmentStore as IImportedAttachmentStore)
                     .ConfigureAwait(false);
             }
 

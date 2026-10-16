@@ -166,6 +166,8 @@ namespace Honua.Import.FileImport;
 [JsonSerializable(typeof(BackgroundImportResponse))]
 [JsonSerializable(typeof(PreviewUrlImportRequest))]
 [JsonSerializable(typeof(ImportUrlImportRequest))]
+[JsonSerializable(typeof(ImportObjectStoreImportRequest))]
+[JsonSerializable(typeof(ImportObjectStoreAuditPayload))]
 [JsonSerializable(typeof(ImportProgress[]))]
 [JsonSerializable(typeof(CancelUploadResponse))]
 [JsonSerializable(typeof(CancelImportJobResponse))]

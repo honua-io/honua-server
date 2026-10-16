@@ -2391,6 +2391,12 @@
       "path": "/import/upload"
     },
     {
+      "operationId": "uploadImportFileFromObjectStore",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/upload-object"
+    },
+    {
       "operationId": "uploadImportFileFromUrl",
       "catalogOperationId": null,
       "method": "POST",
