@@ -248,50 +248,35 @@ internal static class ProtocolProfile
 
     private static IEnumerable<string> CompiledModuleNames()
     {
-        if (IncludesGeoServices)
-        {
-            yield return "geoservices";
-        }
-
-        if (IncludesOgcApi)
-        {
-            yield return "ogc-api";
-        }
-
-        if (IncludesOgcClassic)
-        {
-            yield return "ogc-classic";
-        }
-
-        if (IncludesOData)
-        {
-            yield return "odata";
-        }
-
-        if (IncludesStac)
-        {
-            yield return "stac";
-        }
-
-        if (IncludesSensorThings)
-        {
-            yield return "sensorthings";
-        }
-
-        if (IncludesScene)
-        {
-            yield return "scene";
-        }
-
-        if (IncludesGrpc)
-        {
-            yield return "grpc";
-        }
-
-        if (IncludesMcp)
-        {
-            yield return "mcp";
-        }
+        // The include flags are constants, so a runtime if leaves the excluded
+        // yields unreachable on a narrowed profile and fails the warnings-as-errors build.
+#if !HONUA_EXCLUDE_GEOSERVICES
+        yield return "geoservices";
+#endif
+#if !HONUA_EXCLUDE_OGC_API
+        yield return "ogc-api";
+#endif
+#if !HONUA_EXCLUDE_OGC_CLASSIC
+        yield return "ogc-classic";
+#endif
+#if !HONUA_EXCLUDE_ODATA
+        yield return "odata";
+#endif
+#if !HONUA_EXCLUDE_STAC
+        yield return "stac";
+#endif
+#if !HONUA_EXCLUDE_SENSORTHINGS
+        yield return "sensorthings";
+#endif
+#if !HONUA_EXCLUDE_SCENE
+        yield return "scene";
+#endif
+#if !HONUA_EXCLUDE_GRPC
+        yield return "grpc";
+#endif
+#if !HONUA_EXCLUDE_MCP
+        yield return "mcp";
+#endif
     }
 
     private static IEnumerable<string> ReadEnabledModules(IConfiguration configuration)
