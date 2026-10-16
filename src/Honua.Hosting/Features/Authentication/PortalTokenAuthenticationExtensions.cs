@@ -274,7 +274,7 @@ internal sealed class PortalTokenAuthenticationMiddleware(
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (_options.CurrentValue.Enabled &&
+        if (!ScopedJobAuthentication.HasCandidate(context) && _options.CurrentValue.Enabled &&
             !IsAuthenticated(context) &&
             CarriesPortalTokenIndicator(context))
         {

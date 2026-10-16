@@ -17,7 +17,7 @@ internal static class ManagedMembershipRevalidation
     /// Applies live membership to <paramref name="principal"/>.
     /// Unmanaged principals (the source returns null) are unchanged.
     /// Inactive principals and source failures become unauthenticated.
-    /// API keys, the bootstrap admin, and client certificates are left alone.
+    /// API keys, frozen job capabilities, the bootstrap admin, and client certificates are left alone.
     /// </summary>
     public static async Task<ClaimsPrincipal> ApplyAsync(
         ClaimsPrincipal principal,
@@ -32,7 +32,7 @@ internal static class ManagedMembershipRevalidation
 
         var authType = identity.FindFirst("auth_type")?.Value;
         if (authType is "admin" or "admin-api-key" or "dev-bypass" or "client-certificate"
-            || authType == LayerScopedWriteKey.AuthType)
+            || authType is LayerScopedWriteKey.AuthType or ScopedJobTokenIssuer.AuthTypeClaimValue)
         {
             return principal;
         }

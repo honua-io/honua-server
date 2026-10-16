@@ -98,6 +98,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/gp/process-releases/bindings"),
         new("GET", "/api/v1/admin/gp/process-releases/bindings/{process}"),
         new("POST", "/api/v1/admin/gp/process-releases/bindings/{process}/activate"),
+        new("POST", "/api/v1/admin/gp/process-releases/bindings/{process}/jobs"),
         new("GET", "/api/v1/admin/deploy/preflight"),
         new("POST", "/api/v1/admin/deploy/plan"),
         new("GET", "/api/v1/admin/deploy/operations"),

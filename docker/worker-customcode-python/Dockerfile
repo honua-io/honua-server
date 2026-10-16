@@ -25,8 +25,8 @@ ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4@sha256:5828162cffed3af
 FROM ${GDAL_BASE_IMAGE} AS runtime
 
 # Pin the SDK + geo stack so the image is reproducible and matches
-# harness/pyproject.toml (honua-sdk==0.1.4).
-ARG HONUA_SDK_VERSION=0.1.4
+# harness/pyproject.toml (honua-sdk==0.1.16).
+ARG HONUA_SDK_VERSION=0.1.16
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \

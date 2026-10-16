@@ -1666,6 +1666,15 @@ app.UseAuthentication();
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
 
+// Explicit invalid job capabilities must fail even on anonymous data routes, and
+// cannot fall back to a cookie/API key/portal token. Meter and audit before refusal.
+app.UseWhen(ScopedJobAuthentication.HasFailure, invalidJobCapability =>
+{
+    invalidJobCapability.UseHonuaAuditLog();
+    invalidJobCapability.UseRateLimiting();
+    invalidJobCapability.UseScopedJobAuthenticationRejection();
+});
+
 // Anonymous callers must not keep the multipart import ceiling that limits
 // enforcement granted before authentication could run.
 app.UseAnonymousImportPayloadClamp();
@@ -1818,6 +1827,8 @@ app.MapScheduledTickEndpoints(builder.Configuration);
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
 app.MapGpProcessReleaseEndpoints();
+app.MapGpProcessReleaseJobEndpoints();
+Honua.Server.Features.Geoprocessing.CustomCode.CustomCodeArtifactEndpoints.MapCustomCodeArtifactEndpoints(app);
 
 // Cloud event-driven control-plane surface (TriggerMode=Event only): the EventBridge-invoked
 // reconcile Lambda + EventBridge Scheduler backstop post here. No-op under poll (on-prem).

@@ -54,10 +54,10 @@ internal sealed partial class ConsoleJobService
             };
         }
 
-        var entries = (await logStore.GetLogsAsync(job.OperationId, cancellationToken).ConfigureAwait(false))
-            .Where(static e => e is not null)
-            .OrderBy(static e => e.Timestamp)
-            .ToArray();
+        const int stepLimit = 500;
+        var tail = await logStore.TailAsync(job.OperationId, stepLimit, cancellationToken).ConfigureAwait(false);
+        var entries = tail.Items.ToArray();
+        var ordinalOffset = Math.Max(0, tail.TotalCount - entries.Length);
 
         var workspace = await ResolveWorkspaceAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
         var artifactSummary = await BuildStepArtifactSummaryAsync(job, cancellationToken).ConfigureAwait(false);
@@ -69,7 +69,7 @@ internal sealed partial class ConsoleJobService
             // A step's end is bounded by the next entry's timestamp (it ran until the next
             // logged event); the final step's end is the job's terminal time when known.
             var nextTimestamp = isLast ? job.CompletedAt : entries[i + 1].Timestamp;
-            steps[i] = MapStep(job, entries[i], isLast ? null : entries[i + 1], i, workspace, artifactSummary, isLast, nextTimestamp);
+            steps[i] = MapStep(job, entries[i], isLast ? null : entries[i + 1], ordinalOffset + i, workspace, artifactSummary, isLast, nextTimestamp);
         }
 
         return new ConsoleJobStepsResponse
@@ -77,6 +77,9 @@ internal sealed partial class ConsoleJobService
             JobId = job.OperationId,
             CorrelationId = job.Audit.CorrelationId,
             State = "available",
+            TotalCount = tail.TotalCount,
+            Truncated = tail.TotalCount > entries.Length,
+            DroppedCount = tail.DroppedCount,
             Steps = steps
         };
     }

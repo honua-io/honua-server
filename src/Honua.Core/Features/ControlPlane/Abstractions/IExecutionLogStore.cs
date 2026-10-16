@@ -7,7 +7,7 @@ namespace Honua.Core.Features.ControlPlane.Abstractions;
 
 /// <summary>
 /// Durable store for structured execution log entries produced by job executors.
-/// Entries are append-only during execution and read-only after terminal state.
+/// Entries retain append order within a bounded per-job window and expire with job retention.
 /// </summary>
 public interface IExecutionLogStore
 {
@@ -22,8 +22,17 @@ public interface IExecutionLogStore
         ExecutionLogEntry entry,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Atomically appends an external event once per stable producer identity.</summary>
+    /// <param name="operationId">Owning job.</param>
+    /// <param name="eventId">Server-scoped immutable producer event identity.</param>
+    /// <param name="entry">Redacted event.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task AppendOnceAsync(string operationId, string eventId, ExecutionLogEntry entry, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Durable idempotent log ingestion is required.");
+
     /// <summary>
-    /// Retrieves all structured log entries for the specified job in chronological order.
+    /// Retrieves a bounded tail (at most 500 entries in the production store) in append order.
+    /// Use TailAsync for total/dropped counts or QueryAsync for explicit cursor pagination.
     /// </summary>
     /// <param name="operationId">Stable job identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

@@ -46,6 +46,11 @@ internal sealed class ApiKeyAuthenticationHandler(
     /// </summary>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
+        if (ScopedJobAuthentication.HasCandidate(Context))
+        {
+            return await Context.AuthenticateAsync(ScopedJobAuthentication.Scheme).ConfigureAwait(false);
+        }
+
         // Check for development bypass modes
         if (IsDevelopmentBypassEnabled())
         {

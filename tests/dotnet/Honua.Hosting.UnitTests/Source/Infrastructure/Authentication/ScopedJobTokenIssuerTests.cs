@@ -47,7 +47,8 @@ public sealed class ScopedJobTokenIssuerTests
                 Grants: [],
                 JobId: "gp-job-1",
                 ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Write)],
-                ExpiresAt: expiresAt),
+                ExpiresAt: expiresAt)
+            { Attempt = 7 },
             CancellationToken.None);
 
         issuance.Token.Should().NotBeNullOrWhiteSpace();
@@ -59,6 +60,7 @@ public sealed class ScopedJobTokenIssuerTests
         validation!.Principal.Identity!.IsAuthenticated.Should().BeTrue();
         validation.Principal.FindFirstValue(ClaimTypes.Name).Should().Be("alice");
         validation.JobId.Should().Be("gp-job-1");
+        validation.Attempt.Should().Be(7);
         validation.Principal.FindFirstValue(TenantClaimType).Should().Be("tenant-A");
 
         // Service-wide write was reachable, so the service-scoped editor role and

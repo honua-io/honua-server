@@ -1,72 +1,97 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Net.Http.Headers;
+using Honua.Sdk;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.CustomCode.Harness;
 
-/// <summary>
-/// Builds the SCOPED Honua client the tool sees as <see cref="Sdk.GpContext.Client"/>.
-/// </summary>
+/// <summary>Builds published, typed SDK clients carrying the job-bound capability.</summary>
 /// <remarks>
-/// <para>
-/// The production wiring is the .NET mirror of the Python harness's
-/// <c>HonuaClient(base_url, StaticAuthProvider({"Authorization": f"Bearer {token}"}))</c>:
-/// register the Honua SDK clients into a DI container with
-/// <c>AddHonua(o =&gt; { o.BaseAddress = baseUrl; o.BearerTokenProvider = _ =&gt;
-/// Task.FromResult&lt;string?&gt;(token); })</c> so every request carries the scoped,
-/// job-bound bearer token and nothing else.
-/// </para>
-/// <para>
-/// The real <c>AddHonua</c> wiring is compiled in behind the <c>HONUA_SDK</c> constant
-/// (set in the Docker build, where the SDK package restores from the warm NuGet cache).
-/// In the offline harness/test build the SDK package is absent, so this factory returns
-/// a least-privilege fallback client: a bare <see cref="HttpClient"/> with the scoped
-/// bearer header pre-set and the base address pinned. Either way the harness only ever
-/// hands the tool a client that carries the scoped token — never the raw token string —
-/// and the strip step removes the token env right after this runs.
-/// </para>
+/// <see cref="Sdk.GpContext.Client"/> is an <see cref="IServiceProvider"/>; tools resolve
+/// IHonuaOgcFeaturesClient or the FeatureServer client from it. The token is an intended
+/// job capability visible to same-process user code. Environment cleanup is not isolation;
+/// credential-free worker configuration and server-side scope/attempt checks provide the boundary.
 /// </remarks>
 public static class ScopedHonuaClientFactory
 {
-    /// <summary>Create the scoped client for <paramref name="baseUrl"/> + <paramref name="jobToken"/>.</summary>
-    /// <param name="baseUrl">The Honua API base URL.</param>
-    /// <param name="jobToken">The scoped, job-bound bearer token.</param>
-    /// <returns>The scoped client (opaque to the harness; the tool casts it).</returns>
-    public static object Create(string baseUrl, string jobToken)
+    /// <summary>Creates the typed SDK service provider for a running job.</summary>
+    /// <param name="baseUrl">Pinned server origin.</param>
+    /// <param name="jobToken">The intended job capability.</param>
+    /// <param name="jobId">Job context required by server authentication.</param>
+    /// <returns>A disposable provider of typed OGC Features and FeatureServer SDK clients.</returns>
+    public static ServiceProvider Create(string baseUrl, string jobToken, string jobId)
     {
-#if HONUA_SDK
-        return CreateWithSdk(baseUrl, jobToken);
-#else
-        return CreateFallback(baseUrl, jobToken);
-#endif
-    }
-
-#if HONUA_SDK
-    private static object CreateWithSdk(string baseUrl, string jobToken)
-    {
-        // The image restores Honua.Sdk into the warm NuGet cache; AddHonua wires every
-        // enabled client over an HttpClient whose Authorization header is set from the
-        // scoped BearerTokenProvider before each request.
-        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
-        Honua.Sdk.Extensions.ServiceCollectionExtensions.AddHonua(services, o =>
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobToken);
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
+        var origin = new Uri(baseUrl, UriKind.Absolute);
+        if (origin.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(origin.UserInfo))
         {
-            o.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
-            o.BearerTokenProvider = _ => Task.FromResult<string?>(jobToken);
+            throw new ArgumentException("The scoped client requires an HTTP(S) server URL without user information.", nameof(baseUrl));
+        }
+
+        var services = new ServiceCollection();
+        services.AddHonua(options =>
+        {
+            options.BaseAddress = origin;
+            options.BearerToken = jobToken;
+            options.UseGrpc = false;
+            options.UseAdmin = false;
+            options.UseGeocoding = false;
+            options.UseProcesses = false;
+            options.UseWfs = false;
+            options.UseOgcFeatures = true;
+            options.UseGeoServices = true;
+            options.EnableRetry = false;
+            options.PrimaryHttpMessageHandlerFactory = () => new JobContextHandler(origin, jobId)
+            {
+                InnerHandler = new HttpClientHandler { AllowAutoRedirect = false },
+            };
         });
-        return services
-            .Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions
-            .BuildServiceProvider();
+        return services.BuildServiceProvider();
     }
-#endif
 
-    private static object CreateFallback(string baseUrl, string jobToken)
+    private sealed class JobContextHandler(Uri origin, string jobId) : DelegatingHandler
     {
-        var http = new HttpClient
+        private bool _startup = true;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            BaseAddress = new Uri(baseUrl, UriKind.Absolute),
-        };
-        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", jobToken);
-        return http;
+            var destination = request.RequestUri;
+            if (destination is null || !destination.IsAbsoluteUri ||
+                !string.Equals(destination.Scheme, origin.Scheme, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(destination.Host, origin.Host, StringComparison.OrdinalIgnoreCase) || destination.Port != origin.Port)
+            {
+                throw new InvalidOperationException("Scoped SDK requests must remain on the configured server origin.");
+            }
+
+            request.Headers.Remove("X-Honua-Job-Id");
+            request.Headers.Add("X-Honua-Job-Id", jobId);
+            // GeoServices expresses authentication errors as HTTP 200 envelopes. Probe
+            // the ordinary HTTP-status route before sending any SDK operation, so a
+            // queued-to-Running reconciliation delay never requires replaying a write.
+            if (_startup)
+            {
+                using var startupBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                startupBudget.CancelAfter(TimeSpan.FromSeconds(30));
+                var readinessUri = new Uri(origin.AbsoluteUri.TrimEnd('/') + "/healthz/live");
+                while (true)
+                {
+                    using var readiness = new HttpRequestMessage(HttpMethod.Get, readinessUri);
+                    readiness.Headers.Authorization = request.Headers.Authorization;
+                    readiness.Headers.Add("X-Honua-Job-Id", jobId);
+                    using var response = await base.SendAsync(readiness, startupBudget.Token).ConfigureAwait(false);
+                    startupBudget.Token.ThrowIfCancellationRequested();
+                    if (response.StatusCode is not (System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden))
+                    {
+                        response.EnsureSuccessStatusCode();
+                        _startup = false;
+                        break;
+                    }
+                    await Task.Delay(TimeSpan.FromSeconds(1), startupBudget.Token).ConfigureAwait(false);
+                }
+            }
+            return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        }
     }
 }

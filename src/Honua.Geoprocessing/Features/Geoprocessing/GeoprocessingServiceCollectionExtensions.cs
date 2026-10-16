@@ -83,6 +83,7 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         // Built-in process catalog (ticket #735)
         services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExecutionJobRetryGuard, CustomCodeArtifactRetryGuard>());
 
         // Exposes the canonical plan validator's presence-based (including conditional)
         // input requirements so translation/migration tooling cannot certify a mapping
@@ -160,6 +161,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<GeoprocessingLayerAccessGuard>();
         services.TryAddSingleton<GeoprocessingJobDispatcher>();
         services.TryAddSingleton<CustomCodeJobSubmissionGate>();
+        services.TryAddSingleton<ICustomCodeArtifactIngestor, CustomCodeArtifactIngestor>();
         // Process release bindings (honua-server#6221): in-process store unless the host registers
         // the durable one; the admission resolver and environment facts bind to whichever is live.
         services.TryAddSingleton<ProcessRelease.IGpProcessReleaseStore, ProcessRelease.InMemoryGpProcessReleaseStore>();

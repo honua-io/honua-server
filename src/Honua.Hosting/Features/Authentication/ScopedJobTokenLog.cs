@@ -11,6 +11,10 @@ namespace Honua.Infrastructure.Authentication;
 /// </summary>
 internal static partial class ScopedJobTokenLog
 {
+    [LoggerMessage(EventId = 7055, Level = LogLevel.Warning,
+        Message = "Scoped-job callback validation failed; request denied.")]
+    public static partial void CallbackValidationFailed(ILogger logger, Exception exception);
+
     [LoggerMessage(EventId = 7050, Level = LogLevel.Information,
         Message = "Scoped-job token issued for job {JobId} with frozen attenuation roles={RoleCount} permissions={PermissionCount}.")]
     public static partial void TokenIssued(ILogger logger, string jobId, int roleCount, int permissionCount);
