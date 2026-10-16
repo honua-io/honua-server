@@ -55,9 +55,9 @@ artifacts:
     - schema
     - requirements.lock
 validation:
-  receipts:                          # files the project's own validation produced; all must exist
-    - name: golden-tests.junit.xml
-      path: artifacts/golden-tests.junit.xml
+  receipts:                          # candidate-bound JSON results produced after committing the source
+    - name: golden-tests.json
+      path: artifacts/golden-tests.json
 ```
 
 | Field | Rules |
@@ -71,7 +71,33 @@ validation:
 | `targets[]` | At least one. `workerImageDigest` defaults to the runtime image digest; `chartVersion` (Kubernetes) and `jobDefinitionName` (AWS Batch) are optional. |
 | `compatibility.serverContractVersion` | The inclusive serving↔worker execution-contract window the process supports. |
 | `artifacts.include` | Relative paths inside the project. Empty means the whole project directory minus `.git`, `.venv`, `__pycache__`, `node_modules`, `bin`, `obj`, `artifacts` and similar tooling folders. |
-| `validation.receipts[]` | At least one. Each file must exist; the lock records its digest with `status: pass`. The devkit does not run the project's tests for you: produce the receipts first, then release. |
+| `validation.receipts[]` | At least one. Each file must satisfy `honua.gp-validation/v1` below. The lock hashes its bytes and records `status: pass` only after result and candidate validation. The devkit does not execute these tests. |
+
+### Validation receipt
+
+Commit source inputs first, run the tests against that commit and runtime image, then
+write a receipt under an ignored `artifacts/` directory outside `artifacts.include`:
+
+```json
+{
+  "schemaVersion": "honua.gp-validation/v1",
+  "status": "pass",
+  "sourceSha": "<full Git HEAD SHA>",
+  "runtimeImageDigest": "sha256:<exact worker image digest>",
+  "tests": { "passed": 4, "failed": 0, "skipped": 0 }
+}
+```
+
+The source SHA and runtime image digest must match the release inputs exactly. Every
+target worker image digest must equal this validated runtime digest; an untested target
+image override is rejected. At least
+one test must pass, with no failed or skipped tests. Malformed JSON, duplicate fields,
+unsupported schemas, arbitrary text/JUnit and receipts over 64 KiB are rejected.
+Receipts are hashed evidence, not source files: do not commit a receipt into the source
+revision it purports to test or include it in the source artifact. A changed receipt
+changes the release lock digest. The release workflow must independently establish its
+producer's identity and attest the actual run; a self-authored JSON document is not an
+authenticated CI attestation, even when its declared results and bindings validate.
 
 ## Lock: `honua.gp-process-release-lock/v1`
 
@@ -143,9 +169,6 @@ honua-gp-devkit release verify out/release/process-release-lock.json --artifacts
 Exit codes: `0` success, `1` the release cannot be built or verified (every finding is listed),
 `2` usage error.
 
-## What this does not do yet
+## Binding and admission
 
-Publishing the lock to the server's release store, the environment binding
-(process name → selected release, versioned and concurrency-checked), and admission-time
-pinning of Kubernetes Jobs and AWS Batch jobs are the second half of honua-server#6221.
-Until that lands, honua-release's deploy workflow records `binding.status = pending-server-6221`.
+Publishing the lock to the server, the per-process binding (versioned, compare-and-set activation, rollback to the previous release) and admission-time pinning of AWS Batch job-definition revisions and Kubernetes worker images are described in the [GP process release bindings runbook](../operator/geoprocessing-process-releases.md).

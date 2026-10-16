@@ -67,6 +67,13 @@ internal sealed record ConsoleJobDiagnosticRelease
     public string? SourceRef { get; init; }
     public string? Entrypoint { get; init; }
     public string? DependencyManifest { get; init; }
+    public string? ProcessRelease { get; init; }
+    public string? ProcessVersion { get; init; }
+    public string? LockDigest { get; init; }
+    public string? BindingVersion { get; init; }
+    public string? WorkflowVersion { get; init; }
+    public string? DependencyLockDigest { get; init; }
+    public string? WorkerImage { get; init; }
     public string? PlanId { get; init; }
     public required string[] ProcessDefinitions { get; init; }
     public string? Environment { get; init; }

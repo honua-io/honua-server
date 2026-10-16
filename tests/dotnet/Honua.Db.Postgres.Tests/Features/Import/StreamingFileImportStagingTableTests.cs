@@ -585,6 +585,258 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
     }
 
     [IntegrationTest]
+    public async Task ImportFileAsync_ReplaceWithEmptyFile_LeavesExistingRowsAndDropsStaging()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("replace_empty");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            await SeedOverwriteGuardTargetAsync(schema);
+            var liveOid = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = CreateStreamingService(provider, schema);
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("""{"type":"FeatureCollection","features":[]}"""));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "empty.geojson",
+                TableName = OverwriteGuardLogicalTable,
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true
+            });
+
+            result.Success.Should().BeFalse();
+            result.FeatureCount.Should().Be(0);
+            // GeoJSON empty collections are refused by preflight, before a staging table exists.
+            result.ErrorCode.Should().Be(ImportValidationErrorCodes.EmptyDataset);
+            result.ErrorMessage.Should().Be("GeoJSON FeatureCollection does not contain any features.");
+            (await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable)).Should().Be(liveOid);
+            (await ReadOverwriteGuardRowsAsync(schema)).Select(row => (row.Name, row.Code, row.Wkt)).Should().Equal(SeededLiveRows);
+            (await StagingRelationsAsync(schema)).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_ReplaceWithHeaderOnlyCsv_LeavesExistingRows()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("replace_header_csv");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            await SeedOverwriteGuardTargetAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = CreateStreamingService(provider, schema);
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("name,lat,lon\n"));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "empty.csv",
+                TableName = OverwriteGuardLogicalTable,
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true
+            });
+
+            result.Success.Should().BeFalse();
+            result.ErrorMessage.Should().Be("No features found in file");
+            (await ReadOverwriteGuardRowsAsync(schema)).Select(row => (row.Name, row.Code, row.Wkt)).Should().Equal(SeededLiveRows);
+            (await StagingRelationsAsync(schema)).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_FirstReplaceWhenEveryRowIsRejected_ReportsAllRowsFailed()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("replace_all_failed");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = CreateStreamingService(provider, schema);
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("POINT (invalid)\n"));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "invalid.wkt",
+                TableName = "all_failed",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true
+            });
+
+            result.Success.Should().BeFalse();
+            result.FeatureCount.Should().Be(0);
+            result.ErrorCode.Should().Be(ImportValidationErrorCodes.AllRowsFailed);
+            result.ErrorMessage.Should().Contain("all 1 feature(s) were skipped or rejected");
+            (await TableExistsAsync(schema, "imported_all_failed")).Should().BeFalse();
+            (await StagingRelationsAsync(schema)).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_AppendInterruptedAfterCommittedBatch_LeavesLiveRowsUnchanged()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("append_interrupt");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            await SeedOverwriteGuardTargetAsync(schema);
+            await MarkImporterOwnedAsync(schema, OverwriteGuardPhysicalTable);
+            var liveOid = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
+            var progress = new InlineImportProgress(value =>
+            {
+                if (value.BatchesCommitted > 0)
+                {
+                    throw new IOException("fixture failure after committed batch");
+                }
+            });
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = CreateStreamingService(provider, schema, ImportLimits.Default with { BatchSize = 1 });
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "append-interrupted.geojson",
+                TableName = OverwriteGuardLogicalTable,
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Append,
+                OverwriteExisting = false
+            }, progress);
+
+            result.Success.Should().BeFalse();
+            (await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable)).Should().Be(liveOid);
+            (await ReadOverwriteGuardRowsAsync(schema)).Select(row => (row.Name, row.Code, row.Wkt)).Should().Equal(SeededLiveRows);
+            (await StagingRelationsAsync(schema)).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_AppendToOwnedTarget_MergesStagedRowsWithoutReplacingTheTable()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("append_merge");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            await SeedOverwriteGuardTargetAsync(schema);
+            await MarkImporterOwnedAsync(schema, OverwriteGuardPhysicalTable);
+            var liveOid = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = CreateStreamingService(provider, schema);
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "append.geojson",
+                TableName = OverwriteGuardLogicalTable,
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Append,
+                OverwriteExisting = false
+            });
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(2);
+            (await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable)).Should().Be(liveOid);
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".\"{OverwriteGuardPhysicalTable}\"";
+                (await command.ExecuteScalarAsync()).Should().Be(4);
+            }
+
+            // The appended fixture has no code property. Read the seeded rows on their own
+            // so a null code on the new rows does not hide whether the prior rows survived.
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    SELECT properties->>'name', (properties->>'code')::int, ST_AsText(geometry)
+                    FROM "{schema}"."{OverwriteGuardPhysicalTable}"
+                    WHERE properties ? 'code'
+                    ORDER BY id
+                    """;
+                await using var reader = await command.ExecuteReaderAsync();
+                var seeded = new List<(string Name, int Code, string Wkt)>();
+                while (await reader.ReadAsync())
+                {
+                    seeded.Add((reader.GetString(0), reader.GetInt32(1), reader.GetString(2)));
+                }
+
+                seeded.Should().Equal(SeededLiveRows);
+            }
+
+            (await StagingRelationsAsync(schema)).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private static StreamingFileImportService CreateStreamingService(
+        TestConnectionProvider provider,
+        string schema,
+        ImportLimits? limits = null)
+        => new(
+            provider,
+            new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+            new TestFileFormatDetectionService(),
+            new NoopPerformanceMonitor(),
+            NullLogger<StreamingFileImportService>.Instance,
+            limits ?? ImportLimits.Default,
+            schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
+
+    private async Task MarkImporterOwnedAsync(string schema, string tableName)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"COMMENT ON TABLE \"{schema}\".\"{tableName}\" IS 'honua:import-owned:v1'";
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task<List<string>> StagingRelationsAsync(string schema)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=@schema AND relname LIKE '%__staging%'";
+        command.Parameters.AddWithValue("schema", schema);
+        var names = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names;
+    }
+
+    [IntegrationTest]
     public async Task ImportFileAsync_LargeGeneratedFixture_BoundsRetainedMemoryAndPersistsEveryValue()
     {
         const int count = 20_000;

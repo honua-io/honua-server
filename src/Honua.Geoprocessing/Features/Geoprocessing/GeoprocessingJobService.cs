@@ -24,6 +24,7 @@ using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
+using Honua.Geoprocessing.ProcessRelease;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
@@ -133,7 +134,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IPrincipalMembershipSource? principalMembershipSource = null,
         Honua.Core.Features.Operations.Abstractions.IOperationEnvelopeFactory? operationEnvelopeFactory = null,
         ExecutionAdmissionCoordinator? admissionCoordinator = null,
-        IEnumerable<IJobTerminalCallback>? terminalCallbacks = null)
+        IEnumerable<IJobTerminalCallback>? terminalCallbacks = null,
+        GpProcessReleaseAdmission? releaseAdmission = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -164,7 +166,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 operationEnvelopeFactory,
                 admissionCoordinator),
             new CustomCodeJobSubmissionGate(
-                logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier),
+                logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier, releaseAdmission, workloadRegistry),
             new GeoprocessingJobArtifactService(
                 logger,
                 executorOptions,
@@ -859,7 +861,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             requiredRuntimeProfile,
             cancellationToken,
             resolvedKey is null ? null : ConfirmKeyedReplayAsync).ConfigureAwait(false);
-        var effectiveProtocolMetadata = ResolveEffectiveProtocolControls(protocolMetadata, workload);
+        // A release replay uses its persisted workload controls, even if the registry's
+        // first matching runtime or the live process binding now points elsewhere.
+        var effectiveProtocolMetadata = protocolMetadata?.ContainsKey(GpProcessReleaseAdmission.ProcessParam) == true
+            ? protocolMetadata
+            : ResolveEffectiveProtocolControls(protocolMetadata, workload);
         var now = DateTimeOffset.UtcNow;
 
         async Task<bool> ConfirmKeyedReplayAsync(CancellationToken replayToken)
@@ -951,8 +957,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         string? mintedCustomCodeToken = null;
         if (isCustomCode)
         {
-            (ownerScope, mintedCustomCodeToken) = await _customCodeGate.ValidateMintAndInjectAsync(
-                jobId, principal, specParams, cancellationToken).ConfigureAwait(false);
+            (ownerScope, mintedCustomCodeToken, workload) = await _customCodeGate.ValidateMintAndInjectAsync(
+                jobId, principal, specParams, workload, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -1841,6 +1847,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         string? requiredRuntimeProfile,
         GpResourceProfile resourceProfile)
     {
+        var releasePinned = specParams.ContainsKey(GpProcessReleaseAdmission.ReleaseLockDigestParam);
         if (workload == null)
         {
             // The no-registered-workload case (the default) is built through the shared
@@ -1863,6 +1870,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         foreach (var kv in workload.Parameters)
         {
+            // A release owns its code and provider revision. In particular, adding the
+            // workload's tier pool here would make AWS Batch ignore the pinned single ARN.
+            if (GpProcessReleaseAdmission.IsPinnedParameter(kv.Key, specParams))
+            {
+                continue;
+            }
+
             if (requestMetadataKeys.Contains(kv.Key))
             {
                 // The workload definition is authoritative for the parameters it declares: a
@@ -1875,6 +1889,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 // injection) keep their precedence over the workload's baseline.
                 specParams.TryAdd(kv.Key, kv.Value);
             }
+
+            if (releasePinned && IsProtocolControl(kv.Key))
+            {
+                specParams[ReleaseControlDefaultPrefix + kv.Key] = specParams[kv.Key];
+            }
         }
 
         return new ExecutionJobSpec
@@ -1884,7 +1903,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             Backend = workload.Backend,
             WorkloadId = workload.WorkloadId,
             WorkloadName = workload.WorkloadName,
-            Artifact = workload.ArtifactReference,
+            Artifact = releasePinned
+                ? specParams[GpProcessReleaseAdmission.WorkerImageParam]
+                : workload.ArtifactReference,
             // A catalog-required native profile takes precedence over the workload's
             // declared profile so a native gdal.* step still routes to the GDAL worker;
             // otherwise fall back to the workload's own runtime profile.
@@ -2222,10 +2243,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             // These controls are adapter inputs, never server-stamped plan or admission keys.
             // BuildSpec gives a declared workload value precedence whether requested or omitted.
-            if (entry.Key is GeoprocessingProtocolMetadataKeys.GPServerWorkspace
-                or GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput
-                or GeoprocessingProtocolMetadataKeys.GPServerOutSr
-                || IsOutputSelectionKey(entry.Key))
+            if (IsProtocolControl(entry.Key))
             {
                 effective[entry.Key] = entry.Value;
             }
@@ -2234,13 +2252,65 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return effective;
     }
 
+    private const string ReleaseControlDefaultPrefix = "honua.release.workload_control.";
+
+    private static bool IsProtocolControl(string key)
+        => key is GeoprocessingProtocolMetadataKeys.GPServerWorkspace
+            or GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput
+            or GeoprocessingProtocolMetadataKeys.GPServerOutSr
+            || IsOutputSelectionKey(key);
+
     private static bool ProtocolControlsMatch(
         IReadOnlyDictionary<string, string> stored,
         IReadOnlyDictionary<string, string>? requested)
-        => ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerWorkspace)
+    {
+        if (stored.ContainsKey(GpProcessReleaseAdmission.ReleaseLockDigestParam))
+        {
+            var effective = requested is null
+                ? new Dictionary<string, string>()
+                : new Dictionary<string, string>(requested);
+            foreach (var entry in stored)
+            {
+                if (entry.Key.StartsWith(ReleaseControlDefaultPrefix, StringComparison.Ordinal))
+                {
+                    effective[entry.Key[ReleaseControlDefaultPrefix.Length..]] = entry.Value;
+                }
+            }
+
+            requested = effective;
+        }
+
+        return ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerWorkspace)
             && ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerOverwriteOutput)
             && ScalarControlMatches(stored, requested, GeoprocessingProtocolMetadataKeys.GPServerOutSr)
+            && ScalarControlMatches(stored, requested, GpProcessReleaseAdmission.ProcessParam)
+            && ReleaseInputsMatch(stored, requested)
             && OutputSelectionMatches(stored, requested);
+    }
+
+    private static bool ReleaseInputsMatch(
+        IReadOnlyDictionary<string, string> stored,
+        IReadOnlyDictionary<string, string>? requested)
+    {
+        if (requested is null || !requested.ContainsKey(GpProcessReleaseAdmission.ProcessParam))
+        {
+            return true;
+        }
+
+        // Compare explicit code and input values with the admitted spec, never the
+        // current binding. Omitted release-derived values remain valid on replay.
+        foreach (var pair in requested)
+        {
+            if (pair.Key.StartsWith("customcode.", StringComparison.Ordinal)
+                && (!stored.TryGetValue(pair.Key, out var value)
+                    || !string.Equals(value, pair.Value?.Trim(), StringComparison.Ordinal)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     private static bool ScalarControlMatches(
         IReadOnlyDictionary<string, string> stored,

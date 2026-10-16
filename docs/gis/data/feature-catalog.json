@@ -2178,6 +2178,63 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-admin-gp-process-releases",
+      "route": "/api/v1/admin/gp/process-releases",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.GpProcessBindingEndpointsTests.DeployPromoteAndRollBack_WalksTheBindingVersionsAndRefusesStaleAttempts"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-admin-gp-process-releases-bindings",
+      "route": "/api/v1/admin/gp/process-releases/bindings",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.GpProcessBindingEndpointsTests.Bindings_RequireAdminCredentials",
+        "Honua.Server.Tests.Features.Admin.GpProcessBindingEndpointsTests.DeployPromoteAndRollBack_WalksTheBindingVersionsAndRefusesStaleAttempts"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-admin-gp-process-releases-bindings-process",
+      "route": "/api/v1/admin/gp/process-releases/bindings/{process}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.GpProcessBindingEndpointsTests.DeployPromoteAndRollBack_WalksTheBindingVersionsAndRefusesStaleAttempts"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-admin-gp-process-releases-digest",
+      "route": "/api/v1/admin/gp/process-releases/{digest}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.GpProcessBindingEndpointsTests.DeployPromoteAndRollBack_WalksTheBindingVersionsAndRefusesStaleAttempts"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-admin-identity-providers",
       "route": "/api/v1/admin/identity/providers",
       "method": "GET",
@@ -16675,6 +16732,36 @@
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "geocoding.forward"
+    },
+    {
+      "id": "post-api-v1-admin-gp-process-releases",
+      "route": "/api/v1/admin/gp/process-releases",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.GpProcessBindingEndpointsTests.DeployPromoteAndRollBack_WalksTheBindingVersionsAndRefusesStaleAttempts",
+        "Honua.Server.Tests.Features.Admin.GpProcessBindingEndpointsTests.Publish_RejectsAnInvalidLockWithTheFindings"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "post-api-v1-admin-gp-process-releases-bindings-process-activate",
+      "route": "/api/v1/admin/gp/process-releases/bindings/{process}/activate",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.GpProcessBindingEndpointsTests.Activate_RefusesAnUnpublishedLockAndAMissingJobDefinition",
+        "Honua.Server.Tests.Features.Admin.GpProcessBindingEndpointsTests.DeployPromoteAndRollBack_WalksTheBindingVersionsAndRefusesStaleAttempts"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "post-api-v1-admin-import-arcgis-migrations-runid-manifest",

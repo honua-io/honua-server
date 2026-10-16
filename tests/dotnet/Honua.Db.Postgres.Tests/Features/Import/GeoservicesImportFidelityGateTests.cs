@@ -70,8 +70,10 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
             result.NeedsReview.Should().BeTrue();
             result.PublishedLayerId.Should().BeNull();
             result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
-            result.FidelityDifferences.Should().ContainSingle()
-                .Which.Code.Should().Be(MigrationFidelityDifferenceCodes.PublishNotCompleted);
+            result.FidelityDifferences.Should().Contain(difference =>
+                difference.Code == MigrationFidelityDifferenceCodes.PublishNotCompleted);
+            result.FidelityDifferences.Should().Contain(difference =>
+                difference.Code == MigrationFidelityDifferenceCodes.DataReconciliationNotExecuted);
 
             await using var connection = await fixture.GetConnectionAsync();
             await using var command = connection.CreateCommand();

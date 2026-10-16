@@ -38,9 +38,9 @@ public sealed record MigrationFidelityEvaluationInput
     public bool CatalogReconciliationExecuted { get; init; }
 
     /// <summary>
-    /// True when the run published a queryable target layer. When the run did not publish there is
-    /// nothing for the post-publish probes to reconcile against, so they are reported as not
-    /// executed only when a target actually exists.
+    /// True when the run published a queryable target layer. Catalog reconciliation is reported as
+    /// not executed only when a target exists. Data-movement reconciliation is reported whenever
+    /// the probe did not run, including an unpublished import, so that import cannot be full fidelity.
     /// </summary>
     public bool PublishedTarget { get; init; }
 
@@ -52,6 +52,21 @@ public sealed record MigrationFidelityEvaluationInput
 
     /// <summary>Number of source records read that failed to land in the target table.</summary>
     public int FailedFeatures { get; init; }
+
+    /// <summary>Number of source records that were written to the target table.</summary>
+    public int FeaturesProcessed { get; init; }
+
+    /// <summary>
+    /// Source records the transfer was expected to account for, or <c>null</c> when the importer
+    /// did not capture a count. Compared with <see cref="FeaturesProcessed"/> plus
+    /// <see cref="FailedFeatures"/> only when a value is present.
+    /// </summary>
+    public long? SourceCountBeforeTransfer { get; init; }
+
+    /// <summary>
+    /// Source features stored with a null geometry because the source geometry could not be converted.
+    /// </summary>
+    public int UnconvertedGeometryCount { get; init; }
 
     /// <summary>Attachment copy outcome, or <c>null</c> when the source advertises no attachments.</summary>
     public MigrationFidelityAttachmentInput? Attachments { get; init; }
@@ -180,6 +195,7 @@ public static class MigrationFidelityEvaluator
 
         CollectPublish(input, subject, differences);
         CollectRecordLoss(input, subject, differences);
+        CollectInProcessTransfer(input, subject, differences);
         CollectSourceSnapshot(input, subject, differences);
         CollectAttachmentDifferences(input, differences);
         CollectRelationshipOmissions(input, differences);
@@ -279,6 +295,46 @@ public static class MigrationFidelityEvaluator
                 $"{Format(input.FailedFeatures)} source record(s) were read but did not land in the target table; "
                 + "the migrated layer holds strictly less data than the source."
         });
+    }
+
+    private static void CollectInProcessTransfer(
+        MigrationFidelityEvaluationInput input,
+        string subject,
+        List<MigrationFidelityDifference> differences)
+    {
+        if (input.SourceCountBeforeTransfer is { } expected)
+        {
+            var accounted = (long)input.FeaturesProcessed + input.FailedFeatures;
+            if (accounted != expected)
+            {
+                differences.Add(new MigrationFidelityDifference
+                {
+                    Code = MigrationFidelityDifferenceCodes.TransferCountMismatch,
+                    Severity = MigrationFidelityDifferenceSeverities.Blocking,
+                    Subject = subject,
+                    Expected = Format(expected) + " source records",
+                    Actual = Format(accounted) + " records accounted for (imported plus failed)",
+                    Summary =
+                        $"The transfer accounted for {Format(accounted)} record(s) but the source count before "
+                        + $"the transfer was {Format(expected)}; the imported table is not a complete copy of that source."
+                });
+            }
+        }
+
+        if (input.UnconvertedGeometryCount > 0)
+        {
+            differences.Add(new MigrationFidelityDifference
+            {
+                Code = MigrationFidelityDifferenceCodes.GeometryUnconverted,
+                Severity = MigrationFidelityDifferenceSeverities.Blocking,
+                Subject = subject,
+                Expected = "every imported feature keeps its source geometry",
+                Actual = Format(input.UnconvertedGeometryCount) + " features stored with a null geometry",
+                Summary =
+                    $"{Format(input.UnconvertedGeometryCount)} feature(s) were saved with a null geometry because "
+                    + "the source geometry could not be converted."
+            });
+        }
     }
 
     private static void CollectSourceSnapshot(
@@ -448,20 +504,24 @@ public static class MigrationFidelityEvaluator
     {
         if (!input.DataReconciliationExecuted || input.DataReconciliation is null)
         {
-            if (input.PublishedTarget)
+            // An unpublished import has no post-publish probe, but skipping the difference let it
+            // fold to full fidelity with no in-process evidence. Catalog reconciliation still
+            // requires a published entry and is not invented here.
+            differences.Add(new MigrationFidelityDifference
             {
-                differences.Add(new MigrationFidelityDifference
-                {
-                    Code = MigrationFidelityDifferenceCodes.DataReconciliationNotExecuted,
-                    Severity = MigrationFidelityDifferenceSeverities.Unverified,
-                    Subject = subject,
-                    Expected = "data-movement reconciliation executed against the published layer",
-                    Actual = "not executed",
-                    Summary =
-                        "The published layer was never reconciled against the source snapshot, so record counts, "
+                Code = MigrationFidelityDifferenceCodes.DataReconciliationNotExecuted,
+                Severity = MigrationFidelityDifferenceSeverities.Unverified,
+                Subject = subject,
+                Expected = input.PublishedTarget
+                    ? "data-movement reconciliation executed against the published layer"
+                    : "data-movement reconciliation executed, or the import left unpublished only after in-process checks",
+                Actual = "not executed",
+                Summary = input.PublishedTarget
+                    ? "The published layer was never reconciled against the source snapshot, so record counts, "
                         + "geometry validity and extent parity are unproven."
-                });
-            }
+                    : "Data-movement reconciliation did not run. An unpublished import is not full fidelity; "
+                        + "record counts and geometry conversion are unproven beyond the in-process checks."
+            });
 
             return;
         }

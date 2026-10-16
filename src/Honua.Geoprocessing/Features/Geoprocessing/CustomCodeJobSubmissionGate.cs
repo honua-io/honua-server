@@ -4,7 +4,10 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.ProcessRelease;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
@@ -25,6 +28,8 @@ internal sealed class CustomCodeJobSubmissionGate
     private readonly IScopedJobTokenIssuer? _scopedJobTokenIssuer;
     private readonly IOptionsMonitor<CustomCodeOptions>? _customCodeOptions;
     private readonly CustomCodeSubmitCoordinator? _coordinator;
+    private readonly GpProcessReleaseAdmission? _releaseAdmission;
+    private readonly IExecutionJobDefinitionRegistry? _workloads;
 
     /// <summary>
     /// Creates the custom-code submit gate. When no scoped-job token issuer is configured the
@@ -34,9 +39,13 @@ internal sealed class CustomCodeJobSubmissionGate
         ILogger<GeoprocessingJobService> logger,
         IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
         IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null,
-        ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null)
+        ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null,
+        GpProcessReleaseAdmission? releaseAdmission = null,
+        IExecutionJobDefinitionRegistry? workloads = null)
     {
         _logger = logger;
+        _releaseAdmission = releaseAdmission;
+        _workloads = workloads;
         _scopedJobTokenIssuer = scopedJobTokenIssuer;
         _customCodeOptions = customCodeOptions;
         _coordinator = scopedJobTokenIssuer is null
@@ -51,10 +60,11 @@ internal sealed class CustomCodeJobSubmissionGate
     /// Throws <see cref="GeoprocessingValidationException"/> on rejection so the adapter maps it
     /// onto the same validation channel ordinary plan failures use.
     /// </summary>
-    public async Task<(CustomCodeOwnerScope OwnerScope, string Token)> ValidateMintAndInjectAsync(
+    public async Task<(CustomCodeOwnerScope OwnerScope, string Token, ExecutionJobDefinition? Workload)> ValidateMintAndInjectAsync(
         string jobId,
         ClaimsPrincipal principal,
         Dictionary<string, string> specParams,
+        ExecutionJobDefinition? workload,
         CancellationToken cancellationToken)
     {
         if (_coordinator is null || _customCodeOptions is null)
@@ -72,11 +82,50 @@ internal sealed class CustomCodeJobSubmissionGate
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         }
 
+        // Release pinning (honua-server#6221): a submission that names a process is resolved
+        // against its live binding before the custom-code parameters are validated, so the
+        // validated repo/ref/entrypoint are the release's and the job keeps them on every retry.
+        if (_releaseAdmission is not null)
+        {
+            await _releaseAdmission.ApplyAsync(specParams, cancellationToken).ConfigureAwait(false);
+        }
+
+        else if (specParams.ContainsKey(GpProcessReleaseAdmission.ProcessParam))
+        {
+            throw new GeoprocessingValidationException("Process release admission is not configured on this server.");
+        }
+
+        // Select the registered queue/backend configuration for this exact release before
+        // minting credentials. A first-match custom-code workload can belong to another image.
+        if (specParams.ContainsKey(GpProcessReleaseAdmission.ReleaseLockDigestParam))
+        {
+            var definitions = _workloads is null
+                ? Array.Empty<ExecutionJobDefinition>()
+                : await _workloads.ListAsync(cancellationToken).ConfigureAwait(false);
+            workload = definitions.FirstOrDefault(definition =>
+                definition.Kind == ExecutionJobKind.Geoprocessing
+                && definition.TargetKind == BatchComputeTargetKind.AwsBatch
+                && string.Equals(definition.RuntimeProfile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal)
+                && specParams.TryGetValue(GpProcessReleaseAdmission.WorkerImageParam, out var image)
+                && string.Equals(definition.ArtifactReference?.Trim(), image, StringComparison.Ordinal)
+                && specParams.TryGetValue(GpProcessReleaseAdmission.AwsBatchJobDefinitionParam, out var arn)
+                && definition.Parameters.Any(parameter =>
+                    (parameter.Key == GpProcessReleaseAdmission.AwsBatchJobDefinitionParam
+                        || parameter.Key.StartsWith(GpProcessReleaseAdmission.AwsBatchJobDefinitionParam + ".", StringComparison.Ordinal))
+                    && string.Equals(parameter.Value?.Trim(), arn, StringComparison.Ordinal)));
+            if (workload is null)
+            {
+                throw new GeoprocessingValidationException("The active process release requires a registered AWS Batch workload with its pinned image and job-definition revision.");
+            }
+
+            GpProcessReleaseAdmission.ApplyWorkloadManifest(specParams, workload.Parameters);
+        }
+
         try
         {
             var result = await _coordinator.ValidateMintAndInjectAsync(
                 jobId, principal, specParams, _customCodeOptions.CurrentValue, cancellationToken).ConfigureAwait(false);
-            return (result.OwnerScope, result.Token);
+            return (result.OwnerScope, result.Token, workload);
         }
         catch (CustomCodeSubmitRejectedException ex)
         {

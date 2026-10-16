@@ -157,6 +157,7 @@
   - [Troubleshooting](guides/deploy/troubleshooting.md)
   - [Capability deployment profiles](guides/deploy/capability-deployment-profiles.md)
   - [Route geoprocessing to AWS Batch](operator/geoprocessing-aws-batch.md)
+  - [GP process release bindings](operator/geoprocessing-process-releases.md)
 - Migrate
   - [From ArcGIS Server](guides/migrate/from-arcgis-server.md)
   - [From GeoServer](guides/migrate/from-geoserver.md)

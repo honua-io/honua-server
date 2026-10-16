@@ -217,6 +217,11 @@ public static class ImportValidationErrorCodes
     /// without geometry.
     /// </summary>
     public const string AddressGeocodeFailed = "import.address_geocode_failed";
+
+    /// <summary>
+    /// Every source row was skipped or rejected, so the target received no rows.
+    /// </summary>
+    public const string AllRowsFailed = "import.all_rows_failed";
 }
 
 /// <summary>

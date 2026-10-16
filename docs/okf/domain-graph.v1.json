@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:670caaf336039857411a813f0299fff0063d41e4838a050bd175c33e9c1fd544",
+  "bundleDigest": "sha256:c7ecfc02394996d760e4c7ad34138e1520ddb439e62043058aca4ae9128ae228",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7284,6 +7284,17 @@
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/operator/geoprocessing-aws-batch.md"
     },
     {
+      "id": "operator/geoprocessing-process-releases",
+      "path": "operator/geoprocessing-process-releases.md",
+      "documentDigest": "sha256:b7ca81ff370e5017407381ff8553da4964dc4a67bf7fbd0c279576dc8b0f7181",
+      "metadata": {
+        "type": "runbook",
+        "title": "GP process release bindings",
+        "description": "Operate the per-process release binding: publish locks, activate a release under an expected binding version, roll back, and read what each job executed."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/operator/geoprocessing-process-releases.md"
+    },
+    {
       "id": "ops/aot-image-attestations",
       "path": "ops/aot-image-attestations.md",
       "documentDigest": "sha256:f26b7b3fdb941f660ec82bebd7aa6846505b3548b6fed4105d9366a8b924b53b",
@@ -7685,7 +7696,7 @@
     {
       "id": "reference/geoprocessing-operations",
       "path": "reference/geoprocessing-operations.md",
-      "documentDigest": "sha256:326d3c6c5e54a4154d8a5f0a192e393a00128b0b3228168a4246c48fa7d5a304",
+      "documentDigest": "sha256:040b38ebd0de6dfcf97ed4fbeb2c54b69c12578164db763870c61546164c0061",
       "metadata": {
         "type": "reference",
         "title": "Geoprocessing operations",
@@ -7709,7 +7720,7 @@
     {
       "id": "reference/gp-process-release",
       "path": "reference/gp-process-release.md",
-      "documentDigest": "sha256:2753b3c1e99d884c719df0e918270169af8a1e8efd371e322497da0252d539f9",
+      "documentDigest": "sha256:a01a043b96550763ea4022ed7199108c6079125f7c55a3d85179bb9351bdc8b9",
       "metadata": {
         "type": "reference",
         "title": "GP process release descriptor and lock",
@@ -14460,6 +14471,11 @@
       "target": "user/gp-output-store-attestation"
     },
     {
+      "source": "operator/geoprocessing-process-releases",
+      "relation": "links_to",
+      "target": "reference/gp-process-release"
+    },
+    {
       "source": "ops/aot-image-attestations",
       "relation": "links_to",
       "target": "ops/nightly-images"
@@ -15183,6 +15199,11 @@
       "source": "reference/geoprocessing-operations",
       "relation": "links_to",
       "target": "reference/protocols/ogc-apis"
+    },
+    {
+      "source": "reference/gp-process-release",
+      "relation": "links_to",
+      "target": "operator/geoprocessing-process-releases"
     },
     {
       "source": "reference/integration-patterns",
@@ -16240,7 +16261,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:7320d214bd3d539b6a28a878b36db4fac288b33fc8a68275eabd738a412e0b48"
+      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -16313,7 +16334,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:7320d214bd3d539b6a28a878b36db4fac288b33fc8a68275eabd738a412e0b48"
+      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16323,7 +16344,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:7320d214bd3d539b6a28a878b36db4fac288b33fc8a68275eabd738a412e0b48"
+      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
     },
     {
       "workflow": "guides/workflows/import-data",
