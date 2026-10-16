@@ -24,6 +24,8 @@ using StackExchange.Redis;
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 [Collection("Redis")]
+[Protocol(TestProtocols.Infrastructure)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
 {
     [IntegrationTest]
