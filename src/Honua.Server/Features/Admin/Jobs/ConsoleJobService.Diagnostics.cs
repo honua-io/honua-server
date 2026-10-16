@@ -110,7 +110,7 @@ internal sealed partial class ConsoleJobService
         }
 
         var artifacts = await BuildDiagnosticArtifactsAsync(job, missing, cancellationToken).ConfigureAwait(false);
-        var release = BuildRelease(job, missing);
+        var release = BuildRelease(job, missing, operatorView);
         var lifecycle = BuildLifecycle(job, now, missing);
         var worker = BuildWorker(job, now, operatorView);
         var attempt = await BuildAttemptAsync(user, job, operatorView, cancellationToken).ConfigureAwait(false);
@@ -184,7 +184,7 @@ internal sealed partial class ConsoleJobService
         return decision.IsAllowed ? job : null;
     }
 
-    private static ConsoleJobDiagnosticRelease BuildRelease(ExecutionJobRecord job, List<string> missing)
+    private static ConsoleJobDiagnosticRelease BuildRelease(ExecutionJobRecord job, List<string> missing, bool operatorView)
     {
         var runtime = GetParameter(job, CustomCodeJobContract.RuntimeParam);
         var repository = GetParameter(job, CustomCodeJobContract.RepoUrlParam);
@@ -273,7 +273,7 @@ internal sealed partial class ConsoleJobService
             BindingVersion = SafeIdentity(GetParameter(job, GpProcessReleaseAdmission.ReleaseBindingVersionParam)),
             WorkflowVersion = SafeIdentity(GetParameter(job, GpProcessReleaseAdmission.WorkflowVersionParam)),
             DependencyLockDigest = SafeIdentity(GetParameter(job, GpProcessReleaseAdmission.DependencyDigestParam)),
-            WorkerImage = SafeIdentity(GetParameter(job, GpProcessReleaseAdmission.WorkerImageParam)),
+            WorkerImage = operatorView ? SafeIdentity(GetParameter(job, GpProcessReleaseAdmission.WorkerImageParam)) : null,
             PlanId = planId,
             ProcessDefinitions = processDefinitions,
             Environment = GetParameter(job, ExecutionJobParameterKeys.Environment),

@@ -95,6 +95,16 @@ public sealed partial class GpProcessReleaseAdmission
                 $"Process '{process}' is bound to release {binding.LockDigest}, but that lock is not published on this server.");
         var lockDocument = release.Lock;
 
+        // The Python harness invokes pip install -r, not uv/Poetry/Pipenv. Require
+        // the requirements-file naming contract before stamping or admitting a job.
+        if (lockDocument.Process.Runtime == CustomCodeJobContract.PythonRuntime
+            && !lockDocument.DependencyLock.Path.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(Path.GetFileName(lockDocument.DependencyLock.Path), "requirements.lock", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GeoprocessingValidationException(
+                "A Python process release requires a pip-compatible requirements file named *.txt or requirements.lock; export uv/Poetry/Pipenv locks before building the release.");
+        }
+
         // The release decides what runs. A caller may repeat the same values but never different
         // ones: a submission that names a release cannot also point at other code.
         Stamp(specParams, CustomCodeJobContract.RuntimeParam, lockDocument.Process.Runtime, process);

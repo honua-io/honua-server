@@ -67,7 +67,10 @@ values but a different `git_ref`, repository, entrypoint or runtime is refused: 
 names a release cannot also point at other code.
 
 For Python, `customcode.deps_manifest` is the dependency-lock path and must be a pip-compatible
-requirements file (the Python worker does not consume uv/Poetry lock formats). For .NET, the
+requirements file named `*.txt` or `requirements.lock`. Admission rejects other names before
+creating a job or minting a token: export uv/Poetry/Pipenv locks to pip requirements before
+building the release. The name is a format declaration; the worker still validates the contents
+during restoration. For .NET, the
 matching registered workload must declare `customcode.deps_manifest` as the repository-relative
 `.csproj` path. Admission refuses a missing project or a conflicting caller value before minting
 a token. The v1 release lock records `packages.lock.json`, not a build-project path; the project

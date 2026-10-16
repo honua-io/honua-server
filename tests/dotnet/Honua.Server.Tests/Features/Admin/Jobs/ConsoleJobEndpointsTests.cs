@@ -1032,7 +1032,12 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             ClaimedBy = "worker-internal-7",
             ClaimedAt = now.AddMinutes(-1),
             LastHeartbeatAt = now,
-            ProviderOperationId = "provider-op-7"
+            ProviderOperationId = "provider-op-7",
+            Spec = CreateSpec("private-workload", new Dictionary<string, string>
+            {
+                [GpProcessReleaseAdmission.WorkerImageParam] = "private.example/worker@sha256:" + new string('c', 64),
+                [GpProcessReleaseAdmission.ReleaseLockDigestParam] = "sha256:" + new string('a', 64)
+            })
         });
 
         var gatedFixture = new WebAppFixture()
@@ -1062,6 +1067,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.OK, body);
             body.Should().NotContain("worker-internal-7");
             body.Should().NotContain("provider-op-7");
+            body.Should().NotContain("private.example/worker");
 
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
@@ -1069,6 +1075,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             root.GetProperty("worker").GetProperty("liveness").GetString().Should().Be("alive");
             root.GetProperty("worker").TryGetProperty("claimedBy", out _).Should().BeFalse();
             root.GetProperty("identity").TryGetProperty("providerOperationId", out _).Should().BeFalse();
+            root.GetProperty("release").TryGetProperty("workerImage", out _).Should().BeFalse();
+            root.GetProperty("release").GetProperty("lockDigest").GetString().Should().Be("sha256:" + new string('a', 64));
             root.GetProperty("evidence").GetProperty("notes").EnumerateArray().Select(e => e.GetString()!)
                 .Should().Contain(n => n.StartsWith("owner view", StringComparison.Ordinal));
 
@@ -1076,6 +1084,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             using var operatorDoc = await ReadJsonAsync(operatorResponse);
             operatorDoc.RootElement.GetProperty("view").GetString().Should().Be("operator");
             operatorDoc.RootElement.GetProperty("worker").GetProperty("claimedBy").GetString().Should().Be("worker-internal-7");
+            operatorDoc.RootElement.GetProperty("release").GetProperty("workerImage").GetString()
+                .Should().Be("private.example/worker@sha256:" + new string('c', 64));
         }
         finally
         {

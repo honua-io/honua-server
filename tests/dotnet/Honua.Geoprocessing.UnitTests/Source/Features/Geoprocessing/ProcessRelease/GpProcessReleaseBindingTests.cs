@@ -228,11 +228,18 @@ public sealed class GpProcessReleaseBindingTests
         (await store.GetBindingAsync("buffer-features")).Should().BeNull();
     }
 
-    [Fact]
-    public async Task Admission_StampsTheActiveReleaseIntoTheSpec()
+    [Theory]
+    [InlineData("samples/gp-local-dev/requirements.lock")]
+    [InlineData("samples/gp-local-dev/requirements.txt")]
+    [InlineData("requirements/production.txt")]
+    public async Task Admission_StampsTheActiveReleaseIntoTheSpec(string dependencyPath)
     {
         var store = new InMemoryGpProcessReleaseStore();
-        var release = await store.PublishAsync(Lock("1.4.0", "a"), "release-bot");
+        var document = Lock("1.4.0", "a");
+        var release = await store.PublishAsync(document with
+        {
+            DependencyLock = document.DependencyLock with { Path = dependencyPath },
+        }, "release-bot");
         (await store.ActivateAsync(Activation(release.Digest, expected: 0), AwsEnvironment)).Activated.Should().BeTrue();
         var admission = new GpProcessReleaseAdmission(store, NullLogger<GpProcessReleaseAdmission>.Instance);
         var spec = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -248,12 +255,37 @@ public sealed class GpProcessReleaseBindingTests
         spec[CustomCodeJobContract.RepoUrlParam].Should().Be("https://github.com/honua-io/honua-samples");
         spec[CustomCodeJobContract.GitRefParam].Should().Be(new string('a', 40));
         spec[CustomCodeJobContract.EntrypointParam].Should().Be("buffer_features:execute");
-        spec[CustomCodeJobContract.DepsManifestParam].Should().Be("samples/gp-local-dev/uv.lock");
+        spec[CustomCodeJobContract.DepsManifestParam].Should().Be(dependencyPath);
         spec[GpProcessReleaseAdmission.ReleaseLockDigestParam].Should().Be(release.Digest);
         spec[GpProcessReleaseAdmission.ReleaseVersionParam].Should().Be("1.4.0");
         spec[GpProcessReleaseAdmission.ReleaseBindingVersionParam].Should().Be("1");
         spec[GpProcessReleaseAdmission.AwsBatchJobDefinitionParam].Should().Be("arn:aws:batch:us-west-2:123456789012:job-definition/buffer:7");
         spec.Should().NotContainKey(GpProcessReleaseAdmission.KubernetesImageParam, "the binding has no kubernetes-job target");
+    }
+
+    [Theory]
+    [InlineData("samples/gp-local-dev/uv.lock")]
+    [InlineData("poetry.lock")]
+    [InlineData("Pipfile.lock")]
+    [InlineData("pdm.lock")]
+    [InlineData("pyproject.toml")]
+    [InlineData("packages.lock.json")]
+    public async Task Admission_RefusesUnsupportedPythonDependencyFormatsBeforeStamping(string dependencyPath)
+    {
+        var store = new InMemoryGpProcessReleaseStore();
+        var document = Lock("1.4.0", "a");
+        var release = await store.PublishAsync(document with
+        {
+            DependencyLock = document.DependencyLock with { Path = dependencyPath },
+        }, "release-bot");
+        (await store.ActivateAsync(Activation(release.Digest, expected: 0), AwsEnvironment)).Activated.Should().BeTrue();
+        var admission = new GpProcessReleaseAdmission(store, NullLogger<GpProcessReleaseAdmission>.Instance);
+        var spec = new Dictionary<string, string> { [GpProcessReleaseAdmission.ProcessParam] = "buffer-features" };
+
+        var submit = () => admission.ApplyAsync(spec, CancellationToken.None);
+
+        await submit.Should().ThrowAsync<GeoprocessingValidationException>().WithMessage("*pip-compatible requirements file*");
+        spec.Should().ContainSingle().Which.Key.Should().Be(GpProcessReleaseAdmission.ProcessParam);
     }
 
     [Fact]
@@ -323,7 +355,7 @@ public sealed class GpProcessReleaseBindingTests
                 Contract = new GpReleaseContract { InputSchemaSha256 = "sha256:" + new string('1', 64), OutputSchemaSha256 = "sha256:" + new string('2', 64) },
             },
             Source = new GpReleaseSource { Repository = "honua-io/honua-samples", Sha = new string(shaChar[0], 40), DescriptorPath = "samples/gp-local-dev/honua-gp.yaml" },
-            DependencyLock = new GpReleaseFileDigest { Path = "samples/gp-local-dev/uv.lock", Sha256 = "sha256:" + new string('d', 64) },
+            DependencyLock = new GpReleaseFileDigest { Path = "samples/gp-local-dev/requirements.lock", Sha256 = "sha256:" + new string('d', 64) },
             RuntimeImage = new GpReleaseRuntimeImage { Reference = "ghcr.io/honua-io/honua-gp-worker@sha256:" + new string('b', 64), Digest = "sha256:" + new string('b', 64) },
             WorkflowVersion = "wf-2026.1-7",
             ConfigurationReferences = [],
