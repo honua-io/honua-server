@@ -12,6 +12,7 @@ using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -43,6 +44,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
     private readonly ILogger<GeoprocessingDispatchJobExecutor> _logger;
     private readonly IProcessUsageTelemetry? _usageTelemetry;
     private readonly IServiceScopeFactory? _serviceScopeFactory;
+    private readonly IGeoprocessingOutputObjectStore? _outputStore;
+    private readonly IExecutionJobStore? _jobStore;
+    private readonly IOptionsMonitor<GeoprocessingOutputStagingOptions>? _stagingOptions;
 
     /// <summary>
     /// Composes the dispatcher over the auto-registered per-process executors
@@ -65,7 +69,10 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         IEnumerable<IProcessExecutor> executors,
         ILogger<GeoprocessingDispatchJobExecutor> logger,
         IProcessUsageTelemetry? usageTelemetry = null,
-        IServiceScopeFactory? serviceScopeFactory = null)
+        IServiceScopeFactory? serviceScopeFactory = null,
+        IGeoprocessingOutputObjectStore? outputStore = null,
+        IExecutionJobStore? jobStore = null,
+        IOptionsMonitor<GeoprocessingOutputStagingOptions>? stagingOptions = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
         ArgumentNullException.ThrowIfNull(logger);
@@ -77,6 +84,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         _logger = logger;
         _usageTelemetry = usageTelemetry;
         _serviceScopeFactory = serviceScopeFactory;
+        _outputStore = outputStore;
+        _jobStore = jobStore;
+        _stagingOptions = stagingOptions;
     }
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
@@ -140,7 +150,13 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 
             try
             {
-                result = await handler.ExecuteAsync(job, effectiveContext, cancellationToken).ConfigureAwait(false);
+                var streamContext = new ManagedFeatureStreamContext(effectiveContext, job, _outputStore, _jobStore,
+                    _stagingOptions?.CurrentValue ?? new GeoprocessingOutputStagingOptions());
+                result = await handler.ExecuteAsync(job, streamContext, cancellationToken).ConfigureAwait(false);
+            }
+            catch (TransformInputException ex)
+            {
+                return JobExecutionResult.Failed(ex.PublicMessage) with { IsRetryable = false };
             }
             catch (ArtifactAlreadyExistsException ex)
             {

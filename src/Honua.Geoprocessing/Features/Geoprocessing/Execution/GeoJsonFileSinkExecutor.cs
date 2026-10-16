@@ -93,7 +93,7 @@ internal sealed partial class GeoJsonFileSinkExecutor : IProcessExecutor
         // Pass OutputRootDirectory so path-traversal injections in the reference are rejected.
         if (!FeatureStreamArtifact.TryOpenRead(
                 inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes,
-                _options.CurrentValue.OutputRootDirectory))
+                _options.CurrentValue.OutputRootDirectory, context))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }

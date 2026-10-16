@@ -5,6 +5,7 @@ using System.Buffers;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 
@@ -75,7 +76,8 @@ internal static class FeatureStreamArtifact
     /// reference rather than an inline data URI.
     /// </summary>
     public static bool IsStreamReference(string? reference)
-        => reference is not null && reference.StartsWith(StreamReferencePrefix, StringComparison.Ordinal);
+        => reference is not null && (reference.StartsWith(StreamReferencePrefix, StringComparison.Ordinal)
+            || reference.StartsWith(DurableFeatureStream.Prefix, StringComparison.Ordinal));
 
     /// <summary>
     /// Opens an incremental feature stream over an upstream artifact reference. Accepts
@@ -102,7 +104,8 @@ internal static class FeatureStreamArtifact
         out string error,
         out IAsyncEnumerable<IFeature> stream,
         long maxInlineDecodedBytes = long.MaxValue,
-        string? outputRootDirectory = null)
+        string? outputRootDirectory = null,
+        IJobExecutionContext? executionContext = null)
     {
         error = "";
         stream = AsyncEnumerable.Empty<IFeature>();
@@ -113,8 +116,27 @@ internal static class FeatureStreamArtifact
             return false;
         }
 
+        if (reference.StartsWith(DurableFeatureStream.Prefix, StringComparison.Ordinal))
+        {
+            if (executionContext is not ManagedFeatureStreamContext { Store: not null, Jobs: not null } durable
+                || !DurableFeatureStream.TryParse(reference, out _))
+            {
+                error = "shared feature stream storage and trusted execution identity are required";
+                return false;
+            }
+
+            stream = DurableFeatureStream.ReadAsync(reference, durable.Job, durable.Jobs, durable.Store, durable.Options);
+            return true;
+        }
+
         if (IsStreamReference(reference))
         {
+            if (executionContext is ManagedFeatureStreamContext)
+            {
+                error = "node-local feature stream references are not accepted by managed job execution";
+                return false;
+            }
+
             if (!TryParseStreamReference(reference, out var descriptor, out error))
             {
                 return false;
@@ -175,7 +197,7 @@ internal static class FeatureStreamArtifact
         descriptor = default;
         error = "";
 
-        if (!IsStreamReference(reference))
+        if (!reference.StartsWith(StreamReferencePrefix, StringComparison.Ordinal))
         {
             error = $"value must be a '{StreamReferencePrefix}' stream reference";
             return false;

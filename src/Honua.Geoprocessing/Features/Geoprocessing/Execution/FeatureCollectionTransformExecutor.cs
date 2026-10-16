@@ -102,7 +102,7 @@ internal abstract partial class FeatureCollectionTransformExecutor : IProcessExe
         // Pass OutputRootDirectory so path-traversal injections in the reference are rejected.
         if (!FeatureStreamArtifact.TryOpenRead(
                 inputUri, out var parseError, out var inputStream, _options.CurrentValue.MaxArtifactBytes,
-                _options.CurrentValue.OutputRootDirectory))
+                _options.CurrentValue.OutputRootDirectory, context))
         {
             return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: 'input' {parseError}");
         }
@@ -152,7 +152,7 @@ internal abstract partial class FeatureCollectionTransformExecutor : IProcessExe
                 inputCount: -1,
                 outputRoot,
                 job.OperationId,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken, executionContext: context).ConfigureAwait(false);
         }
 
         // Buffered path: stateful transforms (dedup) need the full collection. We still
@@ -174,7 +174,7 @@ internal abstract partial class FeatureCollectionTransformExecutor : IProcessExe
             inputCount: source.Count,
             outputRoot,
             job.OperationId,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken, executionContext: context).ConfigureAwait(false);
     }
 
     private static async IAsyncEnumerable<IFeature> ToAsync(

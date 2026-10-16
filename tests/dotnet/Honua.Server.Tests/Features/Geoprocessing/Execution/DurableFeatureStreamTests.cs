@@ -1,0 +1,267 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Text;
+using System.Text.Json;
+using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.FileStorage;
+using Honua.Geoprocessing;
+using Honua.Geoprocessing.Execution;
+using Honua.Protocols.Ogc.Api.Processes;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NetTopologySuite.Features;
+using NSubstitute;
+
+namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
+
+/// <summary>Production dispatcher, independent shared-store clients, and OGC value read-back.</summary>
+public sealed class DurableFeatureStreamTests : IDisposable
+{
+    private readonly string _root = Path.Join(Path.GetTempPath(), "honua-shared-stream-" + Guid.NewGuid().ToString("N"));
+    private readonly Dictionary<string, ExecutionJobRecord> _records = new(StringComparer.Ordinal);
+    private readonly IExecutionJobStore _jobs = Substitute.For<IExecutionJobStore>();
+    private readonly GeoprocessingOutputStagingOptions _staging;
+    private readonly string _producerRoot;
+    private readonly string _consumerRoot;
+    private readonly string _payload = new('x', 1100 * 1024);
+
+    public DurableFeatureStreamTests()
+    {
+        Directory.CreateDirectory(_root);
+        _producerRoot = Path.Join(_root, "producer-temp");
+        _consumerRoot = Path.Join(_root, "consumer-temp");
+        var shared = Path.Join(_root, "persistent-volume");
+        Directory.CreateDirectory(shared);
+        _staging = GeoprocessingOutputStoreTestHelper.Attest(new GeoprocessingOutputStagingOptions
+        {
+            Enabled = true,
+            LocalRootPath = shared,
+            StoreReference = "managed-features",
+        });
+        _jobs.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(_records.GetValueOrDefault(call.ArgAt<string>(0))));
+    }
+
+    public void Dispose() => Directory.Delete(_root, recursive: true);
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ManagedOutput_ProducerRemoved_ConsumerAndOgcReadExactSharedBytes(bool raw)
+    {
+        var producer = await Produce();
+        producer.Result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        DurableFeatureStream.TryParse(producer.Reference, out var descriptor).Should().BeTrue();
+        producer.Reference.Should().NotContain(_producerRoot);
+        Directory.EnumerateFiles(_producerRoot, "*", SearchOption.AllDirectories).Should().BeEmpty();
+        Directory.Delete(_producerRoot, recursive: true);
+
+        // A distinct store client and a different scratch root model another worker.
+        var storeB = NewStore();
+        var consumer = Job("consumer", "transform.attribute-filter", new Dictionary<string, string>
+        {
+            ["input"] = producer.Reference,
+            ["field"] = "id",
+            ["value"] = "one",
+        });
+        var consumed = await Run(consumer, new AttributeFilterTransformExecutor(ExecutorOptions(_consumerRoot)), storeB);
+        consumed.Result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var output = await Read(consumed.Reference, _records["consumer"], storeB);
+        output.Should().ContainSingle();
+        output[0].Geometry.Coordinate.X.Should().Be(12);
+        output[0].Geometry.Coordinate.Y.Should().Be(34);
+        output[0].Geometry.SRID.Should().Be(4326);
+        output[0].Attributes.GetOptionalValue("payload").Should().Be(_payload);
+
+        var rendered = await Render(producer.Reference, _records["producer"], storeB, raw);
+        rendered.Status.Should().Be(200);
+        using var json = JsonDocument.Parse(rendered.Body);
+        var value = raw ? json.RootElement : json.RootElement.GetProperty("outputFeatureLayer").GetProperty("value");
+        var features = value.GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+        features[0].GetProperty("properties").GetProperty("payload").GetString().Should().Be(_payload);
+        features[0].GetProperty("geometry").GetProperty("coordinates")[0].GetDouble().Should().Be(12);
+        rendered.Body.Should().NotContain(_staging.LocalRootPath!);
+        descriptor!.Bytes.Should().BeGreaterThan(FeatureStreamArtifact.DefaultInlineThresholdBytes);
+    }
+
+    [UnitTest]
+    public async Task ManagedRead_RejectsOtherOwnerTenantForgedReceiptAndStaleAttemptBeforeYield()
+    {
+        var produced = await Produce();
+        var original = _records["producer"];
+        var store = NewStore();
+        foreach (var (owner, tenant) in new[] { ("bob", "tenant-a"), ("alice", "tenant-b") })
+        {
+            var other = Job("other", "transform.attribute-filter", new Dictionary<string, string>(), owner, tenant);
+            await FluentActions.Awaiting(() => Read(produced.Reference, other, store)).Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        DurableFeatureStream.TryParse(produced.Reference, out var descriptor).Should().BeTrue();
+        var forged = (descriptor! with { Sha256 = new string('a', 64) }).Serialize();
+        await FluentActions.Awaiting(() => Read(forged, original, store)).Should().ThrowAsync<InvalidOperationException>();
+        _records["producer"] = original with { AttemptCount = 2 };
+        await FluentActions.Awaiting(() => Read(produced.Reference, original, store)).Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [UnitTest]
+    public async Task ManagedRead_CorruptionAndMissingAttestation_FailBeforePublishingValues()
+    {
+        var produced = await Produce();
+        var original = _records["producer"];
+        DurableFeatureStream.TryParse(produced.Reference, out var descriptor).Should().BeTrue();
+        var path = Path.Join(_staging.LocalRootPath!, descriptor!.ObjectKey);
+        var bytes = await File.ReadAllBytesAsync(path);
+        bytes[10] ^= 1;
+        await File.WriteAllBytesAsync(path, bytes);
+        var store = NewStore();
+        await FluentActions.Awaiting(() => Read(produced.Reference, original, store)).Should().ThrowAsync<InvalidOperationException>();
+        var response = await Render(produced.Reference, original, store, raw: false);
+        response.Status.Should().Be(500);
+        response.Body.Should().NotContain(_payload);
+
+        File.Delete(Path.Join(_staging.LocalRootPath!, GeoprocessingOutputStoreAttestation.FileName));
+        var openHost = () => NewStore();
+        openHost.Should().Throw<InvalidOperationException>();
+        await FluentActions.Awaiting(() => Read(produced.Reference, original, store)).Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [UnitTest]
+    public async Task ManagedSpill_WithoutSharedStorage_FailsAndPublishesNothing()
+    {
+        var options = ExecutorOptions(_producerRoot);
+        var source = new GeoJsonSourceExecutor(options);
+        var dispatcher = new GeoprocessingDispatchJobExecutor([source], NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
+        var context = Substitute.For<IJobExecutionContext>();
+        var result = await dispatcher.ExecuteAsync(SourceJob(), context, CancellationToken.None);
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("shared persistent output staging");
+        await context.DidNotReceive().PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        Directory.Exists(_producerRoot).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ManagedSpill_InterruptedEnumeration_DeletesTemporaryBytes()
+    {
+        var context = new ManagedFeatureStreamContext(Substitute.For<IJobExecutionContext>(), SourceJob(), NewStore(), _jobs, _staging);
+        var attributes = new AttributesTable { { "payload", _payload } };
+        var feature = new Feature(null, attributes);
+        await FluentActions.Awaiting(() => FeatureStreamPublisher.PublishAsync(
+            Interrupted(feature), "source.geojson", 1, _producerRoot, "producer", CancellationToken.None,
+            executionContext: context)).Should().ThrowAsync<OperationCanceledException>();
+        Directory.EnumerateFiles(_producerRoot, "*", SearchOption.AllDirectories).Should().BeEmpty();
+        Directory.EnumerateFiles(_staging.LocalRootPath!, "*.ndjson", SearchOption.AllDirectories).Should().BeEmpty();
+    }
+
+    private static async IAsyncEnumerable<IFeature> Interrupted(IFeature feature)
+    {
+        yield return feature;
+        await Task.Yield();
+        throw new OperationCanceledException();
+    }
+
+    private Task<(JobExecutionResult Result, string Reference)> Produce()
+        => Run(SourceJob(), new GeoJsonSourceExecutor(ExecutorOptions(_producerRoot)), NewStore());
+
+    private ExecutionJobRecord SourceJob() => Job("producer", "source.geojson", new Dictionary<string, string>
+    {
+        ["inline"] = "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[12,34]},\"properties\":{\"id\":\"one\",\"payload\":\"" + _payload + "\"}}]}",
+    });
+
+    private async Task<(JobExecutionResult Result, string Reference)> Run(ExecutionJobRecord job, IProcessExecutor executor, IGeoprocessingOutputObjectStore store)
+    {
+        _records[job.OperationId] = job;
+        var context = Substitute.For<IJobExecutionContext>();
+        string? reference = null;
+        context.When(item => item.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                reference = call.ArgAt<string>(0);
+                _records[job.OperationId] = job with { ArtifactReferences = [reference] };
+            });
+        var dispatcher = new GeoprocessingDispatchJobExecutor([executor], NullLogger<GeoprocessingDispatchJobExecutor>.Instance,
+            outputStore: store, jobStore: _jobs, stagingOptions: Monitor(_staging));
+        var result = await dispatcher.ExecuteAsync(job, context, CancellationToken.None);
+        _records[job.OperationId] = _records[job.OperationId] with { Status = result.Status };
+        reference.Should().NotBeNull();
+        return (result, reference!);
+    }
+
+    private async Task<List<IFeature>> Read(string reference, ExecutionJobRecord authorized, IGeoprocessingOutputObjectStore store)
+    {
+        var features = new List<IFeature>();
+        await foreach (var feature in DurableFeatureStream.ReadAsync(reference, authorized, _jobs, store, _staging))
+        {
+            features.Add(feature);
+        }
+        return features;
+    }
+
+    private async Task<(int Status, string Body)> Render(string reference, ExecutionJobRecord job, IGeoprocessingOutputObjectStore store, bool raw)
+    {
+        await using var services = new ServiceCollection().AddLogging()
+            .AddSingleton(store).AddSingleton(_jobs).AddSingleton(Monitor(_staging))
+            .Configure<GeoprocessingExecutorOptions>(options => options.MaxArtifactBytes = 4 * 1024 * 1024)
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        await using var body = new MemoryStream();
+        context.Response.Body = body;
+        var package = AnalysisResultPackage.CreateCompleted("stream-result", new ResultSummary { Title = "output" },
+            [new ArtifactRef { ArtifactId = "features", Kind = ArtifactKind.FeatureLayer, Label = "outputFeatureLayer", Uri = reference }],
+            [], new ProvenanceRecord { Sources = [], ProcessDefinitions = ["source.geojson"], ExecutedAt = DateTimeOffset.UtcNow });
+        var result = raw ? await JobEndpoints.BuildRawResultsResponseAsync(job, context, package)
+            : await JobEndpoints.BuildValueResultsResponseAsync(job, context, package);
+        await result.ExecuteAsync(context);
+        return (context.Response.StatusCode, Encoding.UTF8.GetString(body.ToArray()));
+    }
+
+    private FileSystemGeoprocessingOutputObjectStore NewStore() => new(Options.Create(_staging));
+
+    private static IOptionsMonitor<GeoprocessingExecutorOptions> ExecutorOptions(string root)
+        => Monitor(new GeoprocessingExecutorOptions { OutputRootDirectory = root });
+
+    private static IOptionsMonitor<T> Monitor<T>(T value) where T : class
+    {
+        var monitor = Substitute.For<IOptionsMonitor<T>>();
+        monitor.CurrentValue.Returns(value);
+        return monitor;
+    }
+
+    private static ExecutionJobRecord Job(string id, string process, Dictionary<string, string> inputs, string owner = "alice", string tenant = "tenant-a")
+    {
+        var parameters = inputs.ToDictionary(item => Honua.ControlPlane.ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0." + item.Key, item => item.Value);
+        parameters[Honua.ControlPlane.ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = process;
+        parameters["protocolProcessId"] = process;
+        return new ExecutionJobRecord
+        {
+            OperationId = id,
+            AttemptCount = 1,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = owner,
+                SubmitterSecurityContext = new JobSecurityContext(owner, tenant, []) { OwnerActorId = owner },
+            },
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = process,
+                Parameters = parameters,
+            },
+        };
+    }
+}

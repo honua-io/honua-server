@@ -189,6 +189,12 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
 
     private static bool IsReferencedByJob(ExecutionJobRecord job, string objectKey)
     {
+        if (job.ArtifactReferences.Any(reference => Execution.DurableFeatureStream.TryParse(reference, out var stream)
+            && stream!.ObjectKey == objectKey))
+        {
+            return true;
+        }
+
         return job.ArtifactReferences
             .Select(static reference => RasterOutputJson.TryDeserialize(reference, out var descriptor)
                 ? descriptor

@@ -29,7 +29,7 @@ public sealed class OgcProcessesValueContractTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Results_SpilledFeatureStream_ReturnsGeoJsonValue(bool raw)
+    public async Task Results_LegacyNodeLocalFeatureStream_IsUnavailable(bool raw)
     {
         var root = Path.Join(AppContext.BaseDirectory, "ogc-stream-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -40,15 +40,8 @@ public sealed class OgcProcessesValueContractTests
             await File.WriteAllTextAsync(path, feature + "\n");
             var reference = FeatureStreamArtifact.BuildStreamReference(path, 1, Encoding.UTF8.GetByteCount(feature) + 1);
             var response = await RenderResultAsync(reference, root, 4096, raw);
-            response.Status.Should().Be(200);
-            using var json = JsonDocument.Parse(response.Body);
-            var value = raw ? json.RootElement : json.RootElement.GetProperty("outputFeatureLayer").GetProperty("value");
-            value.GetProperty("type").GetString().Should().Be("FeatureCollection");
-            var output = value.GetProperty("features")[0];
-            output.GetProperty("properties").GetProperty("name").GetString().Should().Be("sample");
-            output.GetProperty("properties").TryGetProperty("__honua_srid", out _).Should().BeFalse();
-            output.GetProperty("geometry").GetProperty("coordinates").GetArrayLength().Should().Be(3);
-            response.Body.Should().NotContain(root);
+            response.Status.Should().Be(500);
+            response.Body.Should().NotContain(root).And.NotContain("sample");
         }
         finally
         {
@@ -58,7 +51,7 @@ public sealed class OgcProcessesValueContractTests
     }
 
     [Fact]
-    public async Task Results_SpilledFeatureStream_EnforcesActualSizeAndRoot()
+    public async Task Results_UntrustedNodeLocalFeatureStream_DoesNotReadLocalBytes()
     {
         var root = Path.Join(AppContext.BaseDirectory, "ogc-stream-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -67,7 +60,7 @@ public sealed class OgcProcessesValueContractTests
         {
             await File.WriteAllTextAsync(path, new string('x', 2048));
             var reference = FeatureStreamArtifact.BuildStreamReference(path, 1, 0);
-            (await RenderResultAsync(reference, root, 1024, raw: false)).Status.Should().Be(413);
+            (await RenderResultAsync(reference, root, 1024, raw: false)).Status.Should().Be(500);
             var outside = await RenderResultAsync(reference, Path.Join(root, "allowed"), 4096, raw: false);
             outside.Status.Should().Be(500);
             outside.Body.Should().NotContain(path);
