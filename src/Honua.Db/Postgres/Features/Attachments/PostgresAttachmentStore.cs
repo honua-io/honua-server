@@ -24,7 +24,7 @@ namespace Honua.Db.Postgres.Features.Attachments;
 internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImportedAttachmentStore, IFeatureAttachmentCleanup
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
-    private readonly ICloudFileStorage _fileStorage;
+    private readonly ICloudFileStorage? _fileStorage;
     private readonly ILogger<PostgresAttachmentStore> _logger;
     private readonly IAttachmentOrphanLedger? _orphanLedger;
     private readonly AttachmentLimits? _attachmentLimits;
@@ -33,20 +33,30 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
 
     public PostgresAttachmentStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
-        ICloudFileStorage fileStorage,
+        ICloudFileStorage? fileStorage,
         ILogger<PostgresAttachmentStore> logger,
         string? schemaName = null,
         IAttachmentOrphanLedger? orphanLedger = null,
         AttachmentLimits? attachmentLimits = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
-        _fileStorage = fileStorage ?? throw new ArgumentNullException(nameof(fileStorage));
+        // Null is a database-only host. Feature-store resolution includes this store for
+        // row cleanup (#6137) and must not require object storage that the host never registered.
+        _fileStorage = fileStorage;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _orphanLedger = orphanLedger;
         _attachmentLimits = attachmentLimits;
         _tableName = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
         _importCleanupTableName = Infrastructure.SchemaSearchPath.QualifyTable("import_attachment_cleanup", schemaName);
     }
+
+    /// <summary>
+    /// Returns the configured object store. Blob reads and writes call this; a missing
+    /// store becomes an orphan record when the metadata change has already committed.
+    /// </summary>
+    private ICloudFileStorage RequireFileStorage()
+        => _fileStorage ?? throw new InvalidOperationException(
+            "Object storage is not configured. Register ICloudFileStorage before using attachment blobs.");
 
     /// <summary>
     /// Records a storage object that outlived its metadata row, so the divergence is
@@ -214,7 +224,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         var folder = BuildAttachmentFolder(layerId, featureId);
         var sizeBytes = content.CanSeek ? content.Length : (long?)null;
 
-        var uploadResult = await _fileStorage.UploadAsync(new FileUploadRequest
+        var uploadResult = await RequireFileStorage().UploadAsync(new FileUploadRequest
         {
             Content = content,
             FileName = sanitizedFilename,
@@ -249,7 +259,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             {
                 try
                 {
-                    var deleted = await _fileStorage.DeleteAsync(existing.StoragePath, cancellationToken).ConfigureAwait(false);
+                    var deleted = await RequireFileStorage().DeleteAsync(existing.StoragePath, cancellationToken).ConfigureAwait(false);
                     if (!deleted)
                     {
                         // ICloudFileStorage.DeleteAsync defines false as "file was not found",
@@ -291,7 +301,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             {
                 // A false result means the object was not found, so the upload left nothing
                 // behind and the compensation is complete; only a failure leaks an object.
-                await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken).ConfigureAwait(false);
+                await RequireFileStorage().DeleteAsync(uploadResult.File.FileId, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -329,7 +339,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
 
         try
         {
-            var deleted = await _fileStorage.DeleteAsync(storagePath, cancellationToken);
+            var deleted = await RequireFileStorage().DeleteAsync(storagePath, cancellationToken);
             if (!deleted)
             {
                 // ICloudFileStorage.DeleteAsync defines false as "file was not found". The row
@@ -373,7 +383,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         var folder = BuildAttachmentFolder(layerId, featureId);
         var sizeBytes = content.CanSeek ? content.Length : (long?)null;
 
-        var uploadResult = await _fileStorage.UploadAsync(new FileUploadRequest
+        var uploadResult = await RequireFileStorage().UploadAsync(new FileUploadRequest
         {
             Content = content,
             FileName = sanitizedFilename,
@@ -417,7 +427,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
                 // insert failed; a cleanup failure must not mask the original exception being rethrown.
                 // A false result means the object was not found, so nothing survived the failed
                 // insert; only a throwing cleanup leaves an object with no row.
-                await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken);
+                await RequireFileStorage().DeleteAsync(uploadResult.File.FileId, cancellationToken);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -444,7 +454,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             return null;
         }
 
-        var fileStream = await _fileStorage.DownloadAsync(attachment.Value.StoragePath, cancellationToken);
+        var fileStream = await RequireFileStorage().DownloadAsync(attachment.Value.StoragePath, cancellationToken);
         if (fileStream == null)
         {
             return null;

@@ -25,7 +25,7 @@ internal sealed partial class PostgresAttachmentStore
         Guid generation, string filename, string contentType, Stream content, string? keywords,
         CancellationToken cancellationToken)
     {
-        var uploaded = await _fileStorage.UploadAsync(new FileUploadRequest
+        var uploaded = await RequireFileStorage().UploadAsync(new FileUploadRequest
         {
             Content = content,
             FileName = SanitizeFileName(filename),
@@ -268,7 +268,7 @@ internal sealed partial class PostgresAttachmentStore
                     var isReferenced = await referenced.ExecuteScalarAsync(CancellationToken.None).ConfigureAwait(false) is true;
                     if (!isReferenced)
                     {
-                        await _fileStorage.DeleteAsync(item.Path, CancellationToken.None).ConfigureAwait(false);
+                        await RequireFileStorage().DeleteAsync(item.Path, CancellationToken.None).ConfigureAwait(false);
                     }
 
                     await using var remove = new NpgsqlCommand($"DELETE FROM {_importCleanupTableName} WHERE storage_path = $1", connection);

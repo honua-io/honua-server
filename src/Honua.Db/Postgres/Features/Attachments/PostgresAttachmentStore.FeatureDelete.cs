@@ -61,7 +61,7 @@ internal sealed partial class PostgresAttachmentStore
 
             try
             {
-                var deleted = await _fileStorage.DeleteAsync(blob.StoragePath, cancellationToken).ConfigureAwait(false);
+                var deleted = await RequireFileStorage().DeleteAsync(blob.StoragePath, cancellationToken).ConfigureAwait(false);
                 if (!deleted)
                 {
                     // false means the object is already gone. The row is gone too, so the
