@@ -12,6 +12,8 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
+using Honua.Core.Configuration;
 using Honua.Geoprocessing.Execution;
 using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
@@ -197,7 +199,9 @@ public sealed class FileSinkExecutorTests
                         },
                     }],
                 };
-                var admitted = await service.SubmitJobAsync(plan, "same-key", principal);
+                var securityContext = JobSecurityContextCapture.Capture(principal, new RbacOptions());
+                var admitted = await service.SubmitJobWithSecurityContextAsync(plan, "same-key", principal,
+                    new Dictionary<string, string> { ["orchestration.runId"] = "file-sink-proof" }, securityContext);
                 var job = admitted with { Status = ExecutionJobStatus.Running, AttemptCount = 1 };
                 var (result, receipt) = await Execute(job, executor);
                 result.Status.Should().Be(ExecutionJobStatus.Succeeded);
