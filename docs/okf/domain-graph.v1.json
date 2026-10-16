@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:4d8ef287db2f56d74951157b484c6beec90e8154a484539fa1be8e98b8fdb9d9",
+  "bundleDigest": "sha256:f648736213ee9cacdb6bd818b90a4fb39a62a30febf8a5e8a9373558e0896f12",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -16278,7 +16278,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
+      "contractDigest": "sha256:db2ddbe748cf4400e2f9aee7e9114eed2d120ac7168d23cb3592070fcc71d94c"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -16351,7 +16351,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
+      "contractDigest": "sha256:db2ddbe748cf4400e2f9aee7e9114eed2d120ac7168d23cb3592070fcc71d94c"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16361,7 +16361,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
+      "contractDigest": "sha256:db2ddbe748cf4400e2f9aee7e9114eed2d120ac7168d23cb3592070fcc71d94c"
     },
     {
       "workflow": "guides/workflows/import-data",

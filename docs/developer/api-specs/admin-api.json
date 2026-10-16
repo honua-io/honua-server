@@ -37228,6 +37228,20 @@
             "items": {
               "$ref": "#/components/schemas/ConsoleJobStep"
             }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Total appended log entries, including entries removed by retention bounds."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the returned timeline omits earlier entries."
+          },
+          "droppedCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of earliest entries removed by the retained-log bound."
           }
         }
       },
