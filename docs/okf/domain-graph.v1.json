@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:3c75965dc7961da9a91a7ddf5893cec61e6f27ddcc102b7df44839b9288b270d",
+  "bundleDigest": "sha256:90181e5e758186de7fbea34b1e13d78d7a6fc0d50e6c0d612862f516fa29a68c",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7732,7 +7732,7 @@
     {
       "id": "reference/gp-process-release",
       "path": "reference/gp-process-release.md",
-      "documentDigest": "sha256:5cb971bf0db616e5c155c0aee32d7e99d6ac98ce2b03275ed6bbcad6a1eb4d60",
+      "documentDigest": "sha256:a01a043b96550763ea4022ed7199108c6079125f7c55a3d85179bb9351bdc8b9",
       "metadata": {
         "type": "reference",
         "title": "GP process release descriptor and lock",

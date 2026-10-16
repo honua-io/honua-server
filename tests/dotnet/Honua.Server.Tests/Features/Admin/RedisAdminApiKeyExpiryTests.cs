@@ -51,6 +51,8 @@ public sealed class RedisAdminApiKeyExpiryTests(RedisFixture redis)
         finally
         {
             var database = connection.GetDatabase();
+            await database.KeyDeleteAsync(RedisAdminApiKeyStore.HashIndexKey(created.Record.KeyHash));
+            await database.SetRemoveAsync("honua:auth:admin-api-key:hash-indexed-ids", created.Record.Id.ToString("D"));
             await database.KeyDeleteAsync($"honua:auth:admin-api-key:{created.Record.Id:D}");
             await database.SetRemoveAsync("honua:auth:admin-api-key:ids", created.Record.Id.ToString("D"));
             await database.SetRemoveAsync("honua:auth:admin-api-key:active-ids", created.Record.Id.ToString("D"));
@@ -94,6 +96,8 @@ public sealed class RedisAdminApiKeyExpiryTests(RedisFixture redis)
         finally
         {
             var database = connection.GetDatabase();
+            await database.KeyDeleteAsync(RedisAdminApiKeyStore.HashIndexKey(created.Record.KeyHash));
+            await database.SetRemoveAsync("honua:auth:admin-api-key:hash-indexed-ids", created.Record.Id.ToString("D"));
             await database.KeyDeleteAsync($"honua:auth:admin-api-key:{created.Record.Id:D}");
             await database.SetRemoveAsync("honua:auth:admin-api-key:ids", created.Record.Id.ToString("D"));
             await database.SetRemoveAsync("honua:auth:admin-api-key:active-ids", created.Record.Id.ToString("D"));
@@ -102,7 +106,7 @@ public sealed class RedisAdminApiKeyExpiryTests(RedisFixture redis)
     }
 
     [IntegrationTest]
-    public async Task LegacyRegistry_WithoutCandidateIndex_StillAuthenticatesAndSeedsIt()
+    public async Task LegacyRegistry_WithoutHashIndex_AuthenticatesAfterBackgroundReconciliation()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var database = connection.GetDatabase();
@@ -111,11 +115,13 @@ public sealed class RedisAdminApiKeyExpiryTests(RedisFixture redis)
             DateTimeOffset.UtcNow.AddHours(1), "operator", CancellationToken.None);
         try
         {
-            // A registry written before the candidate index existed has records and ids but
-            // neither the active index nor the reconciliation ledger. Authentication must not
-            // fail closed while both are absent.
-            await database.KeyDeleteAsync("honua:auth:admin-api-key:active-ids");
-            await database.KeyDeleteAsync("honua:auth:admin-api-key:seen-ids");
+            // Model a pre-hash-index record. Migration is deliberately off the auth hot path.
+            await database.KeyDeleteAsync(RedisAdminApiKeyStore.HashIndexKey(created.Record.KeyHash));
+            await database.SetRemoveAsync("honua:auth:admin-api-key:hash-indexed-ids", created.Record.Id.ToString("D"));
+            await database.SetRemoveAsync("honua:auth:admin-api-key:active-ids", created.Record.Id.ToString("D"));
+            await database.SetRemoveAsync("honua:auth:admin-api-key:seen-ids", created.Record.Id.ToString("D"));
+            Assert.Null(await store.ValidateAsync(created.Key, CancellationToken.None));
+            await store.ReconcileHashIndexAsync(CancellationToken.None);
 
             var validated = await store.ValidateAsync(created.Key, CancellationToken.None);
 
@@ -127,6 +133,8 @@ public sealed class RedisAdminApiKeyExpiryTests(RedisFixture redis)
         }
         finally
         {
+            await database.KeyDeleteAsync(RedisAdminApiKeyStore.HashIndexKey(created.Record.KeyHash));
+            await database.SetRemoveAsync("honua:auth:admin-api-key:hash-indexed-ids", created.Record.Id.ToString("D"));
             await database.KeyDeleteAsync($"honua:auth:admin-api-key:{created.Record.Id:D}");
             await database.SetRemoveAsync("honua:auth:admin-api-key:ids", created.Record.Id.ToString("D"));
             await database.SetRemoveAsync("honua:auth:admin-api-key:active-ids", created.Record.Id.ToString("D"));
@@ -160,6 +168,8 @@ public sealed class RedisAdminApiKeyExpiryTests(RedisFixture redis)
         }
         finally
         {
+            await database.KeyDeleteAsync(RedisAdminApiKeyStore.HashIndexKey(created.Record.KeyHash));
+            await database.SetRemoveAsync("honua:auth:admin-api-key:hash-indexed-ids", created.Record.Id.ToString("D"));
             await database.KeyDeleteAsync($"honua:auth:admin-api-key:{created.Record.Id:D}");
             await database.SetRemoveAsync("honua:auth:admin-api-key:ids", created.Record.Id.ToString("D"));
             await database.SetRemoveAsync("honua:auth:admin-api-key:active-ids", created.Record.Id.ToString("D"));
