@@ -132,7 +132,7 @@ public sealed class GpProcessReleaseJobEndpointsTests : IAsyncLifetime
     {
         _client.DefaultRequestHeaders.Add("Idempotency-Key", "deployment-smoke");
         using var submitted = await _client.PostAsJsonAsync("/api/v1/admin/gp/process-releases/bindings/buffer-features/jobs",
-            new { @params = new { distance = 10 }, declaredScope = Array.Empty<object>() });
+            new { @params = new { distance = 10 } });
         submitted.StatusCode.Should().Be(HttpStatusCode.Accepted, await submitted.Content.ReadAsStringAsync());
         var body = await submitted.Content.ReadFromJsonAsync<JsonElement>();
         var jobId = body.GetProperty("jobId").GetString()!;
@@ -149,7 +149,8 @@ public sealed class GpProcessReleaseJobEndpointsTests : IAsyncLifetime
         job.Spec.Parameters[CustomCodeJobContract.OutputPrefixParam].Should().Contain(jobId);
 
         await ActivateAsync("2.0.0", 'c', 1);
-        // Replay must survive retirement of the original workload and retain its original pin.
+        // Replay must survive retirement of the original workload, retain its original pin,
+        // and treat the omitted scope on admission identically to an explicit empty scope.
         _registry.ListAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<ExecutionJobDefinition>());
         using var replay = await _client.PostAsJsonAsync("/api/v1/admin/gp/process-releases/bindings/buffer-features/jobs",
             new { @params = new { distance = 10 }, declaredScope = Array.Empty<object>() });
@@ -195,6 +196,7 @@ public sealed class GpProcessReleaseJobEndpointsTests : IAsyncLifetime
         foreach (var json in new[]
         {
             """{"params":[],"declaredScope":[]}""",
+            """{"params":{},"declaredScope":null}""",
             """{"params":{},"declaredScope":[{"serviceId":"parcels","access":"admin"}]}""",
             """{"params":{},"declaredScope":[null]}""",
             """{"params":{},"outputPrefix":"s3://other/job"}""",

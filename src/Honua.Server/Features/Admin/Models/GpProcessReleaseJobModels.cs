@@ -15,7 +15,9 @@ public sealed class GpProcessReleaseJobRequest
     public JsonElement Params { get; init; }
 
     /// <summary>Callback resource access, attenuated against the submitting principal.</summary>
-    public IReadOnlyList<GpProcessReleaseJobScope> DeclaredScope { get; init; } = [];
+    // A normal setter preserves the initializer when source-generated JSON omits this
+    // property. An explicit null still reaches the adapter's invalid-scope check.
+    public IReadOnlyList<GpProcessReleaseJobScope> DeclaredScope { get; set; } = [];
 }
 
 /// <summary>One requested callback resource permission.</summary>
