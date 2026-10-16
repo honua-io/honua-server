@@ -26,4 +26,5 @@ The facts above come from the server's capability registry and capability matrix
 
 - [Run geoprocessing](../../guides/query-analyze/run-geoprocessing.md)
 - [Geoprocessing operations](../../reference/geoprocessing-operations.md)
+- [Custom-code worker runtime](../../reference/gp-customcode-runtime.md)
 - [GP harness events (honua.gp.events/v1)](../../reference/gp-harness-events.v1.md)

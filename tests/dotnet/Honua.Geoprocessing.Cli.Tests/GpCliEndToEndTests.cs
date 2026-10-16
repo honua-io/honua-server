@@ -21,6 +21,7 @@ namespace Honua.Geoprocessing.Cli.Tests;
 /// Redis, no job store, no Docker, and no GDAL binary on PATH.
 /// </summary>
 [Collection(GpCliEndToEndTests.CollectionName)]
+[global::Xunit.Trait("Tier", "Integration")]
 public sealed class GpCliEndToEndTests
 {
     internal const string CollectionName = "GpCli console capture";

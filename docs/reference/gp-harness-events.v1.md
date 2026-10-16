@@ -16,7 +16,7 @@ The same shape is written by:
 
 | Producer | Journal location |
 | --- | --- |
-| Python custom-code harness (Batch container) | `CUSTOMCODE_EVENTS_PATH`, default `/work/out/honua-events.v1.jsonl`; uploaded to `output_prefix` as the reserved artifact `honua-events.v1.jsonl` after the tool's own artifacts |
+| Python custom-code harness (Batch container) | `CUSTOMCODE_EVENTS_PATH`, default `/work/out/honua-events.v1.jsonl`; uploaded through the job-scoped artifact broker as the reserved artifact `honua-events.v1.jsonl` after the tool's own artifacts |
 | .NET custom-code harness (Batch container) | same variable and upload behaviour |
 | `honua-gp-python` / `honua-customcode-harness local` (local runners) | `<output>/<runId>/events.jsonl`, referenced by `receipt.json` (`eventsSchema`) |
 | `honua-gp-devkit run` | `<receipt-dir>/<runId>/events.jsonl` next to `receipt.json` (default `.honua/runs`, `--receipt-dir`, `--no-receipt`) |

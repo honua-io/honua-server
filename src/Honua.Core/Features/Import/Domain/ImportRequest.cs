@@ -65,6 +65,22 @@ public sealed record ImportRequest
     public string? LocalFilePath { get; init; }
 
     /// <summary>
+    /// Customer object-store URI (<c>s3://bucket/key</c>). Exclusive with
+    /// <see cref="FileStream"/>, <see cref="CloudFileId"/>, and <see cref="LocalFilePath"/>.
+    /// The worker opens it with <see cref="ObjectStoreETag"/> pinned.
+    /// </summary>
+    public string? ObjectStoreUri { get; init; }
+
+    /// <summary>ETag observed by HeadObject. The worker sends it as <c>If-Match</c>.</summary>
+    public string? ObjectStoreETag { get; init; }
+
+    /// <summary>Allow-listed role ARN to assume, when the import does not use the host identity.</summary>
+    public string? ObjectStoreRoleArn { get; init; }
+
+    /// <summary>Content type observed by HeadObject, used when the key has no extension.</summary>
+    public string? ObjectStoreContentType { get; init; }
+
+    /// <summary>
     /// Original filename (used for format detection)
     /// </summary>
     public required string FileName { get; init; }
@@ -147,13 +163,14 @@ public sealed record ImportRequest
             : OverwriteExisting ? ImportLoadMode.Replace : ImportLoadMode.Append;
 
     /// <summary>
-    /// Validates that either FileStream or CloudFileId is provided
+    /// Validates that exactly one import source is provided.
     /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown when neither FileStream nor CloudFileId is provided</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the source is missing or ambiguous.</exception>
     public void Validate()
     {
         var cloudFileId = string.IsNullOrWhiteSpace(CloudFileId) ? null : CloudFileId;
         var localFilePath = string.IsNullOrWhiteSpace(LocalFilePath) ? null : LocalFilePath;
+        var objectStoreUri = string.IsNullOrWhiteSpace(ObjectStoreUri) ? null : ObjectStoreUri;
         var sourceCount = 0;
 
         if (FileStream != null)
@@ -171,14 +188,19 @@ public sealed record ImportRequest
             sourceCount++;
         }
 
+        if (objectStoreUri != null)
+        {
+            sourceCount++;
+        }
+
         if (sourceCount == 0)
         {
-            throw new InvalidOperationException("Either FileStream, CloudFileId, or LocalFilePath must be provided.");
+            throw new InvalidOperationException("Either FileStream, CloudFileId, LocalFilePath, or ObjectStoreUri must be provided.");
         }
 
         if (sourceCount > 1)
         {
-            throw new InvalidOperationException("Only one of FileStream, CloudFileId, or LocalFilePath should be provided, not multiple sources.");
+            throw new InvalidOperationException("Only one of FileStream, CloudFileId, LocalFilePath, or ObjectStoreUri should be provided, not multiple sources.");
         }
 
         if (EffectiveLoadMode == ImportLoadMode.Upsert && KeyColumns.Count == 0)
@@ -196,4 +218,9 @@ public sealed record ImportRequest
     /// Gets a value indicating whether this request uses a local staged file path.
     /// </summary>
     public bool UsesLocalFile => !string.IsNullOrWhiteSpace(LocalFilePath);
+
+    /// <summary>
+    /// Gets a value indicating whether this request reads a customer object-store URI at execution time.
+    /// </summary>
+    public bool UsesObjectStore => !string.IsNullOrWhiteSpace(ObjectStoreUri);
 }

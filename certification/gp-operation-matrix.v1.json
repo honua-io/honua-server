@@ -3,11 +3,14 @@
   "catalogVersion": "honua.process_catalog.builtin.v1",
   "ruling": "https://github.com/honua-io/honua-release/issues/210#issuecomment-5502998451",
   "audit": {
+    "runtimeBrokerRegistrationAudit": "certification/gp-runtime-broker-audit-20261016.md",
     "recordedAt": "2026-09-02T02:30:00Z",
     "catalogSourceRevision": "14d101ec17f4b7ccdc6106ee2cb5bd4d621d779f",
     "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848",
     "layerReceiptEnforcement": "PR Gate step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all.",
-    "catalogSourceContentDigest": "sha256:862c13116cb4d47e25d47abbf57525c7028c1727e3300e54354972f1e501dd30",
+    "catalogSourceContentDigest": "sha256:46a41eede2da3db6a3771dbd19471b40b6cb95324782dfdd6fe05567d5aebe7a",
+    "gpCorrectnessAudit": "certification/gp-correctness-audit-20261016.md",
+    "releaseBindingRegistrationAudit": "certification/gp-release-binding-audit-20261015.md",
     "securityRemediationAudit": "certification/gp-security-remediation-audit-20261009.md",
     "importPublishingScopeAudit": "docs/audit/platform-20261006/issue-5622.md",
     "workspaceRetryAudit": "certification/gp-workspace-retry-audit-20260914.md",
@@ -1500,7 +1503,13 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/FileSinkExecutorTests.cs",
           "test": "GeoJsonFileSink_WritesFeatureCollectionFile",
           "assertion": "Real-disk read-back parses the exact written feature count/content.",
-          "bodyDigest": "sha256:762bce02bf51857840c007ea4304d8845379ff1e363aa51f14aaf07cb4db2483"
+          "bodyDigest": "sha256:ee6eef30a2cbeb8ad7f11329ecaa182b0b4f31764af23f8174f269a01ec00797"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/FileSinkExecutorTests.cs",
+          "test": "Submission_SameKeyAndPathAcrossOwnersAndTenants_CannotReplaceOtherOutputs",
+          "assertion": "Canonical admission with identical keys and paths for two owners and two tenants, followed by real file execution, proves exact geometry content and byte-identical prior outputs; duplicate attempt writes fail and retries get distinct paths.",
+          "bodyDigest": "sha256:b921300a2b303b1679a7cb6171d065a38094c3aa7303952a8c8b65ab7c2a3972"
         }
       ]
     },
@@ -1513,7 +1522,13 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/FileSinkExecutorTests.cs",
           "test": "QuarantineSink_TagsRowsAndNeverThrows",
           "assertion": "Real-disk read-back proves exact rows, batch id, and quarantine reason.",
-          "bodyDigest": "sha256:1b2ce669e1251125bd86839daeee45691fea6beb7040d010546d62e032179b47"
+          "bodyDigest": "sha256:966a110fb45fe3b9d6393e23e31f5023c6e5181b10dd5fa3c0d7c7b5f27c90d0"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/FileSinkExecutorTests.cs",
+          "test": "Submission_SameKeyAndPathAcrossOwnersAndTenants_CannotReplaceOtherOutputs",
+          "assertion": "Canonical admission with identical keys and paths for two owners and two tenants, followed by real file execution, proves exact geometry content and byte-identical prior outputs; duplicate attempt writes fail and retries get distinct paths.",
+          "bodyDigest": "sha256:b921300a2b303b1679a7cb6171d065a38094c3aa7303952a8c8b65ab7c2a3972"
         }
       ]
     },

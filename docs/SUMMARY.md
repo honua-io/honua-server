@@ -89,6 +89,7 @@
   - [Design a map application through prompt and preview](guides/workflows/design-studio.md)
 - Publish data
   - [Import files](guides/publish/import-files.md)
+  - [Import from object storage](guides/publish/import-from-object-storage.md)
   - [Import from ArcGIS services](guides/publish/import-from-arcgis-services.md)
   - [Serve existing databases](guides/publish/serve-existing-databases.md)
   - [Publish layers](guides/publish/publish-layers.md)
@@ -157,6 +158,7 @@
   - [Troubleshooting](guides/deploy/troubleshooting.md)
   - [Capability deployment profiles](guides/deploy/capability-deployment-profiles.md)
   - [Route geoprocessing to AWS Batch](operator/geoprocessing-aws-batch.md)
+  - [GP process release bindings](operator/geoprocessing-process-releases.md)
 - Migrate
   - [From ArcGIS Server](guides/migrate/from-arcgis-server.md)
   - [From GeoServer](guides/migrate/from-geoserver.md)
@@ -202,6 +204,7 @@
 - [Data formats](reference/data-formats.md)
 - [CQL2 & filtering](reference/cql2-and-filtering.md)
 - [Geoprocessing operations](reference/geoprocessing-operations.md)
+- [GP process release descriptor and lock](reference/gp-process-release.md)
 - [GP harness events](reference/gp-harness-events.v1.md)
 - [Analysis content, artifacts & reports](reference/analysis-artifacts-and-reports.md)
 - [Spec plan/apply engine](reference/spec-engine.md)

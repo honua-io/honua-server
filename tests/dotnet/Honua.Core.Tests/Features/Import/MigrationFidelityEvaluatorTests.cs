@@ -289,10 +289,10 @@ public sealed class MigrationFidelityEvaluatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Evaluate_WhenNothingWasPublished_DoesNotInventNotExecutedDifferencesForPostPublishProbes()
+    public void Evaluate_WhenNothingWasPublished_IsUnverifiedBecauseDataReconciliationDidNotRun()
     {
-        // With no published target there is nothing for the post-publish probes to reconcile
-        // against, so they are not applicable rather than skipped.
+        // An unpublished import has no post-publish probe. That absence is unverified, not full
+        // fidelity. Catalog reconciliation still needs a published entry and is not invented.
         var input = new MigrationFidelityEvaluationInput
         {
             LayerName = "Inspections",
@@ -301,8 +301,70 @@ public sealed class MigrationFidelityEvaluatorTests
 
         var evaluation = MigrationFidelityEvaluator.Evaluate(input);
 
-        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.FullFidelity);
-        evaluation.Differences.Should().BeEmpty();
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Unverified);
+        evaluation.IsBlocking.Should().BeFalse();
+        evaluation.Differences.Should().ContainSingle().Which.Code
+            .Should().Be(MigrationFidelityDifferenceCodes.DataReconciliationNotExecuted);
+        evaluation.Differences.Should().NotContain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.CatalogReconciliationNotExecuted);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Evaluate_WhenUnpublishedTransferCountDoesNotMatch_IsBlocking()
+    {
+        var evaluation = MigrationFidelityEvaluator.Evaluate(new MigrationFidelityEvaluationInput
+        {
+            LayerName = "Inspections",
+            PublishedTarget = false,
+            FeaturesProcessed = 2,
+            FailedFeatures = 0,
+            SourceCountBeforeTransfer = 4
+        });
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.TransferCountMismatch
+            && difference.Severity == MigrationFidelityDifferenceSeverities.Blocking);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Evaluate_WhenUnpublishedGeometryWasNotConverted_IsBlocking()
+    {
+        var evaluation = MigrationFidelityEvaluator.Evaluate(new MigrationFidelityEvaluationInput
+        {
+            LayerName = "Inspections",
+            PublishedTarget = false,
+            FeaturesProcessed = 3,
+            SourceCountBeforeTransfer = 3,
+            UnconvertedGeometryCount = 1
+        });
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.GeometryUnconverted
+            && difference.Severity == MigrationFidelityDifferenceSeverities.Blocking);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Evaluate_WhenUnpublishedInProcessChecksMatch_StaysUnverifiedNotFullFidelity()
+    {
+        var evaluation = MigrationFidelityEvaluator.Evaluate(new MigrationFidelityEvaluationInput
+        {
+            LayerName = "Inspections",
+            PublishedTarget = false,
+            FeaturesProcessed = 3,
+            FailedFeatures = 0,
+            SourceCountBeforeTransfer = 3,
+            UnconvertedGeometryCount = 0
+        });
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Unverified);
+        evaluation.IsBlocking.Should().BeFalse();
+        evaluation.Differences.Should().ContainSingle().Which.Code
+            .Should().Be(MigrationFidelityDifferenceCodes.DataReconciliationNotExecuted);
     }
 
     [Trait("Tier", "Fast")]
@@ -324,10 +386,12 @@ public sealed class MigrationFidelityEvaluatorTests
         evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
         evaluation.IsBlocking.Should().BeTrue();
         evaluation.BlockingReason.Should().NotBeNullOrWhiteSpace();
-        evaluation.Differences.Should().ContainSingle().Which.Should().Match<MigrationFidelityDifference>(difference =>
+        evaluation.Differences.Should().Contain(difference =>
             difference.Code == MigrationFidelityDifferenceCodes.PublishNotCompleted &&
             difference.Severity == MigrationFidelityDifferenceSeverities.Blocking &&
             difference.Subject == "Inspections");
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.DataReconciliationNotExecuted);
     }
 
     [Trait("Tier", "Fast")]

@@ -1,8 +1,8 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "48548f08e3ea8b90142c6a9841cfb702e18337f0",
-  "generatedAt": "2026-10-15T17:28:20Z",
+  "serverSha": "2ef82ca09ec9014ac67cf99b656724256d788da0",
+  "generatedAt": "2026-10-16T01:21:30Z",
   "regenerate": "bash scripts/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
@@ -77,6 +77,7 @@
     "honua_admin_field_mask_policy_delete",
     "honua_admin_field_mask_policy_get",
     "honua_admin_field_mask_policy_list",
+    "honua_admin_import_upload_object",
     "honua_admin_import_upload_url",
     "honua_admin_layer_drawing_info_get",
     "honua_admin_layer_drawing_info_set",
@@ -142,6 +143,7 @@
   "requiresDurableControlPlane": [
     "honua_admin_connections_create",
     "honua_admin_connections_test",
+    "honua_admin_import_upload_object",
     "honua_admin_import_upload_url",
     "honua_admin_layer_drawing_info_get",
     "honua_admin_layer_drawing_info_set",
@@ -183,6 +185,7 @@
       "honua_admin_api_key_list",
       "honua_admin_connections_create",
       "honua_admin_connections_test",
+      "honua_admin_import_upload_object",
       "honua_admin_import_upload_url",
       "honua_admin_layer_publish",
       "honua_admin_server_status",

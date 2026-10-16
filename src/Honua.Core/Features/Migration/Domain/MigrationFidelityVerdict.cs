@@ -141,6 +141,17 @@ public static class MigrationFidelityDifferenceCodes
     /// and verified automatically.
     /// </summary>
     public const string ConstructReviewRequired = "fidelity.construct.review-required";
+
+    /// <summary>
+    /// The source count captured before the transfer does not equal the rows imported plus the rows
+    /// that failed, so the transfer did not account for every source record.
+    /// </summary>
+    public const string TransferCountMismatch = "fidelity.transfer.count-mismatch";
+
+    /// <summary>
+    /// One or more source geometries could not be converted and were stored with a null geometry.
+    /// </summary>
+    public const string GeometryUnconverted = "fidelity.geometry.unconverted";
 }
 
 /// <summary>

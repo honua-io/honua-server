@@ -2446,6 +2446,100 @@
         }
       }
     },
+    "/import/upload-object": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Import a Geospatial File from Object Storage",
+        "description": "Imports one supported object from an allow-listed s3:// bucket using the host identity. The request carries no credentials. Large objects return a background job without an in-request download.",
+        "operationId": "uploadImportFileFromObjectStore",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportFileFromObjectStoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import completed synchronously.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Import accepted for background processing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The object or bucket was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The object changed after the preflight ETag was recorded, or the importer refused the target.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The object exceeds MaxObjectStoreImportBytes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Background import dependencies are unavailable, or this host has no object-store reader.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/imports": {
       "post": {
         "tags": [
@@ -20922,6 +21016,15 @@
               "maximum": 500,
               "default": 50
             }
+          },
+          {
+            "name": "eventCursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Omit for a tail. Use start to page the retained stream from its beginning, then the returned nextCursor. Append order; not a frozen snapshot."
           }
         ],
         "responses": {
@@ -20957,6 +21060,324 @@
           },
           "400": {
             "description": "Invalid job identifier or event limit."
+          }
+        }
+      }
+    },
+    "/gp/process-releases": {
+      "post": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Publish gp process release",
+        "operationId": "publishGpProcessRelease",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "201": {
+            "description": "Release created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpProcessReleaseLock"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "List gp process releases",
+        "operationId": "listGpProcessReleases",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "name": "process",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/gp/process-releases/{digest}": {
+      "get": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Get gp process release",
+        "operationId": "getGpProcessRelease",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseLock"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "name": "digest",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/gp/process-releases/bindings": {
+      "get": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "List gp process bindings",
+        "operationId": "listGpProcessBindings",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessBindingListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/gp/process-releases/bindings/{process}": {
+      "get": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Get gp process binding",
+        "operationId": "getGpProcessBinding",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessBindingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/gp/process-releases/bindings/{process}/activate": {
+      "post": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Activate gp process release",
+        "operationId": "activateGpProcessRelease",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessBindingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "description": "Activation refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessBindingRefusedResponse"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpProcessBindingActivateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/gp/process-releases/bindings/{process}/jobs": {
+      "post": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Submit a release-bound custom-code job",
+        "operationId": "submitGpProcessReleaseJob",
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "Identical retries return the original job and release pin."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpProcessReleaseJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted; Location identifies the canonical job status route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "Idempotency key already belongs to different inputs."
+          },
+          "429": {
+            "description": "Admission throttled; Retry-After may be present."
+          },
+          "503": {
+            "description": "Durable jobs or the selected execution backend is unavailable."
           }
         }
       }
@@ -21447,6 +21868,46 @@
             "default": false
           },
           "trackProgress": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "ImportFileFromObjectStoreRequest": {
+        "type": "object",
+        "required": [
+          "sourceUri",
+          "tableName"
+        ],
+        "properties": {
+          "sourceUri": {
+            "type": "string",
+            "description": "s3://bucket/key object to import. Credentials, queries, and fragments are rejected."
+          },
+          "assumeRoleArn": {
+            "type": "string",
+            "description": "Optional allow-listed role ARN. The host assumes it with the configured external id. Omit to use the host identity."
+          },
+          "tableName": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+          },
+          "targetSchema": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "sourceSrid": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "targetSrid": {
+            "type": "integer",
+            "format": "int32",
+            "default": 4326
+          },
+          "overwriteExisting": {
             "type": "boolean",
             "default": false
           }
@@ -36971,6 +37432,20 @@
             "items": {
               "$ref": "#/components/schemas/ConsoleJobStep"
             }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Total appended log entries, including entries removed by retention bounds."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the returned timeline omits earlier entries."
+          },
+          "droppedCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of earliest entries removed by the retained-log bound."
           }
         }
       },
@@ -48781,6 +49256,34 @@
             "items": {
               "type": "string"
             }
+          },
+          "processRelease": {
+            "type": "string",
+            "nullable": true
+          },
+          "processVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "lockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "bindingVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "workflowVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "dependencyLockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "workerImage": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -49010,6 +49513,21 @@
           },
           "truncated": {
             "type": "boolean"
+          },
+          "firstCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "tail",
+              "page"
+            ]
           }
         }
       },
@@ -49071,6 +49589,534 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "GpProcessReleaseResponse": {
+        "type": "object",
+        "properties": {
+          "lockDigest": {
+            "type": "string"
+          },
+          "process": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "sourceSha": {
+            "type": "string"
+          },
+          "publishedBy": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "GpProcessReleaseListResponse": {
+        "type": "object",
+        "properties": {
+          "releases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpProcessReleaseResponse"
+            }
+          }
+        }
+      },
+      "GpProcessBindingTargetResponse": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "jobDefinitionArn": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "GpProcessBindingResponse": {
+        "type": "object",
+        "properties": {
+          "process": {
+            "type": "string"
+          },
+          "bindingVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "previousLockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpProcessBindingTargetResponse"
+            }
+          },
+          "operation": {
+            "type": "string",
+            "nullable": true
+          },
+          "activatedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "activatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "serverContractVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "supportedTargets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scheduleReconciliation": {
+            "type": "string"
+          }
+        }
+      },
+      "GpProcessBindingListResponse": {
+        "type": "object",
+        "properties": {
+          "bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpProcessBindingResponse"
+            }
+          }
+        }
+      },
+      "GpProcessBindingTargetRequest": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "jobDefinitionArn": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "GpProcessBindingActivateRequest": {
+        "type": "object",
+        "properties": {
+          "lockDigest": {
+            "type": "string"
+          },
+          "expectedBindingVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "operation": {
+            "type": "string",
+            "nullable": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpProcessBindingTargetRequest"
+            }
+          }
+        }
+      },
+      "GpProcessBindingRefusedResponse": {
+        "type": "object",
+        "properties": {
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "binding": {
+            "$ref": "#/components/schemas/GpProcessBindingResponse",
+            "nullable": true
+          }
+        }
+      },
+      "GpProcessReleaseLock": {
+        "title": "GP process release lock v1",
+        "description": "Immutable identity of one geoprocessing process release: the exact source, dependency lock, runtime image, workflow version, configuration references, targets, artifacts and validation receipts that a deployment activates. Generated once by `honua-gp-devkit release` (honua-server#6221); promoted and rolled back by digest, never rebuilt.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "process",
+          "source",
+          "dependencyLock",
+          "runtimeImage",
+          "workflowVersion",
+          "configurationReferences",
+          "targets",
+          "compatibility",
+          "artifacts",
+          "validation",
+          "generatedAt"
+        ],
+        "properties": {
+          "schema": {
+            "enum": [
+              "honua.gp-process-release-lock/v1"
+            ],
+            "type": "string"
+          },
+          "process": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "version",
+              "runtime",
+              "entrypoint",
+              "contract"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,62}$"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+              },
+              "runtime": {
+                "enum": [
+                  "python",
+                  "dotnet"
+                ],
+                "type": "string"
+              },
+              "entrypoint": {
+                "type": "string",
+                "minLength": 1
+              },
+              "contract": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "inputSchemaSha256",
+                  "outputSchemaSha256"
+                ],
+                "properties": {
+                  "inputSchemaSha256": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "outputSchemaSha256": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "repository",
+              "sha",
+              "descriptorPath"
+            ],
+            "properties": {
+              "repository": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+              },
+              "sha": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "descriptorPath": {
+                "type": "string",
+                "pattern": "^[^ ]+\\.ya?ml$"
+              }
+            }
+          },
+          "dependencyLock": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          },
+          "runtimeImage": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "reference",
+              "digest"
+            ],
+            "properties": {
+              "reference": {
+                "type": "string",
+                "pattern": "^[a-z0-9.-]+(:[0-9]+)?/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          },
+          "workflowVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          },
+          "configurationReferences": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "reference"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+                },
+                "reference": {
+                  "type": "string",
+                  "description": "A reference, never a value: the worker resolves it at execution time.",
+                  "pattern": "^(aws:secretsmanager:|azure:keyvault:|ref:)[^ ]+$"
+                }
+              }
+            }
+          },
+          "targets": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "workerImageDigest"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "kubernetes-job",
+                    "aws-batch"
+                  ],
+                  "type": "string"
+                },
+                "workerImageDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "chartVersion": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+                },
+                "jobDefinitionName": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                }
+              }
+            }
+          },
+          "compatibility": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "serverContractVersion"
+            ],
+            "properties": {
+              "serverContractVersion": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "minimum",
+                  "maximum"
+                ],
+                "properties": {
+                  "minimum": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maximum": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "sha256",
+                "sizeBytes"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "validation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "receipts"
+            ],
+            "properties": {
+              "receipts": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "sha256",
+                    "status"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "status": {
+                      "enum": [
+                        "pass"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "generatedAt": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+          }
+        }
+      },
+      "GpProcessReleaseJobRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "params"
+        ],
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "declaredScope": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "serviceId"
+              ],
+              "properties": {
+                "serviceId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "layerId": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "access": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "write"
+                  ],
+                  "default": "read"
+                }
+              }
+            }
+          }
+        }
+      },
+      "GpProcessReleaseJobResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "statusUrl",
+          "diagnosticsUrl",
+          "artifactsUrl"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "statusUrl": {
+            "type": "string"
+          },
+          "diagnosticsUrl": {
+            "type": "string"
+          },
+          "artifactsUrl": {
+            "type": "string"
           }
         }
       }

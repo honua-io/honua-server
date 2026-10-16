@@ -8,6 +8,7 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
@@ -187,6 +188,10 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         {
             tempFilePath = request.LocalFilePath;
         }
+        else if (request.UsesObjectStore)
+        {
+            backgroundRequest = request;
+        }
         else if (!request.UsesCloudStorage)
         {
             // Copy stream to a temp file for background processing
@@ -317,12 +322,33 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             }));
 
             using var scope = _scopeFactory.CreateScope();
+            if (request.UsesObjectStore)
+            {
+                var reader = scope.ServiceProvider.GetRequiredService<IImportObjectStoreReader>();
+                var cloud = scope.ServiceProvider.GetService<ICloudFileStorage>();
+                var storeOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ImportObjectStoreOptions>>().Value;
+                var materialized = await ImportObjectStoreMaterializer.MaterializeAsync(
+                    request, reader, cloud, storeOptions, cancellationToken).ConfigureAwait(false);
+                request = materialized.Request;
+                if (materialized.DisposeStream)
+                {
+                    stream = request.FileStream;
+                }
+
+                if (materialized.DeleteLocalFile)
+                {
+                    tempFilePath = request.LocalFilePath;
+                }
+            }
+
             var importService = scope.ServiceProvider.GetRequiredService<IFileImportService>();
             var result = await importService.ImportFileAsync(request, progress, cancellationToken);
 
             // The background path must perform the same canonical snapshot refresh as the
             // synchronous upload path. The importer stores file targets under its physical
             // imported_* name, while callers submit the logical table name (#22).
+            // A cancel after the import returned must not skip this refresh or rewrite a
+            // committed result as Cancelled.
             if (result.Success)
             {
                 await ImportedSnapshotRefresher.RefreshAsync(
@@ -330,41 +356,64 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                     request.TargetSchema,
                     request.TableName,
                     ex => UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex),
-                    cancellationToken).ConfigureAwait(false);
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+
+            if (result.Success && cancellationToken.IsCancellationRequested && !licenseCancellation.IsCancellationRequested)
+            {
+                const string committedWarning =
+                    "Import was cancelled after the data was committed. The imported rows were kept.";
+                if (!result.Warnings.Contains(committedWarning, StringComparer.Ordinal))
+                {
+                    result = result with { Warnings = [.. result.Warnings, committedWarning] };
+                }
             }
 
             if (_jobs.TryGetValue(jobId, out state))
             {
-                status = result.Success ? "completed" : "failed";
+                var licenseStoppedCommittedImport = result.Success && licenseCancellation.IsCancellationRequested;
+                status = licenseStoppedCommittedImport ? "failed" : result.Success ? "completed" : "failed";
                 featureCount = result.FeatureCount;
-                errorMessage = result.ErrorMessage;
+                errorMessage = licenseStoppedCommittedImport
+                    ? "license expired; imported rows were already committed"
+                    : result.ErrorMessage;
 
                 await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
-                var currentProgress = await _progressStore.GetProgressAsync<ImportProgress>(jobId, cancellationToken);
+                var currentProgress = await _progressStore.GetProgressAsync<ImportProgress>(jobId, CancellationToken.None);
                 failedFeatures = currentProgress?.FailedFeatures ?? 0;
                 if (currentProgress != null)
                 {
-                    var clientErrorMessage = result.Success ? result.ErrorMessage
+                    var clientErrorMessage = licenseStoppedCommittedImport
+                        ? errorMessage
+                        : result.Success ? result.ErrorMessage
                         : result.ErrorCode == ImportTableOwnershipException.Code
                             ? ImportTableOwnershipException.CreateSafeMessage(result.TableName)
                             : SafeImportFailureMessage;
-                    cancellationToken.ThrowIfCancellationRequested();
                     var finalProgress = currentProgress with
                     {
-                        Status = result.Success ? ImportStatus.Completed : ImportStatus.Failed,
+                        Status = licenseStoppedCommittedImport
+                            ? ImportStatus.Failed
+                            : result.Success ? ImportStatus.Completed : ImportStatus.Failed,
                         FeaturesProcessed = result.FeatureCount,
+                        BatchesCommitted = result.Success ? currentProgress.BatchesCommitted : 0,
                         CompletedAt = DateTimeOffset.UtcNow,
                         ErrorMessage = clientErrorMessage,
-                        ErrorCode = result.ErrorCode,
+                        ErrorCode = licenseStoppedCommittedImport ? null : result.ErrorCode,
                         Warnings = result.Warnings,
                         DetectedSrid = result.DetectedSrid,
-                        CurrentPhase = result.Success ? "Import completed" : "Import failed"
+                        CurrentPhase = licenseStoppedCommittedImport
+                            ? "Failed: license expired after data was committed"
+                            : result.Success ? "Import completed" : "Import failed"
                     };
-                    await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromDays(1), cancellationToken);
-                    cancellationToken.ThrowIfCancellationRequested();
+                    await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromDays(1), CancellationToken.None);
                 }
 
-                if (result.Success)
+                if (licenseStoppedCommittedImport)
+                {
+                    UniversalImportJobLog.JobFailed(_logger, jobId, state.TableName, state.Format, state.FileSize,
+                        errorMessage ?? "license expired", stopwatch.Elapsed.TotalMilliseconds);
+                }
+                else if (result.Success)
                 {
                     UniversalImportJobLog.JobCompleted(_logger, jobId, state.TableName, state.Format, state.FileSize,
                         result.FeatureCount, failedFeatures ?? 0, stopwatch.Elapsed.TotalMilliseconds);
@@ -429,6 +478,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                     {
                         Status = ImportStatus.Failed,
                         CompletedAt = DateTimeOffset.UtcNow,
+                        ErrorCode = ex is ImportObjectStoreException storeFailure ? storeFailure.Code : null,
                         ErrorMessage = licenseCancellation.IsCancellationRequested ? "license expired" : SafeImportFailureMessage
                     };
                     await _progressStore.SetProgressAsync(jobId, failedProgress, TimeSpan.FromDays(1), CancellationToken.None);

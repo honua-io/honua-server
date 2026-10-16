@@ -133,6 +133,78 @@ internal sealed partial class PostgresAttachmentStore
         return result;
     }
 
+    public async Task RemapImportedAttachmentsAsync(
+        int layerId,
+        IReadOnlyDictionary<long, long> sourceObjectIds,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(sourceObjectIds);
+        if (sourceObjectIds.Count == 0)
+        {
+            return;
+        }
+
+        var parents = new long[sourceObjectIds.Count];
+        var targets = new long[sourceObjectIds.Count];
+        var index = 0;
+        foreach (var pair in sourceObjectIds)
+        {
+            parents[index] = pair.Key;
+            targets[index] = pair.Value;
+            index++;
+        }
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using (var lease = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", connection, transaction))
+        {
+            lease.Parameters.AddWithValue($"honua.attachment-import:{_tableName}:{layerId}");
+            await lease.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using (var remap = new NpgsqlCommand($"""
+            UPDATE {_tableName} AS attachment
+            SET feature_id = mapped.target_id
+            FROM unnest($2::bigint[], $3::bigint[]) AS mapped(parent_id, target_id)
+            WHERE attachment.layer_id = $1
+              AND attachment.import_parent_id = mapped.parent_id
+              AND attachment.feature_id IS DISTINCT FROM mapped.target_id
+            """, connection, transaction))
+        {
+            AddLayerAndObjectIdMap(remap, layerId, parents, targets);
+            await remap.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // A parent that was not loaded still carries its pre-swap feature id. When that id was
+        // assigned to a different loaded feature, leave the attachment off every live feature.
+        await using (var detach = new NpgsqlCommand($"""
+            UPDATE {_tableName} AS attachment
+            SET feature_id = -attachment.id
+            WHERE attachment.layer_id = $1
+              AND attachment.import_parent_id IS NOT NULL
+              AND attachment.feature_id > 0
+              AND attachment.feature_id = ANY($2::bigint[])
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM unnest($3::bigint[], $2::bigint[]) AS mapped(parent_id, target_id)
+                  WHERE mapped.parent_id = attachment.import_parent_id
+                    AND mapped.target_id = attachment.feature_id)
+            """, connection, transaction))
+        {
+            AddLayerAndObjectIdMap(detach, layerId, targets, parents);
+            await detach.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void AddLayerAndObjectIdMap(NpgsqlCommand command, int layerId, long[] first, long[] second)
+    {
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Integer, Value = layerId });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Bigint, Value = first });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Bigint, Value = second });
+    }
+
     public async Task<bool> CompleteImportAsync(int layerId, Guid generation, CancellationToken cancellationToken)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);

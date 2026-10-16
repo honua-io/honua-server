@@ -41,7 +41,7 @@ public sealed class EventJournal : IProgressReporter, IGpLogger, IDisposable
 
     private const int MessageLimit = 2000;
     private const int PhaseLimit = 500;
-    private static readonly string[] AttemptEnvNames = ["HONUA_ATTEMPT_ID", "AWS_BATCH_JOB_ATTEMPT"];
+    private static readonly string[] AttemptEnvNames = ["HONUA_JOB_ATTEMPT", "HONUA_ATTEMPT_ID", "AWS_BATCH_JOB_ATTEMPT"];
     private static readonly HashSet<string> Kinds = new(StringComparer.Ordinal)
     {
         "phase", "progress", "log", "artifact", "failure", "truncated", "terminal"

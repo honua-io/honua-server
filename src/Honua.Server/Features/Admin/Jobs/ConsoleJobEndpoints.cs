@@ -286,6 +286,7 @@ internal static class ConsoleJobEndpoints
         HttpContext context,
         string jobId,
         [FromQuery] int? events,
+        [FromQuery] string? eventCursor,
         [FromServices] IConsoleJobService service,
         CancellationToken cancellationToken)
     {
@@ -303,7 +304,7 @@ internal static class ConsoleJobEndpoints
 
         try
         {
-            var response = await service.GetDiagnosticsAsync(context, jobId, events, cancellationToken).ConfigureAwait(false);
+            var response = await service.GetDiagnosticsAsync(context, jobId, events, eventCursor, cancellationToken).ConfigureAwait(false);
             if (response == null)
             {
                 return NotFound(jobId);
@@ -311,6 +312,10 @@ internal static class ConsoleJobEndpoints
 
             SetCorrelationHeader(context, response.CorrelationId);
             return Results.Json(response, ConsoleJobJsonContext.Default.ConsoleJobDiagnostics);
+        }
+        catch (ArgumentException)
+        {
+            return BadRequest("Invalid diagnostic event cursor.");
         }
         catch (ConsoleJobServiceUnavailableException ex)
         {

@@ -167,6 +167,11 @@ public static partial class OidcAuthenticationExtensions
         {
             options.ForwardDefaultSelector = context =>
             {
+                if (ScopedJobAuthentication.HasCandidate(context))
+                {
+                    return ScopedJobAuthentication.Scheme;
+                }
+
                 // Check for Authorization header with Bearer token
                 var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
                 if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))

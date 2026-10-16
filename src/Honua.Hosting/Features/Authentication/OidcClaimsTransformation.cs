@@ -110,10 +110,10 @@ internal sealed class OidcClaimsTransformation(
         CanonicalSecurityActor.RemoveUnstampedAuthorityClaims(principal);
 
         // Skip transformation for API key authenticated users (including
-        // layer-scoped write keys, #1637, which must not be granted a default
-        // role that would widen their tightly scoped write authority).
+        // layer-scoped write keys and frozen job capabilities, which must not be
+        // granted default roles or the owner's current, broader role membership).
         var authType = identity.FindFirst("auth_type")?.Value;
-        if (authType is "admin" or "dev-bypass" or LayerScopedWriteKey.AuthType)
+        if (authType is "admin" or "dev-bypass" or LayerScopedWriteKey.AuthType or ScopedJobTokenIssuer.AuthTypeClaimValue)
         {
             return principal;
         }

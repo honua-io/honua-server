@@ -21,6 +21,10 @@
       "maximum": 500,
       "default": 50,
       "description": "How many of the most recent recorded events to include in observed.events."
+    },
+    "eventCursor": {
+      "type": "string",
+      "maxLength": 128
     }
   },
   "additionalProperties": false

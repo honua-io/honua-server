@@ -10,8 +10,9 @@ namespace Honua.Import.FileImport.Durable;
 /// The <see cref="Honua.Core.Features.ControlPlane.Domain.ExecutionJobSpec.Parameters"/> contract
 /// of a <c>FileImport</c> execution job (honua-server#5916). The accepting host writes it; the
 /// worker reads it back into the <see cref="ImportRequest"/> the in-process path would have run.
-/// The source is always the staged object-store file (<c>import.cloud_file_id</c>): a worker on
-/// another machine cannot read the accepting host's local disk.
+/// The source is either the staged shared file (<c>import.cloud_file_id</c>) or a customer
+/// object pinned by ETag (<c>import.object_store_uri</c>). A worker on another machine cannot
+/// read the accepting host's local disk.
 /// </summary>
 internal static class FileImportJobParameters
 {
@@ -33,18 +34,35 @@ internal static class FileImportJobParameters
     public const string AuditId = "import.audit_id";
     public const string ProposalId = "import.proposal_id";
 
+    /// <summary>Customer object URI (<c>s3://bucket/key</c>) read by the worker with the host identity.</summary>
+    public const string ObjectStoreUri = "import.object_store_uri";
+
+    /// <summary>ETag pinned by the accepting host's HeadObject. The worker sends it as <c>If-Match</c>.</summary>
+    public const string ObjectStoreETag = "import.object_store_etag";
+
+    /// <summary>Allow-listed role ARN, when the worker must assume a role. Never an external id.</summary>
+    public const string ObjectStoreRoleArn = "import.object_store_role_arn";
+
+    /// <summary>Content type observed by HeadObject.</summary>
+    public const string ObjectStoreContentType = "import.object_store_content_type";
+
     /// <summary>The runner the accepting host routed the job to (<c>batch</c> or <c>in-process</c>).</summary>
     public const string Runner = "import.runner";
 
-    /// <summary>Projects a staged import request onto job parameters.</summary>
-    /// <exception cref="InvalidOperationException">The request is not staged in object storage.</exception>
+    /// <summary>Projects a staged or customer-object import request onto job parameters.</summary>
+    /// <exception cref="InvalidOperationException">The request has no shared file and no pinned object.</exception>
     public static Dictionary<string, string> Build(ImportRequest request, long fileSizeBytes)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (!request.UsesCloudStorage)
+        if (!request.UsesCloudStorage && !request.UsesObjectStore)
         {
             throw new InvalidOperationException(
                 "A durable file-import job requires the source to be staged in shared file storage (CloudFileId).");
+        }
+
+        if (request.UsesObjectStore && string.IsNullOrWhiteSpace(request.ObjectStoreETag))
+        {
+            throw new InvalidOperationException("An object-store import job requires the preflight ETag.");
         }
 
         if (request.CsvOptions is not null)
@@ -54,7 +72,6 @@ internal static class FileImportJobParameters
 
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [CloudFileId] = request.CloudFileId!,
             [FileName] = request.FileName,
             [FileSizeBytes] = fileSizeBytes.ToString(CultureInfo.InvariantCulture),
             [TableName] = request.TableName,
@@ -63,7 +80,19 @@ internal static class FileImportJobParameters
             [LoadMode] = request.LoadMode.ToString(),
             [SourceKind] = request.SourceKind,
         };
+        if (request.UsesCloudStorage)
+        {
+            parameters[CloudFileId] = request.CloudFileId!;
+        }
 
+        if (request.UsesObjectStore)
+        {
+            parameters[ObjectStoreUri] = request.ObjectStoreUri!;
+            parameters[ObjectStoreETag] = request.ObjectStoreETag!;
+        }
+
+        AddIfPresent(parameters, ObjectStoreRoleArn, request.ObjectStoreRoleArn);
+        AddIfPresent(parameters, ObjectStoreContentType, request.ObjectStoreContentType);
         AddIfPresent(parameters, TargetSchema, request.TargetSchema);
         AddIfPresent(parameters, SourceSrid, request.SourceSrid?.ToString(CultureInfo.InvariantCulture));
         AddIfPresent(parameters, KeyColumns, request.KeyColumns.Count == 0 ? null : string.Join(',', request.KeyColumns));
@@ -89,11 +118,19 @@ internal static class FileImportJobParameters
         error = null;
 
         var cloudFileId = Get(parameters, CloudFileId);
+        var objectStoreUri = Get(parameters, ObjectStoreUri);
+        var objectStoreETag = Get(parameters, ObjectStoreETag);
         var fileName = Get(parameters, FileName);
         var tableName = Get(parameters, TableName);
-        if (cloudFileId is null || fileName is null || tableName is null)
+        if (fileName is null || tableName is null || (cloudFileId is null && objectStoreUri is null))
         {
-            error = $"'{CloudFileId}', '{FileName}' and '{TableName}' are required.";
+            error = $"'{CloudFileId}' or '{ObjectStoreUri}', plus '{FileName}' and '{TableName}', are required.";
+            return false;
+        }
+
+        if (objectStoreUri is not null && objectStoreETag is null)
+        {
+            error = $"'{ObjectStoreETag}' is required when '{ObjectStoreUri}' is set.";
             return false;
         }
 
@@ -127,7 +164,11 @@ internal static class FileImportJobParameters
 
         request = new ImportRequest
         {
-            CloudFileId = cloudFileId,
+            CloudFileId = objectStoreUri is null ? cloudFileId : null,
+            ObjectStoreUri = objectStoreUri,
+            ObjectStoreETag = objectStoreETag,
+            ObjectStoreRoleArn = Get(parameters, ObjectStoreRoleArn),
+            ObjectStoreContentType = Get(parameters, ObjectStoreContentType),
             FileName = fileName,
             TableName = tableName,
             TargetSchema = Get(parameters, TargetSchema),

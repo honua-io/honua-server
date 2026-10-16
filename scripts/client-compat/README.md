@@ -71,7 +71,7 @@ For each installed client, the script:
 | Client | Connection File | How It Opens |
 |--------|----------------|-------------|
 | QGIS | `.qgs` project (WMS + OGC Features layers) | Opens with layers already loaded |
-| ArcGIS Pro | ArcPy script (`add-honua-layers.py`) | Paste in Pro's Python window |
+| ArcGIS Pro | not produced here | Cite evidence id `desktop-arcgis` in honua-esri-compat |
 | Excel | `.odc` connection file | Use Data > Get Data > OData Feed |
 | Power BI | `.pbids` OData connection file | Navigator opens to the OData feed |
 

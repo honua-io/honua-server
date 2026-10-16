@@ -41,6 +41,25 @@ public interface IUniversalProgressStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically replaces an unchanged progress snapshot. Lease owners and reconcilers use this
+    /// operation so a concurrent heartbeat, owner change, or terminal update prevents stale writes.
+    /// Implementations without snapshot comparison must refuse rather than degrade to a status check.
+    /// </summary>
+    /// <param name="operationId">Operation identifier.</param>
+    /// <param name="progress">Replacement progress.</param>
+    /// <param name="expectedProgress">Entire previously observed progress snapshot.</param>
+    /// <param name="ttl">Time-to-live for the replacement.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The conditional-write outcome.</returns>
+    Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(
+        string operationId,
+        IOperationProgress progress,
+        IOperationProgress expectedProgress,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Atomic progress snapshot comparison is required.");
+
+    /// <summary>
     /// Retrieve progress for any operation.
     /// </summary>
     /// <typeparam name="TProgress">Expected progress type</typeparam>

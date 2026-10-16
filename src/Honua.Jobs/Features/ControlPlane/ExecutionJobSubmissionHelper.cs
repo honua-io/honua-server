@@ -100,8 +100,12 @@ internal static partial class ExecutionJobSubmissionHelper
         ILogger? logger,
         CancellationToken cancellationToken)
     {
+        var prepared = backend is IBatchComputeSubmissionPreparer preparer
+            ? await preparer.PrepareSubmissionAsync(job, cancellationToken).ConfigureAwait(false)
+            : null;
         var provisioning = job with
         {
+            Spec = MergeResolvedParameters(job.Spec, prepared),
             Status = ExecutionJobStatus.Provisioning,
             UpdatedAt = DateTimeOffset.UtcNow,
             CurrentPhase = "Submitting to backend"
@@ -119,6 +123,10 @@ internal static partial class ExecutionJobSubmissionHelper
         }
 
         ControlPlaneTelemetry.RecordExecutionTransition(job, provisioning);
+        if (backend is IBatchComputeSubmissionPreparer committedPreparer)
+        {
+            await committedPreparer.OnPreparationCommittedAsync(job, provisioning, cancellationToken).ConfigureAwait(false);
+        }
 
         var submission = await backend.StartAsync(provisioning, cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;

@@ -18,7 +18,7 @@ Subscribe to WebSocket and SSE feature-change streams with filters and replay cu
 | Edition | Pro |
 | Surface maturity | 3 implemented, 2 preview |
 | Registry entries | 5 |
-| Proving tests | 113 |
+| Proving tests | 118 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

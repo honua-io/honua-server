@@ -87,7 +87,8 @@ public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
             result.Warnings.Should().NotContain(warning => warning.Contains("TOOLONG", StringComparison.Ordinal));
             result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
 
-            var difference = result.FidelityDifferences.Should().ContainSingle().Subject;
+            var difference = result.FidelityDifferences.Should().ContainSingle(d =>
+                d.Code == MigrationFidelityDifferenceCodes.RecordsLost).Subject;
             difference.Code.Should().Be(MigrationFidelityDifferenceCodes.RecordsLost);
             difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Blocking);
             difference.Actual.Should().Be("1 dropped source records");

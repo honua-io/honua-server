@@ -1,10 +1,7 @@
-# ArcGIS Pro REST stub lane.
+# arcgis-stub REST lane.
 #
-# ArcGIS Pro itself runs only on Windows + a paid license. This lane exercises
-# the same FeatureServer / MapServer REST endpoints the desktop client
-# consumes (capabilities, layers, query, identify, export) and emits a
-# comparable cert envelope. Full Pro coverage requires a licensed runner —
-# that gap is tracked in docs/gis/gap-report.md until provisioned.
+# REST-only client-compat lane. It is not a desktop client. Render cases stay
+# skip. Desktop evidence is identifier desktop-arcgis in honua-esri-compat.
 
 FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
 

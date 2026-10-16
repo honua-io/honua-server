@@ -33,6 +33,13 @@ public sealed record ImportLimits
     public long BackgroundJobThresholdBytes { get; init; } = FileSizeConstants.OneHundredMB;
 
     /// <summary>
+    /// Maximum object size accepted from an allow-listed customer object store (<c>s3://</c>).
+    /// Independent of the in-request staging cap. An object above this limit is refused
+    /// before any byte is read. Default: 50 GiB.
+    /// </summary>
+    public long MaxObjectStoreImportBytes { get; init; } = 50 * FileSizeConstants.OneGB;
+
+    /// <summary>
     /// Maximum file size allowed for preview operations in bytes.
     /// Default: 10MB (10485760 bytes).
     /// </summary>

@@ -23,8 +23,21 @@ In an MCP client connected to Honua, call `honua_diagnose_job` with:
 Read `observed.status` for the job outcome and `evidence` for missing records.
 
 
-`events` bounds the recent event tail (default 50, maximum 500). Responses are
-`no-store`; the `X-Correlation-Id` header carries the job's correlation id.
+`events` bounds each response (default 50, maximum 500). Omit `eventCursor` for
+the recent event tail. To read earlier evidence through `honua_job_evidence`, use:
+
+```json
+{"jobId": "your-job-id", "events": 100, "eventCursor": "start"}
+```
+
+Pass the returned `events.nextCursor` as `eventCursor` until it is absent or null.
+`events.firstCursor` starts again at the beginning of the retained stream. Pages
+follow append order; they are not a frozen snapshot, so a running job may append
+more events between reads. Retention can remove old evidence. Every page checks
+job authorization again and uses the same redaction as the default view.
+
+The HTTP diagnostics route accepts the same `events` and `eventCursor` parameters.
+Responses are `no-store`; `X-Correlation-Id` carries the job's correlation id.
 
 ## What each section answers
 
@@ -36,8 +49,8 @@ Read `observed.status` for the job outcome and `evidence` for missing records.
 | `attempt` | Which attempt is this and would a retry help? | `retry.allowed` follows the same rules as `POST .../retry`; `wouldRepeat` states what a retry re-runs and whether earlier attempts left committed effects. |
 | `worker` | Is the worker alive? | `liveness` is judged against the job's own heartbeat policy: `alive`, `stale` (past the interval), `lost` (past the timeout; the reconciler will fail or retry the attempt), `not-claimed`, `finished` or `unknown`. |
 | `failure` | Which step failed and with what? | Classification `execution_failed`, `worker_lost`, `timeout` or `cancelled`; the failing step's phase and ordinal, structured `errorCode`, `nativeExitCode` and a sanitized `stderrExcerpt` when the worker recorded them; a `recovery` sentence. |
-| `steps` | What ran, in order? | The same sanitized per-step view as `/steps`; `timingSource` distinguishes measured harness durations from timings inferred from consecutive log timestamps. |
-| `events` | What did the worker report recently? | The most recent `limit` events with `totalCount` and `truncated`; page `/logs` for the rest. |
+| `steps` | What ran, in order? | At most 500 recent event-derived steps; omitted earlier steps are disclosed in `evidence.truncated`. `timingSource` distinguishes measured harness durations from inferred timings. Match a failure to a step by its `ordinal`, which is not necessarily the array index. |
+| `events` | What did the worker report recently? | The most recent `limit` events by default, or a cursor page. `mode`, `firstCursor`, `nextCursor`, `totalCount` and `truncated` describe the view. |
 | `artifacts` | Are the outputs usable? | `complete`, `partial`, `unavailable` or `none`, with counts of expired and unresolved references. |
 | `evidence` | What is the projection not telling me? | `missing`, `truncated` and `notes`. |
 
@@ -59,8 +72,9 @@ and a note saying so.
 2. `worker_lost` and `timeout` are infrastructure outcomes: check worker
    capacity and the job's policies before changing the process.
 3. `execution_failed` with a `nativeExitCode` or `stderrExcerpt` points at the
-   step named in `failure.phase`; the matching `steps[stepOrdinal].command` is
-   the sanitized command line.
+   step named in `failure.phase`; find the step whose `ordinal` equals `failure.stepOrdinal` for its sanitized
+   command line. Failure detail is bounded to the latest 500 retained events;
+   inspect earlier event pages when truncation is disclosed.
 4. Check `release.state` before reproducing locally. A `partial` or
    `unavailable` release means the exact code is not recorded; say so in the
    ticket instead of assuming trunk.

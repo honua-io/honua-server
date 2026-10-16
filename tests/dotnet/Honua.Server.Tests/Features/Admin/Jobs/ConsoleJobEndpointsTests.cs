@@ -14,6 +14,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.ProcessRelease;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
@@ -677,6 +678,76 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
+    public async Task GetSteps_NoisyJob_ReturnsBoundedTailWithAbsoluteOrdinalsAndTruncation()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(CreateJob("job-steps-bounded", ExecutionJobStatus.Running, now, "corr-steps"));
+        _logStore.SetLogs("job-steps-bounded", Enumerable.Range(0, 603).Select(index => new ExecutionLogEntry
+        {
+            Timestamp = now.AddSeconds(index),
+            Level = ExecutionLogLevel.Info,
+            Message = $"event {index}"
+        }).ToArray());
+        var fullReads = _logStore.FullReads;
+        using var response = await _client.GetAsync("/api/v1/admin/jobs/job-steps-bounded/steps");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var body = await ReadJsonAsync(response);
+        body.RootElement.GetProperty("steps").GetArrayLength().Should().Be(500);
+        body.RootElement.GetProperty("steps")[0].GetProperty("ordinal").GetInt32().Should().Be(103);
+        body.RootElement.GetProperty("truncated").GetBoolean().Should().BeTrue();
+        body.RootElement.GetProperty("totalCount").GetInt32().Should().Be(603);
+        _logStore.FullReads.Should().Be(fullReads);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_PagesRetainedEventsWithoutReadingTheWholeStream()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(CreateJob("job-diag-paged", ExecutionJobStatus.Succeeded, now, "corr-paged") with { CompletedAt = now.AddMinutes(20) });
+        _logStore.SetLogs("job-diag-paged", Enumerable.Range(0, 603).Select(i => new ExecutionLogEntry
+        {
+            Timestamp = now.AddSeconds(i),
+            Level = ExecutionLogLevel.Info,
+            Message = $"event {i}",
+            Phase = "Run",
+        }).ToArray());
+        var fullReads = _logStore.FullReads;
+        using var tailResponse = await _client.GetAsync("/api/v1/admin/jobs/job-diag-paged/diagnostics?events=2");
+        tailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var tail = await ReadJsonAsync(tailResponse);
+        tail.RootElement.GetProperty("events").GetProperty("items")[0].GetProperty("message").GetString().Should().Be("event 601");
+        tail.RootElement.GetProperty("steps").GetArrayLength().Should().Be(500);
+        tail.RootElement.GetProperty("evidence").GetProperty("truncated").EnumerateArray()
+            .Select(x => x.GetString()).Should().Contain(x => x!.StartsWith("steps and failure details:", StringComparison.Ordinal));
+        var cursor = tail.RootElement.GetProperty("events").GetProperty("firstCursor").GetString();
+        var messages = new List<string>();
+        do
+        {
+            using var response = await _client.GetAsync("/api/v1/admin/jobs/job-diag-paged/diagnostics?events=200&eventCursor=" + Uri.EscapeDataString(cursor!));
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var page = await ReadJsonAsync(response);
+            var events = page.RootElement.GetProperty("events");
+            events.GetProperty("mode").GetString().Should().Be("page");
+            messages.AddRange(events.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("message").GetString()!));
+            cursor = events.TryGetProperty("nextCursor", out var next) ? next.GetString() : null;
+        }
+        while (cursor is not null);
+
+        messages.Should().Equal(Enumerable.Range(0, 603).Select(i => $"event {i}"));
+        _logStore.FullReads.Should().Be(fullReads, "diagnostics must never materialize the complete log stream");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_RejectsMalformedEventCursor()
+    {
+        using var response = await _client.GetAsync("/api/v1/admin/jobs/job-failed/diagnostics?eventCursor=invalid!");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
     public async Task GetJobDiagnostics_ForFailedJob_ProjectsSanitizedFailureAndDisclosesMissingProvenance()
     {
@@ -873,7 +944,14 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 [CustomCodeJobContract.RepoUrlParam] = repositoryUrl,
                 [CustomCodeJobContract.GitRefParam] = "0123456789abcdef0123456789abcdef01234567",
                 [CustomCodeJobContract.EntrypointParam] = "tools.buffer:execute",
-                [CustomCodeJobContract.DepsManifestParam] = "requirements.lock"
+                [CustomCodeJobContract.DepsManifestParam] = "requirements.lock",
+                [GpProcessReleaseAdmission.ReleaseProcessParam] = "buffer-features",
+                [GpProcessReleaseAdmission.ReleaseVersionParam] = "1.2.3",
+                [GpProcessReleaseAdmission.ReleaseLockDigestParam] = "sha256:" + new string('a', 64),
+                [GpProcessReleaseAdmission.ReleaseBindingVersionParam] = "4",
+                [GpProcessReleaseAdmission.WorkflowVersionParam] = "workflow-v2",
+                [GpProcessReleaseAdmission.DependencyDigestParam] = "sha256:" + new string('b', 64),
+                [GpProcessReleaseAdmission.WorkerImageParam] = "registry/worker@sha256:" + new string('c', 64)
             }) with
             {
                 RuntimeProfile = CustomCodeJobContract.RuntimeProfile
@@ -893,6 +971,12 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         release.GetProperty("runtime").GetString().Should().Be("python");
         release.GetProperty("sourceRef").GetString().Should().Be("0123456789abcdef0123456789abcdef01234567");
         release.GetProperty("entrypoint").GetString().Should().Be("tools.buffer:execute");
+        release.GetProperty("processRelease").GetString().Should().Be("buffer-features");
+        release.GetProperty("processVersion").GetString().Should().Be("1.2.3");
+        release.GetProperty("bindingVersion").GetString().Should().Be("4");
+        release.GetProperty("lockDigest").GetString().Should().Be("sha256:" + new string('a', 64));
+        release.GetProperty("dependencyLockDigest").GetString().Should().Be("sha256:" + new string('b', 64));
+        release.GetProperty("workerImage").GetString().Should().EndWith("@sha256:" + new string('c', 64));
         release.GetProperty("missing").GetArrayLength().Should().Be(0);
         root.GetProperty("identity").GetProperty("runtimeProfile").GetString().Should().Be("custom-code");
 
@@ -971,7 +1055,12 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             ClaimedBy = "worker-internal-7",
             ClaimedAt = now.AddMinutes(-1),
             LastHeartbeatAt = now,
-            ProviderOperationId = "provider-op-7"
+            ProviderOperationId = "provider-op-7",
+            Spec = CreateSpec("private-workload", new Dictionary<string, string>
+            {
+                [GpProcessReleaseAdmission.WorkerImageParam] = "private.example/worker@sha256:" + new string('c', 64),
+                [GpProcessReleaseAdmission.ReleaseLockDigestParam] = "sha256:" + new string('a', 64)
+            })
         });
 
         var gatedFixture = new WebAppFixture()
@@ -1001,6 +1090,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.OK, body);
             body.Should().NotContain("worker-internal-7");
             body.Should().NotContain("provider-op-7");
+            body.Should().NotContain("private.example/worker");
 
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
@@ -1008,6 +1098,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             root.GetProperty("worker").GetProperty("liveness").GetString().Should().Be("alive");
             root.GetProperty("worker").TryGetProperty("claimedBy", out _).Should().BeFalse();
             root.GetProperty("identity").TryGetProperty("providerOperationId", out _).Should().BeFalse();
+            root.GetProperty("release").TryGetProperty("workerImage", out _).Should().BeFalse();
+            root.GetProperty("release").GetProperty("lockDigest").GetString().Should().Be("sha256:" + new string('a', 64));
             root.GetProperty("evidence").GetProperty("notes").EnumerateArray().Select(e => e.GetString()!)
                 .Should().Contain(n => n.StartsWith("owner view", StringComparison.Ordinal));
 
@@ -1015,6 +1107,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             using var operatorDoc = await ReadJsonAsync(operatorResponse);
             operatorDoc.RootElement.GetProperty("view").GetString().Should().Be("operator");
             operatorDoc.RootElement.GetProperty("worker").GetProperty("claimedBy").GetString().Should().Be("worker-internal-7");
+            operatorDoc.RootElement.GetProperty("release").GetProperty("workerImage").GetString()
+                .Should().Be("private.example/worker@sha256:" + new string('c', 64));
         }
         finally
         {
@@ -1262,6 +1356,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
     private sealed class InMemoryLogStore : IExecutionLogStore
     {
+        public int FullReads { get; private set; }
+
         private readonly Dictionary<string, ExecutionLogEntry[]> _logs = new(StringComparer.Ordinal);
 
         public void SetLogs(string operationId, params ExecutionLogEntry[] entries) => _logs[operationId] = entries;
@@ -1274,7 +1370,10 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         }
 
         public Task<IReadOnlyList<ExecutionLogEntry>> GetLogsAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<ExecutionLogEntry>>(_logs.TryGetValue(operationId, out var entries) ? entries : Array.Empty<ExecutionLogEntry>());
+        {
+            FullReads++;
+            return Task.FromResult<IReadOnlyList<ExecutionLogEntry>>(_logs.TryGetValue(operationId, out var entries) ? entries : Array.Empty<ExecutionLogEntry>());
+        }
 
         public Task<ExecutionLogTail> TailAsync(
             string operationId,

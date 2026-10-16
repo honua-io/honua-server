@@ -40,7 +40,6 @@ The pack is the preferred operator entry point because it normalizes the current
 pack/
 ├── templates/
 │   ├── .env.example
-│   ├── desktop/arcgis-pro/
 │   ├── desktop/qgis/
 │   └── bi/{power-bi,excel}/
 └── runbook/

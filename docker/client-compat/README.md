@@ -1,10 +1,10 @@
 # Client compatibility Docker harnesses
 
-Real-client interop test matrix for Honua Server. Each lane runs the actual GIS
-client software customers use (or, for ArcGIS Pro, a stub that mirrors its
-REST consumption pattern), so regressions caused by client-specific quirks —
-header tolerance, content-type handling, capability-document parsing, axis
-order, GML flavor — surface before customers see them.
+Real-client interop test matrix for Honua Server. Each lane runs a client
+harness (the GeoServices lane is the REST-only `arcgis-stub`), so regressions
+caused by client-specific quirks — header tolerance, content-type handling,
+capability-document parsing, axis order, GML flavor — surface before customers
+see them.
 
 CITE conformance suites (`docker/cite/`) prove spec compliance. These harnesses
 prove that real clients can consume the server.
@@ -19,10 +19,8 @@ prove that real clients can consume the server.
 | `cesium` | `mcr.microsoft.com/playwright:v1.59.1-noble` | WMS, WMTS, OGC API Tiles, OGC API Maps |
 | `arcgis-stub` | `python:3.12-slim` | GeoServices REST FeatureServer / MapServer (REST stub) |
 
-ArcGIS Pro itself runs only on Windows + a paid license. The stub lane exercises
-the same REST endpoints the Pro client consumes and emits a comparable cert
-envelope. Full Pro visual coverage still requires a licensed runner; until then
-the stub records those cases as `skip` with a documented pending-runner note.
+`arcgis-stub` is a REST stub, not a desktop client. Render cases stay `skip`.
+Desktop evidence is identifier `desktop-arcgis` in honua-esri-compat.
 
 ## Runtime contract
 

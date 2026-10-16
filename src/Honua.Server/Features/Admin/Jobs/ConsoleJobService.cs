@@ -616,6 +616,12 @@ internal sealed partial class ConsoleJobService(
         IArtifactStore? artifactStore,
         CancellationToken cancellationToken)
     {
+        var customArtifact = await MapCustomCodeArtifactAsync(reference, cancellationToken).ConfigureAwait(false);
+        if (customArtifact is not null)
+        {
+            return customArtifact;
+        }
+
         if (artifactStore != null)
         {
             try

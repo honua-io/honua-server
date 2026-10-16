@@ -170,6 +170,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Should().Contain("batchSize");
         content.Should().Contain("maxMemoryBytes");
         content.Should().Contain("backgroundJobThresholdBytes");
+        content.Should().Contain("maxObjectStoreImportBytes");
         content.Should().Contain("streamBufferSize");
     }
 

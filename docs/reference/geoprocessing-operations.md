@@ -249,8 +249,8 @@ Terminate a workflow by writing the input FeatureCollection and emitting a resul
 
 | Process ID | Description | Key parameters | Entry points |
 | --- | --- | --- | --- |
-| `sink.geojson-file` | Write the input FeatureCollection to a GeoJSON file under the configured output root. | `input`, `path` | workflow |
-| `sink.quarantine` | Dead-letter sink: write rejected rows with batch id and reason. | `input`, `path`, `reasonField`, `batchId` | workflow |
+| `sink.geojson-file` | Write an immutable GeoJSON file in the admitted job and attempt namespace. | `input`, `path` | workflow |
+| `sink.quarantine` | Write immutable job-owned rejected rows with batch id and reason. | `input`, `path`, `reasonField`, `batchId` | workflow |
 | `sink.external-postgis` | Load features into a customer-owned PostGIS database via a registered secure connection (never a raw connection string). | `input`, `connectionName`/`connectionId`, `table`, `targetSrid`, `schema`, `geometryColumn`, `batchSize` | workflow |
 | `sink.honua-layer` | Load features into a named layer in the Honua catalog database (append/replace/upsert). Executed by `HonuaLayerSinkExecutor` through the optional `IHonuaLayerSink` capability; **fails closed with a clear "unavailable in this deployment" message in lean, database-free deployments**. | `input`, `layer`, `targetSrid`, `loadMode`, `keyFields`, `schema`, `geometryColumn`, `batchId` | workflow |
 
@@ -271,3 +271,20 @@ Managed routing jobs use the configured canonical routing provider. They fail ex
 - [Run geoprocessing guide](../guides/query-analyze/run-geoprocessing.md)
 - [OGC APIs reference](protocols/ogc-apis.md)
 - [gRPC ProcessService](protocols/grpc.md)
+
+### File-sink destinations and cancellation
+
+For `sink.geojson-file` and `sink.quarantine`, `path` is a relative file name
+inside a server-owned job and attempt directory. The result receipt's `path`
+identifies its actual location relative to the configured output root;
+`requestedPath` preserves the submitted name. A different owner, tenant, job, or
+retry cannot replace a prior output, and repeating a write within one attempt
+fails rather than overwriting existing bytes. Quarantine's approval exception
+applies to these isolated artifacts, never an existing caller-selected destination.
+
+Both sinks check cancellation and the execution lease immediately before their
+create-only rename. After a successful rename they record committed-effect
+evidence with an uncancelled token. Filesystem rename and the job lease store
+are separate transactions: a lease lost in that final gap cannot be rolled back
+atomically, and a rejected receipt surfaces as an execution error. Attempt isolation
+still prevents that stale write from replacing the next attempt's output.

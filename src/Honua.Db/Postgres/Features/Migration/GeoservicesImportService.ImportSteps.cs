@@ -16,6 +16,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
 
@@ -69,8 +70,11 @@ internal sealed partial class GeoservicesImportService
         }
 
         // #4827: the step a top-level failure happened in, so the job reports where it failed and
-        // whether imported rows had already been committed.
+        // whether imported rows had already been committed. The counters are outside the try so a
+        // cancellation after commit can still report how many rows landed.
         var stage = ImportFailureStage.DiscoveringLayer;
+        var featuresProcessed = 0;
+        var failedFeatures = 0;
         try
         {
             // Phase 1: Discover layer metadata
@@ -86,6 +90,18 @@ internal sealed partial class GeoservicesImportService
                 request.Credentials);
 
             Log.LayerDiscovered(_logger, layerInfo.Name, layerInfo.Fields.Length, layerInfo.FeatureCount);
+
+            foreach (var column in GeoservicesImportColumns.Map(layerInfo).Columns)
+            {
+                if (!column.Renamed)
+                {
+                    continue;
+                }
+
+                warnings.Add(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Source field '{column.Field.Name}' was imported as column '{column.ColumnName}' because '{column.SanitizedName}' is reserved or already used."));
+            }
 
             var totalFeatures = layerInfo.FeatureCount;
             var batchSize = request.BatchSize ?? layerInfo.MaxRecordCount ?? 1000;
@@ -132,8 +148,6 @@ internal sealed partial class GeoservicesImportService
 
             // Phase 3: Retrieve and insert features
             stage = ImportFailureStage.TransferringFeatures;
-            var featuresProcessed = 0;
-            var failedFeatures = 0;
             var offset = 0;
             var batchNumber = 0;
             var hasMore = true;
@@ -368,7 +382,9 @@ internal sealed partial class GeoservicesImportService
                     _connectionProvider.GetConnectionString(),
                     cancellationToken,
                     supportsAttachments: layerInfo.HasAttachments && request.ImportAttachments && _attachmentStore is not null,
-                    replacingExistingTarget: replacingExistingTarget)
+                    replacingExistingTarget: replacingExistingTarget,
+                    replacedSourceObjectIds: replacingExistingTarget ? objectIdMap : null,
+                    importedAttachmentStore: _attachmentStore as IImportedAttachmentStore)
                     .ConfigureAwait(false);
             }
 
@@ -457,6 +473,13 @@ internal sealed partial class GeoservicesImportService
 
             stopwatch.Stop();
 
+            if (unconvertedGeometryTargetIds.Count > 0)
+            {
+                warnings.Add(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{unconvertedGeometryTargetIds.Count} feature(s) were saved with a null geometry because the source geometry could not be converted."));
+            }
+
             // #4600: one verdict, not two. Data-movement reconciliation, catalog (schema/domain/
             // identifier/subtype) reconciliation, dropped records, lost attachments and deferred
             // relationships all fold into a single fidelity evaluation. Any blocking difference
@@ -472,6 +495,9 @@ internal sealed partial class GeoservicesImportService
                 PublishedTarget = publishedLayer is not null,
                 PublishRequested = request.AutoPublish,
                 FailedFeatures = failedFeatures,
+                FeaturesProcessed = featuresProcessed,
+                SourceCountBeforeTransfer = sourceCountBeforeTransfer,
+                UnconvertedGeometryCount = unconvertedGeometryTargetIds.Count,
                 Attachments = attachmentFidelity,
                 Relationships = request.DeferRelationshipApplyToBatch
                     ? []
@@ -560,6 +586,30 @@ internal sealed partial class GeoservicesImportService
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            if (stage == ImportFailureStage.AfterCommit)
+            {
+                // Publishing, attachment copy and reconciliation run after the data commit.
+                // A caller cancel here must not be reported as if the rows were rolled back.
+                stopwatch.Stop();
+                Log.ImportCancelled(_logger, request.TableName);
+                warnings.Add(
+                    "Import was cancelled after the data was committed. Imported rows were already committed; check the target table, its publication, and any partial attachment copy before retrying.");
+                return GeoservicesImportResult.CreateFailure(
+                    request.TableName,
+                    request.ServiceUrl,
+                    request.LayerId,
+                    "Import was cancelled after the data was committed. Imported rows were already committed; check the target table, its publication, and any partial attachment copy before retrying.",
+                    stopwatch.Elapsed) with
+                {
+                    NeedsReview = true,
+                    DataCommitted = true,
+                    FeatureCount = featuresProcessed,
+                    FailedFeatures = failedFeatures,
+                    Warnings = warnings,
+                    ServiceName = request.ServiceName
+                };
+            }
+
             await RollbackAfterFailureAsync(transaction, stage, request.TableName);
             Log.ImportCancelled(_logger, request.TableName);
             throw;
@@ -580,7 +630,12 @@ internal sealed partial class GeoservicesImportService
                 BuildImportFailureMessage(ex, stage),
                 stopwatch.Elapsed) with
             {
-                ErrorCode = ex is ImportTableOwnershipException ? ImportTableOwnershipException.Code : null
+                ErrorCode = ex is ImportTableOwnershipException ? ImportTableOwnershipException.Code : null,
+                DataCommitted = stage == ImportFailureStage.AfterCommit,
+                FeatureCount = featuresProcessed,
+                FailedFeatures = failedFeatures,
+                Warnings = warnings,
+                ServiceName = request.ServiceName
             };
         }
         finally
@@ -965,10 +1020,11 @@ internal sealed partial class GeoservicesImportService
         };
 
         // Add attribute fields (objectid/geometry fields are handled separately above/below).
-        foreach (var field in layerInfo.Fields.Where(field => !field.IsObjectId && !IsGeometryField(field)))
+        // Reserved and colliding names are renamed so CREATE TABLE cannot fail with 42701.
+        foreach (var column in GeoservicesImportColumns.Map(layerInfo).Columns)
         {
-            var pgType = MapEsriTypeToPgType(field.Type, field.Length);
-            columns.Add($"\"{field.Name.SanitizeFieldName()}\" {pgType}");
+            var pgType = MapEsriTypeToPgType(column.Field.Type, column.Field.Length);
+            columns.Add($"\"{column.ColumnName}\" {pgType}");
         }
 
         // Add geometry column if the layer has geometry

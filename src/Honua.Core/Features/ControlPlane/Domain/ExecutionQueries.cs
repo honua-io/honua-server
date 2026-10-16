@@ -148,6 +148,9 @@ public sealed record ExecutionLogQuery
 /// </summary>
 public sealed record ExecutionLogPage
 {
+    /// <summary>Number of earliest records discarded by the durable storage cap.</summary>
+    public int DroppedCount { get; init; }
+
     /// <summary>
     /// Log entries returned in append order.
     /// </summary>
@@ -164,6 +167,9 @@ public sealed record ExecutionLogPage
 /// </summary>
 public sealed record ExecutionLogTail
 {
+    /// <summary>Number of earliest records discarded by the durable storage cap.</summary>
+    public int DroppedCount { get; init; }
+
     /// <summary>
     /// Tail log entries returned in append order.
     /// </summary>

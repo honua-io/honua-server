@@ -62,6 +62,8 @@ def check_ranking_tiers() -> None:
     entry = {"csproj": selector.ODATA_UNIT_PROJECT, "src": ["Probe.cs"], "methods": methods}
     with mock.patch.object(selector, "scan_tiers", return_value=({}, tiers)):
         assert len(selector.runnable_methods(ROOT, "Probe", entry)) == 80
+        cli = {**entry, "csproj": "tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj"}
+        assert len(selector.runnable_methods(ROOT, "Probe", cli)) == 80
         old = {**entry, "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj"}
         assert len(selector.runnable_methods(ROOT, "Probe", old)) == 66
 
@@ -77,6 +79,7 @@ def check_runner_filters() -> None:
         for index, (project, expected_fast) in enumerate([
             (selector.ODATA_UNIT_PROJECT, False),
             ("tests/dotnet/Honua.ControlPlane.Lambda.Tests/Honua.ControlPlane.Lambda.Tests.csproj", False),
+            ("tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj", False),
             (str(ROOT / selector.ODATA_UNIT_PROJECT), False),
             ("tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj", True),
             (selector.DEFAULT_TEST_PROJECT, True),

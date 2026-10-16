@@ -814,6 +814,11 @@ InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configu
 
 // Configure cloud file storage for imports and attachments
 builder.Services.AddCloudFileStorage(builder.Configuration);
+builder.Services.Configure<Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions>(
+    builder.Configuration.GetSection(Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions.SectionName));
+#if !HONUA_EXCLUDE_AWS
+builder.Services.AddAwsImportObjectStore();
+#endif
 
 // Configure file upload security limits
 builder.Services.Configure<FileUploadSecurityOptions>(
@@ -1027,6 +1032,10 @@ builder.Services.AddServerFeatures(
     redisCacheEntitled,
     builder.Environment.EnvironmentName);
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
+// PostgreSQL owns durable GP release bindings. Other providers retain the process-local
+// development store; durable production release deployment is PostgreSQL-only in this slice.
+Honua.Server.Features.Geoprocessing.ProcessRelease.GpProcessReleasePersistenceRegistration.AddGpProcessReleasePersistence(
+    builder.Services, builder.Configuration);
 builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
 builder.Services.AddAdminAccessOperations();
@@ -1662,6 +1671,15 @@ app.UseAuthentication();
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
 
+// Explicit invalid job capabilities must fail even on anonymous data routes, and
+// cannot fall back to a cookie/API key/portal token. Meter and audit before refusal.
+app.UseWhen(ScopedJobAuthentication.HasFailure, invalidJobCapability =>
+{
+    invalidJobCapability.UseHonuaAuditLog();
+    invalidJobCapability.UseRateLimiting();
+    invalidJobCapability.UseScopedJobAuthenticationRejection();
+});
+
 // Anonymous callers must not keep the multipart import ceiling that limits
 // enforcement granted before authentication could run.
 app.UseAnonymousImportPayloadClamp();
@@ -1813,6 +1831,9 @@ app.MapCoordinatedReleaseControlEndpoints();
 app.MapScheduledTickEndpoints(builder.Configuration);
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
+app.MapGpProcessReleaseEndpoints();
+app.MapGpProcessReleaseJobEndpoints();
+Honua.Server.Features.Geoprocessing.CustomCode.CustomCodeArtifactEndpoints.MapCustomCodeArtifactEndpoints(app);
 
 // Cloud event-driven control-plane surface (TriggerMode=Event only): the EventBridge-invoked
 // reconcile Lambda + EventBridge Scheduler backstop post here. No-op under poll (on-prem).

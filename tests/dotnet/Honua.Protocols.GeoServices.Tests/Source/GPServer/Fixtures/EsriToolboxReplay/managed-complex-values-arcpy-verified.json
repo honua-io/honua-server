@@ -2,7 +2,6 @@
   "at": "2026-09-13T21:53:25.295364+00:00",
   "source": "working-tree-managed-diagnostic-d707dd838efc841cb3e3567612e89f69aab39d66",
   "image": "sha256:bc0f79664d3c2f161ccc7971c542091a89aaffb6d4f084abeb617d272f888084",
-  "licensing_mode": "Disabled",
   "evidence_kind": "installed-arcpy-observations",
   "desktop_ui_exercised": false,
   "checks": {

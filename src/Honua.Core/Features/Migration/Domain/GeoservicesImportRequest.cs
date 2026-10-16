@@ -393,6 +393,12 @@ public sealed record GeoservicesImportResult
     public bool NeedsReview { get; init; }
 
     /// <summary>
+    /// True when imported rows were already committed before this result was produced.
+    /// A later cancel or publication failure must not be reported as if those rows were rolled back.
+    /// </summary>
+    public bool DataCommitted { get; init; }
+
+    /// <summary>
     /// Per-layer data-reconciliation artifact produced by the Validating phase, when reconciliation
     /// ran. <c>null</c> when the import did not publish a queryable layer to reconcile against.
     /// </summary>
@@ -460,7 +466,8 @@ public sealed record GeoservicesImportResult
             ReconciliationArtifact = reconciliationArtifact,
             CatalogReconciliationReport = catalogReconciliationReport,
             FidelityVerdict = fidelityVerdict,
-            FidelityDifferences = fidelityDifferences ?? []
+            FidelityDifferences = fidelityDifferences ?? [],
+            DataCommitted = true
         };
 
     /// <summary>
@@ -505,7 +512,8 @@ public sealed record GeoservicesImportResult
             CatalogReconciliationReport = catalogReconciliationReport,
             FidelityVerdict = fidelityVerdict,
             FidelityDifferences = fidelityDifferences ?? [],
-            ErrorMessage = reviewReason
+            ErrorMessage = reviewReason,
+            DataCommitted = true
         };
 
     /// <summary>

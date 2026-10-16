@@ -67,6 +67,13 @@ internal sealed record ConsoleJobDiagnosticRelease
     public string? SourceRef { get; init; }
     public string? Entrypoint { get; init; }
     public string? DependencyManifest { get; init; }
+    public string? ProcessRelease { get; init; }
+    public string? ProcessVersion { get; init; }
+    public string? LockDigest { get; init; }
+    public string? BindingVersion { get; init; }
+    public string? WorkflowVersion { get; init; }
+    public string? DependencyLockDigest { get; init; }
+    public string? WorkerImage { get; init; }
     public string? PlanId { get; init; }
     public required string[] ProcessDefinitions { get; init; }
     public string? Environment { get; init; }
@@ -144,6 +151,11 @@ internal sealed record ConsoleJobDiagnosticEvents
     public required ConsoleJobLogEntry[] Items { get; init; }
     public required int TotalCount { get; init; }
     public required int Limit { get; init; }
+    /// <summary>Use as eventCursor to read the retained stream from its beginning.</summary>
+    public string? FirstCursor { get; init; }
+    /// <summary>Opaque continuation in append order; null at the current end of the stream.</summary>
+    public string? NextCursor { get; init; }
+    public string Mode { get; init; } = "tail";
     public required bool Truncated { get; init; }
 }
 

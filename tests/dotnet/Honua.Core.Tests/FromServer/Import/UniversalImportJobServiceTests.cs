@@ -144,6 +144,38 @@ public sealed class UniversalImportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Import)]
+    public async Task CancelJobAsync_AfterImporterReturnsSuccess_RecordsCompletedWithCommittedWarning()
+    {
+        var progressStore = new InMemoryUniversalProgressStore();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var importService = new FakeFileImportService(async (_, _, _) =>
+        {
+            started.TrySetResult();
+            await release.Task.ConfigureAwait(false);
+            return ImportResult.CreateSuccess("widgets", SupportedFileFormat.GeoJson, featureCount: 4);
+        });
+        using var jobService = CreateService(importService, progressStore);
+
+        using var stream = new MemoryStream([0x01]);
+        var jobId = await jobService.QueueImportAsync(
+            new ImportRequest { FileStream = stream, FileName = "widgets.geojson", TableName = "widgets", TargetSrid = 4326 },
+            fileSize: 1);
+
+        await WaitForStatusAsync(jobService, jobId, ImportStatus.Processing);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        (await jobService.CancelJobAsync(jobId)).Should().BeTrue();
+        release.TrySetResult();
+
+        var progress = await WaitForTerminalProgressAsync(jobService, jobId);
+        progress.Status.Should().Be(ImportStatus.Completed);
+        progress.FeaturesProcessed.Should().Be(4);
+        progress.Warnings.Should().Contain(
+            "Import was cancelled after the data was committed. The imported rows were kept.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
     public async Task CancelJobAsync_ForUnknownJobId_ReturnsFalse()
     {
         var progressStore = new InMemoryUniversalProgressStore();

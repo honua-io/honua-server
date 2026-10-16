@@ -88,6 +88,26 @@ internal sealed class TenantContextMiddleware(
         }
 
         var path = context.Request.Path.Value;
+        // Job capabilities already carry a validated, frozen owner tenant. OIDC
+        // claim-name configuration and the anonymous default must never replace it.
+        if (isAuthenticated && principal!.Identity?.AuthenticationType == ScopedJobAuthentication.Scheme)
+        {
+            var frozenTenants = principal.FindAll(ScopedJobTokenIssuer.TenantClaimType).ToArray();
+            var frozenTenant = frozenTenants.Length == 1 ? frozenTenants[0].Value : null;
+            if (frozenTenants.Length > 1 || (frozenTenant is not null &&
+                (string.IsNullOrWhiteSpace(frozenTenant) || frozenTenant.Length > _options.MaxTenantIdLength ||
+                 !IsSafeTenantId(frozenTenant))))
+            {
+                await TenantDenialResponseWriter.WriteAsync(context, TenantDenialKind.AuthenticationRequired).ConfigureAwait(false);
+                return;
+            }
+
+            tenantContext.Set(frozenTenant, TenantContextSource.Claim);
+            CanonicalSecurityActor.StampRequestBinding(principal, frozenTenant);
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
         // 1. Header override (admin-only). Evaluate first so a logged-in admin can target
         //    a specific tenant explicitly even if they also carry a tid claim.
         if (TryReadHeader(context, out var headerTenantId))
