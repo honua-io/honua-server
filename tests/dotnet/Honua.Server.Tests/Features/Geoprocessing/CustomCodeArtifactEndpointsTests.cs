@@ -86,6 +86,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
                 }
                 return UploadResult.CreateSuccess(new CloudFile
                 {
+                    Provider = CloudStorageProvider.AwsS3,
                     FileId = request.ObjectKeyOverride!,
                     FileName = request.FileName,
                     StoragePath = request.ObjectKeyOverride!,
@@ -99,6 +100,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
             .Returns(call => Task.FromResult<CloudFile?>(_objects.TryGetValue(call.ArgAt<string>(0), out var bytes)
                 ? new CloudFile
                 {
+                    Provider = CloudStorageProvider.AwsS3,
                     FileId = call.ArgAt<string>(0),
                     FileName = "result.json",
                     StoragePath = call.ArgAt<string>(0),
@@ -254,7 +256,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
             $"/api/geoprocessing/jobs/broker-job/custom-artifacts/file{index}.json?attempt=1", new ByteArrayContent([1]))));
         try
         {
-            responses.Should().OnlyContain(response => response.StatusCode is HttpStatusCode.Created or HttpStatusCode.Conflict or HttpStatusCode.RequestEntityTooLarge);
+            responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.Created || response.StatusCode == HttpStatusCode.Conflict || response.StatusCode == HttpStatusCode.RequestEntityTooLarge);
             _records["broker-job"].ArtifactReferences.Count.Should().BeLessThanOrEqualTo(CustomCodeArtifactEndpoints.MaximumArtifacts);
             _objects.Count.Should().BeLessThanOrEqualTo(CustomCodeArtifactEndpoints.MaximumArtifacts);
         }
@@ -411,7 +413,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         _objects["gp/custom-artifacts/broker-job/a1/conflict.json"].Should().Equal([20]);
         var receipts = _records["broker-job"].ArtifactReferences.Select(reference =>
         {
-            CustomCodeArtifactDescriptor.TryParse(reference, out var receipt);
+            CustomCodeArtifactDescriptor.TryParse(reference, out var receipt).Should().BeTrue();
             return receipt!;
         }).ToArray();
         receipts.Single(receipt => receipt.Name == "result.json").State.Should().Be("available");

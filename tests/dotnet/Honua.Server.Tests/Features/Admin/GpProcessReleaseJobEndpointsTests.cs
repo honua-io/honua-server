@@ -253,7 +253,7 @@ public sealed class GpProcessReleaseJobEndpointsTests : IAsyncLifetime
         return release.Digest;
     }
 
-    private static IReadOnlyList<ExecutionJobDefinition> Definitions()
+    private static ExecutionJobDefinition[] Definitions()
         => new[] { ("unrelated", "worker:latest", "wrong-queue"), ("release-worker", Image, "release-queue") }
             .Select(item => new ExecutionJobDefinition
             {
