@@ -71,6 +71,7 @@ internal sealed class GeoprocessingJobDispatcher
     private readonly IOperationGateway? _operationGateway;
     private readonly IOperationEnvelopeFactory? _operationEnvelopeFactory;
     private readonly ExecutionAdmissionCoordinator _admissionCoordinator;
+    private readonly IGeoprocessingHostRuntime _hostRuntime;
 
     /// <summary>
     /// Creates the dispatcher over the admission evaluator, workload registry, queue,
@@ -89,7 +90,8 @@ internal sealed class GeoprocessingJobDispatcher
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
         IOperationGateway? operationGateway = null,
         IOperationEnvelopeFactory? operationEnvelopeFactory = null,
-        ExecutionAdmissionCoordinator? admissionCoordinator = null)
+        ExecutionAdmissionCoordinator? admissionCoordinator = null,
+        IGeoprocessingHostRuntime? hostRuntime = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
@@ -101,6 +103,7 @@ internal sealed class GeoprocessingJobDispatcher
         _operationGateway = operationGateway;
         _operationEnvelopeFactory = operationEnvelopeFactory;
         _admissionCoordinator = admissionCoordinator ?? ExecutionAdmissionCoordinator.ProcessLocal;
+        _hostRuntime = hostRuntime ?? ProcessEnvironmentHostRuntime.Instance;
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -249,13 +252,21 @@ internal sealed class GeoprocessingJobDispatcher
     }
 
     /// <summary>
-    /// Resolves the execution workload (job definition) a submission should run under, routing
-    /// custom-code jobs to the custom-code runtime profile and preferring a configured remote
-    /// geoprocessing workload over the always-present local baseline. Returns <c>null</c> when
-    /// no workload registry is configured. When the current workloads cannot run
+    /// Resolves the execution workload (job definition) a submission should run under.
+    /// Custom-code jobs select the custom-code profile. Managed jobs stay on the local
+    /// backend when one is registered, because the API process is the managed worker and a
+    /// native image will not claim them. Native jobs prefer a workload that declares the
+    /// native profile, then the unprofiled local queue. Returns <c>null</c> when no workload
+    /// registry is configured. When the current workloads cannot run
     /// <paramref name="requiredRuntimeProfile"/>, <paramref name="confirmKeyedReplay"/> reports
     /// whether an already-accepted keyed job exists; a confirmed replay returns <c>null</c>
     /// instead of rejecting the submission (#6069).
+    /// On a serverless host, a managed job is not admitted to the local queue: that loop
+    /// stops when the invocation ends. A remote workload that declares the managed profile
+    /// can still be selected. Otherwise the submission is refused with
+    /// <see cref="GeoprocessingStoreUnavailableException"/> before a job id exists, unless
+    /// <paramref name="confirmKeyedReplay"/> reports an already-accepted job. An operation
+    /// that finishes inside the request never reaches this admission.
     /// </summary>
     public async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(
         bool isCustomCode,
@@ -265,6 +276,12 @@ internal sealed class GeoprocessingJobDispatcher
     {
         if (_workloadRegistry == null)
         {
+            if (RefusesServerlessManagedLoop(isCustomCode, requiredRuntimeProfile, selected: null)
+                && !await ConfirmKeyedReplayAsync(confirmKeyedReplay, cancellationToken).ConfigureAwait(false))
+            {
+                throw GeoprocessingStoreUnavailableException.ForServerlessManagedHost();
+            }
+
             return null;
         }
 
@@ -293,31 +310,105 @@ internal sealed class GeoprocessingJobDispatcher
         // A remote image must explicitly support the required runtime. The local
         // baseline uses the shared queue, whose managed/native consumers apply the
         // runtime claim fence, so an unprofiled local workload can serve either.
+        // Managed work stays on that local worker when it exists. Preferring any
+        // remote image sent geometry.buffer to a native or placeholder Batch
+        // definition that never claims it. Native work prefers the workload that
+        // declares the native profile, which is the GDAL worker image.
         var profile = RuntimeProfiles.Normalize(requiredRuntimeProfile);
         var compatible = geoprocessingWorkloads.Where(d =>
             (string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
                 && string.IsNullOrWhiteSpace(d.RuntimeProfile))
             || string.Equals(RuntimeProfiles.Normalize(d.RuntimeProfile), profile, StringComparison.Ordinal))
             .ToArray();
-        var selected = compatible.FirstOrDefault(d =>
-            !string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
-            ?? compatible.FirstOrDefault();
+        var nativeProfile = string.Equals(profile, RuntimeProfiles.Native, StringComparison.Ordinal);
+        var serverlessManaged = !nativeProfile && _hostRuntime.IsServerless;
+        // On a long-lived host the API process is the managed worker, so local wins.
+        // On a serverless host that process is frozen after the response, so local is
+        // not a placement: only a remote workload that declares the managed profile
+        // qualifies, and anything else is refused below rather than queued.
+        ExecutionJobDefinition? selected;
+        if (nativeProfile)
+        {
+            selected = compatible.FirstOrDefault(d =>
+                    !string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                    && string.Equals(RuntimeProfiles.Normalize(d.RuntimeProfile), RuntimeProfiles.Native, StringComparison.Ordinal))
+                ?? compatible.FirstOrDefault(d =>
+                    string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal));
+        }
+        else if (serverlessManaged)
+        {
+            selected = compatible.FirstOrDefault(d =>
+                !string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                && string.Equals(RuntimeProfiles.Normalize(d.RuntimeProfile), profile, StringComparison.Ordinal));
+        }
+        else
+        {
+            selected = compatible.FirstOrDefault(d =>
+                    string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+                ?? compatible.FirstOrDefault();
+        }
         if (selected is null && geoprocessingWorkloads.Length > 0)
         {
             // An exact retry of a job accepted under the previous workload set does not
             // need a compatible image selected again (#6069).
-            if (confirmKeyedReplay != null
-                && await confirmKeyedReplay(cancellationToken).ConfigureAwait(false))
+            if (await ConfirmKeyedReplayAsync(confirmKeyedReplay, cancellationToken).ConfigureAwait(false))
             {
                 return null;
+            }
+
+            if (serverlessManaged)
+            {
+                throw GeoprocessingStoreUnavailableException.ForServerlessManagedHost();
             }
 
             throw new GeoprocessingValidationException(
                 $"No geoprocessing workload supports runtime profile '{profile}'. Configure a compatible worker image and runtime profile.");
         }
 
+        if (selected is null
+            && RefusesServerlessManagedLoop(isCustomCode, requiredRuntimeProfile, selected)
+            && !await ConfirmKeyedReplayAsync(confirmKeyedReplay, cancellationToken).ConfigureAwait(false))
+        {
+            throw GeoprocessingStoreUnavailableException.ForServerlessManagedHost();
+        }
+
         return selected;
     }
+
+    /// <summary>
+    /// True when admitting <paramref name="selected"/> would leave a managed job on the
+    /// in-process queue of a host that freezes between invocations. A remote managed
+    /// workload is a real placement and is not refused. Native and custom-code routing
+    /// are unchanged. An operation that finishes on the request thread does not call
+    /// this path.
+    /// </summary>
+    private bool RefusesServerlessManagedLoop(
+        bool isCustomCode,
+        string? requiredRuntimeProfile,
+        ExecutionJobDefinition? selected)
+    {
+        if (isCustomCode || !_hostRuntime.IsServerless)
+        {
+            return false;
+        }
+
+        var profile = RuntimeProfiles.Normalize(requiredRuntimeProfile);
+        if (string.Equals(profile, RuntimeProfiles.Native, StringComparison.Ordinal)
+            || string.Equals(profile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return selected is null
+            || string.Equals(selected.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal);
+    }
+
+    private static Task<bool> ConfirmKeyedReplayAsync(
+        Func<CancellationToken, Task<bool>>? confirmKeyedReplay,
+        CancellationToken cancellationToken)
+        => confirmKeyedReplay == null
+            ? Task.FromResult(false)
+            : confirmKeyedReplay(cancellationToken);
 
     /// <summary>
     /// Enqueues the job on the local in-process queue when a queue is configured and the job

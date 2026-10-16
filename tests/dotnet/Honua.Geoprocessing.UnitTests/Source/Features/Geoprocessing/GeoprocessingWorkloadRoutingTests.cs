@@ -16,11 +16,11 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 public sealed partial class GeoprocessingJobServiceTests
 {
     [Theory]
-    [InlineData(null, "managed")]
-    [InlineData("managed", "managed")]
+    [InlineData(null, "local")]
+    [InlineData("managed", "local")]
     [InlineData("native", "native")]
     [Trait("Tier", "Fast")]
-    public async Task ResolveWorkload_MixedRuntimeImages_SelectsCompatibleRemote(string? required, string expected)
+    public async Task ResolveWorkload_MixedRuntimeImages_KeepsManagedLocalAndSelectsNativeWorker(string? required, string expected)
     {
         var registry = Substitute.For<IExecutionJobDefinitionRegistry>();
         registry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
@@ -126,6 +126,143 @@ public sealed partial class GeoprocessingJobServiceTests
         await act.Should().ThrowAsync<GeoprocessingValidationException>().WithMessage("*native*");
     }
 
+    [UnitTest]
+    public async Task ResolveWorkload_ServerlessManaged_RefusesLocalAndDoesNotSelectNative()
+    {
+        var dispatcher = Dispatcher(LocalAndNativeRegistry(), new FrozenHost());
+
+        var act = () => dispatcher.ResolveWorkloadAsync(false, "managed", CancellationToken.None);
+
+        var refusal = await act.Should().ThrowAsync<GeoprocessingStoreUnavailableException>();
+        refusal.Which.ErrorCode.Should().Be("dependency-unavailable");
+        refusal.Which.MissingDependency.Should().Be("long-lived-host");
+        refusal.Which.HasDependencyReceipt.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ResolveWorkload_ServerlessManagedRemote_SelectsThatWorker()
+    {
+        var dispatcher = Dispatcher(MixedRegistry(), new FrozenHost());
+
+        var selected = await dispatcher.ResolveWorkloadAsync(false, null, CancellationToken.None);
+
+        selected!.WorkloadId.Should().Be("managed");
+        selected.Backend.Should().Be("honua-aws-batch");
+    }
+
+    [UnitTest]
+    public async Task ResolveWorkload_ServerlessNative_SelectsNativeWorker()
+    {
+        var dispatcher = Dispatcher(MixedRegistry(), new FrozenHost());
+
+        var selected = await dispatcher.ResolveWorkloadAsync(false, "native", CancellationToken.None);
+
+        selected!.WorkloadId.Should().Be("native");
+    }
+
+    [UnitTest]
+    public async Task ResolveWorkload_LongLivedHost_ManagedWithOnlyNativeRemote_RejectsAsValidation()
+    {
+        var dispatcher = Dispatcher(NativeOnly());
+
+        var act = () => dispatcher.ResolveWorkloadAsync(false, "managed", CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>().WithMessage("*managed*");
+    }
+
+    [UnitTest]
+    public async Task ResolveWorkload_Serverless_ManagedWithOnlyNativeRemote_RefusesAsDependency()
+    {
+        var dispatcher = Dispatcher(NativeOnly(), new FrozenHost());
+
+        var act = () => dispatcher.ResolveWorkloadAsync(false, "managed", CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingStoreUnavailableException>()
+            .WithMessage("*background loop*");
+    }
+
+    [UnitTest]
+    public async Task SubmitJob_ServerlessManagedBuffer_RefusesBeforeCreatingJob()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var service = CreateStoreBackedService(store, LocalAndNativeRegistry(), new FrozenHost());
+
+        var act = () => service.SubmitJobAsync(CreateValidPlan(), "serverless-buffer", CreateStablePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingStoreUnavailableException>();
+        (await store.ListActiveAsync()).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task SubmitJob_ServerlessReplay_ReturnsJobAcceptedOnLongLivedHost()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var registry = LocalAndNativeRegistry();
+        var principal = CreateStablePrincipal();
+        var plan = CreateValidPlan();
+        var accepted = await CreateStoreBackedService(store, registry)
+            .SubmitJobAsync(plan, "buffer-key", principal);
+
+        var replay = await CreateStoreBackedService(store, registry, new FrozenHost())
+            .SubmitJobAsync(plan, "buffer-key", principal);
+        replay.OperationId.Should().Be(accepted.OperationId);
+
+        var act = () => CreateStoreBackedService(store, registry, new FrozenHost())
+            .SubmitJobAsync(plan, "other-buffer", principal);
+        await act.Should().ThrowAsync<GeoprocessingStoreUnavailableException>();
+        (await store.ListActiveAsync()).Should().ContainSingle(job => job.OperationId == accepted.OperationId);
+    }
+
+    private GeoprocessingJobDispatcher Dispatcher(
+        IExecutionJobDefinitionRegistry registry,
+        IGeoprocessingHostRuntime? host = null)
+        => new(
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _progressStore,
+            workloadRegistry: registry,
+            hostRuntime: host);
+
+    private static IExecutionJobDefinitionRegistry MixedRegistry()
+    {
+        var registry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        registry.ListAsync(Arg.Any<CancellationToken>()).Returns(MixedWorkloads());
+        return registry;
+    }
+
+    private static ExecutionJobDefinition[] MixedWorkloads() =>
+    [
+        RuntimeWorkload("local", null, "local"),
+        RuntimeWorkload("native", "native", "honua-kubernetes-job"),
+        RuntimeWorkload("managed", "managed", "honua-aws-batch"),
+    ];
+
+    private static IExecutionJobDefinitionRegistry LocalAndNativeRegistry()
+    {
+        var registry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        registry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            RuntimeWorkload("local", null, "local"),
+            RuntimeWorkload("native", "native", "honua-kubernetes-job"),
+        });
+        return registry;
+    }
+
+    private static IExecutionJobDefinitionRegistry NativeOnly()
+    {
+        var registry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        registry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            RuntimeWorkload("native", "native", "honua-kubernetes-job"),
+        });
+        return registry;
+    }
+
+    private sealed class FrozenHost : IGeoprocessingHostRuntime
+    {
+        public bool IsServerless => true;
+    }
+
     private static AnalysisPlan NativeGdalPlan() => new()
     {
         PlanId = "plan-native",
@@ -156,4 +293,26 @@ public sealed partial class GeoprocessingJobServiceTests
             Backend = backend,
             RuntimeProfile = profile,
         };
+}
+
+public sealed class ServerlessHostMarkerTests
+{
+    [Theory]
+    [InlineData("AWS_LAMBDA_FUNCTION_NAME")]
+    [InlineData("FUNCTIONS_WORKER_RUNTIME")]
+    [InlineData("K_SERVICE")]
+    [Trait("Tier", "Fast")]
+    public void IsServerlessEnvironment_Marker_IsFrozen(string marker)
+    {
+        ProcessEnvironmentHostRuntime.IsServerlessEnvironment(name => name == marker ? "honua" : null)
+            .Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void IsServerlessEnvironment_NoMarker_IsLongLived()
+    {
+        ProcessEnvironmentHostRuntime.IsServerlessEnvironment(_ => null).Should().BeFalse();
+        ProcessEnvironmentHostRuntime.IsServerlessEnvironment(
+            name => name == "AWS_LAMBDA_FUNCTION_NAME" ? "  " : null).Should().BeFalse();
+    }
 }
