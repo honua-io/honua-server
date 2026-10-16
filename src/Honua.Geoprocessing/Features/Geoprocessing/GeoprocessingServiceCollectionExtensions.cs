@@ -83,6 +83,7 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         // Built-in process catalog (ticket #735)
         services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExecutionJobRetryGuard, CustomCodeArtifactRetryGuard>());
 
         // Exposes the canonical plan validator's presence-based (including conditional)
         // input requirements so translation/migration tooling cannot certify a mapping

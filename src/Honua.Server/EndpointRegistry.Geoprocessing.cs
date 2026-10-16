@@ -8,5 +8,7 @@ public static partial class EndpointRegistry
     private static IReadOnlyList<EndpointDefinition> GeoprocessingEndpoints =>
     [
         new("GET", "/api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content"),
+        new("PUT", "/api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}"),
+        new("GET", "/api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}"),
     ];
 }

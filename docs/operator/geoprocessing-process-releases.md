@@ -85,6 +85,44 @@ Workflow-run pinning and schedule reconciliation require separate orchestration 
 this API alone does not establish those guarantees. Built-in processes that ship inside the server image are not
 bound this way; their rollback granularity is the server image.
 
+## Deployment smoke and output transport
+
+The deployment workflow can submit the active binding through
+`POST /api/v1/admin/gp/process-releases/bindings/{process}/jobs`. Its JSON body has a
+`params` object and optional `declaredScope` entries containing `serviceId`, optional
+`layerId`, and `access` (`read` or `write`). An optional `Idempotency-Key` header preserves
+the original job on identical replay, including after a binding changes. Changed inputs
+under the same key return 409. The response is 202 with `jobId`, `statusUrl`,
+`diagnosticsUrl`, and `artifactsUrl`; `Location` identifies the status URL. Submission
+requires admin authentication and the shared custom-code execution permission. Source,
+image, credentials, and output destinations are resolved by the server.
+
+Custom workers upload through the server artifact broker using their job-bound callback
+credential, without cloud storage credentials. The broker accepts only the current
+Running attempt and its current token. An early worker retries while the provider's
+Running observation is being persisted. Each file name is immutable within that attempt.
+The broker reserves capacity atomically before accepting bytes: at most 32 files,
+64 MiB per file, and 256 MiB total per job artifact list. The reserved harness journal
+counts toward those limits and has a 1 MiB ceiling. One slot and 1 MiB are reserved
+inside the totals until the journal is uploaded, limiting user output to 31 files and
+255 MiB before journal publication. Failed or interrupted uploads retain
+their capacity reservation. A matching reservation allows at most three upload attempts,
+including the first. Remote retries retain all broker reservations and outputs in
+the cumulative job budget. A retry is refused with a durable diagnostic if its
+mandatory journal no longer fits; the existing finite attempt cap still applies. Recovery and completed output retries accept only identical bytes;
+completed journal retries re-run ingestion of the original immutable journal. Cloud
+objects expire after seven days.
+
+The server requires configured AWS S3 or Azure Blob storage that supports conditional
+create. Admin artifact listings expose authenticated same-origin download links, labels,
+and byte sizes. Download requires the canonical job-read and ownership checks; the
+callback token itself grants no job-read permission. Files are served as attachments
+after validating their complete bytes against the broker-computed SHA-256 receipt,
+with that digest as the ETag. A deployment smoke can compare downloaded bytes to
+its committed expected-output fixture and verify the release identity in diagnostics.
+Worker journal ingestion requires its registered ingestion service; uploads fail closed
+when durable storage or journal ingestion is unavailable.
+
 ## Schedules
 
 Activation does not create, modify, or duplicate schedules. The binding response identifies
