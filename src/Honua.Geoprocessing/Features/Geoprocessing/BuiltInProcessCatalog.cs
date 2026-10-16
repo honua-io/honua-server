@@ -1664,7 +1664,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
-                Param("path", "Output Path", "Relative output file path under the configured geoprocessing output root (overwritten if it exists).", ProcessParameterValueType.Text, required: true),
+                Param("path", "Output Path", "Relative file name within a server-owned job and attempt directory; existing output is never overwritten.", ProcessParameterValueType.Text, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.File]
         },
@@ -1678,7 +1678,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("input", "Rejected Features", "Input FeatureCollection of rejected rows as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
-                Param("path", "Output Path", "Relative dead-letter output file path under the configured geoprocessing output root (overwritten if it exists).", ProcessParameterValueType.Text, required: true),
+                Param("path", "Output Path", "Relative dead-letter file name within a server-owned job and attempt directory; existing output is never overwritten.", ProcessParameterValueType.Text, required: true),
                 Param("reasonField", "Reason Field", "Attribute name carrying a per-row reason string. Defaults to _quarantine_reason.", ProcessParameterValueType.Text, defaultValue: "_quarantine_reason"),
                 Param("batchId", "Batch Id", "Run batch identifier tagged on every quarantined row. Defaults to the operation id.", ProcessParameterValueType.Text),
             ],
