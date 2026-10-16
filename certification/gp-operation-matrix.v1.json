@@ -1508,7 +1508,7 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/FileSinkExecutorTests.cs",
           "test": "Submission_SameKeyAndPathAcrossOwnersAndTenants_CannotReplaceOtherOutputs",
           "assertion": "Canonical admission with identical keys and paths for two owners and two tenants, followed by real file execution, proves exact geometry content and byte-identical prior outputs; duplicate attempt writes fail and retries get distinct paths.",
-          "bodyDigest": "sha256:d0b46b5076105370092ac57993e37532e104d4ea6e07e4b4d6087df5f6a10412"
+          "bodyDigest": "sha256:b921300a2b303b1679a7cb6171d065a38094c3aa7303952a8c8b65ab7c2a3972"
         }
       ]
     },
@@ -1527,7 +1527,7 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/FileSinkExecutorTests.cs",
           "test": "Submission_SameKeyAndPathAcrossOwnersAndTenants_CannotReplaceOtherOutputs",
           "assertion": "Canonical admission with identical keys and paths for two owners and two tenants, followed by real file execution, proves exact geometry content and byte-identical prior outputs; duplicate attempt writes fail and retries get distinct paths.",
-          "bodyDigest": "sha256:d0b46b5076105370092ac57993e37532e104d4ea6e07e4b4d6087df5f6a10412"
+          "bodyDigest": "sha256:b921300a2b303b1679a7cb6171d065a38094c3aa7303952a8c8b65ab7c2a3972"
         }
       ]
     },
