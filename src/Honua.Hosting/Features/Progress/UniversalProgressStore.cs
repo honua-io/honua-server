@@ -180,14 +180,28 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         }
 
         var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
-        var expected = SerializeProgress(expectedProgress);
-        var current = await GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
+        RedisValue persisted = RedisValue.Null;
+        IOperationProgress? current;
+        var key = (RedisKey)$"{_cacheInstanceName}{KeyPrefix}{operationId}";
+        if (AllowsLocalFallback)
+        {
+            current = await GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            if (!CanUseRedisBackplane)
+            {
+                throw CreateDistributedStateUnavailableException("atomically replace progress");
+            }
+            persisted = await _redis!.GetDatabase().HashGetAsync(key, "data").ConfigureAwait(false);
+            current = persisted.HasValue ? DeserializeProgress(persisted.ToString()) : null;
+        }
         if (current is null)
         {
             return ProgressCompareAndSetResult.NotFound;
         }
 
-        if (!string.Equals(SerializeProgress(current), expected, StringComparison.Ordinal))
+        if (!SameProgressSnapshot(current, expectedProgress))
         {
             return ProgressCompareAndSetResult.StatusMismatch(current);
         }
@@ -210,9 +224,8 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             // RedisCache stores payload and expiration metadata in this hash. Compare and update
             // inside one Redis transaction, including expiry, so lock loss/expiry and unguarded
             // progress writers cannot turn an old heartbeat snapshot into an accepted write.
-            var key = (RedisKey)$"{_cacheInstanceName}{KeyPrefix}{operationId}";
             var transaction = _redis!.GetDatabase().CreateTransaction();
-            transaction.AddCondition(Condition.HashEqual(key, "data", expected));
+            transaction.AddCondition(Condition.HashEqual(key, "data", persisted));
             _ = transaction.HashSetAsync(key,
             [
                 new HashEntry("data", SerializeProgress(progress)),
@@ -228,6 +241,33 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
         current = await GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
         return current is null ? ProgressCompareAndSetResult.NotFound : ProgressCompareAndSetResult.StatusMismatch(current);
+    }
+
+    private static bool SameProgressSnapshot(IOperationProgress current, IOperationProgress expected)
+    {
+        if (current.GetType() != expected.GetType())
+        {
+            return false;
+        }
+
+        // Duration is a computed wall-clock view, never a state/version field. Compare every
+        // persisted state field, but use the original Redis bytes as the atomic transaction token
+        // so legacy payloads (including their old computed Duration) remain compatible.
+        var currentData = SerializeProgressData(current);
+        var expectedData = SerializeProgressData(expected);
+        foreach (var property in expectedData.EnumerateObject())
+        {
+            if (property.NameEquals("Duration"))
+            {
+                continue;
+            }
+            if (!currentData.TryGetProperty(property.Name, out var value) ||
+                !string.Equals(value.GetRawText(), property.Value.GetRawText(), StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private async Task SetProgressUnguardedAsync(string operationId, IOperationProgress progress, TimeSpan effectiveTtl, CancellationToken cancellationToken)

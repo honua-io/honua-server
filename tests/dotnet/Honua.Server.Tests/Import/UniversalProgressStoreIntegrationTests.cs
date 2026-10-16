@@ -90,27 +90,38 @@ public sealed class UniversalProgressStoreIntegrationTests
         }
     }
 
-    [IntegrationTest]
-    public async Task TryReplaceProgressAsync_ConcurrentRefresh_RejectsStaleSnapshotAndKeepsExpiry()
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData("honua:")]
+    public async Task TryReplaceProgressAsync_ConcurrentRefresh_RejectsStaleSnapshotAndKeepsExpiry(string instanceName)
     {
-        using var provider = BuildRedisServices();
+        using var provider = BuildRedisServices(instanceName);
         using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
         var store = new UniversalProgressStore(provider.GetRequiredService<IDistributedCache>(),
-            NullLogger<UniversalProgressStore>.Instance, multiplexer);
+            NullLogger<UniversalProgressStore>.Instance, multiplexer,
+            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions>>());
         var id = $"snapshot-{Guid.NewGuid():N}";
-        var initial = UploadProgress.CreateInitial(id, "data.bin", 100) with { Status = OperationStatus.Processing };
-        var refreshed = initial with { BytesUploaded = 20 };
+        var initial = PrintProgress.CreateInitial(id, "pdf", "map", 1) with
+        {
+            Status = OperationStatus.Processing,
+            OwnerInstanceId = "live-owner",
+            HeartbeatAt = DateTimeOffset.UtcNow.AddMinutes(-5)
+        };
+        var refreshed = initial with { HeartbeatAt = DateTimeOffset.UtcNow };
         try
         {
+            // Existing serializer includes computed Duration. The CAS must accept its old bytes
+            // while ignoring wall-clock drift in that view, including during rolling upgrades.
             await store.SetProgressAsync(id, initial);
+            await Task.Delay(10);
             (await store.TryReplaceProgressAsync(id, refreshed, initial, TimeSpan.FromMinutes(5)))
                 .Outcome.Should().Be(ProgressCompareAndSetOutcome.Updated);
             (await store.TryReplaceProgressAsync(id, initial with { Status = OperationStatus.Failed }, initial))
                 .Outcome.Should().Be(ProgressCompareAndSetOutcome.StatusMismatch);
-            var stored = await store.GetProgressAsync<UploadProgress>(id);
+            var stored = await store.GetProgressAsync<PrintProgress>(id);
             stored!.Status.Should().Be(OperationStatus.Processing);
-            stored.PercentComplete.Should().Be(20);
-            var ttl = await multiplexer.GetDatabase().KeyTimeToLiveAsync($"universal:progress:{id}");
+            stored.HeartbeatAt.Should().Be(refreshed.HeartbeatAt);
+            var ttl = await multiplexer.GetDatabase().KeyTimeToLiveAsync($"{instanceName}universal:progress:{id}");
             ttl.Should().NotBeNull();
             ttl!.Value.Should().BeLessThanOrEqualTo(TimeSpan.FromMinutes(5));
         }
@@ -120,13 +131,13 @@ public sealed class UniversalProgressStoreIntegrationTests
         }
     }
 
-    private ServiceProvider BuildRedisServices()
+    private ServiceProvider BuildRedisServices(string instanceName = "")
     {
         var services = new ServiceCollection();
         services.AddStackExchangeRedisCache(options =>
         {
             options.Configuration = _redis.ConnectionString;
-            options.InstanceName = string.Empty;
+            options.InstanceName = instanceName;
         });
 
         return services.BuildServiceProvider();

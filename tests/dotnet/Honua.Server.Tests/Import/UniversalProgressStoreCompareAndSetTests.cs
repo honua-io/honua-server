@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Migration;
+using Honua.Infrastructure.Progress;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -21,6 +22,19 @@ public sealed class UniversalProgressStoreCompareAndSetTests
 
     private static UploadProgress CreateProgress(string uploadId, OperationStatus status)
         => UploadProgress.CreateInitial(uploadId, "data.bin", 100) with { Status = status };
+
+    [UnitTest]
+    public async Task TryReplaceProgressAsync_RunningPrintHeartbeat_UpdatesDespiteComputedDuration()
+    {
+        var store = CreateInMemoryStore();
+        var original = PrintProgress.CreateInitial("print-lease", "pdf", "map", 1);
+        await store.SetProgressAsync("print-lease", original);
+        await Task.Delay(10);
+        var refreshed = original with { HeartbeatAt = DateTimeOffset.UtcNow };
+        (await store.TryReplaceProgressAsync("print-lease", refreshed, original)).Outcome
+            .Should().Be(ProgressCompareAndSetOutcome.Updated);
+        (await store.GetProgressAsync<PrintProgress>("print-lease"))!.HeartbeatAt.Should().Be(refreshed.HeartbeatAt);
+    }
 
     [UnitTest]
     public async Task TryReplaceProgressAsync_ChangedSnapshot_RejectsStaleWriter()
