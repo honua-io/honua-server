@@ -51,6 +51,11 @@ jobs:
             filter: FullyQualifiedName~ScopedJobCallbackAuthenticationTests
             source: tests/dotnet/Honua.Server.Tests/Infrastructure/Authentication/ScopedJobCallbackAuthenticationTests.cs
             prefix: ''
+          - name: custom-artifact-broker
+            project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+            filter: FullyQualifiedName~CustomCodeArtifactEndpointsTests
+            source: tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/CustomCodeArtifactEndpointsTests.cs
+            prefix: ''
           - name: soap-durable-runtime
             project: tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj
             filter: FullyQualifiedName~SoapScopedAPIKey_|FullyQualifiedName~SoapArea_WithProductionExecutor|FullyQualifiedName~SoapJobOperation_OtherCaller|FullyQualifiedName~GetJobStatus_ProgressHint|FullyQualifiedName~GetJobStatus_InvalidProgressHint|FullyQualifiedName~OtherJobOperations_ProgressHint
