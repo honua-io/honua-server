@@ -33,7 +33,6 @@ namespace Honua.Server.Tests.Features.Admin;
 [Operation(Operations.Configuration)]
 public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
 {
-    private const string Base = "/api/v1/admin/gp/process-releases";
     private const string JobDefinitionArn = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer-features:7";
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
@@ -72,29 +71,30 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/gp/process-releases/bindings/{process}/activate")]
     public async Task DeployPromoteAndRollBack_WalksTheBindingVersionsAndRefusesStaleAttempts()
     {
+        // Keep route literals in the HTTP calls so source-based endpoint governance can verify all six routes.
         // Publish v1 twice: the second publish is a no-op with the same digest.
-        var publishV1 = await _client.PostAsync(Base, Json(Lock("1.0.0", 'a')));
+        var publishV1 = await _client.PostAsync("/api/v1/admin/gp/process-releases", Json(Lock("1.0.0", 'a')));
         publishV1.StatusCode.Should().Be(HttpStatusCode.Created);
         var v1 = await publishV1.Content.ReadFromJsonAsync<JsonElement>();
         var v1Digest = v1.GetProperty("lockDigest").GetString()!;
         v1Digest.Should().StartWith("sha256:");
-        var republish = await _client.PostAsync(Base, Json(Lock("1.0.0", 'a')));
+        var republish = await _client.PostAsync("/api/v1/admin/gp/process-releases", Json(Lock("1.0.0", 'a')));
         republish.StatusCode.Should().Be(HttpStatusCode.OK);
         (await republish.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("created").GetBoolean().Should().BeFalse();
 
-        var publishV2 = await _client.PostAsync(Base, Json(Lock("2.0.0", 'b')));
+        var publishV2 = await _client.PostAsync("/api/v1/admin/gp/process-releases", Json(Lock("2.0.0", 'b')));
         publishV2.StatusCode.Should().Be(HttpStatusCode.Created);
         var v2Digest = (await publishV2.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("lockDigest").GetString()!;
 
         // The environment projection before any activation: version 0, server facts present.
-        var unbound = await _client.GetFromJsonAsync<JsonElement>($"{Base}/bindings/buffer-features");
+        var unbound = await _client.GetFromJsonAsync<JsonElement>("/api/v1/admin/gp/process-releases/bindings/buffer-features");
         unbound.GetProperty("bindingVersion").GetInt32().Should().Be(0);
         unbound.GetProperty("lockDigest").ValueKind.Should().Be(JsonValueKind.Null);
         unbound.GetProperty("serverContractVersion").GetInt32().Should().BeGreaterThanOrEqualTo(1);
         unbound.GetProperty("supportedTargets").EnumerateArray().Select(e => e.GetString()).Should().Contain("aws-batch");
 
         // Deploy v1.
-        var deploy = await _client.PostAsJsonAsync($"{Base}/bindings/buffer-features/activate", Activate(v1Digest, expected: 0));
+        var deploy = await _client.PostAsJsonAsync("/api/v1/admin/gp/process-releases/bindings/buffer-features/activate", Activate(v1Digest, expected: 0));
         deploy.StatusCode.Should().Be(HttpStatusCode.OK, await deploy.Content.ReadAsStringAsync());
         var bound = await deploy.Content.ReadFromJsonAsync<JsonElement>();
         bound.GetProperty("bindingVersion").GetInt32().Should().Be(1);
@@ -103,26 +103,26 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
         bound.GetProperty("targets")[0].GetProperty("image").GetString().Should().EndWith("@sha256:" + new string('b', 64));
 
         // Promote v2 under the version the deploy workflow read.
-        var promote = await _client.PostAsJsonAsync($"{Base}/bindings/buffer-features/activate", Activate(v2Digest, expected: 1));
+        var promote = await _client.PostAsJsonAsync("/api/v1/admin/gp/process-releases/bindings/buffer-features/activate", Activate(v2Digest, expected: 1));
         promote.StatusCode.Should().Be(HttpStatusCode.OK, await promote.Content.ReadAsStringAsync());
         var promoted = await promote.Content.ReadFromJsonAsync<JsonElement>();
         promoted.GetProperty("bindingVersion").GetInt32().Should().Be(2);
         promoted.GetProperty("previousLockDigest").GetString().Should().Be(v1Digest);
 
         // A concurrent deployment that still believes the version is 1 is refused, not applied.
-        var stale = await _client.PostAsJsonAsync($"{Base}/bindings/buffer-features/activate", Activate(v2Digest, expected: 1));
+        var stale = await _client.PostAsJsonAsync("/api/v1/admin/gp/process-releases/bindings/buffer-features/activate", Activate(v2Digest, expected: 1));
         stale.StatusCode.Should().Be(HttpStatusCode.Conflict);
         var refusal = await stale.Content.ReadFromJsonAsync<JsonElement>();
         refusal.GetProperty("reasons").EnumerateArray().Select(e => e.GetString()).Should().Contain("STALE_BINDING_VERSION");
         refusal.GetProperty("binding").GetProperty("bindingVersion").GetInt32().Should().Be(2);
 
         // A rollback must name the previous release.
-        var wrongTarget = await _client.PostAsJsonAsync($"{Base}/bindings/buffer-features/activate", Activate(v2Digest, expected: 2, operation: "rollback"));
+        var wrongTarget = await _client.PostAsJsonAsync("/api/v1/admin/gp/process-releases/bindings/buffer-features/activate", Activate(v2Digest, expected: 2, operation: "rollback"));
         wrongTarget.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await wrongTarget.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("reasons").EnumerateArray().Select(e => e.GetString())
             .Should().Contain("ROLLBACK_TARGET_MISMATCH");
 
-        var rollback = await _client.PostAsJsonAsync($"{Base}/bindings/buffer-features/activate", Activate(v1Digest, expected: 2, operation: "rollback"));
+        var rollback = await _client.PostAsJsonAsync("/api/v1/admin/gp/process-releases/bindings/buffer-features/activate", Activate(v1Digest, expected: 2, operation: "rollback"));
         rollback.StatusCode.Should().Be(HttpStatusCode.OK, await rollback.Content.ReadAsStringAsync());
         var rolledBack = await rollback.Content.ReadFromJsonAsync<JsonElement>();
         rolledBack.GetProperty("bindingVersion").GetInt32().Should().Be(3);
@@ -133,11 +133,11 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
         // Projections.
         var list = await _client.GetFromJsonAsync<JsonElement>("/api/v1/admin/gp/process-releases?process=buffer-features");
         list.GetProperty("releases").GetArrayLength().Should().Be(2);
-        var bindings = await _client.GetFromJsonAsync<JsonElement>($"{Base}/bindings");
+        var bindings = await _client.GetFromJsonAsync<JsonElement>("/api/v1/admin/gp/process-releases/bindings");
         bindings.GetProperty("bindings").EnumerateArray().Should().ContainSingle(b => b.GetProperty("process").GetString() == "buffer-features");
-        var lockBody = await _client.GetStringAsync($"{Base}/{v1Digest}");
+        var lockBody = await _client.GetStringAsync($"/api/v1/admin/gp/process-releases/{v1Digest}");
         lockBody.Should().Contain("\"schema\": \"honua.gp-process-release-lock/v1\"").And.Contain("\"version\": \"1.0.0\"");
-        (await _client.GetAsync($"{Base}/sha256:" + new string('0', 64))).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _client.GetAsync("/api/v1/admin/gp/process-releases/sha256:" + new string('0', 64))).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -145,7 +145,7 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
     public async Task Publish_RejectsAnInvalidLockWithTheFindings()
     {
         using var content = new StringContent("{\"schema\":\"honua.gp-process-release-lock/v1\"}", Encoding.UTF8, "application/json");
-        using var response = await _client.PostAsync(Base, content);
+        using var response = await _client.PostAsync("/api/v1/admin/gp/process-releases", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("process is required");
@@ -155,14 +155,14 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/gp/process-releases/bindings/{process}/activate")]
     public async Task Activate_RefusesAnUnpublishedLockAndAMissingJobDefinition()
     {
-        var unknown = await _client.PostAsJsonAsync($"{Base}/bindings/buffer-features/activate", Activate("sha256:" + new string('0', 64), expected: 0));
+        var unknown = await _client.PostAsJsonAsync("/api/v1/admin/gp/process-releases/bindings/buffer-features/activate", Activate("sha256:" + new string('0', 64), expected: 0));
         unknown.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await unknown.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("reasons").EnumerateArray().Select(e => e.GetString())
             .Should().Contain("LOCK_NOT_FOUND");
 
-        var publish = await _client.PostAsync(Base, Json(Lock("3.0.0", 'c')));
+        var publish = await _client.PostAsync("/api/v1/admin/gp/process-releases", Json(Lock("3.0.0", 'c')));
         var digest = (await publish.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("lockDigest").GetString()!;
-        var noIdentity = await _client.PostAsJsonAsync($"{Base}/bindings/buffer-features/activate",
+        var noIdentity = await _client.PostAsJsonAsync("/api/v1/admin/gp/process-releases/bindings/buffer-features/activate",
             new { lockDigest = digest, expectedBindingVersion = 0, operation = "deploy", targets = Array.Empty<object>() });
         noIdentity.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await noIdentity.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("reasons").EnumerateArray().Select(e => e.GetString())
@@ -175,10 +175,10 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
     {
         using var anonymous = _fixture.CreateClient();
 
-        using var response = await anonymous.GetAsync($"{Base}/bindings");
+        using var response = await anonymous.GetAsync("/api/v1/admin/gp/process-releases/bindings");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        using var authorized = await _client.GetAsync($"{Base}/bindings");
+        using var authorized = await _client.GetAsync("/api/v1/admin/gp/process-releases/bindings");
         authorized.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
