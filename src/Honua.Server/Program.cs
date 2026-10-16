@@ -1666,6 +1666,15 @@ app.UseAuthentication();
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
 
+// Explicit invalid job capabilities must fail even on anonymous data routes, and
+// cannot fall back to a cookie/API key/portal token. Meter and audit before refusal.
+app.UseWhen(ScopedJobAuthentication.HasFailure, invalidJobCapability =>
+{
+    invalidJobCapability.UseHonuaAuditLog();
+    invalidJobCapability.UseRateLimiting();
+    invalidJobCapability.UseScopedJobAuthenticationRejection();
+});
+
 // Anonymous callers must not keep the multipart import ceiling that limits
 // enforcement granted before authentication could run.
 app.UseAnonymousImportPayloadClamp();

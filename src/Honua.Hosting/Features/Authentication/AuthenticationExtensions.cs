@@ -125,11 +125,15 @@ public static class AuthenticationExtensions
         // those denials short-circuit above the audit middleware and are observable nowhere else.
         services.AddSingleton<IAuthorizationMiddlewareResultHandler, HonuaAuthorizationMiddlewareResultHandler>();
 
+        services.AddTransient<ScopedJobAuthenticationDependencies>();
+
         // Add authentication with API key scheme
         _ = services.AddAuthentication(defaultScheme: ApiKeyScheme)
             .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
                 ApiKeyScheme,
-                options => { });
+                options => { })
+            .AddScheme<AuthenticationSchemeOptions, ScopedJobTokenAuthenticationHandler>(
+                ScopedJobAuthentication.Scheme, options => { });
 
         // #2958: the client-certificate scheme is only ever a valid policy scheme
         // reference when the security.mtls experimental capability is enabled — resolved
