@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:ba01bd520d9386117a4888c00d95ea98c073abbb99dab3500f9c9bbb6d61a216",
+  "bundleDigest": "sha256:6ab129365528f1f2ba3d523e5c3a18d315160f0a9bbb22d50b7aee2fb89dfa04",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2097,9 +2097,9 @@
     {
       "id": "guides/deploy/cloud-deployments",
       "path": "guides/deploy/cloud-deployments.md",
-      "documentDigest": "sha256:f5a4a7e342c883fc4246aa9d25cc408f7df64ac8ba50bbd6f52c09728fb40b52",
+      "documentDigest": "sha256:50ba7f1fc70f99ba1b662d701d7ddedbec5495a9ecc0ec2e34b01cda835609fb",
       "metadata": {
-        "type": "guide",
+        "type": "runbook",
         "title": "Deploy on AWS and Azure",
         "description": "You'll pick a managed-cloud deployment pattern for Honua — ECS/Fargate, Lambda, Azure Container Apps, or Azure Functions — and know which image, configuration, and rollout mechanism each one uses."
       },
