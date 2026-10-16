@@ -58,6 +58,12 @@ jobs:
             filter: FullyQualifiedName~PostgresWorkspaceStoreTests
             required_classes: PostgresWorkspaceStoreTests
             additional_method: ManagedStreamRetention_UsesPublishedObjectIdentityUntilCanonicalArtifactDeletion
+          - name: file-sink-ownership-and-effects
+            needs_postgres: false
+            project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+            filter: FullyQualifiedName~FileSinkExecutorTests
+            source: tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/FileSinkExecutorTests.cs
+            prefix: ''
           - name: soap-durable-runtime
             project: tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj
             filter: FullyQualifiedName~SoapScopedAPIKey_|FullyQualifiedName~SoapArea_WithProductionExecutor|FullyQualifiedName~SoapJobOperation_OtherCaller|FullyQualifiedName~GetJobStatus_ProgressHint|FullyQualifiedName~GetJobStatus_InvalidProgressHint|FullyQualifiedName~OtherJobOperations_ProgressHint
