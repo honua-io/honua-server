@@ -103,7 +103,9 @@ Running attempt and its current token. An early worker retries while the provide
 Running observation is being persisted. Each file name is immutable within that attempt.
 The broker reserves capacity atomically before accepting bytes: at most 32 files,
 64 MiB per file, and 256 MiB total per job artifact list. The reserved harness journal
-counts toward those limits and has a 1 MiB ceiling. Failed or interrupted uploads retain
+counts toward those limits and has a 1 MiB ceiling. One slot and 1 MiB are reserved
+inside the totals until the journal is uploaded, limiting user output to 31 files and
+255 MiB before journal publication. Failed or interrupted uploads retain
 their capacity reservation. A matching reservation allows at most three upload attempts,
 including the first. Recovery and completed output retries accept only identical bytes;
 completed journal retries re-run ingestion of the original immutable journal. Cloud

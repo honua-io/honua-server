@@ -291,6 +291,38 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}")]
+    public async Task Upload_UserOutputsCannotConsumeReservedJournalCountOrBytes()
+    {
+        foreach (var fillByteBudget in new[] { false, true })
+        {
+            var sizes = fillByteBudget
+                ? new[] { 64L << 20, 64L << 20, 64L << 20, 63L << 20 }
+                : Enumerable.Repeat(1L, 31).ToArray();
+            _records["broker-job"] = _records["broker-job"] with
+            {
+                ArtifactReferences = sizes.Select((size, index) => new CustomCodeArtifactDescriptor
+                {
+                    JobId = "broker-job",
+                    Attempt = 1,
+                    Name = $"output{index}.bin",
+                    ObjectKey = $"gp/custom-artifacts/broker-job/a1/output{index}.bin",
+                    ContentType = "application/octet-stream",
+                    SizeBytes = size,
+                    Provider = CloudStorageProvider.AwsS3,
+                }.Serialize()).ToArray(),
+            };
+            _objects.Clear();
+            using var rejected = await _worker.PutAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/extra.bin?attempt=1", new ByteArrayContent([1]));
+            rejected.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+            using var journal = await _worker.PutAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/honua-events.v1.jsonl?attempt=1",
+                new ByteArrayContent(new byte[CustomCodeArtifactEndpoints.MaximumJournalBytes]));
+            journal.StatusCode.Should().Be(HttpStatusCode.Created);
+            _records["broker-job"].ArtifactReferences.Count.Should().BeLessThanOrEqualTo(CustomCodeArtifactEndpoints.MaximumArtifacts);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}")]
     public async Task Upload_InterruptedJournal_RecoversSameReservationWithinRetryLimit()
     {
         _failUploads = 1;

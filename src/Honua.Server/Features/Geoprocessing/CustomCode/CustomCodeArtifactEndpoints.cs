@@ -149,9 +149,14 @@ internal static class CustomCodeArtifactEndpoints
                 continue;
             }
 
-            if (receipts.Count >= MaximumArtifacts || receipts.Sum(item => item.SizeBytes) + length > MaximumJobBytes)
+            // Reserve the required journal inside the existing total caps so hostile
+            // user output cannot consume its final slot or byte allowance.
+            var reserveJournal = !journal && !receipts.Any(item => item.Attempt == attempt && item.Name == HarnessEvents.FileName);
+            var availableCount = MaximumArtifacts - (reserveJournal ? 1 : 0);
+            var availableBytes = MaximumJobBytes - (reserveJournal ? MaximumJournalBytes : 0);
+            if (receipts.Count >= availableCount || receipts.Sum(item => item.SizeBytes) + length > availableBytes)
             {
-                return Problem(context, 413, "The job artifact count or aggregate byte limit has been reached.");
+                return Problem(context, 413, "The job artifact count or aggregate byte limit has been reached; journal capacity is reserved.");
             }
 
             var updated = job! with { ArtifactReferences = [.. job!.ArtifactReferences, artifact.Serialize()] };
