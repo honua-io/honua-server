@@ -119,10 +119,11 @@ public sealed class RedisAdminApiKeyEndpointsTests(RedisFixture redis) : IAsyncL
         // Deliberately use the pre-fix serializer to seed an existing deployment's bytes.
         await database.StringSetAsync($"{RegistryPrefix}{id:D}", JsonSerializer.Serialize(issued.Record));
         await database.SetAddAsync(RegistryPrefix + "ids", id.ToString("D"));
+        var store = Assert.IsType<RedisAdminApiKeyStore>(_fixture.GetService<IAdminApiKeyStore>());
+        await store.ReconcileHashIndexAsync(CancellationToken.None);
         using var client = CreateClient(issued.Key);
         using var valid = await client.GetAsync("/api/v1/admin/api-keys");
         Assert.Equal(HttpStatusCode.OK, valid.StatusCode);
-        var store = _fixture.GetService<IAdminApiKeyStore>();
         Assert.NotNull((await store.GetAsync(id, CancellationToken.None))!.LastUsedAt);
 
         var expired = issued.Record with { ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1) };
@@ -239,13 +240,13 @@ public sealed class RedisAdminApiKeyEndpointsTests(RedisFixture redis) : IAsyncL
     [Endpoint("POST /api/v1/admin/api-keys")]
     [Endpoint("GET /api/v1/admin/api-keys")]
     [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
-    public async Task RetainedMetadata_AfterExpiryOrRevoke_LeavesTheAuthenticationCandidateSet()
+    public async Task RetainedMetadata_AfterExpiryOrRevoke_CannotAuthenticate()
     {
         var database = _connection.GetDatabase();
         var expiresAt = DateTimeOffset.UtcNow.AddSeconds(10);
-        var (expiredId, _) = await CreateKeyAsync("redis-hotpath-expired", expiresAt);
-        var (revokedId, _) = await CreateKeyAsync("redis-hotpath-revoked", DateTimeOffset.UtcNow.AddHours(1));
-        var (liveId, liveKey) = await CreateKeyAsync("redis-hotpath-live", DateTimeOffset.UtcNow.AddHours(1));
+        var (expiredId, expiredKey) = await CreateKeyAsync("redis-hotpath-expired", expiresAt);
+        var (revokedId, revokedKey) = await CreateKeyAsync("redis-hotpath-revoked", DateTimeOffset.UtcNow.AddHours(1));
+        var (_, liveKey) = await CreateKeyAsync("redis-hotpath-live", DateTimeOffset.UtcNow.AddHours(1));
 
         using (var revoke = await _admin.PostAsync($"/api/v1/admin/api-keys/{revokedId}/revoke", null))
         {
@@ -254,20 +255,22 @@ public sealed class RedisAdminApiKeyEndpointsTests(RedisFixture redis) : IAsyncL
 
         await WaitPastAsync(expiresAt);
 
-        // Authenticating runs the candidate scan, which prunes what can never authenticate again.
+        // Authentication is a direct hash lookup, with no registry or candidate-set scan.
+        // Exercise each credential through the actual HTTP boundary after expiry/revocation.
+        using var expiredClient = CreateClient(expiredKey);
+        using var expiredResponse = await expiredClient.GetAsync("/api/v1/admin/api-keys");
+        Assert.Equal(HttpStatusCode.Unauthorized, expiredResponse.StatusCode);
+        using var revokedClient = CreateClient(revokedKey);
+        using var revokedResponse = await revokedClient.GetAsync("/api/v1/admin/api-keys");
+        Assert.Equal(HttpStatusCode.Unauthorized, revokedResponse.StatusCode);
         using var live = CreateClient(liveKey);
         using var authenticated = await live.GetAsync("/api/v1/admin/api-keys");
         Assert.Equal(HttpStatusCode.OK, authenticated.StatusCode);
+        Assert.False(await database.KeyExistsAsync(RedisAdminApiKeyStore.HashIndexKey(
+            (await _fixture.GetService<IAdminApiKeyStore>().GetAsync(revokedId, CancellationToken.None))!.KeyHash)),
+            "revocation must withdraw the direct authentication index");
 
-        var activeIds = RegistryPrefix + "active-ids";
-        Assert.False(await database.SetContainsAsync(activeIds, expiredId.ToString("D")),
-            "an expired record must not stay on the per-request authentication path");
-        Assert.False(await database.SetContainsAsync(activeIds, revokedId.ToString("D")),
-            "a revoked record must not stay on the per-request authentication path");
-        Assert.True(await database.SetContainsAsync(activeIds, liveId.ToString("D")),
-            "a live record must remain an authentication candidate");
-
-        // Pruning the candidate set must not evict the retained metadata (#4603).
+        // Denying authentication must not evict retained administrative metadata (#4603).
         Assert.True(await database.SetContainsAsync(RegistryPrefix + "ids", expiredId.ToString("D")));
         using var list = await _admin.GetAsync("/api/v1/admin/api-keys");
         using var listed = JsonDocument.Parse(await list.Content.ReadAsStringAsync());

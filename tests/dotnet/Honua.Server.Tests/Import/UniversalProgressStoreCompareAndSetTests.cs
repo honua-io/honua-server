@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Migration;
+using Honua.Infrastructure.Progress;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -21,6 +22,33 @@ public sealed class UniversalProgressStoreCompareAndSetTests
 
     private static UploadProgress CreateProgress(string uploadId, OperationStatus status)
         => UploadProgress.CreateInitial(uploadId, "data.bin", 100) with { Status = status };
+
+    [UnitTest]
+    public async Task TryReplaceProgressAsync_RunningPrintHeartbeat_UpdatesDespiteComputedDuration()
+    {
+        var store = CreateInMemoryStore();
+        var original = PrintProgress.CreateInitial("print-lease", "pdf", "map", 1);
+        await store.SetProgressAsync("print-lease", original);
+        await Task.Delay(10);
+        var refreshed = original with { HeartbeatAt = DateTimeOffset.UtcNow };
+        (await store.TryReplaceProgressAsync("print-lease", refreshed, original)).Outcome
+            .Should().Be(ProgressCompareAndSetOutcome.Updated);
+        (await store.GetProgressAsync<PrintProgress>("print-lease"))!.HeartbeatAt.Should().Be(refreshed.HeartbeatAt);
+    }
+
+    [UnitTest]
+    public async Task TryReplaceProgressAsync_ChangedSnapshot_RejectsStaleWriter()
+    {
+        var store = CreateInMemoryStore();
+        var original = CreateProgress("lease", OperationStatus.Processing);
+        await store.SetProgressAsync("lease", original);
+        var refreshed = original with { BytesUploaded = 30 };
+        (await store.TryReplaceProgressAsync("lease", refreshed, original)).Outcome
+            .Should().Be(ProgressCompareAndSetOutcome.Updated);
+        (await store.TryReplaceProgressAsync("lease", original with { Status = OperationStatus.Failed }, original)).Outcome
+            .Should().Be(ProgressCompareAndSetOutcome.StatusMismatch);
+        (await store.GetProgressAsync<UploadProgress>("lease"))!.PercentComplete.Should().Be(30);
+    }
 
     [UnitTest]
     public async Task TrySetProgressAsync_WhenStatusMatches_UpdatesProgress()

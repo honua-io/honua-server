@@ -162,6 +162,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         var batchId = inputs.GetOrDefault("batchId", job.OperationId);
 
         long written = 0;
+        long acceptedOffset = 0;
         long rejected = 0;
         try
         {
@@ -202,8 +203,11 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                         await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
                         written += await InsertBatchAsync(
                             connection, tx, schema, table, geometryColumn, targetSrid, buffer, batchId,
-                            idempotencyColumn, idempotencyConstraint, idempotencyKey, wkbWriter, cancellationToken)
+                            idempotencyColumn, idempotencyConstraint, idempotencyKey, acceptedOffset, wkbWriter, cancellationToken)
                             .ConfigureAwait(false);
+                        // Advance by accepted input rows, never by inserted rows: conflicts on
+                        // replay must not shift the identity of subsequent batches.
+                        acceptedOffset += buffer.Count;
                         buffer.Clear();
                     }
                 }
@@ -213,7 +217,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                     await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
                     written += await InsertBatchAsync(
                         connection, tx, schema, table, geometryColumn, targetSrid, buffer, batchId,
-                        idempotencyColumn, idempotencyConstraint, idempotencyKey, wkbWriter, cancellationToken)
+                        idempotencyColumn, idempotencyConstraint, idempotencyKey, acceptedOffset, wkbWriter, cancellationToken)
                         .ConfigureAwait(false);
                 }
 
@@ -401,6 +405,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         string? idempotencyColumn,
         string? idempotencyConstraint,
         string? idempotencyKey,
+        long acceptedOffset,
         WKBWriter wkbWriter,
         CancellationToken cancellationToken)
     {
@@ -421,7 +426,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             attributes[i] = BuildAttributesJson(jsonWriter, bufferWriter, features[i], batchId);
             if (idempotencyKeys is not null)
             {
-                idempotencyKeys[i] = $"{idempotencyKey}:{i}";
+                idempotencyKeys[i] = $"{idempotencyKey}:{(acceptedOffset + i).ToString(CultureInfo.InvariantCulture)}";
             }
         }
 

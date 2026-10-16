@@ -105,6 +105,53 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
         Assert.True(json.RootElement.GetProperty("committed").GetBoolean());
     }
 
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ExecuteAsync_IdempotentBatches_PreserveAllRowsAcrossReplayWithDifferentBatchSize()
+    {
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var create = new NpgsqlCommand($"""
+            CREATE TABLE "{_schemaName}".idempotent_output (
+                id BIGSERIAL PRIMARY KEY,
+                geom geometry(Geometry, 4326),
+                attributes JSONB NOT NULL,
+                row_key TEXT NOT NULL,
+                CONSTRAINT unique_row_key UNIQUE (row_key)
+            )
+            """, connection);
+        await create.ExecuteNonQueryAsync();
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        resolver.ResolveConnectionStringAsync("external-target", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(_fixture.ConnectionString));
+        var executor = new ExternalPostgisSinkExecutor(Options(), resolver);
+        var factory = new GeometryFactory(new PrecisionModel(), 4326);
+        var input = BuildInputUri(
+            new Feature(factory.CreatePoint(new Coordinate(1, 2)), new AttributesTable()),
+            new Feature(null, new AttributesTable()),
+            new Feature(factory.CreatePoint(new Coordinate(3, 4)), new AttributesTable()),
+            new Feature(factory.CreatePoint(new Coordinate(5, 6)), new AttributesTable()));
+
+        foreach (var batchSize in new[] { "1", "2" })
+        {
+            var result = await executor.ExecuteAsync(Record(
+                ("input", input), ("connectionName", "external-target"),
+                ("schema", _schemaName), ("table", "idempotent_output"),
+                ("targetSrid", "4326"), ("batchSize", batchSize),
+                ("idempotencyColumn", "row_key"), ("idempotencyConstraint", "unique_row_key"),
+                ("idempotencyKey", "same-logical-write")),
+                Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+            Assert.Equal(ExecutionJobStatus.Succeeded, result.Status);
+            await using var rows = new NpgsqlCommand($"SELECT row_key FROM \"{_schemaName}\".idempotent_output ORDER BY row_key", connection);
+            await using var reader = await rows.ExecuteReaderAsync();
+            var keys = new List<string>();
+            while (await reader.ReadAsync())
+            {
+                keys.Add(reader.GetString(0));
+            }
+            Assert.Equal(new[] { "same-logical-write:0", "same-logical-write:1", "same-logical-write:2" }, keys);
+        }
+    }
+
     [Fact]
     public async Task ExecuteAsync_CreatesTableAndInsertsFeaturesWithBatchTag()
     {
