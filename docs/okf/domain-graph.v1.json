@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:2cd942ed81bd19bd497006fcfd60d6207183f196674853bb36ed44dff96a14cb",
+  "bundleDigest": "sha256:3c75965dc7961da9a91a7ddf5893cec61e6f27ddcc102b7df44839b9288b270d",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7708,7 +7708,7 @@
     {
       "id": "reference/gp-customcode-runtime",
       "path": "reference/gp-customcode-runtime.md",
-      "documentDigest": "sha256:c7f984ffd6ec1c61ddc9942f52f96df5b227a0a729ca3d9229312cca7724221d",
+      "documentDigest": "sha256:22db7f300deacde30682440145258d54b4650ecae57bd92b9ba1404c2bb2dfd5",
       "metadata": {
         "type": "reference",
         "title": "Custom-code worker runtime",

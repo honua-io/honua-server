@@ -98,6 +98,30 @@ public sealed class CustomCodeBatchBoundaryTests
         Assert.Equal(terminate ? 0 : 1, client.CancelCallCount);
     }
 
+    [UnitTest]
+    public async Task ExpiredQueuedDiscovery_UsesOriginalDeadlineAndDoesNotMintReplacement()
+    {
+        var issuer = Substitute.For<IScopedJobTokenIssuer>();
+        var client = new StubAwsBatchJobClient
+        {
+            NextListJobsResult = [new AwsBatchJobState { JobId = "accepted-before-crash", Status = "RUNNABLE" }]
+        };
+        var backend = new AwsBatchComputeBackend(client, Options.Create(new AwsBatchExecutionOptions()),
+            NullLogger<AwsBatchComputeBackend>.Instance, issuer);
+        var job = AwsBatchComputeBackendTests.CreateJob(status: ExecutionJobStatus.Provisioning);
+        job = job with
+        {
+            Audit = new OperationAuditInfo { CustomCodeOwnerScope = new CustomCodeOwnerScope("owner", "tenant", [], [], []) },
+            Spec = job.Spec with { Parameters = new Dictionary<string, string>(job.Spec.Parameters)
+                { ["env.HONUA_JOB_START_DEADLINE"] = "1", ["env.HONUA_JOB_ATTEMPT"] = "1" } }
+        };
+        var observed = await backend.ObserveAsync(job);
+        Assert.Equal(ExecutionJobStatus.Cancelling, observed.Status);
+        Assert.Equal("accepted-before-crash", observed.ProviderOperationId);
+        Assert.Equal(1, client.CancelCallCount);
+        await issuer.DidNotReceive().IssueAsync(Arg.Any<ScopedJobTokenRequest>(), Arg.Any<CancellationToken>());
+    }
+
     private static JobDefinition SafeDefinition() => new()
     {
         PlatformCapabilities = ["FARGATE"],

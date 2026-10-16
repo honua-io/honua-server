@@ -233,6 +233,13 @@ public static class HarnessEvents
         DateTimeOffset fallbackTimestamp,
         int maxEntries = DefaultMaxEntries,
         long maxBytes = DefaultMaxBytes)
+        => ProjectExecutionLogEntries(events, fallbackTimestamp, maxEntries, maxBytes);
+
+    internal static IReadOnlyList<ExecutionLogEntry> ProjectExecutionLogEntries(
+        IEnumerable<HarnessEvent> events,
+        DateTimeOffset fallbackTimestamp,
+        int maxEntries = DefaultMaxEntries,
+        long maxBytes = DefaultMaxBytes)
     {
         ArgumentNullException.ThrowIfNull(events);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(maxEntries, 0);

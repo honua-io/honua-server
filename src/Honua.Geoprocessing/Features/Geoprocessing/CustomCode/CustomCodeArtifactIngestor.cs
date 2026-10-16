@@ -47,18 +47,34 @@ internal sealed class CustomCodeArtifactIngestor(IServiceProvider services) : IC
         {
             throw new InvalidOperationException("The harness journal object does not match its immutable receipt.");
         }
-        var events = HarnessEvents.Parse(Encoding.UTF8.GetString(bytes, 0, length));
         var attempt = artifact.Attempt.ToString(CultureInfo.InvariantCulture);
-        // Identity comes from the authenticated broker receipt, never the supplied journal.
-        var boundEvents = events.Select(entry => entry with { Attempt = attempt }).ToArray();
-        var entries = HarnessEvents.ToExecutionLogEntries(boundEvents, job.UpdatedAt);
+        // Parse incrementally: a 1 MiB journal of tiny lines must not retain hundreds
+        // of thousands of event objects before the bounded projection runs.
+        using var reader = new StringReader(Encoding.UTF8.GetString(bytes, 0, length));
+        IEnumerable<HarnessEvent> BoundEvents()
+        {
+            while (reader.ReadLine() is { } line)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                foreach (var entry in HarnessEvents.Parse([line]))
+                {
+                    // Identity comes from the authenticated broker receipt, never the journal.
+                    yield return entry with { Attempt = attempt };
+                }
+            }
+        }
+        var entries = HarnessEvents.ProjectExecutionLogEntries(BoundEvents(), job.UpdatedAt);
         for (var index = 0; index < entries.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             // One immutable journal is allowed per attempt. Its position is stable even when a
             // malformed line becomes a text event or the projection adds a truncation record.
             var eventId = $"harness:{attempt}:{artifact.Sha256}:{index.ToString(CultureInfo.InvariantCulture)}";
-            await logs.AppendOnceAsync(job.OperationId, eventId, entries[index], cancellationToken).ConfigureAwait(false);
+            var metadata = new Dictionary<string, string>(entries[index].Metadata ?? new Dictionary<string, string>(), StringComparer.Ordinal)
+            {
+                [HarnessEvents.AttemptKey] = attempt
+            };
+            await logs.AppendOnceAsync(job.OperationId, eventId, entries[index] with { Metadata = metadata }, cancellationToken).ConfigureAwait(false);
         }
     }
 }

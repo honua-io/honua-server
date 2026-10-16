@@ -62,7 +62,9 @@ broker attempt, redacts and projects bounded events, and atomically deduplicates
 retry ingestion by receipt digest and event position. Failure to publish the required journal changes an otherwise successful worker exit
 to a harness failure; existing tool failures remain failures. Hard process termination or a
 cancelled attempt can prevent a final journal upload; provider status remains the
-terminal source of truth in that case.
+terminal source of truth in that case. A lost acknowledgement after the broker has
+stored the journal can also leave a journal describing tool success beside a failed
+provider exit; consumers must use the durable job/provider state for final outcome.
 
 The Redis execution-log store retains at most 2,000 entries of 4 KiB each per job.
 Queries use absolute append cursors, so trimming earlier entries does not shift a

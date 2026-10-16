@@ -52,7 +52,7 @@ internal sealed partial class RedisExecutionLogStore(
         local result = {offset + length, offset, start}
         for _, value in ipairs(values) do
             if string.len(value) > 4096 then
-                value = '{"timestamp":"1970-01-01T00:00:00+00:00","level":"Warning","message":"Legacy execution log payload omitted: entry limit exceeded."}'
+                value = '{"timestamp":"1970-01-01T00:00:00+00:00","level":2,"message":"Legacy execution log payload omitted: entry limit exceeded."}'
             end
             table.insert(result, value)
         end

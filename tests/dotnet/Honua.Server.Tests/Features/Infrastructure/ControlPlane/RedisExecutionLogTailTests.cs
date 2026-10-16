@@ -78,6 +78,27 @@ public sealed class RedisExecutionLogTailTests(RedisFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task LegacyOversizedEntry_ReadsBoundedPlaceholderWithoutChangingCursor()
+    {
+        await using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
+        var store = new RedisExecutionLogStore(redis, NullLogger<RedisExecutionLogStore>.Instance);
+        var id = "legacy-log-" + Guid.NewGuid().ToString("N");
+        var key = "controlplane:job:log:" + id;
+        try
+        {
+            await redis.GetDatabase().ListRightPushAsync(key, new string('x', 100000));
+            var tail = await store.TailAsync(id, 10);
+            tail.TotalCount.Should().Be(1);
+            tail.Items.Single().Message.Should().Contain("Legacy execution log payload omitted");
+            tail.Items.Single().Level.Should().Be(ExecutionLogLevel.Warning);
+        }
+        finally
+        {
+            await redis.GetDatabase().KeyDeleteAsync([key, "{" + key + "}:state"]);
+        }
+    }
+
     private static ExecutionLogEntry Entry(string message) => new()
     {
         Timestamp = DateTimeOffset.UtcNow,
