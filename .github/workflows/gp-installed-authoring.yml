@@ -61,4 +61,11 @@ jobs:
           python -m pip install pytest==9.1.1
           version="$(python candidate/verify-gp-installed-authoring.py --package-version candidate)"
           dotnet tool install Honua.Geoprocessing.Cli --add-source candidate --tool-path installed --version "$version"
-          python candidate/verify-gp-installed-authoring.py --tool "installed/honua-gp-devkit${{ runner.os == 'Windows' && '.exe' || '' }}"
+          python candidate/verify-gp-installed-authoring.py --tool "installed/honua-gp-devkit${{ runner.os == 'Windows' && '.exe' || '' }}" --restored-locks restored-locks
+      - name: Preserve restored template dependency locks
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: installed-gp-locks-${{ matrix.os }}
+          path: restored-locks
+          if-no-files-found: warn

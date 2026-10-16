@@ -16,6 +16,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--tool')
     parser.add_argument('--package-version', type=Path)
+    parser.add_argument('--restored-locks', type=Path)
     args = parser.parse_args()
     if args.package_version:
         packages = list(args.package_version.glob('Honua.Geoprocessing.Cli.*.nupkg'))
@@ -59,6 +60,8 @@ def main():
             assert (project / '.honua/toolchain').is_dir()
             assert not (project / 'Directory.Build.rsp').exists(), 'installed flow must not capture a checkout path'
             if language == 'dotnet':
+                lock_paths = ('process/packages.lock.json', 'tests/SummaryTool.Tests/packages.lock.json')
+                original_locks = {name: json.loads((project / name).read_text()) for name in lock_paths}
                 # Exercise the exact host-debug command before devkit test can rebuild
                 # the executable's dependency graph. This verifies launchability, not
                 # an interactive VS Code breakpoint or the container debug recipe.
@@ -104,6 +107,14 @@ def main():
             else:
                 direct = run('dotnet', 'test', 'tests/SummaryTool.Tests/SummaryTool.Tests.csproj', '--no-restore', cwd=project)
                 assert re.search(r'Passed:\s+4', direct) and re.search(r'Failed:\s+0', direct) and re.search(r'Skipped:\s+0', direct)
+                restored_locks = {name: json.loads((project / name).read_text()) for name in lock_paths}
+                if args.restored_locks:
+                    for name in lock_paths:
+                        target = args.restored_locks.resolve() / name
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        # Canonical newlines permit comparing the dependency graphs across OSes.
+                        target.write_bytes((json.dumps(restored_locks[name], indent=2) + '\n').encode())
+                assert original_locks == restored_locks, 'Shipped template lockfiles changed during restore; update them from restored-lock artifacts'
             # The same untouched v1 descriptor reaches release validation. Local tests
             # deliberately cannot synthesize a passing worker-image validation receipt.
             run('git', 'init', cwd=project)
