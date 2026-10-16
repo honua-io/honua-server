@@ -2464,11 +2464,14 @@ public sealed partial class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_WithLocalAndBatchWorkloads_PrefersBatchAndCarriesTierParams()
+    public async Task SubmitJob_WithLocalAndBatchWorkloads_KeepsManagedLocal()
     {
-        // Both the always-present local baseline AND a fully-configured AWS Batch GP
-        // workload are registered. The service must prefer the Batch workload and
-        // route the job to the honua-aws-batch backend, carrying the queue + tier ARNs.
+        // Both the always-present local baseline AND an unprofiled AWS Batch GP
+        // workload are registered. An unprofiled remote normalizes to managed, but
+        // a long-lived host keeps managed work on the local worker. The Batch queue
+        // and tier ARNs stay on that workload; they are not copied onto the local job.
+        // Tier projection when Batch is the selected workload is covered by
+        // SubmitJob_WithBatchWorkload_CarriesPerJobResourceProfileSizing.
         var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
         var batchBackend = Substitute.For<IBatchComputeBackend>();
         batchBackend.BackendName.Returns("honua-aws-batch");
@@ -2526,17 +2529,13 @@ public sealed partial class GeoprocessingJobServiceTests
 
         var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
 
-        job.Spec.WorkloadId.Should().Be("geoprocessing-aws-batch");
-        job.Spec.Backend.Should().Be("honua-aws-batch");
-        job.Spec.TargetKind.Should().Be(BatchComputeTargetKind.AwsBatch);
-        job.Spec.Parameters.Should().ContainKey("batch.job_queue_arn")
-            .WhoseValue.Should().Be("arn:aws:batch:us-east-1:123:job-queue/honua-gp");
-        job.Spec.Parameters.Should().ContainKey("batch.region").WhoseValue.Should().Be("us-east-1");
-        job.Spec.Parameters.Should().ContainKey("batch.job_definition_arn.s");
-        job.Spec.Parameters.Should().ContainKey("batch.job_definition_arn.xl");
-        await batchBackend.Received().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
-        await _jobQueue.DidNotReceive().EnqueueAsync(
-            Arg.Any<string>(),
+        job.Spec.WorkloadId.Should().Be("geoprocessing-local");
+        job.Spec.Backend.Should().Be("local");
+        job.Spec.Parameters.Should().NotContainKey("batch.job_queue_arn");
+        job.Spec.Parameters.Should().NotContainKey("batch.job_definition_arn.s");
+        await batchBackend.DidNotReceive().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+        await _jobQueue.Received().EnqueueAsync(
+            job.OperationId,
             Arg.Any<OperationPriority>(),
             Arg.Any<CancellationToken>());
     }
