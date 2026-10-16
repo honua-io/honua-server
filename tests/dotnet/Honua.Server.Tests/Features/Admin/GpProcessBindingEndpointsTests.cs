@@ -183,6 +183,7 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
     public async Task PostgresActivation_CustomSchema_ConcurrentPublishesAndDeploysPersistOnce()
     {
         var process = "binding-test-" + Guid.NewGuid().ToString("N");
