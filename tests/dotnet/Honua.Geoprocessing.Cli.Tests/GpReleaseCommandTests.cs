@@ -69,7 +69,7 @@ public sealed class GpReleaseCommandTests : IDisposable
         parsed.DependencyLock.Path.Should().Be("tools/summary/requirements.lock");
         parsed.RuntimeImage.Reference.Should().Be(RuntimeImage);
         parsed.Targets.Should().ContainSingle().Which.WorkerImageDigest.Should().Be("sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-        parsed.ValidationReceipts.Should().ContainSingle().Which.Name.Should().Be("golden-tests.junit.xml");
+        parsed.ValidationReceipts.Should().ContainSingle().Which.Name.Should().Be("golden-tests.json");
         parsed.GeneratedAt.Should().MatchRegex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$");
         first.Stdout.Should().Contain("digest  : " + parsed.Digest);
 
@@ -133,7 +133,7 @@ public sealed class GpReleaseCommandTests : IDisposable
         var result = Run(project, "out");
 
         result.Exit.Should().Be(1);
-        result.Stderr.Should().Contain("validation.receipts[golden-tests.junit.xml]").And.Contain("does not exist");
+        result.Stderr.Should().Contain("validation.receipts[golden-tests.json]").And.Contain("does not exist");
         File.Exists(Path.Join(project, "out", "process-release-lock.json")).Should().BeFalse();
     }
 
@@ -177,7 +177,6 @@ public sealed class GpReleaseCommandTests : IDisposable
     [InlineData("requirements.lock")]
     [InlineData("schema/inputs.schema.json")]
     [InlineData("schema/outputs.schema.json")]
-    [InlineData("artifacts/golden-tests.junit.xml")]
     public void Release_RefusesDirtyHashedInputsOutsideArtifactIncludes(string relative)
     {
         var project = CreateProject();
@@ -213,6 +212,7 @@ public sealed class GpReleaseCommandTests : IDisposable
         }
         Git(project, "add", ".");
         Git(project, "commit", "-qm", "use default includes");
+        WriteReceipt(project);
         const string output = "tools/summary/out-release";
         var first = Run(project, output);
         first.Exit.Should().Be(0, first.Stderr);
@@ -327,7 +327,7 @@ public sealed class GpReleaseCommandTests : IDisposable
         return (exit, stdout.ToString(), stderr.ToString());
     }
 
-    private string CreateProject(string receiptPath = "artifacts/golden-tests.junit.xml", string configurationReference = "ref:environment/data-bucket")
+    private string CreateProject(string receiptPath = "artifacts/golden-tests.json", string configurationReference = "ref:environment/data-bucket")
     {
         var project = Path.Join(_root, "repo");
         var tool = Path.Join(project, "tools", "summary");
@@ -338,7 +338,6 @@ public sealed class GpReleaseCommandTests : IDisposable
         File.WriteAllText(Path.Join(tool, "schema", "inputs.schema.json"), "{\"type\":\"object\"}\n");
         File.WriteAllText(Path.Join(tool, "schema", "outputs.schema.json"), "{\"type\":\"object\",\"required\":[\"sum\"]}\n");
         File.WriteAllText(Path.Join(tool, "requirements.lock"), "honua-customcode-harness==0.1.0\n");
-        File.WriteAllText(Path.Join(tool, "artifacts", "golden-tests.junit.xml"), "<testsuite tests=\"4\" failures=\"0\"/>\n");
         File.WriteAllText(Path.Join(tool, "honua-gp.yaml"), $"""
             schema: honua.gp-process/v1
             process:
@@ -369,11 +368,11 @@ public sealed class GpReleaseCommandTests : IDisposable
                 - requirements.lock
             validation:
               receipts:
-                - name: golden-tests.junit.xml
+                - name: golden-tests.json
                   path: {receiptPath}
 
             """);
-        File.WriteAllText(Path.Join(project, ".gitignore"), "out*/\n");
+        File.WriteAllText(Path.Join(project, ".gitignore"), "out*/\nartifacts/\n");
 
         Git(project, "init", "-q");
         Git(project, "config", "user.email", "test@example.invalid");
@@ -381,7 +380,64 @@ public sealed class GpReleaseCommandTests : IDisposable
         Git(project, "config", "commit.gpgsign", "false");
         Git(project, "add", ".");
         Git(project, "commit", "-qm", "summary tool 1.2.0");
+        WriteReceipt(project);
         return project;
+    }
+
+    [Fact]
+    public void Release_TargetImageDiffersFromValidatedRuntime_RefusesUntestedDeployment()
+    {
+        var project = CreateProject();
+        var descriptor = Path.Join(project, "tools", "summary", "honua-gp.yaml");
+        File.WriteAllText(descriptor, File.ReadAllText(descriptor).Replace(
+            "    chartVersion: 2026.1.0", "    chartVersion: 2026.1.0\n    workerImageDigest: sha256:" + new string('c', 64), StringComparison.Ordinal));
+        Git(project, "add", ".");
+        Git(project, "commit", "-qm", "select different target image");
+        WriteReceipt(project);
+        var result = Run(project, "out");
+        result.Exit.Should().Be(1);
+        result.Stderr.Should().Contain("workerImageDigest must match the receipt-validated runtime image digest");
+    }
+
+    private static void WriteReceipt(string project, string status = "pass", string? sourceSha = null,
+        string? runtimeDigest = null, int passed = 4, int failed = 0, int skipped = 0)
+        => File.WriteAllText(Path.Join(project, "tools", "summary", "artifacts", "golden-tests.json"),
+            JsonSerializer.Serialize(new
+            {
+                schemaVersion = "honua.gp-validation/v1",
+                status,
+                sourceSha = sourceSha ?? Git(project, "rev-parse", "HEAD").Trim(),
+                runtimeImageDigest = runtimeDigest ?? RuntimeImage[(RuntimeImage.IndexOf('@') + 1)..],
+                tests = new { passed, failed, skipped }
+            }));
+
+    [Theory]
+    [InlineData("failed")]
+    [InlineData("wrong-source")]
+    [InlineData("wrong-image")]
+    [InlineData("no-tests")]
+    [InlineData("failed-test")]
+    [InlineData("skipped-test")]
+    [InlineData("malformed")]
+    public void Release_RefusesUnverifiedOrWrongCandidateReceipt(string failure)
+    {
+        var project = CreateProject();
+        WriteReceipt(project,
+            status: failure == "failed" ? "fail" : "pass",
+            sourceSha: failure == "wrong-source" ? new string('a', 40) : null,
+            runtimeDigest: failure == "wrong-image" ? "sha256:" + new string('c', 64) : null,
+            passed: failure == "no-tests" ? 0 : 4,
+            failed: failure == "failed-test" ? 1 : 0,
+            skipped: failure == "skipped-test" ? 1 : 0);
+        if (failure == "malformed")
+        {
+            File.WriteAllText(Path.Join(project, "tools", "summary", "artifacts", "golden-tests.json"),
+                "<testsuite tests=\"4\" failures=\"1\"/>");
+        }
+        var result = Run(project, "out");
+        result.Exit.Should().Be(1);
+        result.Stderr.Should().Contain("validation.receipts[golden-tests.json]");
+        File.Exists(Path.Join(project, "out", "process-release-lock.json")).Should().BeFalse();
     }
 
     private static string Git(string directory, params string[] arguments)
