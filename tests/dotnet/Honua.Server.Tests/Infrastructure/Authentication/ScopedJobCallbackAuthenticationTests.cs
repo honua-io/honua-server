@@ -9,11 +9,13 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -167,7 +169,7 @@ public sealed class ScopedJobCallbackAuthenticationTests
         }
 
         using var response = await client.GetAsync(QueryPath);
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, reason);
+        await response.AssertGeoServicesErrorAsync(401);
         // Anonymous endpoints must not silently ignore a malformed explicit credential.
         using var anonymousRoute = await client.GetAsync("/healthz/live");
         anonymousRoute.StatusCode.Should().Be(HttpStatusCode.Unauthorized, reason);
@@ -252,6 +254,10 @@ public sealed class ScopedJobCallbackAuthenticationTests
                 static () => new RbacTestLayerCatalog(betaAlsoIncludesAlphaLayer: true))
                 .WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
                 {
+                    // The data fixture has no provider-backed CRS detector. Queries still
+                    // use the production resolver with its standard fixture dependency.
+                    services.RemoveAll<ICrsDetectionService>();
+                    services.AddSingleton<ICrsDetectionService, NoopCrsDetectionService>();
                     services.RemoveAll<IScopedJobTokenIssuer>();
                     services.AddSingleton<IScopedJobTokenIssuer>(Issuer);
                     services.RemoveAll<IExecutionJobStore>();
