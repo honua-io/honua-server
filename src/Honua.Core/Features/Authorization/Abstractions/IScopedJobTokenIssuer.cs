@@ -102,7 +102,11 @@ public sealed record ScopedJobTokenRequest(
     IReadOnlyList<string> Grants,
     string JobId,
     IReadOnlyList<JobResourceScopeEntry> ResourceScope,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt)
+{
+    /// <summary>Server-assigned execution attempt; zero identifies legacy non-artifact capabilities.</summary>
+    public int Attempt { get; init; }
+}
 
 /// <summary>
 /// Result of minting a scoped-job token.
@@ -125,4 +129,8 @@ public sealed record ScopedJobTokenIssuance(string Token, DateTimeOffset Expires
 public sealed record ScopedJobTokenValidation(
     ClaimsPrincipal Principal,
     string JobId,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt)
+{
+    /// <summary>Frozen execution attempt this capability may upload artifacts for.</summary>
+    public int Attempt { get; init; }
+}
