@@ -158,7 +158,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("PUT /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}")]
     [Endpoint("GET /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}")]
-    public async Task Upload_RejectsCrossJobExpiredAndStaleAttemptCredentials()
+    public async Task Upload_RejectsCrossJobRevokedAndStaleAttemptCredentials()
     {
         using var crossJob = await _worker.PutAsync("/api/geoprocessing/jobs/other-job/custom-artifacts/result.json?attempt=1", new ByteArrayContent([1]));
         crossJob.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -176,6 +176,8 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         using var anonymous = _fixture.CreateClient();
         using var forbiddenRead = await anonymous.GetAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/result.json?attempt=1");
         forbiddenRead.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        using var callbackRead = await _worker.GetAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/result.json?attempt=1");
+        callbackRead.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         _objects.Should().BeEmpty();
     }
 
@@ -217,6 +219,25 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
                 response.Dispose();
             }
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}")]
+    public async Task Upload_AggregateBudgetIncludesFailedReservations()
+    {
+        _records["broker-job"] = _records["broker-job"] with
+        {
+            ArtifactReferences = Enumerable.Range(0, 4).Select(index => new CustomCodeArtifactDescriptor
+            {
+                JobId = "broker-job", Attempt = 1, Name = $"interrupted{index}.bin",
+                ObjectKey = $"gp/custom-artifacts/broker-job/a1/interrupted{index}.bin",
+                ContentType = "application/octet-stream", SizeBytes = CustomCodeArtifactEndpoints.MaximumArtifactBytes,
+            }.Serialize()).ToArray(),
+        };
+        using var response = await _worker.PutAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/result.json?attempt=1", new ByteArrayContent([1]));
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+        _objects.Should().BeEmpty();
+        _records["broker-job"].ArtifactReferences.Should().HaveCount(4);
     }
 
     [IntegrationTest]

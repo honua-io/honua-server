@@ -188,7 +188,8 @@ internal static class CustomCodeArtifactEndpoints
         for (var retry = 0; retry < MaximumCasAttempts; retry++)
         {
             var job = await jobs.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-            if (!LiveAttempt(job, attempt, credential[0]!))
+            if (!LiveAttempt(job, attempt, credential[0]!)
+                || !Receipts(job!).Any(item => item.Attempt == attempt && item.Name == name && item.State == "pending"))
             {
                 break;
             }
