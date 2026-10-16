@@ -1064,12 +1064,17 @@ internal sealed class PostgresRasterStore : IRasterStore
             return BuildStretchedBandExpression(baseExpr, 1, bounds[0]);
         }
 
-        var first = BuildStretchedBandExpression(baseExpr, 1, bounds[0]);
+        // The base can contain the complete corrected-nearest sampler. Do not embed
+        // that tree once per band: PostgreSQL would plan and execute each copy.
+        // MATERIALIZED prevents inlining the input back into each band.
+        const string input = "stretch_input.rast";
+        var first = BuildStretchedBandExpression(input, 1, bounds[0]);
         var rest = string.Join(
             ", ",
             Enumerable.Range(2, bounds.Count - 1)
-                .Select(band => BuildStretchedBandExpression(baseExpr, band, bounds[band - 1])));
-        return $"ST_AddBand({first}, ARRAY[{rest}]::raster[])";
+                .Select(band => BuildStretchedBandExpression(input, band, bounds[band - 1])));
+        return $"(WITH stretch_input AS MATERIALIZED (SELECT {baseExpr} AS rast) "
+            + $"SELECT ST_AddBand({first}, ARRAY[{rest}]::raster[]) FROM stretch_input)";
     }
 
     private static string BuildStretchedBandExpression(string baseExpr, int band, StretchBounds bounds)

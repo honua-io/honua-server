@@ -62,14 +62,14 @@ Open `http://localhost:8080/terrain/{layerId}/12/655/1583.png` in a browser. The
 200 image/png
 ```
 
-A fully uncovered (but valid) tile coordinate still returns a valid all-sentinel PNG rather than `404`.
+A fully uncovered (but valid) tile coordinate still returns a valid transparent PNG rather than `404`.
 
 ## Troubleshoot
 
 - **`tile.json` reports `"supported": false`** — read `unsupportedReasons`: the usual causes are a multi-band source, an unusable SRID (such as `0`), or mixed CRSs across the layer's rasters.
 - **Tile requests return `422`** — same source requirements as above; metadata can return `200` while tiles fail, so diagnose from `tile.json` first.
 - **`404` for the dataset** — the layer id is unknown or has no registered raster source; confirm the step 1 import succeeded.
-- **Terrain looks flat or spiky at edges** — clients rendering the `-10000 m` sentinel as real elevation; filter `[0, 0, 0]` pixels in the application.
+- **Terrain looks flat or spiky at edges** — ensure the client honors PNG alpha `0` as missing data. Do not filter solely by RGB `[0, 0, 0]`: a valid `-10000 m` elevation retains alpha `255`.
 - **Stale tiles after re-importing the DEM** — raster import invalidates the `terrain` cache tag automatically; if a proxy caches tiles, honor `Cache-Control` or purge it.
 
 More help: [troubleshooting](../deploy/troubleshooting.md).
