@@ -50,7 +50,7 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
         provisioning.AttemptCount.Should().Be(0);
         var capability = provisioning.Spec.Parameters["env.HONUA_JOB_TOKEN"];
         client.LastSubmission!.EnvironmentOverrides.Single(entry => entry.Name == "HONUA_JOB_TOKEN").Value.Should().Be(capability);
-        (await issuer.ValidateAsync(capability, job.OperationId))!.Attempt.Should().Be(1);
+        (await issuer.ValidateAsync(capability, job.OperationId, CancellationToken.None))!.Attempt.Should().Be(1);
         client.NextListJobsResult = [new AwsBatchJobState { JobId = "accepted-before-crash", Status = "RUNNING" }];
         var reconciler = new ExecutionJobReconciler(jobs, [backend], progress, NullLogger<ExecutionJobReconciler>.Instance);
         await reconciler.ReconcileExecutionJobAsync(job.OperationId);
@@ -59,8 +59,8 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
         recovered.AttemptCount.Should().Be(1);
         recovered.ProviderOperationId.Should().Be("accepted-before-crash");
         recovered.Spec.Parameters["env.HONUA_JOB_TOKEN"].Should().Be(capability);
-        (await issuer.ValidateAsync(capability, job.OperationId))!.Attempt.Should().Be(recovered.AttemptCount);
-        await issuer.RevokeAsync(capability);
+        (await issuer.ValidateAsync(capability, job.OperationId, CancellationToken.None))!.Attempt.Should().Be(recovered.AttemptCount);
+        await issuer.RevokeAsync(capability, CancellationToken.None);
         await jobs.TrySetAsync(recovered with { Status = ExecutionJobStatus.Cancelled, CompletedAt = DateTimeOffset.UtcNow }, TimeSpan.FromMinutes(1));
     }
 
