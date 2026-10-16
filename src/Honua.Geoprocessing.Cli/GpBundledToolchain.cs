@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Reflection;
+using System.Text;
 
 namespace Honua.Geoprocessing.Cli;
 
@@ -13,6 +14,7 @@ namespace Honua.Geoprocessing.Cli;
 internal static class GpBundledToolchain
 {
     private const string Prefix = "Toolchain/";
+    internal const string VersionFileName = "toolchain-version.txt";
 
     internal static string Version => typeof(GpBundledToolchain).Assembly
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion;
@@ -26,12 +28,35 @@ internal static class GpBundledToolchain
 
         var root = Path.GetFullPath(projectDirectory);
         var destination = Path.Join(root, ".honua", "toolchain");
-        if (!Directory.Exists(destination))
+        if (!IsCurrent(destination))
         {
+            if (Directory.Exists(destination))
+            {
+                Directory.Delete(destination, recursive: true);
+            }
+
             GpCustomProjectScaffolder.Apply(root, Files());
         }
 
         return destination;
+    }
+
+    /// <summary>
+    /// True when <paramref name="toolchainDirectory"/> is the payload extracted by this devkit.
+    /// Harness directories alone are not enough: a leftover tree from another version is stale.
+    /// </summary>
+    internal static bool IsCurrent(string toolchainDirectory)
+    {
+        var stampPath = Path.Join(toolchainDirectory, VersionFileName);
+        if (!File.Exists(stampPath))
+        {
+            return false;
+        }
+
+        var recorded = File.ReadAllText(stampPath).Trim();
+        return string.Equals(recorded, Version, StringComparison.Ordinal)
+            && Directory.Exists(Path.Join(toolchainDirectory, "docker", "worker-customcode-python", "harness"))
+            && Directory.Exists(Path.Join(toolchainDirectory, "docker", "worker-customcode-dotnet", "harness"));
     }
 
     internal static IReadOnlyList<GpProjectFile> Files()
@@ -57,6 +82,9 @@ internal static class GpBundledToolchain
             throw new InvalidOperationException("The devkit package has no bundled authoring toolchain.");
         }
 
+        files.Add(new GpProjectFile(
+            ".honua/toolchain/" + VersionFileName,
+            Encoding.UTF8.GetBytes(Version + "\n")));
         return files;
     }
 }

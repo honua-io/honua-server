@@ -992,7 +992,10 @@ public static class GpCli
             throw new GpCliUsageException(ex.Message);
         }
 
-        var harnessRoot = GpCustomProjectScaffolder.ResolveHarnessRoot(explicitHarnessRoot ?? manifest.HarnessRoot, projectDirectory);
+        var harnessRoot = GpCustomProjectScaffolder.ResolveHarnessRoot(
+            explicitHarnessRoot ?? manifest.HarnessRoot,
+            projectDirectory,
+            manifest.ToolchainVersion);
         if (harnessRoot is null)
         {
             try

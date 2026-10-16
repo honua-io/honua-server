@@ -305,9 +305,11 @@ public static partial class GpCustomProjectScaffolder
     /// <summary>
     /// Finds the honua-server checkout holding the harnesses: <paramref name="explicitRoot"/>,
     /// then <c>HONUA_GP_HARNESS_ROOT</c> / <c>HONUA_SERVER_CHECKOUT</c>, then the bundled
-    /// project-local toolchain under <paramref name="startDirectory"/>. No implicit checkout discovery.
+    /// project-local toolchain under <paramref name="startDirectory"/> when its recorded
+    /// version is this devkit and <paramref name="bundledToolchainVersion"/> asks for it.
+    /// No implicit checkout discovery.
     /// </summary>
-    public static string? ResolveHarnessRoot(string? explicitRoot, string startDirectory)
+    public static string? ResolveHarnessRoot(string? explicitRoot, string startDirectory, string? bundledToolchainVersion = null)
     {
         foreach (var candidate in new[] { explicitRoot, Environment.GetEnvironmentVariable("HONUA_GP_HARNESS_ROOT"), Environment.GetEnvironmentVariable("HONUA_SERVER_CHECKOUT") })
         {
@@ -318,7 +320,9 @@ public static partial class GpCustomProjectScaffolder
         }
 
         var bundled = Path.Join(Path.GetFullPath(startDirectory), ".honua", "toolchain");
-        if (IsHarnessRoot(bundled))
+        var versionMatches = bundledToolchainVersion is null
+            || string.Equals(bundledToolchainVersion, GpBundledToolchain.Version, StringComparison.Ordinal);
+        if (versionMatches && GpBundledToolchain.IsCurrent(bundled))
         {
             return bundled;
         }

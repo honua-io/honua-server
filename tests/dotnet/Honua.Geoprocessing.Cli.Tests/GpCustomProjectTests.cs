@@ -170,6 +170,59 @@ public sealed class GpCustomProjectTests
     }
 
     [Fact]
+    public void ResolveHarnessRoot_ReusesBundledToolchainOnlyWhenTheStampMatches()
+    {
+        var root = Directory.CreateTempSubdirectory("gp-toolchain-").FullName;
+        try
+        {
+            var toolchain = Path.Join(root, ".honua", "toolchain");
+            Directory.CreateDirectory(Path.Join(toolchain, "docker", "worker-customcode-python", "harness"));
+            Directory.CreateDirectory(Path.Join(toolchain, "docker", "worker-customcode-dotnet", "harness"));
+
+            GpCustomProjectScaffolder.ResolveHarnessRoot(null, root, GpBundledToolchain.Version).Should().BeNull();
+
+            File.WriteAllText(Path.Join(toolchain, GpBundledToolchain.VersionFileName), "stale\n");
+            GpCustomProjectScaffolder.ResolveHarnessRoot(null, root, GpBundledToolchain.Version).Should().BeNull();
+
+            File.WriteAllText(Path.Join(toolchain, GpBundledToolchain.VersionFileName), GpBundledToolchain.Version + "\n");
+            GpCustomProjectScaffolder.ResolveHarnessRoot(null, root, "other-version").Should().BeNull();
+            GpCustomProjectScaffolder.ResolveHarnessRoot(null, root, GpBundledToolchain.Version)
+                .Should().Be(Path.GetFullPath(toolchain));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Restore_ReplacesAStaleBundledToolchainAndKeepsAVersionMismatch()
+    {
+        var root = Directory.CreateTempSubdirectory("gp-restore-").FullName;
+        try
+        {
+            var toolchain = Path.Join(root, ".honua", "toolchain");
+            Directory.CreateDirectory(Path.Join(toolchain, "docker", "worker-customcode-python", "harness"));
+            Directory.CreateDirectory(Path.Join(toolchain, "docker", "worker-customcode-dotnet", "harness"));
+            File.WriteAllText(Path.Join(toolchain, "stale.txt"), "old");
+
+            var mismatch = () => GpBundledToolchain.Restore(root, "not-this-version");
+            mismatch.Should().Throw<InvalidDataException>();
+            File.Exists(Path.Join(toolchain, "stale.txt")).Should().BeTrue();
+
+            GpBundledToolchain.Restore(root, GpBundledToolchain.Version).Should().Be(Path.GetFullPath(toolchain));
+            File.Exists(Path.Join(toolchain, "stale.txt")).Should().BeFalse();
+            File.ReadAllText(Path.Join(toolchain, GpBundledToolchain.VersionFileName)).Trim()
+                .Should().Be(GpBundledToolchain.Version);
+            GpBundledToolchain.IsCurrent(toolchain).Should().BeTrue();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Plan_RejectsBadNames()
     {
         var act = () => GpCustomProjectScaffolder.Plan(GpProjectLanguage.Python, "Parcel Summary", null);
