@@ -71,7 +71,12 @@ internal sealed class GeoprocessingJobDispatcher
     private readonly IOperationGateway? _operationGateway;
     private readonly IOperationEnvelopeFactory? _operationEnvelopeFactory;
     private readonly ExecutionAdmissionCoordinator _admissionCoordinator;
-    private readonly IGeoprocessingHostRuntime _hostRuntime;
+
+    /// <summary>
+    /// Whether this process freezes between requests. Not a constructor collaborator:
+    /// production reads the process environment, and tests replace the probe.
+    /// </summary>
+    internal IGeoprocessingHostRuntime HostRuntime { get; init; } = ProcessEnvironmentHostRuntime.Instance;
 
     /// <summary>
     /// Creates the dispatcher over the admission evaluator, workload registry, queue,
@@ -90,8 +95,7 @@ internal sealed class GeoprocessingJobDispatcher
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
         IOperationGateway? operationGateway = null,
         IOperationEnvelopeFactory? operationEnvelopeFactory = null,
-        ExecutionAdmissionCoordinator? admissionCoordinator = null,
-        IGeoprocessingHostRuntime? hostRuntime = null)
+        ExecutionAdmissionCoordinator? admissionCoordinator = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
@@ -103,7 +107,6 @@ internal sealed class GeoprocessingJobDispatcher
         _operationGateway = operationGateway;
         _operationEnvelopeFactory = operationEnvelopeFactory;
         _admissionCoordinator = admissionCoordinator ?? ExecutionAdmissionCoordinator.ProcessLocal;
-        _hostRuntime = hostRuntime ?? ProcessEnvironmentHostRuntime.Instance;
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -321,7 +324,7 @@ internal sealed class GeoprocessingJobDispatcher
             || string.Equals(RuntimeProfiles.Normalize(d.RuntimeProfile), profile, StringComparison.Ordinal))
             .ToArray();
         var nativeProfile = string.Equals(profile, RuntimeProfiles.Native, StringComparison.Ordinal);
-        var serverlessManaged = !nativeProfile && _hostRuntime.IsServerless;
+        var serverlessManaged = !nativeProfile && HostRuntime.IsServerless;
         // On a long-lived host the API process is the managed worker, so local wins.
         // On a serverless host that process is frozen after the response, so local is
         // not a placement: only a remote workload that declares the managed profile
@@ -387,7 +390,7 @@ internal sealed class GeoprocessingJobDispatcher
         string? requiredRuntimeProfile,
         ExecutionJobDefinition? selected)
     {
-        if (isCustomCode || !_hostRuntime.IsServerless)
+        if (isCustomCode || !HostRuntime.IsServerless)
         {
             return false;
         }

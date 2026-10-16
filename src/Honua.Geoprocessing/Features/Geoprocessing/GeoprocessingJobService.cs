@@ -166,8 +166,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 admissionEvaluator,
                 operationGateway,
                 operationEnvelopeFactory,
-                admissionCoordinator,
-                hostRuntime),
+                admissionCoordinator)
+            {
+                HostRuntime = hostRuntime ?? ProcessEnvironmentHostRuntime.Instance,
+            },
             new CustomCodeJobSubmissionGate(
                 logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier, releaseAdmission, workloadRegistry, customCodeArtifactStorage),
             new GeoprocessingJobArtifactService(

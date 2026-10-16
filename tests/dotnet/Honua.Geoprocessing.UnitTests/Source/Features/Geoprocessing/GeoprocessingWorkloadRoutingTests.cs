@@ -220,8 +220,10 @@ public sealed partial class GeoprocessingJobServiceTests
             NullLogger<GeoprocessingJobService>.Instance,
             DefaultExecutorOptions,
             _progressStore,
-            workloadRegistry: registry,
-            hostRuntime: host);
+            workloadRegistry: registry)
+        {
+            HostRuntime = host ?? ProcessEnvironmentHostRuntime.Instance,
+        };
 
     private static IExecutionJobDefinitionRegistry MixedRegistry()
     {
