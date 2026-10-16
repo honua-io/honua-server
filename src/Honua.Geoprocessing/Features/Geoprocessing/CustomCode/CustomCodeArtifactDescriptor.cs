@@ -4,6 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Geoprocessing.CustomCode;
 
@@ -20,6 +21,8 @@ public sealed record CustomCodeArtifactDescriptor
     public required string Name { get; init; }
     /// <summary>Server-selected cloud object identity; never accepted from a caller.</summary>
     public required string ObjectKey { get; init; }
+    /// <summary>Cloud provider that owns the immutable object; mismatched providers fail closed.</summary>
+    public CloudStorageProvider Provider { get; init; }
     /// <summary>Uploaded content type.</summary>
     public required string ContentType { get; init; }
     /// <summary>Reserved and then verified byte length.</summary>
