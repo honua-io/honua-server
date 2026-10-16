@@ -249,6 +249,8 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
         }
         catch (AmazonS3Exception ex) when (ex.ErrorCode is "BucketAlreadyOwnedByYou" or "BucketAlreadyExists")
         {
+            // Create is idempotent. The object write below uses the existing bucket.
+            _ = ex;
         }
 
         await s3.PutObjectAsync(new PutObjectRequest
@@ -453,6 +455,8 @@ public sealed class ImportObjectStoreLocalStackFixture : IAsyncLifetime
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
             {
+                // The emulator is still starting. The loop retries until the deadline.
+                _ = ex;
             }
 
             await Task.Delay(1000);

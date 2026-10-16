@@ -340,6 +340,8 @@ internal static class ImportObjectStoreCoordinator
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            // Best-effort. The caller is already propagating the failure that required this delete.
+            _ = ex;
         }
     }
 }
