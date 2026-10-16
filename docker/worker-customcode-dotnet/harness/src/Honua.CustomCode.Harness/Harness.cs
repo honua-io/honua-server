@@ -71,7 +71,10 @@ public sealed class Harness
         finally
         {
             journal.Terminal(StatusFor(exit), exit, exit == ExitOk ? null : state.Phase);
-            UploadEvents(journal, state.Uploader);
+            if (!UploadEvents(journal, state.Uploader) && exit == ExitOk)
+            {
+                exit = ExitHarnessError;
+            }
         }
 
         return exit;
@@ -85,22 +88,23 @@ public sealed class Harness
         _ => "setupFailed",
     };
 
-    /// <summary>Best effort: the journal rides along as a reserved artifact after the tool's own.</summary>
-    private static void UploadEvents(EventJournal journal, ArtifactUploader? uploader)
+    /// <summary>Publish required diagnostics; preserve an original process failure if transport also fails.</summary>
+    private static bool UploadEvents(EventJournal journal, ArtifactUploader? uploader)
     {
         if (uploader is null)
         {
-            return;
+            return false;
         }
 
         try
         {
             uploader.Upload([new Artifact(EventJournal.FileName, journal.Path, new FileInfo(journal.Path).Length)]);
+            return true;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Evidence upload must not change the job outcome; the stderr line is the only trace.
-            Console.Error.WriteLine($"[tool] WARN  event journal upload failed: {ex.Message}");
+            Console.Error.WriteLine($"[tool] ERROR event journal publication failed: {ex.GetType().Name}");
+            return false;
         }
     }
 
@@ -128,6 +132,31 @@ public sealed class Harness
         catch (JobSpecException ex)
         {
             log.Warn($"invalid job inputs: {ex.Message}");
+            return ExitHarnessError;
+        }
+
+        // Establish evidence transport before any source, dependency or user-code phase.
+        try
+        {
+            string? ReadEnvironment(string name) => env is null
+                ? Environment.GetEnvironmentVariable(name)
+                : env.GetValueOrDefault(name);
+            state.Uploader = _options.UploaderFactory is { } factory
+                ? factory(spec.OutputPrefix)
+                : ArtifactUploader.CreateBroker(spec.BaseUrl, spec.JobToken,
+                    ReadEnvironment("HONUA_JOB_ID"), ReadEnvironment("HONUA_JOB_ATTEMPT"));
+            var deadline = ReadEnvironment("HONUA_JOB_START_DEADLINE");
+            if ((deadline is not null || _options.UploaderFactory is null) &&
+                (!long.TryParse(deadline, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var latestStart) ||
+                 DateTimeOffset.UtcNow.ToUnixTimeSeconds() > latestStart))
+            {
+                log.Warn("Custom-code queue-wait deadline is missing, invalid or exceeded; source execution refused.");
+                return ExitHarnessError;
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            log.Warn($"artifact broker setup failed: {ex.GetType().Name}");
             return ExitHarnessError;
         }
 
@@ -166,7 +195,8 @@ public sealed class Harness
         object? client;
         try
         {
-            client = CredentialSandbox.BuildScopedClient(spec.BaseUrl, spec.JobToken, _options.ClientFactory);
+            client = CredentialSandbox.BuildScopedClient(spec.BaseUrl, spec.JobToken, _options.ClientFactory,
+                jobId: env is null ? Environment.GetEnvironmentVariable("HONUA_JOB_ID") : env.GetValueOrDefault("HONUA_JOB_ID"));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -253,11 +283,7 @@ public sealed class Harness
         journal.Phase("upload");
         try
         {
-            var uploader = _options.UploaderFactory is { } factory
-                ? factory(spec.OutputPrefix)
-                : new ArtifactUploader(spec.OutputPrefix);
-            state.Uploader = uploader;
-            foreach (var uploaded in uploader.Upload(output.Artifacts))
+            foreach (var uploaded in state.Uploader!.Upload(output.Artifacts))
             {
                 log.Info($"uploaded {uploaded.Name} -> {uploaded.Uri} ({uploaded.SizeBytes} bytes)");
                 journal.Artifact(uploaded.Name, uploaded.SizeBytes, uri: uploaded.Uri);

@@ -21217,6 +21217,76 @@
           }
         }
       }
+    },
+    "/gp/process-releases/bindings/{process}/jobs": {
+      "post": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Submit a release-bound custom-code job",
+        "operationId": "submitGpProcessReleaseJob",
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "Identical retries return the original job and release pin."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpProcessReleaseJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted; Location identifies the canonical job status route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "Idempotency key already belongs to different inputs."
+          },
+          "429": {
+            "description": "Admission throttled; Retry-After may be present."
+          },
+          "503": {
+            "description": "Durable jobs or the selected execution backend is unavailable."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -37228,6 +37298,20 @@
             "items": {
               "$ref": "#/components/schemas/ConsoleJobStep"
             }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Total appended log entries, including entries removed by retention bounds."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the returned timeline omits earlier entries."
+          },
+          "droppedCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of earliest entries removed by the retained-log bound."
           }
         }
       },
@@ -49835,6 +49919,70 @@
           "generatedAt": {
             "type": "string",
             "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+          }
+        }
+      },
+      "GpProcessReleaseJobRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "params"
+        ],
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "declaredScope": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "serviceId"
+              ],
+              "properties": {
+                "serviceId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "layerId": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "access": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "write"
+                  ],
+                  "default": "read"
+                }
+              }
+            }
+          }
+        }
+      },
+      "GpProcessReleaseJobResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "statusUrl",
+          "diagnosticsUrl",
+          "artifactsUrl"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "statusUrl": {
+            "type": "string"
+          },
+          "diagnosticsUrl": {
+            "type": "string"
+          },
+          "artifactsUrl": {
+            "type": "string"
           }
         }
       }

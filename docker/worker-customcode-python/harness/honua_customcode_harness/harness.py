@@ -49,7 +49,7 @@ from .sandbox import (
     strip_credential_env,
 )
 from .sourcefetch import SourceFetchError, clone_pinned
-from .upload import ArtifactUploader
+from .upload import BrokerArtifactUploader
 
 EXIT_OK = 0
 EXIT_TOOL_FAILED = 1
@@ -101,19 +101,22 @@ def run(
     finally:
         journal.terminal(EXIT_STATUS.get(code, "failed"), code,
                          phase=None if code == EXIT_OK else state["phase"])
-        _upload_events(journal, state["uploader"])
+        if not _upload_events(journal, state["uploader"]) and code == EXIT_OK:
+            code = EXIT_HARNESS_ERROR
     return code
 
 
-def _upload_events(journal: EventJournal, uploader: Any) -> None:
-    """Best effort: the journal rides along as a reserved artifact after the tool's own."""
+def _upload_events(journal: EventJournal, uploader: Any) -> bool:
+    """Publish required diagnostics, preserving any original process failure."""
     if uploader is None:
-        return
+        return False
     try:
         size = journal.path.stat().st_size
         uploader.upload([Artifact(name=EVENTS_FILE_NAME, path=journal.path, size_bytes=size)])
-    except Exception as exc:  # noqa: BLE001 - evidence upload must not change the job outcome
-        print(f"[tool] WARN  event journal upload failed: {exc}", file=sys.stderr, flush=True)
+        return True
+    except Exception as exc:  # noqa: BLE001 - preserve the original failure
+        print(f"[tool] ERROR event journal publication failed: {type(exc).__name__}", file=sys.stderr, flush=True)
+        return False
 
 
 def _run_steps(
@@ -139,6 +142,19 @@ def _run_steps(
         spec = load_job_spec(env)
     except JobSpecError as exc:
         log.warn(f"invalid job inputs: {exc}")
+        return EXIT_HARNESS_ERROR
+
+    # Establish evidence delivery before any source/dependency/user-code phase can fail.
+    try:
+        state["uploader"] = _build_uploader(spec, uploader_factory, env)
+        deadline = (os.environ if env is None else env).get("HONUA_JOB_START_DEADLINE")
+        if deadline is not None or uploader_factory is None:
+            import time
+            if deadline is None or not deadline.isdecimal() or time.time() > int(deadline):
+                log.warn("Custom-code queue-wait deadline is missing, invalid or exceeded; source execution refused.")
+                return EXIT_HARNESS_ERROR
+    except Exception as exc:
+        log.warn(f"artifact broker setup failed: {type(exc).__name__}")
         return EXIT_HARNESS_ERROR
 
     # --- 2. Pinned source --------------------------------------------------
@@ -167,7 +183,8 @@ def _run_steps(
     journal.phase("client")
     try:
         client = build_scoped_client(
-            spec.base_url, spec.job_token, client_factory=client_factory
+            spec.base_url, spec.job_token, client_factory=client_factory,
+            job_id=(os.environ if env is None else env).get("HONUA_JOB_ID")
         )
     except Exception as exc:  # noqa: BLE001 - surface SDK construction errors
         log.warn(f"failed to construct scoped client: {exc}")
@@ -224,8 +241,7 @@ def _run_steps(
     state["phase"] = "upload"
     journal.phase("upload")
     try:
-        uploader = _build_uploader(spec, uploader_factory)
-        state["uploader"] = uploader
+        uploader = state["uploader"]
         uploaded = uploader.upload(output.artifacts)
         for u in uploaded:
             log.info(f"uploaded {u.name} -> {u.uri} ({u.size_bytes} bytes)")
@@ -241,10 +257,11 @@ def _run_steps(
     return EXIT_OK
 
 
-def _build_uploader(spec: JobSpec, uploader_factory: Any) -> Any:
+def _build_uploader(spec: JobSpec, uploader_factory: Any, env=None) -> Any:
     if uploader_factory is not None:
         return uploader_factory(spec.output_prefix)
-    return ArtifactUploader(spec.output_prefix)
+    values = os.environ if env is None else env
+    return BrokerArtifactUploader(spec.base_url, spec.job_token, values.get("HONUA_JOB_ID", ""), values.get("HONUA_JOB_ATTEMPT", ""))
 
 
 def _coerce_result(result: Any, log: Any) -> GpResult:
@@ -280,9 +297,38 @@ def _close_quietly(client: Any) -> None:
             pass
 
 
-def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin wrapper
-    return run()
+def main(argv: list[str] | None = None) -> int:
+    """Production launch: credential-free Fargate container plus a sanitized child process.
 
-
-if __name__ == "__main__":  # pragma: no cover
-    sys.exit(main())
+    The job-scoped Honua capability is intentionally available to user code. No cloud
+    role or credential is made available; server dispatch verifies the actual Fargate
+    definition before launch. Environment deletion is only defense in depth.
+    """
+    import subprocess
+    args = sys.argv[1:] if argv is None else argv
+    allowed_aws = {"AWS_REGION", "AWS_DEFAULT_REGION", "AWS_EC2_METADATA_DISABLED",
+                   "AWS_BATCH_JOB_ID", "AWS_BATCH_JOB_ATTEMPT", "AWS_BATCH_CE_NAME",
+                   "AWS_BATCH_JQ_NAME", "AWS_BATCH_JOB_MAIN_NODE_INDEX", "AWS_EXECUTION_ENV"}
+    forbidden = [name for name in os.environ if
+                 (name.startswith("AWS_") and name not in allowed_aws) or
+                 name.startswith(("AZURE_", "GOOGLE_")) or name == "CLOUDSDK_CONFIG"]
+    if forbidden:
+        print("Custom-code launch refused: infrastructure credential environment is forbidden.", file=sys.stderr)
+        return EXIT_HARNESS_ERROR
+    if args == ["--credential-free-child"]:
+        return run()
+    if args:
+        print("Unknown custom-code launch arguments.", file=sys.stderr)
+        return EXIT_HARNESS_ERROR
+    safe_names = {"PATH", "LANG", "LC_ALL", "TZ", "GDAL_DATA", "PROJ_LIB", "LD_LIBRARY_PATH",
+                  "PYTHONUNBUFFERED", "PYTHONDONTWRITEBYTECODE"}
+    child_env = {name: value for name, value in os.environ.items()
+                 if name in safe_names or name.startswith(("CUSTOMCODE_", "HONUA_"))}
+    child_env["AWS_EC2_METADATA_DISABLED"] = "true"
+    child = subprocess.Popen([sys.executable, "-m", "honua_customcode_harness", "--credential-free-child"], env=child_env)
+    def forward(signum, _frame):
+        if child.poll() is None:
+            child.send_signal(signum)
+    signal.signal(signal.SIGTERM, forward)
+    signal.signal(signal.SIGINT, forward)
+    return child.wait()

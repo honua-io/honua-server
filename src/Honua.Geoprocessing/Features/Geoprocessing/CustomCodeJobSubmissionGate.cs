@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -30,6 +32,7 @@ internal sealed class CustomCodeJobSubmissionGate
     private readonly CustomCodeSubmitCoordinator? _coordinator;
     private readonly GpProcessReleaseAdmission? _releaseAdmission;
     private readonly IExecutionJobDefinitionRegistry? _workloads;
+    private readonly ICloudFileStorage? _artifactStorage;
 
     /// <summary>
     /// Creates the custom-code submit gate. When no scoped-job token issuer is configured the
@@ -41,9 +44,11 @@ internal sealed class CustomCodeJobSubmissionGate
         IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null,
         ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null,
         GpProcessReleaseAdmission? releaseAdmission = null,
-        IExecutionJobDefinitionRegistry? workloads = null)
+        IExecutionJobDefinitionRegistry? workloads = null,
+        ICloudFileStorage? artifactStorage = null)
     {
         _logger = logger;
+        _artifactStorage = artifactStorage;
         _releaseAdmission = releaseAdmission;
         _workloads = workloads;
         _scopedJobTokenIssuer = scopedJobTokenIssuer;
@@ -71,6 +76,11 @@ internal sealed class CustomCodeJobSubmissionGate
         {
             throw new GeoprocessingValidationException(
                 "Custom-code geoprocessing is not enabled on this server (no scoped-job token issuer is configured).");
+        }
+
+        if (_artifactStorage?.Provider is not (CloudStorageProvider.AwsS3 or CloudStorageProvider.AzureBlob))
+        {
+            throw new GeoprocessingValidationException("Custom-code jobs require durable cloud storage for the authenticated artifact broker.");
         }
 
         // Open-policy gate (PA-196): an unrestricted-repo execution surface requires admin

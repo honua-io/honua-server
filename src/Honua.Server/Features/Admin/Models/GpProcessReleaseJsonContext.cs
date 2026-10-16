@@ -13,6 +13,9 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = false)]
+[JsonSerializable(typeof(GpProcessReleaseJobRequest))]
+[JsonSerializable(typeof(GpProcessReleaseJobResponse))]
+[JsonSerializable(typeof(IReadOnlyList<GpProcessReleaseJobScope>))]
 [JsonSerializable(typeof(GpProcessReleaseResponse))]
 [JsonSerializable(typeof(GpProcessReleaseListResponse))]
 [JsonSerializable(typeof(GpProcessBindingTargetResponse))]

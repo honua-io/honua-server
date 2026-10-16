@@ -15,7 +15,7 @@ on a GDAL-full base with the geospatial stack + `honua-sdk` baked in.
   python bindings (`osgeo.gdal/ogr/osr`) and the full driver set.
 - Added: `git`, `python3-pip`, `ca-certificates`, build toolchain.
 - Pre-installed (no per-job restore for the common case): `rasterio`,
-  `geopandas`, `shapely`, `pyproj`, `fiona`, `boto3`, and **`honua-sdk==0.1.4`**.
+  `geopandas`, `shapely`, `pyproj`, `fiona`, `boto3`, and **`honua-sdk==0.1.16`**.
 
 ### First-class GDAL interop
 
@@ -70,7 +70,7 @@ The `customcode.*` parameters are resolved in this order (see
 | `deps_manifest` | `CUSTOMCODE_DEPS_MANIFEST` | requirements file, repo-relative |
 | `params_json` | `CUSTOMCODE_PARAMS_JSON` | inline JSON or `@/path` |
 | `output_prefix` | `CUSTOMCODE_OUTPUT_PREFIX` | `s3://bucket/prefix` |
-| `declared_scope` | `CUSTOMCODE_DECLARED_SCOPE` | advisory scope list |
+| `declared_scope` | `CUSTOMCODE_DECLARED_SCOPE` | scope requested at admission and enforced by the callback server |
 | `output_max_bytes` | `CUSTOMCODE_OUTPUT_MAX_BYTES` | default 1 GiB |
 
 ## Harness flow
@@ -82,18 +82,10 @@ The `customcode.*` parameters are resolved in this order (see
    fail hard on mismatch.
 3. **Restore extra deps** (`pip install -r <deps_manifest>`) — the SDK + geo
    stack are already baked in, so this only pulls user extras.
-4. **Build the scoped client, then strip credentials.** Construct
-   `HonuaClient(base_url, auth_provider=StaticAuthProvider({"Authorization":
-   f"Bearer {HONUA_JOB_TOKEN}"}))`, **then delete** `HONUA_JOB_TOKEN`,
-   `AWS_CONTAINER_CREDENTIALS_*`, `ECS_CONTAINER_METADATA_URI*`, and any static
-   AWS keys from `os.environ` **before importing user code** — so the tool can
-   neither read the raw token nor assume the Batch task role. An invariant check
-   (`assert_credentials_stripped`) runs after the scrub.
+4. **Build the scoped client, then scrub inherited credentials.** Construct a scoped `HonuaClient` from the published Python SDK. Requests carry the job-bound bearer token and `X-Honua-Job-Id`; the server validates the current running attempt and its declared data scope. Remove credential environment variables before loading tool code. This reduces accidental exposure; same-process code can inspect client state and the token is not a sandbox secret. Cloud isolation comes from the validated non-root Fargate definition with no task IAM role, credential environment, or secret mounts. The provider execution role is not exposed to the task.
 5. **Import + run.** Load the `module:func` entrypoint from the source root,
    build a `GpContext`, call `func(context)`.
-6. **Upload + report.** Upload registered artifacts to `output_prefix`, enforce
-   the output-size cap, and map the returned `GpResult` to an exit code:
-   `0` success, `1` tool failure, `2` harness/setup error, `3` cancelled.
+6. **Upload + report.** Upload registered artifacts and the mandatory bounded harness journal through the HTTPS job artifact broker using the current attempt capability. The worker receives no S3 credentials. The server binds immutable receipts to the job, provider, attempt, size and SHA-256. Limits remain 32 artifacts and 256 MiB cumulatively across attempts, with 64 MiB per ordinary artifact and 1 MiB for the journal; one slot and 1 MiB are reserved for a pending journal. A retry is refused if its journal cannot fit. Failed journal delivery turns an otherwise successful run into a harness error. Exit codes are `0` success, `1` tool failure, `2` harness/setup error and `3` cancelled. The legacy `output_prefix` field remains required for contract compatibility; production storage routing is server controlled.
 
 ## The `execute(context)` contract
 
@@ -109,8 +101,8 @@ def execute(context: GpContext) -> GpResult:
     context.cancellation.raise_if_cancelled()      # cooperative cancel
     out = context.workdir / "out.geojson"          # writable scratch
     out.write_text("...")
-    context.output.add_artifact("out.geojson", out)  # staged for S3 upload
-    # context.client -> pre-authed scoped HonuaClient (raw token never exposed)
+    context.output.add_artifact("out.geojson", out)  # staged for the job artifact broker
+    # context.client -> scoped HonuaClient; same-process code can inspect its state
     # context.inputs -> resolved input artifacts (name -> local path)
     return GpResult.succeeded("done")              # or GpResult.failed("why")
 ```
@@ -140,3 +132,5 @@ and the full flow with a fake SDK/git/pip/uploader. Run:
 cd docker/worker-customcode-python/harness
 with-build-lock python3 -m pytest
 ```
+
+Before the first typed SDK operation, the harness authenticates the job capability at `/healthz/live` within a single 30-second retry window. Connect/read/write/pool timeouts are each capped to the remaining window; HTTPX enforces per-phase inactivity timeouts, so this is not a strict total wall-clock deadline against a slowly trickling response. This waits for the provider-to-server Running transition using ordinary HTTP status codes, including when the eventual operation uses GeoServices error envelopes. Only the read-only readiness probe is retried. The factory disables SDK automatic retries, and a failed readiness window is never restarted by the transport.

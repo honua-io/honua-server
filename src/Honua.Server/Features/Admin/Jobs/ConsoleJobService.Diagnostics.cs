@@ -580,6 +580,10 @@ internal sealed partial class ConsoleJobService
         var selected = page?.Items ?? tail.Items.TakeLast(limit).ToArray();
         var items = selected.Select(MapDiagnosticLogEntry).ToArray();
         var isTruncated = tail.TotalCount > items.Length;
+        if (tail.DroppedCount > 0)
+        {
+            truncated.Add($"events: {tail.DroppedCount} earliest records were discarded by the durable storage limit; paging starts at the first retained event");
+        }
         if (isTruncated)
         {
             truncated.Add($"events: {items.Length} of {tail.TotalCount} returned; use firstCursor to start paging and nextCursor to continue");

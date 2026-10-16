@@ -53,10 +53,10 @@ public sealed class GpContext
     public IReadOnlyDictionary<string, string> Inputs { get; }
 
     /// <summary>
-    /// A pre-authenticated, <em>scoped</em> Honua client. Its bearer token is job-bound
-    /// and least-privilege; the raw token is never exposed to tool code. Exposed as
-    /// <see cref="object"/> so the SDK contract does not drag the whole Honua SDK graph
-    /// through this stable package — a tool casts it to the client type it needs. May be
+    /// A service provider containing pre-authenticated typed Honua SDK clients. Its bearer
+    /// capability is job-bound and scope-limited, but is accessible to same-process code.
+    /// Cast to <see cref="IServiceProvider"/> and resolve the required SDK client interface.
+    /// Exposed as <see cref="object"/> to keep this contract independent of the SDK graph. May be
     /// <see langword="null"/> when no callback access was granted.
     /// </summary>
     public object? Client { get; }
