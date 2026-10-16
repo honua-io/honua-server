@@ -188,8 +188,13 @@ public sealed class DurableFeatureStreamTests : IDisposable
         var workspaces = Substitute.For<IWorkspaceStore>();
         var source = new Workspace
         {
-            WorkspaceId = "scratch", Kind = WorkspaceKind.Scratch, Label = "scratch", OwnerId = "alice",
-            ScopeId = "tenant-a", State = WorkspaceLifecycleState.Active, CreatedAt = DateTimeOffset.UtcNow,
+            WorkspaceId = "scratch",
+            Kind = WorkspaceKind.Scratch,
+            Label = "scratch",
+            OwnerId = "alice",
+            ScopeId = "tenant-a",
+            State = WorkspaceLifecycleState.Active,
+            CreatedAt = DateTimeOffset.UtcNow,
         };
         var target = source with { WorkspaceId = "saved", Kind = WorkspaceKind.Persistent };
         workspaces.GetAsync("scratch", Arg.Any<CancellationToken>()).Returns(source);
@@ -235,7 +240,9 @@ public sealed class DurableFeatureStreamTests : IDisposable
         published!.SizeBytes.Should().Be(descriptor!.Bytes);
         var promotion = await lifecycle.PromoteArtifactAsync(new ArtifactPromotionRequest
         {
-            SourceWorkspaceId = "scratch", TargetWorkspaceId = "saved", ArtifactId = published.ArtifactId,
+            SourceWorkspaceId = "scratch",
+            TargetWorkspaceId = "saved",
+            ArtifactId = published.ArtifactId,
         });
         promotion.Succeeded.Should().BeTrue();
         var promoted = rows[promotion.PromotedArtifactId!];
