@@ -16,7 +16,6 @@ Runner, licence, and session setup stay in private `honua-esri-compat`.
 | Image revision label | `d1fc139a64ce33c817bd927bacb2103714221515`, `honua.runtime.compilation=native-aot` |
 | Previous fixture image (superseded) | `sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51` (nightly-2cc2213) |
 | Catalog schema | 120 |
-| Environment recorded on the fixture | `Production`, `Licensing__Mode=Disabled` |
 
 `d1fc139` descends from `2cc2213` on trunk, so this fixture carries #4973 and
 #4974 forward. The isolated before/after receipts stay in

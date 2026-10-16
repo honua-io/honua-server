@@ -3,7 +3,6 @@
   "source": "9f2f16a5b9d19becf052f8b2635cf7c2ce109fdd",
   "image": "sha256:a5d962958ec8a6890ecd0f5f34f1da9c08a9d464da0418bdfbbc381c754d30fc",
   "tls_verified": true,
-  "licensing_mode": "Disabled",
   "evidence_kind": "installed-sdk-observations",
   "desktop_ui_exercised": false,
   "requested_clients": [
