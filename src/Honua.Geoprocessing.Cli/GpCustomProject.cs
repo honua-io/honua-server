@@ -276,7 +276,7 @@ public sealed record GpProjectFile(string RelativePath, byte[] Contents);
 public static partial class GpCustomProjectScaffolder
 {
     /// <summary>The honua-samples commit the embedded templates were copied from.</summary>
-    public const string TemplateCommit = "48e3e9b48167dee1d462bcd1d3516b9bbe1ce61c";
+    public const string TemplateCommit = "04506bba05ed051139b9f248089e57df32f31880";
 
     /// <summary>The honua-samples repository.</summary>
     public const string TemplateSource = "honua-io/honua-samples";
