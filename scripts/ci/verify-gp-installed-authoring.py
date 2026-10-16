@@ -8,12 +8,32 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
+import zipfile
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--tool', required=True)
+    parser.add_argument('--tool')
+    parser.add_argument('--package-version', type=Path)
     args = parser.parse_args()
+    if args.package_version:
+        packages = list(args.package_version.glob('Honua.Geoprocessing.Cli.*.nupkg'))
+        if len(packages) != 1:
+            raise RuntimeError('Expected exactly one packed devkit candidate')
+        with zipfile.ZipFile(packages[0]) as package:
+            specs = [name for name in package.namelist() if name.endswith('.nuspec')]
+            if len(specs) != 1:
+                raise RuntimeError('Expected exactly one package manifest')
+            metadata = ET.fromstring(package.read(specs[0]))
+            identity = metadata.find('.//{*}id')
+            version = metadata.find('.//{*}version')
+            if identity is None or identity.text != 'Honua.Geoprocessing.Cli' or version is None or not version.text:
+                raise RuntimeError('Candidate package identity/version is missing or incorrect')
+            print(version.text)
+        return
+    if not args.tool:
+        parser.error('--tool is required for the installed journey')
     tool = str(Path(args.tool).resolve())
     env = dict(os.environ)
     for key in ('HONUA_SERVER_CHECKOUT', 'HONUA_GP_HARNESS_ROOT', 'HONUA_CUSTOMCODE_SDK_ASSEMBLY', 'PYTHONPATH'):

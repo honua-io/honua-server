@@ -59,5 +59,6 @@ jobs:
         shell: bash
         run: |
           python -m pip install pytest==9.1.1
-          dotnet tool install Honua.Geoprocessing.Cli --add-source candidate --tool-path installed --version "2026.1.1-installed.${{ github.run_id }}.${{ github.run_attempt }}"
+          version="$(python candidate/verify-gp-installed-authoring.py --package-version candidate)"
+          dotnet tool install Honua.Geoprocessing.Cli --add-source candidate --tool-path installed --version "$version"
           python candidate/verify-gp-installed-authoring.py --tool "installed/honua-gp-devkit${{ runner.os == 'Windows' && '.exe' || '' }}"
