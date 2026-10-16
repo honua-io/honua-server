@@ -90,8 +90,8 @@ internal static class FeatureStreamArtifact
     /// <param name="stream">The lazy feature sequence on success.</param>
     /// <param name="maxInlineDecodedBytes">
     /// Ceiling applied only to inline data-URI inputs (mirrors
-    /// <see cref="FeatureCollectionArtifact.TryParseDataUri"/>). Spilled streams are
-    /// unbounded — that is the whole point — so the ceiling does not apply to them.
+    /// <see cref="FeatureCollectionArtifact.TryParseDataUri"/>). Durable stream reads
+    /// enforce their separately bounded immutable byte receipt.
     /// </param>
     /// <param name="outputRootDirectory">
     /// When non-null, the path carried by any spilled NDJSON stream reference must fall
@@ -99,6 +99,7 @@ internal static class FeatureStreamArtifact
     /// authenticated caller from injecting an arbitrary file-system path into the reference
     /// and reading files outside the geoprocessing sandbox.
     /// </param>
+    /// <param name="executionContext">Dispatch-owned identity and shared storage for managed streams.</param>
     public static bool TryOpenRead(
         string? reference,
         out string error,
