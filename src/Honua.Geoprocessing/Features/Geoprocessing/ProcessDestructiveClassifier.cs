@@ -49,7 +49,8 @@ internal static class ProcessDestructiveClassifier
     // approval-gated. copy-features always materializes a NEW target layer and never
     // modifies the source; sink.quarantine is the internal dead-letter half of the
     // row-level-error contract (it only persists rows the pipeline already rejected),
-    // not a caller-chosen data destination. Any other mutating process is gated.
+    // written only to a new server-owned job/attempt namespace. A requested name
+    // cannot select another job's destination. Any other mutating process is gated.
     private static readonly FrozenSet<string> SafeMutatingProcessIds =
         new HashSet<string>(StringComparer.Ordinal)
         {
@@ -73,7 +74,7 @@ internal static class ProcessDestructiveClassifier
     // must pass the same approval gate as destructive mutations (#2262).
     // sink.quarantine is deliberately excluded: it is the internal dead-letter
     // half of the row-level-error contract (it only persists rows the pipeline
-    // already rejected), not a caller-chosen data destination.
+    // already rejected) in its own immutable job/attempt output namespace.
     private static readonly FrozenSet<string> SinkProcessIds =
         new HashSet<string>(StringComparer.Ordinal)
         {

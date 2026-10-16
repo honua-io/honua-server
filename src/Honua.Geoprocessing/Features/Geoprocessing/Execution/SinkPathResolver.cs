@@ -1,6 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using Honua.Core.Features.ControlPlane.Domain;
+
 namespace Honua.Geoprocessing.Execution;
 
 internal static class SinkPathResolver
@@ -11,6 +16,7 @@ internal static class SinkPathResolver
     public static bool TryResolveOutputPath(
         string outputRootDirectory,
         string requestedPath,
+        ExecutionJobRecord job,
         out string resolvedPath,
         out string? error)
     {
@@ -33,7 +39,18 @@ internal static class SinkPathResolver
 
         try
         {
-            var root = Path.GetFullPath(outputRootDirectory);
+            // Job ids are server-issued and tenant/owner scoped by admission. Hashing
+            // keeps legacy ids from becoming filesystem path components; attempts never
+            // share a destination, so a stale worker cannot replace a retry's output.
+            if (string.IsNullOrWhiteSpace(job.OperationId) || job.AttemptCount < 0)
+            {
+                error = "a trusted job identity and execution attempt are required.";
+                return false;
+            }
+
+            var jobKey = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(job.OperationId)));
+            var root = Path.GetFullPath(Path.Join(outputRootDirectory, "jobs", jobKey,
+                "a" + job.AttemptCount.ToString(CultureInfo.InvariantCulture)));
             // requestedPath is already checked non-rooted above, so this combine cannot
             // silently discard root; the canonicalized candidate is also re-validated
             // against rootPrefix below to reject ".." traversal that escapes the root.
