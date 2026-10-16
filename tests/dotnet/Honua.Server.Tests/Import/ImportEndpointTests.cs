@@ -224,6 +224,7 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload-object")]
     public async Task ImportFileFromObjectStore_WithBucketOutsideAllowList_ReturnsForbidden()
     {
         using var response = await _client.PostAsJsonAsync(
@@ -237,6 +238,7 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task CapabilityManifest_ObjectStore_IsDisabledUntilABucketIsAllowListed()
     {
         using var response = await _client.GetAsync("/api/v1/capabilities/manifest");

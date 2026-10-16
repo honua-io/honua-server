@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.FileStorage;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Aws.UnitTests;
 
@@ -10,7 +11,7 @@ public sealed class AwsS3MultipartDecisionTests
     private const int Mebibyte = 1024 * 1024;
     private const long FiftyGiB = 50L * 1024 * 1024 * 1024;
 
-    [Fact]
+    [UnitTest]
     public void RequiresMultipartUpload_WhenLengthIsUnknownOrAboveFiveGiB()
     {
         Assert.True(AwsS3FileStorage.RequiresMultipartUpload(conditional: false, knownLength: null));
@@ -27,7 +28,7 @@ public sealed class AwsS3MultipartDecisionTests
             knownLength: AwsS3FileStorage.S3SinglePutMaxBytes + 1));
     }
 
-    [Fact]
+    [UnitTest]
     public void MultipartPartSize_CoversTheDefaultImportLimitInSixteenMebibyteParts()
     {
         Assert.Equal(16 * Mebibyte, AwsS3FileStorage.MultipartPartSize(null));
@@ -35,7 +36,7 @@ public sealed class AwsS3MultipartDecisionTests
         Assert.Equal(16 * Mebibyte, AwsS3FileStorage.MultipartPartSize(AwsS3FileStorage.S3SinglePutMaxBytes + 1));
     }
 
-    [Fact]
+    [UnitTest]
     public void MultipartPartSize_GrowsInMebibyteStepsAndStaysUnderThePartCap()
     {
         var length = 200L * 1024 * 1024 * 1024;
@@ -46,7 +47,7 @@ public sealed class AwsS3MultipartDecisionTests
         Assert.True((long)part * 10_000 >= length);
     }
 
-    [Fact]
+    [UnitTest]
     public void MultipartPartSize_RejectsAnObjectThatCannotFitInOneUpload()
     {
         var length = 128L * Mebibyte * 10_000 + 1;

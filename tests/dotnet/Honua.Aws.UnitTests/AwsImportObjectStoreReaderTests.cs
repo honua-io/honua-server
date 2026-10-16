@@ -2,12 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.FileStorage;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Aws.UnitTests;
 
 public sealed class AwsImportObjectStoreReaderTests
 {
-    [Fact]
+    [UnitTest]
     public void BuildAssumeRoleRequest_SetsExternalIdOnlyWhenConfigured()
     {
         var withId = AwsImportObjectStoreReader.BuildAssumeRoleRequest(
