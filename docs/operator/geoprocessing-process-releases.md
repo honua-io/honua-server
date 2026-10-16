@@ -103,3 +103,21 @@ tables alongside the other migrated metadata tables.
 
 The server records the authenticated principal as `activatedBy`; activation requests do not
 accept a caller-supplied actor identity.
+
+## Scoped SDK callbacks
+
+The custom worker's Python `ctx.client` and .NET `context.Client` supply the
+job's bearer capability and `X-Honua-Job-Id` context automatically. The server
+accepts this credential only while its persisted custom-code job is running,
+with no cancellation requested, and only for the current execution attempt and
+its exact persisted token. A replaced, revoked, expired, terminal-job or
+mismatched-job capability cannot authenticate a callback.
+
+Data access uses the frozen intersection of the submitter's grants and the
+job's declared resource scope. A read-only scope cannot edit features; a grant
+for one service or layer cannot reach another. Later owner role changes and
+OIDC default-role configuration do not widen this capability. Tenant identity
+comes from the pinned owner snapshot, and a conflicting tenant header is
+rejected. Job credentials do not grant administrative access. An explicit
+invalid job credential is refused even when the request also supplies an
+administrative API key.
