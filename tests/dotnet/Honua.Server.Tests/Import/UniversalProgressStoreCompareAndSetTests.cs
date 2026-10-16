@@ -23,6 +23,20 @@ public sealed class UniversalProgressStoreCompareAndSetTests
         => UploadProgress.CreateInitial(uploadId, "data.bin", 100) with { Status = status };
 
     [UnitTest]
+    public async Task TryReplaceProgressAsync_ChangedSnapshot_RejectsStaleWriter()
+    {
+        var store = CreateInMemoryStore();
+        var original = CreateProgress("lease", OperationStatus.Processing);
+        await store.SetProgressAsync("lease", original);
+        var refreshed = original with { BytesUploaded = 30 };
+        (await store.TryReplaceProgressAsync("lease", refreshed, original)).Outcome
+            .Should().Be(ProgressCompareAndSetOutcome.Updated);
+        (await store.TryReplaceProgressAsync("lease", original with { Status = OperationStatus.Failed }, original)).Outcome
+            .Should().Be(ProgressCompareAndSetOutcome.StatusMismatch);
+        (await store.GetProgressAsync<UploadProgress>("lease"))!.PercentComplete.Should().Be(30);
+    }
+
+    [UnitTest]
     public async Task TrySetProgressAsync_WhenStatusMatches_UpdatesProgress()
     {
         var store = CreateInMemoryStore();

@@ -90,6 +90,36 @@ public sealed class UniversalProgressStoreIntegrationTests
         }
     }
 
+    [IntegrationTest]
+    public async Task TryReplaceProgressAsync_ConcurrentRefresh_RejectsStaleSnapshotAndKeepsExpiry()
+    {
+        using var provider = BuildRedisServices();
+        using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
+        var store = new UniversalProgressStore(provider.GetRequiredService<IDistributedCache>(),
+            NullLogger<UniversalProgressStore>.Instance, multiplexer);
+        var id = $"snapshot-{Guid.NewGuid():N}";
+        var initial = UploadProgress.CreateInitial(id, "data.bin", 100) with { Status = OperationStatus.Processing };
+        var refreshed = initial with { BytesUploaded = 20 };
+        try
+        {
+            await store.SetProgressAsync(id, initial);
+            (await store.TryReplaceProgressAsync(id, refreshed, initial, TimeSpan.FromMinutes(5)))
+                .Outcome.Should().Be(ProgressCompareAndSetOutcome.Updated);
+            (await store.TryReplaceProgressAsync(id, initial with { Status = OperationStatus.Failed }, initial))
+                .Outcome.Should().Be(ProgressCompareAndSetOutcome.StatusMismatch);
+            var stored = await store.GetProgressAsync<UploadProgress>(id);
+            stored!.Status.Should().Be(OperationStatus.Processing);
+            stored.PercentComplete.Should().Be(20);
+            var ttl = await multiplexer.GetDatabase().KeyTimeToLiveAsync($"universal:progress:{id}");
+            ttl.Should().NotBeNull();
+            ttl!.Value.Should().BeLessThanOrEqualTo(TimeSpan.FromMinutes(5));
+        }
+        finally
+        {
+            await store.DeleteProgressAsync(id);
+        }
+    }
+
     private ServiceProvider BuildRedisServices()
     {
         var services = new ServiceCollection();

@@ -23,6 +23,7 @@ using Honua.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using StackExchange.Redis;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Migration;
 
@@ -33,6 +34,7 @@ namespace Honua.Migration;
 internal sealed partial class UniversalProgressStore : IUniversalProgressStore, IProgressStoreRecovery
 {
     private readonly IDistributedCache? _cache;
+    private readonly string _cacheInstanceName;
     private readonly IConnectionMultiplexer? _redis;
     private readonly ILogger<UniversalProgressStore> _logger;
     private const string KeyPrefix = "universal:progress:";
@@ -64,9 +66,11 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
     public UniversalProgressStore(
         IDistributedCache? cache,
         ILogger<UniversalProgressStore> logger,
-        IConnectionMultiplexer? redis = null)
+        IConnectionMultiplexer? redis = null,
+        IOptions<RedisCacheOptions>? cacheOptions = null)
     {
         _cache = cache;
+        _cacheInstanceName = cacheOptions?.Value.InstanceName ?? string.Empty;
         _logger = logger;
         _redis = redis;
         _isUsingFallback = cache == null;
@@ -158,6 +162,72 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         {
             await ReleaseConditionalWriteLockAsync(operationId, lockToken).ConfigureAwait(false);
         }
+    }
+
+    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(
+        string operationId,
+        IOperationProgress progress,
+        IOperationProgress expectedProgress,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+        ArgumentNullException.ThrowIfNull(expectedProgress);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (progress.Type != expectedProgress.Type)
+        {
+            throw new ArgumentException("A progress update cannot change the operation type.", nameof(progress));
+        }
+
+        var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
+        var expected = SerializeProgress(expectedProgress);
+        var current = await GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
+        if (current is null)
+        {
+            return ProgressCompareAndSetResult.NotFound;
+        }
+
+        if (!string.Equals(SerializeProgress(current), expected, StringComparison.Ordinal))
+        {
+            return ProgressCompareAndSetResult.StatusMismatch(current);
+        }
+
+        if (AllowsLocalFallback)
+        {
+            if (_fallbackStore.TryUpdate($"{KeyPrefix}{operationId}", progress, current))
+            {
+                _fallbackExpiry[$"{KeyPrefix}{operationId}"] = DateTime.UtcNow.Add(effectiveTtl);
+                return ProgressCompareAndSetResult.Updated;
+            }
+        }
+        else
+        {
+            if (!CanUseRedisBackplane)
+            {
+                throw CreateDistributedStateUnavailableException("atomically replace progress");
+            }
+
+            // RedisCache stores payload and expiration metadata in this hash. Compare and update
+            // inside one Redis transaction, including expiry, so lock loss/expiry and unguarded
+            // progress writers cannot turn an old heartbeat snapshot into an accepted write.
+            var key = (RedisKey)$"{_cacheInstanceName}{KeyPrefix}{operationId}";
+            var transaction = _redis!.GetDatabase().CreateTransaction();
+            transaction.AddCondition(Condition.HashEqual(key, "data", expected));
+            _ = transaction.HashSetAsync(key,
+            [
+                new HashEntry("data", SerializeProgress(progress)),
+                new HashEntry("absexp", DateTimeOffset.UtcNow.Add(effectiveTtl).Ticks),
+                new HashEntry("sldexp", -1)
+            ]);
+            _ = transaction.KeyExpireAsync(key, effectiveTtl);
+            if (await transaction.ExecuteAsync().ConfigureAwait(false))
+            {
+                return ProgressCompareAndSetResult.Updated;
+            }
+        }
+
+        current = await GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
+        return current is null ? ProgressCompareAndSetResult.NotFound : ProgressCompareAndSetResult.StatusMismatch(current);
     }
 
     private async Task SetProgressUnguardedAsync(string operationId, IOperationProgress progress, TimeSpan effectiveTtl, CancellationToken cancellationToken)
