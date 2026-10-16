@@ -34,7 +34,7 @@ internal sealed class CustomCodeArtifactRetryGuard : IExecutionJobRetryGuard
             {
                 if (reference.Contains("honua.gp.custom-artifact/v1", StringComparison.Ordinal))
                 {
-                    return Refuse(retained, "Custom-code retry refused because an artifact reservation is invalid.");
+                    return Refuse(job.ArtifactReferences, "Custom-code retry refused because an artifact reservation is invalid.");
                 }
 
                 continue;
@@ -45,14 +45,14 @@ internal sealed class CustomCodeArtifactRetryGuard : IExecutionJobRetryGuard
                 || artifact.SizeBytes > CustomCodeArtifactQuota.MaximumArtifactBytes
                 || !identities.Add((artifact.Attempt, artifact.Name)))
             {
-                return Refuse(retained, "Custom-code retry refused because an artifact reservation is invalid.");
+                return Refuse(job.ArtifactReferences, "Custom-code retry refused because an artifact reservation is invalid.");
             }
 
             bytes += artifact.SizeBytes;
             if (retained.Count >= CustomCodeArtifactQuota.MaximumArtifacts
                 || bytes > CustomCodeArtifactQuota.MaximumJobBytes - CustomCodeArtifactQuota.MaximumJournalBytes)
             {
-                return Refuse(retained, "Custom-code retry refused: cumulative artifact capacity cannot reserve the next attempt's mandatory journal.");
+                return Refuse(job.ArtifactReferences, "Custom-code retry refused: cumulative artifact capacity cannot reserve the next attempt's mandatory journal.");
             }
         }
 
