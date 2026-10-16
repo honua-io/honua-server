@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:ba01bd520d9386117a4888c00d95ea98c073abbb99dab3500f9c9bbb6d61a216",
+  "bundleDigest": "sha256:e608cacd4bb29ff9e435f9d4008dc412f92e5a58cca6b7eb0d5c9338b6654f75",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2425,7 +2425,7 @@
     {
       "id": "guides/publish/publish-terrain-and-elevation",
       "path": "guides/publish/publish-terrain-and-elevation.md",
-      "documentDigest": "sha256:f856b632ce62cf6b5eafb7b89bd473592108eb26c56f2458035e69793d8ff1d0",
+      "documentDigest": "sha256:7ac53d76760e140a8be5f62ffa5da616f25d3cabec14bbbee84161c780e0c559",
       "metadata": {
         "type": "guide",
         "title": "Publish terrain and elevation",
@@ -7890,7 +7890,7 @@
     {
       "id": "reference/protocols/terrain-and-elevation",
       "path": "reference/protocols/terrain-and-elevation.md",
-      "documentDigest": "sha256:1c438d6d2527d47c92625b404accde8ecc12969ae24c810a55217ee62f38b064",
+      "documentDigest": "sha256:c4ede945e0d6e27b88f79f880d363bd901cca020be6b77e3e565a15dcbe9116b",
       "metadata": {
         "type": "reference",
         "title": "Terrain and elevation",

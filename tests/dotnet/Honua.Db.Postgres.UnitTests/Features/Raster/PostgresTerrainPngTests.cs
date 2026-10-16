@@ -40,7 +40,7 @@ public sealed class PostgresTerrainPngTests
         {
             var pixel = decoded.Pixel(index % 4, index / 4);
             var nativeValue = pixel.A == 255
-                ? -10000 + (pixel.R * 65536 + pixel.G * 256 + pixel.B) * 0.1
+                ? -10000 + (pixel.R * 65536d + pixel.G * 256d + pixel.B) * 0.1
                 : double.NaN;
             if (elevations[index] is { } elevation && double.IsFinite(elevation))
             {
