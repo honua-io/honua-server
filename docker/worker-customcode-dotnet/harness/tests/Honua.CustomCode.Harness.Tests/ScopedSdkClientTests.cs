@@ -28,7 +28,7 @@ public sealed class ScopedSdkClientTests
         var request = await received;
         request.Should().Contain("Authorization: Bearer capability");
         request.Should().Contain("X-Honua-Job-Id: job-typed-sdk");
-        request.Should().Contain("/ogc/collections/features/items");
+        request.Should().Contain("/ogc/features/collections/features/items");
     }
 
     [Fact]
