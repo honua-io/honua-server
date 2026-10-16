@@ -3,8 +3,6 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.ProcessRelease;
@@ -62,12 +60,6 @@ public static class GpProcessReleaseJobEndpoints
         if (keys.Count > 1 || (keys.Count == 1 && (string.IsNullOrWhiteSpace(keys[0]) || keys[0]!.Length > 256)))
         {
             return Problem(context, StatusCodes.Status400BadRequest, "Idempotency-Key must be one non-empty value of at most 256 characters.");
-        }
-
-        var storage = context.RequestServices.GetService<ICloudFileStorage>();
-        if (storage is null || storage.Provider is not (CloudStorageProvider.AwsS3 or CloudStorageProvider.AzureBlob))
-        {
-            return Problem(context, StatusCodes.Status503ServiceUnavailable, "Custom-code jobs require durable cloud artifact storage on the serving host.");
         }
 
         // Custom-code plans carry resource scope, not a catalog process to execute. The

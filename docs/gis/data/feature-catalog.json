@@ -24590,9 +24590,12 @@
         "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_AttemptChangesDuringCloudWrite_DoesNotPublishAndDeletesOwnGeneration",
         "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_ConcurrentReservations_RespectCountCap",
         "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_DownloadAndAdminListing_UseImmutableAuthorizedBytes",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_InterruptedJournal_RecoversSameReservationWithinRetryLimit",
         "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_Journal_PublishesImmutableReceiptAndCallsIdempotentIngestor",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_LostCloudAcknowledgement_RecoversOnlyMatchingImmutableBytes",
         "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RejectsCrossJobRevokedAndStaleAttemptCredentials",
-        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RejectsUnsafeNamesOversizedBodiesAndTerminalJobs"
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RejectsUnsafeNamesOversizedBodiesAndTerminalJobs",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RepeatedStorageFailures_KeepCapacityAndBoundRecoveryAttempts"
       ],
       "proof_ledger_surface": "geoprocessing-output-artifacts",
       "maturity": "implemented",

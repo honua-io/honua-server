@@ -82,12 +82,14 @@ public sealed class GpProcessReleaseJobEndpointsTests : IAsyncLifetime
         var approval = Substitute.For<IOperatorApprovalEvaluator>();
         approval.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>()).Returns(ApprovalRequirement.NotRequired());
         var issuer = new ScopedJobTokenIssuer(_tokenCache, NullLogger<ScopedJobTokenIssuer>.Instance);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.Provider.Returns(CloudStorageProvider.AwsS3);
         var service = new GeoprocessingJobService(
             Substitute.For<IUniversalProgressStore>(), [Substitute.For<IJobCancellationNotifier>()],
             authorization, approval, new BuiltInProcessCatalog(), NullLogger<GeoprocessingJobService>.Instance,
             new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions()),
             jobStore, Substitute.For<IJobQueue>(), workloadRegistry: _registry, backends: [_backend],
-            scopedJobTokenIssuer: issuer,
+            scopedJobTokenIssuer: issuer, customCodeArtifactStorage: storage,
             customCodeOptions: new StaticOptionsMonitor<CustomCodeOptions>(new CustomCodeOptions
             {
                 RepoPolicy = CustomCodeRepoPolicy.OrgAllowlist,
@@ -106,8 +108,6 @@ public sealed class GpProcessReleaseJobEndpointsTests : IAsyncLifetime
             {
                 services.RemoveAll<IGeoprocessingJobService>();
                 services.AddSingleton<IGeoprocessingJobService>(service);
-                var storage = Substitute.For<ICloudFileStorage>();
-                storage.Provider.Returns(CloudStorageProvider.AwsS3);
                 services.RemoveAll<ICloudFileStorage>();
                 services.AddSingleton(storage);
             });
@@ -216,7 +216,10 @@ public sealed class GpProcessReleaseJobEndpointsTests : IAsyncLifetime
         {
             Process = new GpReleaseProcess
             {
-                Name = "buffer-features", Version = version, Runtime = "python", Entrypoint = "buffer_features:execute",
+                Name = "buffer-features",
+                Version = version,
+                Runtime = "python",
+                Entrypoint = "buffer_features:execute",
                 Contract = new GpReleaseContract { InputSchemaSha256 = "sha256:" + new string('1', 64), OutputSchemaSha256 = "sha256:" + new string('2', 64) },
             },
             Source = new GpReleaseSource { Repository = "honua-io/honua-samples", Sha = new string(sha, 40), DescriptorPath = "honua-gp.yaml" },
@@ -233,11 +236,17 @@ public sealed class GpProcessReleaseJobEndpointsTests : IAsyncLifetime
         var release = await _releases.PublishAsync(document, "operator");
         var activation = await _releases.ActivateAsync(new GpProcessBindingActivation
         {
-            Process = "buffer-features", LockDigest = release.Digest, ExpectedBindingVersion = expectedVersion, Actor = "operator", Operation = "deploy",
+            Process = "buffer-features",
+            LockDigest = release.Digest,
+            ExpectedBindingVersion = expectedVersion,
+            Actor = "operator",
+            Operation = "deploy",
             Targets = [new GpProcessBindingTargetIdentity { Kind = "aws-batch", JobDefinitionArn = Arn }],
         }, new GpProcessReleaseEnvironment
         {
-            ServerContractVersion = 1, SupportedTargetKinds = ["aws-batch"], CustomCodeMayUseKubernetes = false,
+            ServerContractVersion = 1,
+            SupportedTargetKinds = ["aws-batch"],
+            CustomCodeMayUseKubernetes = false,
             ReadyTargets = [new GpProcessBindingTarget { Kind = "aws-batch", Image = Image, JobDefinitionArn = Arn }],
         });
         activation.Activated.Should().BeTrue();
@@ -248,8 +257,12 @@ public sealed class GpProcessReleaseJobEndpointsTests : IAsyncLifetime
         => new[] { ("unrelated", "worker:latest", "wrong-queue"), ("release-worker", Image, "release-queue") }
             .Select(item => new ExecutionJobDefinition
             {
-                WorkloadId = item.Item1, WorkloadName = item.Item1, Kind = ExecutionJobKind.Geoprocessing,
-                TargetKind = BatchComputeTargetKind.AwsBatch, Backend = "aws-batch", RuntimeProfile = "custom-code",
+                WorkloadId = item.Item1,
+                WorkloadName = item.Item1,
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                RuntimeProfile = "custom-code",
                 ArtifactReference = item.Item2,
                 Parameters = new Dictionary<string, string> { ["batch.queue"] = item.Item3, [GpProcessReleaseAdmission.AwsBatchJobDefinitionParam] = Arn },
             }).ToArray();

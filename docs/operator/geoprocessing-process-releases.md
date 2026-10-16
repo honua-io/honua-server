@@ -104,13 +104,17 @@ Running observation is being persisted. Each file name is immutable within that 
 The broker reserves capacity atomically before accepting bytes: at most 32 files,
 64 MiB per file, and 256 MiB total per job artifact list. The reserved harness journal
 counts toward those limits and has a 1 MiB ceiling. Failed or interrupted uploads retain
-their capacity reservation. Cloud objects expire after seven days.
+their capacity reservation. A matching reservation allows at most three upload attempts,
+including the first. Recovery and completed output retries accept only identical bytes;
+completed journal retries re-run ingestion of the original immutable journal. Cloud
+objects expire after seven days.
 
 The server requires configured AWS S3 or Azure Blob storage that supports conditional
 create. Admin artifact listings expose authenticated same-origin download links, labels,
 and byte sizes. Download requires the canonical job-read and ownership checks; the
 callback token itself grants no job-read permission. Files are served as attachments
-with a broker-computed SHA-256 ETag. A deployment smoke can compare downloaded bytes to
+after validating their complete bytes against the broker-computed SHA-256 receipt,
+with that digest as the ETag. A deployment smoke can compare downloaded bytes to
 its committed expected-output fixture and verify the release identity in diagnostics.
 Worker journal ingestion requires its registered ingestion service; uploads fail closed
 when durable storage or journal ingestion is unavailable.

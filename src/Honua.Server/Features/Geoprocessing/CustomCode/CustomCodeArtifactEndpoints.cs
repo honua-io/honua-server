@@ -24,6 +24,7 @@ internal static class CustomCodeArtifactEndpoints
     internal const long MaximumJournalBytes = 1024 * 1024;
     internal const int MaximumArtifacts = 32;
     private const int MaximumCasAttempts = 8;
+    private const int MaximumUploadAttempts = 3;
 
     public static void MapCustomCodeArtifactEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -32,6 +33,7 @@ internal static class CustomCodeArtifactEndpoints
             .WithName("UploadCustomCodeArtifact")
             .WithSummary("Upload an immutable output using a job and attempt bound callback credential")
             .Produces(StatusCodes.Status201Created)
+            .Produces(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status409Conflict)
@@ -46,6 +48,7 @@ internal static class CustomCodeArtifactEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
@@ -89,9 +92,13 @@ internal static class CustomCodeArtifactEndpoints
 
         var artifact = new CustomCodeArtifactDescriptor
         {
-            JobId = jobId, Attempt = attempt, Name = name,
+            JobId = jobId,
+            Attempt = attempt,
+            Name = name,
             ObjectKey = $"gp/custom-artifacts/{jobId}/a{attempt}/{name}",
-            ContentType = "application/octet-stream", SizeBytes = length, Provider = storage.Provider,
+            ContentType = "application/octet-stream",
+            SizeBytes = length,
+            Provider = storage.Provider,
         };
         ExecutionJobRecord? reservedJob = null;
         for (var retry = 0; retry < MaximumCasAttempts; retry++)
@@ -114,7 +121,32 @@ internal static class CustomCodeArtifactEndpoints
                     return Results.StatusCode(StatusCodes.Status200OK);
                 }
 
-                return Problem(context, 409, "Artifact names are immutable within an attempt.");
+                if (existing.State == "available" && existing.SizeBytes == length
+                    && await MatchesReceiptAsync(context.Request.Body, existing, context.RequestAborted).ConfigureAwait(false))
+                {
+                    return Results.StatusCode(StatusCodes.Status200OK);
+                }
+
+                if (existing.State != "pending" || existing.SizeBytes != length
+                    || existing.Provider != storage.Provider || existing.UploadAttempts >= MaximumUploadAttempts)
+                {
+                    return Problem(context, 409, "Artifact names are immutable and upload recovery attempts are bounded.");
+                }
+
+                artifact = existing with { UploadAttempts = existing.UploadAttempts + 1 };
+                var recovery = job! with
+                {
+                    ArtifactReferences = job!.ArtifactReferences.Select(reference =>
+                        CustomCodeArtifactDescriptor.TryParse(reference, out var item)
+                        && item!.Attempt == attempt && item.Name == name ? artifact.Serialize() : reference).ToArray(),
+                };
+                if (await jobs.TrySetAsync(recovery, cancellationToken: context.RequestAborted).ConfigureAwait(false))
+                {
+                    reservedJob = recovery;
+                    break;
+                }
+
+                continue;
             }
 
             if (receipts.Count >= MaximumArtifacts || receipts.Sum(item => item.SizeBytes) + length > MaximumJobBytes)
@@ -176,24 +208,61 @@ internal static class CustomCodeArtifactEndpoints
 
         var uploaded = await storage.UploadIfMatchAsync(new FileUploadRequest
         {
-            Content = spool, FileName = name, ContentType = artifact.ContentType, SizeBytes = length,
-            ObjectKeyOverride = artifact.ObjectKey, TimeToLive = TimeSpan.FromDays(7), EnableChunkedUpload = false,
+            Content = spool,
+            FileName = name,
+            ContentType = artifact.ContentType,
+            SizeBytes = length,
+            ObjectKeyOverride = artifact.ObjectKey,
+            TimeToLive = TimeSpan.FromDays(7),
+            EnableChunkedUpload = false,
             Metadata = ImmutableDictionary<string, string>.Empty.Add("sha256", artifact.Sha256!),
         }, expectedETag: null, context.RequestAborted).ConfigureAwait(false);
         if (!uploaded.Success)
         {
-            return Problem(context, 503, "The immutable artifact could not be stored.");
+            // A previous write may have committed before its acknowledgement was lost.
+            // Recover only the exact bytes this request supplied, never replace an object.
+            await using var stored = await storage.DownloadAsync(artifact.ObjectKey, context.RequestAborted).ConfigureAwait(false);
+            if (stored is null)
+            {
+                return Problem(context, 503, "The immutable artifact could not be stored; its bounded reservation can be retried.");
+            }
+
+            if (!await MatchesReceiptAsync(stored, artifact, context.RequestAborted).ConfigureAwait(false))
+            {
+                return Problem(context, 409, "Existing immutable artifact bytes differ from this upload.");
+            }
         }
 
         for (var retry = 0; retry < MaximumCasAttempts; retry++)
         {
             var job = await jobs.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-            if (!LiveAttempt(job, attempt, credential[0]!)
-                || !Receipts(job!).Any(item => item.Attempt == attempt && item.Name == name && item.State == "pending"))
+            if (!LiveAttempt(job, attempt, credential[0]!))
             {
                 break;
             }
 
+            var receipt = Receipts(job!).FirstOrDefault(item => item.Attempt == attempt && item.Name == name);
+            if (receipt is null)
+            {
+                break;
+            }
+
+            if (receipt.State == "available")
+            {
+                if (receipt.Sha256 != artifact.Sha256 || receipt.SizeBytes != artifact.SizeBytes)
+                {
+                    return Problem(context, 409, "Existing immutable artifact bytes differ from this upload.");
+                }
+
+                if (journal)
+                {
+                    await ingestor!.IngestAsync(job!, receipt, context.RequestAborted).ConfigureAwait(false);
+                }
+
+                return Results.StatusCode(StatusCodes.Status200OK);
+            }
+
+            artifact = artifact with { UploadAttempts = receipt.UploadAttempts };
             var updated = job! with
             {
                 ArtifactReferences = job!.ArtifactReferences.Select(reference =>
@@ -214,7 +283,10 @@ internal static class CustomCodeArtifactEndpoints
 
         // A lost attempt cannot publish its object into a later attempt's artifact list.
         // The cloud TTL reclaims any orphan if compensation cannot complete.
-        if (uploaded.File?.ETag is string etag)
+        var latest = await jobs.GetAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+        if (!LiveAttempt(latest, attempt, credential[0]!)
+            && (latest is null || !Receipts(latest).Any(receipt => receipt.ObjectKey == artifact.ObjectKey && receipt.State == "available"))
+            && uploaded.File?.ETag is string etag)
         {
             await storage.DeleteIfMatchAsync(artifact.ObjectKey, etag, CancellationToken.None).ConfigureAwait(false);
         }
@@ -320,6 +392,32 @@ internal static class CustomCodeArtifactEndpoints
                 await verified.DisposeAsync().ConfigureAwait(false);
             }
         }
+    }
+
+    private static async Task<bool> MatchesReceiptAsync(Stream stream, CustomCodeArtifactDescriptor artifact, CancellationToken cancellationToken)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[64 * 1024];
+        long total = 0;
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            total += read;
+            if (total > artifact.SizeBytes || total > MaximumArtifactBytes)
+            {
+                return false;
+            }
+
+            hash.AppendData(buffer, 0, read);
+        }
+
+        return total == artifact.SizeBytes
+            && string.Equals(Convert.ToHexStringLower(hash.GetHashAndReset()), artifact.Sha256, StringComparison.Ordinal);
     }
 
     private static bool LiveAttempt(ExecutionJobRecord? job, int attempt, string credential)
