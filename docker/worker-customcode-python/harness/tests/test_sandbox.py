@@ -140,9 +140,9 @@ def test_production_sdk_sends_scoped_context_over_http(startup_denial: bool) -> 
     assert seen["path"] != "/healthz/live"
 
 
-@pytest.mark.parametrize("readiness_denied", [False, True])
+@pytest.mark.parametrize("readiness_denied,late_readiness", [(False, False), (True, False), (False, True)])
 def test_production_sdk_never_replays_operation_or_restarts_readiness(
-    monkeypatch: pytest.MonkeyPatch, readiness_denied: bool
+    monkeypatch: pytest.MonkeyPatch, readiness_denied: bool, late_readiness: bool
 ) -> None:
     import httpx
     import time
@@ -156,14 +156,16 @@ def test_production_sdk_never_replays_operation_or_restarts_readiness(
     def respond(self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
         paths.append(request.url.path)
         if request.url.path == "/healthz/live":
+            if late_readiness:
+                now[0] = 31.0
             return httpx.Response(401 if readiness_denied else 200, content=b"", request=request)
         return httpx.Response(503, json={"error": {"code": 503, "message": "unavailable"}}, request=request)
 
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", respond)
     with build_scoped_client("https://api.honua.test", "capability", job_id="job-sdk") as client:
-        with pytest.raises(HonuaTimeoutError if readiness_denied else HonuaHttpError):
+        with pytest.raises(HonuaTimeoutError if readiness_denied or late_readiness else HonuaHttpError):
             client.list_services()
-        if readiness_denied:
+        if readiness_denied or late_readiness:
             assert paths == ["/healthz/live"]
             # A caller catching the timeout cannot silently restart the same capability's budget.
             with pytest.raises(HonuaTimeoutError):

@@ -81,6 +81,7 @@ public static class ScopedHonuaClientFactory
                     readiness.Headers.Authorization = request.Headers.Authorization;
                     readiness.Headers.Add("X-Honua-Job-Id", jobId);
                     using var response = await base.SendAsync(readiness, startupBudget.Token).ConfigureAwait(false);
+                    startupBudget.Token.ThrowIfCancellationRequested();
                     if (response.StatusCode is not (System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden))
                     {
                         response.EnsureSuccessStatusCode();

@@ -111,6 +111,8 @@ def _default_client_factory(base_url: str, job_token: str, job_id: str) -> Any:
                     response = super().handle_request(readiness)
                     status = response.status_code
                     response.close()
+                    if time.monotonic() >= deadline:
+                        raise httpx.TimeoutException("The job capability readiness retry window elapsed.")
                     if status not in (401, 403):
                         if not 200 <= status < 300:
                             raise RuntimeError(f"Job capability readiness failed with HTTP {status}.")
