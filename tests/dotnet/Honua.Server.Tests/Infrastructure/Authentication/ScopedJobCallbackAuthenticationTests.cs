@@ -229,7 +229,8 @@ public sealed class ScopedJobCallbackAuthenticationTests
 
     private static ScopedJobTokenRequest Request(JobResourceAccess access) => new(
         "callback-owner", "tenant-a", ["admin"], [], JobId,
-        [new JobResourceScopeEntry("beta", "Beta Layer", access)], DateTimeOffset.UtcNow.AddMinutes(10)) { Attempt = 1 };
+        [new JobResourceScopeEntry("beta", "Beta Layer", access)], DateTimeOffset.UtcNow.AddMinutes(10))
+    { Attempt = 1 };
 
     private sealed class CallbackFixture : IDisposable
     {

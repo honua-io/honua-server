@@ -343,7 +343,8 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         admitted.Allowed.Should().BeTrue();
         admitted.ArtifactReferences.Should().Equal(prior);
         var token = await _issuer.IssueAsync(new ScopedJobTokenRequest("alice", null, [], [], "broker-job", [],
-            DateTimeOffset.UtcNow.AddHours(1)) { Attempt = 2 }, CancellationToken.None);
+            DateTimeOffset.UtcNow.AddHours(1))
+        { Attempt = 2 }, CancellationToken.None);
         _records["broker-job"] = previous with
         {
             AttemptCount = 2,
