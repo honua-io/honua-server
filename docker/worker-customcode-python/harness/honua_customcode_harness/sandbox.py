@@ -72,8 +72,21 @@ def _default_client_factory(base_url: str, job_token: str, job_id: str) -> Any:
     from honua_sdk import HonuaClient
     from honua_sdk.auth import StaticAuthProvider
 
-    auth = StaticAuthProvider({"Authorization": f"Bearer {job_token}", "X-Honua-Job-Id": job_id})
-    return HonuaClient(base_url, auth_provider=auth)
+    import httpx
+
+    authority = httpx.URL(base_url)
+
+    class JobContextTransport(httpx.HTTPTransport):
+        def handle_request(self, request: httpx.Request) -> httpx.Response:
+            request.headers.pop("X-Honua-Job-Id", None)
+            if (request.url.scheme, request.url.host, request.url.port) == (
+                authority.scheme, authority.host, authority.port
+            ):
+                request.headers["X-Honua-Job-Id"] = job_id
+            return super().handle_request(request)
+
+    auth = StaticAuthProvider({"Authorization": f"Bearer {job_token}"})
+    return HonuaClient(base_url, auth_provider=auth, transport=JobContextTransport())
 
 
 def assert_credentials_stripped(env: Mapping[str, str] | None = None) -> None:
