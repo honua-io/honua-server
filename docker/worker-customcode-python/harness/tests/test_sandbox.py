@@ -82,14 +82,23 @@ def test_default_factory_builds_static_bearer_provider() -> None:
     client.close()
 
 
-def test_production_sdk_sends_scoped_context_over_http() -> None:
+@pytest.mark.parametrize("startup_denial", [False, True])
+def test_production_sdk_sends_scoped_context_over_http(startup_denial: bool) -> None:
     from http.server import BaseHTTPRequestHandler, HTTPServer
     from threading import Thread
 
     seen: dict[str, str | None] = {}
+    requests = 0
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
+            nonlocal requests
+            requests += 1
+            if startup_denial and requests == 1:
+                self.send_response(401)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             seen["authorization"] = self.headers.get("Authorization")
             seen["job"] = self.headers.get("X-Honua-Job-Id")
             seen["path"] = self.path
@@ -105,7 +114,11 @@ def test_production_sdk_sends_scoped_context_over_http() -> None:
 
     with HTTPServer(("127.0.0.1", 0), Handler) as server:
         server.timeout = 10
-        thread = Thread(target=server.handle_request)
+        def serve() -> None:
+            for _ in range(2 if startup_denial else 1):
+                server.handle_request()
+
+        thread = Thread(target=serve)
         thread.start()
         try:
             with build_scoped_client(
@@ -115,6 +128,7 @@ def test_production_sdk_sends_scoped_context_over_http() -> None:
         finally:
             thread.join(timeout=12)
         assert not thread.is_alive()
+    assert requests == (2 if startup_denial else 1)
     assert seen["authorization"] == "Bearer capability"
     assert seen["job"] == "job-sdk"
     assert seen["path"]

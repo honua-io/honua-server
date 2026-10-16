@@ -73,17 +73,30 @@ def _default_client_factory(base_url: str, job_token: str, job_id: str) -> Any:
     from honua_sdk.auth import StaticAuthProvider
 
     import httpx
+    import time
 
     authority = httpx.URL(base_url)
 
     class JobContextTransport(httpx.HTTPTransport):
+        _startup = True
+
         def handle_request(self, request: httpx.Request) -> httpx.Response:
             request.headers.pop("X-Honua-Job-Id", None)
             if (request.url.scheme, request.url.host, request.url.port) == (
                 authority.scheme, authority.host, authority.port
             ):
                 request.headers["X-Honua-Job-Id"] = job_id
-            return super().handle_request(request)
+            # Authentication rejects before executing the operation. A worker can start
+            # before the reconciler persists Running; wait within a fixed startup budget.
+            request.read()  # Cache SDK request bytes so a denied write can be replayed.
+            deadline = time.monotonic() + 30
+            while True:
+                response = super().handle_request(request)
+                if not self._startup or response.status_code not in (401, 403) or time.monotonic() >= deadline:
+                    self._startup = False
+                    return response
+                response.close()
+                time.sleep(min(1, max(0, deadline - time.monotonic())))
 
     auth = StaticAuthProvider({"Authorization": f"Bearer {job_token}"})
     return HonuaClient(base_url, auth_provider=auth, transport=JobContextTransport())

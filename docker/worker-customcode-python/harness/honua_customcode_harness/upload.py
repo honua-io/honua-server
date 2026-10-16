@@ -100,7 +100,8 @@ class BrokerArtifactUploader:
                                 raise RuntimeError("Artifact broker refused upload.")
                     break
                 except HTTPError as exc:
-                    if exc.code not in {409, 429, 500, 502, 503, 504} or time.monotonic() >= deadline:
+                    exc.close()
+                    if exc.code not in {401, 403, 409, 429, 500, 502, 503, 504} or time.monotonic() >= deadline:
                         raise RuntimeError(f"Artifact broker refused upload (HTTP {exc.code}).") from None
                     time.sleep(2)
                 except (URLError, TimeoutError, ConnectionError):

@@ -53,7 +53,9 @@ public static class ScopedHonuaClientFactory
 
     private sealed class JobContextHandler(Uri origin, string jobId) : DelegatingHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        private bool _startup = true;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var destination = request.RequestUri;
             if (destination is null || !destination.IsAbsoluteUri ||
@@ -65,7 +67,29 @@ public static class ScopedHonuaClientFactory
 
             request.Headers.Remove("X-Honua-Job-Id");
             request.Headers.Add("X-Honua-Job-Id", jobId);
-            return base.SendAsync(request, cancellationToken);
+            // A new worker may run before the reconciler records Running. Retry only
+            // pre-operation authentication denials, with a fixed monotonic startup budget.
+            if (_startup && request.Content is not null)
+            {
+                await request.Content.LoadIntoBufferAsync(64L * 1024 * 1024, cancellationToken).ConfigureAwait(false);
+            }
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            while (true)
+            {
+                var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+                if (!_startup || response.StatusCode is not (System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                    || clock.Elapsed >= TimeSpan.FromSeconds(30))
+                {
+                    _startup = false;
+                    return response;
+                }
+                response.Dispose();
+                var remaining = TimeSpan.FromSeconds(30) - clock.Elapsed;
+                if (remaining > TimeSpan.Zero)
+                {
+                    await Task.Delay(remaining < TimeSpan.FromSeconds(1) ? remaining : TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
     }
 }

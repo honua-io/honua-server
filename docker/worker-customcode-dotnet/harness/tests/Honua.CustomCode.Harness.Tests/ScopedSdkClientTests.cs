@@ -14,14 +14,16 @@ namespace Honua.CustomCode.Harness.Tests;
 
 public sealed class ScopedSdkClientTests
 {
-    [Fact]
-    public async Task ProductionFactory_TypedSdkRequest_SendsJobAndBearerHeaders()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProductionFactory_TypedSdkRequest_SendsJobAndBearerHeaders(bool startupDenial)
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var received = ReceiveAsync(listener, timeout.Token);
+        var received = ReceiveAsync(listener, timeout.Token, startupDenial);
         using var provider = ScopedHonuaClientFactory.Create($"http://127.0.0.1:{port}", "capability", "job-typed-sdk");
         var sdk = provider.GetRequiredService<IHonuaOgcFeaturesClient>();
         await sdk.GetItemsAsync("features", cancellationToken: timeout.Token);
@@ -38,8 +40,18 @@ public sealed class ScopedSdkClientTests
         create.Should().Throw<ArgumentException>().WithMessage("*jobId*");
     }
 
-    private static async Task<string> ReceiveAsync(TcpListener listener, CancellationToken cancellationToken)
+    private static async Task<string> ReceiveAsync(TcpListener listener, CancellationToken cancellationToken, bool startupDenial)
     {
+        if (startupDenial)
+        {
+            using var denied = await listener.AcceptTcpClientAsync(cancellationToken);
+            await using var deniedStream = denied.GetStream();
+            using var deniedReader = new StreamReader(deniedStream, Encoding.ASCII, leaveOpen: true);
+            while (await deniedReader.ReadLineAsync(cancellationToken) is { Length: > 0 })
+            {
+            }
+            await deniedStream.WriteAsync("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray(), cancellationToken);
+        }
         using var connection = await listener.AcceptTcpClientAsync(cancellationToken);
         await using var stream = connection.GetStream();
         using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);

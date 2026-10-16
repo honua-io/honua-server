@@ -101,7 +101,7 @@ public sealed class ArtifactUploader
             var uri = prefix + artifact.Name + "?attempt=" + attempt;
             using var handler = new HttpClientHandler { AllowAutoRedirect = false };
             using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
-            var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
+            var retryClock = System.Diagnostics.Stopwatch.StartNew();
             while (true)
             {
                 using var stream = File.OpenRead(artifact.Path);
@@ -117,16 +117,16 @@ public sealed class ArtifactUploader
                     {
                         return uri;
                     }
-                    var retryable = response.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.TooManyRequests ||
+                    var retryable = response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.Conflict or HttpStatusCode.TooManyRequests ||
                         (int)response.StatusCode >= 500;
-                    if (!retryable || DateTimeOffset.UtcNow >= deadline)
+                    if (!retryable || retryClock.Elapsed >= TimeSpan.FromMinutes(2))
                     {
                         throw new InvalidOperationException($"Artifact broker refused upload (HTTP {(int)response.StatusCode}).");
                     }
                 }
                 catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
                 {
-                    if (DateTimeOffset.UtcNow >= deadline)
+                    if (retryClock.Elapsed >= TimeSpan.FromMinutes(2))
                     {
                         throw new InvalidOperationException("Artifact broker upload did not complete before its retry deadline.");
                     }
