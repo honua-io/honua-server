@@ -11,7 +11,6 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing.CustomCode;
@@ -153,6 +152,22 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         using var overwrite = await _worker.PutAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/result.json?attempt=1", new ByteArrayContent([0]));
         overwrite.StatusCode.Should().Be(HttpStatusCode.Conflict);
         _objects.Values.Single().Should().Equal(bytes);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}")]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}")]
+    public async Task Download_ChangedCloudBytesOrProvider_FailsBeforeServingAnyArtifactBytes()
+    {
+        using var upload = await _worker.PutAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/result.json?attempt=1", new ByteArrayContent([1, 2, 3]));
+        upload.StatusCode.Should().Be(HttpStatusCode.Created);
+        _objects["gp/custom-artifacts/broker-job/a1/result.json"] = [4, 5, 6];
+        using var changed = await _admin.GetAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/result.json?attempt=1");
+        changed.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await changed.Content.ReadAsByteArrayAsync()).Should().NotEqual([4, 5, 6]);
+        _storage.Provider.Returns(CloudStorageProvider.AzureBlob);
+        using var provider = await _admin.GetAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/result.json?attempt=1");
+        provider.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
     }
 
     [IntegrationTest]

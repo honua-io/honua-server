@@ -16,7 +16,8 @@ internal sealed partial class ConsoleJobService
         }
 
         var availability = "Unavailable";
-        if (artifact!.State == "available" && serviceProvider.GetService<ICloudFileStorage>() is { } storage)
+        if (artifact!.State == "available" && serviceProvider.GetService<ICloudFileStorage>() is { } storage
+            && storage.Provider == artifact.Provider)
         {
             try
             {

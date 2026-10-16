@@ -91,7 +91,7 @@ internal static class CustomCodeArtifactEndpoints
         {
             JobId = jobId, Attempt = attempt, Name = name,
             ObjectKey = $"gp/custom-artifacts/{jobId}/a{attempt}/{name}",
-            ContentType = "application/octet-stream", SizeBytes = length,
+            ContentType = "application/octet-stream", SizeBytes = length, Provider = storage.Provider,
         };
         ExecutionJobRecord? reservedJob = null;
         for (var retry = 0; retry < MaximumCasAttempts; retry++)
@@ -254,9 +254,9 @@ internal static class CustomCodeArtifactEndpoints
         }
 
         var storage = context.RequestServices.GetService<ICloudFileStorage>();
-        if (storage is null)
+        if (storage is null || storage.Provider != artifact.Provider)
         {
-            return Problem(context, 503, "Durable artifact storage is unavailable.");
+            return Problem(context, 503, "The artifact's durable cloud storage is unavailable.");
         }
 
         var file = await storage.GetMetadataAsync(artifact.ObjectKey, context.RequestAborted).ConfigureAwait(false);
@@ -271,9 +271,55 @@ internal static class CustomCodeArtifactEndpoints
             return Problem(context, 404, "Artifact expired or unavailable.");
         }
 
-        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
-        return Results.Stream(stream, "application/octet-stream", name,
-            entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue('"' + artifact.Sha256 + '"'));
+        // Verify the stored content before returning any bytes. A changed bucket/account
+        // under the same provider must not serve unrelated content with the original ETag.
+        await using var cloudStream = stream;
+        var verified = new FileStream(Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
+            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024,
+            FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+        var responseOwnsStream = false;
+        try
+        {
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var buffer = new byte[64 * 1024];
+            long total = 0;
+            while (true)
+            {
+                var read = await cloudStream.ReadAsync(buffer, context.RequestAborted).ConfigureAwait(false);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                total += read;
+                if (total > artifact.SizeBytes || total > MaximumArtifactBytes)
+                {
+                    return Problem(context, 409, "Artifact content does not match its immutable receipt.");
+                }
+
+                hash.AppendData(buffer, 0, read);
+                await verified.WriteAsync(buffer.AsMemory(0, read), context.RequestAborted).ConfigureAwait(false);
+            }
+
+            if (total != artifact.SizeBytes || !string.Equals(Convert.ToHexStringLower(hash.GetHashAndReset()), artifact.Sha256, StringComparison.Ordinal))
+            {
+                return Problem(context, 409, "Artifact content does not match its immutable receipt.");
+            }
+
+            verified.Position = 0;
+            context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            var result = Results.Stream(verified, "application/octet-stream", name,
+                entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue('"' + artifact.Sha256 + '"'));
+            responseOwnsStream = true;
+            return result;
+        }
+        finally
+        {
+            if (!responseOwnsStream)
+            {
+                await verified.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     private static bool LiveAttempt(ExecutionJobRecord? job, int attempt, string credential)
