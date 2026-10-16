@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Managed GP feature streams"
+description: "Shared staging, immutable receipts and operational requirements for large managed GeoETL outputs."
+---
 # Managed feature streams
 
 Managed GeoETL source and transform outputs remain inline below 1 MiB of serialized feature bytes. Larger outputs require `Geoprocessing:OutputStaging` and its existing shared persistent-volume contract. Configure the same store reference, key prefix and attested persistent mount on every worker and API replica. Startup/readiness validates the configured mount identity, configuration digest and backup membership. A local temporary directory is not a supported shared store.
