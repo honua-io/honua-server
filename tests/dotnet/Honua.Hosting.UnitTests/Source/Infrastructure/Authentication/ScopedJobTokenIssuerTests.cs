@@ -47,7 +47,8 @@ public sealed class ScopedJobTokenIssuerTests
                 Grants: [],
                 JobId: "gp-job-1",
                 ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Write)],
-                ExpiresAt: expiresAt) { Attempt = 7 },
+                ExpiresAt: expiresAt)
+            { Attempt = 7 },
             CancellationToken.None);
 
         issuance.Token.Should().NotBeNullOrWhiteSpace();

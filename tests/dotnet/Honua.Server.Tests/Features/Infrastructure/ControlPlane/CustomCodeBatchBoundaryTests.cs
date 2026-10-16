@@ -97,7 +97,7 @@ public sealed class CustomCodeBatchBoundaryTests
             Spec = job.Spec with { Parameters = new Dictionary<string, string>(job.Spec.Parameters) { ["env.HONUA_JOB_START_DEADLINE"] = "1" } }
         };
         var observed = await backend.ObserveAsync(job);
-        Assert.Equal(ExecutionJobStatus.Cancelling, observed.Status);
+        Assert.Equal(job.Status, observed.Status);
         Assert.Equal(terminate ? 1 : 0, client.TerminateCallCount);
         Assert.Equal(terminate ? 0 : 1, client.CancelCallCount);
     }
@@ -116,11 +116,17 @@ public sealed class CustomCodeBatchBoundaryTests
         job = job with
         {
             Audit = new OperationAuditInfo { CustomCodeOwnerScope = new CustomCodeOwnerScope("owner", "tenant", [], [], []) },
-            Spec = job.Spec with { Parameters = new Dictionary<string, string>(job.Spec.Parameters)
-                { ["env.HONUA_JOB_START_DEADLINE"] = "1", ["env.HONUA_JOB_ATTEMPT"] = "1" } }
+            Spec = job.Spec with
+            {
+                Parameters = new Dictionary<string, string>(job.Spec.Parameters)
+                {
+                    ["env.HONUA_JOB_START_DEADLINE"] = "1",
+                    ["env.HONUA_JOB_ATTEMPT"] = "1"
+                }
+            }
         };
         var observed = await backend.ObserveAsync(job);
-        Assert.Equal(ExecutionJobStatus.Cancelling, observed.Status);
+        Assert.Equal(job.Status, observed.Status);
         Assert.Equal("accepted-before-crash", observed.ProviderOperationId);
         Assert.Equal(1, client.CancelCallCount);
         await issuer.DidNotReceive().IssueAsync(Arg.Any<ScopedJobTokenRequest>(), Arg.Any<CancellationToken>());

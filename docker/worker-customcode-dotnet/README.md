@@ -90,7 +90,7 @@ The `customcode.*` parameters are resolved in this order (see
 | `deps_manifest` | `CUSTOMCODE_DEPS_MANIFEST` | the user's **`.csproj`**, repo-relative |
 | `params_json` | `CUSTOMCODE_PARAMS_JSON` | inline JSON or `@/path` |
 | `output_prefix` | `CUSTOMCODE_OUTPUT_PREFIX` | `s3://bucket/prefix` |
-| `declared_scope` | `CUSTOMCODE_DECLARED_SCOPE` | advisory scope list |
+| `declared_scope` | `CUSTOMCODE_DECLARED_SCOPE` | scope requested at admission and enforced by the callback server |
 | `output_max_bytes` | `CUSTOMCODE_OUTPUT_MAX_BYTES` | default 1 GiB |
 
 The only runtime-shaped differences from python are the **entrypoint** form
@@ -108,21 +108,12 @@ user `.csproj` instead of `requirements.txt`).
    cache (the SDK + geometry stack are already baked in, so the common tool needs no
    network restore). The manifest is resolved relative to the source root and must stay
    inside it (no `..` escapes).
-4. **Build the scoped client, then strip credentials.** Construct the scoped Honua client
-   (`AddHonua(o => { o.BaseAddress = HONUA_BASE_URL; o.BearerTokenProvider = _ =>
-   Task.FromResult(HONUA_JOB_TOKEN); })`), **then delete** `HONUA_JOB_TOKEN`,
-   `AWS_CONTAINER_CREDENTIALS_*`, `ECS_CONTAINER_METADATA_URI*`, and any static AWS keys
-   from the environment **before activating user code** — so the tool can neither read the
-   raw token nor assume the Batch task role. An invariant check
-   (`AssertCredentialsStripped`) runs after the scrub.
+4. **Build the scoped client, then scrub inherited credentials.** Construct an `IServiceProvider` containing the published typed Honua SDK clients. Requests carry the job-bound bearer token and `X-Honua-Job-Id`; the server validates the current running attempt and its declared data scope. Remove credential environment variables before loading tool code. This reduces accidental exposure; same-process code can inspect client state and the token is not a sandbox secret. Cloud isolation comes from the validated non-root Fargate definition with no task IAM role, credential environment, or secret mounts. The provider execution role is not exposed to the task.
 5. **Activate + run.** Load the `Assembly::Namespace.Type` entrypoint from the build
    output via a dedicated `AssemblyLoadContext`, verify it implements
    `IGeoprocessingTool`, activate it, build a `GpContext`, call
    `ExecuteAsync(context, ct)`.
-6. **Upload + report.** Upload registered artifacts to `output_prefix`, enforce the
-   output-size cap, and map the returned `GpResult` to an exit code: `0` success,
-   `1` tool failure, `2` harness/setup error, `3` cancelled (the same code contract as
-   the python harness).
+6. **Upload + report.** Upload registered artifacts and the mandatory bounded harness journal through the HTTPS job artifact broker using the current attempt capability. The worker receives no S3 credentials. The server binds immutable receipts to the job, provider, attempt, size and SHA-256. Limits remain 32 artifacts and 256 MiB cumulatively across attempts, with 64 MiB per ordinary artifact and 1 MiB for the journal; one slot and 1 MiB are reserved for a pending journal. A retry is refused if its journal cannot fit. Failed journal delivery turns an otherwise successful run into a harness error. Exit codes are `0` success, `1` tool failure, `2` harness/setup error and `3` cancelled. The legacy `output_prefix` field remains required for contract compatibility; production storage routing is server controlled.
 
 ## The `IGeoprocessingTool` contract
 
@@ -142,8 +133,8 @@ public sealed class BufferTool : IGeoprocessingTool
         ct.ThrowIfCancellationRequested();                                  // cooperative cancel
         var outPath = Path.Combine(context.WorkDirectory, "out.geojson");   // writable scratch
         await File.WriteAllTextAsync(outPath, "...", ct);
-        context.Output.AddArtifact("out.geojson", outPath);                 // staged for S3 upload
-        // context.Client -> pre-authed scoped Honua client (raw token never exposed)
+        context.Output.AddArtifact("out.geojson", outPath);                 // staged for the job artifact broker
+        // context.Client -> IServiceProvider; resolve a typed Honua SDK client
         // context.Inputs -> resolved input artifacts (name -> local path)
         return GpResult.Succeeded("done");                                  // or GpResult.Failed("why")
     }

@@ -76,7 +76,45 @@ def test_default_factory_builds_static_bearer_provider() -> None:
     pytest.importorskip("honua_sdk")
     from honua_customcode_harness.sandbox import _default_client_factory
 
-    client = _default_client_factory("https://api.honua.test", "abc")
+    client = _default_client_factory("https://api.honua.test", "abc", "job-sdk")
     assert client is not None
     # Token should be wrapped as an Authorization Bearer header by the provider.
     client.close()
+
+
+def test_production_sdk_sends_scoped_context_over_http() -> None:
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from threading import Thread
+
+    seen: dict[str, str | None] = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            seen["authorization"] = self.headers.get("Authorization")
+            seen["job"] = self.headers.get("X-Honua-Job-Id")
+            seen["path"] = self.path
+            payload = b'{"services":[]}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    with HTTPServer(("127.0.0.1", 0), Handler) as server:
+        server.timeout = 10
+        thread = Thread(target=server.handle_request)
+        thread.start()
+        try:
+            with build_scoped_client(
+                f"http://127.0.0.1:{server.server_port}", "capability", job_id="job-sdk"
+            ) as client:
+                client.list_services()
+        finally:
+            thread.join(timeout=12)
+        assert not thread.is_alive()
+    assert seen["authorization"] == "Bearer capability"
+    assert seen["job"] == "job-sdk"
+    assert seen["path"]

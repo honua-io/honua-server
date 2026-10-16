@@ -509,7 +509,7 @@ internal sealed partial class AwsBatchComputeBackend(
         var region = GetOptionalParameter(parameters, AwsBatchParameterKeys.Region);
         var serviceUrl = GetOptionalParameter(parameters, AwsBatchParameterKeys.ServiceUrl);
 
-        IReadOnlyDictionary<string, string>? resolvedParameters = null;
+        Dictionary<string, string>? resolvedParameters = null;
         var environmentOverrides = BuildEnvironmentOverrides(job);
         if (job.Audit.CustomCodeOwnerScope is not null)
         {
@@ -669,8 +669,13 @@ internal sealed partial class AwsBatchComputeBackend(
 
             if (await EnforceCustomCodeQueueDeadlineAsync(job, state, region, serviceUrl, cancellationToken).ConfigureAwait(false))
             {
-                return new BatchComputeObservation { Status = ExecutionJobStatus.Cancelling, ProviderOperationId = state.JobId,
-                    Message = "Custom-code queue-wait deadline exceeded; cancelling provider execution." };
+                // Keep observing until the provider confirms termination.
+                return new BatchComputeObservation
+                {
+                    Status = job.Status,
+                    ProviderOperationId = state.JobId,
+                    Message = "Custom-code queue-wait deadline exceeded; cancelling provider execution."
+                };
             }
             var mapped = AwsBatchStateMapper.MapStatusWithReason(state.Status, state.StatusReason);
             var message = BuildObservationMessage(state);
@@ -788,8 +793,13 @@ internal sealed partial class AwsBatchComputeBackend(
             var summary = matches[0];
             if (await EnforceCustomCodeQueueDeadlineAsync(job, summary, region, serviceUrl, cancellationToken).ConfigureAwait(false))
             {
-                return new BatchComputeObservation { Status = ExecutionJobStatus.Cancelling, ProviderOperationId = summary.JobId,
-                    Message = "Custom-code queue-wait deadline exceeded; cancelling provider execution." };
+                // Keep observing until the provider confirms termination.
+                return new BatchComputeObservation
+                {
+                    Status = job.Status,
+                    ProviderOperationId = summary.JobId,
+                    Message = "Custom-code queue-wait deadline exceeded; cancelling provider execution."
+                };
             }
             var mapped = AwsBatchStateMapper.MapStatusWithReason(summary.Status, summary.StatusReason);
             Log.BatchJobDiscoveryResolved(

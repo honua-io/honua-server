@@ -139,7 +139,8 @@ internal sealed partial class RedisExecutionLogStore(
         var window = await ReadWindowAsync(operationId, offset, limit, cancellationToken).ConfigureAwait(false);
         return new ExecutionLogPage
         {
-            Items = window.Items, DroppedCount = window.Dropped,
+            Items = window.Items,
+            DroppedCount = window.Dropped,
             NextCursor = window.More ? EncodeOffsetCursor(window.Start + window.Items.Count) : null
         };
     }

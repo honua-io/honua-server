@@ -83,7 +83,9 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
         var guard = Substitute.For<IExecutionJobRetryGuard>();
         guard.EvaluateRetry(Arg.Any<ExecutionJobRecord>()).Returns(new ExecutionJobRetryDecision
         {
-            Allowed = allowed, ArtifactReferences = allowed ? job.ArtifactReferences : [], RefusalReason = "No reserved journal budget remains."
+            Allowed = allowed,
+            ArtifactReferences = allowed ? job.ArtifactReferences : [],
+            RefusalReason = "No reserved journal budget remains."
         });
         var reconciler = new ExecutionJobReconciler(jobs, [backend], Substitute.For<IUniversalProgressStore>(),
             NullLogger<ExecutionJobReconciler>.Instance, retryGuards: [guard]);
@@ -115,10 +117,15 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
         var job = AwsBatchComputeBackendTests.CreateJob() with { AttemptCount = 3 };
         var artifact = new CustomCodeArtifactDescriptor
         {
-            JobId = job.OperationId, Attempt = 3, Name = HarnessEvents.FileName,
-            ObjectKey = "server-owned/journal", ContentType = "application/x-ndjson",
-            Provider = CloudStorageProvider.AwsS3, SizeBytes = bytes.Length,
-            Sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)), State = "available"
+            JobId = job.OperationId,
+            Attempt = 3,
+            Name = HarnessEvents.FileName,
+            ObjectKey = "server-owned/journal",
+            ContentType = "application/x-ndjson",
+            Provider = CloudStorageProvider.AwsS3,
+            SizeBytes = bytes.Length,
+            Sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)),
+            State = "available"
         };
         job = job with { ArtifactReferences = [artifact.Serialize()] };
         var jobs = Substitute.For<IExecutionJobStore>();

@@ -685,7 +685,9 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         _jobStore.Set(CreateJob("job-steps-bounded", ExecutionJobStatus.Running, now, "corr-steps"));
         _logStore.SetLogs("job-steps-bounded", Enumerable.Range(0, 603).Select(index => new ExecutionLogEntry
         {
-            Timestamp = now.AddSeconds(index), Level = ExecutionLogLevel.Info, Message = $"event {index}"
+            Timestamp = now.AddSeconds(index),
+            Level = ExecutionLogLevel.Info,
+            Message = $"event {index}"
         }).ToArray());
         var fullReads = _logStore.FullReads;
         using var response = await _client.GetAsync("/api/v1/admin/jobs/job-steps-bounded/steps");
