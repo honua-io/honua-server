@@ -21,4 +21,16 @@ internal interface IImportedAttachmentStore
     /// Returns whether untracked attachments require operator review for legacy provenance.
     /// </summary>
     Task<bool> CompleteImportAsync(int layerId, Guid generation, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Points imported attachments at the object ids assigned by a table replacement.
+    /// <paramref name="sourceObjectIds"/> maps each source object id to the new target object id.
+    /// An imported attachment whose parent was not loaded, and whose current feature id was
+    /// reused by a loaded feature, is detached so it does not appear on that feature.
+    /// Attachments created through Honua have no source parent and are left unchanged.
+    /// </summary>
+    Task RemapImportedAttachmentsAsync(
+        int layerId,
+        IReadOnlyDictionary<long, long> sourceObjectIds,
+        CancellationToken cancellationToken);
 }
