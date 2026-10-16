@@ -814,6 +814,11 @@ InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configu
 
 // Configure cloud file storage for imports and attachments
 builder.Services.AddCloudFileStorage(builder.Configuration);
+builder.Services.Configure<Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions>(
+    builder.Configuration.GetSection(Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions.SectionName));
+#if !HONUA_EXCLUDE_AWS
+builder.Services.AddAwsImportObjectStore();
+#endif
 
 // Configure file upload security limits
 builder.Services.Configure<FileUploadSecurityOptions>(

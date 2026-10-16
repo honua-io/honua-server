@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1190,
+    "total": 1194,
     "byStatus": {
-      "not-executable": 1175,
+      "not-executable": 1179,
       "unvalidated": 12,
       "passed": 3
     }
@@ -6249,6 +6249,19 @@
       },
       "fence": 3,
       "line": 78,
+      "language": "json"
+    },
+    {
+      "id": "1ca51804027d6c59",
+      "kind": "docs-fence",
+      "path": "docs/guides/publish/import-from-object-storage.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 33,
       "language": "json"
     },
     {
@@ -13675,6 +13688,19 @@
       "language": "bash"
     },
     {
+      "id": "ed5a84e7e8968765",
+      "kind": "docs-fence",
+      "path": "docs/operator/geoprocessing-process-releases.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 33,
+      "language": "json"
+    },
+    {
       "id": "169ff9eb4378c2e4",
       "kind": "docs-fence",
       "path": "docs/ops/aot-image-attestations-proof.md",
@@ -14273,6 +14299,19 @@
       "language": "sql"
     },
     {
+      "id": "8330ff5b0023e5df",
+      "kind": "docs-fence",
+      "path": "docs/reference/gp-customcode-runtime.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 36,
+      "language": "text"
+    },
+    {
       "id": "51addabcc5d41362",
       "kind": "docs-fence",
       "path": "docs/reference/gp-harness-events.v1.md",
@@ -14299,6 +14338,19 @@
       "language": "yaml"
     },
     {
+      "id": "23f23f9b95452568",
+      "kind": "docs-fence",
+      "path": "docs/reference/gp-process-release.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 4,
+      "line": 152,
+      "language": "bash"
+    },
+    {
       "id": "25fa7114e09bd659",
       "kind": "docs-fence",
       "path": "docs/reference/gp-process-release.md",
@@ -14308,8 +14360,8 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 114,
-      "language": "plain"
+      "line": 81,
+      "language": "json"
     },
     {
       "id": "b65275bcbcf0e8e1",
@@ -14321,8 +14373,8 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 126,
-      "language": "bash"
+      "line": 140,
+      "language": "plain"
     },
     {
       "id": "595b0b63e5b3586b",

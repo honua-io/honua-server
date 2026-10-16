@@ -19,14 +19,15 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 /// <summary>
-/// The closed operator roster is advertised by the default Postgres composition, and its four
-/// writes are not operator-gated.
+/// The closed operator roster is advertised by the default Postgres composition, and its
+/// direct writes are not operator-gated.
 /// </summary>
 public sealed class OperatorJourneyMcpRosterTests
 {
     private static readonly string[] DirectWrites =
     [
         "admin.connections.create",
+        "admin.import.upload-object",
         "admin.import.upload-url",
         "admin.layer.publish",
         "admin.services.access-policy.set",

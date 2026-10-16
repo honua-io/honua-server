@@ -53,6 +53,7 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
                 ["Import:Limits:BatchSize"] = "-1",
                 ["Import:Limits:MaxMemoryBytes"] = "-2",
                 ["Import:Limits:BackgroundJobThresholdBytes"] = "-3",
+                ["Import:Limits:MaxObjectStoreImportBytes"] = "-11",
                 ["Import:Limits:MaxPreviewSizeBytes"] = "-4",
                 ["Import:Limits:MaxPreviewFeatures"] = "-5",
                 ["Import:Limits:StreamBufferSize"] = "-6",
@@ -73,6 +74,7 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
         limits.BatchSize.Should().Be(defaults.BatchSize);
         limits.MaxMemoryBytes.Should().Be(defaults.MaxMemoryBytes);
         limits.BackgroundJobThresholdBytes.Should().Be(defaults.BackgroundJobThresholdBytes);
+        limits.MaxObjectStoreImportBytes.Should().Be(defaults.MaxObjectStoreImportBytes);
         limits.MaxPreviewSizeBytes.Should().Be(defaults.MaxPreviewSizeBytes);
         limits.MaxPreviewFeatures.Should().Be(defaults.MaxPreviewFeatures);
         limits.StreamBufferSize.Should().Be(defaults.StreamBufferSize);
@@ -92,6 +94,7 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
                 ["Import:Limits:BatchSize"] = "250",
                 ["Import:Limits:MaxMemoryBytes"] = "2048",
                 ["Import:Limits:BackgroundJobThresholdBytes"] = "4096",
+                ["Import:Limits:MaxObjectStoreImportBytes"] = "8192",
                 ["Import:Limits:MaxPreviewSizeBytes"] = "1024",
                 ["Import:Limits:MaxPreviewFeatures"] = "15",
                 ["Import:Limits:StreamBufferSize"] = "512",
@@ -112,6 +115,7 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
         limits.BatchSize.Should().Be(250);
         limits.MaxMemoryBytes.Should().Be(2048);
         limits.BackgroundJobThresholdBytes.Should().Be(4096);
+        limits.MaxObjectStoreImportBytes.Should().Be(8192);
         limits.MaxPreviewSizeBytes.Should().Be(1024);
         limits.MaxPreviewFeatures.Should().Be(15);
         limits.StreamBufferSize.Should().Be(512);

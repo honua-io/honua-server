@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 505,
+    "operationCount": 506,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 412,
+      "admin-api": 413,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -30,7 +30,7 @@
       "geocoding.forward": 4,
       "identity.mtls-client-certificate": 13,
       "identity.oidc": 6,
-      "import.file": 26,
+      "import.file": 27,
       "import.geoserver": 5,
       "import.geoservices": 10,
       "process.ogc-api-processes": 10,
@@ -1596,6 +1596,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "post-api-v1-admin-import-upload"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/upload-object",
+      "operationId": "uploadImportFileFromObjectStore",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-upload-object"
     },
     {
       "spec": "admin-api",

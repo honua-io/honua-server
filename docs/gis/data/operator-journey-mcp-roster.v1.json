@@ -43,6 +43,20 @@
       "inputFields": ["dryRun", "id"]
     },
     {
+      "toolName": "honua_admin_import_upload_object",
+      "operationId": "admin.import.upload-object",
+      "mode": "execute",
+      "inputFields": [
+        "assumeRoleArn",
+        "overwriteExisting",
+        "sourceSrid",
+        "sourceUri",
+        "tableName",
+        "targetSchema",
+        "targetSrid"
+      ]
+    },
+    {
       "toolName": "honua_admin_import_upload_url",
       "operationId": "admin.import.upload-url",
       "mode": "execute",

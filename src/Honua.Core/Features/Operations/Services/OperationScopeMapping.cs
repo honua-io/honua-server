@@ -49,7 +49,8 @@ public static class OperationScopeMapping
                 "studio.content.reopen-version" or "studio.content.create-publication-request" or
                 "studio.content.rollback" => ResolveStudioOperation(request.OperationId),
             "admin.layer.publish" => OperatorOperation.Publish,
-            "admin.connections.create" or "admin.import.upload" or "admin.import.upload-url" => OperatorOperation.Create,
+            "admin.connections.create" or "admin.import.upload" or "admin.import.upload-url" or
+                "admin.import.upload-object" => OperatorOperation.Create,
             "admin.connections.delete" or "admin.import.jobs.cancel" => OperatorOperation.Delete,
             "admin.layer.set-enabled" or "admin.layer.fields.set" or "admin.layer.filter.set" or
                 "admin.layer.popup-info.set" or "admin.layer.drawing-info.set" or
