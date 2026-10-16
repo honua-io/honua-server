@@ -219,18 +219,18 @@ internal static class GeoservicesImportColumns
                 i++;
             }
 
-            var nameStart = i;
+            var dotStart = i;
             while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_'))
             {
                 i++;
             }
 
-            if (i == nameStart)
+            if (i == dotStart)
             {
                 return false;
             }
 
-            fieldName = text[nameStart..i];
+            fieldName = text[dotStart..i];
             end = i;
             return true;
         }
