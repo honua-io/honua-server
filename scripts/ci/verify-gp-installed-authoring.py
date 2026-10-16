@@ -79,6 +79,13 @@ def main():
                 assert (receipt.parent / 'artifacts/summary.json').read_bytes() == (project / 'expected/summary.json').read_bytes()
             output = run(tool, 'test', '--project', str(project))
             assert 'PASS  summary.json' in output and 'summary : passed' in output
+            if language == 'dotnet' and os.name != 'nt':
+                # A symlinked ancestor must share the direct-build dependency graph.
+                # Windows symlinks require privileges unavailable on some consumers.
+                alias = root / 'linked authoring project'
+                alias.symlink_to(project, target_is_directory=True)
+                linked = run(tool, 'test', '--project', str(alias))
+                assert 'PASS  summary.json' in linked and 'summary : passed' in linked
             expected = project / 'expected/summary.json'
             original = expected.read_bytes()
             broken = json.loads(original)

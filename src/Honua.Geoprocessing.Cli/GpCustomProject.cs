@@ -545,7 +545,11 @@ public static class GpCustomProjectTester
     /// <param name="cancellationToken">Cancellation.</param>
     public static async Task<GpCustomProjectTestResult> RunAsync(string projectDirectory, string harnessRoot, bool update, double tolerance = 1e-9, CancellationToken cancellationToken = default)
     {
-        var root = Path.GetFullPath(projectDirectory);
+        // MSBuild identifies project instances and incremental outputs by their paths.
+        // A shell build resolves its working directory (for example /var -> /private/var
+        // on macOS), so use the same physical paths when launching a later devkit build.
+        var root = ResolvePhysicalDirectory(projectDirectory);
+        harnessRoot = ResolvePhysicalDirectory(harnessRoot);
         var manifest = GpProjectManifest.Load(Path.Join(root, GpProjectManifest.FileName));
         var runsDirectory = Path.Join(root, ".honua", "test-runs");
         Directory.CreateDirectory(runsDirectory);
@@ -842,6 +846,21 @@ public static class GpCustomProjectTester
         {
             ["PYTHONPATH"] = string.IsNullOrEmpty(existing) ? harnessPackage : harnessPackage + Path.PathSeparator + existing,
         });
+    }
+
+    private static string ResolvePhysicalDirectory(string directory)
+    {
+        var fullPath = Path.GetFullPath(directory);
+        var current = Path.GetPathRoot(fullPath)!;
+        // Resolve each ancestor: resolving only the leaf misses symlinks such as /var.
+        foreach (var segment in fullPath[current.Length..].Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Join(current, segment);
+            current = new DirectoryInfo(current).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? current;
+        }
+
+        return current;
     }
 
     private static async Task<Command> DotnetCommandAsync(GpProjectManifest manifest, string root, string harnessRoot, string runsDirectory, CancellationToken cancellationToken)
