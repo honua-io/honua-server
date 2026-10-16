@@ -2,7 +2,7 @@
 
 A Honua geoprocessing process written against the production custom-code
 contract, with a fixture, golden expectations, pinned dependencies, and VS Code
-debugging. Copy this directory to start a new process; it is the layout
+debugging. Use the installed devkit to start a new process; it is the layout
 `honua-gp-devkit init --language python` scaffolds (honua-server#6217).
 
 | Path | Purpose |
@@ -19,15 +19,16 @@ debugging. Copy this directory to start a new process; it is the layout
 ## Prerequisites
 
 - Python 3.11 or newer with virtual environments.
-- The custom-code harness. It is not on PyPI yet, so install it from a
-  honua-server checkout (`docker/worker-customcode-python/harness`); the
-  version in `requirements.lock` is the one these goldens were produced with.
+- A project created by the installed `Honua.Geoprocessing.Cli` tool's
+  `honua-gp-devkit init --language python --name parcel-summary` command. The
+  devkit includes its matching local harness under `.honua/toolchain`; no
+  server checkout or unpublished PyPI package is needed for the host loop.
 - Docker only for the container recipe below.
 
 ```bash
 python3 -m venv .venv-gp
 . .venv-gp/bin/activate
-python -m pip install --no-deps /path/to/honua-server/docker/worker-customcode-python/harness
+python -m pip install --no-deps .honua/toolchain/docker/worker-customcode-python/harness
 python -m pip install pytest==9.1.1
 ```
 
@@ -49,7 +50,11 @@ run directory holds `work/`, published `artifacts/summary.json`,
 {"count": 3, "field": "value", "mean": 20.0, "sum": 60.0}
 ```
 
-Receipts are unsanitized local development evidence, not support bundles.
+Receipts are unsanitized local development evidence, not support bundles or
+worker-image validation receipts. `honua-gp.yaml` is the shared v1 authoring
+and release descriptor. Local `test` reads its `authoring` section; `release`
+uses the same process identity and entrypoint. Release still requires a real
+pinned worker image and independent passing image-validation evidence.
 
 ## Golden tests
 

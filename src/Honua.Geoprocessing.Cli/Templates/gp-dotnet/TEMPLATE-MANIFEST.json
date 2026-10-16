@@ -19,8 +19,8 @@
     },
     {
       "path": "Directory.Build.props",
-      "sha256": "c9ebc0546c089a1cfcee1ca9a865ca43866ef06577eb44456c8c17f9aa29c07b",
-      "sizeBytes": 1322
+      "sha256": "cb7bf09b3a52fb27c97582878c0d16db8b674941c26b0bfb908104756ddaa3c6",
+      "sizeBytes": 1164
     },
     {
       "path": "docker/compose.debug.yaml",
@@ -64,18 +64,23 @@
     },
     {
       "path": "process/SummaryTool.csproj",
-      "sha256": "b84aea52f77e4aabeee3e5258b64f02cadbf99809d75543bcbcb0cb9252f8db7",
-      "sizeBytes": 685
+      "sha256": "16a844391a9bb382158c74cc8980e36b18db1de7e3b3eb0176fdcb71933b2eed",
+      "sizeBytes": 891
     },
     {
       "path": "README.md",
-      "sha256": "fad89d3bc69b90b65d175ba1678ceca118c855f466a87f23447e931f4e738d46",
-      "sizeBytes": 5603
+      "sha256": "b97a16f6721435ad62b460c784a81565088b6073f61f30d785842abbc1c7c064",
+      "sizeBytes": 6029
     },
     {
       "path": "schema/inputs.schema.json",
       "sha256": "51d880cfb6e8711c128ac88ca092df43c476e5ae263ea7d1b3d62f48057ae955",
       "sizeBytes": 1150
+    },
+    {
+      "path": "schema/outputs.schema.json",
+      "sha256": "32918561972c2d3dd835b1587072eeb20682c259f59004e3eecc0fc770964dd9",
+      "sizeBytes": 440
     },
     {
       "path": "tests/SummaryTool.Tests/GoldenTests.cs",

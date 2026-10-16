@@ -1,0 +1,69 @@
+"""Exercise a packed GP devkit with no source checkout on the consuming runner."""
+import argparse
+import json
+import os
+import re
+import shutil
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--tool', required=True)
+    args = parser.parse_args()
+    tool = str(Path(args.tool).resolve())
+    env = dict(os.environ)
+    for key in ('HONUA_SERVER_CHECKOUT', 'HONUA_GP_HARNESS_ROOT', 'HONUA_CUSTOMCODE_SDK_ASSEMBLY', 'PYTHONPATH'):
+        env.pop(key, None)
+    with tempfile.TemporaryDirectory(prefix='gp installed ') as temp:
+        root = Path(temp)
+        def run(*command, cwd=root, expected=0, extra_env=None):
+            result = subprocess.run(command, cwd=cwd, env={**env, **(extra_env or {})}, text=True,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300)
+            print(result.stdout)
+            if result.returncode != expected:
+                raise RuntimeError(f'{command[0]} exited {result.returncode}, expected {expected}')
+            return result.stdout
+        for language in ('python', 'dotnet'):
+            run(tool, 'init', '--language', language, '--name', f'summary-{language}', '--output', str(root))
+            project = root / f'summary-{language}'
+            assert (project / '.honua/toolchain').is_dir()
+            assert not (project / 'Directory.Build.rsp').exists(), 'installed flow must not capture a checkout path'
+            output = run(tool, 'test', '--project', str(project))
+            assert 'PASS  summary.json' in output and 'summary : passed' in output
+            expected = project / 'expected/summary.json'
+            original = expected.read_bytes()
+            broken = json.loads(original)
+            broken['mean'] = 999
+            expected.write_text(json.dumps(broken))
+            assert 'FAIL  summary.json' in run(tool, 'test', '--project', str(project), expected=1)
+            expected.write_bytes(original)
+            run(tool, 'test', '--project', str(project))
+            # Recreate the ignored payload exactly as a fresh source clone must do.
+            shutil.rmtree(project / '.honua/toolchain')
+            run(tool, 'test', '--project', str(project))
+            if language == 'python':
+                harness = project / '.honua/toolchain/docker/worker-customcode-python/harness'
+                run(sys.executable, '-m', 'pip', 'install', '--no-deps', str(harness), cwd=project)
+                assert '4 passed' in run(sys.executable, '-m', 'pytest', '-q', 'tests', cwd=project)
+            else:
+                direct = run('dotnet', 'test', 'tests/SummaryTool.Tests/SummaryTool.Tests.csproj', '--no-restore', cwd=project)
+                assert re.search(r'Passed:\s+4', direct) and re.search(r'Failed:\s+0', direct) and re.search(r'Skipped:\s+0', direct)
+            # The same untouched v1 descriptor reaches release validation. Local tests
+            # deliberately cannot synthesize a passing worker-image validation receipt.
+            run('git', 'init', cwd=project)
+            run('git', 'add', '.', cwd=project)
+            run('git', '-c', 'user.name=GP CI', '-c', 'user.email=ci@honua.io', 'commit', '-m', 'Fixture source', cwd=project)
+            refusal = run(tool, 'release', '--output', str(root / f'release-{language}'),
+                          '--source-repository', 'honua-io/installed-fixture',
+                          '--runtime-image', 'ghcr.io/honua-io/fixture@sha256:' + 'a' * 64,
+                          cwd=project, expected=1)
+            assert 'receipt' in refusal.lower() and 'not valid honua.gp-process' not in refusal
+        print('Installed Python and .NET init/test/negative golden/direct test/release refusal passed.')
+
+
+if __name__ == '__main__':
+    main()

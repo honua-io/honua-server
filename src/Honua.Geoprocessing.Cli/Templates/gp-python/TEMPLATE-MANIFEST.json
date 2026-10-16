@@ -54,18 +54,23 @@
     },
     {
       "path": "README.md",
-      "sha256": "80e25609b814d1b2045e30a0a81d0d2c0cfdf46e00ceadc7682b2e0039271374",
-      "sizeBytes": 5265
+      "sha256": "543dd917692b4d46b73977451a3dcd776a607055a52fddd4497bf88bf6da7414",
+      "sizeBytes": 5645
     },
     {
       "path": "requirements.lock",
-      "sha256": "a8632809275c89c31bc07e6ee932d6dd2f1fcae22f5c0ff2683513ebdfdf2da8",
-      "sizeBytes": 346
+      "sha256": "823e56dbfc83b17046041cf92d7297122bbbd87f2608d9d0ec15a2ca956751f8",
+      "sizeBytes": 168
     },
     {
       "path": "schema/inputs.schema.json",
       "sha256": "51d880cfb6e8711c128ac88ca092df43c476e5ae263ea7d1b3d62f48057ae955",
       "sizeBytes": 1150
+    },
+    {
+      "path": "schema/outputs.schema.json",
+      "sha256": "32918561972c2d3dd835b1587072eeb20682c259f59004e3eecc0fc770964dd9",
+      "sizeBytes": 440
     },
     {
       "path": "tests/test_golden.py",

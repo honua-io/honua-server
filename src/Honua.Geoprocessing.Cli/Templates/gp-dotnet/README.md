@@ -2,7 +2,7 @@
 
 A Honua geoprocessing process written against the production custom-code
 contract (`IGeoprocessingTool`), with a fixture, golden expectations, a
-package lock, and VS Code debugging. Copy this directory to start a new
+package lock, and VS Code debugging. Use the installed devkit to start a new
 process; it is the layout `honua-gp-devkit init --language dotnet` scaffolds
 (honua-server#6217).
 
@@ -21,10 +21,11 @@ process; it is the layout `honua-gp-devkit init --language dotnet` scaffolds
 
 - .NET 10 SDK. The harness loads the process assembly by reflection; neither
   needs an AOT build.
-- The custom-code SDK and local harness. They are not on NuGet yet, so they
-  are consumed as project references from a honua-server checkout: keep
-  `honua-server` as a sibling of the `honua-samples` checkout, or set
-  `HONUA_SERVER_CHECKOUT` to its path.
+- A project created by the installed `Honua.Geoprocessing.Cli` tool's
+  `honua-gp-devkit init --language dotnet --name parcel-summary` command. The
+  devkit includes matching SDK and harness sources under `.honua/toolchain`;
+  project references resolve there without an unpublished NuGet package.
+  `HONUA_SERVER_CHECKOUT` remains an explicit source-development override.
 - Docker only for the container recipe below.
 
 ## Run the fixture
@@ -49,7 +50,11 @@ run directory holds `work/`, published `artifacts/summary.json`,
 {"count":3,"field":"value","mean":20,"sum":60}
 ```
 
-Receipts are unsanitized local development evidence, not support bundles.
+Receipts are unsanitized local development evidence, not support bundles or
+worker-image validation receipts. `honua-gp.yaml` is the shared v1 authoring
+and release descriptor. Local `test` reads its `authoring` section; `release`
+uses the same process identity and entrypoint. Release still requires a real
+pinned worker image and independent passing image-validation evidence.
 
 ## Golden tests
 

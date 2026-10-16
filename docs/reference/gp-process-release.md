@@ -63,6 +63,7 @@ validation:
 | Field | Rules |
 |---|---|
 | `schema` | Must be `honua.gp-process/v1`. Unknown keys anywhere are an error. |
+| `authoring` | Optional local devkit settings: template identity, exact `toolchainVersion`, explicit `harnessRoot` override, source/build/assembly paths, fixtures and expected artifacts. `init` writes this section and `test` reads it alongside `process.runtime` and `process.entrypoint`; it makes no remote validation claim. |
 | `process.*` | Name, semantic version, runtime, entrypoint, and the two contract schema paths. The lock records the schemas' SHA-256 digests, not the files. |
 | `source.repository` | `owner/name`. The commit SHA is never declared: it is read from the checkout (and must equal `--source-sha` when given). |
 | `dependencyLock` | Path of the committed dependency lock; its digest goes into the lock. |
