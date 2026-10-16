@@ -98,11 +98,13 @@ internal sealed partial class FileImportJobExecutor(
         ImportResult result;
         Stream? materializedStream = null;
         string? materializedTemp = null;
+        ICloudFileStorage? stagedCloud = null;
+        string? stagedCloudFileId = null;
         try
         {
+            await using var scope = scopeFactory.CreateAsyncScope();
             try
             {
-                await using var scope = scopeFactory.CreateAsyncScope();
                 var active = request;
                 if (active.UsesObjectStore)
                 {
@@ -111,7 +113,12 @@ internal sealed partial class FileImportJobExecutor(
                     var storeOptions = scope.ServiceProvider
                         .GetRequiredService<Microsoft.Extensions.Options.IOptions<ImportObjectStoreOptions>>().Value;
                     var materialized = await ImportObjectStoreMaterializer.MaterializeAsync(
-                        active, reader, cloud, storeOptions, cancellationToken).ConfigureAwait(false);
+                        active,
+                        reader,
+                        cloud,
+                        storeOptions,
+                        cancellationToken,
+                        fileSize > 0 ? fileSize : null).ConfigureAwait(false);
                     active = materialized.Request;
                     if (materialized.DisposeStream)
                     {
@@ -121,6 +128,12 @@ internal sealed partial class FileImportJobExecutor(
                     if (materialized.DeleteLocalFile)
                     {
                         materializedTemp = active.LocalFilePath;
+                    }
+
+                    if (materialized.DeleteCloudFile && cloud is not null)
+                    {
+                        stagedCloud = cloud;
+                        stagedCloudFileId = active.CloudFileId;
                     }
                 }
 
@@ -153,6 +166,19 @@ internal sealed partial class FileImportJobExecutor(
                         File.Delete(materializedTemp);
                     }
                     catch (Exception cleanupEx) when (cleanupEx is IOException or UnauthorizedAccessException)
+                    {
+                        Log.ImportFaulted(logger, jobId, cleanupEx);
+                    }
+                }
+
+                if (stagedCloud is not null && !string.IsNullOrWhiteSpace(stagedCloudFileId))
+                {
+                    try
+                    {
+                        // None so a cancelled import still deletes the staged copy.
+                        await stagedCloud.DeleteAsync(stagedCloudFileId, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception cleanupEx) when (cleanupEx is not OutOfMemoryException)
                     {
                         Log.ImportFaulted(logger, jobId, cleanupEx);
                     }

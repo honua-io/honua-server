@@ -124,7 +124,8 @@ public sealed class ImportObjectStoreCoordinatorTests
         admission.Request!.ObjectStoreUri.Should().BeNull();
         reader.OpenedEtag.Should().Be("\"pin\"");
         using var stream = admission.Request.FileStream!;
-        var body = await new StreamReader(stream).ReadToEndAsync();
+        using var textReader = new StreamReader(stream, leaveOpen: true);
+        var body = await textReader.ReadToEndAsync();
         body.Should().Be("{}");
     }
 

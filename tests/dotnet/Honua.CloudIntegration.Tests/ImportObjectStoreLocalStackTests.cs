@@ -17,14 +17,16 @@ using Honua.Core.Features.Import.ObjectStore;
 using Honua.FileStorage;
 using Honua.Import.FileImport;
 using Microsoft.Extensions.Options;
+using Xunit;
 
-namespace Honua.Aws.UnitTests;
+namespace Honua.CloudIntegration.Tests;
 
 /// <summary>
 /// LocalStack Community coverage for the customer-bucket reader: a small object streams in the
 /// request, an object above the background threshold is queued without a body read, and an
 /// allow-listed role is assumed with the configured external id.
 /// </summary>
+[Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CloudIntegration)]
 [Trait("Category", "Integration")]
 [Trait("Category", "Emulator")]
 [Trait("Tier", "Slow")]

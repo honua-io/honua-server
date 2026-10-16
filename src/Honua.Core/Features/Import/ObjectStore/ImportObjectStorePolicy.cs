@@ -149,7 +149,20 @@ public static class ImportObjectStorePolicy
             return false;
         }
 
-        var key = Uri.UnescapeDataString(uri.AbsolutePath).TrimStart('/');
+        // Uri.AbsolutePath removes '.' and '..' before IsSafeKey can see them, so
+        // s3://bucket/a/../secret.geojson would be admitted as secret.geojson.
+        // Reject dot segments on the raw path, and reject any path Uri rewrites.
+        if (!TryReadRawKey(candidate, out var rawKey)
+            || !TryUnescape(rawKey, out var decodedKey)
+            || HasDotSegment(rawKey)
+            || HasDotSegment(decodedKey)
+            || !string.Equals(decodedKey, CanonicalKey(uri), StringComparison.Ordinal))
+        {
+            problem = Invalid("sourceUri must not contain '.' or '..' path segments.");
+            return false;
+        }
+
+        var key = decodedKey;
         if (string.IsNullOrEmpty(key) || !IsSafeKey(key))
         {
             problem = Invalid("sourceUri must include a bucket and an object key.");
@@ -164,6 +177,76 @@ public static class ImportObjectStorePolicy
         };
         problem = null;
         return true;
+    }
+
+    /// <summary>
+    /// Path after the bucket, without the separator slash and without a query or fragment.
+    /// Taken from the original text so '.' and '..' are still present.
+    /// </summary>
+    private static bool TryReadRawKey(string candidate, out string rawKey)
+    {
+        rawKey = string.Empty;
+        var scheme = candidate.IndexOf("://", StringComparison.Ordinal);
+        if (scheme < 0)
+        {
+            return false;
+        }
+
+        var authority = scheme + 3;
+        var path = candidate.IndexOf('/', authority);
+        if (path < 0)
+        {
+            return true;
+        }
+
+        var rest = candidate[(path + 1)..];
+        var cut = rest.IndexOfAny(['?', '#']);
+        if (cut >= 0)
+        {
+            rest = rest[..cut];
+        }
+
+        rawKey = rest;
+        return true;
+    }
+
+    private static string CanonicalKey(Uri uri)
+        => TryUnescape(uri.AbsolutePath.TrimStart('/'), out var key) ? key : string.Empty;
+
+    private static bool TryUnescape(string value, out string unescaped)
+    {
+        try
+        {
+            unescaped = Uri.UnescapeDataString(value);
+            return true;
+        }
+        catch (UriFormatException)
+        {
+            unescaped = string.Empty;
+            return false;
+        }
+    }
+
+    private static bool HasDotSegment(string path)
+    {
+        var start = 0;
+        for (var i = 0; i <= path.Length; i++)
+        {
+            if (i != path.Length && path[i] != '/')
+            {
+                continue;
+            }
+
+            var segment = path[start..i];
+            if (segment is "." or "..")
+            {
+                return true;
+            }
+
+            start = i + 1;
+        }
+
+        return false;
     }
 
     private static bool IsSafeKey(string key)

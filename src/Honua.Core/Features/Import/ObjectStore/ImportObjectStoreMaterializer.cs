@@ -26,7 +26,19 @@ public static class ImportObjectStoreMaterializer
 
         /// <summary>The caller deletes <see cref="ImportRequest.LocalFilePath"/> after the import.</summary>
         public bool DeleteLocalFile { get; init; }
+
+        /// <summary>
+        /// The caller deletes <see cref="ImportRequest.CloudFileId"/> after the import finishes,
+        /// fails, or is cancelled. The upload also carries <see cref="StagedCopyLifetime"/> so a
+        /// crashed worker does not keep the object forever.
+        /// </summary>
+        public bool DeleteCloudFile { get; init; }
     }
+
+    /// <summary>
+    /// Lifetime of a worker-staged copy in shared file storage. Matches the staged file-import upload.
+    /// </summary>
+    public static readonly TimeSpan StagedCopyLifetime = TimeSpan.FromDays(1);
 
     /// <summary>
     /// Reads <paramref name="request"/> with the pinned ETag and returns a request the
@@ -37,7 +49,8 @@ public static class ImportObjectStoreMaterializer
         IImportObjectStoreReader reader,
         ICloudFileStorage? cloudStorage,
         ImportObjectStoreOptions options,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long? contentLength = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(reader);
@@ -85,6 +98,8 @@ public static class ImportObjectStoreMaterializer
                     ContentType = string.IsNullOrWhiteSpace(request.ObjectStoreContentType)
                         ? "application/octet-stream"
                         : request.ObjectStoreContentType,
+                    SizeBytes = contentLength ?? (stream.CanSeek ? stream.Length : null),
+                    TimeToLive = StagedCopyLifetime,
                     Folder = "imports",
                 }, cancellationToken).ConfigureAwait(false);
                 if (!uploaded.Success || string.IsNullOrWhiteSpace(uploaded.File?.FileId))
@@ -95,6 +110,7 @@ public static class ImportObjectStoreMaterializer
                 return new Result
                 {
                     Request = ClearObjectStore(request) with { CloudFileId = uploaded.File.FileId },
+                    DeleteCloudFile = true,
                 };
             }
 

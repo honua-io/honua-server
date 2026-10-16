@@ -213,17 +213,8 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
     }
 
     private ImportObjectStoreRoleOptions? FindRole(string roleArn)
-    {
-        foreach (var role in _options.CurrentValue.AssumeRoles)
-        {
-            if (string.Equals(role.RoleArn?.Trim(), roleArn, StringComparison.Ordinal))
-            {
-                return role;
-            }
-        }
-
-        return null;
-    }
+        => _options.CurrentValue.AssumeRoles.FirstOrDefault(role =>
+            string.Equals(role.RoleArn?.Trim(), roleArn, StringComparison.Ordinal));
 
     private IAmazonS3 Client
     {
