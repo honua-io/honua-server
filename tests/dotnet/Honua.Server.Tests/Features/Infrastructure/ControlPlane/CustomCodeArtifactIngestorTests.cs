@@ -83,7 +83,7 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
         var guard = Substitute.For<IExecutionJobRetryGuard>();
         guard.EvaluateRetry(Arg.Any<ExecutionJobRecord>()).Returns(new ExecutionJobRetryDecision
         {
-            Allowed = allowed, ArtifactReferences = job.ArtifactReferences, RefusalReason = "No reserved journal budget remains."
+            Allowed = allowed, ArtifactReferences = allowed ? job.ArtifactReferences : [], RefusalReason = "No reserved journal budget remains."
         });
         var reconciler = new ExecutionJobReconciler(jobs, [backend], Substitute.For<IUniversalProgressStore>(),
             NullLogger<ExecutionJobReconciler>.Instance, retryGuards: [guard]);

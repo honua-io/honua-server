@@ -454,7 +454,7 @@ internal sealed partial class ExecutionJobReconciler(
                 {
                     CurrentPhase = "Failed (retry budget exhausted)",
                     ErrorMessage = decision.RefusalReason ?? "The durable resource budget does not permit another attempt.",
-                    ArtifactReferences = decision.ArtifactReferences
+                    ArtifactReferences = job.ArtifactReferences
                 };
             }
             retainedArtifacts = retainedArtifacts.Concat(decision.ArtifactReferences).Distinct(StringComparer.Ordinal).ToArray();
