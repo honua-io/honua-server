@@ -14,6 +14,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.ProcessRelease;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
@@ -920,7 +921,14 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 [CustomCodeJobContract.RepoUrlParam] = repositoryUrl,
                 [CustomCodeJobContract.GitRefParam] = "0123456789abcdef0123456789abcdef01234567",
                 [CustomCodeJobContract.EntrypointParam] = "tools.buffer:execute",
-                [CustomCodeJobContract.DepsManifestParam] = "requirements.lock"
+                [CustomCodeJobContract.DepsManifestParam] = "requirements.lock",
+                [GpProcessReleaseAdmission.ReleaseProcessParam] = "buffer-features",
+                [GpProcessReleaseAdmission.ReleaseVersionParam] = "1.2.3",
+                [GpProcessReleaseAdmission.ReleaseLockDigestParam] = "sha256:" + new string('a', 64),
+                [GpProcessReleaseAdmission.ReleaseBindingVersionParam] = "4",
+                [GpProcessReleaseAdmission.WorkflowVersionParam] = "workflow-v2",
+                [GpProcessReleaseAdmission.DependencyDigestParam] = "sha256:" + new string('b', 64),
+                [GpProcessReleaseAdmission.WorkerImageParam] = "registry/worker@sha256:" + new string('c', 64)
             }) with
             {
                 RuntimeProfile = CustomCodeJobContract.RuntimeProfile
@@ -940,6 +948,12 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         release.GetProperty("runtime").GetString().Should().Be("python");
         release.GetProperty("sourceRef").GetString().Should().Be("0123456789abcdef0123456789abcdef01234567");
         release.GetProperty("entrypoint").GetString().Should().Be("tools.buffer:execute");
+        release.GetProperty("processRelease").GetString().Should().Be("buffer-features");
+        release.GetProperty("processVersion").GetString().Should().Be("1.2.3");
+        release.GetProperty("bindingVersion").GetString().Should().Be("4");
+        release.GetProperty("lockDigest").GetString().Should().Be("sha256:" + new string('a', 64));
+        release.GetProperty("dependencyLockDigest").GetString().Should().Be("sha256:" + new string('b', 64));
+        release.GetProperty("workerImage").GetString().Should().EndWith("@sha256:" + new string('c', 64));
         release.GetProperty("missing").GetArrayLength().Should().Be(0);
         root.GetProperty("identity").GetProperty("runtimeProfile").GetString().Should().Be("custom-code");
 
@@ -1018,7 +1032,12 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             ClaimedBy = "worker-internal-7",
             ClaimedAt = now.AddMinutes(-1),
             LastHeartbeatAt = now,
-            ProviderOperationId = "provider-op-7"
+            ProviderOperationId = "provider-op-7",
+            Spec = CreateSpec("private-workload", new Dictionary<string, string>
+            {
+                [GpProcessReleaseAdmission.WorkerImageParam] = "private.example/worker@sha256:" + new string('c', 64),
+                [GpProcessReleaseAdmission.ReleaseLockDigestParam] = "sha256:" + new string('a', 64)
+            })
         });
 
         var gatedFixture = new WebAppFixture()
@@ -1048,6 +1067,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.OK, body);
             body.Should().NotContain("worker-internal-7");
             body.Should().NotContain("provider-op-7");
+            body.Should().NotContain("private.example/worker");
 
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
@@ -1055,6 +1075,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             root.GetProperty("worker").GetProperty("liveness").GetString().Should().Be("alive");
             root.GetProperty("worker").TryGetProperty("claimedBy", out _).Should().BeFalse();
             root.GetProperty("identity").TryGetProperty("providerOperationId", out _).Should().BeFalse();
+            root.GetProperty("release").TryGetProperty("workerImage", out _).Should().BeFalse();
+            root.GetProperty("release").GetProperty("lockDigest").GetString().Should().Be("sha256:" + new string('a', 64));
             root.GetProperty("evidence").GetProperty("notes").EnumerateArray().Select(e => e.GetString()!)
                 .Should().Contain(n => n.StartsWith("owner view", StringComparison.Ordinal));
 
@@ -1062,6 +1084,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             using var operatorDoc = await ReadJsonAsync(operatorResponse);
             operatorDoc.RootElement.GetProperty("view").GetString().Should().Be("operator");
             operatorDoc.RootElement.GetProperty("worker").GetProperty("claimedBy").GetString().Should().Be("worker-internal-7");
+            operatorDoc.RootElement.GetProperty("release").GetProperty("workerImage").GetString()
+                .Should().Be("private.example/worker@sha256:" + new string('c', 64));
         }
         finally
         {

@@ -1027,6 +1027,10 @@ builder.Services.AddServerFeatures(
     redisCacheEntitled,
     builder.Environment.EnvironmentName);
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
+// PostgreSQL owns durable GP release bindings. Other providers retain the process-local
+// development store; durable production release deployment is PostgreSQL-only in this slice.
+Honua.Server.Features.Geoprocessing.ProcessRelease.GpProcessReleasePersistenceRegistration.AddGpProcessReleasePersistence(
+    builder.Services, builder.Configuration);
 builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
 builder.Services.AddAdminAccessOperations();
@@ -1813,6 +1817,7 @@ app.MapCoordinatedReleaseControlEndpoints();
 app.MapScheduledTickEndpoints(builder.Configuration);
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
+app.MapGpProcessReleaseEndpoints();
 
 // Cloud event-driven control-plane surface (TriggerMode=Event only): the EventBridge-invoked
 // reconcile Lambda + EventBridge Scheduler backstop post here. No-op under poll (on-prem).

@@ -41,13 +41,14 @@ internal static partial class CustomCodeSubmitValidator
 
     /// <summary>
     /// Returns <see langword="true"/> when the submission carries the custom-code
-    /// runtime marker (so the submit path branches into the custom-code gate). A
-    /// submission without it is an ordinary geoprocessing job and is unaffected.
+    /// runtime marker or a logical release process name. Both paths require the same
+    /// custom-code authorization and validation before a durable job is created.
     /// </summary>
     public static bool IsCustomCodeSubmission(IReadOnlyDictionary<string, string>? parameters)
         => parameters is not null
-           && parameters.TryGetValue(CustomCodeJobContract.RuntimeParam, out var runtime)
-           && !string.IsNullOrWhiteSpace(runtime);
+           && ((parameters.TryGetValue(CustomCodeJobContract.RuntimeParam, out var runtime)
+                && !string.IsNullOrWhiteSpace(runtime))
+               || parameters.ContainsKey(ProcessRelease.GpProcessReleaseAdmission.ProcessParam));
 
     /// <summary>
     /// Validates the caller-supplied custom-code parameters and parses the declared
