@@ -73,6 +73,131 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
     }
 
     [IntegrationTest]
+    public async Task GetImageTileAsync_TwoBandNativeFixture_StretchesEveryPixelWithinDeadline()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await CreateSchemaAsync(schemaName);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE raster_tiles (
+                    raster_data_id bigint, zoom_level integer, tile_x integer, tile_y integer,
+                    tile_data bytea, content_type text, renderer_version integer DEFAULT 0,
+                    renderer_payload_sha256 bytea);
+                INSERT INTO raster_data (layer_id, name, raster)
+                SELECT @layerId, 'native-two-band',
+                    ST_SetValues(ST_SetValues(ST_AddBand(ST_AddBand(
+                        ST_MakeEmptyRaster(4, 3, -124, 40, 0.25, -0.5, 0, 0, 4326),
+                        '32BF'::text, -9999, -9999), '32BF'::text, -9999, -9999),
+                        1, 1, 1, ARRAY[[-17.25, 0, 33.5, 8], [101, 2, -9999, -9], [10, 11, 12, 13]]::double precision[][]),
+                        2, 1, 1, ARRAY[[200, 210, 220, -9999], [-4.5, 500, 600, 700], [800, 900, 1000, 1100]]::double precision[][])
+                RETURNING id;
+                """;
+            command.Parameters.AddWithValue("layerId", LayerId);
+            var rasterId = (long)(await command.ExecuteScalarAsync())!;
+
+            // Use an independent pool so the bounded SQL setting cannot affect other tests.
+            var settings = new NpgsqlConnectionStringBuilder(fixture.ConnectionString);
+            settings.Options = $"{settings.Options} -c statement_timeout=15000".Trim();
+            settings.CommandTimeout = 20;
+            await using var dataSource = NpgsqlDataSource.Create(settings.ConnectionString);
+            var store = new PostgresRasterStore(new FixtureConnectionProvider(dataSource),
+                NullLogger<PostgresRasterStore>.Instance, FixtureBypassDatabaseSchemaGuard.Instance, schemaName);
+
+            // This invokes the complete production cache miss -> statistics -> sampler ->
+            // per-band auto-stretch -> aligned frame -> encoder, not the sampler alone.
+            var totalRendering = TimeSpan.Zero;
+            byte[]? geotiff = null;
+            command.Parameters.Clear();
+            foreach (var format in new[] { RasterFormat.TIFF, RasterFormat.PNG })
+            {
+                command.CommandText = "SELECT COUNT(*) FROM raster_tiles";
+                ((long)(await command.ExecuteScalarAsync())!).Should().Be(0,
+                    "both encoders must exercise a real production cache miss");
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                var tile = await store.GetImageTileAsync(LayerId, rasterId, 9, 195, 80, format, deadline.Token)
+                    ?? throw new InvalidOperationException("Expected the actual native fixture tile.");
+                watch.Stop();
+                watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15));
+                totalRendering += watch.Elapsed;
+                tile.Width.Should().Be(256);
+                tile.Height.Should().Be(256);
+                tile.Srid.Should().Be(3857);
+                if (format == RasterFormat.TIFF)
+                {
+                    geotiff = tile.Data;
+                }
+                else
+                {
+                    tile.Data.Take(8).Should().Equal(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
+                    System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(tile.Data.AsSpan(16, 4)).Should().Be(256);
+                    System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(tile.Data.AsSpan(20, 4)).Should().Be(256);
+                }
+            }
+            totalRendering.Should().BeLessThan(TimeSpan.FromSeconds(30));
+
+            command.CommandText = """
+                WITH decoded AS (SELECT ST_FromGDALRaster(@data) AS rast)
+                SELECT ST_Width(rast), ST_Height(rast), ST_NumBands(rast), ST_SRID(rast),
+                    ST_BandPixelType(rast, 1), ST_BandPixelType(rast, 2),
+                    ST_BandNoDataValue(rast, 1), ST_BandNoDataValue(rast, 2),
+                    ST_DumpValues(rast, 1, FALSE), ST_DumpValues(rast, 2, FALSE)
+                FROM decoded;
+                """;
+            command.Parameters.Clear();
+            command.Parameters.AddWithValue("data", geotiff!);
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt32(0).Should().Be(256);
+            reader.GetInt32(1).Should().Be(256);
+            reader.GetInt32(2).Should().Be(2);
+            reader.GetInt32(3).Should().Be(3857);
+            reader.GetString(4).Should().Be("8BUI");
+            reader.GetString(5).Should().Be("8BUI");
+            reader.GetDouble(6).Should().Be(0);
+            reader.GetDouble(7).Should().Be(0);
+            // Independent literal results for the fixed source and each band's full-source
+            // min/max. PostGIS 8BUI conversion truncates positive clamped values; both source
+            // NoData (-9999) and the resulting 8BUI NoData are represented here by zero.
+            double[][,] literalStretchedBands =
+            [
+                new double[,] { { 0, 37, 109, 54 }, { 255, 41, 0, 17 }, { 58, 60, 63, 65 } },
+                new double[,] { { 47, 49, 51, 0 }, { 0, 116, 139, 162 }, { 185, 208, 231, 255 } }
+            ];
+            const double radius = 6378137;
+            const double halfWorld = 20037508.342789244;
+            var tileSpan = 2 * halfWorld / 512;
+            for (var band = 0; band < 2; band++)
+            {
+                var actual = reader.GetFieldValue<double[,]>(8 + band);
+                actual.GetLength(0).Should().Be(256);
+                actual.GetLength(1).Should().Be(256);
+                for (var y = 0; y < 256; y++)
+                {
+                    var mercatorY = halfWorld - (195 + (y + 0.5) / 256) * tileSpan;
+                    var latitude = (2 * Math.Atan(Math.Exp(mercatorY / radius)) - Math.PI / 2) * 180 / Math.PI;
+                    var sourceY = (int)Math.Floor((40 - latitude) / 0.5);
+                    for (var x = 0; x < 256; x++)
+                    {
+                        var longitude = (-halfWorld + (80 + (x + 0.5) / 256) * tileSpan) / radius * 180 / Math.PI;
+                        var sourceX = (int)Math.Floor((longitude + 124) / 0.25);
+                        var expected = sourceX is >= 0 and < 4 && sourceY is >= 0 and < 3
+                            ? literalStretchedBands[band][sourceY, sourceX] : 0;
+                        actual[y, x].Should().Be(expected, $"literal stretched band {band + 1}, target ({x},{y})");
+                    }
+                }
+            }
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
     public async Task GetImageTileAsync_WorldCrs84QuadWindow_ReprojectsSource3857AndRendersRealPixels()
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));

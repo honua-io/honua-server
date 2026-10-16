@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:6ab129365528f1f2ba3d523e5c3a18d315160f0a9bbb22d50b7aee2fb89dfa04",
+  "bundleDigest": "sha256:5e80bef0384033fee8edf9bd4f060b2ce42c1741099e592f67197d3019327553",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2425,7 +2425,7 @@
     {
       "id": "guides/publish/publish-terrain-and-elevation",
       "path": "guides/publish/publish-terrain-and-elevation.md",
-      "documentDigest": "sha256:f856b632ce62cf6b5eafb7b89bd473592108eb26c56f2458035e69793d8ff1d0",
+      "documentDigest": "sha256:7ac53d76760e140a8be5f62ffa5da616f25d3cabec14bbbee84161c780e0c559",
       "metadata": {
         "type": "guide",
         "title": "Publish terrain and elevation",
@@ -7742,6 +7742,17 @@
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/gp-harness-events.v1.md"
     },
     {
+      "id": "reference/gp-managed-feature-streams",
+      "path": "reference/gp-managed-feature-streams.md",
+      "documentDigest": "sha256:58ffd04b5432003e5827162146f032bbd696f67bfda0da4c952e0099cade9b74",
+      "metadata": {
+        "type": "reference",
+        "title": "Managed GP feature streams",
+        "description": "Shared staging, immutable receipts and operational requirements for large managed GeoETL outputs."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/gp-managed-feature-streams.md"
+    },
+    {
       "id": "reference/gp-process-release",
       "path": "reference/gp-process-release.md",
       "documentDigest": "sha256:a01a043b96550763ea4022ed7199108c6079125f7c55a3d85179bb9351bdc8b9",
@@ -7890,7 +7901,7 @@
     {
       "id": "reference/protocols/terrain-and-elevation",
       "path": "reference/protocols/terrain-and-elevation.md",
-      "documentDigest": "sha256:1c438d6d2527d47c92625b404accde8ecc12969ae24c810a55217ee62f38b064",
+      "documentDigest": "sha256:c4ede945e0d6e27b88f79f880d363bd901cca020be6b77e3e565a15dcbe9116b",
       "metadata": {
         "type": "reference",
         "title": "Terrain and elevation",
