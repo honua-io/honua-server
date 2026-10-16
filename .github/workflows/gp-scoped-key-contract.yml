@@ -11,6 +11,10 @@ on:
       - 'src/Honua.Protocols.GeoServices/GPServer/**'
       - 'tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/**'
       - 'tests/dotnet/Honua.Geoprocessing.UnitTests/**'
+      - 'src/Honua.Db/Postgres/Features/Geoprocessing/**'
+      - 'tests/dotnet/Honua.Db.Postgres.Tests/Features/Geoprocessing/**'
+      - 'src/Honua.Core/Features/Geoprocessing/**'
+      - 'src/Honua.Server/Migrations/132_IndexManagedWorkspaceStreamRetention.sql'
       - 'tests/dotnet/Honua.Server.Tests/Features/Eval/EvalHarnessTests.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/**'
       - '.github/workflows/gp-scoped-key-contract.yml'
@@ -43,6 +47,17 @@ jobs:
             filter: FullyQualifiedName~GeoprocessingJobTerminalServiceTests|FullyQualifiedName~AdminApiKeyEndpointsTests|FullyQualifiedName~Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario
             required_classes: GeoprocessingJobTerminalServiceTests,AdminApiKeyEndpointsTests
             additional_method: Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario
+          - name: managed-shared-stream-lifecycle
+            needs_postgres: false
+            project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+            filter: FullyQualifiedName~DurableFeatureStreamTests
+            source: tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/DurableFeatureStreamTests.cs
+            prefix: ''
+          - name: managed-stream-postgres-retention
+            project: tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
+            filter: FullyQualifiedName~PostgresWorkspaceStoreTests
+            required_classes: PostgresWorkspaceStoreTests
+            additional_method: ManagedStreamRetention_UsesPublishedObjectIdentityUntilCanonicalArtifactDeletion
           - name: soap-durable-runtime
             project: tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj
             filter: FullyQualifiedName~SoapScopedAPIKey_|FullyQualifiedName~SoapArea_WithProductionExecutor|FullyQualifiedName~SoapJobOperation_OtherCaller|FullyQualifiedName~GetJobStatus_ProgressHint|FullyQualifiedName~GetJobStatus_InvalidProgressHint|FullyQualifiedName~OtherJobOperations_ProgressHint
