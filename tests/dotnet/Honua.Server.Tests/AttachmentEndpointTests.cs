@@ -582,6 +582,11 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result.DeleteAttachmentResults.Should().OnlyContain(r => r.Success);
         result.DeleteAttachmentResults.Should().Contain(r => r.ObjectId == 1);
         result.DeleteAttachmentResults.Should().Contain(r => r.ObjectId == 2);
+        using var document = JsonDocument.Parse(content);
+        foreach (var item in document.RootElement.GetProperty("deleteAttachmentResults").EnumerateArray())
+        {
+            item.TryGetProperty("error", out _).Should().BeFalse();
+        }
     }
 
     [IntegrationTest]
@@ -652,6 +657,31 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         deleteResult.Error.Should().NotBeNull();
         deleteResult.Error!.Code.Should().Be(1000);
         deleteResult.Error.Description.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DeleteAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
+    public async Task DeleteAttachments_WithSuccessfulAndMissingIds_EmitsErrorOnlyForFailure()
+    {
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent("1,999"), "attachmentIds" }
+        };
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", form);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var results = document.RootElement.GetProperty("deleteAttachmentResults");
+        results.GetArrayLength().Should().Be(2);
+        results[0].GetProperty("objectId").GetInt64().Should().Be(1);
+        results[0].GetProperty("success").GetBoolean().Should().BeTrue();
+        results[0].TryGetProperty("error", out _).Should().BeFalse();
+        results[1].GetProperty("objectId").GetInt64().Should().Be(999);
+        results[1].GetProperty("success").GetBoolean().Should().BeFalse();
+        results[1].GetProperty("error").GetProperty("code").GetInt32().Should().Be(1000);
+        results[1].GetProperty("error").GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
     [IntegrationTest]
