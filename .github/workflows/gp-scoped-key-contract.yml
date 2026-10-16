@@ -8,6 +8,9 @@ on:
       - 'src/Honua.Core/Features/ControlPlane/Domain/OperationModels.cs'
       - 'src/Honua.Hosting/Features/Authentication/LayerScopedWriteKey.cs'
       - 'src/Honua.Hosting/Features/Authentication/ApiKeyAuthenticationHandler.cs'
+      - 'src/Honua.Hosting/Features/Authentication/ScopedJob*.cs'
+      - 'src/Honua.Hosting/Features/Middleware/TenantContextMiddleware.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Infrastructure/Authentication/ScopedJobCallbackAuthenticationTests.cs'
       - 'src/Honua.Protocols.GeoServices/GPServer/**'
       - 'tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/**'
       - 'tests/dotnet/Honua.Geoprocessing.UnitTests/**'
@@ -43,6 +46,11 @@ jobs:
             filter: FullyQualifiedName~GeoprocessingJobTerminalServiceTests|FullyQualifiedName~AdminApiKeyEndpointsTests|FullyQualifiedName~Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario
             required_classes: GeoprocessingJobTerminalServiceTests,AdminApiKeyEndpointsTests
             additional_method: Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario
+          - name: scoped-callback-http-authorization
+            project: tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+            filter: FullyQualifiedName~ScopedJobCallbackAuthenticationTests
+            source: tests/dotnet/Honua.Server.Tests/Infrastructure/Authentication/ScopedJobCallbackAuthenticationTests.cs
+            prefix: ''
           - name: soap-durable-runtime
             project: tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj
             filter: FullyQualifiedName~SoapScopedAPIKey_|FullyQualifiedName~SoapArea_WithProductionExecutor|FullyQualifiedName~SoapJobOperation_OtherCaller|FullyQualifiedName~GetJobStatus_ProgressHint|FullyQualifiedName~GetJobStatus_InvalidProgressHint|FullyQualifiedName~OtherJobOperations_ProgressHint

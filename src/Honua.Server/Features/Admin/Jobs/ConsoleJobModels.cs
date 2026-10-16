@@ -127,6 +127,10 @@ internal sealed record ConsoleJobStage
 
 internal sealed record ConsoleJobStepsResponse
 {
+    public int TotalCount { get; init; }
+    public bool Truncated { get; init; }
+    public int DroppedCount { get; init; }
+
     public required string JobId { get; init; }
     public string? CorrelationId { get; init; }
     public required string State { get; init; }

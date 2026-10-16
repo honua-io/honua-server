@@ -1,0 +1,39 @@
+name: GP Custom Code Runtime
+
+on:
+  pull_request:
+    paths:
+      - 'docker/worker-customcode-*/**'
+      - '.github/workflows/gp-customcode-runtime.yml'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  harnesses:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Python production transport and harness regression tests
+        working-directory: docker/worker-customcode-python/harness
+        run: |
+          python -m pip install -e ".[test]"
+          PYTHONPATH=. python -m pytest tests -ra --junitxml=../../../artifacts/customcode-python.xml
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: .NET production transport and harness regression tests
+        run: dotnet test docker/worker-customcode-dotnet/harness/tests/Honua.CustomCode.Harness.Tests/Honua.CustomCode.Harness.Tests.csproj --configuration Release --logger 'trx;LogFileName=customcode-dotnet.trx' --results-directory artifacts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: customcode-runtime-tests
+          path: artifacts
+          if-no-files-found: error

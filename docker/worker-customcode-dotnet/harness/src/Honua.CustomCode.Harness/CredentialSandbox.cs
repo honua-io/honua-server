@@ -3,17 +3,11 @@
 
 namespace Honua.CustomCode.Harness;
 
-/// <summary>
-/// Credential-stripping + scoped Honua client construction. The harness builds the
-/// scoped client from <c>HONUA_JOB_TOKEN</c> and then SCRUBS the process environment
-/// <em>before</em> activating user code, so a tool cannot read the raw scoped token nor
-/// reach the ECS/Batch task role via the container credential provider or IMDS.
-/// </summary>
+/// <summary>Environment hygiene and scoped client construction.</summary>
 /// <remarks>
-/// This is the .NET mirror of the Python harness's <c>sandbox.py</c>. The only
-/// capability the tool keeps to talk to Honua is the pre-authed scoped client whose
-/// token is least-privilege and job-bound. AWS SDK calls the user makes then fall back
-/// to whatever (if anything) the operator left in place — by default nothing.
+/// Removing environment entries is not a hostile-code security boundary. Same-process code
+/// can inspect its intended job capability; deployment must provide no cloud task credentials.
+/// The server enforces that capability's frozen scope and current running job attempt.
 /// </remarks>
 public static class CredentialSandbox
 {
@@ -97,11 +91,13 @@ public static class CredentialSandbox
     /// <param name="baseUrl">The Honua API base URL.</param>
     /// <param name="jobToken">The scoped, job-bound bearer token.</param>
     /// <param name="clientFactory">An injectable factory (for tests). Defaults to the real SDK wiring.</param>
+    /// <param name="jobId">Required job context for the production SDK factory.</param>
     /// <returns>The constructed scoped client (opaque to the harness).</returns>
     public static object BuildScopedClient(
         string baseUrl,
         string jobToken,
-        Func<string, string, object>? clientFactory = null)
+        Func<string, string, object>? clientFactory = null,
+        string? jobId = null)
     {
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
@@ -113,7 +109,8 @@ public static class CredentialSandbox
             throw new ArgumentException("jobToken is required to build the scoped client.", nameof(jobToken));
         }
 
-        clientFactory ??= ScopedHonuaClientFactory.Create;
-        return clientFactory(baseUrl, jobToken);
+        return clientFactory is not null
+            ? clientFactory(baseUrl, jobToken)
+            : ScopedHonuaClientFactory.Create(baseUrl, jobToken, jobId ?? throw new ArgumentException("jobId is required for the production SDK client.", nameof(jobId)));
     }
 }

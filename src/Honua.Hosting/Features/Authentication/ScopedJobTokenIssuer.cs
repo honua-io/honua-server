@@ -90,6 +90,7 @@ internal sealed partial class ScopedJobTokenIssuer(
             // re-derived from a callback-supplied value (invariant #2).
             TenantId = request.TenantId,
             JobId = request.JobId.Trim(),
+            Attempt = request.Attempt,
             Roles = claims.Roles.ToArray(),
             Permissions = claims.Permissions.ToArray(),
             ExpiresAt = request.ExpiresAt,
@@ -133,7 +134,7 @@ internal sealed partial class ScopedJobTokenIssuer(
         }
 
         var principal = ProjectPrincipal(record);
-        return new ScopedJobTokenValidation(principal, record.JobId, record.ExpiresAt);
+        return new ScopedJobTokenValidation(principal, record.JobId, record.ExpiresAt) { Attempt = record.Attempt };
     }
 
     /// <inheritdoc />
@@ -342,6 +343,8 @@ internal sealed class ScopedJobTokenRecord
     public string? TenantId { get; init; }
 
     public required string JobId { get; init; }
+
+    public int Attempt { get; init; }
 
     public required string[] Roles { get; init; }
 
