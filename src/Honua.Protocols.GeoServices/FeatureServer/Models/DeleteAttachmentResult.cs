@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
 /// <summary>
@@ -26,6 +28,7 @@ public sealed class DeleteAttachmentResult
     /// <summary>
     /// Error information when the attachment could not be deleted.
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public EditError? Error { get; init; }
 }
 
