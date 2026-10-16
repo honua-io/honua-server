@@ -36,8 +36,8 @@ public sealed class CustomCodeBatchBoundaryTests
             case "ec2": definition.PlatformCapabilities = ["EC2"]; break;
             case "secret": definition.ContainerProperties.Secrets = [new Secret { Name = "TOKEN", ValueFrom = "secret" }]; break;
             case "root": definition.ContainerProperties.User = "0"; break;
-            case "static-key": definition.ContainerProperties.Environment = [new KeyValuePair { Name = "AWS_SECRET_ACCESS_KEY", Value = "fake" }]; break;
-            case "metadata-uri": definition.ContainerProperties.Environment = [new KeyValuePair { Name = "AWS_CONTAINER_CREDENTIALS_FULL_URI", Value = "http://metadata.invalid" }]; break;
+            case "static-key": definition.ContainerProperties.Environment = [new Amazon.Batch.Model.KeyValuePair { Name = "AWS_SECRET_ACCESS_KEY", Value = "fake" }]; break;
+            case "metadata-uri": definition.ContainerProperties.Environment = [new Amazon.Batch.Model.KeyValuePair { Name = "AWS_CONTAINER_CREDENTIALS_FULL_URI", Value = "http://metadata.invalid" }]; break;
             case "volume": definition.ContainerProperties.Volumes = [new Volume { Name = "host" }]; break;
         }
         Assert.Throws<InvalidOperationException>(() => AwsSdkBatchJobClient.ValidateCredentialFreeCustomCodeDefinition(definition, []));
