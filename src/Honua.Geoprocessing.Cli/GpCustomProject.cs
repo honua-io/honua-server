@@ -89,7 +89,8 @@ public sealed record GpProjectManifest
         var document = new YamlStream();
         try
         {
-            document.Load(new StringReader(yaml));
+            using var reader = new StringReader(yaml);
+            document.Load(reader);
             if (document.Documents.Count == 1 && document.Documents[0].RootNode is YamlMappingNode root &&
                 root.Children.TryGetValue(new YamlScalarNode("schema"), out var schemaNode) &&
                 schemaNode is YamlScalarNode { Value: Schema })
