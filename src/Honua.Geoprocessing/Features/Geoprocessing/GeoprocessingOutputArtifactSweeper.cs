@@ -7,6 +7,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
@@ -41,7 +42,8 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
     IGeoprocessingOutputObjectStore store,
     IExecutionJobStore jobStore,
     IOptionsMonitor<GeoprocessingOutputStagingOptions> options,
-    ILogger<GeoprocessingOutputArtifactSweeper> logger) : BackgroundService
+    ILogger<GeoprocessingOutputArtifactSweeper> logger,
+    IServiceScopeFactory? workspaceScopes = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -104,6 +106,10 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
                         continue;
                     }
 
+                    if (await HasWorkspaceReferenceAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false))
+                    {
+                        continue;
+                    }
                     await store.DeleteAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false);
                     deleted++;
                     Log.OrphanDeleted(logger, staged.ObjectKey);
@@ -160,6 +166,10 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
             return false;
         }
 
+        if (await HasWorkspaceReferenceAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
         var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
         if (job is null)
         {
@@ -185,6 +195,13 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
         // Queued/Provisioning/Running: reclaim only staging from provably stale
         // attempts. The current attempt (or a future one) is never touched.
         return attemptNumber < job.AttemptCount;
+    }
+
+    private async Task<bool> HasWorkspaceReferenceAsync(string objectKey, CancellationToken cancellationToken)
+    {
+        using var scope = workspaceScopes?.CreateScope();
+        return scope?.ServiceProvider.GetService<IArtifactStore>() is IWorkspaceStreamReferenceStore references
+            && await references.HasRetainedStreamAsync(objectKey, store.StoreReference, cancellationToken).ConfigureAwait(false);
     }
 
     private static bool IsReferencedByJob(ExecutionJobRecord job, string objectKey)

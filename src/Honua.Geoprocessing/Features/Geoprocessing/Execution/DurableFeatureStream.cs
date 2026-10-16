@@ -13,6 +13,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Security;
 using NetTopologySuite.Features;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -31,6 +32,8 @@ internal sealed record DurableFeatureStream
     public required long Count { get; init; }
     public required long Bytes { get; init; }
     public required string Sha256 { get; init; }
+    public string? WorkspaceId { get; init; }
+    public string? WorkspaceArtifactId { get; init; }
 
     public string Serialize() => Prefix + Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(this, DurableFeatureStreamJsonContext.Default.DurableFeatureStream));
 
@@ -64,6 +67,7 @@ internal sealed record DurableFeatureStream
         IGeoprocessingOutputObjectStore store,
         GeoprocessingOutputStagingOptions options,
         long maximumBytes = MaximumBytes,
+        IServiceScopeFactory? workspaceScopes = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (!TryParse(reference, out var descriptor) || descriptor!.Bytes > maximumBytes
@@ -75,15 +79,40 @@ internal sealed record DurableFeatureStream
             throw new InvalidOperationException("The shared feature stream identity or configured store does not match.");
         }
 
-        var producer = await jobs.GetAsync(descriptor.JobId, cancellationToken).ConfigureAwait(false);
-        var owner = authorizedJob.Audit.SubmitterSecurityContext;
-        if (producer is null || producer.AttemptCount != descriptor.Attempt
-            || (producer.Status != ExecutionJobStatus.Succeeded
-                && (producer.Status != ExecutionJobStatus.Running || producer.OperationId != authorizedJob.OperationId))
-            || !producer.ArtifactReferences.Contains(reference, StringComparer.Ordinal)
-            || !JobOwnershipSecurity.MatchesSubmitter(producer.Audit, owner?.OwnerActorId, owner?.TenantId))
+        if (descriptor.WorkspaceArtifactId is not null || descriptor.WorkspaceId is not null)
         {
-            throw new InvalidOperationException("The feature stream is not a published output owned by this job's submitter.");
+            using var scope = workspaceScopes?.CreateScope();
+            var artifacts = scope?.ServiceProvider.GetService<IArtifactStore>();
+            var workspaces = scope?.ServiceProvider.GetService<IWorkspaceStore>();
+            var artifact = artifacts is null || descriptor.WorkspaceArtifactId is null ? null
+                : await artifacts.GetAsync(descriptor.WorkspaceArtifactId, cancellationToken).ConfigureAwait(false);
+            var workspace = workspaces is null || descriptor.WorkspaceId is null ? null
+                : await workspaces.GetAsync(descriptor.WorkspaceId, cancellationToken).ConfigureAwait(false);
+            var owner = authorizedJob.Audit.SubmitterSecurityContext;
+            var workspaceOwner = owner?.WorkspaceOwnerId ?? authorizedJob.Audit.RequestedBy;
+            if (artifact is null || workspace is null || artifact.WorkspaceId != workspace.WorkspaceId
+                || artifact.State != ArtifactLifecycleState.Available || artifact.Uri != reference
+                || !artifact.Metadata.TryGetValue(WorkspaceStreamProvenance.Published, out var marker) || marker != "v1"
+                || workspace.State != WorkspaceLifecycleState.Active || workspace.IsExpired(DateTimeOffset.UtcNow)
+                || workspace.Kind is not (WorkspaceKind.Persistent or WorkspaceKind.SavedLayer)
+                || string.IsNullOrWhiteSpace(workspaceOwner) || workspace.OwnerId != workspaceOwner
+                || workspace.ScopeId != owner?.TenantId)
+            {
+                throw new InvalidOperationException("The promoted feature stream is not authorized by an active durable workspace.");
+            }
+        }
+        else
+        {
+            var producer = await jobs.GetAsync(descriptor.JobId, cancellationToken).ConfigureAwait(false);
+            var owner = authorizedJob.Audit.SubmitterSecurityContext;
+            if (producer is null || producer.AttemptCount != descriptor.Attempt
+                || (producer.Status != ExecutionJobStatus.Succeeded
+                    && (producer.Status != ExecutionJobStatus.Running || producer.OperationId != authorizedJob.OperationId))
+                || !producer.ArtifactReferences.Contains(reference, StringComparer.Ordinal)
+                || !JobOwnershipSecurity.MatchesSubmitter(producer.Audit, owner?.OwnerActorId, owner?.TenantId))
+            {
+                throw new InvalidOperationException("The feature stream is not a published output owned by this job's submitter.");
+            }
         }
 
         var info = await store.GetInfoAsync(descriptor.ObjectKey, cancellationToken).ConfigureAwait(false);

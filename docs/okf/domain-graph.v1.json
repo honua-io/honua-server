@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:a41436e8a22b5d2e8d5bce2552bff94e0a2161d6f5f14131c724563202459203",
+  "bundleDigest": "sha256:cfc8a3927541680968c23b95522ba3150fd476b388457bc720eb95d73712f533",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7720,7 +7720,7 @@
     {
       "id": "reference/gp-managed-feature-streams",
       "path": "reference/gp-managed-feature-streams.md",
-      "documentDigest": "sha256:45c704b0c5f36a53b7b2d6f0f2c3d2f15ffb7058589af0b8b6906f18dbfd7b88",
+      "documentDigest": "sha256:58ffd04b5432003e5827162146f032bbd696f67bfda0da4c952e0099cade9b74",
       "metadata": {
         "type": "reference",
         "title": "Managed GP feature streams",

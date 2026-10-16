@@ -31,6 +31,10 @@ internal static class FeatureStreamPublisher
         ArgumentNullException.ThrowIfNull(outputRootDirectory);
         ArgumentOutOfRangeException.ThrowIfNegative(inlineThresholdBytes);
         inlineThresholdBytes = Math.Min(inlineThresholdBytes, FeatureStreamArtifact.DefaultInlineThresholdBytes);
+        if (executionContext is ManagedFeatureStreamContext managed)
+        {
+            inlineThresholdBytes = Math.Min(inlineThresholdBytes, managed.Options.MaxInlineArtifactBytes);
+        }
 
         var buffer = new List<(IFeature Feature, string Line)>();
         var writer = GeoJsonArtifactCodec.CreateWriter();

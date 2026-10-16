@@ -163,6 +163,124 @@ public sealed class DurableFeatureStreamTests : IDisposable
         Directory.EnumerateFiles(_staging.LocalRootPath!, "*.ndjson", SearchOption.AllDirectories).Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task ConfiguredInlineCeiling_StagesSmallStreamAboveOperatorLimit()
+    {
+        _staging.MaxInlineArtifactBytes = 1024;
+        GeoprocessingOutputStoreTestHelper.Attest(_staging);
+        var context = new ManagedFeatureStreamContext(Substitute.For<IJobExecutionContext>(), SourceJob(), NewStore(), _jobs, _staging);
+        var feature = new Feature(null, new AttributesTable { { "payload", new string('x', 2048) } });
+        var result = await FeatureStreamPublisher.PublishAsync(One(feature), "source.geojson", 1, _producerRoot,
+            "producer", CancellationToken.None, executionContext: context);
+        DurableFeatureStream.TryParse(result.ArtifactReference, out var receipt).Should().BeTrue();
+        receipt!.Bytes.Should().BeGreaterThan(1024).And.BeLessThan(FeatureStreamArtifact.DefaultInlineThresholdBytes);
+    }
+
+    [UnitTest]
+    public async Task PromotedWorkspaceStream_AfterProducerExpiry_RemainsOwnedReadableAndRetainedUntilCleanup()
+    {
+        var produced = await Produce();
+        var producer = _records["producer"];
+        var store = NewStore();
+        DurableFeatureStream.TryParse(produced.Reference, out var descriptor).Should().BeTrue();
+        var artifacts = Substitute.For<IArtifactStore, IAtomicWorkspaceStore, IWorkspaceStreamReferenceStore>();
+        var rows = new Dictionary<string, Artifact>();
+        var workspaces = Substitute.For<IWorkspaceStore>();
+        var source = new Workspace
+        {
+            WorkspaceId = "scratch", Kind = WorkspaceKind.Scratch, Label = "scratch", OwnerId = "alice",
+            ScopeId = "tenant-a", State = WorkspaceLifecycleState.Active, CreatedAt = DateTimeOffset.UtcNow,
+        };
+        var target = source with { WorkspaceId = "saved", Kind = WorkspaceKind.Persistent };
+        workspaces.GetAsync("scratch", Arg.Any<CancellationToken>()).Returns(source);
+        workspaces.GetAsync("saved", Arg.Any<CancellationToken>()).Returns(target);
+        artifacts.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => rows.GetValueOrDefault(call.ArgAt<string>(0)));
+        var atomic = (IAtomicWorkspaceStore)artifacts;
+        atomic.PublishAsync(Arg.Any<Artifact>(), Arg.Any<bool>(), Arg.Any<WorkspaceQuota>(),
+                Arg.Any<Func<CancellationToken, Task<bool>>>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var artifact = call.ArgAt<Artifact>(0);
+                if (!await call.ArgAt<Func<CancellationToken, Task<bool>>>(3)(CancellationToken.None))
+                {
+                    return null;
+                }
+                rows[artifact.ArtifactId] = artifact;
+                return artifact;
+            });
+        atomic.CreateArtifactWithQuotaAsync(Arg.Any<Artifact>(), Arg.Any<WorkspaceQuota>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var artifact = call.ArgAt<Artifact>(0);
+                rows[artifact.ArtifactId] = artifact;
+                return artifact;
+            });
+        artifacts.TransitionStateAsync(Arg.Any<string>(), Arg.Any<ArtifactLifecycleState>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var id = call.ArgAt<string>(0);
+                rows[id] = rows[id] with { State = call.ArgAt<ArtifactLifecycleState>(1) };
+                return true;
+            });
+        ((IWorkspaceStreamReferenceStore)artifacts).HasRetainedStreamAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => rows.Values.Any(row => row.Metadata.GetValueOrDefault(WorkspaceStreamProvenance.ObjectKey) == call.ArgAt<string>(0)
+                && row.Metadata.GetValueOrDefault(WorkspaceStreamProvenance.StoreReference) == call.ArgAt<string>(1)));
+        var retention = Substitute.For<IRetentionPolicyEvaluator>();
+        retention.IsEligibleForPromotion(WorkspaceKind.Scratch, WorkspaceLifecycleState.Active).Returns(true);
+        var lifecycle = new WorkspaceLifecycleService(workspaces, artifacts, retention, Options.Create(new WorkspaceOptions()),
+            TimeProvider.System, NullLogger<WorkspaceLifecycleService>.Instance);
+        var published = await lifecycle.PublishArtifactAsync(new WorkspaceArtifactPublication("scratch", "producer", 0,
+            ArtifactKind.FeatureLayer, "features", false, produced.Reference), _ => Task.FromResult(true));
+        published!.SizeBytes.Should().Be(descriptor!.Bytes);
+        var promotion = await lifecycle.PromoteArtifactAsync(new ArtifactPromotionRequest
+        {
+            SourceWorkspaceId = "scratch", TargetWorkspaceId = "saved", ArtifactId = published.ArtifactId,
+        });
+        promotion.Succeeded.Should().BeTrue();
+        var promoted = rows[promotion.PromotedArtifactId!];
+        promoted.Uri.Should().NotBe(produced.Reference);
+        _records.Remove("producer");
+        await using var services = new ServiceCollection().AddSingleton(artifacts).AddSingleton(workspaces).BuildServiceProvider();
+        var scopes = services.GetRequiredService<IServiceScopeFactory>();
+        (await Read(promoted.Uri!, producer, store, scopes)).Should().ContainSingle();
+        await FluentActions.Awaiting(() => Read(promoted.Uri!, Job("other", "source.geojson", [], "bob"), store, scopes))
+            .Should().ThrowAsync<InvalidOperationException>();
+        await FluentActions.Awaiting(() => Read(promoted.Uri!, Job("other", "source.geojson", [], tenant: "tenant-b"), store, scopes))
+            .Should().ThrowAsync<InvalidOperationException>();
+        await FluentActions.Awaiting(() => lifecycle.AddArtifactAsync("saved", ArtifactKind.FeatureLayer, "forged", promoted.Uri))
+            .Should().ThrowAsync<ArgumentException>();
+        await FluentActions.Awaiting(() => lifecycle.AddArtifactAsync("saved", ArtifactKind.FeatureLayer, "forged-marker",
+            metadata: new Dictionary<string, string> { [WorkspaceStreamProvenance.Published] = "v1" }))
+            .Should().ThrowAsync<ArgumentException>();
+
+        var path = Path.Join(_staging.LocalRootPath!, descriptor.ObjectKey);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-8));
+        // Remove the read lease so retention, not the preceding read, decides the sweep.
+        var fakeStore = Substitute.For<IGeoprocessingOutputObjectStore>();
+        fakeStore.StoreReference.Returns(store.StoreReference);
+        fakeStore.ListAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Staged(descriptor));
+        fakeStore.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        var sweeper = new GeoprocessingOutputArtifactSweeper(fakeStore, _jobs, Monitor(_staging),
+            NullLogger<GeoprocessingOutputArtifactSweeper>.Instance, scopes);
+        (await sweeper.SweepOnceAsync(CancellationToken.None)).Deleted.Should().Be(0);
+        rows.Clear();
+        (await sweeper.SweepOnceAsync(CancellationToken.None)).Deleted.Should().Be(1);
+        await FluentActions.Awaiting(() => Read(promoted.Uri!, producer, store, scopes)).Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    private static async IAsyncEnumerable<GeoprocessingStagedObjectInfo> Staged(DurableFeatureStream descriptor)
+    {
+        yield return new GeoprocessingStagedObjectInfo(descriptor.ObjectKey, descriptor.Bytes, DateTimeOffset.UtcNow.AddDays(-8));
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<IFeature> One(IFeature feature)
+    {
+        yield return feature;
+        await Task.CompletedTask;
+    }
+
     private static async IAsyncEnumerable<IFeature> Interrupted(IFeature feature)
     {
         yield return feature;
@@ -197,10 +315,10 @@ public sealed class DurableFeatureStreamTests : IDisposable
         return (result, reference!);
     }
 
-    private async Task<List<IFeature>> Read(string reference, ExecutionJobRecord authorized, IGeoprocessingOutputObjectStore store)
+    private async Task<List<IFeature>> Read(string reference, ExecutionJobRecord authorized, IGeoprocessingOutputObjectStore store, IServiceScopeFactory? workspaceScopes = null)
     {
         var features = new List<IFeature>();
-        await foreach (var feature in DurableFeatureStream.ReadAsync(reference, authorized, _jobs, store, _staging))
+        await foreach (var feature in DurableFeatureStream.ReadAsync(reference, authorized, _jobs, store, _staging, workspaceScopes: workspaceScopes))
         {
             features.Add(feature);
         }

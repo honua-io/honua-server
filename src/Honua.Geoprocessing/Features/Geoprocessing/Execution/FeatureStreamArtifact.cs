@@ -126,7 +126,7 @@ internal static class FeatureStreamArtifact
                 return false;
             }
 
-            stream = DurableFeatureStream.ReadAsync(reference, durable.Job, durable.Jobs, durable.Store, durable.Options);
+            stream = DurableFeatureStream.ReadAsync(reference, durable.Job, durable.Jobs, durable.Store, durable.Options, workspaceScopes: durable.WorkspaceScopes);
             return true;
         }
 

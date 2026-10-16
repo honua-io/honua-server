@@ -151,7 +151,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             try
             {
                 var streamContext = new ManagedFeatureStreamContext(effectiveContext, job, _outputStore, _jobStore,
-                    _stagingOptions?.CurrentValue ?? new GeoprocessingOutputStagingOptions());
+                    _stagingOptions?.CurrentValue ?? new GeoprocessingOutputStagingOptions(), _serviceScopeFactory);
                 result = await handler.ExecuteAsync(job, streamContext, cancellationToken).ConfigureAwait(false);
             }
             catch (TransformInputException ex)

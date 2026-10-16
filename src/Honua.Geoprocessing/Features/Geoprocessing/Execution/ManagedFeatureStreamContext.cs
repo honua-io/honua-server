@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -14,12 +15,14 @@ internal sealed class ManagedFeatureStreamContext(
     ExecutionJobRecord job,
     IGeoprocessingOutputObjectStore? store,
     IExecutionJobStore? jobs,
-    GeoprocessingOutputStagingOptions options) : IJobExecutionContext
+    GeoprocessingOutputStagingOptions options,
+    IServiceScopeFactory? workspaceScopes = null) : IJobExecutionContext
 {
     public ExecutionJobRecord Job { get; } = job;
     public IGeoprocessingOutputObjectStore? Store { get; } = store;
     public IExecutionJobStore? Jobs { get; } = jobs;
     public GeoprocessingOutputStagingOptions Options { get; } = options;
+    public IServiceScopeFactory? WorkspaceScopes { get; } = workspaceScopes;
     public string OperationId => inner.OperationId;
 
     public async Task<string> StageAsync(string path, long count, long bytes, CancellationToken cancellationToken)

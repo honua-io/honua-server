@@ -925,7 +925,7 @@ internal static class JobEndpoints
 
         try
         {
-            var features = DurableFeatureStream.ReadAsync(reference, job, jobs, store, options, maxBytes, context.RequestAborted);
+            var features = DurableFeatureStream.ReadAsync(reference, job, jobs, store, options, maxBytes, context.RequestServices.GetService<IServiceScopeFactory>(), context.RequestAborted);
             using var body = new MemoryStream();
             using var writer = new Utf8JsonWriter(body);
             var featureWriter = GeoJsonArtifactCodec.CreateWriter();
