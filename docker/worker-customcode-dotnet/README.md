@@ -175,3 +175,5 @@ a fake git/build/SDK-client/uploader. Run:
 cd docker/worker-customcode-dotnet/harness
 dotnet test Honua.CustomCode.slnx --configuration Release -p:NuGetAudit=false
 ```
+
+Before the first typed SDK operation, the harness authenticates the job capability at `/healthz/live` with a 30-second startup budget. This waits for the provider-to-server Running transition using ordinary HTTP status codes, including when the eventual operation uses GeoServices error envelopes. Only the read-only readiness probe is retried; the SDK operation is sent once.

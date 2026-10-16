@@ -132,3 +132,5 @@ and the full flow with a fake SDK/git/pip/uploader. Run:
 cd docker/worker-customcode-python/harness
 with-build-lock python3 -m pytest
 ```
+
+Before the first typed SDK operation, the harness authenticates the job capability at `/healthz/live` with a 30-second startup budget. This waits for the provider-to-server Running transition using ordinary HTTP status codes, including when the eventual operation uses GeoServices error envelopes. Only the read-only readiness probe is retried; the SDK operation is sent once.

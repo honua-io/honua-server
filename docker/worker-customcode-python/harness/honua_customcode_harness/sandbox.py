@@ -86,17 +86,35 @@ def _default_client_factory(base_url: str, job_token: str, job_id: str) -> Any:
                 authority.scheme, authority.host, authority.port
             ):
                 request.headers["X-Honua-Job-Id"] = job_id
-            # Authentication rejects before executing the operation. A worker can start
-            # before the reconciler persists Running; wait within a fixed startup budget.
-            request.read()  # Cache SDK request bytes so a denied write can be replayed.
-            deadline = time.monotonic() + 30
-            while True:
-                response = super().handle_request(request)
-                if not self._startup or response.status_code not in (401, 403) or time.monotonic() >= deadline:
-                    self._startup = False
-                    return response
-                response.close()
-                time.sleep(min(1, max(0, deadline - time.monotonic())))
+            # GeoServices returns HTTP 200 error envelopes. Wait for the explicit
+            # credential to authenticate on a plain-status route before any operation;
+            # readiness retries never replay a potentially side-effecting SDK request.
+            if self._startup:
+                deadline = time.monotonic() + 30
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise httpx.TimeoutException("The job capability did not become ready within 30 seconds.")
+                    original_timeouts = request.extensions.get("timeout", {})
+                    timeouts = {
+                        name: min(remaining, original_timeouts[name]) if original_timeouts.get(name) is not None else remaining
+                        for name in ("connect", "read", "write", "pool")
+                    }
+                    readiness = httpx.Request(
+                        "GET", base_url.rstrip("/") + "/healthz/live",
+                        headers={"Authorization": f"Bearer {job_token}", "X-Honua-Job-Id": job_id},
+                        extensions={"timeout": timeouts},
+                    )
+                    response = super().handle_request(readiness)
+                    status = response.status_code
+                    response.close()
+                    if status not in (401, 403):
+                        if not 200 <= status < 300:
+                            raise RuntimeError(f"Job capability readiness failed with HTTP {status}.")
+                        self._startup = False
+                        break
+                    time.sleep(min(1, max(0, deadline - time.monotonic())))
+            return super().handle_request(request)
 
     auth = StaticAuthProvider({"Authorization": f"Bearer {job_token}"})
     return HonuaClient(base_url, auth_provider=auth, transport=JobContextTransport())

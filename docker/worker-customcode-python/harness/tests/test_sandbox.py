@@ -89,10 +89,15 @@ def test_production_sdk_sends_scoped_context_over_http(startup_denial: bool) -> 
 
     seen: dict[str, str | None] = {}
     requests = 0
+    readiness_requests = 0
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            nonlocal requests
+            nonlocal requests, readiness_requests
+            if self.path == "/healthz/live":
+                readiness_requests += 1
+                assert self.headers.get("Authorization") == "Bearer capability"
+                assert self.headers.get("X-Honua-Job-Id") == "job-sdk"
             requests += 1
             if startup_denial and requests == 1:
                 self.send_response(401)
@@ -115,7 +120,7 @@ def test_production_sdk_sends_scoped_context_over_http(startup_denial: bool) -> 
     with HTTPServer(("127.0.0.1", 0), Handler) as server:
         server.timeout = 10
         def serve() -> None:
-            for _ in range(2 if startup_denial else 1):
+            for _ in range(3 if startup_denial else 2):
                 server.handle_request()
 
         thread = Thread(target=serve)
@@ -128,7 +133,8 @@ def test_production_sdk_sends_scoped_context_over_http(startup_denial: bool) -> 
         finally:
             thread.join(timeout=12)
         assert not thread.is_alive()
-    assert requests == (2 if startup_denial else 1)
+    assert requests == (3 if startup_denial else 2)
+    assert readiness_requests == (2 if startup_denial else 1)
     assert seen["authorization"] == "Bearer capability"
     assert seen["job"] == "job-sdk"
-    assert seen["path"]
+    assert seen["path"] != "/healthz/live"

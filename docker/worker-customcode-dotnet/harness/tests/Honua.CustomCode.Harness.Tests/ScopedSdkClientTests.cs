@@ -52,6 +52,20 @@ public sealed class ScopedSdkClientTests
             }
             await deniedStream.WriteAsync("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray(), cancellationToken);
         }
+        using (var readiness = await listener.AcceptTcpClientAsync(cancellationToken))
+        {
+            await using var readinessStream = readiness.GetStream();
+            using var readinessReader = new StreamReader(readinessStream, Encoding.ASCII, leaveOpen: true);
+            var readinessRequest = new StringBuilder();
+            while (await readinessReader.ReadLineAsync(cancellationToken) is { Length: > 0 } line)
+            {
+                readinessRequest.AppendLine(line);
+            }
+            readinessRequest.ToString().Should().Contain("GET /healthz/live ")
+                .And.Contain("Authorization: Bearer capability")
+                .And.Contain("X-Honua-Job-Id: job-typed-sdk");
+            await readinessStream.WriteAsync("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray(), cancellationToken);
+        }
         using var connection = await listener.AcceptTcpClientAsync(cancellationToken);
         await using var stream = connection.GetStream();
         using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);

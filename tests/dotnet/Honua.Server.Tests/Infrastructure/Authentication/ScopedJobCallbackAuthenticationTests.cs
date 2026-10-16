@@ -50,6 +50,9 @@ public sealed class ScopedJobCallbackAuthenticationTests
         using var fixture = await CallbackFixture.CreateAsync(JobResourceAccess.Read);
         using var client = fixture.CreateClient();
 
+        using var readiness = await client.GetAsync("/healthz/live");
+        readiness.StatusCode.Should().Be(HttpStatusCode.OK);
+
         using var allowed = await client.GetAsync(QueryPath);
         await ServiceRbacTestFixture.AssertStatusAsync(allowed, HttpStatusCode.OK);
         (await allowed.Content.ReadAsStringAsync()).Should().Contain("features").And.NotContain("\"error\"");

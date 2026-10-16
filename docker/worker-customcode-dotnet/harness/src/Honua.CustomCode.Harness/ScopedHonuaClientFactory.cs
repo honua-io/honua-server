@@ -67,29 +67,30 @@ public static class ScopedHonuaClientFactory
 
             request.Headers.Remove("X-Honua-Job-Id");
             request.Headers.Add("X-Honua-Job-Id", jobId);
-            // A new worker may run before the reconciler records Running. Retry only
-            // pre-operation authentication denials, with a fixed monotonic startup budget.
-            if (_startup && request.Content is not null)
+            // GeoServices expresses authentication errors as HTTP 200 envelopes. Probe
+            // the ordinary HTTP-status route before sending any SDK operation, so a
+            // queued-to-Running reconciliation delay never requires replaying a write.
+            if (_startup)
             {
-                await request.Content.LoadIntoBufferAsync(64L * 1024 * 1024, cancellationToken).ConfigureAwait(false);
-            }
-            var clock = System.Diagnostics.Stopwatch.StartNew();
-            while (true)
-            {
-                var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
-                if (!_startup || response.StatusCode is not (System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
-                    || clock.Elapsed >= TimeSpan.FromSeconds(30))
+                using var startupBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                startupBudget.CancelAfter(TimeSpan.FromSeconds(30));
+                var readinessUri = new Uri(origin.AbsoluteUri.TrimEnd('/') + "/healthz/live");
+                while (true)
                 {
-                    _startup = false;
-                    return response;
-                }
-                response.Dispose();
-                var remaining = TimeSpan.FromSeconds(30) - clock.Elapsed;
-                if (remaining > TimeSpan.Zero)
-                {
-                    await Task.Delay(remaining < TimeSpan.FromSeconds(1) ? remaining : TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+                    using var readiness = new HttpRequestMessage(HttpMethod.Get, readinessUri);
+                    readiness.Headers.Authorization = request.Headers.Authorization;
+                    readiness.Headers.Add("X-Honua-Job-Id", jobId);
+                    using var response = await base.SendAsync(readiness, startupBudget.Token).ConfigureAwait(false);
+                    if (response.StatusCode is not (System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden))
+                    {
+                        response.EnsureSuccessStatusCode();
+                        _startup = false;
+                        break;
+                    }
+                    await Task.Delay(TimeSpan.FromSeconds(1), startupBudget.Token).ConfigureAwait(false);
                 }
             }
+            return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
     }
 }
