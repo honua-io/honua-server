@@ -276,7 +276,7 @@ public sealed record GpProjectFile(string RelativePath, byte[] Contents);
 public static partial class GpCustomProjectScaffolder
 {
     /// <summary>The honua-samples commit the embedded templates were copied from.</summary>
-    public const string TemplateCommit = "56fa807d9ab4aef6dbdb10147f36bd8fb976040b";
+    public const string TemplateCommit = "9fb957cc54f78fc26761bfe4f945ff781008c0d0";
 
     /// <summary>The honua-samples repository.</summary>
     public const string TemplateSource = "honua-io/honua-samples";
@@ -867,6 +867,19 @@ public static class GpCustomProjectTester
         }
 
         var harnessDll = Path.Join(root, manifest.HarnessDll!);
+        // Build the executable as a root project into the declared launch directory.
+        // A transitive reference from a test project can copy the harness DLL while
+        // producing an incomplete executable dependency manifest (observed on macOS).
+        // Its own build must supply the complete runtime graph, including the SDK.
+        var harnessProject = Path.Join(harnessRoot, "docker", "worker-customcode-dotnet", "harness", "src", "Honua.CustomCode.Harness", "Honua.CustomCode.Harness.csproj");
+        var (harnessExit, harnessOut, harnessErr) = await RunProcessAsync(dotnet,
+            ["build", harnessProject, "-c", "Debug", "--nologo", "-v", "q", "-nodeReuse:false", "-p:UseSharedCompilation=false", "-o", Path.GetDirectoryName(harnessDll)!],
+            root, environment, cancellationToken).ConfigureAwait(false);
+        if (harnessExit != 0)
+        {
+            return new Command(null, [$"the local harness build failed: {Tail(string.IsNullOrWhiteSpace(harnessErr) ? harnessOut : harnessErr, 800)}"], environment);
+        }
+
         if (!File.Exists(harnessDll))
         {
             return new Command(null, [$"the build did not produce {manifest.HarnessDll}; the test project must reference the local harness."], environment);

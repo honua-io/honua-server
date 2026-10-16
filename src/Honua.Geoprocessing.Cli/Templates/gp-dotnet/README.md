@@ -103,11 +103,21 @@ in the custom-code worker image with the source mounted read-only:
 
 1. Build the image once from a honua-server checkout:
    `docker build -f docker/worker-customcode-dotnet/Dockerfile -t honua-worker-customcode-dotnet:local .`
-2. Build the process on the host (`dotnet build process/SummaryTool.csproj`),
-   then from this directory: `docker compose -f docker/compose.debug.yaml up`.
-3. Install `vsdbg` into the running container once (the official `getvsdbg`
-   script, target `/root/vsdbg`) and start `GP: attach to container`, which
-   attaches through `docker exec`. Receipts land in `.honua/container-runs`.
+2. Build the Linux process output:
+   `dotnet build process/SummaryTool.csproj -r linux-x64 --self-contained false -o .honua/container-build`.
+3. Create `.honua/container-runs` and `.honua/vsdbg` on the host. On Linux/macOS,
+   set `GP_DEBUG_UID=$(id -u)` and `GP_DEBUG_GID=$(id -g)` in your shell and export
+   both variables so the container can write these directories as your user.
+4. Start the idle debug container:
+   `docker compose -f docker/compose.debug.yaml up -d`.
+   Install Microsoft's `vsdbg` with the official `getvsdbg` script into
+   `/work/vsdbg` inside that container; this directory is mounted from the host
+   and is writable by the selected user. The debugger is a local prerequisite,
+   not part of the production image.
+5. Start `GP: run in container` in VS Code. It launches the harness through
+   `docker exec` after the debugger connects, so a short fixture cannot finish
+   before you attach. Receipts land in `.honua/container-runs`.
+6. Stop the debug container with `docker compose -f docker/compose.debug.yaml down`.
 
 The worker image is not published yet, so CI for this template exercises the
 host path only; the container recipe is documented, not CI-verified.

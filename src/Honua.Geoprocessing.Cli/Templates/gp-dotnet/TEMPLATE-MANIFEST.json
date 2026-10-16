@@ -9,8 +9,8 @@
     },
     {
       "path": ".vscode/launch.json",
-      "sha256": "3067aa282c644cb6be683a4742017139a5a9609043d5f729ba60b78fcf51c9bc",
-      "sizeBytes": 1578
+      "sha256": "c55b5d03baa8f67accbda344d509552d9c16c321f5dcf89293267f84f6b53771",
+      "sizeBytes": 1994
     },
     {
       "path": ".vscode/tasks.json",
@@ -24,8 +24,8 @@
     },
     {
       "path": "docker/compose.debug.yaml",
-      "sha256": "abb96ad132c1aff97f2feefb130e886f156377313dc1320bba40dc5601fe9df2",
-      "sizeBytes": 1297
+      "sha256": "348851fdef95f2d0d3fd609c334d57aa535fc43236eb6862607065111aac7d65",
+      "sizeBytes": 532
     },
     {
       "path": "expected/golden.json",
@@ -69,8 +69,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "b97a16f6721435ad62b460c784a81565088b6073f61f30d785842abbc1c7c064",
-      "sizeBytes": 6029
+      "sha256": "7a46a39f13718b002451510eaa9c9554edd588bb2ecffc2924dfd6f5cd875f4b",
+      "sizeBytes": 6692
     },
     {
       "path": "schema/inputs.schema.json",
