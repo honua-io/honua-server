@@ -138,7 +138,7 @@ internal sealed class GpProcessDescriptor
             Check(!string.IsNullOrWhiteSpace(include) && !Path.IsPathRooted(include) && !include.Split('/', '\\').Contains(".."), $"artifacts.include entry '{include}' must be a relative path inside the project");
         }
 
-        Check(Validation?.Receipts is { Count: > 0 }, "validation.receipts must name at least one receipt file that the release proves passed");
+        Check(Validation?.Receipts is { Count: > 0 }, "validation.receipts must name at least one candidate-bound honua.gp-validation/v1 receipt");
         foreach (var receipt in Validation?.Receipts ?? [])
         {
             Check(!string.IsNullOrWhiteSpace(receipt.Name), "validation.receipts[].name is required");

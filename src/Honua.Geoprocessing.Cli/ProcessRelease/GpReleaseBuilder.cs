@@ -142,11 +142,22 @@ internal static class GpReleaseBuilder
             var receiptPath = ResolveProjectFile(projectDirectory, receipt.Path!, $"validation.receipts[{receipt.Name}]", errors);
             if (receiptPath is not null)
             {
-                sourcePaths.Add(receiptPath);
+                // Receipts are produced after the source commit and must not become source inputs
+                // (binding a committed receipt to its own commit would be self-referential).
+                if (sourcePaths.Contains(receiptPath, StringComparer.Ordinal))
+                {
+                    errors.Add($"validation.receipts[{receipt.Name}] must not be included in the source artifact or other release inputs");
+                }
+                var receiptDigest = GpValidationReceipt.Validate(receiptPath, receipt.Name!, sourceSha,
+                    runtimeImage is null ? string.Empty : runtimeImage[(runtimeImage.IndexOf('@', StringComparison.Ordinal) + 1)..], errors);
+                if (receiptDigest is null)
+                {
+                    continue;
+                }
                 receipts.Add(new GpReleaseValidationReceipt
                 {
                     Name = receipt.Name!,
-                    Sha256 = GpProcessReleaseLock.Sha256Of(File.ReadAllBytes(receiptPath)),
+                    Sha256 = receiptDigest,
                     Status = "pass",
                 });
             }
