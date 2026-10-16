@@ -368,6 +368,10 @@ internal sealed partial class ExecutionJobReconciler(
         CancellationToken cancellationToken)
     {
         var observation = await backend.ObserveAsync(job, cancellationToken).ConfigureAwait(false);
+        if (observation.RecoveredAttemptCount is { } recoveredAttempt && recoveredAttempt > job.AttemptCount)
+        {
+            job = job with { AttemptCount = recoveredAttempt };
+        }
         var retried = await TryRequeueFailedRemoteJobAsync(job, backend, observation, cancellationToken).ConfigureAwait(false);
         if (retried != null)
         {
@@ -379,6 +383,7 @@ internal sealed partial class ExecutionJobReconciler(
 
     private static ExecutionJobRecord ApplyObservation(ExecutionJobRecord job, BatchComputeObservation observation)
     {
+        var newAttemptCount = Math.Max(job.AttemptCount, observation.RecoveredAttemptCount ?? job.AttemptCount);
         var newProviderOpId = observation.ProviderOperationId ?? job.ProviderOperationId;
         var newPercent = observation.PercentComplete ?? job.PercentComplete;
         var newPhase = observation.Message ?? job.CurrentPhase;
@@ -386,7 +391,7 @@ internal sealed partial class ExecutionJobReconciler(
             ? observation.Message ?? job.ErrorMessage
             : job.ErrorMessage;
 
-        if (observation.Status == job.Status &&
+        if (newAttemptCount == job.AttemptCount && observation.Status == job.Status &&
             string.Equals(newProviderOpId, job.ProviderOperationId, StringComparison.Ordinal) &&
             Math.Abs((newPercent ?? 0d) - (job.PercentComplete ?? 0d)) < 0.0001 &&
             string.Equals(newPhase, job.CurrentPhase, StringComparison.Ordinal) &&
@@ -399,6 +404,7 @@ internal sealed partial class ExecutionJobReconciler(
         return job with
         {
             Status = observation.Status,
+            AttemptCount = newAttemptCount,
             UpdatedAt = now,
             CompletedAt = IsTerminal(observation.Status) ? now : job.CompletedAt,
             ProviderOperationId = newProviderOpId,

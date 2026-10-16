@@ -107,13 +107,14 @@ def test_e2e_events_path_and_attempt_come_from_env(tmp_path) -> None:
     assert [e["phase"] for e in events if e["kind"] == "phase"] == ["inputs", "source", "dependencies", "client", "execute", "upload"]
 
 
-def test_e2e_tool_failure_writes_failure_and_terminal_without_upload(tmp_path) -> None:
+def test_e2e_tool_failure_uploads_failure_and_terminal_journal(tmp_path) -> None:
     FakeUploader.instances.clear()
     tool = "from honua_customcode_harness import GpResult" + NL + "def execute(context):" + NL + "    raise ValueError('broken')" + NL
     rc = run(env=_env(tmp_path), source_root=tmp_path / "src", workdir=tmp_path / "out", client_factory=lambda b, t: FakeClient(),
              uploader_factory=FakeUploader, clone_fn=_make_clone_fn(tool), restore_fn=lambda root, manifest: None)
     assert rc == EXIT_TOOL_FAILED
-    assert FakeUploader.instances == []
+    assert len(FakeUploader.instances) == 1
+    assert any(a.name == "honua-events.v1.jsonl" for a in FakeUploader.instances[0].uploaded)
     events = [json.loads(line) for line in (tmp_path / "out" / "honua-events.v1.jsonl").read_text(encoding="utf-8").splitlines()]
     assert events[-2]["kind"] == "failure" and events[-2]["error"]["type"] == "ValueError"
     assert events[-1]["kind"] == "terminal" and events[-1]["status"] == "failed" and events[-1]["phase"] == "execute"

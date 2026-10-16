@@ -219,12 +219,13 @@ public sealed class HarnessEndToEndTests
     {
         var env = JobEnv();
         env["CUSTOMCODE_ENTRYPOINT"] = $"TestAsm::{typeof(ThrowingTool).FullName}";
-        var options = BuildOptions(env, out _);
+        var options = BuildOptions(env, out var uploads);
         options.EntrypointLoader = new EntrypointLoader(_ => typeof(HarnessEndToEndTests).Assembly);
 
         var exit = await new Harness(options).RunAsync(env);
 
         exit.Should().Be(Harness.ExitToolFailed);
+        uploads.Should().ContainSingle(item => item.Item2.EndsWith(EventJournal.FileName, StringComparison.Ordinal));
         var events = EventJournal.Read(Path.Join(options.WorkDir, EventJournal.FileName)).ToList();
         events[^2]["kind"]!.GetValue<string>().Should().Be("failure");
         events[^2]["error"]!["type"]!.GetValue<string>().Should().Be(nameof(InvalidOperationException));

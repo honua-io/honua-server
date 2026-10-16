@@ -160,6 +160,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<GeoprocessingLayerAccessGuard>();
         services.TryAddSingleton<GeoprocessingJobDispatcher>();
         services.TryAddSingleton<CustomCodeJobSubmissionGate>();
+        services.TryAddSingleton<ICustomCodeArtifactIngestor, CustomCodeArtifactIngestor>();
         // Process release bindings (honua-server#6221): in-process store unless the host registers
         // the durable one; the admission resolver and environment facts bind to whichever is live.
         services.TryAddSingleton<ProcessRelease.IGpProcessReleaseStore, ProcessRelease.InMemoryGpProcessReleaseStore>();

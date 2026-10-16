@@ -175,7 +175,8 @@ RUN groupadd --gid 1001 --system honua \
 
 WORKDIR /work
 
-ENV HONUA_CUSTOMCODE_SOURCE_ROOT=/work/src \
+ENV HONUA_CUSTOMCODE_SDK_ASSEMBLY=/opt/harness/Honua.CustomCode.Sdk.dll \
+    HONUA_CUSTOMCODE_SOURCE_ROOT=/work/src \
     HONUA_CUSTOMCODE_BUILD_OUTPUT=/work/build \
     HONUA_CUSTOMCODE_WORKDIR=/work/out \
     GDAL_NUM_THREADS=ALL_CPUS

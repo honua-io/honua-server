@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Options;
 
@@ -288,7 +289,8 @@ internal sealed class AwsBatchJobDefinitionContractOptions
 internal sealed partial class AwsBatchComputeBackend(
     IAwsBatchJobClient batchClient,
     IOptions<AwsBatchExecutionOptions> options,
-    ILogger<AwsBatchComputeBackend> logger) : IBatchComputeBackend
+    ILogger<AwsBatchComputeBackend> logger,
+    IScopedJobTokenIssuer? scopedTokenIssuer = null) : IBatchComputeBackend, IBatchComputeSubmissionPreparer
 {
     internal const string AdapterBackendName = "honua-aws-batch";
 
@@ -432,6 +434,30 @@ internal sealed partial class AwsBatchComputeBackend(
     public Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(CreateCapabilitiesSnapshot());
 
+    public async Task<IReadOnlyDictionary<string, string>?> PrepareSubmissionAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        if (job.Audit.CustomCodeOwnerScope is not { } owner)
+        {
+            return null;
+        }
+        if (scopedTokenIssuer is null)
+        {
+            throw new InvalidOperationException("Custom-code artifact capability issuer is unavailable.");
+        }
+        var attempt = checked(job.AttemptCount + 1);
+        var issuance = await scopedTokenIssuer.IssueAsync(new ScopedJobTokenRequest(
+            owner.PrincipalId, owner.TenantId, owner.Roles, owner.Grants,
+            job.OperationId, owner.DeclaredScope,
+            DateTimeOffset.UtcNow.AddSeconds(TryParseInt(job.Spec.Parameters, AwsBatchParameterKeys.TimeoutSeconds) ?? 3600).AddMinutes(5))
+        { Attempt = attempt }, cancellationToken).ConfigureAwait(false);
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["env.HONUA_JOB_TOKEN"] = issuance.Token,
+            ["env.HONUA_JOB_ID"] = job.OperationId,
+            ["env.HONUA_JOB_ATTEMPT"] = attempt.ToString(CultureInfo.InvariantCulture)
+        };
+    }
+
     public async Task<BatchComputeSubmissionResult> StartAsync(
         ExecutionJobRecord job,
         CancellationToken cancellationToken = default)
@@ -459,18 +485,39 @@ internal sealed partial class AwsBatchComputeBackend(
         var region = GetOptionalParameter(parameters, AwsBatchParameterKeys.Region);
         var serviceUrl = GetOptionalParameter(parameters, AwsBatchParameterKeys.ServiceUrl);
 
+        IReadOnlyDictionary<string, string>? resolvedParameters = null;
+        var environmentOverrides = BuildEnvironmentOverrides(job);
+        if (job.Audit.CustomCodeOwnerScope is not null)
+        {
+            var expectedAttempt = checked(job.AttemptCount + 1).ToString(CultureInfo.InvariantCulture);
+            if (!parameters.TryGetValue("env.HONUA_JOB_TOKEN", out var token) || string.IsNullOrWhiteSpace(token) ||
+                !parameters.TryGetValue("env.HONUA_JOB_ATTEMPT", out var attempt) || attempt != expectedAttempt ||
+                !parameters.TryGetValue("env.HONUA_JOB_ID", out var jobId) || jobId != job.OperationId)
+            {
+                return new BatchComputeSubmissionResult { Status = ExecutionJobStatus.Failed, Message = "Custom-code attempt capability was not durably prepared before dispatch." };
+            }
+            resolvedParameters = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["env.HONUA_JOB_TOKEN"] = token,
+                ["env.HONUA_JOB_ID"] = jobId,
+                ["env.HONUA_JOB_ATTEMPT"] = attempt
+            };
+        }
+
         var jobName = BuildJobName(job.OperationId, job.AttemptCount);
         var submission = new AwsBatchJobSubmission
         {
             JobName = jobName,
             JobDefinition = jobDefinition,
             JobQueue = jobQueue,
-            EnvironmentOverrides = BuildEnvironmentOverrides(job),
+            EnvironmentOverrides = environmentOverrides,
+            RequireCredentialFreeCustomCode = job.Audit.CustomCodeOwnerScope is not null,
+            ExpectedCustomCodeImage = job.Spec.Artifact,
             Vcpus = TryParseInt(parameters, AwsBatchParameterKeys.Vcpus),
             MemoryMib = TryParseInt(parameters, AwsBatchParameterKeys.MemoryMib),
             GpuCount = TryParseInt(parameters, AwsBatchParameterKeys.GpuCount),
             AttemptDurationSeconds = TryParseInt(parameters, AwsBatchParameterKeys.TimeoutSeconds),
-            RetryAttempts = TryParseInt(parameters, AwsBatchParameterKeys.RetryAttempts),
+            RetryAttempts = job.Audit.CustomCodeOwnerScope is not null ? 1 : TryParseInt(parameters, AwsBatchParameterKeys.RetryAttempts),
             ShareIdentifier = GetOptionalParameter(parameters, AwsBatchParameterKeys.ShareIdentifier)
         };
 
@@ -484,7 +531,20 @@ internal sealed partial class AwsBatchComputeBackend(
             {
                 Status = ExecutionJobStatus.Queued,
                 ProviderOperationId = result.JobId,
+                ResolvedParameters = resolvedParameters,
                 Message = $"Submitted AWS Batch job '{result.JobName}' ({result.JobId}) to queue '{jobQueue}'."
+            };
+        }
+        catch (InvalidOperationException) when (job.Audit.CustomCodeOwnerScope is not null)
+        {
+            if (resolvedParameters is not null && scopedTokenIssuer is not null)
+            {
+                await scopedTokenIssuer.RevokeAsync(resolvedParameters["env.HONUA_JOB_TOKEN"], CancellationToken.None).ConfigureAwait(false);
+            }
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = "Custom-code provider definition does not satisfy the credential-free Fargate boundary."
             };
         }
         catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken) && IsSubmissionOutcomeUncertain(ex))
@@ -500,6 +560,7 @@ internal sealed partial class AwsBatchComputeBackend(
             {
                 Status = ExecutionJobStatus.Queued,
                 ProviderOperationId = PendingSubmissionMarkerPrefix + jobName,
+                ResolvedParameters = resolvedParameters,
                 Message = "AWS Batch submission outcome is uncertain. Reconciliation will verify whether the provider accepted the job."
             };
         }
@@ -686,6 +747,11 @@ internal sealed partial class AwsBatchComputeBackend(
             {
                 Status = mapped,
                 ProviderOperationId = summary.JobId,
+                RecoveredAttemptCount = string.IsNullOrWhiteSpace(job.ProviderOperationId)
+                    && job.Audit.CustomCodeOwnerScope is not null
+                    && job.Spec.Parameters.TryGetValue("env.HONUA_JOB_ATTEMPT", out var preparedAttempt)
+                    && int.TryParse(preparedAttempt, NumberStyles.None, CultureInfo.InvariantCulture, out var recoveredAttempt)
+                    && recoveredAttempt == job.AttemptCount + 1 ? recoveredAttempt : null,
                 Message = $"Discovered AWS Batch job '{summary.JobId}' by name '{pendingJobName}' in state {summary.Status ?? "UNKNOWN"}."
             };
         }

@@ -678,6 +678,27 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
+    public async Task GetSteps_NoisyJob_ReturnsBoundedTailWithAbsoluteOrdinalsAndTruncation()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(CreateJob("job-steps-bounded", ExecutionJobStatus.Running, now, "corr-steps"));
+        _logStore.SetLogs("job-steps-bounded", Enumerable.Range(0, 603).Select(index => new ExecutionLogEntry
+        {
+            Timestamp = now.AddSeconds(index), Level = ExecutionLogLevel.Info, Message = $"event {index}"
+        }).ToArray());
+        var fullReads = _logStore.FullReads;
+        using var response = await _client.GetAsync("/api/v1/admin/jobs/job-steps-bounded/steps");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var body = await ReadJsonAsync(response);
+        body.RootElement.GetProperty("steps").GetArrayLength().Should().Be(500);
+        body.RootElement.GetProperty("steps")[0].GetProperty("ordinal").GetInt32().Should().Be(103);
+        body.RootElement.GetProperty("truncated").GetBoolean().Should().BeTrue();
+        body.RootElement.GetProperty("totalCount").GetInt32().Should().Be(603);
+        _logStore.FullReads.Should().Be(fullReads);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
     public async Task GetJobDiagnostics_PagesRetainedEventsWithoutReadingTheWholeStream()
     {

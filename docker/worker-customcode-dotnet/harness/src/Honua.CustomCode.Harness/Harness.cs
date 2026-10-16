@@ -131,6 +131,23 @@ public sealed class Harness
             return ExitHarnessError;
         }
 
+        // Establish evidence transport before any source, dependency or user-code phase.
+        try
+        {
+            string? ReadEnvironment(string name) => env is null
+                ? Environment.GetEnvironmentVariable(name)
+                : env.GetValueOrDefault(name);
+            state.Uploader = _options.UploaderFactory is { } factory
+                ? factory(spec.OutputPrefix)
+                : ArtifactUploader.CreateBroker(spec.BaseUrl, spec.JobToken,
+                    ReadEnvironment("HONUA_JOB_ID"), ReadEnvironment("HONUA_JOB_ATTEMPT"));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            log.Warn($"artifact broker setup failed: {ex.GetType().Name}");
+            return ExitHarnessError;
+        }
+
         // --- 2. Pinned source ----------------------------------------------
         state.Phase = "source";
         journal.Phase("source");
@@ -253,11 +270,7 @@ public sealed class Harness
         journal.Phase("upload");
         try
         {
-            var uploader = _options.UploaderFactory is { } factory
-                ? factory(spec.OutputPrefix)
-                : new ArtifactUploader(spec.OutputPrefix);
-            state.Uploader = uploader;
-            foreach (var uploaded in uploader.Upload(output.Artifacts))
+            foreach (var uploaded in state.Uploader!.Upload(output.Artifacts))
             {
                 log.Info($"uploaded {uploaded.Name} -> {uploaded.Uri} ({uploaded.SizeBytes} bytes)");
                 journal.Artifact(uploaded.Name, uploaded.SizeBytes, uri: uploaded.Uri);

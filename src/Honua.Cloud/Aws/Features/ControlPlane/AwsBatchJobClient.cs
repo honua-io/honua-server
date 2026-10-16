@@ -17,6 +17,10 @@ internal sealed record AwsBatchEnvironmentOverride(string Name, string Value);
 /// </summary>
 internal sealed record AwsBatchJobSubmission
 {
+    public bool RequireCredentialFreeCustomCode { get; init; }
+
+    public string? ExpectedCustomCodeImage { get; init; }
+
     public required string JobName { get; init; }
 
     public required string JobDefinition { get; init; }
@@ -115,6 +119,25 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
         // SubmitJob has no idempotency token. Retrying an ambiguous response inside the
         // SDK can start two containers before our durable discovery path gets control.
         using var client = CreateClient(region, serviceUrl, submitting: true);
+        if (submission.RequireCredentialFreeCustomCode)
+        {
+            var definitions = await client.DescribeJobDefinitionsAsync(new DescribeJobDefinitionsRequest
+            {
+                JobDefinitions = [submission.JobDefinition]
+            }, cancellationToken).ConfigureAwait(false);
+            var definition = definitions.JobDefinitions?.SingleOrDefault();
+            if (definition is null || !string.Equals(definition.JobDefinitionArn, submission.JobDefinition, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Custom-code execution requires an exact verified AWS Batch job-definition revision.");
+            }
+            ValidateCredentialFreeCustomCodeDefinition(definition, submission.EnvironmentOverrides);
+            if (string.IsNullOrWhiteSpace(submission.ExpectedCustomCodeImage) ||
+                !submission.ExpectedCustomCodeImage.Contains("@sha256:", StringComparison.Ordinal) ||
+                !string.Equals(definition.ContainerProperties.Image, submission.ExpectedCustomCodeImage, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Custom-code provider image must match the admitted immutable worker digest.");
+            }
+        }
         var request = new SubmitJobRequest
         {
             JobName = submission.JobName,
@@ -152,6 +175,30 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
             JobName = response.JobName
         };
     }
+
+    internal static void ValidateCredentialFreeCustomCodeDefinition(
+        JobDefinition definition, IReadOnlyList<AwsBatchEnvironmentOverride> overrides)
+    {
+        var container = definition.ContainerProperties;
+        if (definition.PlatformCapabilities is not { Count: 1 } ||
+            !string.Equals(definition.PlatformCapabilities[0].ToString(), "FARGATE", StringComparison.Ordinal) ||
+            definition.EcsProperties is not null || definition.EksProperties is not null || definition.NodeProperties is not null ||
+            container is null || !string.IsNullOrWhiteSpace(container.JobRoleArn) ||
+            container.Privileged == true || container.User is not "1001" and not "1001:1001" ||
+            container.Secrets is { Count: > 0 } || container.Volumes is { Count: > 0 } ||
+            container.Environment?.Any(entry => IsCredentialEnvironmentName(entry.Name)) == true ||
+            overrides.Any(entry => IsCredentialEnvironmentName(entry.Name)))
+        {
+            throw new InvalidOperationException("Custom-code execution requires Fargate, the sanctioned non-root user, no task role, no mounted volumes or injected secrets, and no cloud credential environment.");
+        }
+    }
+
+    internal static bool IsCredentialEnvironmentName(string name)
+        => (name.StartsWith("AWS_", StringComparison.OrdinalIgnoreCase) &&
+            name is not "AWS_REGION" and not "AWS_DEFAULT_REGION" and not "AWS_EC2_METADATA_DISABLED") ||
+            name.StartsWith("AZURE_", StringComparison.OrdinalIgnoreCase) ||
+            name.StartsWith("GOOGLE_", StringComparison.OrdinalIgnoreCase) ||
+            name is "CLOUDSDK_CONFIG";
 
     public async Task<AwsBatchJobState?> DescribeJobAsync(
         string jobId,

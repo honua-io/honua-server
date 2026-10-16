@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:587c5eeda8581c9da4ebb7f3ff0c9d8382d525d198dfef3c8fd2a97cd2060aa7",
+  "bundleDigest": "sha256:4d8ef287db2f56d74951157b484c6beec90e8154a484539fa1be8e98b8fdb9d9",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -6379,7 +6379,7 @@
     {
       "id": "okf/capabilities/process.geoprocessing",
       "path": "okf/capabilities/process.geoprocessing.md",
-      "documentDigest": "sha256:b02253f17f5f1520a844cf952d60b1001849973192fc38af0d433500b65150cd",
+      "documentDigest": "sha256:7ac5e0cb8aaccc6f64264dadacf3a541a6b0f9ab70e2491c6817fc6e4137cf5c",
       "metadata": {
         "type": "capability",
         "title": "Geoprocessing Task Execution",
@@ -7706,9 +7706,21 @@
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/geoprocessing-operations.md"
     },
     {
+      "id": "reference/gp-customcode-runtime",
+      "path": "reference/gp-customcode-runtime.md",
+      "documentDigest": "sha256:3e490dcab7cc72bc1e55da7facb9f2892975f6dd6842b81524d6e9571284dea8",
+      "metadata": {
+        "type": "reference",
+        "title": "Custom-code worker runtime",
+        "description": "Credential-free custom-code dispatch, attempt-scoped artifact transport, journal ingestion and bounded logs.",
+        "resource": "honua://capability/process.geoprocessing"
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/gp-customcode-runtime.md"
+    },
+    {
       "id": "reference/gp-harness-events.v1",
       "path": "reference/gp-harness-events.v1.md",
-      "documentDigest": "sha256:44122d0c658c037860834a907c64c9ac8113728edb183659393f94f55ae48c28",
+      "documentDigest": "sha256:e0d652be8c006cbb77004c12133a7ddf6d7361226450e9342708a787e6f3b954",
       "metadata": {
         "type": "reference",
         "title": "GP harness events (honua.gp.events/v1)",
@@ -14139,6 +14151,11 @@
       "source": "okf/capabilities/process.geoprocessing",
       "relation": "links_to",
       "target": "reference/geoprocessing-operations"
+    },
+    {
+      "source": "okf/capabilities/process.geoprocessing",
+      "relation": "links_to",
+      "target": "reference/gp-customcode-runtime"
     },
     {
       "source": "okf/capabilities/process.geoprocessing",

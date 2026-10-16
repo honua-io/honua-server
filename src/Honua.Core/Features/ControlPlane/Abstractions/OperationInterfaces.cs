@@ -368,6 +368,16 @@ public interface IDeployBackend
         });
 }
 
+/// <summary>Prepares durable per-attempt submission parameters before any provider side effect.</summary>
+public interface IBatchComputeSubmissionPreparer
+{
+    /// <summary>Creates server-owned parameters to persist in the dispatch CAS before StartAsync.</summary>
+    /// <param name="job">The next-attempt dispatch intent.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Parameters that must be durably merged into the job spec before submission.</returns>
+    Task<IReadOnlyDictionary<string, string>?> PrepareSubmissionAsync(ExecutionJobRecord job, CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// Provider adapter for run-to-completion batch compute workloads.
 /// </summary>
