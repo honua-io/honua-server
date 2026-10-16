@@ -379,25 +379,68 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
 
         var limit = Math.Clamp(query.Limit, MinQueryLimit, MaxLogQueryLimit);
         await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var entries = await ReadLogsAsync(
-            lease.Connection,
-            $"SELECT payload_json FROM {LogsTable} WHERE operation_id = @operation_id ORDER BY log_id OFFSET @offset LIMIT @limit",
-            operationId,
-            command =>
-            {
-                command.Parameters.Add(Parameter("offset", NpgsqlDbType.Integer, offset));
-                command.Parameters.Add(Parameter("limit", NpgsqlDbType.Integer, limit + 1));
-            },
-            cancellationToken).ConfigureAwait(false);
+        await using var command = lease.Connection.CreateCommand();
+        // One statement so the page and the count are the same snapshot. The
+        // totals row is preserved when the page itself is empty.
+        command.CommandText = $"""
+            WITH scoped AS (
+                SELECT log_id, payload_json
+                FROM {LogsTable}
+                WHERE operation_id = @operation_id
+            )
+            SELECT page.payload_json, totals.total_count
+            FROM (SELECT COUNT(*) AS total_count FROM scoped) totals
+            LEFT JOIN LATERAL (
+                SELECT payload_json
+                FROM scoped
+                ORDER BY log_id
+                OFFSET @offset
+                LIMIT @limit
+            ) page ON TRUE
+            """;
+        command.Parameters.Add(Parameter("operation_id", NpgsqlDbType.Text, operationId));
+        command.Parameters.Add(Parameter("offset", NpgsqlDbType.Integer, offset));
+        command.Parameters.Add(Parameter("limit", NpgsqlDbType.Integer, limit + 1));
 
-        string? nextCursor = null;
-        if (entries.Count > limit)
+        var entries = new List<ExecutionLogEntry>();
+        long total = 0;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
-            entries.RemoveAt(entries.Count - 1);
-            nextCursor = EncodeOffsetCursor(offset + limit);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                total = reader.GetInt64(1);
+                if (reader.IsDBNull(0))
+                {
+                    continue;
+                }
+
+                var entry = JsonSerializer.Deserialize(
+                    reader.GetString(0),
+                    ControlPlaneJsonContext.Default.ExecutionLogEntry);
+                if (entry is not null)
+                {
+                    entries.Add(entry);
+                }
+            }
         }
 
-        return new ExecutionLogPage { Items = entries, NextCursor = nextCursor };
+        var hasMore = entries.Count > limit;
+        if (hasMore)
+        {
+            entries.RemoveAt(entries.Count - 1);
+        }
+
+        long proved = hasMore
+            ? (long)offset + limit + 1
+            : entries.Count > 0 ? (long)offset + entries.Count : 0;
+        var provedCount = proved >= int.MaxValue ? int.MaxValue : (int)proved;
+        var totalCount = total >= int.MaxValue ? int.MaxValue : (int)total;
+        return new ExecutionLogPage
+        {
+            Items = entries,
+            NextCursor = hasMore ? EncodeOffsetCursor(offset + limit) : null,
+            TotalCount = Math.Max(totalCount, provedCount)
+        };
     }
 
     public Task SetRetentionAsync(

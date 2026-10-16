@@ -579,21 +579,26 @@ internal sealed partial class ConsoleJobService
                 cancellationToken).ConfigureAwait(false);
         var selected = page?.Items ?? tail.Items.TakeLast(limit).ToArray();
         var items = selected.Select(MapDiagnosticLogEntry).ToArray();
-        var isTruncated = tail.TotalCount > items.Length;
+        // A cursor page is a later read than the tail. Its count has to come from
+        // that same read, or a row appended in between is reported without being counted.
+        var totalCount = page is null
+            ? tail.TotalCount
+            : Math.Max(page.TotalCount, items.Length);
+        var isTruncated = totalCount > items.Length;
         if (tail.DroppedCount > 0)
         {
             truncated.Add($"events: {tail.DroppedCount} earliest records were discarded by the durable storage limit; paging starts at the first retained event");
         }
         if (isTruncated)
         {
-            truncated.Add($"events: {items.Length} of {tail.TotalCount} returned; use firstCursor to start paging and nextCursor to continue");
+            truncated.Add($"events: {items.Length} of {totalCount} returned; use firstCursor to start paging and nextCursor to continue");
         }
 
         return new ConsoleJobDiagnosticEvents
         {
             State = "available",
             Items = items,
-            TotalCount = tail.TotalCount,
+            TotalCount = totalCount,
             Limit = limit,
             FirstCursor = "start",
             NextCursor = page?.NextCursor,

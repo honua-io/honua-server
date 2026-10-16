@@ -782,7 +782,8 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             return Task.FromResult(new ExecutionLogPage
             {
                 Items = hasMore ? page.Take(limit).ToArray() : page,
-                NextCursor = hasMore ? (offset + limit).ToString(CultureInfo.InvariantCulture) : null
+                NextCursor = hasMore ? (offset + limit).ToString(CultureInfo.InvariantCulture) : null,
+                TotalCount = entries.Count
             });
         }
 

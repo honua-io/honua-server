@@ -8,7 +8,9 @@ namespace Honua.Infrastructure.Hosting;
 
 /// <summary>
 /// Compiled protocol profile. The symbols come from eng/Honua.ProtocolProfiles.props.
-/// Runtime configuration can narrow a request and cannot turn an excluded module back on.
+/// Runtime configuration cannot turn an excluded module back on. A non-empty
+/// <c>Protocols:Enabled</c> list must name every compiled module; registration does
+/// not yet honor a narrower allowlist, so startup rejects one.
 /// </summary>
 internal static class ProtocolProfile
 {
@@ -125,6 +127,7 @@ internal static class ProtocolProfile
                 "Supported profiles: gsr, ogc-api, ogc-api-classic, all.");
         }
 
+        var enabled = new HashSet<string>(StringComparer.Ordinal);
         foreach (var requestedModule in ReadEnabledModules(configuration))
         {
             if (!TryCanonicalModule(requestedModule, out var canonical))
@@ -141,8 +144,26 @@ internal static class ProtocolProfile
                     "Remove it from Protocols:Enabled or rebuild with -p:HonuaProtocolProfile=all " +
                     "(Dockerfile ARG HONUA_PROTOCOL_PROFILE). Supported profiles: gsr, ogc-api, ogc-api-classic, all.");
             }
+
+            enabled.Add(canonical);
         }
 
+        if (enabled.Count > 0)
+        {
+            foreach (var compiled in CompiledModuleNames())
+            {
+                if (!enabled.Contains(compiled))
+                {
+                    throw new InvalidOperationException(
+                        $"Protocols:Enabled omits compiled module '{compiled}'. " +
+                        "A narrowed allowlist is rejected until registration can honor it. " +
+                        $"Omit Protocols:Enabled or list every module compiled into profile '{Name}'. " +
+                        "Supported modules: geoservices, ogc-api, ogc-classic, odata, stac, sensorthings, scene, grpc, mcp.");
+                }
+            }
+        }
+
+        RejectExcludedExperimental(configuration, "sync.offline", IncludesGeoServices);
         RejectExcludedExperimental(configuration, "serve.sensorthings", IncludesSensorThings);
         RejectExcludedExperimental(configuration, "scene.catalog", IncludesScene);
         RejectExcludedExperimental(configuration, "serve.3d-tiles-scene", IncludesScene);
@@ -182,6 +203,7 @@ internal static class ProtocolProfile
         ("serve.geoservices-", "geoservices", false),
         ("edit.geoservices-", "geoservices", false),
         ("versioning.branch", "geoservices", true),
+        ("sync.offline", "geoservices", true),
         ("analysis.spatial", "geoservices", false),
         ("serve.ogc-api-", "ogc-api", false),
         ("process.ogc-api-", "ogc-api", false),
@@ -222,6 +244,54 @@ internal static class ProtocolProfile
         names.Add("grpc");
 #endif
         return names;
+    }
+
+    private static IEnumerable<string> CompiledModuleNames()
+    {
+        if (IncludesGeoServices)
+        {
+            yield return "geoservices";
+        }
+
+        if (IncludesOgcApi)
+        {
+            yield return "ogc-api";
+        }
+
+        if (IncludesOgcClassic)
+        {
+            yield return "ogc-classic";
+        }
+
+        if (IncludesOData)
+        {
+            yield return "odata";
+        }
+
+        if (IncludesStac)
+        {
+            yield return "stac";
+        }
+
+        if (IncludesSensorThings)
+        {
+            yield return "sensorthings";
+        }
+
+        if (IncludesScene)
+        {
+            yield return "scene";
+        }
+
+        if (IncludesGrpc)
+        {
+            yield return "grpc";
+        }
+
+        if (IncludesMcp)
+        {
+            yield return "mcp";
+        }
     }
 
     private static IEnumerable<string> ReadEnabledModules(IConfiguration configuration)

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -103,10 +104,196 @@ internal static class GeoservicesImportColumns
         }
 
         return rules
-            .Select(rule => string.IsNullOrWhiteSpace(rule.FieldName)
-                ? rule
-                : rule with { FieldName = map.MapReference(rule.FieldName) })
+            .Select(rule => rule with
+            {
+                FieldName = string.IsNullOrWhiteSpace(rule.FieldName)
+                    ? rule.FieldName
+                    : map.MapReference(rule.FieldName),
+                ScriptExpression = RemapFeatureReferences(rule.ScriptExpression, map)
+            })
             .ToArray();
+    }
+
+    /// <summary>
+    /// Rewrites <c>$feature.Name</c> and <c>$feature["Name"]</c> when the import
+    /// allocated a different column. A case-only change is left alone because field
+    /// lookup is already case-insensitive. Text inside quotes is not rewritten.
+    /// </summary>
+    internal static string RemapFeatureReferences(string? expression, GeoservicesImportColumnMap map)
+    {
+        if (string.IsNullOrEmpty(expression))
+        {
+            return expression ?? string.Empty;
+        }
+
+        var rewritten = new StringBuilder(expression.Length);
+        for (var i = 0; i < expression.Length; i++)
+        {
+            var c = expression[i];
+            if (c is '\'' or '"')
+            {
+                var end = ClosingQuote(expression, i);
+                if (end < 0)
+                {
+                    rewritten.Append(expression.AsSpan(i));
+                    break;
+                }
+
+                rewritten.Append(expression.AsSpan(i, end - i + 1));
+                i = end;
+                continue;
+            }
+
+            if (TryReadFeatureReference(expression, i, out var fieldName, out var endIndex))
+            {
+                var mapped = map.MapReference(fieldName);
+                if (string.Equals(mapped, fieldName, StringComparison.OrdinalIgnoreCase))
+                {
+                    rewritten.Append(expression.AsSpan(i, endIndex - i));
+                }
+                else
+                {
+                    rewritten.Append(FormatFeatureReference(mapped));
+                }
+
+                i = endIndex - 1;
+                continue;
+            }
+
+            rewritten.Append(c);
+        }
+
+        return rewritten.ToString();
+    }
+
+    private static int ClosingQuote(string text, int open)
+    {
+        var quote = text[open];
+        for (var i = open + 1; i < text.Length; i++)
+        {
+            if (text[i] == quote)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool TryReadFeatureReference(string text, int start, out string fieldName, out int end)
+    {
+        fieldName = string.Empty;
+        end = start;
+        const string token = "$feature";
+        if (start + token.Length > text.Length
+            || !text.AsSpan(start, token.Length).Equals(token, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (start > 0)
+        {
+            var previous = text[start - 1];
+            if (char.IsLetterOrDigit(previous) || previous is '_' or '$')
+            {
+                return false;
+            }
+        }
+
+        var i = start + token.Length;
+        while (i < text.Length && char.IsWhiteSpace(text[i]))
+        {
+            i++;
+        }
+
+        if (i >= text.Length)
+        {
+            return false;
+        }
+
+        if (text[i] == '.')
+        {
+            i++;
+            while (i < text.Length && char.IsWhiteSpace(text[i]))
+            {
+                i++;
+            }
+
+            var nameStart = i;
+            while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_'))
+            {
+                i++;
+            }
+
+            if (i == nameStart)
+            {
+                return false;
+            }
+
+            fieldName = text[nameStart..i];
+            end = i;
+            return true;
+        }
+
+        if (text[i] != '[')
+        {
+            return false;
+        }
+
+        i++;
+        while (i < text.Length && char.IsWhiteSpace(text[i]))
+        {
+            i++;
+        }
+
+        if (i >= text.Length || text[i] is not ('\'' or '"'))
+        {
+            return false;
+        }
+
+        var quote = text[i];
+        var nameStart = ++i;
+        while (i < text.Length && text[i] != quote)
+        {
+            if (text[i] == '\\')
+            {
+                return false;
+            }
+
+            i++;
+        }
+
+        if (i >= text.Length)
+        {
+            return false;
+        }
+
+        fieldName = text[nameStart..i];
+        i++;
+        while (i < text.Length && char.IsWhiteSpace(text[i]))
+        {
+            i++;
+        }
+
+        if (i >= text.Length || text[i] != ']')
+        {
+            return false;
+        }
+
+        end = i + 1;
+        return true;
+    }
+
+    private static string FormatFeatureReference(string column)
+    {
+        if (column.Length > 0
+            && (char.IsLetter(column[0]) || column[0] == '_')
+            && column.All(static c => char.IsLetterOrDigit(c) || c == '_'))
+        {
+            return "$feature." + column;
+        }
+
+        return "$feature[\"" + column.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"]";
     }
 
     private static Dictionary<string, MetadataV2SubtypeFieldOverride> RemapOverrides(
