@@ -98,6 +98,30 @@ public class PrintingToolsOrphanReconcilerTests
         }
     }
 
+    [UnitTest]
+    [Protocol(TestProtocols.PrintingTools)]
+    public async Task HeartbeatRefreshedAfterEnumeration_DoesNotFailLiveOwner()
+    {
+        var store = new MemoryProgressStore();
+        await using var restarted = BuildProvider(store, new PrintWorkerInstance(), new PrintJobTracker(),
+            new PrintingToolsOrphanOptions { LeaseTimeout = TimeSpan.FromSeconds(30) });
+        await SubmitAsync(restarted, Submitter());
+        var queued = store.Snapshot().OfType<PrintProgress>().Single();
+        var stale = queued with { OwnerInstanceId = "live-owner", HeartbeatAt = DateTimeOffset.UtcNow.AddMinutes(-5) };
+        await store.SetProgressAsync(stale.JobId, stale);
+        var fresh = stale with { HeartbeatAt = DateTimeOffset.UtcNow };
+        store.BeforeSnapshotReplace = () =>
+        {
+            store.BeforeSnapshotReplace = null;
+            // This in-memory test store completes writes synchronously under its gate.
+            _ = store.SetProgressAsync(stale.JobId, fresh);
+        };
+        var reconciler = ActivatorUtilities.CreateInstance<PrintingToolsOrphanReconciler>(restarted);
+        var sweep = typeof(PrintingToolsOrphanReconciler).GetMethod("FailStaleJobsAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        await (Task)sweep.Invoke(reconciler, [CancellationToken.None])!;
+        Assert.Equal(fresh, await store.GetProgressAsync<PrintProgress>(stale.JobId));
+    }
+
     private static ServiceProvider BuildProvider(
         MemoryProgressStore store,
         PrintWorkerInstance instance,
@@ -218,6 +242,31 @@ public class PrintingToolsOrphanReconcilerTests
                     return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
                 }
 
+                _items[operationId] = progress;
+                return Task.FromResult(ProgressCompareAndSetResult.Updated);
+            }
+        }
+
+        public Action? BeforeSnapshotReplace { get; set; }
+
+        public Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(
+            string operationId,
+            IOperationProgress progress,
+            IOperationProgress expectedProgress,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+        {
+            BeforeSnapshotReplace?.Invoke();
+            lock (_gate)
+            {
+                if (!_items.TryGetValue(operationId, out var current))
+                {
+                    return Task.FromResult(ProgressCompareAndSetResult.NotFound);
+                }
+                if (!Equals(current, expectedProgress))
+                {
+                    return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
+                }
                 _items[operationId] = progress;
                 return Task.FromResult(ProgressCompareAndSetResult.Updated);
             }
