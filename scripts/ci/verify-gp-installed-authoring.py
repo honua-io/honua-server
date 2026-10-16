@@ -58,6 +58,25 @@ def main():
             project = root / f'summary-{language}'
             assert (project / '.honua/toolchain').is_dir()
             assert not (project / 'Directory.Build.rsp').exists(), 'installed flow must not capture a checkout path'
+            if language == 'dotnet':
+                # Exercise the exact host-debug command before devkit test can rebuild
+                # the executable's dependency graph. This verifies launchability, not
+                # an interactive VS Code breakpoint or the container debug recipe.
+                launch = json.loads((project / '.vscode/launch.json').read_text())
+                config = next(item for item in launch['configurations']
+                              if item['name'] == 'GP: run with breakpoints (host)')
+                tasks = json.loads((project / '.vscode/tasks.json').read_text())
+                build = next(item for item in tasks['tasks']
+                             if item['label'] == config['preLaunchTask'])
+                def expand(value):
+                    return value.replace('${workspaceFolder}', str(project))
+                run(expand(build['command']), *map(expand, build['args']), cwd=project)
+                debug_output = run(expand(config['program']), *map(expand, config['args']), cwd=project)
+                result = json.loads(debug_output.strip().splitlines()[-1])
+                assert result['status'] == 'succeeded', result
+                receipt = Path(result['receipt'])
+                assert receipt.is_file()
+                assert (receipt.parent / 'artifacts/summary.json').read_bytes() == (project / 'expected/summary.json').read_bytes()
             output = run(tool, 'test', '--project', str(project))
             assert 'PASS  summary.json' in output and 'summary : passed' in output
             expected = project / 'expected/summary.json'
@@ -88,7 +107,7 @@ def main():
                           '--runtime-image', 'ghcr.io/honua-io/fixture@sha256:' + 'a' * 64,
                           cwd=project, expected=1)
             assert 'receipt' in refusal.lower() and 'not valid honua.gp-process' not in refusal
-        print('Installed Python and .NET init/test/negative golden/direct test/release refusal passed.')
+        print('Installed Python and .NET init/test/negative golden/host debug launch/direct test/release refusal passed.')
 
 
 if __name__ == '__main__':

@@ -35,7 +35,8 @@ the harness local mode exactly as the launch configuration does:
 
 ```bash
 dotnet build tests/SummaryTool.Tests/SummaryTool.Tests.csproj
-dotnet tests/SummaryTool.Tests/bin/Debug/net10.0/Honua.CustomCode.Harness.dll local \
+dotnet exec --depsfile tests/SummaryTool.Tests/bin/Debug/net10.0/SummaryTool.Tests.deps.json \
+  tests/SummaryTool.Tests/bin/Debug/net10.0/Honua.CustomCode.Harness.dll local \
   --assembly-dir process/bin/Debug/net10.0 \
   --entrypoint SummaryTool::Honua.Templates.SummaryTool \
   --params fixtures/params.json --input features=fixtures/input.geojson \
