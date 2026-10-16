@@ -29,6 +29,9 @@ internal static class CustomCodeArtifactEndpoints
     public static void MapCustomCodeArtifactEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPut("/api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}", UploadAsync)
+            // UploadAsync validates the dedicated callback credential and current job
+            // attempt before reading bytes; ordinary user/admin auth cannot grant upload.
+            .AllowAnonymous()
             .WithTags("Geoprocessing")
             .WithName("UploadCustomCodeArtifact")
             .WithSummary("Upload an immutable output using a job and attempt bound callback credential")
