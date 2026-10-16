@@ -60,6 +60,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="AWSSDK.SecurityToken" />
+    <PackageReference Include="AWSSDK.IdentityManagement" />
     <PackageReference Include="AWSSDK.Batch" />
     <!-- The ECS/ALB weighted-cutover cell (#2164) resolves the cert listener's default rule ARN
          directly (DescribeRules by ListenerArn) before driving the production AwsSdkAlbClient seam. -->
@@ -69,6 +71,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Cloud\Aws\Honua.Aws.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Import\Honua.Import.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
     <!-- LocalProcessPoolBatchComputeBackend (GP lane) lives in Honua.Jobs; the real

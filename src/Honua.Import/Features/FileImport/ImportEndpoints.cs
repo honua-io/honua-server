@@ -130,6 +130,14 @@ internal static partial class ImportEndpoints
             .WithName($"ImportFileFromUrl{nameSuffix}MethodNotAllowed")
             .WithSummary("Import geospatial data from a public object URL method not allowed");
 
+        _ = group.MapMethods("/upload-object", [HttpMethods.Post], HandleImportFileFromObjectStore)
+            .WithName($"ImportFileFromObjectStore{nameSuffix}")
+            .WithSummary("Import geospatial data from an allow-listed s3 object using the host identity")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        _ = group.MapMethods("/upload-object", NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName($"ImportFileFromObjectStore{nameSuffix}MethodNotAllowed")
+            .WithSummary("Import geospatial data from an allow-listed s3 object method not allowed");
+
         // Get upload progress
         _ = group.MapMethods("/uploads/{uploadId}/progress", [HttpMethods.Get], HandleGetUploadProgress)
             .WithName($"GetUploadProgress{nameSuffix}")
@@ -1724,6 +1732,9 @@ internal static partial class ImportEndpoints
         /// <param name="layerCount">Number of published layers whose snapshot was rebuilt.</param>
         [LoggerMessage(EventId = 3306, Level = LogLevel.Information, Message = "Rebuilt published feature snapshot for {LayerCount} layer(s) after importing table {TableName}")]
         public static partial void SnapshotRefreshed(ILogger logger, string tableName, int layerCount);
+
+        [LoggerMessage(EventId = 3307, Level = LogLevel.Warning, Message = "Failed to record the object-store import audit event")]
+        public static partial void AuditRecordFailed(ILogger logger, Exception exception);
     }
 
     private static string? ReadLineageHeader(HttpContext context, string name)

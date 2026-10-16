@@ -2,7 +2,6 @@
   "at": "2026-09-19T08:57:55.084104+00:00",
   "source": "d1fc139a64ce33c817bd927bacb2103714221515",
   "image": "sha256:4bac230b40b0b07e396af54e2fc801420d2957bb31a6b6dafb3d402a8444d350",
-  "licensing_mode": "Disabled",
   "evidence_kind": "installed-arcpy-observations",
   "desktop_ui_exercised": false,
   "checks": {

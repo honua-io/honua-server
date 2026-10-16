@@ -16,6 +16,13 @@ namespace Honua.FileStorage;
 
 internal sealed class AwsS3FileStorage : CloudFileStorageBase
 {
+    /// <summary>S3 rejects one PutObject larger than 5 GiB. Multipart is required above that.</summary>
+    internal const long S3SinglePutMaxBytes = 5L * 1024 * 1024 * 1024;
+
+    private const int DefaultPartBytes = 16 * 1024 * 1024;
+    private const int MaxPartCount = 10_000;
+    private const int MaxPartBytes = 128 * 1024 * 1024;
+
     private readonly TimeSpan _signedUrlLifetime;
 
     private readonly AwsS3Options _options;
@@ -109,69 +116,91 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                 : (DateTimeOffset?)null;
 
             var metadata = CloudStorageMetadata.BuildMetadata(request.Metadata, request.FileName, expiresAt);
+            var knownLength = KnownContentLength(request);
+            string? etag;
+            if (RequiresMultipartUpload(conditional, knownLength))
+            {
+                if (request.Progress != null)
+                {
+                    progressWriter = CreateProgressWriter(uploadId);
+                }
 
-            var putRequest = new PutObjectRequest
-            {
-                BucketName = _options.BucketName,
-                Key = objectKey,
-                ContentType = request.ContentType,
-                InputStream = request.Content
-            };
-            if (conditional)
-            {
-                if (expectedETag is null)
-                {
-                    putRequest.IfNoneMatch = "*";
-                }
-                else
-                {
-                    putRequest.IfMatch = expectedETag;
-                }
+                etag = await UploadMultipartAsync(
+                    request,
+                    objectKey,
+                    metadata,
+                    knownLength,
+                    uploadId,
+                    initialProgress,
+                    progressWriter,
+                    linkedCancellationSource.Token).ConfigureAwait(false);
             }
-
-            if (request.Progress != null)
+            else
             {
-                var writer = CreateProgressWriter(uploadId);
-                progressWriter = writer;
-                var lastProgressUpdate = DateTimeOffset.UtcNow;
-                putRequest.StreamTransferProgress += (_, args) =>
+                var putRequest = new PutObjectRequest
                 {
-                    var now = DateTimeOffset.UtcNow;
-                    if (now - lastProgressUpdate < TimeSpan.FromMilliseconds(100) && args.TransferredBytes < args.TotalBytes)
-                    {
-                        return;
-                    }
-
-                    var resolvedTotalBytes = args.TotalBytes > 0 ? args.TotalBytes : totalBytes;
-                    var progress = new UploadProgress
-                    {
-                        UploadId = uploadId,
-                        Status = OperationStatus.Processing,
-                        BytesUploaded = args.TransferredBytes,
-                        TotalBytes = resolvedTotalBytes,
-                        FileName = request.FileName,
-                        ContentType = request.ContentType,
-                        StartedAt = initialProgress.StartedAt,
-                        CurrentPhase = "Uploading"
-                    };
-
-                    writer.Report(progress);
-                    ReportProgressToCaller(request.Progress, uploadId, progress);
-                    lastProgressUpdate = now;
+                    BucketName = _options.BucketName,
+                    Key = objectKey,
+                    ContentType = request.ContentType,
+                    InputStream = request.Content
                 };
-            }
+                if (conditional)
+                {
+                    if (expectedETag is null)
+                    {
+                        putRequest.IfNoneMatch = "*";
+                    }
+                    else
+                    {
+                        putRequest.IfMatch = expectedETag;
+                    }
+                }
 
-            foreach (var pair in metadata)
-            {
-                putRequest.Metadata[pair.Key] = pair.Value;
-            }
+                if (request.Progress != null)
+                {
+                    var writer = CreateProgressWriter(uploadId);
+                    progressWriter = writer;
+                    var lastProgressUpdate = DateTimeOffset.UtcNow;
+                    putRequest.StreamTransferProgress += (_, args) =>
+                    {
+                        var now = DateTimeOffset.UtcNow;
+                        if (now - lastProgressUpdate < TimeSpan.FromMilliseconds(100) && args.TransferredBytes < args.TotalBytes)
+                        {
+                            return;
+                        }
 
-            if (_options.EnableServerSideEncryption)
-            {
-                putRequest.ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256;
-            }
+                        var resolvedTotalBytes = args.TotalBytes > 0 ? args.TotalBytes : totalBytes;
+                        var progress = new UploadProgress
+                        {
+                            UploadId = uploadId,
+                            Status = OperationStatus.Processing,
+                            BytesUploaded = args.TransferredBytes,
+                            TotalBytes = resolvedTotalBytes,
+                            FileName = request.FileName,
+                            ContentType = request.ContentType,
+                            StartedAt = initialProgress.StartedAt,
+                            CurrentPhase = "Uploading"
+                        };
 
-            var putResponse = await _client.PutObjectAsync(putRequest, linkedCancellationSource.Token);
+                        writer.Report(progress);
+                        ReportProgressToCaller(request.Progress, uploadId, progress);
+                        lastProgressUpdate = now;
+                    };
+                }
+
+                foreach (var pair in metadata)
+                {
+                    putRequest.Metadata[pair.Key] = pair.Value;
+                }
+
+                if (_options.EnableServerSideEncryption)
+                {
+                    putRequest.ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256;
+                }
+
+                var putResponse = await _client.PutObjectAsync(putRequest, linkedCancellationSource.Token);
+                etag = putResponse.ETag;
+            }
 
             var sizeBytes = await ResolveSizeAsync(objectKey, request, cancellationToken);
             var cloudFile = new CloudFile
@@ -184,7 +213,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                 UploadedAt = uploadedAt,
                 ExpiresAt = expiresAt,
                 ContentHash = null,
-                ETag = putResponse.ETag,
+                ETag = etag,
                 Metadata = request.Metadata,
                 Provider = CloudStorageProvider.AwsS3
             };
@@ -607,6 +636,229 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         }
 
         return new AmazonS3Client(config);
+    }
+
+    /// <summary>
+    /// A single PUT is unsafe when the object is larger than 5 GiB or its length is not known.
+    /// Conditional cache writes stay on PutObject; those objects are small.
+    /// </summary>
+    internal static bool RequiresMultipartUpload(bool conditional, long? knownLength)
+        => !conditional && knownLength is null or > S3SinglePutMaxBytes;
+
+    /// <summary>
+    /// Part size that stays under S3's 10,000-part cap for <paramref name="knownLength"/>.
+    /// Unknown lengths use <see cref="DefaultPartBytes"/>, which covers the 50 GiB import default.
+    /// </summary>
+    internal static int MultipartPartSize(long? knownLength)
+    {
+        long part = DefaultPartBytes;
+        if (knownLength is > S3SinglePutMaxBytes)
+        {
+            var minimum = (knownLength.Value + MaxPartCount - 1) / MaxPartCount;
+            if (minimum > part)
+            {
+                part = minimum;
+            }
+        }
+
+        const long mebibyte = 1024 * 1024;
+        part = (part + mebibyte - 1) / mebibyte * mebibyte;
+        if (part is < DefaultPartBytes or > MaxPartBytes)
+        {
+            throw new InvalidOperationException("The object is too large to stage with one multipart upload.");
+        }
+
+        return (int)part;
+    }
+
+    private static long? KnownContentLength(FileUploadRequest request)
+    {
+        if (request.SizeBytes.HasValue)
+        {
+            return request.SizeBytes.Value;
+        }
+
+        if (request.Content.CanSeek)
+        {
+            return request.Content.Length;
+        }
+
+        return null;
+    }
+
+    private async Task<string?> UploadMultipartAsync(
+        FileUploadRequest request,
+        string objectKey,
+        Dictionary<string, string> metadata,
+        long? knownLength,
+        string uploadId,
+        UploadProgress initialProgress,
+        SerializedUploadProgressWriter? progressWriter,
+        CancellationToken cancellationToken)
+    {
+        var partSize = MultipartPartSize(knownLength);
+        var buffer = new byte[partSize];
+        var filled = await ReadPartAsync(request.Content, buffer, cancellationToken).ConfigureAwait(false);
+        if (filled == 0)
+        {
+            // Nothing to split. An empty object is within the single-PUT limit.
+            return await PutEmptyObjectAsync(request, objectKey, metadata, cancellationToken).ConfigureAwait(false);
+        }
+
+        string? openUploadId = null;
+        try
+        {
+            var initiate = new InitiateMultipartUploadRequest
+            {
+                BucketName = _options.BucketName,
+                Key = objectKey,
+                ContentType = request.ContentType,
+            };
+            foreach (var pair in metadata)
+            {
+                initiate.Metadata[pair.Key] = pair.Value;
+            }
+
+            if (_options.EnableServerSideEncryption)
+            {
+                initiate.ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256;
+            }
+
+            var initiated = await _client.InitiateMultipartUploadAsync(initiate, cancellationToken).ConfigureAwait(false);
+            openUploadId = initiated.UploadId;
+            var parts = new List<PartETag>(capacity: 16);
+            long sent = 0;
+            var partNumber = 1;
+            while (filled > 0)
+            {
+                if (partNumber > MaxPartCount)
+                {
+                    throw new InvalidOperationException("The object is too large to stage with one multipart upload.");
+                }
+
+                using var partStream = new MemoryStream(buffer, 0, filled, writable: false, publiclyVisible: true);
+                var uploaded = await _client.UploadPartAsync(new UploadPartRequest
+                {
+                    BucketName = _options.BucketName,
+                    Key = objectKey,
+                    UploadId = openUploadId,
+                    PartNumber = partNumber,
+                    PartSize = filled,
+                    InputStream = partStream,
+                }, cancellationToken).ConfigureAwait(false);
+                parts.Add(new PartETag(partNumber, uploaded.ETag));
+                sent += filled;
+                ReportMultipartProgress(request, uploadId, initialProgress, progressWriter, sent, knownLength);
+                partNumber++;
+                filled = await ReadPartAsync(request.Content, buffer, cancellationToken).ConfigureAwait(false);
+            }
+
+            var completed = await _client.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+            {
+                BucketName = _options.BucketName,
+                Key = objectKey,
+                UploadId = openUploadId,
+                PartETags = parts,
+            }, cancellationToken).ConfigureAwait(false);
+            openUploadId = null;
+            return completed.ETag;
+        }
+        catch
+        {
+            if (openUploadId is not null)
+            {
+                try
+                {
+                    await _client.AbortMultipartUploadAsync(new AbortMultipartUploadRequest
+                    {
+                        BucketName = _options.BucketName,
+                        Key = objectKey,
+                        UploadId = openUploadId,
+                    }, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception abortEx) when (abortEx is not OutOfMemoryException)
+                {
+                    // The original upload failure is what the caller observes.
+                    FileStorageLog.FileDeleteFailed(Logger, abortEx, objectKey);
+                }
+            }
+
+            throw;
+        }
+    }
+
+    private async Task<string?> PutEmptyObjectAsync(
+        FileUploadRequest request,
+        string objectKey,
+        Dictionary<string, string> metadata,
+        CancellationToken cancellationToken)
+    {
+        using var empty = new MemoryStream([], writable: false);
+        var putRequest = new PutObjectRequest
+        {
+            BucketName = _options.BucketName,
+            Key = objectKey,
+            ContentType = request.ContentType,
+            InputStream = empty,
+        };
+        foreach (var pair in metadata)
+        {
+            putRequest.Metadata[pair.Key] = pair.Value;
+        }
+
+        if (_options.EnableServerSideEncryption)
+        {
+            putRequest.ServerSideEncryptionMethod = ServerSideEncryptionMethod.AES256;
+        }
+
+        var response = await _client.PutObjectAsync(putRequest, cancellationToken).ConfigureAwait(false);
+        return response.ETag;
+    }
+
+    private void ReportMultipartProgress(
+        FileUploadRequest request,
+        string uploadId,
+        UploadProgress initialProgress,
+        SerializedUploadProgressWriter? progressWriter,
+        long sent,
+        long? knownLength)
+    {
+        if (progressWriter is null && request.Progress is null)
+        {
+            return;
+        }
+
+        var progress = new UploadProgress
+        {
+            UploadId = uploadId,
+            Status = OperationStatus.Processing,
+            BytesUploaded = sent,
+            TotalBytes = knownLength is > 0 ? knownLength.Value : sent,
+            FileName = request.FileName,
+            ContentType = request.ContentType,
+            StartedAt = initialProgress.StartedAt,
+            CurrentPhase = "Uploading",
+        };
+        progressWriter?.Report(progress);
+        ReportProgressToCaller(request.Progress, uploadId, progress);
+    }
+
+    private static async Task<int> ReadPartAsync(Stream source, byte[] buffer, CancellationToken cancellationToken)
+    {
+        var filled = 0;
+        while (filled < buffer.Length)
+        {
+            var read = await source.ReadAsync(buffer.AsMemory(filled, buffer.Length - filled), cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            filled += read;
+        }
+
+        return filled;
     }
 
     private static bool IsNotFound(AmazonS3Exception exception)

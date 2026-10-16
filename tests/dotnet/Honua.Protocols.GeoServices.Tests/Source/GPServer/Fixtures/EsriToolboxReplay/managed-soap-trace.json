@@ -6,7 +6,7 @@
     "2026-09-13T05:44:00Z",
     "2026-09-13T05:50:00Z"
   ],
-  "sanitization": "Headers and query strings omitted; request text replaced with [value], except the six named ArcPy default environment controls and result options. One row per distinct SOAP operation/status retained.",
+  "sanitization": "Headers and query strings omitted. One row per distinct SOAP operation/status retained.",
   "operations": [
     {
       "method": "POST",

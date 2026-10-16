@@ -226,6 +226,12 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests(Postgr
         public Task<bool> CompleteImportAsync(int layerId, Guid generation, CancellationToken cancellationToken)
             => Task.FromResult(false);
 
+        public Task RemapImportedAttachmentsAsync(
+            int layerId,
+            IReadOnlyDictionary<long, long> sourceObjectIds,
+            CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
         public List<UploadedAttachment> Uploaded { get; } = [];
         private long _nextId = 1;
 

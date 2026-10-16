@@ -27,7 +27,7 @@ public sealed class ImportRequestTests
         Action act = () => request.Validate();
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Either FileStream, CloudFileId, or LocalFilePath must be provided*");
+            .WithMessage("*Either FileStream, CloudFileId, LocalFilePath, or ObjectStoreUri must be provided*");
     }
 
     [Trait("Tier", "Fast")]
@@ -64,7 +64,7 @@ public sealed class ImportRequestTests
         Action act = () => request.Validate();
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Only one of FileStream, CloudFileId, or LocalFilePath should be provided*");
+            .WithMessage("*Only one of FileStream, CloudFileId, LocalFilePath, or ObjectStoreUri should be provided*");
     }
 
     [Trait("Tier", "Fast")]
