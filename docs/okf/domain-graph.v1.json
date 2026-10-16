@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:587c5eeda8581c9da4ebb7f3ff0c9d8382d525d198dfef3c8fd2a97cd2060aa7",
+  "bundleDigest": "sha256:212e790b76da868654692ab4114f35b22e1db3968c3fe69f684ead393bf5b62d",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7286,7 +7286,7 @@
     {
       "id": "operator/geoprocessing-process-releases",
       "path": "operator/geoprocessing-process-releases.md",
-      "documentDigest": "sha256:b7ca81ff370e5017407381ff8553da4964dc4a67bf7fbd0c279576dc8b0f7181",
+      "documentDigest": "sha256:d2f7eb0bad910e5b3923f382d1708e30e4b4048ad3f2f10e65e47ebaf6734a6f",
       "metadata": {
         "type": "runbook",
         "title": "GP process release bindings",
@@ -16261,7 +16261,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
+      "contractDigest": "sha256:39f44915ca5bbfc374486ac571ec7496ea3a82e73431f728f507bc633612e2c1"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -16334,7 +16334,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
+      "contractDigest": "sha256:39f44915ca5bbfc374486ac571ec7496ea3a82e73431f728f507bc633612e2c1"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16344,7 +16344,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
+      "contractDigest": "sha256:39f44915ca5bbfc374486ac571ec7496ea3a82e73431f728f507bc633612e2c1"
     },
     {
       "workflow": "guides/workflows/import-data",
