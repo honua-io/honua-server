@@ -983,13 +983,26 @@ public sealed class CustomCodeSubmitTests
     // helpers
     // -----------------------------------------------------------------------
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_WithoutArtifactBrokerStorage_RejectsBeforeMinting()
+    {
+        var issuer = Substitute.For<IScopedJobTokenIssuer>();
+        var service = CreateService(scopedJobTokenIssuer: issuer, hasArtifactStorage: false);
+        var submit = async () => await service.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
+        await submit.Should().ThrowAsync<GeoprocessingValidationException>().WithMessage("*durable cloud storage*");
+        await issuer.DidNotReceiveWithAnyArgs().IssueAsync(default!, default);
+    }
+
     private GeoprocessingJobService CreateService(
         Action<CustomCodeOptions>? configure = null,
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
         IEnumerable<IBatchComputeBackend>? backends = null,
         ICustomCodeCommitSignatureVerifier? signatureVerifier = null,
         GpProcessReleaseAdmission? releaseAdmission = null,
-        IScopedJobTokenIssuer? scopedJobTokenIssuer = null)
+        IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
+        bool hasArtifactStorage = true)
     {
         var options = new CustomCodeOptions
         {
@@ -1000,6 +1013,8 @@ public sealed class CustomCodeSubmitTests
         };
         configure?.Invoke(options);
 
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.Provider.Returns(Honua.Core.Features.Infrastructure.Domain.CloudStorageProvider.AwsS3);
         return new GeoprocessingJobService(
             _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
@@ -1012,7 +1027,8 @@ public sealed class CustomCodeSubmitTests
             scopedJobTokenIssuer: scopedJobTokenIssuer ?? _issuer,
             customCodeOptions: new StaticOptionsMonitor<CustomCodeOptions>(options),
             customCodeSignatureVerifier: signatureVerifier,
-            releaseAdmission: releaseAdmission);
+            releaseAdmission: releaseAdmission,
+            customCodeArtifactStorage: hasArtifactStorage ? storage : null);
     }
 
     /// <summary>
