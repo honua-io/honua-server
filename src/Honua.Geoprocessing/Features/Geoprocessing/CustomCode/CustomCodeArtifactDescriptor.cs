@@ -29,6 +29,8 @@ public sealed record CustomCodeArtifactDescriptor
     public required long SizeBytes { get; init; }
     /// <summary>SHA-256 computed by the broker, absent until upload completes.</summary>
     public string? Sha256 { get; init; }
+    /// <summary>CAS-counted bounded upload attempts charged to this reservation.</summary>
+    public int UploadAttempts { get; init; } = 1;
     /// <summary>Pending reservation or available immutable object.</summary>
     public string State { get; init; } = "pending";
 
