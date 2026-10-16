@@ -16,6 +16,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Geoprocessing.CustomCode;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -34,6 +35,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 [Operation(Operations.Configuration)]
 public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
 {
+    private const string TenantId = "public";
     private readonly ConcurrentDictionary<string, ExecutionJobRecord> _records = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte[]> _objects = new(StringComparer.Ordinal);
     private readonly ICloudFileStorage _storage = Substitute.For<ICloudFileStorage>();
@@ -122,6 +124,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
             })
             .ConfigureServices(services =>
             {
+                services.PostConfigure<TenantContextOptions>(options => options.DefaultTenantId = TenantId);
                 services.RemoveAll<IExecutionJobStore>();
                 services.AddSingleton(jobs);
                 services.RemoveAll<ICloudFileStorage>();
@@ -136,7 +139,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        var issuance = await _issuer.IssueAsync(new ScopedJobTokenRequest("alice", null, [], [], "broker-job", [],
+        var issuance = await _issuer.IssueAsync(new ScopedJobTokenRequest("alice", TenantId, [], [], "broker-job", [],
             DateTimeOffset.UtcNow.AddHours(1))
         { Attempt = 1 }, CancellationToken.None);
         _token = issuance.Token;
@@ -175,6 +178,18 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         item.GetProperty("label").GetString().Should().Be("result.json");
         item.GetProperty("sizeBytes").GetInt64().Should().Be(bytes.Length);
         item.GetProperty("providerLink").GetString().Should().Be(receipt.ContentUrl);
+
+        var original = _records["broker-job"];
+        _records["broker-job"] = original with
+        {
+            Audit = original.Audit with
+            {
+                SubmitterSecurityContext = new JobSecurityContext("alice", "other-tenant", []) { OwnerActorId = "alice" }
+            }
+        };
+        using var crossTenantDownload = await _admin.GetAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/result.json?attempt=1");
+        crossTenantDownload.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        _records["broker-job"] = original;
 
         using var retry = await _worker.PutAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/result.json?attempt=1", new ByteArrayContent(bytes));
         retry.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -343,7 +358,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         var admitted = guard.EvaluateRetry(previous)!;
         admitted.Allowed.Should().BeTrue();
         admitted.ArtifactReferences.Should().Equal(prior);
-        var token = await _issuer.IssueAsync(new ScopedJobTokenRequest("alice", null, [], [], "broker-job", [],
+        var token = await _issuer.IssueAsync(new ScopedJobTokenRequest("alice", TenantId, [], [], "broker-job", [],
             DateTimeOffset.UtcNow.AddHours(1))
         { Attempt = 2 }, CancellationToken.None);
         _records["broker-job"] = previous with
@@ -459,7 +474,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         Audit = new OperationAuditInfo
         {
             RequestedBy = "alice",
-            SubmitterSecurityContext = new JobSecurityContext("alice", null, []) { OwnerActorId = "alice" }
+            SubmitterSecurityContext = new JobSecurityContext("alice", TenantId, []) { OwnerActorId = "alice" }
         },
         Spec = new ExecutionJobSpec
         {
