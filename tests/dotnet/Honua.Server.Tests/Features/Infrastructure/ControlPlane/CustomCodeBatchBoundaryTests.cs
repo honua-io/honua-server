@@ -75,6 +75,10 @@ public sealed class CustomCodeBatchBoundaryTests
         var retry = await backend.StartAsync(retryJob with { Spec = job.Spec with { Parameters = retryParameters } });
         Assert.Equal("2", retry.ResolvedParameters!["env.HONUA_JOB_ATTEMPT"]);
         Assert.Equal("capability-2", retry.ResolvedParameters["env.HONUA_JOB_TOKEN"]);
+        await issuer.DidNotReceive().RevokeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await backend.OnPreparationCommittedAsync(job with { Spec = job.Spec with { Parameters = firstParameters } },
+            retryJob with { Spec = job.Spec with { Parameters = retryParameters } }, CancellationToken.None);
+        await issuer.Received(1).RevokeAsync("capability-1", Arg.Any<CancellationToken>());
         await issuer.Received(1).IssueAsync(Arg.Is<ScopedJobTokenRequest>(request =>
             request.Attempt == 2 && request.JobId == job.OperationId && request.TenantId == "tenant"), Arg.Any<CancellationToken>());
     }

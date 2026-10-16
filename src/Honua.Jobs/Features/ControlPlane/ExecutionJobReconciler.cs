@@ -22,7 +22,8 @@ internal sealed partial class ExecutionJobReconciler(
     IUniversalProgressStore progressStore,
     ILogger<ExecutionJobReconciler> logger,
     ILicenseOperationPolicy? licensePolicy = null,
-    IEnumerable<IJobTerminalCallback>? terminalCallbacks = null) : IExecutionJobReconciler
+    IEnumerable<IJobTerminalCallback>? terminalCallbacks = null,
+    IEnumerable<IExecutionJobRetryGuard>? retryGuards = null) : IExecutionJobReconciler
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
@@ -30,6 +31,7 @@ internal sealed partial class ExecutionJobReconciler(
 
     private readonly IReadOnlyList<IBatchComputeBackend> _backends = backends.ToArray();
     private readonly IReadOnlyList<IJobTerminalCallback> _terminalCallbacks = terminalCallbacks?.ToArray() ?? [];
+    private readonly IReadOnlyList<IExecutionJobRetryGuard> _retryGuards = retryGuards?.ToArray() ?? [];
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
     public async Task ReconcileExecutionJobAsync(
@@ -347,7 +349,7 @@ internal sealed partial class ExecutionJobReconciler(
         }
     }
 
-    private static async Task<ExecutionJobRecord> CancelJobAsync(
+    private async Task<ExecutionJobRecord> CancelJobAsync(
         ExecutionJobRecord job,
         IBatchComputeBackend backend,
         CancellationToken cancellationToken)
@@ -362,7 +364,7 @@ internal sealed partial class ExecutionJobReconciler(
         return ApplyObservation(job, observation);
     }
 
-    private static async Task<ExecutionJobRecord> ObserveJobAsync(
+    private async Task<ExecutionJobRecord> ObserveJobAsync(
         ExecutionJobRecord job,
         IBatchComputeBackend backend,
         CancellationToken cancellationToken)
@@ -415,7 +417,7 @@ internal sealed partial class ExecutionJobReconciler(
         };
     }
 
-    private static async Task<ExecutionJobRecord?> TryRequeueFailedRemoteJobAsync(
+    private async Task<ExecutionJobRecord?> TryRequeueFailedRemoteJobAsync(
         ExecutionJobRecord job,
         IBatchComputeBackend backend,
         BatchComputeObservation observation,
@@ -438,6 +440,25 @@ internal sealed partial class ExecutionJobReconciler(
             return null;
         }
 
+        IReadOnlyList<string> retainedArtifacts = [];
+        foreach (var guard in _retryGuards)
+        {
+            var decision = guard.EvaluateRetry(job);
+            if (decision is null)
+            {
+                continue;
+            }
+            if (!decision.Allowed)
+            {
+                return ApplyObservation(job, observation) with
+                {
+                    CurrentPhase = "Failed (retry budget exhausted)",
+                    ErrorMessage = decision.RefusalReason ?? "The durable resource budget does not permit another attempt.",
+                    ArtifactReferences = decision.ArtifactReferences
+                };
+            }
+            retainedArtifacts = retainedArtifacts.Concat(decision.ArtifactReferences).Distinct(StringComparer.Ordinal).ToArray();
+        }
         var now = DateTimeOffset.UtcNow;
         var delay = retryPolicy.ComputeDelay(job.AttemptCount + 1);
         return job with
@@ -449,12 +470,12 @@ internal sealed partial class ExecutionJobReconciler(
             PercentComplete = null,
             CurrentPhase = $"Retrying (attempt {job.AttemptCount + 1}/{retryPolicy.MaxAttempts})",
             ErrorMessage = null,
-            ArtifactReferences = Array.Empty<string>(),
+            ArtifactReferences = retainedArtifacts,
             NextRetryAt = now.Add(delay)
         };
     }
 
-    private static async Task<ExecutionJobRecord> ObserveLocalRetryAsync(
+    private async Task<ExecutionJobRecord> ObserveLocalRetryAsync(
         ExecutionJobRecord job,
         IBatchComputeBackend backend,
         CancellationToken cancellationToken)

@@ -123,6 +123,10 @@ internal static partial class ExecutionJobSubmissionHelper
         }
 
         ControlPlaneTelemetry.RecordExecutionTransition(job, provisioning);
+        if (backend is IBatchComputeSubmissionPreparer committedPreparer)
+        {
+            await committedPreparer.OnPreparationCommittedAsync(job, provisioning, cancellationToken).ConfigureAwait(false);
+        }
 
         var submission = await backend.StartAsync(provisioning, cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;

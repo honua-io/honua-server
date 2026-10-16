@@ -468,6 +468,20 @@ internal sealed partial class AwsBatchComputeBackend(
         };
     }
 
+    public async Task OnPreparationCommittedAsync(ExecutionJobRecord previous, ExecutionJobRecord prepared, CancellationToken cancellationToken)
+    {
+        if (previous.Audit.CustomCodeOwnerScope is not null && scopedTokenIssuer is not null &&
+            previous.Spec.Parameters.TryGetValue("env.HONUA_JOB_TOKEN", out var oldToken) &&
+            prepared.Spec.Parameters.TryGetValue("env.HONUA_JOB_TOKEN", out var newToken) &&
+            !string.Equals(oldToken, newToken, StringComparison.Ordinal))
+        {
+            // Never revoke before the preparation CAS: a stale dispatcher must not revoke
+            // another live attempt. Callback handlers also compare the durable current token,
+            // covering a process crash between this CAS and the cache revocation below.
+            await scopedTokenIssuer.RevokeAsync(oldToken, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     public async Task<BatchComputeSubmissionResult> StartAsync(
         ExecutionJobRecord job,
         CancellationToken cancellationToken = default)

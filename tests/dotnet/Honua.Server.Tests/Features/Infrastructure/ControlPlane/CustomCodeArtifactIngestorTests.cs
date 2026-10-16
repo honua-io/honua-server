@@ -64,6 +64,40 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
         await jobs.TrySetAsync(recovered with { Status = ExecutionJobStatus.Cancelled, CompletedAt = DateTimeOffset.UtcNow }, TimeSpan.FromMinutes(1));
     }
 
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RetryGuard_RetainsChargedReceiptsOrRefusesRetry(bool allowed)
+    {
+        await using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
+        var jobs = new RedisExecutionJobStore(redis, NullLogger<RedisExecutionJobStore>.Instance);
+        var client = new StubAwsBatchJobClient { NextDescribeResult = new AwsBatchJobState { JobId = "failed-attempt", Status = "FAILED" } };
+        var backend = new AwsBatchComputeBackend(client, NullLogger<AwsBatchComputeBackend>.Instance);
+        var job = AwsBatchComputeBackendTests.CreateJob(providerOperationId: "failed-attempt", status: ExecutionJobStatus.Running) with
+        {
+            AttemptCount = 1,
+            RetryPolicy = new JobRetryPolicy { MaxAttempts = 3 },
+            ArtifactReferences = ["charged-immutable-receipt"]
+        };
+        await jobs.TryCreateAsync(job);
+        var guard = Substitute.For<IExecutionJobRetryGuard>();
+        guard.EvaluateRetry(Arg.Any<ExecutionJobRecord>()).Returns(new ExecutionJobRetryDecision
+        {
+            Allowed = allowed, ArtifactReferences = job.ArtifactReferences, RefusalReason = "No reserved journal budget remains."
+        });
+        var reconciler = new ExecutionJobReconciler(jobs, [backend], Substitute.For<IUniversalProgressStore>(),
+            NullLogger<ExecutionJobReconciler>.Instance, retryGuards: [guard]);
+        await reconciler.ReconcileExecutionJobAsync(job.OperationId);
+        var result = (await jobs.GetAsync(job.OperationId))!;
+        result.ArtifactReferences.Should().Equal("charged-immutable-receipt");
+        result.Status.Should().Be(allowed ? ExecutionJobStatus.Queued : ExecutionJobStatus.Failed);
+        if (!allowed)
+        {
+            result.ErrorMessage.Should().Be("No reserved journal budget remains.");
+        }
+        await jobs.TrySetAsync(result with { Status = ExecutionJobStatus.Cancelled }, TimeSpan.FromMinutes(1));
+    }
+
     private sealed class InjectedDispatchCrashException : Exception
     {
     }

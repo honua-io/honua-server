@@ -376,6 +376,13 @@ public interface IBatchComputeSubmissionPreparer
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Parameters that must be durably merged into the job spec before submission.</returns>
     Task<IReadOnlyDictionary<string, string>?> PrepareSubmissionAsync(ExecutionJobRecord job, CancellationToken cancellationToken);
+
+    /// <summary>Finalizes preparation after its parameters are durably committed and before provider submission.</summary>
+    /// <param name="previous">Prior attempt snapshot.</param>
+    /// <param name="prepared">Durably prepared next-attempt snapshot.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task OnPreparationCommittedAsync(ExecutionJobRecord previous, ExecutionJobRecord prepared, CancellationToken cancellationToken)
+        => Task.CompletedTask;
 }
 
 /// <summary>
