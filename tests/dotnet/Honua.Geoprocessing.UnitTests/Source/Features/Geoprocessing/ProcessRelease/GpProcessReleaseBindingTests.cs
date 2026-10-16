@@ -235,7 +235,7 @@ public sealed class GpProcessReleaseBindingTests
             [GpProcessReleaseAdmission.ProcessParam] = "buffer-features",
             [CustomCodeJobContract.GitRefParam] = new string('f', 40),
         }, CancellationToken.None);
-        await contradicting.Should().ThrowAsync<GeoprocessingValidationException>().WithMessage("*contradicts the active release*");
+        await contradicting.Should().ThrowAsync<GeoprocessingValidationException>().WithMessage("*'customcode.git_ref' contradicts the active process release*");
 
         var untouched = new Dictionary<string, string> { ["process.id"] = "geometry.buffer" };
         (await admission.ApplyAsync(untouched, CancellationToken.None)).Should().BeNull();

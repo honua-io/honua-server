@@ -41,6 +41,11 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
     public GpProcessBindingEndpointsTests()
     {
         _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IGpProcessReleaseStore>();
@@ -170,9 +175,11 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
     {
         using var anonymous = _fixture.CreateClient();
 
-        var response = await anonymous.GetAsync($"{Base}/bindings");
+        using var response = await anonymous.GetAsync($"{Base}/bindings");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        using var authorized = await _client.GetAsync($"{Base}/bindings");
+        authorized.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -181,17 +188,24 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
         var process = "binding-test-" + Guid.NewGuid().ToString("N");
         var schema = _fixture.CurrentSchema!;
         using var builder = new NpgsqlCommandBuilder();
-        var quotedSchema = builder.QuoteIdentifier(schema);
-        await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+        var assembly = typeof(Program).Assembly;
+        var resource = assembly.GetManifestResourceNames().Single(name =>
+            name.EndsWith("131_CreateGpProcessReleases.sql", StringComparison.Ordinal));
+        await using var stream = assembly.GetManifestResourceStream(resource)!;
+        using var reader = new StreamReader(stream);
+        var migrationSql = await reader.ReadToEndAsync();
+        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            // Isolate the release metadata as a configured non-default schema would.
-            foreach (var table in new[] { "gp_process_release", "gp_process_binding", "gp_process_binding_history" })
+            // Test hosts skip application migrations. Apply the actual production DDL
+            // to both schemas so the store's configured-schema isolation is exercised.
+            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            foreach (var targetSchema in new[] { "honua", schema })
             {
                 await using var command = new NpgsqlCommand(
-                    $"CREATE TABLE IF NOT EXISTS {quotedSchema}.{table} (LIKE honua.{table} INCLUDING ALL)", connection);
+                    migrationSql.Replace("$HonuaSchema$", builder.QuoteIdentifier(targetSchema), StringComparison.Ordinal), connection);
                 await command.ExecuteNonQueryAsync();
             }
-        }
+        });
 
         var store = new PostgresGpProcessReleaseStore(
             _fixture.Services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, schema);
