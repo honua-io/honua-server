@@ -118,6 +118,18 @@ internal static class GpReleaseBuilder
             errors.Add("the runtime image is required as registry/repository@sha256:<64 hex>: set runtimeImage in the descriptor or pass --runtime-image");
         }
 
+        else
+        {
+            var validatedImageDigest = runtimeImage[(runtimeImage.IndexOf('@', StringComparison.Ordinal) + 1)..];
+            foreach (var target in descriptor.Targets!)
+            {
+                if (target.WorkerImageDigest is not null && target.WorkerImageDigest != validatedImageDigest)
+                {
+                    errors.Add($"targets[{target.Kind}].workerImageDigest must match the receipt-validated runtime image digest");
+                }
+            }
+        }
+
         var generatedAt = request.GeneratedAt ?? git.CommitTimeUtc;
         if (!LockPatterns.TryParseGeneratedAt(generatedAt, out var modificationTime))
         {

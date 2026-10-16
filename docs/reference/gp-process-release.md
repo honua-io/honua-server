@@ -88,7 +88,9 @@ write a receipt under an ignored `artifacts/` directory outside `artifacts.inclu
 }
 ```
 
-The source SHA and runtime image digest must match the release inputs exactly. At least
+The source SHA and runtime image digest must match the release inputs exactly. Every
+target worker image digest must equal this validated runtime digest; an untested target
+image override is rejected. At least
 one test must pass, with no failed or skipped tests. Malformed JSON, duplicate fields,
 unsupported schemas, arbitrary text/JUnit and receipts over 64 KiB are rejected.
 Receipts are hashed evidence, not source files: do not commit a receipt into the source

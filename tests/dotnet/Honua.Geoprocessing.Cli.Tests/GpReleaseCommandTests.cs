@@ -384,6 +384,21 @@ public sealed class GpReleaseCommandTests : IDisposable
         return project;
     }
 
+    [Fact]
+    public void Release_TargetImageDiffersFromValidatedRuntime_RefusesUntestedDeployment()
+    {
+        var project = CreateProject();
+        var descriptor = Path.Join(project, "tools", "summary", "honua-gp.yaml");
+        File.WriteAllText(descriptor, File.ReadAllText(descriptor).Replace(
+            "    chartVersion: 2026.1.0", "    chartVersion: 2026.1.0\n    workerImageDigest: sha256:" + new string('c', 64), StringComparison.Ordinal));
+        Git(project, "add", ".");
+        Git(project, "commit", "-qm", "select different target image");
+        WriteReceipt(project);
+        var result = Run(project, "out");
+        result.Exit.Should().Be(1);
+        result.Stderr.Should().Contain("workerImageDigest must match the receipt-validated runtime image digest");
+    }
+
     private static void WriteReceipt(string project, string status = "pass", string? sourceSha = null,
         string? runtimeDigest = null, int passed = 4, int failed = 0, int skipped = 0)
         => File.WriteAllText(Path.Join(project, "tools", "summary", "artifacts", "golden-tests.json"),
