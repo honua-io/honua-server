@@ -1029,17 +1029,8 @@ builder.Services.AddServerFeatures(
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
 // PostgreSQL owns durable GP release bindings. Other providers retain the process-local
 // development store; durable production release deployment is PostgreSQL-only in this slice.
-var gpReleaseProvider = builder.Configuration["DataSource:Provider"];
-if (string.IsNullOrWhiteSpace(gpReleaseProvider)
-    || gpReleaseProvider.Equals("postgres", StringComparison.OrdinalIgnoreCase)
-    || gpReleaseProvider.Equals("postgresql", StringComparison.OrdinalIgnoreCase)
-    || gpReleaseProvider.Equals("postgis", StringComparison.OrdinalIgnoreCase))
-{
-    builder.Services.AddSingleton<Honua.Geoprocessing.ProcessRelease.IGpProcessReleaseStore>(sp =>
-        new Honua.Server.Features.Geoprocessing.ProcessRelease.PostgresGpProcessReleaseStore(
-            sp.GetRequiredService<IServiceScopeFactory>(), sp.GetRequiredService<TimeProvider>(),
-            builder.Configuration["Database:Schema"]));
-}
+Honua.Server.Features.Geoprocessing.ProcessRelease.GpProcessReleasePersistenceRegistration.AddGpProcessReleasePersistence(
+    builder.Services, builder.Configuration);
 builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
 builder.Services.AddAdminAccessOperations();

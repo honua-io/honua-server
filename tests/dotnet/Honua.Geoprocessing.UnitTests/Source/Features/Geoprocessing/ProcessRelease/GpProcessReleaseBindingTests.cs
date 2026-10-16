@@ -164,6 +164,43 @@ public sealed class GpProcessReleaseBindingTests
     }
 
     [Fact]
+    public async Task Activate_OmittedDefinitionName_StillRequiresARegisteredRevision()
+    {
+        var store = new InMemoryGpProcessReleaseStore();
+        var document = Lock("1.0.0", "a");
+        var release = await store.PublishAsync(document with
+        {
+            Targets = [document.Targets[0] with { JobDefinitionName = null }],
+        }, "operator");
+        var activation = Activation(release.Digest, 0);
+
+        var unversioned = await store.ActivateAsync(activation with
+        {
+            Targets = [new GpProcessBindingTargetIdentity
+            {
+                Kind = "aws-batch", JobDefinitionArn = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer",
+            }],
+        }, AwsEnvironment);
+        unversioned.Activated.Should().BeFalse();
+        unversioned.Reasons.Should().Contain(GpProcessBindingRefusal.TargetIdentityMissing);
+
+        var unregistered = await store.ActivateAsync(activation with
+        {
+            Targets = [new GpProcessBindingTargetIdentity
+            {
+                Kind = "aws-batch", JobDefinitionArn = "arn:aws:batch:us-west-2:123456789012:job-definition/other:7",
+            }],
+        }, AwsEnvironment);
+        unregistered.Activated.Should().BeFalse();
+        unregistered.Reasons.Should().Contain(GpProcessBindingRefusal.TargetNotReady);
+        (await store.GetBindingAsync("buffer-features")).Should().BeNull();
+
+        var registered = await store.ActivateAsync(activation, AwsEnvironment);
+        registered.Activated.Should().BeTrue(string.Join(";", registered.Details));
+        registered.Binding!.Targets.Should().ContainSingle().Which.JobDefinitionArn.Should().Be(activation.Targets[0].JobDefinitionArn);
+    }
+
+    [Fact]
     public async Task Publish_ProtectsStoredReleaseFromCallerCollectionMutations()
     {
         var store = new InMemoryGpProcessReleaseStore();

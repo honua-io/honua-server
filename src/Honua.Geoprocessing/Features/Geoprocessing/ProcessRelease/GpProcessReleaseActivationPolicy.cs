@@ -107,7 +107,8 @@ public static partial class GpProcessReleaseActivationPolicy
             {
                 jobDefinitionArn = identity?.JobDefinitionArn?.Trim();
                 if (string.IsNullOrEmpty(jobDefinitionArn) || !RevisionArn().IsMatch(jobDefinitionArn)
-                    || !jobDefinitionArn.Contains(":job-definition/" + target.JobDefinitionName + ":", StringComparison.Ordinal))
+                    || (target.JobDefinitionName is not null
+                        && !jobDefinitionArn.Contains(":job-definition/" + target.JobDefinitionName + ":", StringComparison.Ordinal)))
                 {
                     Refuse(GpProcessBindingRefusal.TargetIdentityMissing,
                         "an aws-batch target needs the registered job definition ARN with its revision (arn:…:job-definition/<name>:<revision>) so admitted jobs pin that revision");
