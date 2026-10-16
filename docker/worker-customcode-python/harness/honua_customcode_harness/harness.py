@@ -101,19 +101,22 @@ def run(
     finally:
         journal.terminal(EXIT_STATUS.get(code, "failed"), code,
                          phase=None if code == EXIT_OK else state["phase"])
-        _upload_events(journal, state["uploader"])
+        if not _upload_events(journal, state["uploader"]) and code == EXIT_OK:
+            code = EXIT_HARNESS_ERROR
     return code
 
 
-def _upload_events(journal: EventJournal, uploader: Any) -> None:
-    """Best effort: the journal rides along as a reserved artifact after the tool's own."""
+def _upload_events(journal: EventJournal, uploader: Any) -> bool:
+    """Publish required diagnostics, preserving any original process failure."""
     if uploader is None:
-        return
+        return False
     try:
         size = journal.path.stat().st_size
         uploader.upload([Artifact(name=EVENTS_FILE_NAME, path=journal.path, size_bytes=size)])
-    except Exception as exc:  # noqa: BLE001 - evidence upload must not change the job outcome
-        print(f"[tool] WARN  event journal upload failed: {exc}", file=sys.stderr, flush=True)
+        return True
+    except Exception as exc:  # noqa: BLE001 - preserve the original failure
+        print(f"[tool] ERROR event journal publication failed: {type(exc).__name__}", file=sys.stderr, flush=True)
+        return False
 
 
 def _run_steps(
@@ -144,6 +147,12 @@ def _run_steps(
     # Establish evidence delivery before any source/dependency/user-code phase can fail.
     try:
         state["uploader"] = _build_uploader(spec, uploader_factory, env)
+        deadline = (os.environ if env is None else env).get("HONUA_JOB_START_DEADLINE")
+        if deadline is not None or uploader_factory is None:
+            import time
+            if deadline is None or not deadline.isdecimal() or time.time() > int(deadline):
+                log.warn("Custom-code queue-wait deadline is missing, invalid or exceeded; source execution refused.")
+                return EXIT_HARNESS_ERROR
     except Exception as exc:
         log.warn(f"artifact broker setup failed: {type(exc).__name__}")
         return EXIT_HARNESS_ERROR

@@ -24,7 +24,12 @@ configuration subsequently becomes unavailable.
 The dispatcher prepares a fresh scoped token for each canonical attempt and
 persists it with `HONUA_JOB_ID` and `HONUA_JOB_ATTEMPT` in its Provisioning CAS before
 calling AWS. A recovered provider submission therefore uses the same durable token.
-Provider retries are disabled; canonical retries mint the next attempt's token.
+The configured `ControlPlane:AwsBatch:CustomCodeMaxQueueWaitSeconds` (default 3,600,
+allowed 1–86,400) fixes a latest start time. Observers cancel jobs still queued or
+starting after that deadline, and both harnesses refuse source fetch/build/execute
+past it. The token expires after that start deadline plus the explicit execution
+timeout and five minutes of upload grace, giving every admitted start its full
+execution budget. Provider retries are disabled; canonical retries mint the next attempt's token.
 
 The worker sends artifact bytes to:
 
@@ -54,7 +59,8 @@ Both production harnesses initialize the broker before fetching or building user
 code, so ordinary setup, tool and upload failures can publish their final journal.
 The server checks its immutable receipt, overrides the claimed attempt with the
 broker attempt, redacts and projects bounded events, and atomically deduplicates
-retry ingestion by receipt digest and event position. Hard process termination or a
+retry ingestion by receipt digest and event position. Failure to publish the required journal changes an otherwise successful worker exit
+to a harness failure; existing tool failures remain failures. Hard process termination or a
 cancelled attempt can prevent a final journal upload; provider status remains the
 terminal source of truth in that case.
 

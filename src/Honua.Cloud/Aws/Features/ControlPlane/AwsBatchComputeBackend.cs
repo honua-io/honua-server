@@ -266,6 +266,9 @@ internal sealed class AwsBatchExecutionOptions
     /// <summary>Configuration section name.</summary>
     public const string SectionName = "ControlPlane:AwsBatch";
 
+    /// <summary>Maximum custom-code queue/start wait, in seconds; enforced before user source executes.</summary>
+    public int CustomCodeMaxQueueWaitSeconds { get; set; } = 3600;
+
     /// <summary>
     /// Job-definition contract attestations. Each ARN/revision is stored as an entry value instead
     /// of a dictionary key because colons in an ARN are configuration-path delimiters.
@@ -444,17 +447,24 @@ internal sealed partial class AwsBatchComputeBackend(
         {
             throw new InvalidOperationException("Custom-code artifact capability issuer is unavailable.");
         }
+        var queueWait = options.Value.CustomCodeMaxQueueWaitSeconds;
+        if (queueWait is < 1 or > 86400)
+        {
+            throw new InvalidOperationException("Custom-code queue wait must be between 1 and 86400 seconds.");
+        }
+        var startDeadline = DateTimeOffset.UtcNow.AddSeconds(queueWait);
         var attempt = checked(job.AttemptCount + 1);
         var issuance = await scopedTokenIssuer.IssueAsync(new ScopedJobTokenRequest(
             owner.PrincipalId, owner.TenantId, owner.Roles, owner.Grants,
             job.OperationId, owner.DeclaredScope,
-            DateTimeOffset.UtcNow.AddSeconds(TryParseInt(job.Spec.Parameters, AwsBatchParameterKeys.TimeoutSeconds) ?? 3600).AddMinutes(5))
+            startDeadline.AddSeconds(TryParseInt(job.Spec.Parameters, AwsBatchParameterKeys.TimeoutSeconds) ?? 3600).AddMinutes(5))
         { Attempt = attempt }, cancellationToken).ConfigureAwait(false);
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["env.HONUA_JOB_TOKEN"] = issuance.Token,
             ["env.HONUA_JOB_ID"] = job.OperationId,
-            ["env.HONUA_JOB_ATTEMPT"] = attempt.ToString(CultureInfo.InvariantCulture)
+            ["env.HONUA_JOB_ATTEMPT"] = attempt.ToString(CultureInfo.InvariantCulture),
+            ["env.HONUA_JOB_START_DEADLINE"] = startDeadline.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
         };
     }
 
@@ -643,6 +653,11 @@ internal sealed partial class AwsBatchComputeBackend(
                 };
             }
 
+            if (await EnforceCustomCodeQueueDeadlineAsync(job, state, region, serviceUrl, cancellationToken).ConfigureAwait(false))
+            {
+                return new BatchComputeObservation { Status = ExecutionJobStatus.Cancelling, ProviderOperationId = state.JobId,
+                    Message = "Custom-code queue-wait deadline exceeded; cancelling provider execution." };
+            }
             var mapped = AwsBatchStateMapper.MapStatusWithReason(state.Status, state.StatusReason);
             var message = BuildObservationMessage(state);
             Log.BatchJobObserved(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN", mapped.ToString());
@@ -671,6 +686,28 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = "AWS Batch observation failed."
             };
         }
+    }
+
+    private async Task<bool> EnforceCustomCodeQueueDeadlineAsync(ExecutionJobRecord job, AwsBatchJobState state,
+        string? region, string? serviceUrl, CancellationToken cancellationToken)
+    {
+        if (job.Audit.CustomCodeOwnerScope is null || state.Status is not ("SUBMITTED" or "PENDING" or "RUNNABLE" or "STARTING") ||
+            !job.Spec.Parameters.TryGetValue("env.HONUA_JOB_START_DEADLINE", out var raw) ||
+            !long.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var deadline) ||
+            DateTimeOffset.UtcNow.ToUnixTimeSeconds() <= deadline)
+        {
+            return false;
+        }
+        const string reason = "Custom-code queue-wait deadline exceeded.";
+        if (AwsBatchStateMapper.CanCancelWithoutTerminate(state.Status))
+        {
+            await batchClient.CancelJobAsync(state.JobId, reason, region, serviceUrl, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await batchClient.TerminateJobAsync(state.JobId, reason, region, serviceUrl, cancellationToken).ConfigureAwait(false);
+        }
+        return true;
     }
 
     private async Task<BatchComputeObservation> ObservePendingDiscoveryAsync(
@@ -735,6 +772,11 @@ internal sealed partial class AwsBatchComputeBackend(
             }
 
             var summary = matches[0];
+            if (await EnforceCustomCodeQueueDeadlineAsync(job, summary, region, serviceUrl, cancellationToken).ConfigureAwait(false))
+            {
+                return new BatchComputeObservation { Status = ExecutionJobStatus.Cancelling, ProviderOperationId = summary.JobId,
+                    Message = "Custom-code queue-wait deadline exceeded; cancelling provider execution." };
+            }
             var mapped = AwsBatchStateMapper.MapStatusWithReason(summary.Status, summary.StatusReason);
             Log.BatchJobDiscoveryResolved(
                 logger,

@@ -60,6 +60,8 @@ public sealed class CustomCodeBatchBoundaryTests
         var owner = new CustomCodeOwnerScope("owner", "tenant", [], [], []);
         var job = AwsBatchComputeBackendTests.CreateJob() with { Audit = new OperationAuditInfo { CustomCodeOwnerScope = owner } };
         var prepared = await backend.PrepareSubmissionAsync(job, CancellationToken.None);
+        var startDeadline = DateTimeOffset.FromUnixTimeSeconds(long.Parse(prepared!["env.HONUA_JOB_START_DEADLINE"], System.Globalization.CultureInfo.InvariantCulture));
+        await issuer.Received(1).IssueAsync(Arg.Is<ScopedJobTokenRequest>(request => request.ExpiresAt > startDeadline.AddHours(1)), Arg.Any<CancellationToken>());
         var firstParameters = job.Spec.Parameters.Concat(prepared!).ToDictionary(pair => pair.Key, pair => pair.Value);
         var first = await backend.StartAsync(job with { Spec = job.Spec with { Parameters = firstParameters } });
         Assert.Equal("1", first.ResolvedParameters!["env.HONUA_JOB_ATTEMPT"]);
@@ -75,6 +77,25 @@ public sealed class CustomCodeBatchBoundaryTests
         Assert.Equal("capability-2", retry.ResolvedParameters["env.HONUA_JOB_TOKEN"]);
         await issuer.Received(1).IssueAsync(Arg.Is<ScopedJobTokenRequest>(request =>
             request.Attempt == 2 && request.JobId == job.OperationId && request.TenantId == "tenant"), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData("RUNNABLE", false)]
+    [InlineData("STARTING", true)]
+    public async Task ExpiredQueueBudget_CancelsProviderBeforeUserExecution(string status, bool terminate)
+    {
+        var client = new StubAwsBatchJobClient { NextDescribeResult = new AwsBatchJobState { JobId = "queued-job", Status = status } };
+        var backend = new AwsBatchComputeBackend(client, NullLogger<AwsBatchComputeBackend>.Instance);
+        var job = AwsBatchComputeBackendTests.CreateJob(providerOperationId: "queued-job");
+        job = job with
+        {
+            Audit = new OperationAuditInfo { CustomCodeOwnerScope = new CustomCodeOwnerScope("owner", "tenant", [], [], []) },
+            Spec = job.Spec with { Parameters = new Dictionary<string, string>(job.Spec.Parameters) { ["env.HONUA_JOB_START_DEADLINE"] = "1" } }
+        };
+        var observed = await backend.ObserveAsync(job);
+        Assert.Equal(ExecutionJobStatus.Cancelling, observed.Status);
+        Assert.Equal(terminate ? 1 : 0, client.TerminateCallCount);
+        Assert.Equal(terminate ? 0 : 1, client.CancelCallCount);
     }
 
     private static JobDefinition SafeDefinition() => new()

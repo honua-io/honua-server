@@ -217,3 +217,23 @@ def test_e2e_closes_client(tmp_path) -> None:
         restore_fn=lambda root, manifest: None,
     )
     assert client.closed is True
+
+
+def test_missing_final_journal_cannot_report_success(tmp_path):
+    class RefusingJournal(FakeUploader):
+        def upload(self, artifacts):
+            if any(item.name == "honua-events.v1.jsonl" for item in artifacts):
+                raise RuntimeError("broker unavailable")
+            return super().upload(artifacts)
+    tool = "from honua_customcode_harness import GpResult\ndef execute(context):\n    return GpResult.succeeded()\n"
+    assert run(env=_env(tmp_path), source_root=tmp_path / "src", workdir=tmp_path / "out",
+               client_factory=lambda b, t: FakeClient(), uploader_factory=RefusingJournal,
+               clone_fn=_make_clone_fn(tool), restore_fn=lambda root, manifest: None) == EXIT_HARNESS_ERROR
+
+
+def test_expired_queue_budget_refuses_source_before_user_code(tmp_path):
+    def must_not_clone(*args):
+        raise AssertionError("user source must not run after queue deadline")
+    assert run(env={**_env(tmp_path), "HONUA_JOB_START_DEADLINE": "1"}, source_root=tmp_path / "src",
+               workdir=tmp_path / "out", client_factory=lambda b, t: FakeClient(), uploader_factory=FakeUploader,
+               clone_fn=must_not_clone, restore_fn=lambda root, manifest: None) == EXIT_HARNESS_ERROR

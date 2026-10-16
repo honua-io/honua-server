@@ -107,6 +107,34 @@ public sealed class HarnessEndToEndTests
         };
     }
 
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Run_MissingFinalJournalCannotReportSuccess()
+    {
+        var env = JobEnv();
+        var options = BuildOptions(env, out _);
+        env["CUSTOMCODE_ENTRYPOINT"] = $"TestAsm::{typeof(ProbeTool).FullName}";
+        options.UploaderFactory = prefix => new ArtifactUploader(prefix, (_, key, _) =>
+        {
+            if (key.EndsWith(EventJournal.FileName, StringComparison.Ordinal))
+            {
+                throw new IOException("broker unavailable");
+            }
+        });
+        (await new Harness(options).RunAsync(env)).Should().Be(Harness.ExitHarnessError);
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Run_ExpiredQueueBudgetRefusesSourceBeforeUserCode()
+    {
+        var env = JobEnv();
+        env["HONUA_JOB_START_DEADLINE"] = "1";
+        var options = BuildOptions(env, out _);
+        options.SourceFetch = new SourceFetch((_, _) => throw new InvalidOperationException("user source must not execute"));
+        (await new Harness(options).RunAsync(env)).Should().Be(Harness.ExitHarnessError);
+    }
+
     private sealed class TestScopedClient(string token)
     {
         public string Token { get; } = token;
