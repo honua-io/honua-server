@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -455,7 +456,11 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         AttemptCount = 1,
         CreatedAt = DateTimeOffset.UtcNow,
         UpdatedAt = DateTimeOffset.UtcNow,
-        Audit = new OperationAuditInfo { RequestedBy = "alice" },
+        Audit = new OperationAuditInfo
+        {
+            RequestedBy = "alice",
+            SubmitterSecurityContext = new JobSecurityContext("alice", null, []) { OwnerActorId = "alice" }
+        },
         Spec = new ExecutionJobSpec
         {
             Kind = ExecutionJobKind.Geoprocessing,
