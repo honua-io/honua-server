@@ -336,6 +336,7 @@ public sealed class DurableFeatureStreamTests : IDisposable
     {
         await using var services = new ServiceCollection().AddLogging()
             .AddSingleton(store).AddSingleton(_jobs).AddSingleton(Monitor(_staging))
+            .AddSingleton<IGeoprocessingFeatureStreamReader, GeoprocessingFeatureStreamReader>()
             .Configure<GeoprocessingExecutorOptions>(options => options.MaxArtifactBytes = 4 * 1024 * 1024)
             .BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };

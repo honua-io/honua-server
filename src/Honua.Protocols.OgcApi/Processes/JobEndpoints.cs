@@ -909,10 +909,8 @@ internal static class JobEndpoints
         long maxBytes)
     {
         const string mediaType = "application/geo+json";
-        var store = context.RequestServices.GetService<IGeoprocessingOutputObjectStore>();
-        var jobs = context.RequestServices.GetService<IExecutionJobStore>();
-        var options = context.RequestServices.GetService<IOptionsMonitor<GeoprocessingOutputStagingOptions>>()?.CurrentValue;
-        if (store is null || jobs is null || options is null
+        var reader = context.RequestServices.GetService<IGeoprocessingFeatureStreamReader>();
+        if (reader is null
             || !DurableFeatureStream.TryParse(reference, out var descriptor))
         {
             return new MaterializedArtifact(null, mediaType, "The shared feature stream output store is unavailable.", false);
@@ -925,7 +923,7 @@ internal static class JobEndpoints
 
         try
         {
-            var features = DurableFeatureStream.ReadAsync(reference, job, jobs, store, options, maxBytes, context.RequestServices.GetService<IServiceScopeFactory>(), context.RequestAborted);
+            var features = reader.ReadAsync(reference, job, maxBytes, context.RequestAborted);
             using var body = new MemoryStream();
             using var writer = new Utf8JsonWriter(body);
             var featureWriter = GeoJsonArtifactCodec.CreateWriter();
