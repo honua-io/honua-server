@@ -16,7 +16,7 @@ authors = [{ name = "Honua", email = "mike@honua.io" }]
 # honua-sdk is pinned here so a standalone install matches the image, but the
 # image installs it as a baked layer rather than as a transitive resolve.
 dependencies = [
-  "honua-sdk==0.1.4",
+  "honua-sdk==0.1.16",
 ]
 
 [project.optional-dependencies]

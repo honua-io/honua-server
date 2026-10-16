@@ -1622,6 +1622,9 @@ public sealed record BatchComputeSubmissionResult
 /// </summary>
 public sealed record BatchComputeObservation
 {
+    /// <summary>Provider-confirmed submitted attempt recovered after a lost post-submit commit.</summary>
+    public int? RecoveredAttemptCount { get; init; }
+
     /// <summary>
     /// Observed execution status.
     /// </summary>

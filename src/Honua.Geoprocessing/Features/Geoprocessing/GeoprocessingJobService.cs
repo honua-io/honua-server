@@ -135,7 +135,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         Honua.Core.Features.Operations.Abstractions.IOperationEnvelopeFactory? operationEnvelopeFactory = null,
         ExecutionAdmissionCoordinator? admissionCoordinator = null,
         IEnumerable<IJobTerminalCallback>? terminalCallbacks = null,
-        GpProcessReleaseAdmission? releaseAdmission = null)
+        GpProcessReleaseAdmission? releaseAdmission = null,
+        ICloudFileStorage? customCodeArtifactStorage = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -166,7 +167,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 operationEnvelopeFactory,
                 admissionCoordinator),
             new CustomCodeJobSubmissionGate(
-                logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier, releaseAdmission, workloadRegistry),
+                logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier, releaseAdmission, workloadRegistry, customCodeArtifactStorage),
             new GeoprocessingJobArtifactService(
                 logger,
                 executorOptions,

@@ -107,6 +107,34 @@ public sealed class HarnessEndToEndTests
         };
     }
 
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Run_MissingFinalJournalCannotReportSuccess()
+    {
+        var env = JobEnv();
+        var options = BuildOptions(env, out _);
+        env["CUSTOMCODE_ENTRYPOINT"] = $"TestAsm::{typeof(ProbeTool).FullName}";
+        options.UploaderFactory = prefix => new ArtifactUploader(prefix, (_, key, _) =>
+        {
+            if (key.EndsWith(EventJournal.FileName, StringComparison.Ordinal))
+            {
+                throw new IOException("broker unavailable");
+            }
+        });
+        (await new Harness(options).RunAsync(env)).Should().Be(Harness.ExitHarnessError);
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Run_ExpiredQueueBudgetRefusesSourceBeforeUserCode()
+    {
+        var env = JobEnv();
+        env["HONUA_JOB_START_DEADLINE"] = "1";
+        var options = BuildOptions(env, out _);
+        options.SourceFetch = new SourceFetch((_, _) => throw new InvalidOperationException("user source must not execute"));
+        (await new Harness(options).RunAsync(env)).Should().Be(Harness.ExitHarnessError);
+    }
+
     private sealed class TestScopedClient(string token)
     {
         public string Token { get; } = token;
@@ -219,12 +247,13 @@ public sealed class HarnessEndToEndTests
     {
         var env = JobEnv();
         env["CUSTOMCODE_ENTRYPOINT"] = $"TestAsm::{typeof(ThrowingTool).FullName}";
-        var options = BuildOptions(env, out _);
+        var options = BuildOptions(env, out var uploads);
         options.EntrypointLoader = new EntrypointLoader(_ => typeof(HarnessEndToEndTests).Assembly);
 
         var exit = await new Harness(options).RunAsync(env);
 
         exit.Should().Be(Harness.ExitToolFailed);
+        uploads.Should().ContainSingle(item => item.Item2.EndsWith(EventJournal.FileName, StringComparison.Ordinal));
         var events = EventJournal.Read(Path.Join(options.WorkDir, EventJournal.FileName)).ToList();
         events[^2]["kind"]!.GetValue<string>().Should().Be("failure");
         events[^2]["error"]!["type"]!.GetValue<string>().Should().Be(nameof(InvalidOperationException));

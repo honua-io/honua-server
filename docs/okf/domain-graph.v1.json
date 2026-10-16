@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:c7ecfc02394996d760e4c7ad34138e1520ddb439e62043058aca4ae9128ae228",
+  "bundleDigest": "sha256:72488c9f076043da1f33549c3753e182a705da4324dd5d5548c68cf834d6a364",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -6379,7 +6379,7 @@
     {
       "id": "okf/capabilities/process.geoprocessing",
       "path": "okf/capabilities/process.geoprocessing.md",
-      "documentDigest": "sha256:b02253f17f5f1520a844cf952d60b1001849973192fc38af0d433500b65150cd",
+      "documentDigest": "sha256:7ac5e0cb8aaccc6f64264dadacf3a541a6b0f9ab70e2491c6817fc6e4137cf5c",
       "metadata": {
         "type": "capability",
         "title": "Geoprocessing Task Execution",
@@ -7286,7 +7286,7 @@
     {
       "id": "operator/geoprocessing-process-releases",
       "path": "operator/geoprocessing-process-releases.md",
-      "documentDigest": "sha256:b7ca81ff370e5017407381ff8553da4964dc4a67bf7fbd0c279576dc8b0f7181",
+      "documentDigest": "sha256:093c937f1471c8980e5b9fca65af1913d1fb35e455240aafb86d06dc730832df",
       "metadata": {
         "type": "runbook",
         "title": "GP process release bindings",
@@ -7706,9 +7706,21 @@
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/geoprocessing-operations.md"
     },
     {
+      "id": "reference/gp-customcode-runtime",
+      "path": "reference/gp-customcode-runtime.md",
+      "documentDigest": "sha256:22db7f300deacde30682440145258d54b4650ecae57bd92b9ba1404c2bb2dfd5",
+      "metadata": {
+        "type": "reference",
+        "title": "Custom-code worker runtime",
+        "description": "Credential-free custom-code dispatch, attempt-scoped artifact transport, journal ingestion and bounded logs.",
+        "resource": "honua://capability/process.geoprocessing"
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/gp-customcode-runtime.md"
+    },
+    {
       "id": "reference/gp-harness-events.v1",
       "path": "reference/gp-harness-events.v1.md",
-      "documentDigest": "sha256:44122d0c658c037860834a907c64c9ac8113728edb183659393f94f55ae48c28",
+      "documentDigest": "sha256:e0d652be8c006cbb77004c12133a7ddf6d7361226450e9342708a787e6f3b954",
       "metadata": {
         "type": "reference",
         "title": "GP harness events (honua.gp.events/v1)",
@@ -14143,6 +14155,11 @@
     {
       "source": "okf/capabilities/process.geoprocessing",
       "relation": "links_to",
+      "target": "reference/gp-customcode-runtime"
+    },
+    {
+      "source": "okf/capabilities/process.geoprocessing",
+      "relation": "links_to",
       "target": "reference/gp-harness-events.v1"
     },
     {
@@ -16261,7 +16278,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
+      "contractDigest": "sha256:bf59a21b1f833d1a272b8872234a0826abe508142fccbb241a819fecb10b9506"
     },
     {
       "workflow": "guides/workflows/design-studio",
@@ -16334,7 +16351,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
+      "contractDigest": "sha256:bf59a21b1f833d1a272b8872234a0826abe508142fccbb241a819fecb10b9506"
     },
     {
       "workflow": "guides/workflows/import-data",
@@ -16344,7 +16361,7 @@
       "validation": "openapi_method_and_path",
       "runtimeDiscoveryRequired": true,
       "executionVerified": false,
-      "contractDigest": "sha256:872cc34942a3991ac0df0ce10a4791be96766977f49d6712733f31213485cda1"
+      "contractDigest": "sha256:bf59a21b1f833d1a272b8872234a0826abe508142fccbb241a819fecb10b9506"
     },
     {
       "workflow": "guides/workflows/import-data",

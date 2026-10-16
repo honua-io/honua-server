@@ -1208,6 +1208,22 @@
       "capability": "process.geoprocessing"
     },
     {
+      "id": "get-api-geoprocessing-jobs-jobid-custom-artifacts-name",
+      "route": "/api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}",
+      "method": "GET",
+      "family": "Geoprocessing Output Artifacts",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Geoprocessing.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Download_ChangedCloudBytesOrProvider_FailsBeforeServingAnyArtifactBytes",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_DownloadAndAdminListing_UseImmutableAuthorizedBytes",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RejectsCrossJobRevokedAndStaleAttemptCredentials"
+      ],
+      "proof_ledger_surface": "geoprocessing-output-artifacts",
+      "maturity": "implemented",
+      "capability": "process.geoprocessing"
+    },
+    {
       "id": "get-api-scenes",
       "route": "/api/scenes",
       "method": "GET",
@@ -2704,7 +2720,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetArtifacts_DirectReferencesRemainUsableWithMetadataProvider",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetArtifacts_MapsAvailabilityStates",
-        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetArtifacts_ProviderFailureDoesNotEchoUnsafeReference"
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetArtifacts_ProviderFailureDoesNotEchoUnsafeReference",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_DownloadAndAdminListing_UseImmutableAuthorizedBytes"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -16764,6 +16781,23 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "post-api-v1-admin-gp-process-releases-bindings-process-jobs",
+      "route": "/api/v1/admin/gp/process-releases/bindings/{process}/jobs",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.GpProcessReleaseJobEndpointsTests.SubmitAndReplay_PinMatchingWorkerAndOriginalReleaseAcrossBindingChange",
+        "Honua.Server.Tests.Features.Admin.GpProcessReleaseJobEndpointsTests.Submit_RejectsInvalidScopeAndServerControlFields",
+        "Honua.Server.Tests.Features.Admin.GpProcessReleaseJobEndpointsTests.Submit_RequiresAdminAuthenticationAndSeparateCustomCodePermission",
+        "Honua.Server.Tests.Features.Admin.GpProcessReleaseJobEndpointsTests.Submit_UnboundProcess_IsRefusedBeforeCreatingJob"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "post-api-v1-admin-import-arcgis-migrations-runid-manifest",
       "route": "/api/v1/admin/import/arcgis/migrations/{runId}/manifest",
       "method": "POST",
@@ -24542,6 +24576,32 @@
       "proof_ledger_surface": "data-enrichment",
       "maturity": "implemented",
       "capability": "enrichment.datasets"
+    },
+    {
+      "id": "put-api-geoprocessing-jobs-jobid-custom-artifacts-name",
+      "route": "/api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}",
+      "method": "PUT",
+      "family": "Geoprocessing Output Artifacts",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.Geoprocessing.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Download_ChangedCloudBytesOrProvider_FailsBeforeServingAnyArtifactBytes",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_AggregateBudgetIncludesFailedReservations",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_AttemptChangesDuringCloudWrite_DoesNotPublishAndDeletesOwnGeneration",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_ConcurrentReservations_RespectCountCap",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_DownloadAndAdminListing_UseImmutableAuthorizedBytes",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_InterruptedJournal_RecoversSameReservationWithinRetryLimit",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_Journal_PublishesImmutableReceiptAndCallsIdempotentIngestor",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_LostCloudAcknowledgement_RecoversOnlyMatchingImmutableBytes",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RejectsCrossJobRevokedAndStaleAttemptCredentials",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RejectsUnsafeNamesOversizedBodiesAndTerminalJobs",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RepeatedStorageFailures_KeepCapacityAndBoundRecoveryAttempts",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RetryRetainsPriorChargesAndReservesCurrentAttemptJournal",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_UserOutputsCannotConsumeReservedJournalCountOrBytes"
+      ],
+      "proof_ledger_surface": "geoprocessing-output-artifacts",
+      "maturity": "implemented",
+      "capability": "process.geoprocessing"
     },
     {
       "id": "put-api-v1-admin-alerts-rules-ruleid",

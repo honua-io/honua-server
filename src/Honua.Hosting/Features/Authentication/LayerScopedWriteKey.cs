@@ -206,13 +206,14 @@ internal static class LayerScopedWriteKey
     }
 
     /// <summary>
-    /// Determines whether the principal authenticated as a layer-scoped write key.
+    /// Determines whether writes require explicit grants from a scoped key or job capability.
     /// </summary>
     /// <param name="principal">The request principal.</param>
-    /// <returns><see langword="true"/> when the principal is a scoped write key.</returns>
+    /// <returns><see langword="true"/> when the principal is a scoped key or a frozen job capability.</returns>
     public static bool IsScopedWritePrincipal(ClaimsPrincipal? principal)
         => principal is not null &&
-           principal.HasClaim("auth_type", AuthType);
+           (principal.HasClaim("auth_type", AuthType) ||
+            principal.HasClaim("auth_type", ScopedJobTokenIssuer.AuthTypeClaimValue));
 
     /// <summary>
     /// Determines whether resource access for an API-key principal is governed by

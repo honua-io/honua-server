@@ -107,13 +107,14 @@ def test_e2e_events_path_and_attempt_come_from_env(tmp_path) -> None:
     assert [e["phase"] for e in events if e["kind"] == "phase"] == ["inputs", "source", "dependencies", "client", "execute", "upload"]
 
 
-def test_e2e_tool_failure_writes_failure_and_terminal_without_upload(tmp_path) -> None:
+def test_e2e_tool_failure_uploads_failure_and_terminal_journal(tmp_path) -> None:
     FakeUploader.instances.clear()
     tool = "from honua_customcode_harness import GpResult" + NL + "def execute(context):" + NL + "    raise ValueError('broken')" + NL
     rc = run(env=_env(tmp_path), source_root=tmp_path / "src", workdir=tmp_path / "out", client_factory=lambda b, t: FakeClient(),
              uploader_factory=FakeUploader, clone_fn=_make_clone_fn(tool), restore_fn=lambda root, manifest: None)
     assert rc == EXIT_TOOL_FAILED
-    assert FakeUploader.instances == []
+    assert len(FakeUploader.instances) == 1
+    assert any(a.name == "honua-events.v1.jsonl" for a in FakeUploader.instances[0].uploaded)
     events = [json.loads(line) for line in (tmp_path / "out" / "honua-events.v1.jsonl").read_text(encoding="utf-8").splitlines()]
     assert events[-2]["kind"] == "failure" and events[-2]["error"]["type"] == "ValueError"
     assert events[-1]["kind"] == "terminal" and events[-1]["status"] == "failed" and events[-1]["phase"] == "execute"
@@ -216,3 +217,23 @@ def test_e2e_closes_client(tmp_path) -> None:
         restore_fn=lambda root, manifest: None,
     )
     assert client.closed is True
+
+
+def test_missing_final_journal_cannot_report_success(tmp_path):
+    class RefusingJournal(FakeUploader):
+        def upload(self, artifacts):
+            if any(item.name == "honua-events.v1.jsonl" for item in artifacts):
+                raise RuntimeError("broker unavailable")
+            return super().upload(artifacts)
+    tool = "from honua_customcode_harness import GpResult\ndef execute(context):\n    return GpResult.succeeded()\n"
+    assert run(env=_env(tmp_path), source_root=tmp_path / "src", workdir=tmp_path / "out",
+               client_factory=lambda b, t: FakeClient(), uploader_factory=RefusingJournal,
+               clone_fn=_make_clone_fn(tool), restore_fn=lambda root, manifest: None) == EXIT_HARNESS_ERROR
+
+
+def test_expired_queue_budget_refuses_source_before_user_code(tmp_path):
+    def must_not_clone(*args):
+        raise AssertionError("user source must not run after queue deadline")
+    assert run(env={**_env(tmp_path), "HONUA_JOB_START_DEADLINE": "1"}, source_root=tmp_path / "src",
+               workdir=tmp_path / "out", client_factory=lambda b, t: FakeClient(), uploader_factory=FakeUploader,
+               clone_fn=must_not_clone, restore_fn=lambda root, manifest: None) == EXIT_HARNESS_ERROR

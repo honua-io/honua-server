@@ -27,6 +27,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Honua.Sdk" />
     <ProjectReference Include="..\Honua.CustomCode.Sdk\Honua.CustomCode.Sdk.csproj" />
   </ItemGroup>
 
