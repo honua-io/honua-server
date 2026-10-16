@@ -131,7 +131,7 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
         rolledBack.GetProperty("scheduleReconciliation").GetString().Should().Contain("pending-orchestration-integration");
 
         // Projections.
-        var list = await _client.GetFromJsonAsync<JsonElement>($"{Base}?process=buffer-features");
+        var list = await _client.GetFromJsonAsync<JsonElement>("/api/v1/admin/gp/process-releases?process=buffer-features");
         list.GetProperty("releases").GetArrayLength().Should().Be(2);
         var bindings = await _client.GetFromJsonAsync<JsonElement>($"{Base}/bindings");
         bindings.GetProperty("bindings").EnumerateArray().Should().ContainSingle(b => b.GetProperty("process").GetString() == "buffer-features");
