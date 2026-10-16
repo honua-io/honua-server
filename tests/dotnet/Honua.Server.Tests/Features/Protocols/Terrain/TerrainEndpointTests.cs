@@ -175,7 +175,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         {
             bitmap.Width.Should().Be(TerrainRgbEncoding.TileSize);
             bitmap.Height.Should().Be(TerrainRgbEncoding.TileSize);
-            AssertTerrainPixel(bitmap, 128, 128, TerrainRgbEncoding.NoDataSentinelMeters);
+            AssertTransparentNoDataPixel(bitmap, 128, 128);
         }
     }
 
@@ -206,9 +206,49 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         var bitmap = await DecodeBitmapAsync(response);
         using (bitmap)
         {
-            AssertTerrainPixel(bitmap, 64, 128, TerrainRgbEncoding.NoDataSentinelMeters);
+            AssertTransparentNoDataPixel(bitmap, 64, 128);
             AssertTerrainPixel(bitmap, 192, 128, 50);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
+    public async Task GetTerrainTile_WithSourceNoData_ReturnsTransparentPixels()
+    {
+        await ReplaceLayerRasterSqlAsync("""
+            ST_AddBand(
+                ST_MakeEmptyRaster(2, 2, @upperLeftX, @upperLeftY, @scaleX / 2, @scaleY / 2, 0, 0, 3857),
+                '32BF'::text,
+                -9999,
+                -9999)
+            """);
+
+        var response = await _fixture.Client.GetAsync("/terrain/0/0/0/0.png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var bitmap = await DecodeBitmapAsync(response);
+        for (var row = 0; row < bitmap.Height; row++)
+        {
+            for (var column = 0; column < bitmap.Width; column++)
+            {
+                AssertTransparentNoDataPixel(bitmap, column, row);
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
+    public async Task GetTerrainTile_WithValidMinusTenThousandElevation_RemainsOpaque()
+    {
+        await SeedFullWorldRasterAsync(-10000);
+
+        var response = await _fixture.Client.GetAsync("/terrain/0/0/0/0.png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var bitmap = await DecodeBitmapAsync(response);
+        AssertTerrainPixel(bitmap, 128, 128, -10000);
     }
 
     [IntegrationTest]
@@ -465,5 +505,14 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         actual.Green.Should().Be(expected.G);
         actual.Blue.Should().Be(expected.B);
         actual.Alpha.Should().Be(byte.MaxValue);
+    }
+
+    private static void AssertTransparentNoDataPixel(SKBitmap bitmap, int x, int y)
+    {
+        var actual = bitmap.GetPixel(x, y);
+        actual.Red.Should().Be(0);
+        actual.Green.Should().Be(0);
+        actual.Blue.Should().Be(0);
+        actual.Alpha.Should().Be(0);
     }
 }
