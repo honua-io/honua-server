@@ -131,10 +131,10 @@ internal sealed class PrintingToolsOrphanReconciler(
             }
 
             var refreshed = progress with { HeartbeatAt = now };
-            var result = await progressStore.TrySetProgressAsync(
+            var result = await progressStore.TryReplaceProgressAsync(
                     jobId,
                     refreshed,
-                    progress.Status,
+                    progress,
                     PrintingToolsRequestHandlers.ResultTtl,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -184,10 +184,10 @@ internal sealed class PrintingToolsOrphanReconciler(
                 CompletedAt = now,
                 DownloadUrl = null
             };
-            var result = await progressStore.TrySetProgressAsync(
+            var result = await progressStore.TryReplaceProgressAsync(
                     progress.JobId,
                     failed,
-                    progress.Status,
+                    progress,
                     PrintingToolsRequestHandlers.ResultTtl,
                     cancellationToken)
                 .ConfigureAwait(false);
