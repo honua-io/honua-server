@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the ArcGIS Pro REST stub against a running honua service.
+# Runs the arcgis-stub REST lane against a running honua service.
 set -euo pipefail
 
 : "${HONUA_BASE_URL:=http://honua:5000}"
