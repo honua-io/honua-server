@@ -267,15 +267,41 @@ public sealed class PostgresWorkspaceStoreTests(PostgresFixture fixture)
             (await stores[1].ListByWorkspaceAsync(empty.WorkspaceId)).Should().BeEmpty();
         });
 
+    [IntegrationTest]
+    public Task ManagedStreamRetention_UsesPublishedObjectIdentityUntilCanonicalArtifactDeletion()
+        => WithStoresAsync(async stores =>
+        {
+            var workspace = await stores[0].CreateAsync(Workspace("alice", "streams"));
+            var artifact = await stores[0].CreateAsync(Artifact(workspace.WorkspaceId, "stream", "opaque-stream") with
+            {
+                Metadata = new Dictionary<string, string>
+                {
+                    [WorkspaceStreamProvenance.Published] = "v1",
+                    [WorkspaceStreamProvenance.ObjectKey] = "gp/producer/a1/features/output.ndjson",
+                    [WorkspaceStreamProvenance.StoreReference] = "shared-volume",
+                }
+            });
+            (await stores[1].HasRetainedStreamAsync("gp/producer/a1/features/output.ndjson", "shared-volume")).Should().BeTrue();
+            (await stores[1].HasRetainedStreamAsync("gp/producer/a1/features/other.ndjson", "shared-volume")).Should().BeFalse();
+            (await stores[1].HasRetainedStreamAsync("gp/producer/a1/features/output.ndjson", "other-store")).Should().BeFalse();
+            await stores[0].TransitionStateAsync(artifact.ArtifactId, ArtifactLifecycleState.Promoted);
+            // Promotion and source cleanup cannot introduce a gap while a referenced row remains.
+            (await stores[2].HasRetainedStreamAsync("gp/producer/a1/features/output.ndjson", "shared-volume")).Should().BeTrue();
+            await ((IArtifactStore)stores[0]).DeleteAsync(artifact.ArtifactId);
+            (await stores[3].HasRetainedStreamAsync("gp/producer/a1/features/output.ndjson", "shared-volume")).Should().BeFalse();
+        });
+
     private async Task WithStoresAsync(Func<PostgresWorkspaceStore[], Task> action)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresWorkspaceStoreTests));
         try
         {
             var migration = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "119_CreateGeoprocessingWorkspaces.sql"));
+            var streamIndex = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "132_IndexManagedWorkspaceStreamRetention.sql"));
             var upgrader = DeployChanges.To.PostgresqlDatabase(fixture.ConnectionString)
                 .JournalTo(new NullJournal())
                 .WithScript("119_CreateGeoprocessingWorkspaces.sql", migration)
+                .WithScript("132_IndexManagedWorkspaceStreamRetention.sql", streamIndex)
                 .WithVariable("HonuaSchema", SchemaSearchPath.ValidateAndQuote(schema))
                 .WithTransaction().Build();
             upgrader.PerformUpgrade().Successful.Should().BeTrue();

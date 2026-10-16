@@ -5,6 +5,7 @@ using System.Buffers;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 
@@ -75,7 +76,8 @@ internal static class FeatureStreamArtifact
     /// reference rather than an inline data URI.
     /// </summary>
     public static bool IsStreamReference(string? reference)
-        => reference is not null && reference.StartsWith(StreamReferencePrefix, StringComparison.Ordinal);
+        => reference is not null && (reference.StartsWith(StreamReferencePrefix, StringComparison.Ordinal)
+            || reference.StartsWith(DurableFeatureStream.Prefix, StringComparison.Ordinal));
 
     /// <summary>
     /// Opens an incremental feature stream over an upstream artifact reference. Accepts
@@ -88,8 +90,8 @@ internal static class FeatureStreamArtifact
     /// <param name="stream">The lazy feature sequence on success.</param>
     /// <param name="maxInlineDecodedBytes">
     /// Ceiling applied only to inline data-URI inputs (mirrors
-    /// <see cref="FeatureCollectionArtifact.TryParseDataUri"/>). Spilled streams are
-    /// unbounded — that is the whole point — so the ceiling does not apply to them.
+    /// <see cref="FeatureCollectionArtifact.TryParseDataUri"/>). Durable stream reads
+    /// enforce their separately bounded immutable byte receipt.
     /// </param>
     /// <param name="outputRootDirectory">
     /// When non-null, the path carried by any spilled NDJSON stream reference must fall
@@ -97,12 +99,14 @@ internal static class FeatureStreamArtifact
     /// authenticated caller from injecting an arbitrary file-system path into the reference
     /// and reading files outside the geoprocessing sandbox.
     /// </param>
+    /// <param name="executionContext">Dispatch-owned identity and shared storage for managed streams.</param>
     public static bool TryOpenRead(
         string? reference,
         out string error,
         out IAsyncEnumerable<IFeature> stream,
         long maxInlineDecodedBytes = long.MaxValue,
-        string? outputRootDirectory = null)
+        string? outputRootDirectory = null,
+        IJobExecutionContext? executionContext = null)
     {
         error = "";
         stream = AsyncEnumerable.Empty<IFeature>();
@@ -113,8 +117,27 @@ internal static class FeatureStreamArtifact
             return false;
         }
 
+        if (reference.StartsWith(DurableFeatureStream.Prefix, StringComparison.Ordinal))
+        {
+            if (executionContext is not ManagedFeatureStreamContext { Store: not null, Jobs: not null } durable
+                || !DurableFeatureStream.TryParse(reference, out _))
+            {
+                error = "shared feature stream storage and trusted execution identity are required";
+                return false;
+            }
+
+            stream = DurableFeatureStream.ReadAsync(reference, durable.Job, durable.Jobs, durable.Store, durable.Options, workspaceScopes: durable.WorkspaceScopes);
+            return true;
+        }
+
         if (IsStreamReference(reference))
         {
+            if (executionContext is ManagedFeatureStreamContext)
+            {
+                error = "node-local feature stream references are not accepted by managed job execution";
+                return false;
+            }
+
             if (!TryParseStreamReference(reference, out var descriptor, out error))
             {
                 return false;
@@ -175,7 +198,7 @@ internal static class FeatureStreamArtifact
         descriptor = default;
         error = "";
 
-        if (!IsStreamReference(reference))
+        if (!reference.StartsWith(StreamReferencePrefix, StringComparison.Ordinal))
         {
             error = $"value must be a '{StreamReferencePrefix}' stream reference";
             return false;

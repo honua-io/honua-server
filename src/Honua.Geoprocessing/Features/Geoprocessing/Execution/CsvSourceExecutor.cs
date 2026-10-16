@@ -106,7 +106,7 @@ internal sealed class CsvSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOpt
             inputCount: features.Count,
             _options.CurrentValue.OutputRootDirectory,
             job.OperationId,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken, executionContext: context).ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.PublishArtifactAsync(published.ArtifactReference, cancellationToken).ConfigureAwait(false);

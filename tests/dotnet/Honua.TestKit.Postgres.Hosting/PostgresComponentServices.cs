@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.Licensing;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Db.Postgres;
@@ -19,6 +20,7 @@ using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.Server.Startup;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.TestKit.Postgres.Hosting;
 
@@ -44,6 +46,10 @@ public static class PostgresComponentServices
             .Bind(builder.Configuration.GetSection(LimitsOptions.SectionName));
         builder.Services.AddSingleton<IValidateOptions<LimitsOptions>, LimitsOptionsValidator>();
         builder.Services.AddOptions<CacheOptions>().Bind(builder.Configuration.GetSection(CacheOptions.SectionName));
+        // Feature-store construction includes attachment cleanup. These component hosts
+        // exercise database-backed protocols, so fail loudly if a test actually needs
+        // object storage; a storage-aware host can register its real provider first.
+        builder.Services.TryAddSingleton<ICloudFileStorage, UnconfiguredComponentFileStorage>();
         builder.Services.AddPostgreSqlServices(builder.Configuration, ServerCoreSchemaMigrations.Manifest);
         builder.Services.AddSingleton<IGeometryService, GeometryService>();
         builder.Services.AddScoped<IGeometryValidator>(sp => new WkbGeometryValidator(
