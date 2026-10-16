@@ -107,7 +107,9 @@ counts toward those limits and has a 1 MiB ceiling. One slot and 1 MiB are reser
 inside the totals until the journal is uploaded, limiting user output to 31 files and
 255 MiB before journal publication. Failed or interrupted uploads retain
 their capacity reservation. A matching reservation allows at most three upload attempts,
-including the first. Recovery and completed output retries accept only identical bytes;
+including the first. Remote retries retain all broker reservations and outputs in
+the cumulative job budget. A retry is refused with a durable diagnostic if its
+mandatory journal no longer fits; the existing finite attempt cap still applies. Recovery and completed output retries accept only identical bytes;
 completed journal retries re-run ingestion of the original immutable journal. Cloud
 objects expire after seven days.
 

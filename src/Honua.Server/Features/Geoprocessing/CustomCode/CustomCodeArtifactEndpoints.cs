@@ -19,10 +19,10 @@ namespace Honua.Server.Features.Geoprocessing.CustomCode;
 /// <summary>Credential-free worker output transport, fenced to one live job attempt.</summary>
 internal static class CustomCodeArtifactEndpoints
 {
-    internal const long MaximumArtifactBytes = 64L * 1024 * 1024;
-    internal const long MaximumJobBytes = 256L * 1024 * 1024;
-    internal const long MaximumJournalBytes = 1024 * 1024;
-    internal const int MaximumArtifacts = 32;
+    internal const long MaximumArtifactBytes = CustomCodeArtifactQuota.MaximumArtifactBytes;
+    internal const long MaximumJobBytes = CustomCodeArtifactQuota.MaximumJobBytes;
+    internal const long MaximumJournalBytes = CustomCodeArtifactQuota.MaximumJournalBytes;
+    internal const int MaximumArtifacts = CustomCodeArtifactQuota.MaximumArtifacts;
     private const int MaximumCasAttempts = 8;
     private const int MaximumUploadAttempts = 3;
 

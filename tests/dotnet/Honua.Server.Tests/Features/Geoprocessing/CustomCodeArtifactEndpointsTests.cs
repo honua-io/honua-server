@@ -323,6 +323,45 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}")]
+    public async Task Upload_RetryRetainsPriorChargesAndReservesCurrentAttemptJournal()
+    {
+        var prior = Enumerable.Range(0, 31).Select(index => new CustomCodeArtifactDescriptor
+        {
+            JobId = "broker-job",
+            Attempt = 1,
+            Name = index == 30 ? "honua-events.v1.jsonl" : $"prior{index}.bin",
+            ObjectKey = $"gp/custom-artifacts/broker-job/a1/prior{index}.bin",
+            ContentType = "application/octet-stream",
+            SizeBytes = 1,
+            Provider = CloudStorageProvider.AwsS3,
+        }.Serialize()).ToArray();
+        var previous = _records["broker-job"] with { ArtifactReferences = prior };
+        var guard = new CustomCodeArtifactRetryGuard();
+        var admitted = guard.EvaluateRetry(previous)!;
+        admitted.Allowed.Should().BeTrue();
+        admitted.ArtifactReferences.Should().Equal(prior);
+        var token = await _issuer.IssueAsync(new ScopedJobTokenRequest("alice", null, [], [], "broker-job", [],
+            DateTimeOffset.UtcNow.AddHours(1)) { Attempt = 2 }, CancellationToken.None);
+        _records["broker-job"] = previous with
+        {
+            AttemptCount = 2,
+            ArtifactReferences = admitted.ArtifactReferences,
+            Spec = previous.Spec with { Parameters = new Dictionary<string, string> { [CustomCodeJobContract.JobTokenEnvParam] = token.Token } },
+        };
+        _worker.DefaultRequestHeaders.Remove("X-Api-Key");
+        _worker.DefaultRequestHeaders.Add("X-Api-Key", token.Token);
+        using var output = await _worker.PutAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/output.bin?attempt=2", new ByteArrayContent([1]));
+        output.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+        using var journal = await _worker.PutAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/honua-events.v1.jsonl?attempt=2", new ByteArrayContent([10]));
+        journal.StatusCode.Should().Be(HttpStatusCode.Created);
+        var refused = guard.EvaluateRetry(_records["broker-job"])!;
+        refused.Allowed.Should().BeFalse();
+        refused.RefusalReason.Should().Contain("mandatory journal");
+        _records["broker-job"].ArtifactReferences.Should().HaveCount(32);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}")]
     public async Task Upload_InterruptedJournal_RecoversSameReservationWithinRetryLimit()
     {
         _failUploads = 1;

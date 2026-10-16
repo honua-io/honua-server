@@ -24596,6 +24596,7 @@
         "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RejectsCrossJobRevokedAndStaleAttemptCredentials",
         "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RejectsUnsafeNamesOversizedBodiesAndTerminalJobs",
         "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RepeatedStorageFailures_KeepCapacityAndBoundRecoveryAttempts",
+        "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_RetryRetainsPriorChargesAndReservesCurrentAttemptJournal",
         "Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests.Upload_UserOutputsCannotConsumeReservedJournalCountOrBytes"
       ],
       "proof_ledger_surface": "geoprocessing-output-artifacts",
