@@ -31,13 +31,13 @@ public sealed class FeatureServerQueryAttachmentsFilterFixture : IAsyncLifetime
     {
         await App.InitializeAsync();
         var storage = App.GetService<ICloudFileStorage>();
-        await AttachmentTestData.SeedAsync(App.Postgres, storage, TestLayerId, TestFeatureId);
+        await AttachmentTestData.SeedAsync(App.Postgres, storage, TestLayerId, TestFeatureId, App.CurrentSchema!);
     }
 
     public async Task DisposeAsync()
     {
         var storage = App.GetService<ICloudFileStorage>();
-        await AttachmentTestData.CleanupAsync(App.Postgres, storage, TestLayerId, TestFeatureId);
+        await AttachmentTestData.CleanupAsync(App.Postgres, storage, TestLayerId, TestFeatureId, App.CurrentSchema!);
         await App.DisposeAsync();
     }
 }

@@ -42,14 +42,86 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             TestServiceId,
             ["Query", "Create", "Update", "Delete"]);
         var storage = _fixture.GetService<ICloudFileStorage>();
-        await AttachmentTestData.SeedAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId);
+        await AttachmentTestData.SeedAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId, _fixture.CurrentSchema!);
     }
 
     public async Task DisposeAsync()
     {
         var storage = _fixture.GetService<ICloudFileStorage>();
-        await AttachmentTestData.CleanupAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId);
+        await AttachmentTestData.CleanupAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId, _fixture.CurrentSchema!);
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Delete)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task FeatureDelete_CleansOnlyItsFixtureAttachmentsAfterCommit(bool isolatedHost)
+    {
+        var target = new WebAppFixture();
+        if (isolatedHost)
+        {
+            target.ConfigureServices(_ => { });
+        }
+
+        await target.InitializeAsync();
+        var storage = target.GetService<ICloudFileStorage>();
+        try
+        {
+            target.EnableV2ServiceEditingCapabilities(TestServiceId, ["Query", "Create", "Update", "Delete"]);
+            await AttachmentTestData.SeedAsync(target.Postgres, storage, TestLayerId, TestFeatureId, target.CurrentSchema!);
+            var targetPath = await GetStoragePathAsync(target, 1);
+            var otherPath = await GetStoragePathAsync(1);
+            targetPath.Should().NotBe(otherPath);
+
+            // A later missing feature rolls the whole delete back, including attachment
+            // metadata. The backing objects must remain available until a confirmed commit.
+            using var failedForm = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["deletes"] = $"{TestFeatureId},999999",
+                ["rollbackOnFailure"] = "true",
+                ["f"] = "json"
+            });
+            using var failed = await target.Client.PostAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", failedForm);
+            failed.BeSuccessful();
+            using var failedJson = JsonDocument.Parse(await failed.Content.ReadAsStringAsync());
+            failedJson.RootElement.GetProperty("deleteResults").EnumerateArray()
+                .Should().Contain(result => !result.GetProperty("success").GetBoolean());
+            (await GetStoragePathAsync(target, 1)).Should().Be(targetPath);
+            (await storage.ExistsAsync(targetPath)).Should().BeTrue();
+
+            using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["deletes"] = TestFeatureId.ToString(CultureInfo.InvariantCulture),
+                ["rollbackOnFailure"] = "true",
+                ["f"] = "json"
+            });
+            using var deleted = await target.Client.PostAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", form);
+            deleted.BeSuccessful();
+            using var deletedJson = JsonDocument.Parse(await deleted.Content.ReadAsStringAsync());
+            deletedJson.RootElement.GetProperty("deleteResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
+
+            await using var connection = await target.Postgres.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT count(*) FROM {QuoteSchema(target.CurrentSchema!)}.attachments WHERE layer_id = @layer AND feature_id = @feature";
+            command.Parameters.AddWithValue("layer", TestLayerId);
+            command.Parameters.AddWithValue("feature", TestFeatureId);
+            (await command.ExecuteScalarAsync()).Should().Be(0L);
+            (await storage.ExistsAsync(targetPath)).Should().BeFalse();
+
+            // The other fixture owns the same layer/feature/attachment identifiers.
+            // Its row and exact bytes must survive this fixture's committed delete.
+            (await GetStoragePathAsync(1)).Should().Be(otherPath);
+            (await DownloadAttachmentBytesAsync(1)).Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
+        }
+        finally
+        {
+            await AttachmentTestData.CleanupAsync(target.Postgres, storage, TestLayerId, TestFeatureId, target.CurrentSchema!);
+            await target.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -1108,7 +1180,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         try
         {
             var storage = fixture.GetService<ICloudFileStorage>();
-            await AttachmentTestData.SeedAsync(fixture.Postgres, storage, TestLayerId, TestFeatureId);
+            await AttachmentTestData.SeedAsync(fixture.Postgres, storage, TestLayerId, TestFeatureId, fixture.CurrentSchema!);
 
             try
             {
@@ -1135,7 +1207,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             }
             finally
             {
-                await AttachmentTestData.CleanupAsync(fixture.Postgres, storage, TestLayerId, TestFeatureId);
+                await AttachmentTestData.CleanupAsync(fixture.Postgres, storage, TestLayerId, TestFeatureId, fixture.CurrentSchema!);
             }
         }
         finally
@@ -1218,9 +1290,9 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     {
         await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $"""
             SELECT COUNT(*)
-            FROM honua.attachments
+            FROM {QuoteSchema(_fixture.CurrentSchema!)}.attachments
             WHERE layer_id = @layerId AND feature_id = @featureId
             """;
         command.Parameters.AddWithValue("layerId", TestLayerId);
@@ -1299,11 +1371,20 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     /// Reads the storage identifier of an attachment straight from the metadata table, so a
     /// test can assert on the object after the row that names it has been deleted.
     /// </summary>
-    private async Task<string> GetStoragePathAsync(long attachmentId)
+    private static string QuoteSchema(string schema)
     {
-        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        using var builder = new Npgsql.NpgsqlCommandBuilder();
+        return builder.QuoteIdentifier(schema);
+    }
+
+    private Task<string> GetStoragePathAsync(long attachmentId)
+        => GetStoragePathAsync(_fixture, attachmentId);
+
+    private static async Task<string> GetStoragePathAsync(WebAppFixture fixture, long attachmentId)
+    {
+        await using var connection = await fixture.Postgres.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT storage_path FROM honua.attachments WHERE id = @id";
+        command.CommandText = $"SELECT storage_path FROM {QuoteSchema(fixture.CurrentSchema!)}.attachments WHERE id = @id";
         command.Parameters.AddWithValue("id", attachmentId);
         var value = await command.ExecuteScalarAsync();
         value.Should().BeOfType<string>("attachment {0} must have a storage path", attachmentId);

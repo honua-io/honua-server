@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Cryptography;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -11,12 +12,15 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Db.Postgres.Features.Attachments;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Honua.TestKit.Mixins;
@@ -126,6 +130,8 @@ internal static class WebAppFixturePostgresWiringMixin
         services.RemoveAll<IRelationshipStore>();
         services.RemoveAll<IStreamingFeatureStore>();
         services.RemoveAll<IAttachmentStore>();
+        services.RemoveAll<IFeatureAttachmentCleanup>();
+        services.RemoveAll<PostgresAttachmentStore>();
         services.RemoveAll<ITableDiscoveryService>();
         services.RemoveAll<IDatabaseHealthChecker>();
         services.RemoveAll<IDatabaseConnectionProvider>();
@@ -291,6 +297,7 @@ internal static class WebAppFixturePostgresWiringMixin
         UseFixtureSchemaGuardBypass(services);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
+        BindFixtureAttachmentStore(services);
 
         // Mirror the production composition root: wrap the provider raster-coverage
         // renderer with the vector-aware styled-render decorator (honua-server#2498) so
@@ -350,6 +357,7 @@ internal static class WebAppFixturePostgresWiringMixin
         UseFixtureSchemaGuardBypass(services);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
+        BindFixtureAttachmentStore(services);
 
         // Mirror the production composition root: wrap the provider raster-coverage
         // renderer with the vector-aware styled-render decorator (honua-server#2498) so
@@ -368,6 +376,24 @@ internal static class WebAppFixturePostgresWiringMixin
         // reach this registry, so unsupported registration shapes fail closed.
         services.AddSingleton<ScopedServiceOverrideRegistry>();
         services.AddSingleton<IStartupFilter, ScopedServiceOverrideStartupFilter>();
+    }
+
+    /// <summary>
+    /// Keeps attachment reads and transactional feature-delete cleanup on the same
+    /// maintained store, using the isolated host's schema or the shared request's schema.
+    /// The production default targets honua, which isolated test schemas do not populate.
+    /// </summary>
+    private static void BindFixtureAttachmentStore(IServiceCollection services)
+    {
+        services.RemoveAll<PostgresAttachmentStore>();
+        services.AddScoped(serviceProvider => new PostgresAttachmentStore(
+            serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+            serviceProvider.GetService<ICloudFileStorage>(),
+            serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
+            schemaName: serviceProvider.GetRequiredService<ISchemaContext>().CurrentSchema,
+            orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
+            attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
+                ?? new AttachmentLimits()));
     }
 
     /// <summary>

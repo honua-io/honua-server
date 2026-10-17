@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Npgsql;
 
 namespace Honua.TestKit.Infrastructure;
 
@@ -25,16 +26,17 @@ public static class AttachmentTestData
     /// </summary>
     public static ReadOnlySpan<byte> SeededImageFileBytes => [0xFF, 0xD8, 0xFF, 0xD9];
 
-    public static async Task SeedAsync(PostgresFixture fixture, ICloudFileStorage fileStorage, int layerId, long featureId)
+    public static async Task SeedAsync(PostgresFixture fixture, ICloudFileStorage fileStorage, int layerId, long featureId, string schemaName = "honua")
     {
         ArgumentNullException.ThrowIfNull(fixture);
         ArgumentNullException.ThrowIfNull(fileStorage);
 
+        var tableName = QualifyAttachmentTable(schemaName);
         var file1Name = "test1.txt";
         var file2Name = "test2.jpg";
         var file1Bytes = SeededTextFileBytes.ToArray();
         var file2Bytes = SeededImageFileBytes.ToArray();
-        var folder = BuildAttachmentFolder(layerId, featureId);
+        var folder = BuildAttachmentFolder(layerId, featureId, schemaName);
 
         var upload1 = await fileStorage.UploadAsync(new ByteArrayUploadRequest
         {
@@ -63,7 +65,7 @@ public static class AttachmentTestData
             throw new InvalidOperationException("Failed to seed attachment file test2.jpg");
         }
 
-        // #2020: serialize the global honua.attachments DELETE + INSERT + setval seed under the
+        // #2020: serialize the fixture attachments DELETE + INSERT + setval seed under the
         // schema-mutation advisory lock (multi-statement, parameterized, sequence reset). The
         // file-cleanup compensation stays OUTSIDE the lock action so it runs only after the lock
         // helper has exhausted its bounded 40P01/40001 retries — a transient deadlock retries the
@@ -74,11 +76,11 @@ public static class AttachmentTestData
             {
                 await using var connection = await fixture.DataSource.OpenConnectionAsync();
                 await using var command = connection.CreateCommand();
-                command.CommandText = """
-                    DELETE FROM honua.attachments
+                command.CommandText = $"""
+                    DELETE FROM {tableName}
                     WHERE layer_id = @layerId AND feature_id = @featureId;
 
-                    INSERT INTO honua.attachments (
+                    INSERT INTO {tableName} (
                         id,
                         feature_id,
                         layer_id,
@@ -94,10 +96,11 @@ public static class AttachmentTestData
                         (2, @featureId, @layerId, @file2Name, 'image/jpeg', @file2Size, @file2CreatedAt, @storagePath2, 'test,image');
 
                     SELECT setval(
-                        pg_get_serial_sequence('honua.attachments', 'id'),
-                        (SELECT COALESCE(MAX(id), 0) FROM honua.attachments)
+                        pg_get_serial_sequence(@tableName, 'id'),
+                        (SELECT COALESCE(MAX(id), 0) FROM {tableName})
                     );
                     """;
+                command.Parameters.AddWithValue("tableName", tableName);
                 command.Parameters.AddWithValue("layerId", layerId);
                 command.Parameters.AddWithValue("featureId", featureId);
                 command.Parameters.AddWithValue("file1Name", file1Name);
@@ -120,19 +123,20 @@ public static class AttachmentTestData
         }
     }
 
-    public static async Task CleanupAsync(PostgresFixture fixture, ICloudFileStorage fileStorage, int layerId, long featureId)
+    public static async Task CleanupAsync(PostgresFixture fixture, ICloudFileStorage fileStorage, int layerId, long featureId, string schemaName = "honua")
     {
         ArgumentNullException.ThrowIfNull(fixture);
         ArgumentNullException.ThrowIfNull(fileStorage);
 
+        var tableName = QualifyAttachmentTable(schemaName);
         var fileIds = new List<string>();
 
         await using (var connection = await fixture.DataSource.OpenConnectionAsync())
         await using (var command = connection.CreateCommand())
         {
-            command.CommandText = """
+            command.CommandText = $"""
                 SELECT storage_path
-                FROM honua.attachments
+                FROM {tableName}
                 WHERE layer_id = @layerId AND feature_id = @featureId;
                 """;
             command.Parameters.AddWithValue("layerId", layerId);
@@ -148,11 +152,11 @@ public static class AttachmentTestData
             }
         }
 
-        // #2020: route the global honua.attachments DELETE through the schema-mutation advisory
+        // #2020: route the fixture attachments DELETE through the schema-mutation advisory
         // lock (parameterized overload). The preceding SELECT is read-only and stays unlocked.
         await fixture.ApplyGlobalSeedSqlAsync(
-            """
-            DELETE FROM honua.attachments
+            $"""
+            DELETE FROM {tableName}
             WHERE layer_id = @layerId AND feature_id = @featureId;
             """,
             command =>
@@ -167,13 +171,21 @@ public static class AttachmentTestData
         }
     }
 
-    private static string BuildAttachmentFolder(int layerId, long featureId)
+    private static string BuildAttachmentFolder(int layerId, long featureId, string schemaName)
     {
         return string.Join(
             '/',
             "attachments",
+            schemaName,
             layerId.ToString(CultureInfo.InvariantCulture),
             featureId.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static string QualifyAttachmentTable(string schemaName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schemaName);
+        using var builder = new NpgsqlCommandBuilder();
+        return $"{builder.QuoteIdentifier(schemaName)}.attachments";
     }
 
     private static async Task TryDeleteFileAsync(ICloudFileStorage fileStorage, string fileId)
