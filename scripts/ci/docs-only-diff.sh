@@ -28,6 +28,8 @@
 #       is added or modified (deleting one is never docs-only), or
 #     * a prose or image file under docs/ (.md .png .jpg .jpeg .gif .svg .webp)
 #       outside docs/gis/data/, added, modified or deleted;
+#     * an added/modified install-artifacts.json, llms.txt or OKF domain graph
+#       explicitly owned by the lightweight docs gates (DOCS_DATA below);
 #   and no changed path may be referenced by a GATE INPUT (below). A type change
 #   (file <-> symlink) is never docs-only.
 #
@@ -222,6 +224,15 @@ from pathlib import PurePosixPath
 MAX_PATHS = 400
 PROSE_EXTENSIONS = {".md", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
 
+# Data owned by the lightweight docs gates, not server runtime/build inputs.
+# These still pass the reference scan: a new runtime consumer makes them
+# ineligible again. Do not generalize this to arbitrary JSON or docs/gis/data.
+DOCS_DATA = {
+    "docs/get-started/install-artifacts.json",
+    "docs/llms.txt",
+    "docs/okf/domain-graph.v1.json",
+}
+
 # Everything a step the docs-only exit skips compiles, executes or reads. A
 # gate step added to pr-gate.yml or the lean-gate action that reads a new file
 # means adding that file here; scripts/ci/fixtures/validate-docs-only-diff.sh
@@ -309,6 +320,10 @@ def refusal(status: str, path: str) -> str | None:
         return f"{path}: outside docs/"
     if path.startswith("docs/gis/data/"):
         return f"{path}: generated data under docs/gis/data/"
+    if path in DOCS_DATA:
+        if status == "D":
+            return f"{path}: deletes a required documentation input"
+        return None
     if suffix not in PROSE_EXTENSIONS:
         return f"{path}: not a prose or image file ({suffix or 'no extension'})"
     return None

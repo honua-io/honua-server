@@ -50,6 +50,9 @@ write docs/reference/literal.md '# Read by a test through a path literal'
 write docs/reference/embedded.md '# Embedded by a project'
 write docs/gis/data/catalog.json '{}'
 write docs/gis/data/notes.md 'generated'
+write docs/get-started/install-artifacts.json '{"serverImage":"example"}'
+write docs/llms.txt '# Documentation index'
+write docs/okf/domain-graph.v1.json '{}'
 write src/Lib/Lib.cs 'internal sealed class Lib { }'
 # A packed README only has to exist; an embedded document is build content.
 write src/Lib/Lib.csproj '<Project Sdk="Microsoft.NET.Sdk">
@@ -147,6 +150,15 @@ edit_docs_and_src() {
 }
 edit_generated_json() { write docs/gis/data/catalog.json '{"changed": true}'; }
 edit_generated_markdown() { printf 'More.\n' >> "${REPO}/docs/gis/data/notes.md"; }
+edit_install_manifest() { write docs/get-started/install-artifacts.json '{"serverImage":"next"}'; }
+edit_docs_indexes() {
+  write docs/llms.txt '# Updated documentation index'
+  write docs/okf/domain-graph.v1.json '{"nodes": []}'
+}
+edit_runtime_consumed_manifest() {
+  # Add the consumer to the target tree, then change only the docs data on a PR.
+  edit_install_manifest
+}
 edit_docs_yaml() { write docs/guides/config.yaml 'key: value'; }
 rename_docs_to_src() { g mv docs/guides/intro.md src/Lib/intro.md; }
 rename_within_docs() { g mv docs/guides/intro.md docs/guides/renamed.md; }
@@ -188,6 +200,8 @@ case_pr "rename within docs" true rename_within_docs
 case_pr "AGENTS.md (existence-only reference)" true edit_agents
 case_pr "Markdown under docs/gis/data" false edit_generated_markdown
 case_pr "non-prose file under docs" false edit_docs_yaml
+case_pr "installation manifest uses docs validation" true edit_install_manifest
+case_pr "derived agent indexes use docs validation" true edit_docs_indexes
 case_pr "document read by source-only architecture guard" false edit_source_governed
 case_pr "document read through path segments" false edit_governed_segments
 case_pr "document read through a path literal" false edit_governed_literal
@@ -198,6 +212,16 @@ case_pr "deleted top-level Markdown" false delete_top_level_markdown
 case_pr "deleted docs page" true delete_docs_page
 case_pr "docs page replaced by a symlink" false symlink_docs_page
 case_on "${MOVED}" "target moved on in src; PR still docs-only" true edit_docs
+
+start_pr
+write src/Lib/Install.cs 'var content = File.ReadAllText("docs/get-started/install-artifacts.json");'
+commit_pr "runtime starts reading install manifest"
+CONSUMER="$(g rev-parse HEAD)"
+g checkout -q -B pr "${CONSUMER}"
+edit_runtime_consumed_manifest
+commit_pr "change runtime-consumed manifest"
+merge_onto "${CONSUMER}"
+expect "docs data with a runtime consumer still requires runtime CI" false
 
 echo "== Refusing to answer without a pull-request merge base"
 start_pr
@@ -316,6 +340,18 @@ if -1 in positions or positions != sorted(positions):
 policy = gate[gate.find(order[3]) :].split("- name:", 2)[1]
 if "if: steps.docs-only.outputs.docs_only == 'true'" not in policy or "check-markdown-command-policy.ps1" not in policy:
     problems.append("a docs-only diff must still run the Markdown command policy")
+indexes = gate.split("- name: Validate derived documentation indexes (docs-only diff)", 1)
+if len(indexes) != 2 or any(command not in indexes[1].split("- name:", 1)[0] for command in (
+    "if: steps.docs-only.outputs.docs_only == 'true'",
+    "generate-okf-graph.py --check", "generate-llms-txt.py --check",
+)):
+    problems.append("docs data exemptions must retain their lightweight validators inside the required gate")
+install = gate.split("- name: Validate installation references and select public Docker proof", 1)
+if len(install) != 2 or "--smoke-base HEAD^1" not in install[1].split("- name:", 1)[0]:
+    problems.append("required gate must validate install references and select proof from its actual merge parent")
+proof = gate.split("- name: Prove the published Docker installation", 1)
+if len(proof) != 2 or "if: steps.public-install.outputs.smoke == 'true'" not in proof[1].split("- name:", 1)[0]:
+    problems.append("public Docker proof must run only when selected, including on docs-only changes")
 for name in ("Verify tracked text files are UTF-8", "Verify review-first admission contract", "Admission receipt"):
     block = gate[gate.find(f"- name: {name}") :].split("- name:", 2)[1]
     if "docs-only" in block:
