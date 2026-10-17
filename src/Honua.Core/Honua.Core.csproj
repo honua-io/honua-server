@@ -73,6 +73,8 @@
     <InternalsVisibleTo Include="Honua.SqlServer" />
     <InternalsVisibleTo Include="Honua.SqlServer.Tests" />
     <InternalsVisibleTo Include="Honua.Oracle" />
+    <InternalsVisibleTo Include="Honua.Redshift" />
+    <InternalsVisibleTo Include="Honua.Snowflake" />
   </ItemGroup>
 
   <ItemGroup>
