@@ -1970,6 +1970,7 @@ jobs:
         uses: ./.github/actions/setup-honua-server
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          post-seed-yaml: tests/seed/browser-compat.yaml
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
