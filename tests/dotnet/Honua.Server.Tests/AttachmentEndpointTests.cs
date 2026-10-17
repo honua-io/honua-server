@@ -8,12 +8,15 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -60,6 +63,9 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task FeatureDelete_CleansOnlyItsFixtureAttachmentsAfterCommit(bool isolatedHost)
     {
         var target = new WebAppFixture();
+        var license = new TestLicenseEntitlementService(HonuaEdition.Pro);
+        target.ReplaceRequestService<ILicenseEntitlementService>(license)
+            .ReplaceRequestService<ILicenseStatusProvider>(license);
         if (isolatedHost)
         {
             target.ConfigureServices(_ => { });
@@ -86,8 +92,11 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             using var failed = await target.Client.PostAsync(
                 $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", failedForm);
             failed.BeSuccessful();
-            using var failedJson = JsonDocument.Parse(await failed.Content.ReadAsStringAsync());
-            failedJson.RootElement.GetProperty("deleteResults").EnumerateArray()
+            var failedBody = await failed.Content.ReadAsStringAsync();
+            using var failedJson = JsonDocument.Parse(failedBody);
+            failedJson.RootElement.TryGetProperty("deleteResults", out var failedDeletes).Should()
+                .BeTrue("response should contain deleteResults; body: {0}", failedBody);
+            failedDeletes.EnumerateArray()
                 .Should().Contain(result => !result.GetProperty("success").GetBoolean());
             (await GetStoragePathAsync(target, 1)).Should().Be(targetPath);
             (await storage.ExistsAsync(targetPath)).Should().BeTrue();
@@ -101,8 +110,11 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             using var deleted = await target.Client.PostAsync(
                 $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", form);
             deleted.BeSuccessful();
-            using var deletedJson = JsonDocument.Parse(await deleted.Content.ReadAsStringAsync());
-            deletedJson.RootElement.GetProperty("deleteResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
+            var deletedBody = await deleted.Content.ReadAsStringAsync();
+            using var deletedJson = JsonDocument.Parse(deletedBody);
+            deletedJson.RootElement.TryGetProperty("deleteResults", out var deletedResults).Should()
+                .BeTrue("response should contain deleteResults; body: {0}", deletedBody);
+            deletedResults[0].GetProperty("success").GetBoolean().Should().BeTrue();
 
             await using var connection = await target.Postgres.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
