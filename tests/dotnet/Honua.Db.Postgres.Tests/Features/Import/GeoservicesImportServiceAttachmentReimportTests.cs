@@ -180,8 +180,17 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
                         cancellation.Cancel();
                     }
                 };
-                Func<Task> interrupted = async () => await service.ImportLayerAsync(ReimportRequest(schema), cancellation.Token);
-                await interrupted.Should().ThrowAsync<OperationCanceledException>();
+                var result = await service.ImportLayerAsync(ReimportRequest(schema), cancellation.Token);
+
+                downloads.Should().Be(2, "cancellation must interrupt the second attachment download");
+                cancellation.IsCancellationRequested.Should().BeTrue();
+                result.Success.Should().BeFalse();
+                result.NeedsReview.Should().BeTrue();
+                result.DataCommitted.Should().BeTrue("attachment copy runs after the feature data commit");
+                result.FeatureCount.Should().Be(2);
+                result.FailedFeatures.Should().Be(0);
+                result.ErrorMessage.Should().Contain("already committed");
+                result.Warnings.Should().Contain(warning => warning.Contains("already committed", StringComparison.Ordinal));
             }
             else
             {
