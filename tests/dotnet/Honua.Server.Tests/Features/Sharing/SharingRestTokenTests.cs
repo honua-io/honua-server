@@ -172,13 +172,17 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData(TokenEndpoint, "username")]
-    [InlineData(TokenEndpoint + "-extra", "password")]
-    [InlineData("/rest/services/test/FeatureServer/0/query", "password")]
+    [InlineData(TokenEndpoint, "username", false)]
+    [InlineData("/rest/services/test/FeatureServer/0/query", "password", false)]
+    [InlineData(TokenEndpoint, "username", true)]
+    [InlineData(TokenEndpoint + "-extra", "password", true)]
+    [InlineData("/rest/services/test/FeatureServer/0/query", "password", true)]
     [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/generateToken")]
+    [Endpoint("GET /sharing/rest/generateToken")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task GenerateToken_SqlInspectionExemption_IsLimitedToPassword(string path, string parameter)
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task GenerateToken_SqlInspectionExemption_IsLimitedToPassword(string path, string parameter, bool query)
     {
         using var client = _fixture.CreateClient();
         using var content = new FormUrlEncodedContent(new[]
@@ -186,10 +190,30 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             new KeyValuePair<string, string>(parameter, "opaque--value"),
             new KeyValuePair<string, string>("f", "json")
         });
-        using var response = await client.PostAsync(path, content);
+        // Unmatched routes intentionally do not buffer anonymous form bodies (#5615).
+        // Query parameters are inspected even there, proving the password exemption
+        // matches the exact token path rather than a prefix.
+        using var response = query
+            ? await client.GetAsync($"{path}?{parameter}=opaque--value&f=json")
+            : await client.PostAsync(path, content);
 
         await response.AssertGeoServicesErrorAsync(400);
         (await response.Content.ReadAsStringAsync()).Should().Contain("SQL injection attempt detected");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_UnmatchedFormRoute_ReturnsNotFound()
+    {
+        using var client = _fixture.CreateClient();
+        using var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("password", "opaque--value"),
+        });
+        using var response = await client.PostAsync(TokenEndpoint + "-extra", content);
+
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTheory]

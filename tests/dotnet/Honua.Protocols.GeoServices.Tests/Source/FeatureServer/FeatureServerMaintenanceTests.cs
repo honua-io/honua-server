@@ -224,10 +224,19 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
         var getResponse = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/calculate?where={where}&calcExpression={Uri.EscapeDataString(calcExpression)}&f=json");
 
-        getResponse.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        await getResponse.AssertGeoServicesErrorAsync(405);
         getResponse.Content.Headers.Allow.Should().BeEquivalentTo(["POST"]);
         (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
             .Should().Be(originalName, "a GET to calculate must never reach the edit pipeline");
+
+        using var headRequest = new HttpRequestMessage(HttpMethod.Head,
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/calculate?where={where}&calcExpression={Uri.EscapeDataString(calcExpression)}&f=json");
+        using var headResponse = await _fixture.Client.SendAsync(headRequest);
+        headResponse.StatusCode.Should().Be(getResponse.StatusCode);
+        headResponse.Content.Headers.Allow.Should().BeEquivalentTo(["POST"]);
+        (await headResponse.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+            .Should().Be(originalName, "a HEAD to calculate must never reach the edit pipeline");
 
         var postResponse = await PostCalculateAsync(calcExpression, $"objectid = {objectId}");
 

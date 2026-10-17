@@ -72,8 +72,11 @@ public sealed class MapServerFindMaskedFieldTests
             $"{ServicePath}/find?searchText=sample&layers=0&searchFields=category&f=json");
         var content = await response.Content.ReadAsStringAsync();
         await response.AssertGeoServicesErrorAsync(400);
-        content.Should().Contain("Field 'category' is not available for search.");
-        content.Should().NotContain("Invalid find request parameters.");
+        using var errorDocument = JsonDocument.Parse(content);
+        var details = errorDocument.RootElement.GetProperty("error").GetProperty("details")
+            .EnumerateArray().Select(detail => detail.GetString()).ToArray();
+        details.Should().Contain("Field 'category' is not available for search.");
+        details.Should().NotContain("Invalid find request parameters.");
 
         using var allowed = await client.GetAsync(
             $"{ServicePath}/find?searchText=Feature&layers=0&searchFields=name&f=json");

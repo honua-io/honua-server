@@ -178,15 +178,16 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
     }
 
     [IntegrationTest]
-    public async Task QueryAsync_DistinctPage_RetainsExistingCountSemantics()
+    public async Task QueryAsync_DistinctPage_CountsProjectedTuples()
     {
         var result = await CreateReader().QueryAsync(1,
             new FeatureQuery { Limit = 100, Distinct = true, OutFields = ["tenant"] });
 
-        // QueryAsync currently counts matching source rows for a distinct projection.
-        // Count reuse must not silently replace this with the projected-row count.
-        result.TotalCount.Should().Be(4);
-        result.Items.Should().HaveCount(2);
+        // #6196 counts the projected tuples, not the four matching source rows.
+        // Keep the distinct count query outside short-first-page source-count reuse.
+        result.TotalCount.Should().Be(2);
+        result.Items.Select(feature => feature.Attributes["tenant"]).Should().BeEquivalentTo(new[] { "a", "b" });
+        result.HasMoreResults.Should().BeFalse();
         await _provider.Received(2).OpenConnectionAsync(Arg.Any<CancellationToken>());
     }
 
