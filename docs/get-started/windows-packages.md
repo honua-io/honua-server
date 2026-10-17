@@ -28,8 +28,9 @@ For local evaluation, use the published preview image
 preview build; the receipt does not claim a clean Windows qualification.
 
 After release promotion, use `ghcr.io/honua-io/honua-server:2026.1-rc`
-(`ghcr.io/honua-io/honua-server:2026.1` at GA) with that release's published
-install manifest. Those release artifacts must exist before selecting that path.
+(`ghcr.io/honua-io/honua-server:2026.1` at GA). The exact digest is in the
+release's `customer-install-manifest.json` (`server.image`). Those release
+artifacts must exist before selecting that path.
 
 Docker Desktop runs Linux containers; this journey selects `linux/amd64`.
 To pin the installation exactly, use the digest in the preview artifact receipt
