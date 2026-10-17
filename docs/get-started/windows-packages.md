@@ -6,6 +6,10 @@ resource: "https://github.com/honua-io/honua-server/releases"
 ---
 # Install on Windows from published packages
 
+Check the [current packaged-artifact availability](quickstart.md) before starting:
+the 2026.1 release image and customer install manifest were unavailable in the
+2026-10-17 UTC check. Do not treat an intended release channel as a published artifact.
+
 Run these blocks in order in **Windows PowerShell 5.1 or PowerShell 7**, from a
 directory where you can create a private installation folder. You need Docker
 Desktop running Linux containers, Docker Compose **2.23.1+**, and Python **3.11+**

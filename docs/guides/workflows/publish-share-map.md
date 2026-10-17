@@ -86,13 +86,13 @@ workflow:
       recovery:
         - "Resolve missing rights or clarify audience before submitting."
     -
-      id: "propose"
+      id: "submit"
       interfaces:
         -
           kind: "mcp"
           operation: "honua_studio_propose_publication"
           contract: "/studio/mcp-tools.md"
-      verb: "propose_publication"
+      verb: "submit_publication"
       inputs:
         -
           name: "version"
@@ -106,42 +106,52 @@ workflow:
         -
           name: "request"
           concept: "/concepts/domain/publication.md"
-          description: "Publication request with exact version and returned operation identities."
-      effect: "propose"
+          description: "Publication result with exact version and operation identities; Published for an authorized admin or AwaitingApproval for another caller."
+      effect: "execute"
       effectTarget: "catalog_configuration"
       preconditions:
-        - "Use the actual publication contract; server MCP publication requires a separate approver."
+        - "The current saved version and hash match the intended publication; the caller is authorized for the requested route and visibility."
       authorization:
-        - "Caller may propose this version for the requested route."
-      idempotency: "Track the existing request/operation after a timeout rather than create another proposal."
+        - "The server decides whether this caller may publish directly or submit a proposal requiring a separate principal."
+      idempotency: "Track the existing publication operation or proposal after a timeout; reconcile state before resubmission."
       checks:
-        - "The request binds the selected version/hash and intended audience."
-        - "Pending status is reported as pending, not active."
+        - "The result binds the selected version/hash and intended audience."
+        - "Published is confirmed from the completed result and server-issued share URL; AwaitingApproval remains pending."
+        - "Do not request or fabricate a second approver for an already completed admin publication."
       recovery:
-        - "Follow the existing proposal cancellation/rejection contract if available; do not mutate approval storage."
+        - "Follow a pending proposal through its documented status/cancellation contract; inspect a direct publication through its returned operation and route."
+      rollback:
+        snapshot: "Record the prior published version, route, audience, and current saved version before submission."
+        revisionGuard: "Re-read publication state; preserve changes made after this operation."
+        scope: "Only this item's publication selection and requested route/access change."
+        compensation: "Use the installed lifecycle rollback/unpublish contract under its own authority. If unavailable, report that limitation; do not modify approval storage."
+        verification:
+          - "Read back the selected publication and check access under the intended viewer."
+        nonReversible:
+          - "Rollback cannot recall content or data already downloaded by viewers."
     -
       id: "observe"
       verb: "observe_publication"
       inputs:
         -
           name: "request"
-          from: "$actions.propose.request"
+          from: "$actions.submit.request"
           concept: "/concepts/domain/publication.md"
       outputs:
         -
           name: "active"
           concept: "/concepts/domain/publication.md"
-          description: "Confirmed active publication, or an explicit non-completion outcome."
+          description: "Confirmed active publication; an incomplete or rejected outcome does not produce this successful output."
       effect: "observe"
       effectTarget: "observation"
       preconditions:
-        - "The separately authorized approval decision and activation outcome are observable."
+        - "The returned publication state is observable; a pending non-admin proposal requires a separate authorized decision before activation."
       authorization:
         - "Read the caller-visible publication status."
       idempotency: "Poll boundedly using the returned identity."
       checks:
         - "Only confirmed activation is called published."
-        - "The active version matches the approved request."
+        - "The active version matches the submitted version and any required approval decision."
       recovery:
         - "On rejection, timeout, or failure, report the exact state and retain the saved version."
     -
@@ -179,7 +189,24 @@ workflow:
 
 Routine [map composition](compose-map.md) stays in the direct edit-and-preview loop. This workflow is the separate transition that makes a saved version available through a serving route.
 
-Identify the exact version, route, audience, and data dependencies. Under the server's current MCP contract, publication is proposed and a separate authorized principal approves it. Use the returned proposal identity to observe the outcome. This requirement comes from that publication surface; it does not add approval to every creative edit or every possible deployment API.
+Identify the current saved version, hash, route, audience, and data dependencies.
+The same `honua_studio_propose_publication` tool has two server outcomes:
+
+- An authorized admin publishes in that call. A completed result reports
+  `Published`, `humanConfirmationRequired: false`, and the server-issued share URL.
+- A non-admin receives `AwaitingApproval`, a proposal handle, and no share URL.
+  A separate authorized principal must approve before activation.
+
+The structured submission action is therefore `execute`, not `propose`: it can
+change the published pointer immediately. Follow the actual response rather than
+inferring effects from the tool name or treating a browser fixture as the entire
+server contract. A pending result stops short of the workflow's successful output.
+The current browser Preview models the proposal branch; verify client support
+before choosing it for an admin direct-publication journey.
+
+See [Studio MCP tools](../../studio/mcp-tools.md) for this operation's contract.
+Publication policy does not add approval to every creative edit or every other
+operational API.
 
 A pending proposal is not published. A public map document does not grant access to private layers, and a private map does not revoke an independently public data service. Check both the map and its dependencies using the intended viewer.
 

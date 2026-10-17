@@ -7,20 +7,18 @@ description: "Honua is a cloud-native geospatial server that speaks every major 
 
 Honua is a cloud-native geospatial server that speaks every major GIS protocol — ArcGIS-compatible REST, OGC APIs, WMS/WFS/WMTS, OData, vector tiles, STAC — from one container on your PostGIS database. No GDAL toolchain to install, no ETL pipelines, no Esri complexity.
 
-## Try it in 10 minutes
+## Start with your agent
 
-```bash
-git clone https://github.com/honua-io/honua-server.git
-cd honua-server
-docker compose up -d
-docker compose ps
-```
+> Set up Honua in Docker on this machine.
 
-Open <http://localhost:8080/healthz/ready> in a browser and wait for `Ready`.
+**[Get started with AI](get-started/with-ai.md)** follows the complete journey:
+check local prerequisites, install Honua, connect data, publish services, create
+and style maps/apps in realtime, and publish them back to Honua. Evaluate locally
+before choosing cloud infrastructure. Git integration is optional.
 
-**[Start the quickstart →](get-started/quickstart.md)** — install published packages, import, publish, and verify a dataset through the SDK.
-For a browser map using the source installation above, follow the
-[source quickstart](internal/developer/source-quickstart.md).
+The [package quickstart](get-started/quickstart.md) supplies the concrete local
+installation procedure. The [GIS workflow-language guide](guides/workflows/use-workflow-language.md)
+explains the shared meanings and verification behind the agent's actions.
 
 ## Pick your path
 
@@ -45,9 +43,11 @@ For a browser map using the source installation above, follow the
 
 ## Why teams trust it
 
-- **1137/1138 OGC CITE tests passing** across 14 conformance suites; WFS 2.0 `basic` is 166/167 because multi-layer `rollbackOnFailure=true` transactions are rejected — [see the receipt](cite-status.md)
+- **Recorded OGC conformance evidence** — [current snapshot and run receipt](cite-status.md); this records the tested revision, not a new test of every later build.
 - **Works with the clients you already use** — ArcGIS Pro, QGIS, Excel, Power BI, MapLibre, GDAL — [client compatibility](reference/compatibility/clients.md)
 
 ## Ecosystem
 
-[honua-sdk-js](https://github.com/honua-io/honua-sdk-js) · [honua-sdk-dotnet](https://github.com/honua-io/honua-sdk-dotnet) · Honua Console (coming soon) · [honua-helm](https://github.com/honua-io/honua-helm) / Terraform modules (private) — see the [ecosystem overview](concepts/ecosystem.md).
+[Honua Studio](studio/README.md) provides realtime map/app authoring.
+[Honua Console](https://github.com/honua-io/honua-console) provides administration.
+See the [ecosystem overview](concepts/ecosystem.md) for SDKs and deployment tools.

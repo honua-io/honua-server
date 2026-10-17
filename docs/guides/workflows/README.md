@@ -7,6 +7,11 @@ tags: [gis, domain-language, workflow]
 
 # GIS workflow contracts
 
+Start with [Use the Honua GIS workflow language](use-workflow-language.md): set up
+Honua with AI, add services and layers and operate Honua with AI, and make maps
+in realtime with AI. It explains how ordinary requests become typed intent,
+installed tool calls, and observed results.
+
 Each guide combines a readable walkthrough with typed inputs, outputs, actions, effects, checks, recovery, and links to relevant interfaces. Read the [language contract](../../concepts/domain/workflow-language.md) before interpreting these fields as machine metadata. They describe intent and required outcomes; actual runtime contracts determine execution.
 
 Routine Studio design is the direct prompt/edit/preview/refine/undo loop. Data publication, audience changes, and deployment use their existing policy and rollback surfaces when requested. All AI workflows preserve authoritative GIS source records.

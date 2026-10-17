@@ -34,10 +34,16 @@ In the canonical Metadata v2 graph, a publication links a [resource](resource.md
 
 For a connection or data source, “publish” usually means register, validate, bind, and then expose the intended resource; it does not publish credential material. For a style, it means make the style resource available and bind its intended scope, not change source features. Resolve the actual object kind and runtime contract rather than applying one generic publish operation to all nouns.
 
-For Studio publication through MCP, a saved version supplies the version identifier and content hash. The agent proposes publication; a separate authorized principal approves it. A pending proposal is not an active publication, and a preview is not a published artifact.[^contract]
+For Studio publication through MCP, the current saved version supplies the
+version identifier and content hash. An authorized admin publishes in the call
+and receives `Published` with a share URL. Other callers receive
+`AwaitingApproval` and a proposal handle; a separate authorized principal must
+approve before activation. Inspect the returned state rather than treating the
+word “propose” as a guarantee of no immediate effect. A pending proposal is not
+an active publication, and a preview is not a published artifact.[^contract]
 
 Publication and [sharing](sharing.md) are related but distinct. “Public” must refer to the effective audience, including access to dependent data; it cannot be inferred from a URL. An internal publication can require authentication.
 
 Use [publish and share a map](../../guides/workflows/publish-share-map.md). Recheck the resulting status and route. The [Studio release boundary](../../studio/README.md#release-boundary) remains a separate qualification statement.
 
-[^contract]: [Source contract](../../guides/connect/ai-agents-mcp.md).
+[^contract]: [Studio publication contract](../../studio/mcp-tools.md).

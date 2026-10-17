@@ -6,6 +6,10 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 ---
 # Client packages and registries
 
+Check the [current packaged-artifact availability](quickstart.md) before starting:
+the 2026.1 release image and customer install manifest were unavailable in the
+2026-10-17 UTC check. Do not treat an intended release channel as a published artifact.
+
 **Every Honua client package is public and installs with no credentials**, and so
 does the server image. Nothing on this page needs a token.
 

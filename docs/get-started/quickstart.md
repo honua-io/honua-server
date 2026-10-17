@@ -9,6 +9,17 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 Honua runs as one container beside PostGIS and Redis. This page starts it with
 Docker Compose, publishes a small dataset, and queries it back.
 
+Prefer an agent-led walkthrough? Start with [Get started with AI](with-ai.md),
+including its [local prerequisite check](with-ai.md#agent-prerequisite-check).
+
+> **Artifact availability observed 2026-10-17 UTC:** an anonymous pull of
+> `ghcr.io/honua-io/honua-server:2026.1-rc` returned `not found`, and the customer
+> install manifest linked below returned HTTP 404. Both pinned Python package
+> versions were available on PyPI. The packaged release path below is blocked
+> until its image and manifest are published and the complete procedure is
+> replayed. A nightly image is a different evaluation target; do not substitute
+> it and claim this release path passed.
+
 **You need** Docker with Compose 2.23.1 or later, Python 3.11+ for the last
 step, and OpenSSL 3 with a POSIX shell (`grep`, `cut`, `chmod`) for the key-ring
 certificate. On Windows, run that certificate block in WSL or Git Bash. Nothing
@@ -125,10 +136,11 @@ configs:
 
 ## 2. Set the secrets
 
-Three secrets go in a `.env` file beside `compose.yaml`. Generate them rather
+Four secrets go in a `.env` file beside `compose.yaml`. Generate them rather
 than inventing them.
 
 ```bash
+umask 077
 cat > .env <<EOF
 COMPOSE_PROJECT_NAME=honua-quickstart
 HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
@@ -318,7 +330,9 @@ a backup.
   denied, run `sudo chown "$USER" secrets secrets/keyring.pfx` and then the block
   again. Then `docker compose up` so the root-owned mode `0640` mount is applied
   before the server starts. Do not grant other-read on the file.
-- **A pull fails** — these pins need no credentials, so it is network or proxy
-  policy. The optional .NET client uses a different registry; see
+- **A pull fails** — distinguish an unpublished tag (`not found`), registry
+  authorization failure, unsupported image platform, and network/proxy failure.
+  These are intended public artifacts; registry credentials do not fix an
+  unpublished tag. The optional .NET client uses a different registry; see
   [registry clients](registry-clients.md) only if you need it.
 - **Anything else** — [troubleshooting](../guides/deploy/troubleshooting.md).

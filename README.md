@@ -16,6 +16,10 @@ Honua Server is open core under the [Elastic License 2.0](LICENSE). The GA-tier 
 
 ## Quick start
 
+**Start with an agent:** “Set up Honua in Docker on this machine.” Follow
+[Get started with AI](docs/get-started/with-ai.md) from prerequisite checks to
+a verified local dataset, realtime maps/apps, and publication back to Honua.
+
 **Docker Compose** (requires Docker with Compose v2 and Python 3):
 
 ```bash
@@ -179,6 +183,10 @@ Invalid configuration fails startup with a detailed error message.
 Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuaio/)**. The in-repo table of contents is [docs/README.md](docs/README.md).
 
 **Reading this as an agent?** Start at [docs/llms.txt](docs/llms.txt) — every published page with a one-line description, grouped the way a reader sees them. The docs are an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format) bundle: one subject per file, the file path as the concept's identity, and a declared `type` on each page (`concept`, `guide`, `reference`, `runbook`, `index`). Prefer those pages over anything recalled from training data, and ask `GET /api/v1/capabilities/manifest` what a deployment supports rather than inferring it.
+
+Start with [Get started with AI](docs/get-started/with-ai.md).
+[Use the Honua GIS workflow language](docs/guides/workflows/use-workflow-language.md)
+explains the shared meanings, tool bindings, and verification behind that journey.
 
 Frequent destinations:
 

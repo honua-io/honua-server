@@ -73,10 +73,13 @@ workflow:
       effectTarget: "observation"
       preconditions:
         - "Identify ECS, EKS, Lambda, or local serving and any separate job backend."
+        - "Before first installation, inspect the host and documented artifact requirements with its deployment tools; honua_list_capabilities applies only when a server already exists."
       authorization:
         - "Operator may inspect the named environment."
       idempotency: "Read-only; refresh observations before apply."
       checks:
+        - "For local Docker, inspect OS/architecture, local Docker context, client and daemon access, Compose and supporting-tool versions, available capacity, directory ownership, and unused loopback ports before installation."
+        - "The exact image and client artifacts can be retrieved; distinguish unavailable artifacts from host prerequisite failures."
         - "Artifact family matches the hosting target."
         - "Network, credentials, persistent state, and cleanup scope are explicit."
       recovery:
@@ -122,6 +125,10 @@ workflow:
       interfaces:
         -
           kind: "mcp"
+          operation: "honua_list_capabilities"
+          contract: "/guides/connect/ai-agents-mcp.md"
+        -
+          kind: "mcp"
           operation: "honua_ops_health"
           contract: "/guides/connect/ai-agents-mcp.md"
       verb: "verify_persistence"
@@ -151,7 +158,16 @@ workflow:
 
 # Install and configure a durable environment
 
+Start with the [agent-led Docker journey](../../get-started/with-ai.md#agent-prerequisite-check) for a first local evaluation. Inspect facts from the machine before asking about missing user choices.
+
 Choose the serving target and the lifecycle the work needs. [Deployment](../../concepts/domain/deployment.md) separates the HTTP host from job execution; [storage](../../concepts/domain/storage.md) separates source data, catalog state, jobs, and artifacts.
+
+For a first installation, the agent uses the authorized host's deployment tools
+and a documented [quickstart](../../get-started/quickstart.md) or cloud install
+path. There is no running Honua MCP endpoint to call yet. The inspection action's
+MCP binding applies to an existing deployment only; discover runtime capabilities
+after a new server starts. A published layer is not a prerequisite to connect an
+agent or register the first service.
 
 Inspect the pinned artifact and dependency requirements before provisioning. ECS and EKS serve containers; Lambda has a target-specific artifact and request lifecycle. Batch can execute jobs for a serving host, but is not the map endpoint. Record what is actually configured rather than inferring capability from a cloud product name.
 

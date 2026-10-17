@@ -60,6 +60,8 @@ the tool table as an authorization boundary. A safe turn is:
 4. validate and preview the draft;
 5. save a version with `honua_studio_save_version`, and branch a new draft from one with `honua_studio_reopen_version` — both are MCP tools, so durable versioning does not need an SDK client. `honua_studio_save_version` returns the immutable `versionId` and `contentHash` that `honua_studio_propose_publication` requires.
 
-`honua_studio_propose_publication` records intent, but do not promise a public
-URL: the governed publication journey is blocked by
-[#3304](https://github.com/honua-io/honua-server/issues/3304).
+When publication is requested, use the current saved item, version, hash, route,
+and visibility. An authorized admin receives `Published` and the server-issued
+share URL on completion. Other callers receive `AwaitingApproval` and a proposal
+handle to follow until a separate authorized principal decides. See
+[Studio MCP tools](mcp-tools.md); do not report a pending proposal as published.

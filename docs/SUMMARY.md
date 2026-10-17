@@ -2,6 +2,7 @@
 
 ## Get started
 
+- [Get started with AI](get-started/with-ai.md)
 - [Quickstart: install, publish, and query](get-started/quickstart.md)
 - [Your first dataset](get-started/first-dataset.md)
 - [Your first map](get-started/first-map.md)
@@ -74,6 +75,7 @@
 
 - [All guides: I want to…](guides/README.md)
 - [GIS workflow contracts](guides/workflows/README.md)
+  - [Use the Honua GIS workflow language](guides/workflows/use-workflow-language.md)
   - [Install and configure a durable environment](guides/workflows/install-configure.md)
   - [Connect and publish existing data](guides/workflows/connect-publish-data.md)
   - [Import data with explicit geometry and provenance](guides/workflows/import-data.md)

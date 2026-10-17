@@ -34,7 +34,7 @@ is the bounded terminal path and is what stamps `_meta["honua.studio"].view`.
 | `honua_studio_save_version` | Save the draft as an immutable version. `versionId` and `contentHash` stay nested under `version`. |
 | `honua_studio_get_version` | Read a saved version by `itemId` and `versionId`. Returns top-level `versionId` and `contentHash`. A missing version is `not_found`. Does not advance the draft generation. |
 | `honua_studio_reopen_version` | Branch a new draft from a saved version. |
-| `honua_studio_propose_publication` | Propose an exact saved version for publication. The configure prompts tell an admin to finish this call in the same session. |
+| `honua_studio_propose_publication` | Publish the current saved version directly for an authorized admin, or return an approval proposal for another caller. Bind the exact item, version, hash, route, and visibility. |
 
 Every mutation that accepts `generation` uses optimistic concurrency. A stale
 generation returns `failed_precondition` with the owner-authorized snapshot's
@@ -51,3 +51,27 @@ with the requested `route` and `visibility` to `honua_studio_propose_publication
 The configure prompts tell an admin to finish that call in the same session and to
 read the share URL from the result. A caller who is not an admin receives a proposal
 and does not get a share URL.
+
+## Composition policy
+
+Realtime draft editing is the intended Studio authoring experience. The current
+server guardrail executes draft composition directly under Community/Pro defaults
+and under `Licensing:Mode=Disabled`. With licensing enabled, the Enterprise default
+still requires approval for `StudioDraftMutation`; an operator override can also
+require approval or block it. This is a current runtime limitation relative to the
+realtime product direction, not a reason for clients to invent approval steps for
+every design turn. Respect the actual operation outcome and report the mismatch.
+Do not change deployment policy as an implicit part of a creative edit.
+
+Publication has a separate branch: an authorized admin receives `Published`,
+`humanConfirmationRequired: false`, and the server-issued `shareUrl` only after
+completion. A non-admin receives `AwaitingApproval`,
+`humanConfirmationRequired: true`, and the proposal identity with no share URL.
+Follow that proposal to its decision and activation; never have the proposer
+approve itself. Neither path changes the requested audience implicitly.
+
+A browser client can support fewer result branches than the server. In particular,
+the Studio Preview sharing adapter currently models the non-admin proposal path;
+its fixture evidence does not establish support for the admin direct-publication
+response. Use the installed client/server contracts, not a shared product name,
+to determine which journey is supported.
