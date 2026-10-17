@@ -329,28 +329,24 @@ internal sealed class ImageServerMetadataHandler
 
     /// <summary>
     /// Builds the Esri-conformant <c>timeInfo</c> block when the V2 resource declares
-    /// temporal fields or when the raster catalog carries acquisition timestamps.
+    /// temporal fields that exist in the raster catalog, or when the catalog carries
+    /// acquisition timestamps. Hints naming absent fields are not advertised.
     /// </summary>
     private static ImageServerTimeInfo? BuildTimeInfo(
         (string? StartTimeField, string? EndTimeField, string? TrackIdField) timeHints,
         IReadOnlyList<RasterInfo> rasters)
     {
-        var hasAcquisitionDates = rasters.Any(r => r.AcquisitionDate.HasValue);
-        var timeExtent = hasAcquisitionDates ? ImageServerMosaicHelpers.CreateTimeExtent(rasters) : null;
-        var hasDeclaredFields = !string.IsNullOrWhiteSpace(timeHints.StartTimeField) ||
-                                !string.IsNullOrWhiteSpace(timeHints.EndTimeField) ||
-                                !string.IsNullOrWhiteSpace(timeHints.TrackIdField);
-        if (!hasDeclaredFields && timeExtent is null)
+        if (ImageServerCatalogTime.Resolve(timeHints, rasters) is not { } time)
         {
             return null;
         }
 
         return new ImageServerTimeInfo
         {
-            StartTimeField = timeHints.StartTimeField ?? (timeExtent is null ? null : "AcquisitionDate"),
-            EndTimeField = timeHints.EndTimeField,
-            TrackIdField = timeHints.TrackIdField,
-            TimeExtent = timeExtent,
+            StartTimeField = time.StartTimeField,
+            EndTimeField = time.EndTimeField,
+            TrackIdField = time.TrackIdField,
+            TimeExtent = time.TimeExtent,
             TimeReference = new ImageServerTimeReference()
         };
     }

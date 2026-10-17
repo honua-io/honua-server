@@ -952,20 +952,18 @@ internal static partial class ImageServerSoapEndpoints
         var snapshot = await graph.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var resolved = ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context);
         var hints = ImageServerV2Lookups.ReadTimeFieldHints(resolved?.Resource);
-        var hasAcquisitionDates = rasters.Any(static raster => raster.AcquisitionDate.HasValue);
-        var extent = hasAcquisitionDates ? ImageServerMosaicHelpers.CreateTimeExtent(rasters) : null;
-        var hasDeclaredFields = !string.IsNullOrWhiteSpace(hints.StartTimeField)
-            || !string.IsNullOrWhiteSpace(hints.EndTimeField)
-            || !string.IsNullOrWhiteSpace(hints.TrackIdField);
-        if (!hasDeclaredFields && extent is null)
+
+        // Same resolver as REST timeInfo: only catalog fields may be advertised.
+        if (ImageServerCatalogTime.Resolve(hints, rasters) is not { } time)
         {
             return (false, null, null, null, null);
         }
 
+        var extent = time.TimeExtent;
         return (
             true,
-            hints.StartTimeField ?? (extent is null ? null : "AcquisitionDate"),
-            hints.EndTimeField,
+            time.StartTimeField,
+            time.EndTimeField,
             extent is { Length: > 0 } ? extent[0] : null,
             extent is { Length: > 1 } ? extent[1] : null);
     }
