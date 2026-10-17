@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import runpy
 import subprocess
@@ -24,7 +25,9 @@ def observe(trx: Path, label: str, project: str) -> dict:
         'schema': 'honua.shard-execution/v1', 'status': 'failed',
         'sourceSha': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
         'sourceDirty': bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=ROOT, text=True)),
-        'project': project, 'trxFile': trx.name, 'trxSha256': None, 'counts': None,
+        'project': project, 'workflowRunId': os.environ.get('GITHUB_RUN_ID'),
+        'workflowRunAttempt': os.environ.get('GITHUB_RUN_ATTEMPT'), 'workflowJob': os.environ.get('GITHUB_JOB'),
+        'trxFile': trx.name, 'trxSha256': None, 'counts': None,
         'runnerSha256': digest(ROOT / 'scripts/ci/run-server-test-shard.sh'),
         'verifierSha256': digest(Path(__file__)), 'tripwireSha256': digest(TRIPWIRE),
     }

@@ -227,6 +227,12 @@ wait "${test_pid}"
 test_exit_code=$?
 set -e
 
+# Freeze the child exit time before Git/TRX inspection; evidence I/O must not turn
+# an early kill into an apparent timeout or inflate measured shard headroom.
+completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+completed_epoch="$(date +%s)"
+duration_seconds=$((completed_epoch - start_epoch))
+
 # Inspect TRX even when dotnet failed, retaining measured counts for diagnostics. A child
 # failure/timeout keeps its original exit code; successful exit alone cannot pass a shard.
 execution_exit=0
@@ -237,9 +243,6 @@ if [[ "${test_exit_code}" -eq 0 && "${execution_exit}" -ne 0 ]]; then
   test_exit_code=1
 fi
 
-completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-completed_epoch="$(date +%s)"
-duration_seconds=$((completed_epoch - start_epoch))
 timed_out="false"
 kill_escalated="false"
 status="failed"

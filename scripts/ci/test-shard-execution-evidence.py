@@ -63,7 +63,7 @@ class EvidenceTests(unittest.TestCase):
             path.write_text('<TestRun><Results><UnitTestResult outcome="Passed" /></Results></TestRun>')
             self.assertIn('no result counters', evidence.observe(path, 'test', 'test.csproj')['problem'])
 
-    def run_supervisor(self, directory, *, mode='passed', child_exit=0, max_cpu=''):
+    def run_supervisor(self, directory, *, mode='passed', child_exit=0, max_cpu='', no_jq=False, slow_evidence=False):
         root = Path(directory)
         stub = root / 'dotnet'
         stub.write_text('#!' + sys.executable + '''
@@ -91,6 +91,18 @@ sys.exit(int(os.environ['CHILD_EXIT']))
                'HONUA_SERVER_TEST_FILTER': 'FullyQualifiedName~Synthetic', 'HONUA_SERVER_TEST_LOG_NAME': 'control',
                'HONUA_SERVER_TEST_RESULTS_DIR': str(root), 'HONUA_SERVER_TEST_POLL_SECONDS': '0.01',
                'HONUA_SERVER_TEST_TIMEOUT_MINUTES': '', 'HONUA_SERVER_TEST_MAX_CPU_COUNT': max_cpu}
+        if no_jq:
+            bash_env = root / 'no-jq.sh'
+            bash_env.write_text('command() { if [[ "$1" == -v && "${2:-}" == jq ]]; then return 1; fi; builtin command "$@"; }\n')
+            env['BASH_ENV'] = str(bash_env)
+        if slow_evidence:
+            python = root / 'python3'
+            python.write_text('#!' + sys.executable + "\nimport os, sys, time\n"
+                              "if sys.argv[1].endswith('shard-execution-evidence.py'): time.sleep(3)\n"
+                              "os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n")
+            python.chmod(0o755)
+            env.update(HONUA_SERVER_TEST_TIMEOUT_MINUTES='0.0167', HONUA_SERVER_TEST_KILL_AFTER_SECONDS='1',
+                       HONUA_SERVER_TEST_KILL_ESCALATION_TOLERANCE_SECONDS='0')
         run = subprocess.run(['bash', str(ROOT / 'scripts/ci/run-server-test-shard.sh')], env=env, capture_output=True, text=True, timeout=15)
         return run, json.loads((root / 'control.timing.json').read_text()), json.loads((root / 'args.json').read_text())
 
@@ -112,6 +124,20 @@ sys.exit(int(os.environ['CHILD_EXIT']))
             self.assertEqual(7, run.returncode)
             self.assertEqual('failed', timing['status'])
             self.assertEqual('passed', timing['execution']['status'])
+
+    def test_count_provenance_survives_without_jq(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, timing, _ = self.run_supervisor(directory, no_jq=True)
+            self.assertEqual(0, run.returncode, run.stdout + run.stderr)
+            self.assertEqual(1, timing['execution']['counts']['executed'])
+
+    def test_evidence_io_does_not_reclassify_early_kill_as_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, timing, _ = self.run_supervisor(directory, child_exit=137, slow_evidence=True)
+            self.assertEqual(137, run.returncode)
+            self.assertEqual('killed', timing['status'])
+            self.assertFalse(timing['timed_out'])
+            self.assertLess(timing['duration_seconds'], 2)
 
     def test_no_match_setting_and_cpu_share_one_delimiter(self):
         for cpu in ('', '2'):
