@@ -1,10 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.Protocols.GeoServices.ImageServer.Models;
 
-namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
+namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
 /// <summary>
 /// Resolves the attribute-time fields an Image Server may advertise. REST
@@ -22,42 +23,49 @@ internal static class ImageServerCatalogTime
 {
     /// <summary>
     /// Returns the advertised attribute-time fields and extent, or <c>null</c>
-    /// when the catalog carries no usable attribute time.
+    /// when no catalog date field can serve as the (required) start time field.
     /// </summary>
+    /// <param name="hints">The resource's declared temporal field hints.</param>
+    /// <param name="rasters">The service rasters, for the acquisition-date fallback and extent.</param>
+    /// <param name="maskedFields">Caller field masks; masked fields are never advertised.</param>
     public static ImageServerCatalogTimeFields? Resolve(
         (string? StartTimeField, string? EndTimeField, string? TrackIdField) hints,
-        IReadOnlyList<RasterInfo> rasters)
+        IReadOnlyList<RasterInfo> rasters,
+        ImmutableArray<string> maskedFields = default)
     {
         ArgumentNullException.ThrowIfNull(rasters);
 
+        var schema = ImageServerCatalogFields.Schema(maskedFields);
         var hasAcquisitionDates = rasters.Any(static raster => raster.AcquisitionDate.HasValue);
         var extent = hasAcquisitionDates ? ImageServerMosaicHelpers.CreateTimeExtent(rasters) : null;
-        var start = ResolveDateField(hints.StartTimeField) ?? (extent is null ? null : "AcquisitionDate");
-        var end = ResolveDateField(hints.EndTimeField);
-        if (start is null && end is null)
+        var start = ResolveField(schema, hints.StartTimeField, dateOnly: true)
+            ?? (extent is null ? null : ResolveField(schema, "AcquisitionDate", dateOnly: true));
+
+        // The end field is optional interval metadata attached to a start field;
+        // an end-only definition is not a usable time capability.
+        if (start is null)
         {
             return null;
         }
 
-        var trackId = string.IsNullOrWhiteSpace(hints.TrackIdField)
-            ? null
-            : ImageServerCatalogFields.CanonicalNames.FirstOrDefault(name =>
-                string.Equals(name, hints.TrackIdField.Trim(), StringComparison.OrdinalIgnoreCase));
-        return new ImageServerCatalogTimeFields(start, end, trackId, extent);
+        return new ImageServerCatalogTimeFields(
+            start,
+            ResolveField(schema, hints.EndTimeField, dateOnly: true),
+            ResolveField(schema, hints.TrackIdField, dateOnly: false),
+            extent);
     }
 
-    private static string? ResolveDateField(string? fieldName)
+    private static string? ResolveField(Field[] schema, string? hint, bool dateOnly)
     {
-        if (string.IsNullOrWhiteSpace(fieldName))
+        if (string.IsNullOrWhiteSpace(hint)
+            || ImageServerCatalogFields.ResolveCanonicalName(hint) is not { } canonical)
         {
             return null;
         }
 
-        var trimmed = fieldName.Trim();
-        return ImageServerCatalogQueryHandler.BuildCatalogFields()
-            .FirstOrDefault(field =>
-                string.Equals(field.Type, "esriFieldTypeDate", StringComparison.Ordinal)
-                && string.Equals(field.Name, trimmed, StringComparison.OrdinalIgnoreCase))
+        return schema.FirstOrDefault(field =>
+                string.Equals(field.Name, canonical, StringComparison.Ordinal)
+                && (!dateOnly || string.Equals(field.Type, "esriFieldTypeDate", StringComparison.Ordinal)))
             ?.Name;
     }
 }
@@ -66,7 +74,7 @@ internal static class ImageServerCatalogTime
 /// Attribute-time fields advertised by an Image Server; every name is a catalog field.
 /// </summary>
 internal sealed record ImageServerCatalogTimeFields(
-    string? StartTimeField,
+    string StartTimeField,
     string? EndTimeField,
     string? TrackIdField,
     long?[]? TimeExtent);

@@ -178,7 +178,7 @@ internal sealed class ImageServerMetadataHandler
                 // (notably the ArcGIS Maps SDK for JavaScript, which calls
                 // fields.find(...) during ImageryLayer.load) get a non-null fields
                 // array with the OID field they expect.
-                Fields = ImageServerCatalogQueryHandler.BuildCatalogFields(),
+                Fields = ImageServerCatalogFields.Schema(),
                 ObjectIdField = "OBJECTID",
                 Extent = BuildExtent(extent.Value),
                 // The native .NET ImageServiceRaster.LoadAsync reads fullExtent /
