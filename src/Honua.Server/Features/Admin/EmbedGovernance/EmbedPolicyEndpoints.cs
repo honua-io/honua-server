@@ -235,6 +235,20 @@ internal static partial class EmbedPolicyEndpoints
             return false;
         }
 
+        // Check the original fields before trusted scope replaces client identity hints
+        // or enum parsing can echo an invalid value in a validation response.
+        if (EmbedKeyMaterial.LooksLikeRawKey(dto.EventType)
+            || EmbedKeyMaterial.LooksLikeRawKey(dto.IntegrationId)
+            || EmbedKeyMaterial.LooksLikeRawKey(dto.TenantId)
+            || EmbedKeyMaterial.LooksLikeRawKey(dto.Origin)
+            || EmbedKeyMaterial.LooksLikeRawKey(dto.ServiceId)
+            || EmbedKeyMaterial.LooksLikeRawKey(dto.LayerId)
+            || EmbedKeyMaterial.LooksLikeRawKey(dto.DenyReason))
+        {
+            error = "analytics event contains raw embed key material; analytics events must be redacted";
+            return false;
+        }
+
         if (!Enum.TryParse<EmbedAnalyticsEventType>(dto.EventType, ignoreCase: true, out var eventType)
             || !Enum.IsDefined(eventType))
         {

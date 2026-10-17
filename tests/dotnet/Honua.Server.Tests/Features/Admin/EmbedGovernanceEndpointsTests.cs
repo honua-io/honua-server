@@ -281,9 +281,16 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         Assert.Equal(0L, report.Data.Total);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(nameof(EmbedAnalyticsEventDto.EventType))]
+    [InlineData(nameof(EmbedAnalyticsEventDto.IntegrationId))]
+    [InlineData(nameof(EmbedAnalyticsEventDto.TenantId))]
+    [InlineData(nameof(EmbedAnalyticsEventDto.Origin))]
+    [InlineData(nameof(EmbedAnalyticsEventDto.ServiceId))]
+    [InlineData(nameof(EmbedAnalyticsEventDto.LayerId))]
+    [InlineData(nameof(EmbedAnalyticsEventDto.DenyReason))]
     [Endpoint("POST /api/v1/embed/analytics")]
-    public async Task IngestAnalytics_WithRawKeyInPayload_ReturnsBadRequest()
+    public async Task IngestAnalytics_WithRawKeyInPayload_ReturnsBadRequest(string field)
     {
         var created = await CreateKeyAsync("analytics-redaction-key", ["https://app.example.com"]);
 
@@ -291,7 +298,16 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         {
             Events =
             [
-                new EmbedAnalyticsEventDto { EventType = "view", IntegrationId = created.Key },
+                new EmbedAnalyticsEventDto
+                {
+                    EventType = field == nameof(EmbedAnalyticsEventDto.EventType) ? created.Key : "view",
+                    IntegrationId = field == nameof(EmbedAnalyticsEventDto.IntegrationId) ? created.Key : null,
+                    TenantId = field == nameof(EmbedAnalyticsEventDto.TenantId) ? created.Key : null,
+                    Origin = field == nameof(EmbedAnalyticsEventDto.Origin) ? created.Key : null,
+                    ServiceId = field == nameof(EmbedAnalyticsEventDto.ServiceId) ? created.Key : null,
+                    LayerId = field == nameof(EmbedAnalyticsEventDto.LayerId) ? created.Key : null,
+                    DenyReason = field == nameof(EmbedAnalyticsEventDto.DenyReason) ? created.Key : null,
+                },
             ],
         };
 
@@ -300,6 +316,7 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("raw embed key", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(created.Key, body, StringComparison.Ordinal);
     }
 
     [IntegrationTest]
