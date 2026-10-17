@@ -318,6 +318,7 @@ services:
       HONUA_BASE_URL: http://honua:5000
       HONUA_SERVICE_ID: browser_compat
       HONUA_LAYER_ID: "2000"
+      HONUA_PAGING_COLLECTION_ID: "0"
     depends_on:
       honua:
         condition: service_healthy

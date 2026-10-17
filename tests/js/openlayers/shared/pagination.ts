@@ -1,4 +1,13 @@
 /** Assertions for pagination evidence, independent of response status or counters. */
+export function selectPagingCollection(body: unknown, expectedId: string): string {
+  if (!body || typeof body !== 'object' || !('collections' in body) || !Array.isArray(body.collections)
+    || body.collections.filter((collection: unknown) => collection && typeof collection === 'object'
+      && 'id' in collection && collection.id === expectedId).length !== 1) {
+    throw new Error(`Configured populated paging collection '${expectedId}' must be advertised exactly once`);
+  }
+  return expectedId;
+}
+
 export function pageFeatureIds(body: unknown, expectedCount: number): string[] {
   if (!Number.isSafeInteger(expectedCount) || expectedCount < 1) throw new Error('Pagination requires a positive page size');
   if (!body || typeof body !== 'object' || !('type' in body) || body.type !== 'FeatureCollection'

@@ -8,14 +8,18 @@
 import GeoJSON from 'ol/format/GeoJSON.js';
 import { config, ogcFeaturesUrl, discoverCollectionId } from '../shared/config.js';
 import { EvidenceCollector } from '../shared/evidence.js';
-import { disjointPageIds, pageFeatureIds } from '../shared/pagination.js';
+import { disjointPageIds, pageFeatureIds, selectPagingCollection } from '../shared/pagination.js';
 
 const format = new GeoJSON();
 const evidence = new EvidenceCollector('ogc-features');
 let collectionId: string;
+let pagingCollectionId: string;
 
 beforeAll(async () => {
   collectionId = await discoverCollectionId();
+  const response = await fetch(`${ogcFeaturesUrl}/collections`);
+  expect(response.ok).toBe(true);
+  pagingCollectionId = selectPagingCollection(await response.json(), config.pagingCollectionId);
 });
 
 afterAll(() => {
@@ -72,12 +76,11 @@ describe('OGC API Features Items', () => {
     // base-schema.sql and client-compat-v1.sql seed ten rows on layer0;
     // js_test_server.py seeds the same ten-row profile on the configured layer.
     // Browser-only layers2000–2002 have fewer than four rows and cannot replace it.
-    expect(collectionId).toBe(config.layerId);
-    const fixture = await fetch(`${ogcFeaturesUrl}/collections/${collectionId}/items?limit=4`);
+    const fixture = await fetch(`${ogcFeaturesUrl}/collections/${pagingCollectionId}/items?limit=4`);
     expect(fixture.ok).toBe(true);
     pageFeatureIds(await fixture.json(), 4);
     const start = Date.now();
-    const resp = await fetch(`${ogcFeaturesUrl}/collections/${collectionId}/items?limit=2`);
+    const resp = await fetch(`${ogcFeaturesUrl}/collections/${pagingCollectionId}/items?limit=2`);
     const duration = Date.now() - start;
 
     expect(resp.ok).toBe(true);
@@ -93,15 +96,14 @@ describe('OGC API Features Items', () => {
 
   it('pagination with offset', async () => {
     evidence.attempt('CERT-PAGE-02');
-    expect(collectionId).toBe(config.layerId);
     // First get items without offset
-    const resp1 = await fetch(`${ogcFeaturesUrl}/collections/${collectionId}/items?limit=2`);
+    const resp1 = await fetch(`${ogcFeaturesUrl}/collections/${pagingCollectionId}/items?limit=2`);
     expect(resp1.ok).toBe(true);
     const page1 = await resp1.json();
 
     // Then get items with offset
     const start = Date.now();
-    const resp2 = await fetch(`${ogcFeaturesUrl}/collections/${collectionId}/items?limit=2&offset=2`);
+    const resp2 = await fetch(`${ogcFeaturesUrl}/collections/${pagingCollectionId}/items?limit=2&offset=2`);
     const duration = Date.now() - start;
 
     expect(resp2.ok).toBe(true);
