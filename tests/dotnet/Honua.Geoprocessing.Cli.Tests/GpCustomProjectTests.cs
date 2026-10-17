@@ -4,6 +4,7 @@
 using System.Text;
 using FluentAssertions;
 using Honua.Geoprocessing.Cli;
+using Honua.Geoprocessing.Cli.Release;
 using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
@@ -118,12 +119,107 @@ public sealed class GpCustomProjectTests
         }
 
         var descriptor = Encoding.UTF8.GetString(plan.Single(static f => f.RelativePath == GpProjectManifest.FileName).Contents);
-        var map = GpFlatYaml.Parse(descriptor);
-        map["name"].Should().Be("parcel-summary");
-        map["template"].Should().Be(template);
-        map["templateCommit"].Should().Be(GpCustomProjectScaffolder.TemplateCommit);
-        map["harnessRoot"].Should().Be("/srv/honua-server");
-        map["fixtures.inputs.features"].Should().Be("fixtures/input.geojson");
+        var shared = GpProcessDescriptor.Parse(descriptor);
+        shared.Process!.Name.Should().Be("parcel-summary");
+        shared.Authoring!.Template.Should().Be(template);
+        shared.Authoring.TemplateCommit.Should().Be(GpCustomProjectScaffolder.TemplateCommit);
+        shared.Authoring.HarnessRoot.Should().Be("/srv/honua-server");
+        shared.Authoring.Fixtures!.Inputs!["features"].Should().Be("fixtures/input.geojson");
+    }
+
+    [Theory]
+    [InlineData(GpProjectLanguage.Python)]
+    [InlineData(GpProjectLanguage.Dotnet)]
+    public void InstalledScaffold_UsesOneDescriptorForLocalTestsAndRelease(GpProjectLanguage language)
+    {
+        var directory = Directory.CreateTempSubdirectory("gp-installed-");
+        try
+        {
+            var plan = GpCustomProjectScaffolder.Plan(language, "parcel-summary", null);
+            GpCustomProjectScaffolder.Apply(directory.FullName, plan);
+            var path = Path.Join(directory.FullName, GpProjectManifest.FileName);
+            var local = GpProjectManifest.Load(path);
+            var release = GpProcessDescriptor.Parse(File.ReadAllText(path));
+            release.Validate().Should().BeEmpty();
+            release.Process!.Name.Should().Be(local.Name);
+            release.Process.Entrypoint.Should().Be(local.Entrypoint);
+            release.Process.Runtime.Should().Be(language == GpProjectLanguage.Python ? "python" : "dotnet");
+            release.Targets.Should().ContainSingle().Which.Kind.Should().Be("aws-batch");
+            File.Exists(Path.Join(directory.FullName, release.Process.Contract!.OutputSchema!)).Should().BeTrue();
+            File.Exists(Path.Join(directory.FullName, release.DependencyLock!)).Should().BeTrue();
+            // Init must not fabricate remote image validation evidence.
+            release.RuntimeImage.Should().BeNull();
+            File.Exists(Path.Join(directory.FullName, release.Validation!.Receipts![0].Path!)).Should().BeFalse();
+            plan.Should().Contain(f => f.RelativePath.EndsWith("/Honua.CustomCode.Sdk.csproj", StringComparison.Ordinal));
+            plan.Should().Contain(f => f.RelativePath.EndsWith("/honua_customcode_harness/local.py", StringComparison.Ordinal));
+            plan.Should().NotContain(f => f.RelativePath.Contains("/obj/", StringComparison.Ordinal) || f.RelativePath.Contains("/bin/", StringComparison.Ordinal));
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SharedDescriptor_RejectsUnknownAuthoringKeys()
+    {
+        var yaml = Encoding.UTF8.GetString(GpCustomProjectScaffolder.Plan(GpProjectLanguage.Python, "demo", null)
+            .Single(f => f.RelativePath == GpProjectManifest.FileName).Contents);
+        var act = () => GpProcessDescriptor.Parse(yaml.Replace("  expected: expected", "  misspelledExpected: expected", StringComparison.Ordinal));
+        act.Should().Throw<GpReleaseException>().WithMessage("*misspelledExpected*");
+    }
+
+    [Fact]
+    public void ResolveHarnessRoot_ReusesBundledToolchainOnlyWhenTheStampMatches()
+    {
+        var root = Directory.CreateTempSubdirectory("gp-toolchain-").FullName;
+        try
+        {
+            var toolchain = Path.Join(root, ".honua", "toolchain");
+            Directory.CreateDirectory(Path.Join(toolchain, "docker", "worker-customcode-python", "harness"));
+            Directory.CreateDirectory(Path.Join(toolchain, "docker", "worker-customcode-dotnet", "harness"));
+
+            GpCustomProjectScaffolder.ResolveHarnessRoot(null, root, GpBundledToolchain.Version).Should().BeNull();
+
+            File.WriteAllText(Path.Join(toolchain, GpBundledToolchain.VersionFileName), "stale\n");
+            GpCustomProjectScaffolder.ResolveHarnessRoot(null, root, GpBundledToolchain.Version).Should().BeNull();
+
+            File.WriteAllText(Path.Join(toolchain, GpBundledToolchain.VersionFileName), GpBundledToolchain.Version + "\n");
+            GpCustomProjectScaffolder.ResolveHarnessRoot(null, root, "other-version").Should().BeNull();
+            GpCustomProjectScaffolder.ResolveHarnessRoot(null, root, GpBundledToolchain.Version)
+                .Should().Be(Path.GetFullPath(toolchain));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Restore_ReplacesAStaleBundledToolchainAndKeepsAVersionMismatch()
+    {
+        var root = Directory.CreateTempSubdirectory("gp-restore-").FullName;
+        try
+        {
+            var toolchain = Path.Join(root, ".honua", "toolchain");
+            Directory.CreateDirectory(Path.Join(toolchain, "docker", "worker-customcode-python", "harness"));
+            Directory.CreateDirectory(Path.Join(toolchain, "docker", "worker-customcode-dotnet", "harness"));
+            File.WriteAllText(Path.Join(toolchain, "stale.txt"), "old");
+
+            var mismatch = () => GpBundledToolchain.Restore(root, "not-this-version");
+            mismatch.Should().Throw<InvalidDataException>();
+            File.Exists(Path.Join(toolchain, "stale.txt")).Should().BeTrue();
+
+            GpBundledToolchain.Restore(root, GpBundledToolchain.Version).Should().Be(Path.GetFullPath(toolchain));
+            File.Exists(Path.Join(toolchain, "stale.txt")).Should().BeFalse();
+            File.ReadAllText(Path.Join(toolchain, GpBundledToolchain.VersionFileName)).Trim()
+                .Should().Be(GpBundledToolchain.Version);
+            GpBundledToolchain.IsCurrent(toolchain).Should().BeTrue();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]
@@ -145,7 +241,7 @@ public sealed class GpCustomProjectTests
             GpCustomProjectScaffolder.Apply(directory.FullName, plan);
             File.Exists(Path.Join(directory.FullName, "process", "summary_tool.py")).Should().BeTrue();
             var manifest = GpProjectManifest.Load(Path.Join(directory.FullName, GpProjectManifest.FileName));
-            manifest.HarnessRoot.Should().BeEmpty();
+            manifest.HarnessRoot.Should().BeNull();
             manifest.Language.Should().Be(GpProjectLanguage.Python);
 
             var act = () => GpCustomProjectScaffolder.Apply(directory.FullName, plan);

@@ -53,6 +53,53 @@ internal sealed class GpProcessDescriptor
     /// <summary>Validation receipts that must exist (and have passed) before a lock is written.</summary>
     public ValidationSection? Validation { get; set; }
 
+    /// <summary>Optional local fixture and toolchain settings shared by init and test.</summary>
+    public AuthoringSection? Authoring { get; set; }
+
+    /// <summary>Local development settings; these do not assert remote validation.</summary>
+    public sealed class AuthoringSection
+    {
+        /// <summary>Local Template setting.</summary>
+        public string? Template { get; set; }
+
+        /// <summary>Local TemplateCommit setting.</summary>
+        public string? TemplateCommit { get; set; }
+
+        /// <summary>Local ToolchainVersion setting.</summary>
+        public string? ToolchainVersion { get; set; }
+
+        /// <summary>Local HarnessRoot setting.</summary>
+        public string? HarnessRoot { get; set; }
+
+        /// <summary>Local Source setting.</summary>
+        public string? Source { get; set; }
+
+        /// <summary>Local Build setting.</summary>
+        public string? Build { get; set; }
+
+        /// <summary>Local AssemblyDir setting.</summary>
+        public string? AssemblyDir { get; set; }
+
+        /// <summary>Local HarnessDll setting.</summary>
+        public string? HarnessDll { get; set; }
+
+        /// <summary>Local Fixtures setting.</summary>
+        public FixturesSection? Fixtures { get; set; }
+
+        /// <summary>Local Expected setting.</summary>
+        public string? Expected { get; set; }
+    }
+
+    /// <summary>Input fixtures used by the local harness.</summary>
+    public sealed class FixturesSection
+    {
+        /// <summary>Local Params setting.</summary>
+        public string? Params { get; set; }
+
+        /// <summary>Local Inputs setting.</summary>
+        public Dictionary<string, string>? Inputs { get; set; }
+    }
+
     /// <summary>Parses a descriptor document; unknown keys are an error.</summary>
     /// <param name="yaml">The YAML text.</param>
     /// <returns>The parsed descriptor; call <see cref="Validate"/> before use.</returns>

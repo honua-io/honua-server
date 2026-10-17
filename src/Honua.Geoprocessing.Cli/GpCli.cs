@@ -992,11 +992,20 @@ public static class GpCli
             throw new GpCliUsageException(ex.Message);
         }
 
-        var harnessRoot = GpCustomProjectScaffolder.ResolveHarnessRoot(explicitHarnessRoot ?? manifest.HarnessRoot, projectDirectory);
+        var harnessRoot = GpCustomProjectScaffolder.ResolveHarnessRoot(
+            explicitHarnessRoot ?? manifest.HarnessRoot,
+            projectDirectory,
+            manifest.ToolchainVersion);
         if (harnessRoot is null)
         {
-            Console.Error.WriteLine("error   : the custom-code harness was not found. Pass --harness-root <honua-server checkout>, set HONUA_GP_HARNESS_ROOT, or record harnessRoot in honua-gp.yaml.");
-            return 1;
+            try
+            {
+                harnessRoot = GpBundledToolchain.Restore(projectDirectory, manifest.ToolchainVersion);
+            }
+            catch (InvalidDataException ex)
+            {
+                throw new GpCliUsageException(ex.Message);
+            }
         }
 
         Console.WriteLine($"project : {manifest.Name} ({(manifest.Language == GpProjectLanguage.Python ? "python" : "dotnet")}, {manifest.Entrypoint})");
@@ -1074,7 +1083,7 @@ public static class GpCli
 
         Console.WriteLine($"created : {projectDirectory}");
         Console.WriteLine($"template: {GpCustomProjectScaffolder.TemplateFor(projectLanguage)} from {GpCustomProjectScaffolder.TemplateSource}@{GpCustomProjectScaffolder.TemplateCommit[..10]} ({plan.Count} files)");
-        Console.WriteLine($"harness : {resolvedHarness ?? "not found — set HONUA_GP_HARNESS_ROOT or pass --harness-root before `test`"}");
+        Console.WriteLine($"harness : {resolvedHarness ?? "bundled .honua/toolchain (installed devkit version)"}");
         Console.WriteLine("next    : edit process/, then `honua-gp-devkit test --project " + projectDirectory + "`");
         return 0;
     }

@@ -3,12 +3,13 @@
 
 using System.Diagnostics;
 using System.Globalization;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Honua.Geoprocessing.Cli.Release;
+using YamlDotNet.RepresentationModel;
 
 namespace Honua.Geoprocessing.Cli;
 
@@ -24,11 +25,8 @@ public enum GpProjectLanguage
 
 /// <summary>
 /// The <c>honua-gp.yaml</c> project descriptor <c>honua-gp-devkit init</c> writes next to
-/// a copied template. It is the placeholder for the immutable release descriptor
-/// (honua-server#6221) and the file <c>honua-gp-devkit test</c> reads: the language, the
-/// template identity, where the harness lives, the entrypoint, the fixtures, and where the
-/// expected artifacts are. The devkit writes and reads a flat YAML subset (scalars and
-/// nested maps); no other YAML features are used.
+/// a copied template. New projects share the release v1 descriptor, with local fixture
+/// settings in its authoring section. Existing local-only v0 descriptors remain readable.
 /// </summary>
 public sealed record GpProjectManifest
 {
@@ -36,7 +34,10 @@ public sealed record GpProjectManifest
     public const string FileName = "honua-gp.yaml";
 
     /// <summary>The descriptor schema identifier.</summary>
-    public const string Schema = "honua.gp.project/v0";
+    public const string Schema = "honua.gp-process/v1";
+
+    /// <summary>The original local-only descriptor, still readable for existing projects.</summary>
+    public const string LegacySchema = "honua.gp.project/v0";
 
     /// <summary>The project name (lowercase letters, digits, hyphens).</summary>
     public required string Name { get; init; }
@@ -52,6 +53,9 @@ public sealed record GpProjectManifest
 
     /// <summary>The honua-server checkout holding the harnesses, when <c>init</c> knew it.</summary>
     public string? HarnessRoot { get; init; }
+
+    /// <summary>Exact installed devkit payload version used by this project.</summary>
+    public string? ToolchainVersion { get; init; }
 
     /// <summary>The harness entrypoint (<c>module:function</c> or <c>Assembly::Namespace.Type</c>).</summary>
     public required string Entrypoint { get; init; }
@@ -81,14 +85,32 @@ public sealed record GpProjectManifest
     /// <param name="path">The <c>honua-gp.yaml</c> path.</param>
     public static GpProjectManifest Load(string path)
     {
-        var map = GpFlatYaml.Parse(File.ReadAllText(path));
+        var yaml = File.ReadAllText(path);
+        var document = new YamlStream();
+        try
+        {
+            using var reader = new StringReader(yaml);
+            document.Load(reader);
+            if (document.Documents.Count == 1 && document.Documents[0].RootNode is YamlMappingNode root &&
+                root.Children.TryGetValue(new YamlScalarNode("schema"), out var schemaNode) &&
+                schemaNode is YamlScalarNode { Value: Schema })
+            {
+                return FromDescriptor(GpProcessDescriptor.Parse(yaml));
+            }
+        }
+        catch (Exception ex) when (ex is YamlDotNet.Core.YamlException or GpReleaseException)
+        {
+            throw new InvalidDataException($"{FileName}: {ex.Message}", ex);
+        }
+
+        var map = GpFlatYaml.Parse(yaml);
         string Require(string key)
             => map.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
                 ? value
                 : throw new InvalidDataException($"{FileName}: '{key}' is required.");
 
         var schema = Require("schema");
-        if (!string.Equals(schema, Schema, StringComparison.Ordinal))
+        if (!string.Equals(schema, LegacySchema, StringComparison.Ordinal))
         {
             throw new InvalidDataException($"{FileName}: schema '{schema}' is not supported (expected {Schema}).");
         }
@@ -128,6 +150,42 @@ public sealed record GpProjectManifest
         }
 
         return manifest;
+    }
+
+    private static GpProjectManifest FromDescriptor(GpProcessDescriptor descriptor)
+    {
+        static string Require(string? value, string key) => !string.IsNullOrWhiteSpace(value)
+            ? value : throw new InvalidDataException($"{FileName}: '{key}' is required for local testing.");
+        var process = descriptor.Process;
+        var local = descriptor.Authoring ?? throw new InvalidDataException($"{FileName}: 'authoring' is required for local testing.");
+        var language = process?.Runtime switch
+        {
+            "python" => GpProjectLanguage.Python,
+            "dotnet" => GpProjectLanguage.Dotnet,
+            _ => throw new InvalidDataException($"{FileName}: process.runtime must be python or dotnet."),
+        };
+        if (local.Fixtures?.Inputs is not { Count: > 0 })
+        {
+            throw new InvalidDataException($"{FileName}: at least one authoring.fixtures.inputs entry is required.");
+        }
+
+        return new GpProjectManifest
+        {
+            Name = Require(process?.Name, "process.name"),
+            Language = language,
+            Entrypoint = Require(process?.Entrypoint, "process.entrypoint"),
+            Template = local.Template,
+            TemplateCommit = local.TemplateCommit,
+            HarnessRoot = local.HarnessRoot,
+            ToolchainVersion = local.ToolchainVersion,
+            Source = Require(local.Source, "authoring.source"),
+            Build = language == GpProjectLanguage.Dotnet ? Require(local.Build, "authoring.build") : local.Build,
+            AssemblyDir = language == GpProjectLanguage.Dotnet ? Require(local.AssemblyDir, "authoring.assemblyDir") : local.AssemblyDir,
+            HarnessDll = language == GpProjectLanguage.Dotnet ? Require(local.HarnessDll, "authoring.harnessDll") : local.HarnessDll,
+            FixtureParams = Require(local.Fixtures.Params, "authoring.fixtures.params"),
+            FixtureInputs = local.Fixtures.Inputs,
+            Expected = Require(local.Expected, "authoring.expected"),
+        };
     }
 }
 
@@ -219,7 +277,7 @@ public sealed record GpProjectFile(string RelativePath, byte[] Contents);
 public static partial class GpCustomProjectScaffolder
 {
     /// <summary>The honua-samples commit the embedded templates were copied from.</summary>
-    public const string TemplateCommit = "65253c959a97ad4ed39cc2a45c85a14a5a34cfac";
+    public const string TemplateCommit = "04506bba05ed051139b9f248089e57df32f31880";
 
     /// <summary>The honua-samples repository.</summary>
     public const string TemplateSource = "honua-io/honua-samples";
@@ -231,9 +289,9 @@ public static partial class GpCustomProjectScaffolder
     /// <param name="error">Why it was rejected.</param>
     public static bool TryValidateName(string? name, out string error)
     {
-        if (string.IsNullOrWhiteSpace(name) || !NamePattern().IsMatch(name))
+        if (string.IsNullOrWhiteSpace(name) || name.Length is < 2 or > 63 || !NamePattern().IsMatch(name))
         {
-            error = "a project name is lowercase letters and digits separated by single hyphens (e.g. 'parcel-summary').";
+            error = "a project name has 2–63 lowercase letters and digits, starts with a letter, and uses single internal hyphens (e.g. 'parcel-summary').";
             return false;
         }
 
@@ -246,10 +304,12 @@ public static partial class GpCustomProjectScaffolder
 
     /// <summary>
     /// Finds the honua-server checkout holding the harnesses: <paramref name="explicitRoot"/>,
-    /// then <c>HONUA_GP_HARNESS_ROOT</c> / <c>HONUA_SERVER_CHECKOUT</c>, then a walk up from
-    /// <paramref name="startDirectory"/>. Null when none is found.
+    /// then <c>HONUA_GP_HARNESS_ROOT</c> / <c>HONUA_SERVER_CHECKOUT</c>, then the bundled
+    /// project-local toolchain under <paramref name="startDirectory"/> when its recorded
+    /// version is this devkit and <paramref name="bundledToolchainVersion"/> asks for it.
+    /// No implicit checkout discovery.
     /// </summary>
-    public static string? ResolveHarnessRoot(string? explicitRoot, string startDirectory)
+    public static string? ResolveHarnessRoot(string? explicitRoot, string startDirectory, string? bundledToolchainVersion = null)
     {
         foreach (var candidate in new[] { explicitRoot, Environment.GetEnvironmentVariable("HONUA_GP_HARNESS_ROOT"), Environment.GetEnvironmentVariable("HONUA_SERVER_CHECKOUT") })
         {
@@ -259,18 +319,12 @@ public static partial class GpCustomProjectScaffolder
             }
         }
 
-        foreach (var start in new[] { startDirectory, Directory.GetCurrentDirectory() }.Select(Path.GetFullPath))
+        var bundled = Path.Join(Path.GetFullPath(startDirectory), ".honua", "toolchain");
+        var versionMatches = bundledToolchainVersion is null
+            || string.Equals(bundledToolchainVersion, GpBundledToolchain.Version, StringComparison.Ordinal);
+        if (versionMatches && GpBundledToolchain.IsCurrent(bundled))
         {
-            var directory = new DirectoryInfo(start);
-            while (directory is not null)
-            {
-                if (IsHarnessRoot(directory.FullName))
-                {
-                    return directory.FullName;
-                }
-
-                directory = directory.Parent;
-            }
+            return bundled;
         }
 
         return null;
@@ -359,6 +413,11 @@ public static partial class GpCustomProjectScaffolder
 
         var template = TemplateFor(language);
         var files = EmbeddedFiles(template).Select(path => new GpProjectFile(path, ReadEmbedded(template, path))).ToList();
+        if (harnessRoot is null)
+        {
+            files.AddRange(GpBundledToolchain.Files());
+        }
+
         files.Add(new GpProjectFile(GpProjectManifest.FileName, Encoding.UTF8.GetBytes(Descriptor(language, name, template, harnessRoot))));
         if (language == GpProjectLanguage.Dotnet && harnessRoot is not null)
         {
@@ -394,42 +453,63 @@ public static partial class GpCustomProjectScaffolder
         }
     }
 
-    [GeneratedRegex("^[a-z0-9]+(-[a-z0-9]+)*$")]
+    [GeneratedRegex("^[a-z][a-z0-9]*(-[a-z0-9]+)*$")]
     private static partial Regex NamePattern();
 
     private static string Descriptor(GpProjectLanguage language, string name, string template, string? harnessRoot)
     {
-        var builder = new StringBuilder();
-        builder.Append("# honua-gp.yaml — project descriptor written by `honua-gp-devkit init`.\n");
-        builder.Append("# The devkit reads it for `test`; it is the placeholder for the immutable release\n");
-        builder.Append("# descriptor (honua-server#6221). Flat scalars and two-space nested maps only.\n");
-        builder.Append("schema: ").Append(GpProjectManifest.Schema).Append('\n');
-        builder.Append("name: ").Append(name).Append('\n');
-        builder.Append("language: ").Append(language == GpProjectLanguage.Python ? "python" : "dotnet").Append('\n');
-        builder.Append("template: ").Append(template).Append('\n');
-        builder.Append("templateSource: ").Append(TemplateSource).Append('\n');
-        builder.Append("templateCommit: ").Append(TemplateCommit).Append('\n');
-        if (harnessRoot is null)
+        var runtime = language == GpProjectLanguage.Python ? "python" : "dotnet";
+        var entrypoint = language == GpProjectLanguage.Python ? "summary_tool:execute" : "SummaryTool::Honua.Templates.SummaryTool";
+        var dependencyLock = language == GpProjectLanguage.Python ? "requirements.lock" : "process/packages.lock.json";
+        var buildFiles = language == GpProjectLanguage.Dotnet ? "\n    - Directory.Build.props" : string.Empty;
+        var builder = new StringBuilder($"""
+            # Shared authoring and immutable release descriptor.
+            # Set runtimeImage to your qualified image digest before release.
+            schema: {GpProjectManifest.Schema}
+            process:
+              name: {name}
+              version: 0.1.0
+              runtime: {runtime}
+              entrypoint: {entrypoint}
+              contract:
+                inputSchema: schema/inputs.schema.json
+                outputSchema: schema/outputs.schema.json
+            dependencyLock: {dependencyLock}
+            workflowVersion: custom-code-v1
+            targets:
+              - kind: aws-batch
+            compatibility:
+              serverContractVersion:
+                minimum: 1
+                maximum: 1
+            artifacts:
+              include:
+                - process
+                - schema
+                - honua-gp.yaml
+                - {dependencyLock}{buildFiles}
+            validation:
+              receipts:
+                - name: worker-image-tests
+                  path: artifacts/worker-image-tests.json
+            authoring:
+              template: {template}
+              templateCommit: {TemplateCommit}
+              toolchainVersion: {GpBundledToolchain.Version}
+            """);
+        builder.Append('\n');
+        if (harnessRoot is not null)
         {
-            builder.Append("# harnessRoot: set to a honua-server checkout, or export HONUA_GP_HARNESS_ROOT before `test`.\n");
+            builder.Append("  harnessRoot: ").Append(JsonSerializer.Serialize(harnessRoot.Replace('\\', '/'))).Append('\n');
         }
 
-        builder.Append("harnessRoot: ").Append(harnessRoot is null ? "\"\"" : harnessRoot.Replace('\\', '/')).Append('\n');
-        builder.Append("source: process\n");
-        if (language == GpProjectLanguage.Python)
+        builder.Append("  source: process\n");
+        if (language == GpProjectLanguage.Dotnet)
         {
-            builder.Append("entrypoint: summary_tool:execute\n");
-        }
-        else
-        {
-            builder.Append("entrypoint: SummaryTool::Honua.Templates.SummaryTool\n");
-            builder.Append("build: tests/SummaryTool.Tests/SummaryTool.Tests.csproj\n");
-            builder.Append("assemblyDir: process/bin/Debug/net10.0\n");
-            builder.Append("harnessDll: tests/SummaryTool.Tests/bin/Debug/net10.0/Honua.CustomCode.Harness.dll\n");
+            builder.Append("  build: tests/SummaryTool.Tests/SummaryTool.Tests.csproj\n  assemblyDir: process/bin/Debug/net10.0\n  harnessDll: tests/SummaryTool.Tests/bin/Debug/net10.0/Honua.CustomCode.Harness.dll\n");
         }
 
-        builder.Append("fixtures:\n  params: fixtures/params.json\n  inputs:\n    features: fixtures/input.geojson\n");
-        builder.Append("expected: expected\n");
+        builder.Append("  fixtures:\n    params: fixtures/params.json\n    inputs:\n      features: fixtures/input.geojson\n  expected: expected\n");
         return builder.ToString();
     }
 }
@@ -470,7 +550,11 @@ public static class GpCustomProjectTester
     /// <param name="cancellationToken">Cancellation.</param>
     public static async Task<GpCustomProjectTestResult> RunAsync(string projectDirectory, string harnessRoot, bool update, double tolerance = 1e-9, CancellationToken cancellationToken = default)
     {
-        var root = Path.GetFullPath(projectDirectory);
+        // MSBuild identifies project instances and incremental outputs by their paths.
+        // A shell build resolves its working directory (for example /var -> /private/var
+        // on macOS), so use the same physical paths when launching a later devkit build.
+        var root = ResolvePhysicalDirectory(projectDirectory);
+        harnessRoot = ResolvePhysicalDirectory(harnessRoot);
         var manifest = GpProjectManifest.Load(Path.Join(root, GpProjectManifest.FileName));
         var runsDirectory = Path.Join(root, ".honua", "test-runs");
         Directory.CreateDirectory(runsDirectory);
@@ -769,6 +853,40 @@ public static class GpCustomProjectTester
         });
     }
 
+    private static string ResolvePhysicalDirectory(string directory)
+    {
+        var remainingLinks = 64;
+        return Resolve(directory);
+
+        string Resolve(string path)
+        {
+            var fullPath = Path.GetFullPath(path);
+            var current = Path.GetPathRoot(fullPath)!;
+            // Resolve each ancestor: resolving only the leaf misses symlinks such as /var.
+            foreach (var segment in fullPath[current.Length..].Split(
+                [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Join(current, segment);
+                var target = new DirectoryInfo(current).ResolveLinkTarget(returnFinalTarget: false);
+                if (target is null)
+                {
+                    continue;
+                }
+
+                if (--remainingLinks < 0)
+                {
+                    throw new IOException("The authoring directory contains too many symbolic links or a link cycle.");
+                }
+
+                // An absolute link target can itself contain aliased ancestors. Restart
+                // from its root instead of reintroducing /var after resolving /private/var.
+                current = Resolve(target.FullName);
+            }
+
+            return current;
+        }
+    }
+
     private static async Task<Command> DotnetCommandAsync(GpProjectManifest manifest, string root, string harnessRoot, string runsDirectory, CancellationToken cancellationToken)
     {
         var dotnet = Which("dotnet") ?? "dotnet";
@@ -792,6 +910,19 @@ public static class GpCustomProjectTester
         }
 
         var harnessDll = Path.Join(root, manifest.HarnessDll!);
+        // Build the executable as a root project into the declared launch directory.
+        // A transitive reference from a test project can copy the harness DLL while
+        // producing an incomplete executable dependency manifest (observed on macOS).
+        // Its own build must supply the complete runtime graph, including the SDK.
+        var harnessProject = Path.Join(harnessRoot, "docker", "worker-customcode-dotnet", "harness", "src", "Honua.CustomCode.Harness", "Honua.CustomCode.Harness.csproj");
+        var (harnessExit, harnessOut, harnessErr) = await RunProcessAsync(dotnet,
+            ["build", harnessProject, "-c", "Debug", "--nologo", "-v", "q", "-nodeReuse:false", "-p:UseSharedCompilation=false", "-o", Path.GetDirectoryName(harnessDll)!],
+            root, environment, cancellationToken).ConfigureAwait(false);
+        if (harnessExit != 0)
+        {
+            return new Command(null, [$"the local harness build failed: {Tail(string.IsNullOrWhiteSpace(harnessErr) ? harnessOut : harnessErr, 800)}"], environment);
+        }
+
         if (!File.Exists(harnessDll))
         {
             return new Command(null, [$"the build did not produce {manifest.HarnessDll}; the test project must reference the local harness."], environment);

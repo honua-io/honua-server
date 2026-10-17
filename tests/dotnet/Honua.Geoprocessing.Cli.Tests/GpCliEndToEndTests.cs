@@ -110,10 +110,9 @@ public sealed class GpCliEndToEndTests
     }
 
     [Fact]
-    public async Task RunAsync_Init_Dotnet_WritesResponseFileWhenHarnessIsKnown()
+    public async Task RunAsync_Init_Dotnet_UsesBundledToolchainWithoutCheckout()
     {
         var output = Path.Join(Path.GetTempPath(), $"gp-init-{Guid.NewGuid():N}");
-        var harness = GpCustomProjectScaffolder.ResolveHarnessRoot(null, Directory.GetCurrentDirectory());
         try
         {
             var (exit, _, _) = await InvokeAsync("init", "--language", "dotnet", "--name", "parcel-summary", "--output", output);
@@ -124,11 +123,8 @@ public sealed class GpCliEndToEndTests
             File.Exists(Path.Join(project, "tests", "SummaryTool.Tests", "GoldenTests.cs")).Should().BeTrue();
             var manifest = GpProjectManifest.Load(Path.Join(project, "honua-gp.yaml"));
             manifest.Build.Should().Be("tests/SummaryTool.Tests/SummaryTool.Tests.csproj");
-            if (harness is not null)
-            {
-                File.ReadAllText(Path.Join(project, "Directory.Build.rsp")).Should().Contain("-p:HonuaServerCheckout=");
-                manifest.HarnessRoot.Should().NotBeNullOrEmpty();
-            }
+            File.Exists(Path.Join(project, ".honua", "toolchain", "docker", "worker-customcode-dotnet", "harness", "src", "Honua.CustomCode.Sdk", "Honua.CustomCode.Sdk.csproj")).Should().BeTrue();
+            manifest.ToolchainVersion.Should().Be(GpBundledToolchain.Version);
         }
         finally
         {
@@ -147,8 +143,6 @@ public sealed class GpCliEndToEndTests
             return; // python3 is not on PATH; the project test is exercised where it is (CI Linux).
         }
 
-        var harness = GpCustomProjectScaffolder.ResolveHarnessRoot(null, Directory.GetCurrentDirectory());
-        harness.Should().NotBeNull("the tests run inside the checkout, which holds the harnesses");
         var output = Path.Join(Path.GetTempPath(), $"gp-test-{Guid.NewGuid():N}");
         try
         {

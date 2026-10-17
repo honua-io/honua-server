@@ -6,9 +6,13 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "GP: build",
-      "program": "${workspaceFolder}/tests/SummaryTool.Tests/bin/Debug/net10.0/Honua.CustomCode.Harness.dll",
+      "program": "dotnet",
       "cwd": "${workspaceFolder}",
       "args": [
+        "exec",
+        "--depsfile",
+        "${workspaceFolder}/tests/SummaryTool.Tests/bin/Debug/net10.0/SummaryTool.Tests.deps.json",
+        "${workspaceFolder}/tests/SummaryTool.Tests/bin/Debug/net10.0/Honua.CustomCode.Harness.dll",
         "local",
         "--assembly-dir",
         "process/bin/Debug/net10.0",
@@ -38,10 +42,9 @@
       "stopAtEntry": false
     },
     {
-      "name": "GP: attach to container (docker/compose.debug.yaml)",
+      "name": "GP: run in container (docker/compose.debug.yaml)",
       "type": "coreclr",
-      "request": "attach",
-      "processName": "dotnet",
+      "request": "launch",
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": [
@@ -49,13 +52,28 @@
           "-i",
           "gp-dotnet-debug"
         ],
-        "debuggerPath": "/root/vsdbg/vsdbg",
+        "debuggerPath": "/work/vsdbg/vsdbg",
         "pipeCwd": "${workspaceFolder}",
         "quoteArgs": false
       },
       "sourceFileMap": {
         "/work/src": "${workspaceFolder}"
-      }
+      },
+      "program": "/opt/harness/Honua.CustomCode.Harness.dll",
+      "cwd": "/work/src",
+      "args": [
+        "local",
+        "--assembly-dir",
+        "/work/src/.honua/container-build",
+        "--entrypoint",
+        "SummaryTool::Honua.Templates.SummaryTool",
+        "--params",
+        "/work/src/fixtures/params.json",
+        "--input",
+        "features=/work/src/fixtures/input.geojson",
+        "--output",
+        "/work/out"
+      ]
     }
   ]
 }
