@@ -712,14 +712,18 @@ public sealed class WebAppFixture : IAsyncLifetime
     private Task EnsureTestSecureConnectionAsync()
         => Honua.TestKit.Mixins.WebAppFixtureSecureConnectionMixin.EnsureTestSecureConnectionAsync(_serviceScope);
 
-    private Task SeedSchemaAsync(string schemaName)
+    private async Task SeedSchemaAsync(string schemaName)
     {
         if (!string.IsNullOrWhiteSpace(_seedPath))
         {
-            return Postgres.ApplySeedAsync(_seedPath, schemaName, _seedProfile);
+            await Postgres.ApplySeedAsync(_seedPath, schemaName, _seedProfile).ConfigureAwait(false);
+        }
+        else
+        {
+            await ServerTestData.SeedAsync(Postgres, schemaName).ConfigureAwait(false);
         }
 
-        return ServerTestData.SeedAsync(Postgres, schemaName);
+        await ServerTestData.EnsureFixtureAttachmentsAsync(Postgres, schemaName).ConfigureAwait(false);
     }
 
     private static string ResolveSeedPath(string seedPath)
