@@ -1436,7 +1436,7 @@
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.LegacyRedisRecord_PreservesCompareAndSetAndExpiry",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication",
-        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RetainedMetadata_AfterExpiryOrRevoke_LeavesTheAuthenticationCandidateSet",
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RetainedMetadata_AfterExpiryOrRevoke_CannotAuthenticate",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RotateAndRevoke_UnderConcurrentUse_TakeEffectWithoutDenyingValidRequests",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Rotate_AfterExpiry_IsRejectedWithoutIssuingDeadCredential",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.ScopedAndWrongKeys_WithRedisRegistry_AreHeldToTheSharedAdminPolicy",
@@ -1740,7 +1740,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.Endpoints_ResponsesSanitized_NoSensitiveDataExposed",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.GetConnections_WithAdminAuth_ReturnsConnections",
-        "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.GetConnections_WithoutAdminAuth_ReturnsUnauthorized"
+        "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.GetConnections_WithoutAdminAuth_ReturnsUnauthorized",
+        "Honua.Server.Tests.Infrastructure.Authentication.ScopedJobCallbackAuthenticationTests.ReadOnlyCapability_CannotWrite_OrUseAnAccompanyingAdminKey",
+        "Honua.Server.Tests.Infrastructure.Authentication.ScopedJobCallbackAuthenticationTests.WriteCapability_UsesCanonicalFeatureEditPipeline_AndStillCannotAdminister"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -2767,7 +2769,10 @@
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_ForCustomCodeJob_ReportsCompleteReleaseIdentityWithoutCredentials",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_ForFailedJob_ProjectsSanitizedFailureAndDisclosesMissingProvenance",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_ForRunningJobs_JudgesWorkerLivenessByHeartbeatPolicy",
-        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_ScopedReadKey_ReceivesOwnerViewWithoutInfrastructureIdentities"
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_PagesRetainedEventsWithoutReadingTheWholeStream",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_RejectsMalformedEventCursor",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_ScopedReadKey_ReceivesOwnerViewWithoutInfrastructureIdentities",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobDiagnostics_WithHarnessEvents_PreservesMeasuredAndInferredStepTiming"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -2798,7 +2803,8 @@
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobSteps_ForUnknownJob_Returns404",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobSteps_ProjectsSanitizedPerStepGlassBox",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobSteps_RequiresAdminAuthorization",
-        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobSteps_SanitizesFallbackCurrentPhase"
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobSteps_SanitizesFallbackCurrentPhase",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetSteps_NoisyJob_ReturnsBoundedTailWithAbsoluteOrdinalsAndTruncation"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -4923,7 +4929,8 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_ExposesImmutableDeploymentRevisionSeparatelyFromServerVersion",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_RejectsMalformedDeploymentRevisionRatherThanEchoingIt",
         "Honua.Server.Tests.Features.Studio.StudioPublishRequestNonAttestedRedisTests.StockRedis_Production_AdvertisesOperationsProposalsAndPublishesDurabilityAsInformation",
-        "Honua.Server.Tests.Import.ImportEndpointBackgroundRefusalTests.ForcedBackgroundImport_OnHostWithoutRunner_ReturnsTyped503BeforeStaging"
+        "Honua.Server.Tests.Import.ImportEndpointBackgroundRefusalTests.ForcedBackgroundImport_OnHostWithoutRunner_ReturnsTyped503BeforeStaging",
+        "Honua.Server.Tests.Import.ImportEndpointTests.CapabilityManifest_ObjectStore_IsDisabledUntilABucketIsAllowListed"
       ],
       "proof_ledger_surface": "capability-manifest",
       "maturity": "implemented",
@@ -6473,6 +6480,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.ApiKeyAuthenticationTests.HealthEndpoint_NoAuth_AlwaysAccessible",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.HealthEndpoint_OidcEnabled_StillAccessible",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
+        "Honua.Server.Tests.Infrastructure.Authentication.ScopedJobCallbackAuthenticationTests.InvalidCapability_IsRejectedBeforeDataAndNeverFallsBackToAdmin",
         "Honua.Server.Tests.Infrastructure.Middleware.CorrelationIdMiddlewareTests.CorrelationIdMiddleware_HealthEndpoints_AlwaysIncludeCorrelationId",
         "Honua.Server.Tests.Infrastructure.Middleware.CorrelationIdMiddlewareTests.CorrelationIdMiddleware_IntegrationWithOpenTelemetry_WorksWithActivity",
         "Honua.Server.Tests.Infrastructure.Middleware.CorrelationIdMiddlewareTests.CorrelationIdMiddleware_MultipleRequests_GeneratesDifferentIds",
@@ -10895,6 +10903,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.RestCatalog_AdminAndRoleOperationHandoffsAgreeWithCatalogVisibility",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ClientCompatErrorHandlingTests.FeatureServer_MalformedWhereClause_ReturnsErrorEnvelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAccessFilteringTests.Query_HiddenLayerAsReader_ReturnsZeroRecordsWhileTheEntitledRoleReadsThem",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAdmissionErrorTests.IdsOnlyQuery_EmptyOrSingleResult_PreservesIdsWithoutFeatureStream",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAdmissionErrorTests.IdsOnlyQuery_WhenAdmissionFails_ReturnsCompleteErrorEnvelopeWithoutFeatureStream",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAdmissionErrorTests.Query_WhenAdmissionUnavailable_Preserves503ErrorAndRetryAfter",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAdmissionErrorTests.StreamingQuery_EmptyOrSingleRow_PreservesRowsAndDisposesSource",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAdmissionErrorTests.StreamingQuery_WhenFirstAdmissionFails_ReturnsCompleteErrorEnvelope",
@@ -10987,10 +10997,13 @@
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.SqlInjection_InWhereClause_ShouldBeBlocked",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.XSS_InParameters_ShouldBeSanitized",
         "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_ActualHttpReadMatchesSql_ThenMembershipAndUnshareRevoke",
+        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_SqlInspectionExemption_IsLimitedToPassword",
         "Honua.Server.Tests.GeoParquetBudgetEndpointTests.Query_ExceedsInputOrOutputBudget_ReturnsCompleteErrorAndCanEncodeNextRequest",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithBoundedQueryWriterOutput_PreservesRowsAcrossRowGroupBoundaries",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithLargeSingleRowGroup_ImportsFeatures",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_DefaultOperationalSchema_CanDiscoverPublishAndQueryFeatureServer",
+        "Honua.Server.Tests.Infrastructure.Authentication.ScopedJobCallbackAuthenticationTests.CurrentCapability_ReadsProtectedData_AndCannotReachAnotherLayerOrService",
+        "Honua.Server.Tests.Infrastructure.Authentication.ScopedJobCallbackAuthenticationTests.InvalidCapability_IsRejectedBeforeDataAndNeverFallsBackToAdmin",
         "Honua.Server.Tests.LimitsEnforcementTests.QueryGet_NoRecordCount_UsesDefaultLimit",
         "Honua.Server.Tests.Seed.AdminSampleSeedFeatureServerTests.FeatureServerGeoJsonQuery_WithProjectedAdminRoute_ReturnsWgs84Coordinates",
         "Honua.Server.Tests.Seed.AdminSampleSeedFixtureTests.AdminSampleSeed_DeclaresPreviewableFeatureServerFixture",
@@ -13764,6 +13777,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_CredentialsInQueryStringOverPlainHttp_Returns403WithHelpfulMessage",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_CredentialsInQueryStringWithInsecureMode_Succeeds",
+        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_SqlInspectionExemption_IsLimitedToPassword",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WithClientIp_ReturnsToken",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WithQueryStringCredentials_ReturnsToken",
         "Honua.Server.Tests.Infrastructure.Authentication.LicenseBlockedCredentialResponseCacheTests.GenerateToken_LicenseBlocked_DoesNotPermitStorage"
@@ -14832,10 +14846,12 @@
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainTile_OutsideCoverage_ReturnsAllNoDataPng",
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainTile_WithPartialCoverage_EncodesCoveredAndUncoveredPixels",
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainTile_WithRegisteredDem_ReturnsTerrainRgbPng",
+        "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainTile_WithSourceNoData_ReturnsTransparentPixels",
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainTile_WithTileCoordinateOutsideMatrix_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainTile_WithUnknownSourceCrs_ReturnsUnprocessableEntity",
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainTile_WithUnregisteredPositiveSourceCrs_ReturnsUnprocessableEntity",
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainTile_WithUnsupportedMultibandSource_ReturnsUnprocessableEntity",
+        "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainTile_WithValidMinusTenThousandElevation_RemainsOpaque",
         "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests.GetTerrainTile_WithZoomAboveLimit_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "terrain-rgb-tiles",
@@ -15981,7 +15997,7 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication",
-        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RetainedMetadata_AfterExpiryOrRevoke_LeavesTheAuthenticationCandidateSet",
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RetainedMetadata_AfterExpiryOrRevoke_CannotAuthenticate",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RotateAndRevoke_UnderConcurrentUse_TakeEffectWithoutDenyingValidRequests",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Rotate_AfterExpiry_IsRejectedWithoutIssuingDeadCredential",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.ScopedAndWrongKeys_WithRedisRegistry_AreHeldToTheSharedAdminPolicy",
@@ -16003,7 +16019,7 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RevokeApiKey_PreventsFurtherAuthentication",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication",
-        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RetainedMetadata_AfterExpiryOrRevoke_LeavesTheAuthenticationCandidateSet",
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RetainedMetadata_AfterExpiryOrRevoke_CannotAuthenticate",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RotateAndRevoke_UnderConcurrentUse_TakeEffectWithoutDenyingValidRequests",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.ScopedAndWrongKeys_WithRedisRegistry_AreHeldToTheSharedAdminPolicy"
       ],
@@ -17389,6 +17405,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.ImportEndpointTests.ImportFileFromObjectStore_WithBucketOutsideAllowList_ReturnsForbidden",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFileFromObjectStore_WithUnsupportedScheme_ReturnsTypedProblem"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -21842,6 +21859,7 @@
         "Honua.ProviderSmoke.Tests.MySqlProviderSmokeTests.FeatureServer_ApplyEdits_RetriedAfterReadOnlyRejection_Repeats405InsteadOfConflict",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.HonuaServer5407_ApplyEditsAttributeOnlyUpdateOnManagedLayerPreservesGeometry",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishManagedCopy_FromUploadedData_WritesAndReadsTheSameRows",
+        "Honua.Server.Tests.AttachmentEndpointTests.FeatureDelete_CleansOnlyItsFixtureAttachmentsAfterCommit",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_LayerLevel_AddsOnly_IncludesEmptyUpdateAndDeleteResults",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_NoOpEsriClientControl_IsAcceptedAndEditApplies",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_RejectsEditKindMissingFromDeclaredCapabilities",
@@ -21949,7 +21967,9 @@
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.ContentValidation_MalformedJSON_ShouldBeRejected",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.CorrelationId_CriticalOperations_ReturnsCorrelationId",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.InputValidation_ExcessivelyLargePayload_ShouldBeRejected",
-        "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_ActualHttpReadMatchesSql_ThenMembershipAndUnshareRevoke"
+        "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_ActualHttpReadMatchesSql_ThenMembershipAndUnshareRevoke",
+        "Honua.Server.Tests.Infrastructure.Authentication.ScopedJobCallbackAuthenticationTests.ReadOnlyCapability_CannotWrite_OrUseAnAccompanyingAdminKey",
+        "Honua.Server.Tests.Infrastructure.Authentication.ScopedJobCallbackAuthenticationTests.WriteCapability_UsesCanonicalFeatureEditPipeline_AndStillCannotAdminister"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -22383,6 +22403,7 @@
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithCanonicalFeatureRoute_ReturnsSuccess",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithInvalidAttachmentIdsToken_Returns400",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithMalformedAttachmentIdsDelimiter_Returns400",
+        "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithSuccessfulAndMissingIds_EmitsErrorOnlyForFailure",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithUnsupportedContentType_Returns415",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithValidIds_ReturnsSuccess",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithoutAttachmentIds_Returns400",
@@ -24094,6 +24115,7 @@
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_RespectsMaxExpirationClamp",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_SqlInspectionExemption_IsLimitedToPassword",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_StrictRefererInheritedExchange_RejectsMissingOrForeignHeader",
+        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_UnmatchedFormRoute_ReturnsNotFound",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_UnsupportedFormat_Returns400",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_VerifierWithoutSource_ReturnsUsableToken",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WhenDisabled_Returns404",
