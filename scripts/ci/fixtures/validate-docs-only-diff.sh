@@ -53,6 +53,7 @@ write docs/gis/data/notes.md 'generated'
 write docs/get-started/install-artifacts.json '{"serverImage":"example"}'
 write docs/llms.txt '# Documentation index'
 write docs/okf/domain-graph.v1.json '{}'
+write docs/ci/historical-report.json '{"contract":"honua.affected-shards-reconciliation/v1","rows":[{"changed_paths_before_landing":["docs/guides/intro.md","docs/llms.txt"]}]}'
 write src/Lib/Lib.cs 'internal sealed class Lib { }'
 # A packed README only has to exist; an embedded document is build content.
 write src/Lib/Lib.csproj '<Project Sdk="Microsoft.NET.Sdk">
@@ -69,6 +70,11 @@ write tests/dotnet/Honua.Architecture.SourceTests/BasicArchitectureTests.cs 'pub
         Directory.Exists(ArchitectureTestHelpers.CombinePath(projectRoot, "docs")).Should().BeTrue();
         File.Exists(ArchitectureTestHelpers.CombinePath(projectRoot, "AGENTS.md")).Should().BeTrue();
     }
+}'
+write tests/dotnet/Honua.Ai.Tests/Source/McpToolRosterDriftTests.cs 'public sealed class McpToolRosterDriftTests
+{
+    public void GitHead() { var directory = RepositoryPaths.Resolve("docs"); }
+    public void Roster() { var data = File.ReadAllText("docs/gis/data/catalog.json"); }
 }'
 write tests/dotnet/Honua.Architecture.Tests/DocReadingTests.cs 'public sealed class DocReadingTests
 {
@@ -160,6 +166,9 @@ edit_runtime_consumed_manifest() {
   edit_install_manifest
 }
 edit_docs_yaml() { write docs/guides/config.yaml 'key: value'; }
+edit_new_report_schema() {
+  write docs/ci/historical-report.json '{"contract":"unreviewed/v1","input":"docs/guides/intro.md"}'
+}
 rename_docs_to_src() { g mv docs/guides/intro.md src/Lib/intro.md; }
 rename_within_docs() { g mv docs/guides/intro.md docs/guides/renamed.md; }
 no_change() { :; }
@@ -222,6 +231,16 @@ edit_runtime_consumed_manifest
 commit_pr "change runtime-consumed manifest"
 merge_onto "${CONSUMER}"
 expect "docs data with a runtime consumer still requires runtime CI" false
+
+start_pr
+edit_new_report_schema
+commit_pr "different JSON contracts still govern referenced documents"
+REPORT_BASE="$(g rev-parse HEAD)"
+g checkout -q -B pr "${REPORT_BASE}"
+edit_docs
+commit_pr "edit JSON-governed docs"
+merge_onto "${REPORT_BASE}"
+expect "unknown report schemas retain conservative reference scanning" false
 
 echo "== Refusing to answer without a pull-request merge base"
 start_pr
