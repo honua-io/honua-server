@@ -19,8 +19,9 @@ for its identity and verification scope. A customer install manifest is not
 required for this preview.
 
 After release promotion, use `ghcr.io/honua-io/honua-server:2026.1-rc`
-(`ghcr.io/honua-io/honua-server:2026.1` at GA) with that release's published
-install manifest. Those release artifacts must exist before selecting that path.
+(`ghcr.io/honua-io/honua-server:2026.1` at GA). The exact digest is in the
+release's `customer-install-manifest.json` (`server.image`). Those release
+artifacts must exist before selecting that path.
 
 ## Create an isolated installation
 
