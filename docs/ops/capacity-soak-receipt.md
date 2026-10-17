@@ -37,6 +37,36 @@ older candidate: GitHub attests the workflow's source commit.
 `publish=false` still runs attestation and the full checker against the local ZIP.
 A failing checker always fails the workflow, whether publication is enabled or not.
 
+## Runner selection
+
+Hosted `ubuntu-24.04` remains the default. Dedicated routing is disabled until an operator
+registers and reviews the capacity-only organization group, its disposable job lifecycle and
+its scheduling restrictions. Do not use a developer checkout or a group that accepts PR code.
+Keep the group restricted to `honua-io/honua-server` and only this producer at protected trunk
+or explicitly approved `refs/tags/nightly-candidate/<full-candidate-sha>` refs. Wildcards,
+arbitrary branches and other workflows are refused. The group must provide one heavy slot;
+lightweight canaries require separate capacity.
+
+After that review, repository administrators can set `HONUA_CAPACITY_RUNNER_POOL=dedicated`
+and `HONUA_CAPACITY_RUNNER_GROUP_ID` to the reviewed real group ID. The routing expression
+selects only `honua-release-heavy` with `self-hosted`, `Linux`, `X64` and `honua-release-heavy`
+labels, for an owned dispatch whose workflow/source SHA matches the candidate and whose ref
+is protected trunk or that exact candidate tag. Caller inputs cannot select labels or a group.
+Unset configuration stays hosted; invalid or incompletely configured dedicated execution fails.
+
+The organization's restricted scheduling policy is the trust boundary before a dedicated job
+starts. The first inline step then verifies live protected-trunk ancestry, the actual producing
+job, the configured group ID, labels, and narrow group workflow/repository access before any
+checkout or workload. Supply `RELEASE_RUNNER_READ_TOKEN` with read-only organization runner-group
+and repository Actions metadata access. It is available only to that first step. Missing metadata,
+API access or source identity fails admission. Cleanup still runs after admitted workload failures;
+an admission failure never executes a stale checkout's cleanup script.
+
+Independent honua-release admission remains mandatory. Its reviewed group allowlist is empty until
+operator registration is accepted under [honua-release#645](https://github.com/honua-io/honua-release/issues/645).
+Routing code and controlled tests do not register a group or qualify capacity. Retain hosted execution
+until actual hosted/dedicated parity passes on the same immutable candidate and frozen fixtures.
+
 ## Collection
 
 The substrate is [local Docker](../../docker-compose.soak.yml): one server
@@ -98,17 +128,27 @@ topology, producer and lock hash. It is uploaded first so the receipt can cite t
 actual immutable Actions artifact URL. The ZIP is flat and bounded to 64 files,
 64 MiB per file and 256 MiB total; it currently contains two files.
 
-The workflow attests that complete ZIP with SLSA v1 on a GitHub-hosted runner and
+The workflow attests that complete ZIP with SLSA v1 on the selected Actions runner and
 publishes its bytes on the evidence branch at a commit-pinned HTTPS URL. It
 fetches the published bytes, compares them, verifies the attestation with `gh`,
-extracts with the release checker’s bounded extractor, and runs
-`tools/check_capacity_soak.py`. The receipt's `signature` field points to the
+extracts with the release checker’s bounded extractor, and runs the producer
+preflight using that same frozen release commit's signal evaluator and pure
+attestation-content binder. This verifies the current invocation's source,
+bundle, observations and signals while the job is still running. It explicitly
+reports completed-run release admission as pending. The receipt's `signature` field points to the
 external ZIP attestation; the field itself is not cryptographic proof.
+
+The lock selector resolves once to a full release commit. Before downloading
+verifier code, both hosted and dedicated producers verify the canonical release
+repository, protected `trunk`, and that exact commit's membership in trunk history.
+A feature branch, mismatched commit or unavailable API metadata refuses execution.
 
 The release checker independently recomputes all eight signals and verifies the
 raw hashes, populations, eight workload dimensions, freeze, source commit,
 workflow, run ID/attempt, image digest and ZIP subject digest. Green requires that
-checker to accept everything. The legacy manual load workflow is diagnostic only;
+checker to accept everything after the producing job completes, including independent
+runner-policy and live completed-job admission. A producer preflight success is
+never a release verdict. The legacy manual load workflow is diagnostic only;
 its nightly schedule has been retired in favor of candidate qualification.
 
 ## Failed qualification

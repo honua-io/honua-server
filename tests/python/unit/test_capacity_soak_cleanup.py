@@ -131,7 +131,10 @@ def test_workflow_always_runs_strict_cleanup_and_never_uploads_private_config():
     assert "capacity-substrate.sh start" in startup["run"]
     assert 'SOAK_LICENSE_CONTENT="$(cat "$RUNNER_TEMP/license/license.json")"' in startup["run"]
     assert cleanup["if"] == "always()"
-    assert cleanup["run"] == "scripts/soak/capacity-substrate.sh cleanup"
+    assert cleanup["env"]["PRODUCER_ADMITTED"] == "${{ steps.admission.outcome == 'success' }}"
+    assert cleanup["run"].splitlines()[-3:] == [
+        'if [ "$PRODUCER_ADMITTED" != true ]; then exit 0; fi',
+        "cd producer", "scripts/soak/capacity-substrate.sh cleanup"]
     assert not cleanup.get("continue-on-error", False)
     for step in steps:
         if "actions/upload-artifact@" in step.get("uses", ""):

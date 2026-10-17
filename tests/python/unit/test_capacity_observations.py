@@ -5,6 +5,7 @@ import asyncio
 import copy
 from datetime import datetime, timedelta, timezone
 import json
+import os
 import re
 from pathlib import Path
 import sys
@@ -517,6 +518,27 @@ def verify_release_contract(tools_path: Path, output: Path):
     assert passed.returncode == 0, passed.stdout + passed.stderr
     verification_path.write_text(json.dumps(wrong))
     refused = subprocess.run(cli, capture_output=True, text=True)
+    assert refused.returncode == 1 and "attested source commit" in refused.stdout, refused.stdout + refused.stderr
+    # Producer preflight uses the real frozen evaluator/content binder but cannot
+    # issue a completed-run verdict from inside the still-running producing job.
+    verification_path.write_text(json.dumps(verified))
+    preflight = [sys.executable, str(ROOT / "scripts/soak/producer_preflight.py"), *cli[2:],
+                 "--expected-run-id", "123", "--expected-run-attempt", "1",
+                 "--expected-workflow-ref", result["producer"]["workflowRef"]]
+    env = dict(os.environ, PYTHONPATH=str(tools_path))
+    passed = subprocess.run(preflight, env=env, capture_output=True, text=True)
+    assert passed.returncode == 0 and "completed-run release admission pending" in passed.stdout, passed.stdout + passed.stderr
+    certificate["runnerEnvironment"] = "self-hosted"
+    verification_path.write_text(json.dumps(verified))
+    passed = subprocess.run(preflight, env=env, capture_output=True, text=True)
+    assert passed.returncode == 0, passed.stdout + passed.stderr
+    # Exactly those bytes still cannot qualify through the independent consumer
+    # without approved runner metadata/policy; preflight is not an alternate gate.
+    refused = subprocess.run(cli, capture_output=True, text=True)
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    wrong[0]["verificationResult"]["signature"]["certificate"]["runnerEnvironment"] = "self-hosted"
+    verification_path.write_text(json.dumps(wrong))
+    refused = subprocess.run(preflight, env=env, capture_output=True, text=True)
     assert refused.returncode == 1 and "attested source commit" in refused.stdout, refused.stdout + refused.stderr
     print("release checker: positive ZIP accepted; wrong-source ZIP attestation rejected")
 
