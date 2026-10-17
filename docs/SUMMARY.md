@@ -4,6 +4,7 @@
 
 - [Get started with AI](get-started/with-ai.md)
 - [Quickstart: install, publish, and query](get-started/quickstart.md)
+  - [Local preview artifact and verification](reference/local-preview-artifact.md)
 - [Your first dataset](get-started/first-dataset.md)
 - [Your first map](get-started/first-map.md)
 - Install as a native package instead

@@ -6,10 +6,6 @@ resource: "https://github.com/honua-io/honua-server/releases"
 ---
 # Install on Windows from published packages
 
-Check the [current packaged-artifact availability](quickstart.md) before starting:
-the 2026.1 release image and customer install manifest were unavailable in the
-2026-10-17 UTC check. Do not treat an intended release channel as a published artifact.
-
 Run these blocks in order in **Windows PowerShell 5.1 or PowerShell 7**, from a
 directory where you can create a private installation folder. You need Docker
 Desktop running Linux containers, Docker Compose **2.23.1+**, and Python **3.11+**
@@ -25,26 +21,28 @@ this journey uses a small synchronous import and does not require durable jobs.
 
 ## Artifact identity and qualification
 
-The server image is the 2026.1 release channel
-`ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA);
-only release promotion moves that tag.
-The exact digest is in the release's `customer-install-manifest.json`
-(`server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json)).
+For local evaluation, use the published preview image
+`ghcr.io/honua-io/honua-server:nightly-0e03bdd`, matching the
+[quickstart](quickstart.md). Its source and immutable identity are recorded in the
+[preview artifact receipt](../reference/local-preview-artifact.md). This is a
+preview build; the receipt does not claim a clean Windows qualification.
+
+After release promotion, use `ghcr.io/honua-io/honua-server:2026.1-rc`
+(`ghcr.io/honua-io/honua-server:2026.1` at GA) with that release's published
+install manifest. Those release artifacts must exist before selecting that path.
+
 Docker Desktop runs Linux containers; this journey selects `linux/amd64`.
-Set `$Image` and `HONUA_IMAGE` to that digest to pin an installation exactly; `docker pull` below
+To pin the installation exactly, use the digest in the preview artifact receipt
+for `$Image` and `HONUA_IMAGE`; `docker pull` below
 resolves the tag, and the support step records the digest that ran. The control-plane package is
 [honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/); the data-plane
 package is [honua-sdk 0.1.16](https://pypi.org/project/honua-sdk/0.1.16/).
 The import step invokes Honua's `honua_ingest_dataset` MCP tool using the
 published [MCP transport client 2.1.1](https://pypi.org/project/mcp/2.1.1/).
 
-Download the [customer install manifest](https://honua.io/data/customer-install-manifest.json)
-for all image and client identities, wheel hashes and direct downloads. Its Honua
-client pins come from the release manifest; the server pin comes from the linked
-successful pre-cut rehearsal. The [publication record](https://honua.io/data/customer-install-publication.json)
-identifies the immutable release-repository source and SHA-256 of the public copy.
-The GHCR manifest URL uses the OCI registry protocol; Docker handles its anonymous
-bearer-token exchange. It does not require a GitHub account.
+The preview does not require the currently unavailable customer install manifest
+or its publication record. Docker handles the public registry's anonymous
+authentication; a GitHub account is not required.
 
 ## 1. Create a private, isolated installation
 
@@ -79,12 +77,12 @@ function New-InstallSecret {
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
 }
-$Image = 'ghcr.io/honua-io/honua-server:2026.1-rc'
+$Image = 'ghcr.io/honua-io/honua-server:nightly-0e03bdd'
 $Port = 18080
 $KeyringPassword = New-InstallSecret
 @"
 COMPOSE_PROJECT_NAME=$Project
-HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-0e03bdd
 HONUA_HTTP_PORT=$Port
 POSTGRES_PASSWORD=$(New-InstallSecret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-InstallSecret)

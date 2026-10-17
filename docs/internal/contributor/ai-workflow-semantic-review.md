@@ -50,7 +50,7 @@ shipped universal execution/verifier layer.
 | Finding | Evidence | Disposition |
 | --- | --- | --- |
 | The first install cannot discover tools from a server that does not exist. A published layer is not needed to connect an agent. | Install workflow and MCP prerequisite descriptions | Corrected; host bootstrap precedes server discovery, then first dataset publication. |
-| The packaged quickstart advertises unavailable release artifacts. | Anonymous Docker pull of `ghcr.io/honua-io/honua-server:2026.1-rc`: `not found`; HTTPS GET of `https://honua.io/data/customer-install-manifest.json`: 404 | Added dated availability notice to package entrypoints. Release publication and full replay remain required. |
+| The packaged quickstart advertises unavailable release artifacts. | Anonymous Docker pull of `ghcr.io/honua-io/honua-server:2026.1-rc`: `not found`; HTTPS GET of `https://honua.io/data/customer-install-manifest.json`: 404 | Replaced the unavailable release install default with an explicitly labeled, locally exercised preview; see the preview artifact receipt. Release publication remains separate. |
 | A “propose publication” tool can publish immediately for an admin. Declaring only a proposal understates its effect. | [Server tool](../../../src/Honua.Ai/Features/Protocols/Mcp/Mcp/Studio/StudioProposePublicationTool.cs), [admin/non-admin tests](../../../tests/dotnet/Honua.Server.Tests/Features/Studio/StudioAdminMcpPublicationTests.cs) | Corrected workflow effect, recovery contract and both result branches. Pending approval is not publication. Tests inspected, not run. |
 | Browser publication models only `AwaitingApproval`, while server supports direct `Published`. | Studio `src/mcp/studio-tools.ts` and `src/chat/share-preview.ts` at reviewed baseline | Narrowed browser documentation; adapter implementation gap remains. |
 | Enterprise default guardrail can require approval for ordinary Studio draft composition. | [Guardrail](../../../src/Honua.Core/Features/Guardrails/DefaultGuardrailLadder.cs), [tests](../../../tests/dotnet/Honua.Core.Tests/Features/Guardrails/DefaultGuardrailLadderTests.cs) | Documented current limitation against realtime product intent. No policy change made. |
@@ -86,7 +86,7 @@ Public checks used an empty Docker client configuration: no registry credentials
 Both pinned Python packages (`honua-admin` 0.1.12, `honua-sdk` 0.1.16) returned
 HTTP 200 from PyPI. The GHCR and Docker Hub nightly image manifests were
 retrievable. No nightly was substituted for the unavailable release candidate;
-no stack was started and no installation, query, map, or restart pass is claimed.
+no stack was started during those initial checks. The subsequent image fix ran a fresh Compose installation and sample publication/query; see the [preview artifact receipt](../../reference/local-preview-artifact.md) for its exact artifact and bounded results.
 
 Documentation validation covers OKF structure, workflow bindings, generated
 graph/index freshness, local links, and the embedded language example. It cannot

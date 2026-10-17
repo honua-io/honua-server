@@ -68,7 +68,9 @@ is broken or that the evaluator needs registry credentials.
 
 ### Start, connect, and prove the installation
 
-Follow the [package quickstart](quickstart.md): create an isolated Compose
+Follow the [package quickstart](quickstart.md), using its published preview and
+[artifact receipt](../reference/local-preview-artifact.md) for local evaluation:
+create an isolated Compose
 project, generate installation secrets directly into protected local files,
 start Honua/PostGIS/Redis with persistent volumes, and verify readiness and an
 authenticated operation. Then connect the agent as described in step 3. For a

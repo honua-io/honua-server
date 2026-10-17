@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:e35fe3a0eadb78c04a228a6f8caf43413e308a1b92b3492993d1b4035244ef46",
+  "bundleDigest": "sha256:9941f1903cde80b424c6e9531c479b11725a86b19effafb34391d4309cee9775",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1912,7 +1912,7 @@
     {
       "id": "get-started/linux-packages",
       "path": "get-started/linux-packages.md",
-      "documentDigest": "sha256:28faa6ca02f56faf23197addf990c4227b0b181579105cffdab24eef7a10e673",
+      "documentDigest": "sha256:f0c4906c1dce5ac97142646093a33da3d5748593760e3d5a55bb8e261e3a7ef5",
       "metadata": {
         "type": "guide",
         "title": "Linux: install published packages",
@@ -1924,7 +1924,7 @@
     {
       "id": "get-started/quickstart",
       "path": "get-started/quickstart.md",
-      "documentDigest": "sha256:1b1eb5f6846c8b767fa450c762ffc2a12a3d9ce9bed4784d05c9b90a6b6591e6",
+      "documentDigest": "sha256:ae964fb46350e60019b0ae2098fa2589fe46fdc666f50715e6f29bf36229007c",
       "metadata": {
         "type": "guide",
         "title": "Quickstart: install, publish, and query",
@@ -1936,7 +1936,7 @@
     {
       "id": "get-started/registry-clients",
       "path": "get-started/registry-clients.md",
-      "documentDigest": "sha256:2b54dcc07fbbaeb81b4371588fdc563b20391dadf547dff23993d3d35b4470d0",
+      "documentDigest": "sha256:f93444740b8f3f1c75ed3ee9c62b3b058724999a0a23aa45ec3874967224650c",
       "metadata": {
         "type": "guide",
         "title": "Client packages and registries",
@@ -1948,7 +1948,7 @@
     {
       "id": "get-started/windows-packages",
       "path": "get-started/windows-packages.md",
-      "documentDigest": "sha256:bb0cbbc8b0e8b05151a2924f2b9388032b7452cf6c7a5ec629eddb372b2ae6b4",
+      "documentDigest": "sha256:1bf1f1fef333113eee4e14f3476f7e3ec55cbe63c7e108c12fd669fba811130c",
       "metadata": {
         "type": "guide",
         "title": "Install on Windows from published packages",
@@ -1960,7 +1960,7 @@
     {
       "id": "get-started/with-ai",
       "path": "get-started/with-ai.md",
-      "documentDigest": "sha256:548afd5161715a636639e68f562ea9416f94d926ef50a632c420229ce6fcea53",
+      "documentDigest": "sha256:30fe0a1e94db16d72fe2942424e2c2577a186dbb14775f1eeb4d66bbe5c4b444",
       "metadata": {
         "type": "guide",
         "title": "Get started with AI",
@@ -7897,6 +7897,17 @@
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/integration-patterns.md"
     },
     {
+      "id": "reference/local-preview-artifact",
+      "path": "reference/local-preview-artifact.md",
+      "documentDigest": "sha256:abc7c3766fe7ebf0d0778ce17d6d91aec720821ae75832eb1a6bf11ead45bb5d",
+      "metadata": {
+        "type": "reference",
+        "title": "Local Docker preview artifact",
+        "description": "Published image identity and bounded installation evidence for the local Docker evaluation guide."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/local-preview-artifact.md"
+    },
+    {
       "id": "reference/openapi-and-explorer",
       "path": "reference/openapi-and-explorer.md",
       "documentDigest": "sha256:9f6650aa90be3345fbb0340e8a3a74c0a77dea45185b91170c832dd424a7cce1",
@@ -10663,6 +10674,11 @@
       "target": "guides/deploy/docker-compose"
     },
     {
+      "source": "get-started/linux-packages",
+      "relation": "links_to",
+      "target": "reference/local-preview-artifact"
+    },
+    {
       "source": "get-started/quickstart",
       "relation": "links_to",
       "target": "concepts/protocols"
@@ -10713,9 +10729,19 @@
       "target": "guides/deploy/troubleshooting"
     },
     {
+      "source": "get-started/quickstart",
+      "relation": "links_to",
+      "target": "reference/local-preview-artifact"
+    },
+    {
       "source": "get-started/registry-clients",
       "relation": "links_to",
       "target": "get-started/quickstart"
+    },
+    {
+      "source": "get-started/registry-clients",
+      "relation": "links_to",
+      "target": "reference/local-preview-artifact"
     },
     {
       "source": "get-started/windows-packages",
@@ -10736,6 +10762,11 @@
       "source": "get-started/windows-packages",
       "relation": "links_to",
       "target": "guides/deploy/docker-compose"
+    },
+    {
+      "source": "get-started/windows-packages",
+      "relation": "links_to",
+      "target": "reference/local-preview-artifact"
     },
     {
       "source": "get-started/with-ai",
@@ -10851,6 +10882,11 @@
       "source": "get-started/with-ai",
       "relation": "links_to",
       "target": "reference/configuration/data-sources/README"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "reference/local-preview-artifact"
     },
     {
       "source": "get-started/with-ai",
@@ -15761,6 +15797,21 @@
       "source": "reference/integration-patterns",
       "relation": "links_to",
       "target": "reference/protocols/ogc-apis"
+    },
+    {
+      "source": "reference/local-preview-artifact",
+      "relation": "links_to",
+      "target": "get-started/linux-packages"
+    },
+    {
+      "source": "reference/local-preview-artifact",
+      "relation": "links_to",
+      "target": "get-started/quickstart"
+    },
+    {
+      "source": "reference/local-preview-artifact",
+      "relation": "links_to",
+      "target": "get-started/windows-packages"
     },
     {
       "source": "reference/openapi-and-explorer",
