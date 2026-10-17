@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
@@ -237,7 +238,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
             """;
         await using var byName = new NpgsqlCommand(byNameSql, connection);
         byName.Parameters.AddWithValue("id", gdbVersion);
-        byName.Parameters.AddWithValue("caller", (object?)callerOwner ?? DBNull.Value);
+        byName.Parameters.AddWithValue("caller", NpgsqlDbType.Text, (object?)callerOwner ?? DBNull.Value);
         return await ReadSingleAsync(byName, cancellationToken).ConfigureAwait(false);
     }
 
