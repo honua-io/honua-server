@@ -200,7 +200,8 @@ Frequent destinations:
 
 Honua is a family of repos around this server — the full map is in [Ecosystem](docs/concepts/ecosystem.md):
 
-- [honua-console](https://github.com/honua-io/honua-console) — web console (Studio, Catalog, Operate, Share) over the admin API; the admin/UI home
+- [honua-console](https://github.com/honua-io/honua-console) — administration, Catalog, Operate, and Share over the admin API
+- [honua-studio](https://github.com/honua-io/honua-studio) — realtime conversational map and app composition over the JavaScript SDK (Preview)
 - [honua-helm](https://github.com/honua-io/honua-helm) — Helm chart, the Kubernetes deploy path
 - [honua-sdk-js](https://github.com/honua-io/honua-sdk-js) · [honua-sdk-python](https://github.com/honua-io/honua-sdk-python) · [honua-sdk-dotnet](https://github.com/honua-io/honua-sdk-dotnet) — client SDKs generated from the same admin contract
 - [honua-mobile](https://github.com/honua-io/honua-mobile) — **Experimental** reusable .NET MAUI SDK and map/control foundation for offline field workflows (Apache-2.0)
