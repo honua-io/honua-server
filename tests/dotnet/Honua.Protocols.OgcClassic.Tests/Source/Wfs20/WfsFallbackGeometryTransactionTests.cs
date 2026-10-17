@@ -201,6 +201,7 @@ public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
             """), HttpStatusCode.BadRequest);
 
         response.Should().Contain("InvalidParameterValue")
+            .And.Contain("locator=\"geometry\"")
             .And.Contain("does not match the layer geometry type Polygon");
         (await ReadLayerStateAsync()).Should().Be(before);
     }

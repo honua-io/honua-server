@@ -2849,6 +2849,14 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_Insert_3dGmlPosList_EvenVertexCount_StoresCorrectGeometry()
     {
+        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, spatial: new MetadataV2ResourceSpatial
+        {
+            SpatialReference = MetadataV2SpatialReference.Wgs84,
+            GeometryType = MetadataV2GeometryType.LineString,
+            PrimaryGeometryField = "shape",
+            SupportedCrs = [MetadataV2SpatialReference.Wgs84]
+        });
+
         // 2-vertex 3D LineString: x1 y1 z1 x2 y2 z2 → 6 ordinates.
         // Before the fix these were mis-parsed as 3 2D points with the wrong coordinates.
         const string requestBody = """
@@ -2897,6 +2905,10 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         // A correct 2-point LineString has exactly 2 coordinate pairs.
         coordinates.GetArrayLength().Should().Be(2,
             "a 3D GML posList with 2 vertices must produce a 2-point LineString, not 3");
+        coordinates[0][0].GetDouble().Should().BeApproximately(-122.1, 1e-9);
+        coordinates[0][1].GetDouble().Should().BeApproximately(37.1, 1e-9);
+        coordinates[1][0].GetDouble().Should().BeApproximately(-122.2, 1e-9);
+        coordinates[1][1].GetDouble().Should().BeApproximately(37.2, 1e-9);
     }
 
     private static string?[] ReadGeoJsonFeatureNames(string responseBody)
