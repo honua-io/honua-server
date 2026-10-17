@@ -1330,6 +1330,9 @@ class PostGISFixture:
                 "storageBindingIds": [feature_storage_id],
                 "primaryStorageBindingId": feature_storage_id,
                 "schemaFields": fields_by_layer.get(row_layer_id, []),
+                # Attachment tests must reach storage, rather than the production
+                # capability refusal for resources that do not support attachments.
+                "editing": {"supportsAttachments": True},
                 "spatial": feature_spatial,
                 "temporal": {
                     "startTimeField": temporal_column,

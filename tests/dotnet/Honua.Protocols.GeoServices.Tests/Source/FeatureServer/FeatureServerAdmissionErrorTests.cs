@@ -30,6 +30,8 @@ public sealed class FeatureServerAdmissionErrorTests : IClassFixture<FeatureServ
         public Feature[]? StreamingFeatures { get; set; }
         public int StreamStarts { get; private set; }
         public int StreamDisposals { get; private set; }
+        public ImmutableArray<long>? ObjectIds { get; set; }
+        public int IdReads { get; private set; }
 
         public Fixture() => App = Build();
 
@@ -39,6 +41,8 @@ public sealed class FeatureServerAdmissionErrorTests : IClassFixture<FeatureServ
             var failure = new ServiceUnavailableException("Private pool diagnostics must not escape", 7);
             reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromException<QueryResult<Feature>>(failure));
+            reader.QueryObjectIdsAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+                .Returns(_ => ReadObjectIds());
             reader.CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromException<long>(failure));
             ((IPagedFeatureReader)reader).QueryPageAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -56,6 +60,15 @@ public sealed class FeatureServerAdmissionErrorTests : IClassFixture<FeatureServ
                 services.AddSingleton<IStreamingFeatureStore>((IStreamingFeatureStore)reader);
                 services.AddSingleton<IFeatureDataProviderRegistry>(new FeatureDataProviderRegistry([provider]));
             });
+        }
+
+        private Task<ImmutableArray<long>> ReadObjectIds()
+        {
+            IdReads++;
+            return ObjectIds is { } ids
+                ? Task.FromResult(ids)
+                : Task.FromException<ImmutableArray<long>>(
+                    new ServiceUnavailableException("Private pool diagnostics must not escape", 7));
         }
 
         private async IAsyncEnumerable<Feature> StreamFeatures([EnumeratorCancellation] CancellationToken cancellationToken)
@@ -119,17 +132,16 @@ public sealed class FeatureServerAdmissionErrorTests : IClassFixture<FeatureServ
     }
 
     [IntegrationTheory]
-    [InlineData("json", false)]
-    [InlineData("geojson", false)]
-    [InlineData("json", true)]
+    [InlineData("json")]
+    [InlineData("geojson")]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task StreamingQuery_WhenFirstAdmissionFails_ReturnsCompleteErrorEnvelope(string format, bool idsOnly)
+    public async Task StreamingQuery_WhenFirstAdmissionFails_ReturnsCompleteErrorEnvelope(string format)
     {
         var starts = _state.StreamStarts;
         var disposals = _state.StreamDisposals;
         using var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1=1&resultRecordCount=1001&f={format}&returnIdsOnly={idsOnly.ToString().ToLowerInvariant()}");
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1=1&resultRecordCount=1001&f={format}");
         var content = await response.Content.ReadAsStringAsync();
 
         _state.StreamStarts.Should().Be(starts + 1, "the regression must exercise streaming admission");
@@ -142,15 +154,13 @@ public sealed class FeatureServerAdmissionErrorTests : IClassFixture<FeatureServ
     }
 
     [IntegrationTheory]
-    [InlineData("json", false, 0)]
-    [InlineData("json", false, 1)]
-    [InlineData("geojson", false, 0)]
-    [InlineData("geojson", false, 1)]
-    [InlineData("json", true, 0)]
-    [InlineData("json", true, 1)]
+    [InlineData("json", 0)]
+    [InlineData("json", 1)]
+    [InlineData("geojson", 0)]
+    [InlineData("geojson", 1)]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task StreamingQuery_EmptyOrSingleRow_PreservesRowsAndDisposesSource(string format, bool idsOnly, int count)
+    public async Task StreamingQuery_EmptyOrSingleRow_PreservesRowsAndDisposesSource(string format, int count)
     {
         var starts = _state.StreamStarts;
         var disposals = _state.StreamDisposals;
@@ -158,11 +168,11 @@ public sealed class FeatureServerAdmissionErrorTests : IClassFixture<FeatureServ
         try
         {
             using var response = await _fixture.Client.GetAsync(
-                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1=1&resultRecordCount=1001&f={format}&returnIdsOnly={idsOnly.ToString().ToLowerInvariant()}");
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1=1&resultRecordCount=1001&f={format}");
             var content = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(HttpStatusCode.OK, content);
             using var document = JsonDocument.Parse(content);
-            document.RootElement.GetProperty(idsOnly ? "objectIds" : "features").GetArrayLength().Should().Be(count);
+            document.RootElement.GetProperty("features").GetArrayLength().Should().Be(count);
             _state.StreamStarts.Should().Be(starts + 1);
             _state.StreamDisposals.Should().Be(disposals + 1);
         }
@@ -171,4 +181,57 @@ public sealed class FeatureServerAdmissionErrorTests : IClassFixture<FeatureServ
             _state.StreamingFeatures = null;
         }
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task IdsOnlyQuery_WhenAdmissionFails_ReturnsCompleteErrorEnvelopeWithoutFeatureStream()
+    {
+        var reads = _state.IdReads;
+        var starts = _state.StreamStarts;
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1=1&resultRecordCount=1001&f=json&returnIdsOnly=true");
+        var content = await response.Content.ReadAsStringAsync();
+
+        _state.IdReads.Should().Be(reads + 1, "ID-only queries must use provider ID admission");
+        _state.StreamStarts.Should().Be(starts, "ID-only queries must not load full features");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        (response.Headers.RetryAfter?.Delta).Should().Be(TimeSpan.FromSeconds(7));
+        using var document = JsonDocument.Parse(content);
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(503);
+        error.GetProperty("retryable").GetBoolean().Should().BeTrue();
+        error.GetProperty("retryAfterSeconds").GetInt32().Should().Be(7);
+        content.Should().NotContain("Private pool diagnostics");
+    }
+
+    [IntegrationTheory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task IdsOnlyQuery_EmptyOrSingleResult_PreservesIdsWithoutFeatureStream(int count)
+    {
+        var reads = _state.IdReads;
+        var starts = _state.StreamStarts;
+        ImmutableArray<long> expectedIds = count == 0 ? [] : [42];
+        _state.ObjectIds = expectedIds;
+        try
+        {
+            using var response = await _fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1=1&resultRecordCount=1001&f=json&returnIdsOnly=true");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            using var document = JsonDocument.Parse(content);
+            document.RootElement.GetProperty("objectIds").EnumerateArray()
+                .Select(id => id.GetInt64()).Should().Equal(expectedIds);
+            _state.IdReads.Should().Be(reads + 1);
+            _state.StreamStarts.Should().Be(starts, "ID-only queries must not load full features");
+        }
+        finally
+        {
+            _state.ObjectIds = null;
+        }
+    }
+
 }
