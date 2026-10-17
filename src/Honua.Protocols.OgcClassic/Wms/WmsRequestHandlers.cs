@@ -50,10 +50,8 @@ internal static partial class WmsRequestHandlers
     private const string WmsXmlExceptionMimeType = "text/xml";
     private const string WmsSeXmlExceptionMimeType = "application/vnd.ogc.se_xml";
     private const string WmsGmlFeatureInfoSchemaRequest = "GetFeatureInfoSchema";
-    private const string WmsExceptionSchemaLocation = "http://www.opengis.net/ogc http://schemas.opengis.net/wms/1.3.0/exceptions_1_3_0.xsd";
     private const string WmsCapabilitiesSchemaLocation = "http://www.opengis.net/wms http://schemas.opengis.net/wms/1.3.0/capabilities_1_3_0.xsd";
     private const string Wms111CapabilitiesDtd = "http://schemas.opengis.net/wms/1.1.1/WMS_MS_Capabilities.dtd";
-    private const string Wms111ExceptionDtd = "http://schemas.opengis.net/wms/1.1.1/exception_1_1_1.dtd";
     private const double WmsWebMercatorMax = SpatialConstants.WebMercatorExtent;
     private const string WmsWarningHeaderName = "Warning";
     private const string CiteLakesLayerTitle = "cite:Lakes";
@@ -1185,12 +1183,7 @@ internal static partial class WmsRequestHandlers
         => IsWms111Version(version) ? Wms111CapabilitiesMimeType : WmsCapabilitiesMimeType;
 
     private static string GetWmsExceptionMimeType(string? exceptionsValue, string? version)
-    {
-        return string.Equals(exceptionsValue, WmsSeXmlExceptionMimeType, StringComparison.OrdinalIgnoreCase) ||
-               (string.IsNullOrWhiteSpace(exceptionsValue) && IsWms111Version(version))
-            ? WmsSeXmlExceptionMimeType
-            : WmsXmlExceptionMimeType;
-    }
+        => WmsServiceExceptionReport.GetMimeType(exceptionsValue, version);
 
     private static bool TryParseWmsTransparent(string? value, out bool transparent)
     {
@@ -1574,46 +1567,7 @@ internal static partial class WmsRequestHandlers
     }
 
     private static string BuildWmsServiceExceptionReport(string code, string message, string? version)
-    {
-        if (IsWms111Version(version))
-        {
-            // WMS 1.1.1 (OGC 01-068r3 Annex A.4) names this exception code InvalidSRS;
-            // InvalidCRS is the WMS 1.3.0 equivalent.
-            if (string.Equals(code, "InvalidCRS", StringComparison.OrdinalIgnoreCase))
-            {
-                code = "InvalidSRS";
-            }
-
-            var legacy = new StringBuilder(512);
-            legacy.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-            legacy.Append("<!DOCTYPE ServiceExceptionReport SYSTEM \"")
-                .Append(Wms111ExceptionDtd)
-                .AppendLine("\">");
-            legacy.AppendLine("<ServiceExceptionReport version=\"1.1.1\">");
-            legacy.Append("  <ServiceException code=\"")
-                .Append(EscapeXml(code))
-                .Append("\">")
-                .Append(EscapeXml(message))
-                .AppendLine("</ServiceException>");
-            legacy.AppendLine("</ServiceExceptionReport>");
-            return legacy.ToString();
-        }
-
-        var sb = new StringBuilder(512);
-        sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        sb.Append("<ServiceExceptionReport xmlns=\"http://www.opengis.net/ogc\" ")
-            .Append("xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" ")
-            .Append("version=\"1.3.0\" xsi:schemaLocation=\"")
-            .Append(WmsExceptionSchemaLocation)
-            .AppendLine("\">");
-        sb.Append("  <ServiceException code=\"")
-            .Append(EscapeXml(code))
-            .Append("\">")
-            .Append(EscapeXml(message))
-            .AppendLine("</ServiceException>");
-        sb.AppendLine("</ServiceExceptionReport>");
-        return sb.ToString();
-    }
+        => WmsServiceExceptionReport.Build(code, message, version);
 
     private static bool TryHandleCiteWmsGetMap(
         HttpContext context,

@@ -62,6 +62,13 @@
       "why": "CapabilityUnavailableCodes.EntitlementRemediationRef \u2014 the remediationRef for a host where Redis IS configured but the Pro 'caching.redis' entitlement is absent. Same wire contract as the entry above, different remediation, and it must not silently collapse onto the Redis-optional anchor: telling an operator to configure Redis that is already configured is worse than no link."
     },
     {
+      "url": "https://honua.io/docs/guides/deploy/cloud-deployments/#background-file-imports-run-on-aws-batch",
+      "sources": [
+        "src/Honua.Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
+      ],
+      "why": "CapabilityUnavailableCodes.ServerlessManagedRemediationRef \u2014 the remediationRef when a managed geoprocessing job would be queued on a host that freezes between invocations. The heading records why that loop cannot drain the job. It must not collapse onto the Redis-optional anchor: Redis can be present and the refusal still stands."
+    },
+    {
       "url": "https://honua.io/docs/guides/deploy/troubleshooting/#database-connections",
       "sources": [
         "docs/guides/deploy/examples/prometheus-alerts.yml"

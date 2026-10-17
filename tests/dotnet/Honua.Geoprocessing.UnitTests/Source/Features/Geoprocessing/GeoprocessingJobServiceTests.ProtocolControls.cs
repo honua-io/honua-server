@@ -122,7 +122,9 @@ public sealed partial class GeoprocessingJobServiceTests
     }
 
     private GeoprocessingJobService CreateStoreBackedService(
-        InMemoryExecutionJobStore store, IExecutionJobDefinitionRegistry? workloadRegistry = null)
+        InMemoryExecutionJobStore store,
+        IExecutionJobDefinitionRegistry? workloadRegistry = null,
+        IGeoprocessingHostRuntime? hostRuntime = null)
         => new(
             _progressStore,
             [_cancellationNotifier],
@@ -134,5 +136,6 @@ public sealed partial class GeoprocessingJobServiceTests
             store,
             _jobQueue,
             workloadRegistry: workloadRegistry,
-            resultPackageStore: _resultPackageStore);
+            resultPackageStore: _resultPackageStore,
+            hostRuntime: hostRuntime);
 }

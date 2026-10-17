@@ -136,7 +136,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ExecutionAdmissionCoordinator? admissionCoordinator = null,
         IEnumerable<IJobTerminalCallback>? terminalCallbacks = null,
         GpProcessReleaseAdmission? releaseAdmission = null,
-        ICloudFileStorage? customCodeArtifactStorage = null)
+        ICloudFileStorage? customCodeArtifactStorage = null,
+        IGeoprocessingHostRuntime? hostRuntime = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -165,7 +166,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 admissionEvaluator,
                 operationGateway,
                 operationEnvelopeFactory,
-                admissionCoordinator),
+                admissionCoordinator)
+            {
+                HostRuntime = hostRuntime ?? ProcessEnvironmentHostRuntime.Instance,
+            },
             new CustomCodeJobSubmissionGate(
                 logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier, releaseAdmission, workloadRegistry, customCodeArtifactStorage),
             new GeoprocessingJobArtifactService(

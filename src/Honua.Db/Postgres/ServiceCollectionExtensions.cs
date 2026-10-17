@@ -305,11 +305,13 @@ internal static class ServiceCollectionExtensions
 
         // Register attachment store implementation (metadata tables live in the honua schema).
         // Feature deletes resolve IFeatureAttachmentCleanup from this same instance so attachment
-        // rows share the feature transaction (#6137).
+        // rows share the feature transaction (#6137). Object storage stays optional here:
+        // a host that registered ICloudFileStorage wins, and a database-only host can still
+        // resolve the feature store. Blob operations require storage when they run.
         services.AddScoped(serviceProvider =>
             new PostgresAttachmentStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                serviceProvider.GetRequiredService<ICloudFileStorage>(),
+                serviceProvider.GetService<ICloudFileStorage>(),
                 serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
                 schemaName: string.IsNullOrWhiteSpace(configuration["Attachments:Schema"])
                     ? "honua"

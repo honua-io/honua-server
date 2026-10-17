@@ -88,6 +88,28 @@ public sealed class FeatureDeleteAttachmentCleanupTests
         ledger.Orphans.Should().OnlyContain(orphan => orphan.LayerId == 3 && orphan.FeatureId == 9);
     }
 
+    [Fact]
+    public async Task DeleteBlobsAsync_WithoutStorage_RecordsOrphansAndDoesNotThrow()
+    {
+        var ledger = new RecordingLedger();
+        var store = new PostgresAttachmentStore(
+            Substitute.For<IAdoNetDatabaseConnectionProvider>(),
+            fileStorage: null,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            "honua",
+            ledger);
+
+        var act = () => store.DeleteBlobsAsync(
+            [new DeletedAttachmentBlob(3, 9, "blob")],
+            CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+        ledger.Orphans.Should().ContainSingle();
+        ledger.Orphans[0].StoragePath.Should().Be("blob");
+        ledger.Orphans[0].Kind.Should().Be(AttachmentOrphanKind.UndeletedObject);
+        ledger.Orphans[0].Reason.Should().Contain("not configured");
+    }
+
     private sealed class RecordingLedger : IAttachmentOrphanLedger
     {
         public List<AttachmentOrphan> Orphans { get; } = new();
