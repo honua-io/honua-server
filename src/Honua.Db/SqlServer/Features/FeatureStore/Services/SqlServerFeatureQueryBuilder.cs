@@ -588,7 +588,7 @@ internal static partial class SqlServerFeatureQueryBuilder
 
     private static string ParseAndParameterizeWhereClause(string whereClause, List<object> parameters)
     {
-        var expressions = SplitOnAnd(whereClause);
+        var expressions = WhereClauseSplitter.SplitOnAnd(whereClause);
         if (expressions.Count == 0)
         {
             throw new ArgumentException("WHERE clause format not supported.");
@@ -658,63 +658,6 @@ internal static partial class SqlServerFeatureQueryBuilder
         return string.Join(" AND ", rendered);
     }
 
-    private static List<string> SplitOnAnd(string whereClause)
-    {
-        var parts = new List<string>();
-        var current = new StringBuilder();
-        var inQuotes = false;
-
-        for (var i = 0; i < whereClause.Length; i++)
-        {
-            var c = whereClause[i];
-            if (!inQuotes && c == '\'')
-            {
-                inQuotes = true;
-                current.Append(c);
-            }
-            else if (inQuotes && c == '\'')
-            {
-                if (i + 1 < whereClause.Length && whereClause[i + 1] == '\'')
-                {
-                    current.Append("''");
-                    i++;
-                }
-                else
-                {
-                    inQuotes = false;
-                    current.Append(c);
-                }
-            }
-            else if (!inQuotes && i + 3 <= whereClause.Length &&
-                     whereClause.Substring(i, 3).Equals("AND", StringComparison.OrdinalIgnoreCase) &&
-                     (i == 0 || !IsIdentifierChar(whereClause[i - 1])) &&
-                     (i + 3 >= whereClause.Length || !IsIdentifierChar(whereClause[i + 3])))
-            {
-                parts.Add(current.ToString());
-                current.Clear();
-                i += 2;
-            }
-            else
-            {
-                current.Append(c);
-            }
-        }
-
-        if (current.Length > 0)
-        {
-            parts.Add(current.ToString());
-        }
-
-        return parts;
-    }
-
-    // Identifier-boundary helper used by SplitOnAnd. Mirrors the regex character class
-    // [a-zA-Z0-9_] used by ComparisonRegex / NullCheckRegex so column names that contain
-    // or begin with "and" (e.g. start_and_end, and_flag) are not falsely split as
-    // logical AND boundaries. Underscore is a legal T-SQL identifier character and must
-    // not separate tokens.
-    private static bool IsIdentifierChar(char c)
-        => char.IsLetterOrDigit(c) || c == '_';
 
     private static string NormalizeOperator(string op) => op.Trim().ToUpperInvariant() switch
     {
