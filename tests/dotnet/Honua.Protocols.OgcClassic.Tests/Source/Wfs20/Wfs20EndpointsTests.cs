@@ -2902,13 +2902,30 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             .GetProperty("geometry")
             .GetProperty("coordinates");
 
-        // A correct 2-point LineString has exactly 2 coordinate pairs.
+        // Check the stored vertex order independently of GeoJSON output normalization.
+        var featureId = long.Parse(rid.AsSpan("test_layer.".Length), System.Globalization.CultureInfo.InvariantCulture);
+        var stored = await _fixture.GetService<IFeatureReader>().GetAsync(WebAppFixture.TestLayerId, featureId);
+        stored.Should().NotBeNull();
+        var storedLine = new WKBReader().Read(stored!.Value.Geometry)
+            .Should().BeOfType<LineString>().Subject;
+        storedLine.NumPoints.Should().Be(2);
+        storedLine.GetCoordinateN(0).X.Should().BeApproximately(-122.1, 1e-9);
+        storedLine.GetCoordinateN(0).Y.Should().BeApproximately(37.1, 1e-9);
+        storedLine.GetCoordinateN(1).X.Should().BeApproximately(-122.2, 1e-9);
+        storedLine.GetCoordinateN(1).Y.Should().BeApproximately(37.2, 1e-9);
+
+        // PostGIS ST_ForcePolygonCCW in the GeoJSON projection can reverse a line.
+        // Require both correct XY pairs without coupling the stride regression to that order.
         coordinates.GetArrayLength().Should().Be(2,
             "a 3D GML posList with 2 vertices must produce a 2-point LineString, not 3");
-        coordinates[0][0].GetDouble().Should().BeApproximately(-122.1, 1e-9);
-        coordinates[0][1].GetDouble().Should().BeApproximately(37.1, 1e-9);
-        coordinates[1][0].GetDouble().Should().BeApproximately(-122.2, 1e-9);
-        coordinates[1][1].GetDouble().Should().BeApproximately(37.2, 1e-9);
+        var returnedVertices = coordinates.EnumerateArray()
+            .Select(coordinate => (X: coordinate[0].GetDouble(), Y: coordinate[1].GetDouble()))
+            .OrderBy(coordinate => coordinate.X)
+            .ToArray();
+        returnedVertices[0].X.Should().BeApproximately(-122.2, 1e-9, queryContent);
+        returnedVertices[0].Y.Should().BeApproximately(37.2, 1e-9, queryContent);
+        returnedVertices[1].X.Should().BeApproximately(-122.1, 1e-9, queryContent);
+        returnedVertices[1].Y.Should().BeApproximately(37.1, 1e-9, queryContent);
     }
 
     private static string?[] ReadGeoJsonFeatureNames(string responseBody)
