@@ -12,6 +12,9 @@ namespace Honua.TestKit.Infrastructure;
 /// </summary>
 public static class ServerTestData
 {
+    private static readonly string[] _fixtureAttachmentMigrations =
+        ["002_CreateAttachmentsTable.sql", "125_AddImportedAttachmentIdentity.sql"];
+
     /// <summary>
     /// Seeds the fixture and applies the production cache provenance DDL to its fixed raster schema.
     /// </summary>
@@ -45,7 +48,7 @@ public static class ServerTestData
         return fixture.RunUnderSchemaMutationLockAsync(async () =>
         {
             await using var connection = await fixture.GetConnectionAsync(schemaName).ConfigureAwait(false);
-            foreach (var migration in new[] { "002_CreateAttachmentsTable.sql", "125_AddImportedAttachmentIdentity.sql" })
+            foreach (var migration in _fixtureAttachmentMigrations)
             {
                 await using var stream = typeof(PostgresFixture).Assembly.GetManifestResourceStream(
                     $"Honua.Server.Migrations.{migration}")
