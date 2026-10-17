@@ -6,8 +6,9 @@
  */
 
 import GeoJSON from 'ol/format/GeoJSON.js';
-import { ogcFeaturesUrl, discoverCollectionId } from '../shared/config.js';
+import { config, ogcFeaturesUrl, discoverCollectionId } from '../shared/config.js';
 import { EvidenceCollector } from '../shared/evidence.js';
+import { disjointPageIds, pageFeatureIds } from '../shared/pagination.js';
 
 const format = new GeoJSON();
 const evidence = new EvidenceCollector('ogc-features');
@@ -68,24 +69,31 @@ describe('OGC API Features Items', () => {
 
   it('pagination with limit', async () => {
     evidence.attempt('CERT-PAGE-01');
+    // base-schema.sql and client-compat-v1.sql seed ten rows on layer0;
+    // js_test_server.py seeds the same ten-row profile on the configured layer.
+    // Browser-only layers2000–2002 have fewer than four rows and cannot replace it.
+    expect(collectionId).toBe(config.layerId);
+    const fixture = await fetch(`${ogcFeaturesUrl}/collections/${collectionId}/items?limit=4`);
+    expect(fixture.ok).toBe(true);
+    pageFeatureIds(await fixture.json(), 4);
     const start = Date.now();
     const resp = await fetch(`${ogcFeaturesUrl}/collections/${collectionId}/items?limit=2`);
     const duration = Date.now() - start;
 
     expect(resp.ok).toBe(true);
     const body = await resp.json();
-    expect(body.type).toBe('FeatureCollection');
-    expect(body.features.length).toBeLessThanOrEqual(2);
+    pageFeatureIds(body, 2);
 
     evidence.record('CERT-PAGE-01', 'pass', {
       durationMs: duration,
       measuredCount: body.features.length,
-      notes: 'limit=2 honoured',
+      notes: 'Populated configured fixture returned exactly2 unique identified features for limit=2',
     });
   });
 
   it('pagination with offset', async () => {
     evidence.attempt('CERT-PAGE-02');
+    expect(collectionId).toBe(config.layerId);
     // First get items without offset
     const resp1 = await fetch(`${ogcFeaturesUrl}/collections/${collectionId}/items?limit=2`);
     expect(resp1.ok).toBe(true);
@@ -98,21 +106,12 @@ describe('OGC API Features Items', () => {
 
     expect(resp2.ok).toBe(true);
     const page2 = await resp2.json();
-    expect(page2.type).toBe('FeatureCollection');
-
-    // Verify offset produces different features (if enough data exists)
-    if (page1.features.length > 0 && page2.features.length > 0) {
-      const page1Ids = page1.features.map((f: { id?: string }) => f.id);
-      const page2Ids = page2.features.map((f: { id?: string }) => f.id);
-      // At least one ID should differ (pages are different)
-      const overlap = page2Ids.filter((id: string) => page1Ids.includes(id));
-      expect(overlap.length).toBeLessThan(page2Ids.length);
-    }
+    disjointPageIds(page1, page2, 2);
 
     evidence.record('CERT-PAGE-02', 'pass', {
       durationMs: duration,
       measuredCount: page2.features.length,
-      notes: 'offset=2 returned different feature set',
+      notes: 'Two nonempty2-feature pages have unique IDs and zero overlap at offset=2',
     });
   });
 
