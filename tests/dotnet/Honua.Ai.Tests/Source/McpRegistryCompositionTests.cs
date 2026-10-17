@@ -266,9 +266,9 @@ public sealed class McpRegistryCompositionTests
     {
         // The explicit full-catalog opt-in keeps its pre-#3363 meaning: every eligible
         // descriptor publishes except the audited exclusions and hand-authored duplicates.
-        const int ExpectedCatalogAdminOperations = 110;
+        const int ExpectedCatalogAdminOperations = 111;
         const int ExpectedExclusionsInCatalog = 7;
-        const int ExpectedPublishedAdminTools = 103;
+        const int ExpectedPublishedAdminTools = 104;
 
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
         {
@@ -285,6 +285,10 @@ public sealed class McpRegistryCompositionTests
         var catalogAdminOperationIds = catalogOperationIds
             .Where(operationId => operationId.StartsWith("admin.", StringComparison.Ordinal))
             .ToArray();
+
+        // #6246 adds the governed object-store import to the eligible admin catalog.
+        catalogAdminOperationIds.Should().Contain("admin.import.upload-object");
+        publishedAdminTools.Should().Contain(PublishedOperationTool.ProjectName("admin.import.upload-object"));
 
         // Exclusions that are not catalog operations (embed keys, browser sessions) can
         // never publish; the ones that are catalog operations are withheld.
