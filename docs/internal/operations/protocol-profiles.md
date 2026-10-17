@@ -50,14 +50,15 @@ Rollback is to rebuild and redeploy `all`. The default image and tag behavior is
 
 ## Runtime
 
-`HONUA_PROTOCOL_PROFILE` must match the compiled profile when it is set. Unset means the compiled profile. `Protocols:Enabled` and an explicit experimental opt-in for a module this build excluded fail at startup with the compiled profile, the requested value, and the rebuild switch. Defaults, including MCP admin projection, still allow a restricted build to start. Runtime settings cannot turn excluded code back on.
+`HONUA_PROTOCOL_PROFILE` must match the compiled profile when it is set. Unset means the compiled profile. `Protocols:Enabled` must be omitted or name every module this build compiled. A shorter list is rejected until registration can honor a narrowed allowlist. An explicit experimental opt-in for a module this build excluded also fails at startup. The failure names the compiled profile, the requested value, and the rebuild switch. Defaults, including MCP admin projection, still allow a restricted build to start. Runtime settings cannot turn excluded code back on.
 
 ## Local CI
 
-The dry-run selector is the same command local CI and GitHub Actions run. It does not build or start a container.
+The selector is dry-run only. It does not build or start a container. PR Gate and the full CI build write its JSON, compile the solution for the default `all` profile, then compile each other selected profile. Those extra builds use the isolated `bin/protocol-<name>/` and `obj/protocol-<name>/` trees.
 
     python3 scripts/ci/protocol-profile-selection.py --dry-run
     python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git
+    python3 scripts/ci/build-selected-protocol-profiles.py --selection protocol-profiles.json
 
 A shared, workflow, or unmapped change selects every profile and `run_all` shards. It does not multiply each shard by four. A protocol project change selects the profiles that include that module and the shards whose names match it. Docs-only markdown stays on the default profile. Missing git refs fail closed to full validation.
 

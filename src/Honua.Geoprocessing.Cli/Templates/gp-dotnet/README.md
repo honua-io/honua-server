@@ -2,7 +2,7 @@
 
 A Honua geoprocessing process written against the production custom-code
 contract (`IGeoprocessingTool`), with a fixture, golden expectations, a
-package lock, and VS Code debugging. Copy this directory to start a new
+package lock, and VS Code debugging. Use the installed devkit to start a new
 process; it is the layout `honua-gp-devkit init --language dotnet` scaffolds
 (honua-server#6217).
 
@@ -21,10 +21,11 @@ process; it is the layout `honua-gp-devkit init --language dotnet` scaffolds
 
 - .NET 10 SDK. The harness loads the process assembly by reflection; neither
   needs an AOT build.
-- The custom-code SDK and local harness. They are not on NuGet yet, so they
-  are consumed as project references from a honua-server checkout: keep
-  `honua-server` as a sibling of the `honua-samples` checkout, or set
-  `HONUA_SERVER_CHECKOUT` to its path.
+- A project created by the installed `Honua.Geoprocessing.Cli` tool's
+  `honua-gp-devkit init --language dotnet --name parcel-summary` command. The
+  devkit includes matching SDK and harness sources under `.honua/toolchain`;
+  project references resolve there without an unpublished NuGet package.
+  `HONUA_SERVER_CHECKOUT` remains an explicit source-development override.
 - Docker only for the container recipe below.
 
 ## Run the fixture
@@ -34,7 +35,8 @@ the harness local mode exactly as the launch configuration does:
 
 ```bash
 dotnet build tests/SummaryTool.Tests/SummaryTool.Tests.csproj
-dotnet tests/SummaryTool.Tests/bin/Debug/net10.0/Honua.CustomCode.Harness.dll local \
+dotnet exec --depsfile tests/SummaryTool.Tests/bin/Debug/net10.0/SummaryTool.Tests.deps.json \
+  tests/SummaryTool.Tests/bin/Debug/net10.0/Honua.CustomCode.Harness.dll local \
   --assembly-dir process/bin/Debug/net10.0 \
   --entrypoint SummaryTool::Honua.Templates.SummaryTool \
   --params fixtures/params.json --input features=fixtures/input.geojson \
@@ -49,7 +51,11 @@ run directory holds `work/`, published `artifacts/summary.json`,
 {"count":3,"field":"value","mean":20,"sum":60}
 ```
 
-Receipts are unsanitized local development evidence, not support bundles.
+Receipts are unsanitized local development evidence, not support bundles or
+worker-image validation receipts. `honua-gp.yaml` is the shared v1 authoring
+and release descriptor. Local `test` reads its `authoring` section; `release`
+uses the same process identity and entrypoint. Release still requires a real
+pinned worker image and independent passing image-validation evidence.
 
 ## Golden tests
 
@@ -98,11 +104,21 @@ in the custom-code worker image with the source mounted read-only:
 
 1. Build the image once from a honua-server checkout:
    `docker build -f docker/worker-customcode-dotnet/Dockerfile -t honua-worker-customcode-dotnet:local .`
-2. Build the process on the host (`dotnet build process/SummaryTool.csproj`),
-   then from this directory: `docker compose -f docker/compose.debug.yaml up`.
-3. Install `vsdbg` into the running container once (the official `getvsdbg`
-   script, target `/root/vsdbg`) and start `GP: attach to container`, which
-   attaches through `docker exec`. Receipts land in `.honua/container-runs`.
+2. Build the Linux process output:
+   `dotnet build process/SummaryTool.csproj -r linux-x64 --self-contained false -o .honua/container-build`.
+3. Create `.honua/container-runs` and `.honua/vsdbg` on the host. On Linux/macOS,
+   set `GP_DEBUG_UID=$(id -u)` and `GP_DEBUG_GID=$(id -g)` in your shell and export
+   both variables so the container can write these directories as your user.
+4. Start the idle debug container:
+   `docker compose -f docker/compose.debug.yaml up -d`.
+   Install Microsoft's `vsdbg` with the official `getvsdbg` script into
+   `/work/vsdbg` inside that container; this directory is mounted from the host
+   and is writable by the selected user. The debugger is a local prerequisite,
+   not part of the production image.
+5. Start `GP: run in container` in VS Code. It launches the harness through
+   `docker exec` after the debugger connects, so a short fixture cannot finish
+   before you attach. Receipts land in `.honua/container-runs`.
+6. Stop the debug container with `docker compose -f docker/compose.debug.yaml down`.
 
 The worker image is not published yet, so CI for this template exercises the
 host path only; the container recipe is documented, not CI-verified.

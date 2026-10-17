@@ -160,6 +160,11 @@ public sealed record ExecutionLogPage
     /// Opaque cursor for the next page, or null when no more entries are available.
     /// </summary>
     public string? NextCursor { get; init; }
+
+    /// <summary>
+    /// Entries in the log stream at the same observation as <see cref="Items"/>.
+    /// </summary>
+    public int TotalCount { get; init; }
 }
 
 /// <summary>

@@ -8,8 +8,11 @@
     <PublishAot>false</PublishAot>
   </PropertyGroup>
   <ItemGroup>
-    <!-- The only package a process references. Honua.CustomCode.Sdk is not on NuGet yet, so it is
-         consumed from a honua-server checkout; see Directory.Build.props for the path. -->
-    <ProjectReference Include="$(HonuaCustomCodeSdkProject)" />
+    <!-- The matching authoring SDK ships inside the installed devkit toolchain. -->
+    <ProjectReference Include="$(HonuaCustomCodeSdkProject)" Condition="'$(HONUA_CUSTOMCODE_SDK_ASSEMBLY)' == ''" />
+    <!-- Remote workers supply the SDK assembly from the pinned worker image. -->
+    <Reference Include="Honua.CustomCode.Sdk" Condition="'$(HONUA_CUSTOMCODE_SDK_ASSEMBLY)' != ''">
+      <HintPath>$(HONUA_CUSTOMCODE_SDK_ASSEMBLY)</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>

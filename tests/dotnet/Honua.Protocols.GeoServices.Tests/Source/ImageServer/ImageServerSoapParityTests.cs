@@ -133,7 +133,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         Child(reference, "WKID").Value.Should().Be(srid.ToString(CultureInfo.InvariantCulture));
         Child(reference, "LatestWKID").Value.Should().Be(srid.ToString(CultureInfo.InvariantCulture));
         fields.Document.Descendants().Where(element => element.Name.LocalName == "Field")
-            .Select(field => Child(field, "Name").Value).Should().Equal("OBJECTID", "Shape", "Name");
+            .Select(field => Child(field, "Name").Value).Should().Equal(ImageServerSoapEndpoints.SoapCatalogFieldNames());
     }
 
     [IntegrationTest]
@@ -580,11 +580,26 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         var soapInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
         soapInfo.Status.Should().Be(HttpStatusCode.OK, soapInfo.Body);
         Element(soapInfo.Document, "SupportsTime").Value.Should().Be("true");
-        Element(soapInfo.Document, "StartTimeFieldName").Value.Should().Be(
-            info.GetProperty("timeInfo").GetProperty("startTimeField").GetString());
-        var extent = Element(soapInfo.Document, "TimeExtent");
-        UnixMilliseconds(extent, "Start").Should().Be(info.GetProperty("timeInfo").GetProperty("timeExtent")[0].GetInt64());
-        UnixMilliseconds(extent, "End").Should().Be(info.GetProperty("timeInfo").GetProperty("timeExtent")[1].GetInt64());
+        // Attribute time is advertised only through catalog fields; the fixture's
+        // vector temporal hints (timestamp/event_date) are not catalog fields.
+        var catalogFields = info.GetProperty("fields").EnumerateArray()
+            .Select(static field => field.GetProperty("name").GetString()).ToArray();
+        var soapStart = soapInfo.Document.Descendants().SingleOrDefault(static element => element.Name.LocalName == "StartTimeFieldName");
+        var soapEnd = soapInfo.Document.Descendants().SingleOrDefault(static element => element.Name.LocalName == "EndTimeFieldName");
+        if (info.TryGetProperty("timeInfo", out var timeInfo) && timeInfo.ValueKind == JsonValueKind.Object)
+        {
+            soapStart?.Value.Should().Be(timeInfo.GetProperty("startTimeField").GetString());
+            soapStart?.Value.Should().BeOneOf(catalogFields);
+            var extent = Element(soapInfo.Document, "TimeExtent");
+            UnixMilliseconds(extent, "Start").Should().Be(timeInfo.GetProperty("timeExtent")[0].GetInt64());
+            UnixMilliseconds(extent, "End").Should().Be(timeInfo.GetProperty("timeExtent")[1].GetInt64());
+        }
+        else
+        {
+            soapStart.Should().BeNull("REST advertises no attribute time");
+        }
+
+        soapEnd?.Value.Should().BeOneOf(catalogFields);
 
         var soapMultidim = await PostSoapAsync($"""<GetMultidimensionalInfo xmlns="{ArcGisNamespace}" />""");
         soapMultidim.Status.Should().Be(HttpStatusCode.OK, soapMultidim.Body);

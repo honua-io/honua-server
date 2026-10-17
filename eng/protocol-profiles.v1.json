@@ -32,7 +32,7 @@
         "/rest/services/Utilities/PrintingTools/GPServer"
       ],
       "assets": [],
-      "capabilityPrefixes": ["serve.geoservices-", "edit.geoservices-", "versioning.branch", "analysis.spatial"],
+      "capabilityPrefixes": ["serve.geoservices-", "edit.geoservices-", "versioning.branch", "sync.offline", "analysis.spatial"],
       "note": "GeoServices family only. SceneServer and I3S are the scene module. Import clients stay on every profile."
     },
     "ogc-api": {

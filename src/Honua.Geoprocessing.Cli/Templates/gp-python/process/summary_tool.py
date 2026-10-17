@@ -38,6 +38,6 @@ def execute(context: GpContext) -> GpResult:
         "mean": sum(values) / len(values) if values else None,
     }
     path = context.workdir / "summary.json"
-    path.write_text(json.dumps(summary, allow_nan=False, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(summary, allow_nan=False, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     context.output.add_artifact("summary.json", path)
     return GpResult.succeeded()

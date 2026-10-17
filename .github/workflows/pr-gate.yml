@@ -343,7 +343,8 @@ jobs:
         run: |
           python3 scripts/ci/compute-affected-shards.py --cap "${CAP}" --annotate-resources --json "${RUNNER_TEMP}/producer-shards.json"
           python3 scripts/ci/managed-test-build.py projects --lane pr --matrix-file "${RUNNER_TEMP}/producer-shards.json" --output "${RUNNER_TEMP}/managed-projects.json"
-          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git
+          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "${RUNNER_TEMP}/protocol-profiles.json"
+          cat "${RUNNER_TEMP}/protocol-profiles.json"
 
       - name: Lean gate (managed build producer)
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
@@ -363,6 +364,10 @@ jobs:
           # Format retains this same affected/full/skip contract in the parallel
           # format job above. The default remains inline for every other caller.
           run-format: 'false'
+
+      - name: Build selected protocol profiles
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        run: python3 scripts/ci/build-selected-protocol-profiles.py --selection "${RUNNER_TEMP}/protocol-profiles.json"
 
       - name: Publish pristine managed test outputs
         id: managed-producer

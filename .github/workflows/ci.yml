@@ -783,7 +783,8 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "::notice::Warnings-as-errors build mode: ${mode}${projects:+ (${projects})}"
-          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git
+          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "${RUNNER_TEMP}/protocol-profiles.json"
+          cat "${RUNNER_TEMP}/protocol-profiles.json"
 
       - name: Select managed producer outputs and build graph
         id: managed-plan
@@ -813,6 +814,9 @@ jobs:
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
         run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+
+      - name: Build selected protocol profiles
+        run: python3 scripts/ci/build-selected-protocol-profiles.py --selection "${RUNNER_TEMP}/protocol-profiles.json"
 
       # Package pristine outputs before any test/coverage process can modify them.
       - name: Publish managed test outputs

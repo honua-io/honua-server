@@ -4,6 +4,7 @@
 using System.Reflection;
 using System.Text.Json;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -178,6 +179,47 @@ public sealed class GeoservicesImportServiceSqlTests
         map.MapReference("FID").Should().Be("fid");
         domains.Should().ContainKey("objectid_src");
         domains.Should().NotContainKey("OBJECTID");
+    }
+
+    [Fact]
+    public void RemapAttributeRules_RewritesCollisionReferencesAndKeepsQuotedText()
+    {
+        var map = GeoservicesImportColumns.Map(new GeoservicesLayerInfo
+        {
+            Id = 5,
+            Name = "Rules",
+            GeometryType = "esriGeometryPoint",
+            Fields =
+            [
+                new GeoservicesFieldInfo { Name = "FID", Type = "esriFieldTypeOID" },
+                new GeoservicesFieldInfo { Name = "OBJECTID", Type = "esriFieldTypeInteger" },
+                new GeoservicesFieldInfo { Name = "Name", Type = "esriFieldTypeString" },
+                new GeoservicesFieldInfo { Name = "Field Name", Type = "esriFieldTypeString" }
+            ]
+        });
+
+        var rules = GeoservicesImportColumns.RemapAttributeRules(
+        [
+            new MetadataV2AttributeRule
+            {
+                Name = "copy",
+                FieldName = "OBJECTID",
+                ScriptExpression = "return $feature.OBJECTID + $feature[\"Name\"] + $feature[\"Field Name\"] + 'keep $feature.OBJECTID';"
+            },
+            new MetadataV2AttributeRule
+            {
+                Name = "check",
+                Type = MetadataV2AttributeRuleType.Constraint,
+                ScriptExpression = "$feature.FID > 0"
+            }
+        ], map);
+
+        rules.Should().HaveCount(2);
+        rules![0].FieldName.Should().Be("objectid_src");
+        rules[0].ScriptExpression.Should().Be(
+            "return $feature.objectid_src + $feature[\"Name\"] + $feature.field_name + 'keep $feature.OBJECTID';");
+        rules[1].FieldName.Should().BeNull();
+        rules[1].ScriptExpression.Should().Be("$feature.FID > 0");
     }
 
     [Fact]

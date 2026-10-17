@@ -129,10 +129,10 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
             request.Y,
             cancellationToken).ConfigureAwait(false);
 
-        var rgb = new byte[TerrainRgbEncoding.TileSize * TerrainRgbEncoding.TileSize * 3];
+        var rgba = new byte[TerrainRgbEncoding.TileSize * TerrainRgbEncoding.TileSize * 4];
         if (rasterIds.Length == 0)
         {
-            var emptyPng = PngEncoder.EncodeRgb(rgb, TerrainRgbEncoding.TileSize, TerrainRgbEncoding.TileSize);
+            var emptyPng = PngEncoder.EncodeRgba(rgba, TerrainRgbEncoding.TileSize, TerrainRgbEncoding.TileSize);
             PostgresTerrainLog.TerrainTileGenerated(
                 _logger,
                 request.LayerId,
@@ -153,9 +153,9 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
         var hasData = await PopulateTerrainRgbAsync(
             request,
             rasterIds,
-            rgb,
+            rgba,
             cancellationToken).ConfigureAwait(false);
-        var png = PngEncoder.EncodeRgb(rgb, TerrainRgbEncoding.TileSize, TerrainRgbEncoding.TileSize);
+        var png = PngEncoder.EncodeRgba(rgba, TerrainRgbEncoding.TileSize, TerrainRgbEncoding.TileSize);
 
         PostgresTerrainLog.TerrainTileGenerated(
             _logger,
@@ -218,7 +218,7 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
     private async Task<bool> PopulateTerrainRgbAsync(
         TerrainTileRequest request,
         long[] rasterIds,
-        byte[] rgb,
+        byte[] rgba,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -303,15 +303,23 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
             var px = reader.GetInt32(0);
             var py = reader.GetInt32(1);
             var elevation = reader.IsDBNull(2) ? (double?)null : reader.GetDouble(2);
-            var pixel = TerrainRgbEncoding.Encode(elevation);
-            var index = (py * request.TileSize + px) * 3;
-            rgb[index] = pixel.R;
-            rgb[index + 1] = pixel.G;
-            rgb[index + 2] = pixel.B;
-            hasData |= elevation.HasValue;
+            var index = (py * request.TileSize + px) * 4;
+            WriteTerrainPixel(rgba.AsSpan(index, 4), elevation);
+            hasData |= elevation.HasValue && double.IsFinite(elevation.Value);
         }
 
         return hasData;
+    }
+
+    internal static void WriteTerrainPixel(Span<byte> destination, double? elevation)
+    {
+        var pixel = TerrainRgbEncoding.Encode(elevation);
+        destination[0] = pixel.R;
+        destination[1] = pixel.G;
+        destination[2] = pixel.B;
+        // RGB zero also represents the valid elevation -10000m. Retain its
+        // opacity and distinguish missing samples using the PNG alpha channel.
+        destination[3] = elevation.HasValue && double.IsFinite(elevation.Value) ? byte.MaxValue : (byte)0;
     }
 
     private async Task<double[]?> GetWgs84BoundsAsync(int layerId, CancellationToken cancellationToken)
@@ -469,15 +477,15 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
     private static void AddParameter(DbCommand command, string name, object value)
         => command.AddParameter(name, value);
 
-    private static class PngEncoder
+    internal static class PngEncoder
     {
         private static readonly uint[] CrcTable = CreateCrcTable();
 
-        public static byte[] EncodeRgb(byte[] rgb, int width, int height)
+        internal static byte[] EncodeRgba(byte[] rgba, int width, int height)
         {
-            if (rgb.Length != checked(width * height * 3))
+            if (rgba.Length != checked(width * height * 4))
             {
-                throw new ArgumentException("RGB buffer length does not match image dimensions.", nameof(rgb));
+                throw new ArgumentException("RGBA buffer length does not match image dimensions.", nameof(rgba));
             }
 
             using var png = new MemoryStream();
@@ -487,19 +495,19 @@ internal sealed class PostgresTerrainTileService : ITerrainTileService
             BinaryPrimitives.WriteInt32BigEndian(ihdr[..4], width);
             BinaryPrimitives.WriteInt32BigEndian(ihdr.Slice(4, 4), height);
             ihdr[8] = 8; // bit depth
-            ihdr[9] = 2; // truecolor
+            ihdr[9] = 6; // truecolor with alpha
             ihdr[10] = 0; // compression
             ihdr[11] = 0; // filter
             ihdr[12] = 0; // interlace
             WriteChunk(png, "IHDR", ihdr);
 
-            var stride = width * 3;
+            var stride = width * 4;
             var raw = new byte[(stride + 1) * height];
             for (var row = 0; row < height; row++)
             {
                 var rawOffset = row * (stride + 1);
                 raw[rawOffset] = 0;
-                Buffer.BlockCopy(rgb, row * stride, raw, rawOffset + 1, stride);
+                Buffer.BlockCopy(rgba, row * stride, raw, rawOffset + 1, stride);
             }
 
             using var compressed = new MemoryStream();

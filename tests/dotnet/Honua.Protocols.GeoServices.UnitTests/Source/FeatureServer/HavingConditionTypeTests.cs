@@ -52,6 +52,25 @@ public sealed class HavingConditionTypeTests
     }
 
     [UnitTest]
+    public void TryParseHavingConditions_AndInsideQuotedLiteral_DoesNotSplitTheLiteral()
+    {
+        var parsed = FeatureServerQueryHandler.TryParseHavingConditions(
+            "MAX(name) > 'O''Brien AND Research AND Development' AND COUNT(population) >= 2",
+            [
+                Stat(StatisticType.Max, "name", MetadataV2FieldType.String),
+                Stat(StatisticType.Count, "population", MetadataV2FieldType.Integer)
+            ],
+            Layer,
+            out var conditions,
+            out var error);
+
+        parsed.Should().BeTrue(error);
+        conditions.Should().HaveCount(2);
+        conditions[0].TextValue.Should().Be("O'Brien AND Research AND Development");
+        conditions[1].BoundValue().Should().Be(2d);
+    }
+
+    [UnitTest]
     public void TryParseHavingConditions_CountOfStringComparedToNumber_BindsDouble()
     {
         var parsed = Parse(

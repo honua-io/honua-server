@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
@@ -478,7 +479,7 @@ internal static class JobEndpoints
                 continue;
             }
 
-            var materialized = await MaterializeArtifactAsync(context, artifact, remainingBytes).ConfigureAwait(false);
+            var materialized = await MaterializeArtifactAsync(context, job, artifact, remainingBytes).ConfigureAwait(false);
             if (materialized.Payload == null)
             {
                 return OgcProcessesResults.Error(
@@ -542,7 +543,7 @@ internal static class JobEndpoints
                 continue;
             }
 
-            var materialized = await MaterializeArtifactAsync(context, artifact, remainingBytes).ConfigureAwait(false);
+            var materialized = await MaterializeArtifactAsync(context, job, artifact, remainingBytes).ConfigureAwait(false);
             if (materialized.Payload == null)
             {
                 return OgcProcessesResults.Error(
@@ -801,12 +802,13 @@ internal static class JobEndpoints
 
     private static async Task<MaterializedArtifact> MaterializeArtifactAsync(
         HttpContext context,
+        ExecutionJobRecord job,
         ArtifactRef artifact,
         long maxArtifactBytes)
     {
         if (FeatureStreamArtifact.IsStreamReference(artifact.Uri))
         {
-            return await MaterializeFeatureStreamAsync(context, artifact.Uri!, maxArtifactBytes).ConfigureAwait(false);
+            return await MaterializeFeatureStreamAsync(context, job, artifact.Uri!, maxArtifactBytes).ConfigureAwait(false);
         }
 
         if (!string.IsNullOrWhiteSpace(artifact.Uri)
@@ -902,31 +904,26 @@ internal static class JobEndpoints
 
     private static async Task<MaterializedArtifact> MaterializeFeatureStreamAsync(
         HttpContext context,
+        ExecutionJobRecord job,
         string reference,
         long maxBytes)
     {
         const string mediaType = "application/geo+json";
-        var outputRoot = context.RequestServices.GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.OutputRootDirectory;
-        if (string.IsNullOrWhiteSpace(outputRoot))
+        var reader = context.RequestServices.GetService<IGeoprocessingFeatureStreamReader>();
+        if (reader is null
+            || !DurableFeatureStream.TryParse(reference, out var descriptor))
         {
-            return new MaterializedArtifact(null, mediaType, "The feature stream output store is unavailable.", false);
+            return new MaterializedArtifact(null, mediaType, "The shared feature stream output store is unavailable.", false);
+        }
+
+        if (descriptor!.Bytes > maxBytes)
+        {
+            return new MaterializedArtifact(null, mediaType, "The output exceeds the configured artifact response limit.", true);
         }
 
         try
         {
-            if (!FeatureStreamArtifact.TryOpenRead(reference, out _, out var features, maxBytes, outputRoot)
-                || !FeatureStreamArtifact.TryParseStreamReference(reference, out var descriptor, out _))
-            {
-                return new MaterializedArtifact(null, mediaType, "The feature stream output is unavailable.", false);
-            }
-
-            // Use the actual backing-file size, not the size claimed in the reference.
-            // This also bounds the largest line the canonical reader may materialize.
-            if (new FileInfo(descriptor.Path).Length > maxBytes)
-            {
-                return new MaterializedArtifact(null, mediaType, "The output exceeds the configured artifact response limit.", true);
-            }
-
+            var features = reader.ReadAsync(reference, job, maxBytes, context.RequestAborted);
             using var body = new MemoryStream();
             using var writer = new Utf8JsonWriter(body);
             var featureWriter = GeoJsonArtifactCodec.CreateWriter();
@@ -950,7 +947,7 @@ internal static class JobEndpoints
                 ? new MaterializedArtifact(null, mediaType, "The output exceeds the configured artifact response limit.", true)
                 : new MaterializedArtifact(body.ToArray(), mediaType, null, false);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or Newtonsoft.Json.JsonException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or Newtonsoft.Json.JsonException)
         {
             return new MaterializedArtifact(null, mediaType, "The feature stream output is unavailable.", false);
         }

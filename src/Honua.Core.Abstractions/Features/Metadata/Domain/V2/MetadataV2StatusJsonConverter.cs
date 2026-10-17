@@ -90,19 +90,11 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         writer.WriteStartArray();
         foreach (var condition in value.Conditions)
         {
-            WriteCondition(writer, condition);
+            WriteCondition(writer, condition, options);
         }
 
         writer.WriteEndArray();
-        if (value.ObservedAt is { } observedAt)
-        {
-            writer.WriteString("observedAt", observedAt);
-        }
-        else
-        {
-            writer.WriteNull("observedAt");
-        }
-
+        WriteNullableTimestamp(writer, options, "observedAt", value.ObservedAt);
         writer.WriteEndObject();
     }
 
@@ -136,15 +128,12 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
             throw new JsonException("Metadata v2 lifecycle must be a string.");
         }
 
-        return reader.GetString() switch
+        if (!TryParseNamed(reader.GetString(), out MetadataV2LifecycleStatus lifecycle))
         {
-            "draft" => MetadataV2LifecycleStatus.Draft,
-            "active" => MetadataV2LifecycleStatus.Active,
-            "deprecated" => MetadataV2LifecycleStatus.Deprecated,
-            "retired" => MetadataV2LifecycleStatus.Retired,
-            "archived" => MetadataV2LifecycleStatus.Archived,
-            _ => throw new JsonException("Metadata v2 lifecycle is not a known value.")
-        };
+            throw new JsonException("Metadata v2 lifecycle is not a known value.");
+        }
+
+        return lifecycle;
     }
 
     private static MetadataV2OperationalState ReadState(ref Utf8JsonReader reader)
@@ -177,15 +166,12 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
             throw new JsonException("Metadata v2 operational state must be a string.");
         }
 
-        return reader.GetString() switch
+        if (!TryParseNamed(reader.GetString(), out MetadataV2OperationalState state))
         {
-            "unknown" => MetadataV2OperationalState.Unknown,
-            "ready" => MetadataV2OperationalState.Ready,
-            "pending" => MetadataV2OperationalState.Pending,
-            "degraded" => MetadataV2OperationalState.Degraded,
-            "failed" => MetadataV2OperationalState.Failed,
-            _ => throw new JsonException("Metadata v2 operational state is not a known value.")
-        };
+            throw new JsonException("Metadata v2 operational state is not a known value.");
+        }
+
+        return state;
     }
 
     private static List<MetadataV2Condition> ReadConditions(ref Utf8JsonReader reader)
@@ -276,23 +262,58 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
     private static string? ReadNullableString(ref Utf8JsonReader reader)
         => reader.TokenType == JsonTokenType.Null ? null : reader.GetString();
 
-    private static void WriteCondition(Utf8JsonWriter writer, MetadataV2Condition condition)
+    private static void WriteCondition(Utf8JsonWriter writer, MetadataV2Condition condition, JsonSerializerOptions options)
     {
         writer.WriteStartObject();
         writer.WriteString("type", condition.Type);
         writer.WriteString("status", condition.Status);
-        writer.WriteString("reason", condition.Reason);
-        writer.WriteString("message", condition.Message);
-        if (condition.LastTransitionAt is { } lastTransitionAt)
+        WriteNullableString(writer, options, "reason", condition.Reason);
+        WriteNullableString(writer, options, "message", condition.Message);
+        WriteNullableTimestamp(writer, options, "lastTransitionAt", condition.LastTransitionAt);
+        writer.WriteEndObject();
+    }
+
+    private static void WriteNullableString(Utf8JsonWriter writer, JsonSerializerOptions options, string name, string? value)
+    {
+        if (value is not null)
         {
-            writer.WriteString("lastTransitionAt", lastTransitionAt);
-        }
-        else
-        {
-            writer.WriteNull("lastTransitionAt");
+            writer.WriteString(name, value);
+            return;
         }
 
-        writer.WriteEndObject();
+        if (!OmitNulls(options))
+        {
+            writer.WriteNull(name);
+        }
+    }
+
+    private static void WriteNullableTimestamp(Utf8JsonWriter writer, JsonSerializerOptions options, string name, DateTimeOffset? value)
+    {
+        if (value is { } present)
+        {
+            writer.WriteString(name, present);
+            return;
+        }
+
+        if (!OmitNulls(options))
+        {
+            writer.WriteNull(name);
+        }
+    }
+
+    private static bool OmitNulls(JsonSerializerOptions options)
+        => options.DefaultIgnoreCondition is JsonIgnoreCondition.WhenWritingNull or JsonIgnoreCondition.WhenWritingDefault;
+
+    private static bool TryParseNamed<TEnum>(string? text, out TEnum value)
+        where TEnum : struct, Enum
+    {
+        value = default;
+        if (string.IsNullOrEmpty(text) || char.IsAsciiDigit(text[0]) || text[0] is '-' or '+')
+        {
+            return false;
+        }
+
+        return Enum.TryParse(text, ignoreCase: true, out value) && Enum.IsDefined(value);
     }
 
     private static string LifecycleWireName(MetadataV2LifecycleStatus lifecycle)

@@ -9,8 +9,8 @@
     },
     {
       "path": ".vscode/launch.json",
-      "sha256": "3067aa282c644cb6be683a4742017139a5a9609043d5f729ba60b78fcf51c9bc",
-      "sizeBytes": 1578
+      "sha256": "b353a235c0da97fbabe625e0411d7ea3e451c7083f1f2541874343109f9ab364",
+      "sizeBytes": 2150
     },
     {
       "path": ".vscode/tasks.json",
@@ -19,13 +19,13 @@
     },
     {
       "path": "Directory.Build.props",
-      "sha256": "c9ebc0546c089a1cfcee1ca9a865ca43866ef06577eb44456c8c17f9aa29c07b",
-      "sizeBytes": 1322
+      "sha256": "cb7bf09b3a52fb27c97582878c0d16db8b674941c26b0bfb908104756ddaa3c6",
+      "sizeBytes": 1164
     },
     {
       "path": "docker/compose.debug.yaml",
-      "sha256": "abb96ad132c1aff97f2feefb130e886f156377313dc1320bba40dc5601fe9df2",
-      "sizeBytes": 1297
+      "sha256": "348851fdef95f2d0d3fd609c334d57aa535fc43236eb6862607065111aac7d65",
+      "sizeBytes": 532
     },
     {
       "path": "expected/golden.json",
@@ -64,18 +64,23 @@
     },
     {
       "path": "process/SummaryTool.csproj",
-      "sha256": "b84aea52f77e4aabeee3e5258b64f02cadbf99809d75543bcbcb0cb9252f8db7",
-      "sizeBytes": 685
+      "sha256": "16a844391a9bb382158c74cc8980e36b18db1de7e3b3eb0176fdcb71933b2eed",
+      "sizeBytes": 891
     },
     {
       "path": "README.md",
-      "sha256": "fad89d3bc69b90b65d175ba1678ceca118c855f466a87f23447e931f4e738d46",
-      "sizeBytes": 5603
+      "sha256": "c71003279992ce25e022e4a669d8dead2778c17115f28f1eda5608f375fc161d",
+      "sizeBytes": 6782
     },
     {
       "path": "schema/inputs.schema.json",
       "sha256": "51d880cfb6e8711c128ac88ca092df43c476e5ae263ea7d1b3d62f48057ae955",
       "sizeBytes": 1150
+    },
+    {
+      "path": "schema/outputs.schema.json",
+      "sha256": "32918561972c2d3dd835b1587072eeb20682c259f59004e3eecc0fc770964dd9",
+      "sizeBytes": 440
     },
     {
       "path": "tests/SummaryTool.Tests/GoldenTests.cs",
@@ -84,8 +89,8 @@
     },
     {
       "path": "tests/SummaryTool.Tests/packages.lock.json",
-      "sha256": "0d29691204fb8e1ac926bc6ab6a8b457a4bcac1bbcab7fb83788fa22666ffeaa",
-      "sizeBytes": 4032
+      "sha256": "135f0dea00adbb99d16de79d12bcd3d018d267f24c10b7ccfd6363ed92f8081a",
+      "sizeBytes": 26071
     },
     {
       "path": "tests/SummaryTool.Tests/SummaryTool.Tests.csproj",
