@@ -829,7 +829,12 @@ internal sealed partial class Wfs20Handler
             cancellationToken).ConfigureAwait(false);
         if (!geometryValidation.IsValid)
         {
-            throw new ArgumentException($"Geometry validation failed: {geometryValidation.ErrorMessage}");
+            // The shared mutation validator returns authored validation details. Mark this
+            // boundary explicitly so the untyped exception catch still hides provider errors.
+            throw new WfsTransactionException(
+                "InvalidParameterValue",
+                $"Geometry validation failed: {geometryValidation.ErrorMessage}",
+                "geometry");
         }
 
         var attributesResult = _mutationValidator.ValidateAttributes(
