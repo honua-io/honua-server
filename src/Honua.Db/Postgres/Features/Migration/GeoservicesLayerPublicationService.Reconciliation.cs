@@ -252,7 +252,7 @@ internal sealed partial class GeoservicesLayerPublicationService
     /// SRID, attachment advertisement). Coded-value domains that exceeded the capture cap surface
     /// with no captured values so the reconciler's cap guard does not false-fail them.
     /// </summary>
-    private static MigrationInventoryResource BuildInventoryResourceFromLayerInfo(GeoservicesLayerInfo layerInfo)
+    internal static MigrationInventoryResource BuildInventoryResourceFromLayerInfo(GeoservicesLayerInfo layerInfo)
     {
         var srid = layerInfo.SpatialReferenceWkid
             ?? layerInfo.Extent?.SpatialReferenceWkid;
@@ -269,8 +269,13 @@ internal sealed partial class GeoservicesLayerPublicationService
             }
             : [];
 
+        // Import creates the geometry column as geom, independently of its source name (Shape,
+        // for example). Compare that expected physical field without dropping its type checks.
+        // Attribute fields keep their own names, including an ordinary attribute named Shape.
+        var hasGeometryColumn = !string.IsNullOrEmpty(layerInfo.GeometryType);
         var fields = layerInfo.Fields
-            .Select(BuildInventoryField)
+            .Select(field => BuildInventoryField(field,
+                hasGeometryColumn && GeoservicesImportService.IsGeometryField(field) ? "geom" : field.Name))
             .ToArray();
 
         return new MigrationInventoryResource
@@ -292,7 +297,7 @@ internal sealed partial class GeoservicesLayerPublicationService
         };
     }
 
-    private static MigrationInventoryField BuildInventoryField(GeoservicesFieldInfo field)
+    private static MigrationInventoryField BuildInventoryField(GeoservicesFieldInfo field, string targetFieldName)
     {
         var domain = field.Domain;
         string? domainType = domain?.Type;
@@ -315,7 +320,7 @@ internal sealed partial class GeoservicesLayerPublicationService
 
         return new MigrationInventoryField
         {
-            Name = field.Name,
+            Name = targetFieldName,
             Alias = string.Equals(field.Alias, field.Name, StringComparison.Ordinal) ? null : field.Alias,
             FieldType = field.Type,
             Nullable = field.Nullable,
