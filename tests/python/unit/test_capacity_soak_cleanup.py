@@ -148,14 +148,29 @@ def test_actual_compose_render_retains_required_inputs_for_later_cleanup(substra
     if not docker or subprocess.run([docker, "compose", "version"], capture_output=True).returncode:
         pytest.skip("Docker Compose is not installed; this test renders only and creates no resources")
     run, prepared, _ = substrate
+    license_content = "synthetic-license-$NOT_FROM_ENV-${NOT_FROM_ENV}-$$"
+    master_key = "synthetic-master-$NOT_FROM_ENV"
     started = run("start", REAL_DOCKER=docker,
                   SOAK_SERVER_IMAGE="ghcr.io/honua-io/honua-server@sha256:" + "a" * 64,
                   SOAK_CANDIDATE_SHA="b" * 40, SOAK_DB_PASSWORD="synthetic-db",
-                  SOAK_ADMIN_PASSWORD="synthetic-admin", SOAK_MASTER_KEY="synthetic-master",
-                  SOAK_LICENSE_CONTENT="synthetic-license", SOAK_LICENSE_TRUSTED_KEY="synthetic-public-key",
+                  SOAK_ADMIN_PASSWORD="synthetic-admin", SOAK_MASTER_KEY=master_key,
+                  SOAK_LICENSE_CONTENT=license_content, SOAK_LICENSE_TRUSTED_KEY="synthetic-public-key",
                   SOAK_KEYRING_PASSWORD="synthetic-keyring-password", SOAK_KEYRING_CERTIFICATE=str(tmp_path / "keyring.pfx"))
     assert started.returncode == 0, started.stderr
-    services = yaml.safe_load(prepared.read_text())["services"]
-    assert services["honua"]["environment"]["Licensing__LicenseContent"] == "synthetic-license"
+    # Parse the retained file again with actual Compose, as cleanup does, after
+    # every startup input has disappeared. Dollar literals must not become a
+    # second interpolation into the teardown process environment.
+    clean_env = {key: value for key, value in os.environ.items() if not key.startswith("SOAK_")}
+    clean_env["NOT_FROM_ENV"] = "must-not-replace-the-startup-value"
+    reparsed = subprocess.run([docker, "compose", "--project-name", PROJECT, "-f", str(prepared),
+                              "config", "--format", "json"], env=clean_env,
+                             capture_output=True, text=True)
+    assert reparsed.returncode == 0, reparsed.stderr
+    document = json.loads(reparsed.stdout)
+    assert document["name"] == PROJECT
+    services = document["services"]
+    assert services["honua"]["image"] == "ghcr.io/honua-io/honua-server@sha256:" + "a" * 64
+    assert services["honua"]["environment"]["Licensing__LicenseContent"] == license_content
+    assert services["honua"]["environment"]["Security__ConnectionEncryption__MasterKey"] == master_key
     assert services["honua"]["environment"]["HONUA_GIT_SHA"] == "b" * 40
     assert run("cleanup").returncode == 0
