@@ -65,7 +65,7 @@ public sealed class MountedGeoServicesUrlTests : IAsyncLifetime
     {
         var fixture = await CreateFixtureAsync(publicBaseUrl);
         var storage = fixture.GetService<ICloudFileStorage>();
-        await AttachmentTestData.SeedAsync(fixture.Postgres, storage, 0, 1);
+        await AttachmentTestData.SeedAsync(fixture.Postgres, storage, 0, 1, fixture.CurrentSchema!);
         try
         {
             using var response = await fixture.Client.GetAsync(
@@ -86,7 +86,7 @@ public sealed class MountedGeoServicesUrlTests : IAsyncLifetime
         }
         finally
         {
-            await AttachmentTestData.CleanupAsync(fixture.Postgres, storage, 0, 1);
+            await AttachmentTestData.CleanupAsync(fixture.Postgres, storage, 0, 1, fixture.CurrentSchema!);
         }
     }
 
