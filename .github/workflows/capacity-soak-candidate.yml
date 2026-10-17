@@ -296,7 +296,7 @@ jobs:
         run: |
           set -euo pipefail
           SOAK_LICENSE_CONTENT="$(cat "$RUNNER_TEMP/license/license.json")" \
-            docker compose -f docker-compose.soak.yml up -d
+            scripts/soak/capacity-substrate.sh start
           echo "image=$SOAK_SERVER_IMAGE" >> "$GITHUB_OUTPUT"
 
       - name: Wait for the Production startup policy to report ready
@@ -502,4 +502,4 @@ jobs:
       - name: Tear down the substrate
         if: always()
         working-directory: producer
-        run: docker compose -f docker-compose.soak.yml down -v || true
+        run: scripts/soak/capacity-substrate.sh cleanup

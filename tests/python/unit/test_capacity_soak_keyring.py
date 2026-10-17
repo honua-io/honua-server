@@ -64,7 +64,7 @@ def test_compose_mounts_the_per_run_certificate_read_only():
 
 def test_certificate_is_minted_before_the_substrate_first_boots():
     mint = _step_index(lambda step: step.get("name") == MINT_STEP)
-    boot = _step_index(lambda step: "docker-compose.soak.yml up" in step.get("run", ""))
+    boot = _step_index(lambda step: step.get("name") == "Start the local-docker substrate")
     assert mint < boot
 
 

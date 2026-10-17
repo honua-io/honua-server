@@ -31,7 +31,8 @@ jobs:
           python -m pytest -c /dev/null --rootdir=. --confcutdir=tests/python/unit \
             tests/python/unit/test_capacity_observations.py \
             tests/python/unit/test_capacity_soak_receipt.py \
-            tests/python/unit/test_capacity_soak_keyring.py -q
+            tests/python/unit/test_capacity_soak_keyring.py \
+            tests/python/unit/test_capacity_soak_cleanup.py -q
       - name: Check the emitted ZIP with the independent frozen release verifier
         env:
           RELEASE_REF: 3970b22f05cc19a49b83703df416b4ecc04a35b4
