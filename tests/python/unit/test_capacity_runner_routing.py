@@ -186,3 +186,42 @@ def test_always_cleanup_executes_checkout_code_only_after_admission(tmp_path, ad
         text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "cleanup-called").exists() is admitted
+
+
+@pytest.mark.parametrize("mutation", [None, "repository", "default-branch", "unprotected", "missing-head",
+                                    "untrusted-source", "ref-mismatch", "comparison-base", "diverged", "api-404"])
+def test_downloaded_release_code_requires_exact_protected_trunk_history(monkeypatch, mutation):
+    step = next(step for step in workflow()["jobs"]["soak"]["steps"] if step.get("id") == "lock")
+    script = step["run"]
+    code = script.split("<<'TRUSTED_RELEASE'\n", 1)[1].split("\nTRUSTED_RELEASE", 1)[0]
+    repo = "repos/honua-io/honua-release"
+    data = {repo: {"full_name": "honua-io/honua-release", "default_branch": "trunk"},
+            repo + "/branches/trunk": {"protected": True, "commit": {"sha": TRUNK}},
+            repo + "/commits/" + SOURCE: {"sha": SOURCE},
+            repo + "/compare/" + SOURCE + "..." + TRUNK: {
+                "status": "ahead", "base_commit": {"sha": SOURCE}, "merge_base_commit": {"sha": SOURCE}}}
+    comparison = data[repo + "/compare/" + SOURCE + "..." + TRUNK]
+    if mutation == "repository": data[repo]["full_name"] = "other/repo"
+    if mutation == "default-branch": data[repo]["default_branch"] = "other"
+    if mutation == "unprotected": data[repo + "/branches/trunk"]["protected"] = False
+    if mutation == "missing-head": data[repo + "/branches/trunk"]["commit"] = {}
+    if mutation == "untrusted-source": comparison["merge_base_commit"]["sha"] = "c" * 40
+    if mutation == "ref-mismatch": data[repo + "/commits/" + SOURCE]["sha"] = "c" * 40
+    if mutation == "comparison-base": comparison["base_commit"]["sha"] = "c" * 40
+    if mutation == "diverged": comparison["status"] = "diverged"
+    def api(args, **kwargs):
+        assert args[:2] == ["gh", "api"] and kwargs["stderr"] == subprocess.DEVNULL
+        if mutation == "api-404":
+            raise subprocess.CalledProcessError(1, args, stderr="404 credential-bearing details")
+        return json.dumps(data[args[2]])
+    with monkeypatch.context() as patch:
+        patch.setenv("RELEASE_SHA", SOURCE)
+        patch.setattr(subprocess, "check_output", api)
+        if mutation is None:
+            exec(compile(code, str(WORKFLOW) + ":release-source", "exec"), {})
+        else:
+            with pytest.raises(SystemExit) as error:
+                exec(compile(code, str(WORKFLOW) + ":release-source", "exec"), {})
+            assert "credential-bearing" not in str(error.value)
+    assert script.index("<<'TRUSTED_RELEASE'") < script.index('root="https://raw.githubusercontent.com/')
+    assert script.index("\nTRUSTED_RELEASE") < script.index("curl --retry")

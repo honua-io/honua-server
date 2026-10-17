@@ -138,6 +138,11 @@ bundle, observations and signals while the job is still running. It explicitly
 reports completed-run release admission as pending. The receipt's `signature` field points to the
 external ZIP attestation; the field itself is not cryptographic proof.
 
+The lock selector resolves once to a full release commit. Before downloading
+verifier code, both hosted and dedicated producers verify the canonical release
+repository, protected `trunk`, and that exact commit's membership in trunk history.
+A feature branch, mismatched commit or unavailable API metadata refuses execution.
+
 The release checker independently recomputes all eight signals and verifies the
 raw hashes, populations, eight workload dimensions, freeze, source commit,
 workflow, run ID/attempt, image digest and ZIP subject digest. Green requires that
