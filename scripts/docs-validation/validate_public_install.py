@@ -51,6 +51,8 @@ def wait_ready(base: str, timeout: int = 180) -> None:
                 if response.status == 200 and response.read().decode().strip() == "Ready":
                     return
         except (OSError, urllib.error.URLError):
+            # Startup connection failures are expected; retry until the deadline,
+            # then fail below if the public image never becomes ready.
             pass
         time.sleep(2)
     raise RuntimeError("Public image did not become ready")
