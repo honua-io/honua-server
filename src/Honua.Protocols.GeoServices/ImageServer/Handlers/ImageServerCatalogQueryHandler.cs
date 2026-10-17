@@ -781,44 +781,18 @@ internal sealed class ImageServerCatalogQueryHandler
         IReadOnlyList<string>? outFields = null,
         ImmutableArray<string> maskedFields = default)
     {
-        Field[] allFields =
-        [
-            new Field { Name = "OBJECTID", Type = "esriFieldTypeOID", Alias = "OBJECTID" },
-            new Field { Name = "Name", Type = "esriFieldTypeString", Alias = "Name", Nullable = true },
-            new Field { Name = "MinPS", Type = "esriFieldTypeDouble", Alias = "MinPS" },
-            new Field { Name = "MaxPS", Type = "esriFieldTypeDouble", Alias = "MaxPS" },
-            new Field { Name = "LowPS", Type = "esriFieldTypeDouble", Alias = "LowPS" },
-            new Field { Name = "HighPS", Type = "esriFieldTypeDouble", Alias = "HighPS" },
-            new Field { Name = "CenterX", Type = "esriFieldTypeDouble", Alias = "CenterX" },
-            new Field { Name = "CenterY", Type = "esriFieldTypeDouble", Alias = "CenterY" },
-            new Field { Name = "ZOrder", Type = "esriFieldTypeInteger", Alias = "ZOrder" },
-            new Field { Name = "Shape_Length", Type = "esriFieldTypeDouble", Alias = "Shape_Length" },
-            new Field { Name = "Shape_Area", Type = "esriFieldTypeDouble", Alias = "Shape_Area" },
-            new Field { Name = "BandCount", Type = "esriFieldTypeInteger", Alias = "BandCount" },
-            new Field { Name = "PixelType", Type = "esriFieldTypeString", Alias = "PixelType", Nullable = true },
-            new Field { Name = "AcquisitionDate", Type = "esriFieldTypeDate", Alias = "AcquisitionDate", Nullable = true },
-            new Field { Name = "CreatedAt", Type = "esriFieldTypeDate", Alias = "CreatedAt" },
-        ];
-
-        var masked = maskedFields.IsDefaultOrEmpty
-            ? null
-            : new HashSet<string>(maskedFields, StringComparer.OrdinalIgnoreCase);
-
+        // Drop masked fields from the advertised schema so the response field set
+        // matches the masked attribute set (#2159).
+        var fields = ImageServerCatalogFields.Schema(maskedFields);
         if (outFields is not { Count: > 0 })
         {
-            // Drop masked fields from the advertised schema so the response field set
-            // matches the masked attribute set (#2159).
-            return masked is null
-                ? allFields
-                : allFields.Where(field => !masked.Contains(field.Name)).ToArray();
+            return fields;
         }
 
         // Preserve the canonical field order rather than the caller's order so the
         // schema stays stable and matches the attribute emit order.
         var allowed = new HashSet<string>(outFields, StringComparer.OrdinalIgnoreCase);
-        return allFields
-            .Where(field => allowed.Contains(field.Name) && (masked is null || !masked.Contains(field.Name)))
-            .ToArray();
+        return fields.Where(field => allowed.Contains(field.Name)).ToArray();
     }
 
     private static List<long>? ParseObjectIds(string? raw)

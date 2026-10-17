@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -516,6 +517,9 @@ public class ImageServerMetadataHandlerTests
     [InlineData("Name", "BandCount", "name", false, null, null, null)]
     [InlineData("ACQUISITIONDATE", "createdat", "name", false, "AcquisitionDate", "CreatedAt", "Name")]
     [InlineData(null, null, null, true, "AcquisitionDate", null, null)]
+    [InlineData("created_at", "acquisition_date", null, false, "CreatedAt", null, null)]
+    [InlineData("timestamp", "CreatedAt", "Name", false, null, null, null)]
+    [InlineData("timestamp", "CreatedAt", null, true, "AcquisitionDate", "CreatedAt", null)]
     [Operation(Operations.GetServiceInfo)]
     public void CatalogTime_AdvertisesOnlyFieldsPresentInSoapAndRestCatalog(
         string? startHint,
@@ -549,6 +553,40 @@ public class ImageServerMetadataHandlerTests
         new[] { time.StartTimeField, time.EndTimeField, time.TrackIdField }
             .Where(static name => name is not null)
             .Should().OnlyContain(name => soapFields.Contains(name));
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void SoapCatalogFields_ApplyCallerFieldMasksLikeCatalogQuery()
+    {
+        // ImageServerCatalogQueryHandler drops masked fields from the RecordSet
+        // schema; SOAP GetFields/AllowedFields must not advertise them either.
+        ImmutableArray<string> masked = ["centerx", "AcquisitionDate"];
+
+        var soapNames = ImageServerSoapEndpoints.BuildFields(4326, masked)
+            .Descendants("Field")
+            .Select(static field => field.Element("Name")!.Value)
+            .ToArray();
+
+        soapNames.Should().NotContain(["CenterX", "AcquisitionDate"]);
+        soapNames.Where(static name => name != "Shape").Should().Equal(
+            ImageServerCatalogQueryHandler.BuildCatalogFields(maskedFields: masked).Select(static field => field.Name));
+        ImageServerSoapEndpoints.SoapCatalogFieldNames(masked).Should().Equal(soapNames);
+        ImageServerSoapEndpoints.SoapCatalogFieldNames().Should().Contain(["CenterX", "AcquisitionDate"]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void CatalogTime_MaskedStartField_IsNotAdvertised()
+    {
+        var raster = CreateTestRasterInfo() with { AcquisitionDate = DateTimeOffset.UnixEpoch.AddDays(1) };
+
+        ImageServerCatalogTime.Resolve(("AcquisitionDate", null, null), [raster], ["acquisitiondate"])
+            .Should().BeNull("a masked field is absent from the advertised SOAP catalog fields");
+        var time = ImageServerCatalogTime.Resolve(("AcquisitionDate", "CreatedAt", null), [raster], ["CreatedAt"]);
+        time.Should().NotBeNull();
+        time!.StartTimeField.Should().Be("AcquisitionDate");
+        time.EndTimeField.Should().BeNull("CreatedAt is masked for this caller");
     }
 
     private ImageServerMetadataHandler CreateHandler(MetadataV2ResourceTemporal temporal)

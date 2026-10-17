@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -647,6 +648,7 @@ internal static partial class ImageServerSoapEndpoints
         IReadOnlyList<RasterInfo> rasters,
         RasterMergeStrategy mergeStrategy,
         XNamespace soapNamespace,
+        ImmutableArray<string> maskedFields,
         CancellationToken cancellationToken)
     {
         var info = await ReadMultidimensionalInfoAsync(context, layerId, cancellationToken).ConfigureAwait(false);
@@ -665,7 +667,7 @@ internal static partial class ImageServerSoapEndpoints
         var supportsTimeDimension = info?.Variables.Any(static variable =>
             variable.Dimensions.Any(static dimension =>
                 string.Equals(dimension.Name, "StdTime", StringComparison.Ordinal))) == true;
-        var time = await ReadServiceTimeAsync(context, layerId, rasters, cancellationToken).ConfigureAwait(false);
+        var time = await ReadServiceTimeAsync(context, layerId, rasters, maskedFields, cancellationToken).ConfigureAwait(false);
         XNamespace xsi = XmlSchemaInstanceNamespace;
         return new ServiceInfoExtras(
             supportsTimeDimension || time.HasTime,
@@ -946,6 +948,7 @@ internal static partial class ImageServerSoapEndpoints
             HttpContext context,
             int layerId,
             IReadOnlyList<RasterInfo> rasters,
+            ImmutableArray<string> maskedFields,
             CancellationToken cancellationToken)
     {
         var graph = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
@@ -954,7 +957,7 @@ internal static partial class ImageServerSoapEndpoints
         var hints = ImageServerV2Lookups.ReadTimeFieldHints(resolved?.Resource);
 
         // Same resolver as REST timeInfo: only catalog fields may be advertised.
-        if (ImageServerCatalogTime.Resolve(hints, rasters) is not { } time)
+        if (ImageServerCatalogTime.Resolve(hints, rasters, maskedFields) is not { } time)
         {
             return (false, null, null, null, null);
         }
@@ -966,6 +969,24 @@ internal static partial class ImageServerSoapEndpoints
             time.EndTimeField,
             extent is { Length: > 0 } ? extent[0] : null,
             extent is { Length: > 1 } ? extent[1] : null);
+    }
+
+    /// <summary>
+    /// Resolves the caller's catalog field masks exactly as the catalog query does
+    /// (<see cref="ImageServerCatalogSecurity"/>), so SOAP metadata never advertises
+    /// a field the RecordSet would then drop.
+    /// </summary>
+    private static async Task<ImmutableArray<string>> ReadCatalogMasksAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>()
+            .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var resource = ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)?.Resource;
+        return resource is null
+            ? ImmutableArray<string>.Empty
+            : await ImageServerCatalogSecurity.ResolveMasksAsync(context, resource, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<(int LayerId, IResult? Error)> RevalidateMetadataAsync(
