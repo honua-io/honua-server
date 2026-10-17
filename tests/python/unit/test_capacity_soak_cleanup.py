@@ -170,7 +170,14 @@ def test_actual_compose_render_retains_required_inputs_for_later_cleanup(substra
     assert document["name"] == PROJECT
     services = document["services"]
     assert services["honua"]["image"] == "ghcr.io/honua-io/honua-server@sha256:" + "a" * 64
-    assert services["honua"]["environment"]["Licensing__LicenseContent"] == license_content
-    assert services["honua"]["environment"]["Security__ConnectionEncryption__MasterKey"] == master_key
+    # `config` emits reusable Compose data: its serializer escapes every literal
+    # dollar as $$, including in JSON. The second parse must serialize exactly
+    # the original literals once, rather than substituting the hostile variable
+    # or accumulating another layer of escaping on the retained file.
+    original_environment = yaml.safe_load(prepared.read_text())["services"]["honua"]["environment"]
+    for key, original in (("Licensing__LicenseContent", license_content),
+                          ("Security__ConnectionEncryption__MasterKey", master_key)):
+        assert services["honua"]["environment"][key] == original.replace("$", "$$")
+        assert services["honua"]["environment"][key] == original_environment[key]
     assert services["honua"]["environment"]["HONUA_GIT_SHA"] == "b" * 40
     assert run("cleanup").returncode == 0
