@@ -28,6 +28,8 @@
 #       is added or modified (deleting one is never docs-only), or
 #     * a prose or image file under docs/ (.md .png .jpg .jpeg .gif .svg .webp)
 #       outside docs/gis/data/, added, modified or deleted;
+#     * an added/modified install-artifacts.json, llms.txt or OKF domain graph
+#       explicitly owned by the lightweight docs gates (DOCS_DATA below);
 #   and no changed path may be referenced by a GATE INPUT (below). A type change
 #   (file <-> symlink) is never docs-only.
 #
@@ -213,6 +215,7 @@ python3 - "${mode}" "${tmp}" "${head_tree}" > "${tmp}/verdict" <<'PY' || status=
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -221,6 +224,15 @@ from pathlib import PurePosixPath
 
 MAX_PATHS = 400
 PROSE_EXTENSIONS = {".md", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
+
+# Data owned by the lightweight docs gates, not server runtime/build inputs.
+# These still pass the reference scan: a new runtime consumer makes them
+# ineligible again. Do not generalize this to arbitrary JSON or docs/gis/data.
+DOCS_DATA = {
+    "docs/get-started/install-artifacts.json",
+    "docs/llms.txt",
+    "docs/okf/domain-graph.v1.json",
+}
 
 # Everything a step the docs-only exit skips compiles, executes or reads. A
 # gate step added to pr-gate.yml or the lean-gate action that reads a new file
@@ -274,6 +286,8 @@ REFERENCE_ONLY = {
         ("existence", "asserts Directory.Exists(docs)"),
     ("AGENTS.md", "tests/dotnet/Honua.Architecture.SourceTests/BasicArchitectureTests.cs"):
         ("existence", "asserts File.Exists(AGENTS.md)"),
+    ("docs", "tests/dotnet/Honua.Ai.Tests/Source/McpToolRosterDriftTests.cs"):
+        ("existence", "GitHead uses docs as WorkingDirectory; roster reads retain their docs/gis/data references"),
     ("docs/internal", "tests/dotnet/Honua.Architecture.SourceTests/AuditCoverageMatrixDriftTests.cs"):
         ("mention", "assertion-message text; the document it reads keeps its own literal"),
     ("README.md", "scripts/ci/fixtures/validate-affected-shards.py"):
@@ -309,6 +323,10 @@ def refusal(status: str, path: str) -> str | None:
         return f"{path}: outside docs/"
     if path.startswith("docs/gis/data/"):
         return f"{path}: generated data under docs/gis/data/"
+    if path in DOCS_DATA:
+        if status == "D":
+            return f"{path}: deletes a required documentation input"
+        return None
     if suffix not in PROSE_EXTENSIONS:
         return f"{path}: not a prose or image file ({suffix or 'no extension'})"
     return None
@@ -412,6 +430,16 @@ def scan(tree: str) -> dict[str, dict[str, str]]:
         size = int(header[2])
         body = data[newline + 1:newline + 1 + size].decode("utf-8", "replace")
         cursor = newline + 1 + size + 1
+        # This versioned audit format records historical changed_paths; it never
+        # reads those documents. A dated report must not make every path it has
+        # ever observed into a new runtime dependency. Other JSON stays governed.
+        if source.startswith("docs/ci/") and source.endswith(".json"):
+            try:
+                report = json.loads(body)
+                if isinstance(report, dict) and report.get("contract") == "honua.affected-shards-reconciliation/v1":
+                    continue
+            except ValueError:
+                pass
         for reference, kind in references(source, body).items():
             found.setdefault(reference, {})[source] = kind
     return found

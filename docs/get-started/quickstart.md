@@ -44,6 +44,7 @@ recovery checks scripted, see [Linux](linux-packages.md) or
 
 Make a directory and put this in it as `compose.yaml`:
 
+<!-- docs-validation:install.compose mode=run -->
 ```yaml
 services:
   keyring-init:
@@ -137,6 +138,7 @@ configs:
 Four secrets go in a `.env` file beside `compose.yaml`. Generate them rather
 than inventing them.
 
+<!-- docs-validation:install.secrets mode=run -->
 ```bash
 umask 077
 cat > .env <<EOF
@@ -153,6 +155,7 @@ EOF
 <details>
 <summary>PowerShell</summary>
 
+<!-- docs-validation:install.windows-secrets mode=skip reason="Native Windows alternative" -->
 ```powershell
 function New-Secret { -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) }) }
 @"
@@ -183,6 +186,7 @@ has no other-read, and `openssl` cannot replace a root-owned `0640` file. The di
 stays yours, so the block removes `secrets/keyring.pfx` before the export. The export
 password still encrypts the PKCS#12.
 
+<!-- docs-validation:install.keyring mode=run -->
 ```bash
 mkdir -p secrets
 HONUA_KEYRING_PASSWORD="$(grep '^HONUA_KEYRING_PASSWORD=' .env | cut -d= -f2)"
@@ -203,6 +207,7 @@ put the export password in `HONUA_KEYRING_PASSWORD`.
 
 ## 3. Start it
 
+<!-- docs-validation:install.start mode=run -->
 ```bash
 docker compose up -d --wait --wait-timeout 180
 ```
@@ -225,6 +230,7 @@ Once the server has started, that `honua` schema holds its catalog, so an
 unqualified `CREATE TABLE` would put `places` there. The publish step below
 reads `public.places`.
 
+<!-- docs-validation:install.seed mode=run -->
 ```bash
 docker compose exec -T postgres psql -U honua -d honua <<'SQL'
 CREATE TABLE public.places (
@@ -240,6 +246,7 @@ SQL
 
 Install the two public clients, ideally in a virtual environment:
 
+<!-- docs-validation:install.clients mode=run -->
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.16'
@@ -248,6 +255,7 @@ pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.16'
 Save this as `quickstart.py`. It registers that database as a connection,
 publishes the table as a layer, and queries it back:
 
+<!-- docs-validation:install.publish mode=run -->
 ```python
 import json
 from honua_admin import HonuaAdminClient, CreateSecureConnectionRequest, PublishLayerRequest
@@ -278,6 +286,7 @@ print(f"published service quickstart layer {layer.layer_id}")
 print(json.dumps(result["features"], indent=2))
 ```
 
+<!-- docs-validation:install.query mode=run -->
 ```bash
 python quickstart.py
 ```
@@ -306,6 +315,7 @@ deployment actually exposes, rather than what the list above assumes.
 
 ## Stop or remove it
 
+<!-- docs-validation:install.cleanup mode=skip reason="Harness tears down its isolated project on every exit" -->
 ```bash
 docker compose down              # stop, keep all data
 docker compose down --volumes    # stop and permanently delete this project's data

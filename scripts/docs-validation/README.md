@@ -1,5 +1,47 @@
 # Executable documentation validation
 
+## Public installation guide
+
+The canonical versions for the published installation journey live in
+[`install-artifacts.json`](../../docs/get-started/install-artifacts.json).
+Update that manifest and the corresponding examples when publishing new
+artifacts. No version lives in a C# test. Check their consistency locally:
+
+```bash
+python3 scripts/docs-validation/install_artifacts.py
+```
+
+`PR Gate` runs that lightweight check, validates the derived agent indexes on
+the docs-only path, and the docs link gate checks links, examples and semantics.
+The docs-only router recognizes the installation
+manifest and derived agent indexes, while retaining runtime checks for any
+document or data file actually consumed by server code/builds/tests.
+
+Only changes to the artifact manifest, executable fences in the quickstart or
+Linux/Windows install procedures, or the proof harness select the public Docker
+proof. Wording-only edits do not. Run the same proof manually with:
+
+```bash
+python3 scripts/docs-validation/validate_public_install.py
+```
+
+It requires a local Linux Docker daemon, Compose, Python 3.11+ with working venv
+and pip, and OpenSSL. It anonymously pulls the advertised image, executes the
+annotated public quickstart, checks the published sample's identities and
+coordinates, and verifies readback after restart. It creates a unique Compose
+project with unused loopback ports, tears down only its own resources, and
+writes a secret-free receipt to `artifacts/docs-validation/public-install/`.
+There is no server compilation. The Linux and Windows procedure fences trigger
+this shared-image proof when they change; it does not claim native Windows or
+full Linux-package-procedure execution. Windows readback checks still run in
+the docs gate, and native Windows replay has its own script.
+
+The manual **Docs Public Install** workflow runs the same proof independently.
+When changing the advertised image, refresh the observed preview-artifact
+receipt from a successful run; that receipt is evidence, not generated prose.
+
+## Source-development quickstart
+
 `validate-quickstart.sh` proves the source-development quickstart against a clean,
 isolated Docker Compose project. It extracts commands directly from
 `docs/internal/developer/source-quickstart.md`; there is no second command sequence in the

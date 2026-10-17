@@ -284,13 +284,49 @@ jobs:
         id: docs-only
         run: scripts/ci/docs-only-diff.sh --github-output
 
-      # The lean gate's one documentation check. It scans every *.md for a raw
+      # The lean gate's Markdown command check. It scans every *.md for a raw
       # curl example, and a docs-only diff is exactly what it exists for, so it
       # runs here whenever the lean gate below is skipped.
       - name: Documentation Command Policy (docs-only diff)
         if: steps.docs-only.outputs.docs_only == 'true'
         shell: pwsh
         run: scripts/ci/check-markdown-command-policy.ps1
+
+      - name: Validate derived documentation indexes (docs-only diff)
+        if: steps.docs-only.outputs.docs_only == 'true'
+        run: |
+          python3 -m pip install -r scripts/ci/okf-requirements.txt
+          python3 scripts/ci/generate-okf-graph.py --check
+          python3 scripts/ci/generate-llms-txt.py --check
+
+      # Artifact consistency is a cheap docs check, not a C# architecture test.
+      # Keep the public install proof inside the required gate so an unpublished
+      # image cannot merge, but select it only for artifact/procedure changes.
+      - name: Validate installation references and select public Docker proof
+        id: public-install
+        run: |
+          python3 scripts/docs-validation/test_install_artifacts.py
+          python3 scripts/docs-validation/install_artifacts.py --smoke-base HEAD^1 --github-output "$GITHUB_OUTPUT"
+
+      - name: Set up Python for the public installation proof
+        if: steps.public-install.outputs.smoke == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Prove the published Docker installation
+        if: steps.public-install.outputs.smoke == 'true'
+        timeout-minutes: 20
+        run: python3 scripts/docs-validation/validate_public_install.py
+
+      - name: Upload public installation evidence
+        if: always() && steps.public-install.outputs.smoke == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-public-install
+          path: artifacts/docs-validation/public-install/receipt.json
+          if-no-files-found: warn
+          retention-days: 14
 
       # The full-solution Release build can exhaust ubuntu-latest disk once
       # every project writes bin/obj. Best-effort cleanup mirrors ci.yml.

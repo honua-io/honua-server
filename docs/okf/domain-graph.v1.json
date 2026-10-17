@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:72984568653c1e5660e641f725ab0d52b36c0e9d366096c15a5821e9de04f4d6",
+  "bundleDigest": "sha256:41fcd0a52c3fd488479add3b733f57d53e9db14ad930fbab2b6433836e7ce0e6",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1924,7 +1924,7 @@
     {
       "id": "get-started/quickstart",
       "path": "get-started/quickstart.md",
-      "documentDigest": "sha256:ae964fb46350e60019b0ae2098fa2589fe46fdc666f50715e6f29bf36229007c",
+      "documentDigest": "sha256:fc1169d8b5a286a049939d6216e874637cfb8379080daa34cf9202e77dd78a4f",
       "metadata": {
         "type": "guide",
         "title": "Quickstart: install, publish, and query",
