@@ -68,4 +68,19 @@
     <EmbeddedResource Include="Templates\**\*" LogicalName="Templates/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Pack the matching local harness and SDK as source payload, independent of a server checkout.
+         Explicit source globs exclude build output, credentials, caches and development fixtures. -->
+    <EmbeddedResource Include="../../docker/worker-customcode-python/harness/honua_customcode_harness/*.py"
+                      LogicalName="Toolchain/docker/worker-customcode-python/harness/honua_customcode_harness/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../docker/worker-customcode-python/harness/pyproject.toml;../../docker/worker-customcode-python/harness/README.md"
+                      LogicalName="Toolchain/docker/worker-customcode-python/harness/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../docker/worker-customcode-dotnet/harness/src/**/*.cs;../../docker/worker-customcode-dotnet/harness/src/**/*.csproj"
+                      Exclude="../../docker/worker-customcode-dotnet/harness/src/**/obj/**;../../docker/worker-customcode-dotnet/harness/src/**/bin/**"
+                      LogicalName="Toolchain/docker/worker-customcode-dotnet/harness/src/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../docker/worker-customcode-dotnet/harness/Directory.Build.props;../../docker/worker-customcode-dotnet/harness/Directory.Packages.props;../../docker/worker-customcode-dotnet/harness/NuGet.config"
+                      LogicalName="Toolchain/docker/worker-customcode-dotnet/harness/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../LICENSE" LogicalName="Toolchain/LICENSE" />
+  </ItemGroup>
+
 </Project>

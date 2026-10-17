@@ -730,6 +730,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             using var page = await ReadJsonAsync(response);
             var events = page.RootElement.GetProperty("events");
             events.GetProperty("mode").GetString().Should().Be("page");
+            events.GetProperty("totalCount").GetInt32().Should().Be(603);
             messages.AddRange(events.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("message").GetString()!));
             cursor = events.TryGetProperty("nextCursor", out var next) ? next.GetString() : null;
         }
@@ -1397,7 +1398,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             return Task.FromResult(new ExecutionLogPage
             {
                 Items = hasMore ? page.Take(query.Limit).ToArray() : page,
-                NextCursor = hasMore ? EncodeOffset(offset + query.Limit) : null
+                NextCursor = hasMore ? EncodeOffset(offset + query.Limit) : null,
+                TotalCount = entries.Length
             });
         }
 

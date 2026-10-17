@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "count",
+    "field",
+    "mean",
+    "sum"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "field": {
+      "type": "string"
+    },
+    "mean": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "sum": {
+      "type": "number"
+    }
+  }
+}

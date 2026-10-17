@@ -137,11 +137,14 @@ internal sealed partial class RedisExecutionLogStore(
         }
         var limit = Math.Clamp(query.Limit, MinQueryLimit, MaxQueryLimit);
         var window = await ReadWindowAsync(operationId, offset, limit, cancellationToken).ConfigureAwait(false);
+        var covered = window.Start + window.Items.Count;
+        var coveredCount = covered >= int.MaxValue ? int.MaxValue : (int)covered;
         return new ExecutionLogPage
         {
             Items = window.Items,
             DroppedCount = window.Dropped,
-            NextCursor = window.More ? EncodeOffsetCursor(window.Start + window.Items.Count) : null
+            NextCursor = window.More ? EncodeOffsetCursor(window.Start + window.Items.Count) : null,
+            TotalCount = Math.Max(window.Total, coveredCount)
         };
     }
 

@@ -59,7 +59,7 @@ public interface IExecutionLogStore
     /// <param name="operationId">Stable job identifier.</param>
     /// <param name="query">Cursor and page-size criteria.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Log entries in append order plus an optional next cursor.</returns>
+    /// <returns>Log entries in append order, the stream length from that same read, and an optional next cursor.</returns>
     Task<ExecutionLogPage> QueryAsync(
         string operationId,
         ExecutionLogQuery query,

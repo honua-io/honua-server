@@ -1,32 +1,13 @@
-# Container debugging for a .NET process that needs the native stack of the
-# custom-code worker image. Build the image from a honua-server checkout first:
-#
-#   docker build -f docker/worker-customcode-dotnet/Dockerfile #     -t honua-worker-customcode-dotnet:local .
-#
-# Then build the process on the host (dotnet build process/SummaryTool.csproj),
-# start this file from the template directory, and attach with the
-# "GP: attach to container" launch configuration, which runs vsdbg through
-# docker exec. The container must contain vsdbg at /root/vsdbg (install it once
-# with the official getvsdbg script); it is not part of the production image.
+# Local debugging only: keep the container alive, then VS Code launches the
+# harness through vsdbg. Override the production ENTRYPOINT explicitly.
 services:
   gp-dotnet-debug:
     image: ${HONUA_CUSTOMCODE_DOTNET_IMAGE:-honua-worker-customcode-dotnet:local}
     container_name: gp-dotnet-debug
+    user: "${GP_DEBUG_UID:-1001}:${GP_DEBUG_GID:-1001}"
     working_dir: /work/src
     volumes:
       - ..:/work/src:ro
       - ../.honua/container-runs:/work/out
-    command:
-      - dotnet
-      - /opt/honua/harness/Honua.CustomCode.Harness.dll
-      - local
-      - --assembly-dir
-      - /work/src/process/bin/Debug/net10.0
-      - --entrypoint
-      - SummaryTool::Honua.Templates.SummaryTool
-      - --params
-      - /work/src/fixtures/params.json
-      - --input
-      - features=/work/src/fixtures/input.geojson
-      - --output
-      - /work/out
+      - ../.honua/vsdbg:/work/vsdbg
+    entrypoint: ["sleep", "infinity"]

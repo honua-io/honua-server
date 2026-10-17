@@ -40,11 +40,13 @@ public sealed class RedisExecutionLogTailTests(RedisFixture fixture)
             tail.DroppedCount.Should().Be(4);
             var page = await store.QueryAsync(id, new ExecutionLogQuery { Limit = 2 });
             page.Items.Select(item => item.Message).Should().Equal("event 4", "event 5");
+            page.TotalCount.Should().Be(2004);
             Encoding.UTF8.GetString(Convert.FromBase64String(page.NextCursor!)).Should().Be("6");
             page.DroppedCount.Should().Be(4);
             await store.AppendAsync(id, Entry("new event"));
             var next = await store.QueryAsync(id, new ExecutionLogQuery { Limit = 2, Cursor = page.NextCursor });
             next.Items.Select(item => item.Message).Should().Equal("event 6", "event 7");
+            next.TotalCount.Should().Be(2005);
         }
         finally
         {

@@ -126,8 +126,8 @@ anything derived from log timestamps is `inferred`.
 
 `init` copies the honua-samples GP template for the language (byte for byte, checked
 against its `TEMPLATE-MANIFEST.json`) into a new project directory and adds
-`honua-gp.yaml`, the descriptor the devkit reads for `test` (a placeholder for the
-release descriptor). The project already holds a working process, its input schema,
+`honua-gp.yaml`, the shared `honua.gp-process/v1` descriptor read by both `test` and
+`release`. The project already holds a working process, its input schema,
 fixtures, expected artifacts with a golden digest, the dependency lock, golden tests,
 VS Code launch and task configurations and a container debug recipe:
 
@@ -139,12 +139,35 @@ honua-gp-devkit test --update   # accept the current artifacts and refresh expec
 ```
 
 `--name` names the project directory and the descriptor; the sample process stays
-`summary_tool` / `SummaryTool` until you rename it. `test` runs the Python harness from the
-server checkout it finds (`--harness-root`, `HONUA_GP_HARNESS_ROOT`, or a walk up from the
-project) and, for .NET, builds the template's test project first (which also builds the SDK
-and the harness; `Directory.Build.rsp` points them at the checkout). A failure prints the
-first differing value, the receipt path and the artifact; `expected/golden.json` additionally
-pins the artifact bytes. Nothing here submits to a server.
+`summary_tool` / `SummaryTool` until you rename it. The installed tool includes the
+matching Python harness and .NET authoring SDK/harness source payload. `init` extracts
+it under `.honua/toolchain`; no server checkout or unpublished dependency is needed.
+Python 3.11+ and the .NET 10 SDK remain prerequisites for their respective languages.
+For .NET, `test` builds the template test project and runs the local harness. Python
+uses the bundled module directly. A failure prints the first differing value, receipt
+path and artifact; `expected/golden.json` also pins the artifact bytes.
+
+The descriptor records `authoring.toolchainVersion`. A clone without the ignored
+`.honua/toolchain` directory restores it from the matching installed devkit on `test`;
+a different installed version is refused rather than silently changing the toolchain.
+For intentional source development, pass `--harness-root <checkout>` or set
+`HONUA_GP_HARNESS_ROOT` / `HONUA_SERVER_CHECKOUT`. These are explicit overrides;
+parent directories are never searched for a server checkout.
+
+The generated descriptor includes the process identity, entrypoint, contract schemas,
+dependency lock, AWS Batch target, fixture paths, and required image-validation receipt
+path. Fill in the actual runtime image digest and produce independent image-validation
+evidence before `release`. Local golden tests do **not** claim they ran that image and
+cannot produce a passing image receipt. See [process releases](../../reference/gp-process-release.md).
+Existing `honua.gp.project/v0` descriptors remain readable for local tests with an
+explicit source harness; new projects use v1. Nothing here submits to a server.
+
+For Python debugger and direct pytest use, install the bundled harness in the project's
+virtual environment as the generated README describes. The generated .NET debugger
+uses the bundled SDK project. The `GP Installed Authoring` CI workflow packs the candidate
+once and exercises installed Python/.NET init, golden success and deliberate failure,
+direct harness tests, and release-evidence refusal on Linux, Windows and macOS runners
+without checking out the server there. It does not publish packages or qualify a cloud image.
 
 `list` and `describe` report an `executionMode` (managed, native, service-backed, custom),
 the prerequisites checked, `runnableHere` with the missing prerequisite named, the
