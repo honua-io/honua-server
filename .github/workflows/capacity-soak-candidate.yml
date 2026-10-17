@@ -281,9 +281,11 @@ jobs:
           url="$root/$LOCK_PATH"
           curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 "$url" -o lock.json
           mkdir -p "$RUNNER_TEMP/release-tools"
-          for file in check_capacity_soak.py capacity_observations.py extract_capacity_evidence.py; do
+          for file in check_capacity_soak.py capacity_observations.py extract_capacity_evidence.py release_runner_policy.py; do
             curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 "$root/tools/$file" -o "$RUNNER_TEMP/release-tools/$file"
           done
+          mkdir -p "$RUNNER_TEMP/certification"
+          curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 "$root/certification/release-runners.v1.json" -o "$RUNNER_TEMP/certification/release-runners.v1.json"
           curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 "$root/platform-manifest.yaml" -o "$RUNNER_TEMP/platform-manifest.yaml"
           python - <<'PYTHON'
           import os, pathlib, yaml
@@ -558,13 +560,14 @@ jobs:
             --url-out "$RUNNER_TEMP/receipt-url.txt"
           echo "url=$(cat "$RUNNER_TEMP/receipt-url.txt")" >> "$GITHUB_OUTPUT"
 
-      - name: Verify exact bundle bytes, attestation and recomputed release signals
+      - name: Preflight exact bundle bytes, attestation content and recomputed signals
         id: receipt
         env:
           GH_TOKEN: ${{ github.token }}
           RECEIPT_URL: ${{ steps.publish.outputs.url }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           IMAGE_DIGEST: ${{ steps.pulled.outputs.digest }}
+          SIGNER_WORKFLOW_REF: ${{ steps.signer.outputs.workflow_ref }}
         run: |
           set -euo pipefail
           bundle="$RUNNER_TEMP/capacity-evidence.zip"
@@ -573,14 +576,21 @@ jobs:
             cmp "$bundle" "$RUNNER_TEMP/published.zip"
             bundle="$RUNNER_TEMP/published.zip"
           fi
-          gh attestation verify "$bundle" --repo "$GITHUB_REPOSITORY" --format json > "$RUNNER_TEMP/verified-attestation.json"
+          gh attestation verify "$bundle" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow honua-io/honua-server/.github/workflows/capacity-soak-candidate.yml \
+            --source-digest "$CANDIDATE_SHA" --predicate-type https://slsa.dev/provenance/v1 \
+            --format json > "$RUNNER_TEMP/verified-attestation.json"
           python "$RUNNER_TEMP/release-tools/extract_capacity_evidence.py" --bundle "$bundle" --output "$RUNNER_TEMP/verified-capacity"
-          python "$RUNNER_TEMP/release-tools/check_capacity_soak.py" \
+          # This job is still in progress. Completed-run runner admission belongs to the
+          # independent release consumer after this job finishes; it cannot admit itself.
+          PYTHONPATH="$RUNNER_TEMP/release-tools" python producer/scripts/soak/producer_preflight.py \
             --lock lock.json --receipt "$RUNNER_TEMP/verified-capacity/capacity-soak-receipt.json" \
             --artifact-root "$RUNNER_TEMP/verified-capacity" --expected-revision "$CANDIDATE_SHA" \
             --expected-image-digest "$IMAGE_DIGEST" --bundle "$bundle" \
+            --expected-run-id "$GITHUB_RUN_ID" --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --expected-workflow-ref "$SIGNER_WORKFLOW_REF" \
             --attestation "$RUNNER_TEMP/verified-attestation.json" | tee "$RUNNER_TEMP/gate-verdict.txt"
-          echo "selfcheck=pass" >> "$GITHUB_OUTPUT"
+          echo "selfcheck=producer preflight pass; completed-run release admission pending" >> "$GITHUB_OUTPUT"
 
       - name: Summarise
         if: always()

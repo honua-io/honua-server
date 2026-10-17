@@ -131,14 +131,19 @@ actual immutable Actions artifact URL. The ZIP is flat and bounded to 64 files,
 The workflow attests that complete ZIP with SLSA v1 on the selected Actions runner and
 publishes its bytes on the evidence branch at a commit-pinned HTTPS URL. It
 fetches the published bytes, compares them, verifies the attestation with `gh`,
-extracts with the release checker’s bounded extractor, and runs
-`tools/check_capacity_soak.py`. The receipt's `signature` field points to the
+extracts with the release checker’s bounded extractor, and runs the producer
+preflight using that same frozen release commit's signal evaluator and pure
+attestation-content binder. This verifies the current invocation's source,
+bundle, observations and signals while the job is still running. It explicitly
+reports completed-run release admission as pending. The receipt's `signature` field points to the
 external ZIP attestation; the field itself is not cryptographic proof.
 
 The release checker independently recomputes all eight signals and verifies the
 raw hashes, populations, eight workload dimensions, freeze, source commit,
 workflow, run ID/attempt, image digest and ZIP subject digest. Green requires that
-checker to accept everything. The legacy manual load workflow is diagnostic only;
+checker to accept everything after the producing job completes, including independent
+runner-policy and live completed-job admission. A producer preflight success is
+never a release verdict. The legacy manual load workflow is diagnostic only;
 its nightly schedule has been retired in favor of candidate qualification.
 
 ## Failed qualification
