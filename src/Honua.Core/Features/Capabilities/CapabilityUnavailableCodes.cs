@@ -115,6 +115,36 @@ public static class CapabilityUnavailableCodes
         "job queue, so a submitted job would be persisted and never drain. The request is refused " +
         "rather than accepted into a queue that does not exist.";
 
+    /// <summary>
+    /// Dependency id when a managed job would be queued on a serverless host. Redis may be
+    /// present; the missing piece is a process that stays up to claim the local queue.
+    /// </summary>
+    public const string LongLivedHostDependency = "long-lived-host";
+
+    /// <summary>
+    /// Detail sentence when a managed geoprocessing submission would be left on the in-process
+    /// queue of a host that freezes between invocations.
+    /// </summary>
+    public const string ServerlessManagedDetail =
+        "Managed geoprocessing on this host would be queued for a background loop that stops " +
+        "when the invocation ends. The request is refused instead of being accepted and never " +
+        "run. Native processes run on the GDAL worker. Managed processes run on a long-lived " +
+        "API host, or they finish inside the request without being queued.";
+
+    /// <summary>Operator-facing remediation for a managed job refused on a serverless host.</summary>
+    public const string ServerlessManagedRemediation =
+        "Run managed geoprocessing on a long-lived host (local Docker or ECS). On this " +
+        "serverless cell, submit a native process so it runs on the GDAL worker. An operation " +
+        "that completes inside the request, without admission to the local job queue, is not " +
+        "refused by this check.";
+
+    /// <summary>
+    /// Documentation anchor for why a frozen host cannot drain a queued job. The same constraint
+    /// is what sends background file imports to Batch.
+    /// </summary>
+    public const string ServerlessManagedRemediationRef =
+        "https://honua.io/docs/guides/deploy/cloud-deployments/#background-file-imports-run-on-aws-batch";
+
     /// <summary>Short human-readable title shared by every capability-unavailable refusal.</summary>
     public const string Title = "Capability unavailable";
 
