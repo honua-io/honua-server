@@ -412,8 +412,8 @@ def test_disc_02_single_collection_metadata(
     )
     assert str(identifier) == fx.COLLECTION_ID
     assert item_type == "feature"
-    assert str(storage_crs).endswith(str(fx.STORAGE_CRS_EPSG)), (
-        f"storageCrs {storage_crs!r} does not name EPSG:{fx.STORAGE_CRS_EPSG}"
+    assert storage_crs == CRS84_URI, (
+        f"storageCrs {storage_crs!r} must describe the fixture's longitude/latitude CRS84 ordinates"
     )
     assert bbox is not None and len(bbox) >= 4, f"unusable spatial extent {bbox!r}"
     evidence.record(
@@ -651,38 +651,38 @@ def test_geom_01_anchor_coordinates(
 
 
 @pytest.mark.cert("CERT-GEOM-02")
-def test_geom_02_crs_is_epsg_4326(
+def test_geom_02_crs_is_crs84(
     duckdb_connection: duckdb.DuckDBPyConnection,
     oapif_dsn: str,
     evidence: CertificationEvidenceCollector,
     watch: Stopwatch,
 ) -> None:
-    """``ST_Read_Meta`` reports EPSG:4326 for the layer."""
+    """Published CRS84 survives OAPIF metadata and typed geometry without axis swapping."""
     auth_name, auth_code = one(
         duckdb_connection,
         "SELECT l.geometry_fields[1].crs.auth_name, l.geometry_fields[1].crs.auth_code "
         f"FROM (SELECT unnest(layers) AS l FROM ST_Read_Meta('{oapif_dsn}')) "
         f"WHERE l.name = '{fx.COLLECTION_ID}'",
     )
-    assert (auth_name, str(auth_code)) == ("EPSG", str(fx.STORAGE_CRS_EPSG)), (
-        f"layer SRS is {auth_name}:{auth_code}, expected EPSG:{fx.STORAGE_CRS_EPSG}"
+    assert (auth_name, str(auth_code)) == ("OGC", "CRS84"), (
+        f"layer SRS is {auth_name}:{auth_code}, expected OGC:CRS84"
     )
-    declared_type = one(
+    declared_crs, longitude, latitude = one(
         duckdb_connection,
-        f"SELECT typeof(geom) FROM ST_Read('{oapif_dsn}', layer='{fx.COLLECTION_ID}') "
-        "WHERE geom IS NOT NULL LIMIT 1",
-    )[0]
-    assert str(fx.STORAGE_CRS_EPSG) in str(declared_type), (
-        f"DuckDB geometry type {declared_type!r} does not carry EPSG:"
-        f"{fx.STORAGE_CRS_EPSG}"
+        f"SELECT ST_CRS(geom), ST_X(geom), ST_Y(geom) "
+        f"FROM ST_Read('{oapif_dsn}', layer='{fx.COLLECTION_ID}') "
+        f"WHERE name = '{fx.ANCHOR_NAME}'",
     )
+    assert declared_crs == "OGC:CRS84", f"DuckDB geometry CRS is {declared_crs!r}"
+    assert abs(longitude - fx.ANCHOR_LON) <= GEOGRAPHIC_TOLERANCE_DEGREES
+    assert abs(latitude - fx.ANCHOR_LAT) <= GEOGRAPHIC_TOLERANCE_DEGREES
     evidence.record(
         "CERT-GEOM-02", "pass",
         duration_ms=watch.ms,
         notes=(
-            f"ST_Read_Meta reports {auth_name}:{auth_code} and the DuckDB column "
-            f"type is {declared_type}. The server's storageCrs is EPSG:"
-            f"{fx.STORAGE_CRS_EPSG} and the OAPIF driver propagates it."
+            f"ST_Read_Meta reports {auth_name}:{auth_code}; the DuckDB geometry CRS "
+            f"is {declared_crs} and anchor ordinates are ({longitude}, {latitude}). "
+            "The published CRS84 contract is distinct from the physical PostGIS SRID 4326."
         ),
     )
 
