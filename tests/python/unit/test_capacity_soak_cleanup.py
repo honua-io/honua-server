@@ -166,6 +166,7 @@ def test_actual_compose_render_retains_required_inputs_for_later_cleanup(substra
                               "config", "--format", "json"], env=clean_env,
                              capture_output=True, text=True)
     assert reparsed.returncode == 0, reparsed.stderr
+    assert clean_env["NOT_FROM_ENV"] not in reparsed.stdout
     document = json.loads(reparsed.stdout)
     assert document["name"] == PROJECT
     services = document["services"]
