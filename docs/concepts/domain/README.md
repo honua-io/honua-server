@@ -7,6 +7,10 @@ tags: [gis, domain-language, okf]
 
 # GIS domain language
 
+Honua's agent journeys are setup, service/layer administration and operations,
+and realtime map creation. The [workflow-language guide](../../guides/workflows/use-workflow-language.md)
+connects those journeys to the shared vocabulary and current execution surfaces.
+
 Start with [understanding everyday GIS requests](intent-interpretation.md): use ordinary language, contextual synonyms, and the current application state to determine intent. The [workflow language](workflow-language.md) provides the structured meanings, effects, recovery, and interface links behind the agent's interpretation. People do not need to write that structure. Compact agent context is derived from these same human-readable OKF pages.
 
 The model follows Honua's existing Metadata v2 resource, storage-binding, connection, service, and publication graph. It distinguishes those runtime entities from semantic planning objects such as a query view or a feature-set result, and from map/app design state. Definitions do not grant capability or permission.

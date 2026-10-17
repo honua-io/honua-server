@@ -29,7 +29,9 @@ var saved = await packages.GetVersionAsync(version.ItemId, version.VersionId);
 var reopened = await packages.ReopenVersionAsync(saved.ItemId, saved.VersionId);
 ```
 
-Use the request and model names from the installed SDK version. Publication
-methods exist, but a pending or rejected request has no public URL; the
-governed approval journey is not yet complete. Track
-[#3304](https://github.com/honua-io/honua-server/issues/3304).
+Use the request and model names from the installed SDK version. Follow the
+publication method's actual returned status and its documented polling contract;
+a pending or rejected request has no active URL. The
+[MCP publication tool](mcp-tools.md) has an admin direct-publication branch and
+a non-admin proposal branch. That MCP behavior is not a substitute for checking
+the installed .NET client's REST contract.

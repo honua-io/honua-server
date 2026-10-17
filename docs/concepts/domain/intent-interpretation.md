@@ -89,7 +89,7 @@ Once the intent is understood, use the relevant concept links to find supported 
 
 An understood request can still need an unavailable capability. Explain that limitation separately from an ambiguous request. Rephrasing a clear request does not make an unsupported operation available. AI never modifies authoritative feature attributes or geometry, including through a request phrased as cleanup or repair; offer read-only findings and recommendations instead.
 
-The intended [Studio workspace](studio-workspace.md) experience is prompt, scoped edit, almost immediate preview, refinement, and undo in a Git workspace. This page does not establish that a Git workspace adapter has shipped. Remote publication and deployment retain their actual operational contracts.
+The intended [Studio workspace](studio-workspace.md) experience is prompt, scoped edit, almost immediate preview, refinement, and undo. Git integration is optional. This page does not establish that a Git workspace adapter has shipped. Remote publication and deployment retain their actual operational contracts.
 
 ## Evaluate interpretation without policing wording
 

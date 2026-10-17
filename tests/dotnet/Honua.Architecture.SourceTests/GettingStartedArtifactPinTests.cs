@@ -6,17 +6,17 @@ using FluentAssertions;
 namespace Honua.Architecture.Tests;
 
 /// <summary>
-/// Keeps the executable getting-started journey on the artifacts published for the release.
+/// Keeps the executable getting-started journey on the documented published preview artifacts.
 /// </summary>
 public sealed class GettingStartedArtifactPinTests
 {
-    // The getting-started pages reference the release channel, which only release promotion
-    // moves (ruling R18). The exact digest is in the release's customer-install-manifest.json
-    // (`server.image`); it is never hand-copied into these pages.
+    // Local evaluation uses the published preview until release promotion publishes
+    // the RC channel. Preview identity and observations live in the linked receipt;
+    // the docs must never turn an unavailable release channel into an install default.
+    private const string PreviewImage = "ghcr.io/honua-io/honua-server:nightly-0e03bdd";
     private const string ReleaseChannelImage = "ghcr.io/honua-io/honua-server:2026.1-rc";
     private const string GaChannelImage = "`ghcr.io/honua-io/honua-server:2026.1`";
-    private const string DigestSentence = "The exact digest is in the release's `customer-install-manifest.json`";
-    private const string DigestSource = "`server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json)";
+    private const string PreviewReceipt = "../reference/local-preview-artifact.md";
     private const string ServerImageDigestPrefix = "ghcr.io/honua-io/honua-server@sha256:";
 
     [ArchitectureTest]
@@ -35,10 +35,10 @@ public sealed class GettingStartedArtifactPinTests
         {
             page.Should().Contain(ReleaseChannelImage);
             page.Should().Contain(GaChannelImage);
-            page.Should().Contain(DigestSentence);
-            page.Should().Contain(DigestSource);
+            page.Should().Contain(PreviewReceipt);
             page.Should().Contain("Licensing__Mode: Disabled");
-            page.Should().Contain("HONUA_IMAGE=" + ReleaseChannelImage);
+            page.Should().Contain("HONUA_IMAGE=" + PreviewImage);
+            page.Should().NotContain("HONUA_IMAGE=" + ReleaseChannelImage);
         }
 
         var gettingStartedDir = ArchitectureTestHelpers.CombinePath(root, "docs", "get-started");
@@ -60,7 +60,7 @@ public sealed class GettingStartedArtifactPinTests
         journey.Should().NotContain("@sha256:",
             "no getting-started page hand-copies an image digest");
         journey.Should().NotContain(ServerImageDigestPrefix,
-            "the server image digest lives in the release's customer-install-manifest.json, not in these pages");
+            "the server image digest lives in the linked artifact receipt, not in these pages");
         journey.Should().NotContain("honua-server/manifests/sha256:",
             "a hand-copied registry manifest link is a server image digest pin");
         journey.Should().NotContain("curl ", "getting-started examples use the supported CLI, SDK, or MCP surfaces");

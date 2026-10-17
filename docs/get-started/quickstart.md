@@ -9,18 +9,27 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 Honua runs as one container beside PostGIS and Redis. This page starts it with
 Docker Compose, publishes a small dataset, and queries it back.
 
-**You need** Docker with Compose 2.23.1 or later, Python 3.11+ for the last
+Prefer an agent-led walkthrough? Start with [Get started with AI](with-ai.md),
+including its [local prerequisite check](with-ai.md#agent-prerequisite-check).
+
+**You need** Docker with Compose 2.23.1 or later, Python 3.11+ with working venv and pip support for the last
 step, and OpenSSL 3 with a POSIX shell (`grep`, `cut`, `chmod`) for the key-ring
 certificate. On Windows, run that certificate block in WSL or Git Bash. Nothing
 else: no repository checkout, no compiler, and **no registry credentials** —
 the server image and both Python clients are public. The 2026.1 release runs
 with licensing disabled, so there is no licence or edition-selection step.
 
-The server image is the 2026.1 release channel
-`ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA);
-only release promotion moves that tag.
-The exact digest is in the release's `customer-install-manifest.json`
-(`server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json)).
+For local evaluation, this guide uses the published preview image
+`ghcr.io/honua-io/honua-server:nightly-0e03bdd`. Its source and immutable registry
+identity are recorded in the [preview artifact receipt](../reference/local-preview-artifact.md).
+This is a development preview, not a promoted 2026.1 release. The public image
+and pinned clients below can be used without a customer install manifest.
+
+After release promotion, the release channel will be
+`ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA).
+Use that channel only when its image and install manifest are publicly available;
+the preview instructions below do not depend on it.
+
 The clients are pinned:
 [honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/) and
 [honua-sdk 0.1.16](https://pypi.org/project/honua-sdk/0.1.16/).
@@ -125,13 +134,14 @@ configs:
 
 ## 2. Set the secrets
 
-Three secrets go in a `.env` file beside `compose.yaml`. Generate them rather
+Four secrets go in a `.env` file beside `compose.yaml`. Generate them rather
 than inventing them.
 
 ```bash
+umask 077
 cat > .env <<EOF
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-0e03bdd
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
 HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
@@ -147,7 +157,7 @@ EOF
 function New-Secret { -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) }) }
 @"
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-0e03bdd
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(New-Secret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-Secret)
@@ -197,8 +207,10 @@ put the export password in `HONUA_KEYRING_PASSWORD`.
 docker compose up -d --wait --wait-timeout 180
 ```
 
-`--wait` holds until every container reports healthy, so a clean exit is the
-readiness check — there is nothing else to poll. If it times out,
+`--wait` holds for container health checks. The preview image's container probe
+checks liveness; also open `http://localhost:18080/healthz/ready` (using your
+selected port) and wait for `Ready`. The authenticated publish/query below then
+verifies the data path. If startup times out,
 `docker compose logs honua postgres redis` says why.
 
 The admin API is not anonymous: it needs the `HONUA_ADMIN_PASSWORD` from `.env`,
@@ -318,7 +330,9 @@ a backup.
   denied, run `sudo chown "$USER" secrets secrets/keyring.pfx` and then the block
   again. Then `docker compose up` so the root-owned mode `0640` mount is applied
   before the server starts. Do not grant other-read on the file.
-- **A pull fails** — these pins need no credentials, so it is network or proxy
-  policy. The optional .NET client uses a different registry; see
+- **A pull fails** — distinguish an unpublished tag (`not found`), registry
+  authorization failure, unsupported image platform, and network/proxy failure.
+  These are intended public artifacts; registry credentials do not fix an
+  unpublished tag. The optional .NET client uses a different registry; see
   [registry clients](registry-clients.md) only if you need it.
 - **Anything else** — [troubleshooting](../guides/deploy/troubleshooting.md).

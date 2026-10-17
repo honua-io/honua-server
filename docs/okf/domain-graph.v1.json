@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:59c8c101e0f8a2f70acc8580311084acf20c2091d9a2fe6d458293d7de019b04",
+  "bundleDigest": "sha256:9941f1903cde80b424c6e9531c479b11725a86b19effafb34391d4309cee9775",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -20,7 +20,7 @@
     {
       "id": "README",
       "path": "README.md",
-      "documentDigest": "sha256:d743e314ce8399862eeb5dd316686139ec0783c9b606be8c095824f0d730dd55",
+      "documentDigest": "sha256:0de0de4f99374cbc41978eceb89014f6b51e23b03e3a78d12e7a24709e8438df",
       "metadata": {
         "type": "index",
         "title": "Honua Server",
@@ -91,7 +91,7 @@
     {
       "id": "concepts/domain/README",
       "path": "concepts/domain/README.md",
-      "documentDigest": "sha256:99555e2aced5258e8a8e076e1aa94c92ea8a26e1c94f0f6d6ab03445d3ff693c",
+      "documentDigest": "sha256:e9b1e48026c187427115dc8f9d3377b78eac8bb7dc735af876734de2f2426ccd",
       "metadata": {
         "type": "index",
         "title": "GIS domain language",
@@ -134,7 +134,7 @@
     {
       "id": "concepts/domain/approval",
       "path": "concepts/domain/approval.md",
-      "documentDigest": "sha256:3a422040df3cf768b8c0f2d496000d776b304b99f5b0acf3eab6147b23d7ee0b",
+      "documentDigest": "sha256:4928f106a41bdc55fd4b0343e8bc3bf91e3b46ab2022c3a9ad7458bea16bce74",
       "metadata": {
         "type": "concept",
         "title": "Approval",
@@ -699,7 +699,7 @@
     {
       "id": "concepts/domain/intent-interpretation",
       "path": "concepts/domain/intent-interpretation.md",
-      "documentDigest": "sha256:fc400f25376e25fdcb2c03ff64a65d708c698ba8e3f7af97be2673cdbda44357",
+      "documentDigest": "sha256:520d56092b3e5efa0f0e5393d8fe6ad1c0adf8783bee718b0f184577efcb5610",
       "metadata": {
         "type": "concept",
         "title": "Understanding everyday GIS requests",
@@ -1171,7 +1171,7 @@
     {
       "id": "concepts/domain/publication",
       "path": "concepts/domain/publication.md",
-      "documentDigest": "sha256:a7206a97fb72f6cb8ca9e000f920bea7d2fdffb36748c630e5c1a0b369210109",
+      "documentDigest": "sha256:06eafc5959da37727262cb7cfc2d4d53a06db87d1003ca1ad561bf97e21e04ba",
       "metadata": {
         "type": "concept",
         "title": "Publication",
@@ -1397,7 +1397,7 @@
     {
       "id": "concepts/domain/session",
       "path": "concepts/domain/session.md",
-      "documentDigest": "sha256:4f706301ae0d62cded54462acaad713dcda1e44a32880fa71227f8e95838cd1e",
+      "documentDigest": "sha256:cf7e756f642485500f2e756756f6f2b1be3a029904f4bd235af57504fbd40a13",
       "metadata": {
         "type": "concept",
         "title": "Session and handoff",
@@ -1762,7 +1762,7 @@
     {
       "id": "concepts/domain/workflow-language",
       "path": "concepts/domain/workflow-language.md",
-      "documentDigest": "sha256:96b8746078e0e23649bdff681ce560c691ca4788580842228fa91b80dea76f3f",
+      "documentDigest": "sha256:ef5d7bc2f0bbde53342f1362d590612d9c35853427633831c6ebfaa33cefe528",
       "metadata": {
         "type": "concept",
         "title": "GIS workflow language in OKF",
@@ -1813,7 +1813,7 @@
     {
       "id": "concepts/ecosystem",
       "path": "concepts/ecosystem.md",
-      "documentDigest": "sha256:8f15963cc79a8d9806899e1727e9fa46703d6a872bfb84b6e898b90e56940328",
+      "documentDigest": "sha256:48f73ac553d6854746e6b9321a75f2f314249fbfc15d0c715dc2edc93cb05b0b",
       "metadata": {
         "type": "concept",
         "title": "Ecosystem",
@@ -1912,7 +1912,7 @@
     {
       "id": "get-started/linux-packages",
       "path": "get-started/linux-packages.md",
-      "documentDigest": "sha256:1235a950cd9b901e769b044d202485966aafd6ef09a3ce3dd283fc6e97b954cc",
+      "documentDigest": "sha256:f0c4906c1dce5ac97142646093a33da3d5748593760e3d5a55bb8e261e3a7ef5",
       "metadata": {
         "type": "guide",
         "title": "Linux: install published packages",
@@ -1924,7 +1924,7 @@
     {
       "id": "get-started/quickstart",
       "path": "get-started/quickstart.md",
-      "documentDigest": "sha256:fef28eea1ad868385807bce38fe4dbfc21e927272c6445c9ec41ac138d49c631",
+      "documentDigest": "sha256:ae964fb46350e60019b0ae2098fa2589fe46fdc666f50715e6f29bf36229007c",
       "metadata": {
         "type": "guide",
         "title": "Quickstart: install, publish, and query",
@@ -1936,7 +1936,7 @@
     {
       "id": "get-started/registry-clients",
       "path": "get-started/registry-clients.md",
-      "documentDigest": "sha256:360f712b1d82bbe6e5342fd11bb6c6c2e26b1aa7a3caf8612ad8a23a2a1a23cf",
+      "documentDigest": "sha256:f93444740b8f3f1c75ed3ee9c62b3b058724999a0a23aa45ec3874967224650c",
       "metadata": {
         "type": "guide",
         "title": "Client packages and registries",
@@ -1948,7 +1948,7 @@
     {
       "id": "get-started/windows-packages",
       "path": "get-started/windows-packages.md",
-      "documentDigest": "sha256:3c498fc699f3f5e21326dfb40997e4bf9cb6c8a6e2004cbd90dd2c9c200d7ec8",
+      "documentDigest": "sha256:1bf1f1fef333113eee4e14f3476f7e3ec55cbe63c7e108c12fd669fba811130c",
       "metadata": {
         "type": "guide",
         "title": "Install on Windows from published packages",
@@ -1956,6 +1956,54 @@
         "resource": "https://github.com/honua-io/honua-server/releases"
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/get-started/windows-packages.md"
+    },
+    {
+      "id": "get-started/with-ai",
+      "path": "get-started/with-ai.md",
+      "documentDigest": "sha256:30fe0a1e94db16d72fe2942424e2c2577a186dbb14775f1eeb4d66bbe5c4b444",
+      "metadata": {
+        "type": "guide",
+        "title": "Get started with AI",
+        "description": "Start with an agent and local Docker, verify the first dataset, then create and publish maps and apps, operate Honua, and move to cloud when ready.",
+        "tags": [
+          "getting-started",
+          "agents",
+          "deployment",
+          "publishing",
+          "studio"
+        ],
+        "aliases": [
+          "setup Honua with AI",
+          "install with an agent",
+          "Docker or cloud",
+          "Lambda ECS EKS Batch Redis databases",
+          "secrets from a prompt",
+          "AI GIS getting started"
+        ],
+        "relations": [
+          {
+            "predicate": "uses",
+            "target": "/guides/workflows/use-workflow-language.md"
+          },
+          {
+            "predicate": "starts_with",
+            "target": "/guides/workflows/install-configure.md"
+          },
+          {
+            "predicate": "continues_with",
+            "target": "/guides/workflows/connect-publish-data.md"
+          },
+          {
+            "predicate": "continues_with",
+            "target": "/guides/operate/README.md"
+          },
+          {
+            "predicate": "continues_with",
+            "target": "/guides/workflows/design-studio.md"
+          }
+        ]
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/get-started/with-ai.md"
     },
     {
       "id": "gis/CLIENT_TEMPLATE_RUNBOOK",
@@ -2012,7 +2060,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:d752ae72a032ddc2bcb526f870732165d5887083cc13db28bbf6dd2a54fab3d0",
+      "documentDigest": "sha256:2743bef16be095456fd7dd01f163e766c285a3d7aa1c26ec20e2a104ee8b3836",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -2678,7 +2726,7 @@
     {
       "id": "guides/workflows/README",
       "path": "guides/workflows/README.md",
-      "documentDigest": "sha256:0a9d5689244283bbf23b179cf8ee960eee72f5be3baed790c8de2ce8af3656e0",
+      "documentDigest": "sha256:a40459a7859f38765c2ff96ba00716ab707c9b8bb93ab0adef8c4e765a7bd95c",
       "metadata": {
         "type": "index",
         "title": "GIS workflow contracts",
@@ -4252,7 +4300,7 @@
     {
       "id": "guides/workflows/install-configure",
       "path": "guides/workflows/install-configure.md",
-      "documentDigest": "sha256:e91e2e05753de823a83fe5ac3dd0e8eef3192fefe6dcb4b8be2c8cc716370b97",
+      "documentDigest": "sha256:61806c2d81e367739670edff59047647133dd5713942171dfdc22e10ebc9a393",
       "metadata": {
         "type": "guide",
         "title": "Install and configure a durable environment",
@@ -4347,13 +4395,16 @@
               "effect": "read",
               "effectTarget": "observation",
               "preconditions": [
-                "Identify ECS, EKS, Lambda, or local serving and any separate job backend."
+                "Identify ECS, EKS, Lambda, or local serving and any separate job backend.",
+                "Before first installation, inspect the host and documented artifact requirements with its deployment tools; honua_list_capabilities applies only when a server already exists."
               ],
               "authorization": [
                 "Operator may inspect the named environment."
               ],
               "idempotency": "Read-only; refresh observations before apply.",
               "checks": [
+                "For local Docker, inspect OS/architecture, local Docker context, client and daemon access, Compose and supporting-tool versions, available capacity, directory ownership, and unused loopback ports before installation.",
+                "The exact image and client artifacts can be retrieved; distinguish unavailable artifacts from host prerequisite failures.",
                 "Artifact family matches the hosting target.",
                 "Network, credentials, persistent state, and cleanup scope are explicit."
               ],
@@ -4414,6 +4465,11 @@
               "interfaces": [
                 {
                   "kind": "mcp",
+                  "operation": "honua_list_capabilities",
+                  "contract": "/guides/connect/ai-agents-mcp.md"
+                },
+                {
+                  "kind": "mcp",
                   "operation": "honua_ops_health",
                   "contract": "/guides/connect/ai-agents-mcp.md"
                 }
@@ -4458,7 +4514,7 @@
     {
       "id": "guides/workflows/publish-share-map",
       "path": "guides/workflows/publish-share-map.md",
-      "documentDigest": "sha256:3f806232e0a2b507081e2d00ddc7395d5c235295e6855812bb2dd839f2960a63",
+      "documentDigest": "sha256:df542cb6ad8aed99adad5bfe4a67a306389086ce2b3505237e6bffeb5ffddf72",
       "metadata": {
         "type": "guide",
         "title": "Publish and share a saved map",
@@ -4573,7 +4629,7 @@
               ]
             },
             {
-              "id": "propose",
+              "id": "submit",
               "interfaces": [
                 {
                   "kind": "mcp",
@@ -4581,7 +4637,7 @@
                   "contract": "/studio/mcp-tools.md"
                 }
               ],
-              "verb": "propose_publication",
+              "verb": "submit_publication",
               "inputs": [
                 {
                   "name": "version",
@@ -4598,25 +4654,38 @@
                 {
                   "name": "request",
                   "concept": "/concepts/domain/publication.md",
-                  "description": "Publication request with exact version and returned operation identities."
+                  "description": "Publication result with exact version and operation identities; Published for an authorized admin or AwaitingApproval for another caller."
                 }
               ],
-              "effect": "propose",
+              "effect": "execute",
               "effectTarget": "catalog_configuration",
               "preconditions": [
-                "Use the actual publication contract; server MCP publication requires a separate approver."
+                "The current saved version and hash match the intended publication; the caller is authorized for the requested route and visibility."
               ],
               "authorization": [
-                "Caller may propose this version for the requested route."
+                "The server decides whether this caller may publish directly or submit a proposal requiring a separate principal."
               ],
-              "idempotency": "Track the existing request/operation after a timeout rather than create another proposal.",
+              "idempotency": "Track the existing publication operation or proposal after a timeout; reconcile state before resubmission.",
               "checks": [
-                "The request binds the selected version/hash and intended audience.",
-                "Pending status is reported as pending, not active."
+                "The result binds the selected version/hash and intended audience.",
+                "Published is confirmed from the completed result and server-issued share URL; AwaitingApproval remains pending.",
+                "Do not request or fabricate a second approver for an already completed admin publication."
               ],
               "recovery": [
-                "Follow the existing proposal cancellation/rejection contract if available; do not mutate approval storage."
-              ]
+                "Follow a pending proposal through its documented status/cancellation contract; inspect a direct publication through its returned operation and route."
+              ],
+              "rollback": {
+                "snapshot": "Record the prior published version, route, audience, and current saved version before submission.",
+                "revisionGuard": "Re-read publication state; preserve changes made after this operation.",
+                "scope": "Only this item's publication selection and requested route/access change.",
+                "compensation": "Use the installed lifecycle rollback/unpublish contract under its own authority. If unavailable, report that limitation; do not modify approval storage.",
+                "verification": [
+                  "Read back the selected publication and check access under the intended viewer."
+                ],
+                "nonReversible": [
+                  "Rollback cannot recall content or data already downloaded by viewers."
+                ]
+              }
             },
             {
               "id": "observe",
@@ -4624,7 +4693,7 @@
               "inputs": [
                 {
                   "name": "request",
-                  "from": "$actions.propose.request",
+                  "from": "$actions.submit.request",
                   "concept": "/concepts/domain/publication.md"
                 }
               ],
@@ -4632,13 +4701,13 @@
                 {
                   "name": "active",
                   "concept": "/concepts/domain/publication.md",
-                  "description": "Confirmed active publication, or an explicit non-completion outcome."
+                  "description": "Confirmed active publication; an incomplete or rejected outcome does not produce this successful output."
                 }
               ],
               "effect": "observe",
               "effectTarget": "observation",
               "preconditions": [
-                "The separately authorized approval decision and activation outcome are observable."
+                "The returned publication state is observable; a pending non-admin proposal requires a separate authorized decision before activation."
               ],
               "authorization": [
                 "Read the caller-visible publication status."
@@ -4646,7 +4715,7 @@
               "idempotency": "Poll boundedly using the returned identity.",
               "checks": [
                 "Only confirmed activation is called published.",
-                "The active version matches the approved request."
+                "The active version matches the submitted version and any required approval decision."
               ],
               "recovery": [
                 "On rejection, timeout, or failure, report the exact state and retain the saved version."
@@ -5211,6 +5280,59 @@
         }
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/workflows/save-resume-map.md"
+    },
+    {
+      "id": "guides/workflows/use-workflow-language",
+      "path": "guides/workflows/use-workflow-language.md",
+      "documentDigest": "sha256:c1e4926d37411a9e17608802f7c5538a8118fc25e682bde915d272d303de4c10",
+      "metadata": {
+        "type": "guide",
+        "title": "Use the Honua GIS workflow language",
+        "description": "Translate ordinary requests into verified setup, data administration, operations, and realtime map workflows using Honua's OKF semantic profile.",
+        "tags": [
+          "gis",
+          "domain-language",
+          "workflow",
+          "agents",
+          "okf"
+        ],
+        "aliases": [
+          "Honua GIS workflow DSL",
+          "set up Honua with AI",
+          "add services and layers with AI",
+          "operate Honua with AI",
+          "make maps in realtime with AI"
+        ],
+        "sources": [
+          {
+            "id": "profile",
+            "resource": "/concepts/domain/workflow-language.md"
+          },
+          {
+            "id": "interfaces",
+            "resource": "/guides/connect/ai-agents-mcp.md"
+          }
+        ],
+        "relations": [
+          {
+            "predicate": "explains",
+            "target": "/concepts/domain/workflow-language.md"
+          },
+          {
+            "predicate": "uses",
+            "target": "/concepts/domain/intent-interpretation.md"
+          },
+          {
+            "predicate": "distinguishes",
+            "target": "/developer/spec-grammar/spec-grammar-v1.0.md"
+          },
+          {
+            "predicate": "distinguishes",
+            "target": "/guides/query-analyze/automate-workflows.md"
+          }
+        ]
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/workflows/use-workflow-language.md"
     },
     {
       "id": "internal/README",
@@ -7775,6 +7897,17 @@
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/integration-patterns.md"
     },
     {
+      "id": "reference/local-preview-artifact",
+      "path": "reference/local-preview-artifact.md",
+      "documentDigest": "sha256:abc7c3766fe7ebf0d0778ce17d6d91aec720821ae75832eb1a6bf11ead45bb5d",
+      "metadata": {
+        "type": "reference",
+        "title": "Local Docker preview artifact",
+        "description": "Published image identity and bounded installation evidence for the local Docker evaluation guide."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/reference/local-preview-artifact.md"
+    },
+    {
       "id": "reference/openapi-and-explorer",
       "path": "reference/openapi-and-explorer.md",
       "documentDigest": "sha256:9f6650aa90be3345fbb0340e8a3a74c0a77dea45185b91170c832dd424a7cce1",
@@ -8067,7 +8200,7 @@
     {
       "id": "studio/README",
       "path": "studio/README.md",
-      "documentDigest": "sha256:89588eea6fabd2e2bdf431a8e8b4b94021cfe54e49f2f2de2c7f1f518bc55191",
+      "documentDigest": "sha256:0fe04d8e029b2b8c68af79345003704e4c43e5713225b003e6adab487095022c",
       "metadata": {
         "type": "index",
         "title": "Honua Studio",
@@ -8090,7 +8223,7 @@
     {
       "id": "studio/dotnet-lifecycle",
       "path": "studio/dotnet-lifecycle.md",
-      "documentDigest": "sha256:3c50cc897ced4dbe9f33ac8b6af1334f31bda7f5248b5987027d39eded8d31d4",
+      "documentDigest": "sha256:c24a75a086475ca05d6587be5972798b73a4a7b97e32fd3532a878a4cc84a6cd",
       "metadata": {
         "type": "guide",
         "title": "Use the .NET lifecycle client",
@@ -8101,7 +8234,7 @@
     {
       "id": "studio/drive-from-claude-desktop",
       "path": "studio/drive-from-claude-desktop.md",
-      "documentDigest": "sha256:e780a0c56b65d40a4730794ae0b6fd27147655ba01cb35d65838e314c0a6711a",
+      "documentDigest": "sha256:a38bbac01874ce137b2042544e2654458a349569bf3ac67e2c6958c2141b5d54",
       "metadata": {
         "type": "guide",
         "title": "Drive Studio from Claude Desktop",
@@ -8124,7 +8257,7 @@
     {
       "id": "studio/mcp-tools",
       "path": "studio/mcp-tools.md",
-      "documentDigest": "sha256:9ee4a1d29664b0f86c7c44323bfd789eed9d3ef570e9338a3eb6952831a0bac6",
+      "documentDigest": "sha256:514ea6aed4a258e3553056ddb7a30923949d2ed70749bc7f00a3bf198990235d",
       "metadata": {
         "type": "guide",
         "title": "Studio MCP tools",
@@ -8136,11 +8269,11 @@
     {
       "id": "studio/run-standalone",
       "path": "studio/run-standalone.md",
-      "documentDigest": "sha256:124009958840edfce372035c06f52bcdc2f18070381bf4a57578d45e7166542a",
+      "documentDigest": "sha256:eda5da4c5547d914efc15d8c05781decd04d5c3ac2513a7f815600250c830969",
       "metadata": {
         "type": "guide",
         "title": "Run Studio standalone",
-        "description": "There is no released standalone Studio bundle or container yet; embed from source or drive the server through MCP or an SDK instead."
+        "description": "Build and configure the self-hosted Studio Preview from source, or use a verified versioned release when available."
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/studio/run-standalone.md"
     },
@@ -8223,6 +8356,11 @@
     {
       "source": "README",
       "relation": "links_to",
+      "target": "get-started/with-ai"
+    },
+    {
+      "source": "README",
+      "relation": "links_to",
       "target": "guides/README"
     },
     {
@@ -8263,7 +8401,17 @@
     {
       "source": "README",
       "relation": "links_to",
+      "target": "guides/workflows/use-workflow-language"
+    },
+    {
+      "source": "README",
+      "relation": "links_to",
       "target": "reference/compatibility/clients"
+    },
+    {
+      "source": "README",
+      "relation": "links_to",
+      "target": "studio/README"
     },
     {
       "source": "cite-status",
@@ -8581,6 +8729,11 @@
       "target": "guides/workflows/README"
     },
     {
+      "source": "concepts/domain/README",
+      "relation": "links_to",
+      "target": "guides/workflows/use-workflow-language"
+    },
+    {
       "source": "concepts/domain/app",
       "relation": "links_to",
       "target": "concepts/domain/map"
@@ -8609,6 +8762,11 @@
       "source": "concepts/domain/approval",
       "relation": "links_to",
       "target": "guides/workflows/publish-share-map"
+    },
+    {
+      "source": "concepts/domain/approval",
+      "relation": "links_to",
+      "target": "studio/mcp-tools"
     },
     {
       "source": "concepts/domain/approval",
@@ -9608,17 +9766,17 @@
     {
       "source": "concepts/domain/publication",
       "relation": "links_to",
-      "target": "guides/connect/ai-agents-mcp"
-    },
-    {
-      "source": "concepts/domain/publication",
-      "relation": "links_to",
       "target": "guides/workflows/publish-share-map"
     },
     {
       "source": "concepts/domain/publication",
       "relation": "links_to",
       "target": "studio/README"
+    },
+    {
+      "source": "concepts/domain/publication",
+      "relation": "links_to",
+      "target": "studio/mcp-tools"
     },
     {
       "source": "concepts/domain/publication",
@@ -9844,6 +10002,11 @@
       "source": "concepts/domain/session",
       "relation": "links_to",
       "target": "guides/workflows/save-resume-map"
+    },
+    {
+      "source": "concepts/domain/session",
+      "relation": "links_to",
+      "target": "guides/workflows/use-workflow-language"
     },
     {
       "source": "concepts/domain/session",
@@ -10251,6 +10414,16 @@
       "target": "guides/workflows/design-studio"
     },
     {
+      "source": "concepts/domain/workflow-language",
+      "relation": "links_to",
+      "target": "guides/workflows/use-workflow-language"
+    },
+    {
+      "source": "concepts/domain/workflow-language",
+      "relation": "links_to",
+      "target": "studio/mcp-tools"
+    },
+    {
       "source": "concepts/ecosystem",
       "relation": "links_to",
       "target": "concepts/architecture"
@@ -10488,12 +10661,22 @@
     {
       "source": "get-started/linux-packages",
       "relation": "links_to",
+      "target": "get-started/quickstart"
+    },
+    {
+      "source": "get-started/linux-packages",
+      "relation": "links_to",
       "target": "get-started/windows-packages"
     },
     {
       "source": "get-started/linux-packages",
       "relation": "links_to",
       "target": "guides/deploy/docker-compose"
+    },
+    {
+      "source": "get-started/linux-packages",
+      "relation": "links_to",
+      "target": "reference/local-preview-artifact"
     },
     {
       "source": "get-started/quickstart",
@@ -10528,6 +10711,11 @@
     {
       "source": "get-started/quickstart",
       "relation": "links_to",
+      "target": "get-started/with-ai"
+    },
+    {
+      "source": "get-started/quickstart",
+      "relation": "links_to",
       "target": "guides/deploy/backup-and-restore"
     },
     {
@@ -10541,7 +10729,22 @@
       "target": "guides/deploy/troubleshooting"
     },
     {
+      "source": "get-started/quickstart",
+      "relation": "links_to",
+      "target": "reference/local-preview-artifact"
+    },
+    {
       "source": "get-started/registry-clients",
+      "relation": "links_to",
+      "target": "get-started/quickstart"
+    },
+    {
+      "source": "get-started/registry-clients",
+      "relation": "links_to",
+      "target": "reference/local-preview-artifact"
+    },
+    {
+      "source": "get-started/windows-packages",
       "relation": "links_to",
       "target": "get-started/quickstart"
     },
@@ -10559,6 +10762,151 @@
       "source": "get-started/windows-packages",
       "relation": "links_to",
       "target": "guides/deploy/docker-compose"
+    },
+    {
+      "source": "get-started/windows-packages",
+      "relation": "links_to",
+      "target": "reference/local-preview-artifact"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "continues_with",
+      "target": "guides/operate/README"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "continues_with",
+      "target": "guides/workflows/connect-publish-data"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "continues_with",
+      "target": "guides/workflows/design-studio"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "concepts/domain/studio-workspace"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "get-started/quickstart"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/connect/ai-agents-mcp"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/deploy/cloud-deployments"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/deploy/configuration"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/deploy/docker-compose"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/deploy/kubernetes"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/deploy/upgrade-and-rollback"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/migrate/from-geoserver"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/operate/README"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/publish/import-files"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/publish/import-from-arcgis-services"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/publish/publish-layers"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/publish/serve-existing-databases"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/style/style-maps"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/workflows/publish-share-map"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "guides/workflows/use-workflow-language"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "operator/geoprocessing-aws-batch"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "reference/admin-api/connections-and-layers"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "reference/configuration/data-sources/README"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "reference/local-preview-artifact"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "studio/README"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "links_to",
+      "target": "studio/mcp-tools"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "starts_with",
+      "target": "guides/workflows/install-configure"
+    },
+    {
+      "source": "get-started/with-ai",
+      "relation": "uses",
+      "target": "guides/workflows/use-workflow-language"
     },
     {
       "source": "gis/CLIENT_TEMPLATE_RUNBOOK",
@@ -10899,6 +11247,11 @@
       "source": "guides/connect/ai-agents-mcp",
       "relation": "links_to",
       "target": "guides/secure/authentication"
+    },
+    {
+      "source": "guides/connect/ai-agents-mcp",
+      "relation": "links_to",
+      "target": "guides/workflows/use-workflow-language"
     },
     {
       "source": "guides/connect/ai-agents-mcp",
@@ -12466,6 +12819,11 @@
       "target": "guides/workflows/save-resume-map"
     },
     {
+      "source": "guides/workflows/README",
+      "relation": "links_to",
+      "target": "guides/workflows/use-workflow-language"
+    },
+    {
       "source": "guides/workflows/analyze-features",
       "relation": "interface_contract",
       "target": "guides/connect/ai-agents-mcp"
@@ -12868,6 +13226,16 @@
     {
       "source": "guides/workflows/install-configure",
       "relation": "links_to",
+      "target": "get-started/quickstart"
+    },
+    {
+      "source": "guides/workflows/install-configure",
+      "relation": "links_to",
+      "target": "get-started/with-ai"
+    },
+    {
+      "source": "guides/workflows/install-configure",
+      "relation": "links_to",
       "target": "guides/deploy/cloud-deployments"
     },
     {
@@ -12909,6 +13277,11 @@
       "source": "guides/workflows/publish-share-map",
       "relation": "links_to",
       "target": "guides/workflows/compose-map"
+    },
+    {
+      "source": "guides/workflows/publish-share-map",
+      "relation": "links_to",
+      "target": "studio/mcp-tools"
     },
     {
       "source": "guides/workflows/publish-share-map",
@@ -13059,6 +13432,111 @@
       "source": "guides/workflows/save-resume-map",
       "relation": "uses",
       "target": "concepts/domain/session"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "distinguishes",
+      "target": "developer/spec-grammar/spec-grammar-v1.0"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "distinguishes",
+      "target": "guides/query-analyze/automate-workflows"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "explains",
+      "target": "concepts/domain/workflow-language"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "concepts/domain/intent-interpretation"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "concepts/domain/semantic-contracts"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "concepts/domain/session"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "concepts/domain/workflow-language"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "developer/spec-grammar/spec-grammar-v1.0"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "get-started/quickstart"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "get-started/with-ai"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "guides/connect/ai-agents-mcp"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "guides/operate/README"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "guides/query-analyze/automate-workflows"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "guides/workflows/README"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "guides/workflows/connect-publish-data"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "guides/workflows/design-studio"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "guides/workflows/install-configure"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "guides/workflows/publish-share-map"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "okf/README"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "links_to",
+      "target": "studio/mcp-tools"
+    },
+    {
+      "source": "guides/workflows/use-workflow-language",
+      "relation": "uses",
+      "target": "concepts/domain/intent-interpretation"
     },
     {
       "source": "internal/README",
@@ -15321,6 +15799,21 @@
       "target": "reference/protocols/ogc-apis"
     },
     {
+      "source": "reference/local-preview-artifact",
+      "relation": "links_to",
+      "target": "get-started/linux-packages"
+    },
+    {
+      "source": "reference/local-preview-artifact",
+      "relation": "links_to",
+      "target": "get-started/quickstart"
+    },
+    {
+      "source": "reference/local-preview-artifact",
+      "relation": "links_to",
+      "target": "get-started/windows-packages"
+    },
+    {
       "source": "reference/openapi-and-explorer",
       "relation": "links_to",
       "target": "developer/api-specs/README"
@@ -16011,9 +16504,29 @@
       "target": "reference/configuration/environment-variables"
     },
     {
+      "source": "studio/dotnet-lifecycle",
+      "relation": "links_to",
+      "target": "studio/mcp-tools"
+    },
+    {
+      "source": "studio/drive-from-claude-desktop",
+      "relation": "links_to",
+      "target": "studio/mcp-tools"
+    },
+    {
+      "source": "studio/run-standalone",
+      "relation": "links_to",
+      "target": "studio/drive-from-claude-desktop"
+    },
+    {
       "source": "studio/run-standalone",
       "relation": "links_to",
       "target": "studio/embed"
+    },
+    {
+      "source": "studio/run-standalone",
+      "relation": "links_to",
+      "target": "studio/sdk-js-studio-agent"
     },
     {
       "source": "user/console-catalog-discovery",
@@ -16027,10 +16540,6 @@
     }
   ],
   "unresolvedLinks": [
-    {
-      "source": "README",
-      "target": "internal/developer/source-quickstart"
-    },
     {
       "source": "archive/README",
       "target": "archive/contributor/README"
@@ -16192,7 +16701,7 @@
       "actions": 4,
       "dependencyOrder": [
         "inspect",
-        "propose",
+        "submit",
         "observe",
         "verify"
       ],
@@ -16437,6 +16946,15 @@
     {
       "workflow": "guides/workflows/install-configure",
       "action": "verify",
+      "operation": "honua_list_capabilities",
+      "kind": "mcp",
+      "validation": "documentation_reference_only",
+      "runtimeDiscoveryRequired": true,
+      "executionVerified": false
+    },
+    {
+      "workflow": "guides/workflows/install-configure",
+      "action": "verify",
       "operation": "honua_ops_health",
       "kind": "mcp",
       "validation": "documentation_reference_only",
@@ -16463,7 +16981,7 @@
     },
     {
       "workflow": "guides/workflows/publish-share-map",
-      "action": "propose",
+      "action": "submit",
       "operation": "honua_studio_propose_publication",
       "kind": "mcp",
       "validation": "documentation_reference_only",

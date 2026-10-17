@@ -14,7 +14,14 @@ Honua's agent endpoint is `POST /mcp`: JSON-RPC 2.0 over Streamable HTTP, MCP pr
 
 Which tool calls an agent may make is an edition boundary: reading is Community, changing anything is Pro, and organisational approval policy is Enterprise. See [What an agent can do in each edition](agent-capabilities-and-editions.md).
 
-**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)). Tool calls require an authenticated identity ([authentication](../secure/authentication.md)).
+**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md))
+and an authenticated identity for tool calls ([authentication](../secure/authentication.md)).
+An empty server is enough to connect an agent and configure services and layers.
+A [published layer](../publish/publish-layers.md) is needed when the requested task
+queries data. Before the server exists, an installation agent uses the authorized
+host's deployment tools; it connects to MCP after startup. Start with the
+[GIS workflow-language guide](../workflows/use-workflow-language.md) for the full
+setup, administration, operations, and realtime-map journeys.
 
 The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/templates/list`) are open; `tools/call` and `resources/read` require an authenticated principal plus the matching operator grant. Authentication accepts `X-API-Key` and OAuth bearer tokens (`Authorization: Bearer`); when both are present, the bearer token is evaluated first.
 
@@ -160,14 +167,27 @@ An applied style with no style layers draws nothing for that layer. The caption 
 
 ### Compose Studio drafts
 
-The nineteen `honua_studio_*` tools compose the same server-resident draft the Studio UI observes: create, read and update a draft; add and remove layers, widgets, controls and interaction bindings; set styles, visibility and the view; validate and preview; save an immutable version; reopen a version as a new draft; and propose a saved version for governed publication. The tool table is in [Studio MCP tools](../../studio/mcp-tools.md).
+The `honua_studio_*` tools compose the same server-resident draft the Studio UI observes: create, read and update a draft; add and remove layers, widgets, controls and interaction bindings; set styles, visibility and the view; validate and preview; save an immutable version; reopen a version as a new draft; and propose a saved version for governed publication. The tool table is in [Studio MCP tools](../../studio/mcp-tools.md).
 
 Two rules matter when driving them:
 
-- **Every mutation is generation-checked.** Pass the `generation` last returned by `honua_studio_get_draft` or `honua_studio_create_draft`. A stale value returns `failed_precondition` with the current generation; fetch the draft again and reconcile rather than resubmitting blindly. `honua_studio_validate_draft` and `honua_studio_preview_draft` are read-only and never advance the generation, so calling them between mutations is safe.
-- **Publication is not a canvas mutation.** `honua_studio_save_version` is the only way to obtain the `versionId` and `contentHash` that `honua_studio_propose_publication` requires. The proposal tool records intent and returns proposal, operation and audit identities; a separate authorized principal approves it, and the agent polls the returned `proposalUri` for the final status and active URL.
+- **Draft mutations that accept `generation` are generation-checked.** Pass the latest generation returned by a successful draft read or mutation. A stale value returns `failed_precondition` with the current generation; fetch the draft again and reconcile rather than resubmitting blindly. `honua_studio_validate_draft` and `honua_studio_preview_draft` are read-only and never advance the generation, so calling them between mutations is safe.
+- **Publication is not a canvas mutation.** Save the intended draft with
+  `honua_studio_save_version`; its `versionId` and `contentHash` are nested under
+  `version`. `honua_studio_get_version` can retrieve an existing saved version
+  and returns those fields at the top level. Submit the current saved item,
+  version, hash, route, and visibility to `honua_studio_propose_publication`.
+  An authorized admin receives `Published` and the share URL after completion.
+  Other callers receive `AwaitingApproval` and proposal/operation identities;
+  a separate authorized principal approves, and the agent follows the returned
+  `proposalUri` for the final status and active URL. Do not infer an approval
+  requirement or successful activation from the tool name alone.
 
-These tools authorize against their own operator-grant family (`StudioDraft`), separate from the package-review tools above, so composition access can be scoped independently. All nineteen are advertised unconditionally; a host that never composed Studio persistence still lists them but fails calls with a structured, retryable `unavailable` error.
+These tools authorize against their own operator-grant family (`StudioDraft`), separate from the package-review tools above, so composition access can be scoped independently. The Studio tool inventory is advertised independently of persistence readiness; a host that never composed Studio persistence still lists them but fails calls with a structured, retryable `unavailable` error.
+
+Realtime authoring is the intended design loop. See the
+[composition policy](../../studio/mcp-tools.md#composition-policy) for the current
+Enterprise and override cases that can still gate draft mutations.
 
 ### What is never advertised
 

@@ -12,10 +12,15 @@ clients and two-feature journey as the [Windows install](windows-packages.md).
 No source checkout, build or GitHub login is needed. This pre-cut profile
 selects `linux/amd64`; use an amd64 host for this rehearsal.
 
-The server image is the 2026.1 release channel `ghcr.io/honua-io/honua-server:2026.1-rc`
-(`ghcr.io/honua-io/honua-server:2026.1` at GA); only
-release promotion moves that tag. The exact digest is in the release's `customer-install-manifest.json`
-(`server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json)).
+For local evaluation, use the published preview image
+`ghcr.io/honua-io/honua-server:nightly-0e03bdd`, matching the
+[quickstart](quickstart.md). See the [preview artifact receipt](../reference/local-preview-artifact.md)
+for its identity and verification scope. A customer install manifest is not
+required for this preview.
+
+After release promotion, use `ghcr.io/honua-io/honua-server:2026.1-rc`
+(`ghcr.io/honua-io/honua-server:2026.1` at GA) with that release's published
+install manifest. Those release artifacts must exist before selecting that path.
 
 ## Create an isolated installation
 
@@ -45,7 +50,7 @@ import secrets
 from pathlib import Path
 Path('.env').write_text(
     'COMPOSE_PROJECT_NAME=' + Path.cwd().name + '\n'
-    'HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc\n'
+    'HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-0e03bdd\n'
     'HONUA_HTTP_PORT=18080\n'
     'POSTGRES_PASSWORD=' + secrets.token_hex(32) + '\n'
     'HONUA_ADMIN_PASSWORD=Aa1!' + secrets.token_hex(32) + '\n'

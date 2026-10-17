@@ -122,7 +122,7 @@ Use this map when deciding where code, issues, PRs, and cross-repo coordination 
 | `honua-server` | Public | Server runtime, protocol adapters, canonical pipelines, API governance, conformance/test infrastructure. |
 | `Honua.Server` | Private | Archived legacy server/reference implementation only. It is not an active development target; do not open issues or PRs there and do not copy code from it. Use it only to understand historical behavior. |
 | `honua-server-admin` | Private (archived) | **Archived/dead — not an active target.** Former Blazor WebAssembly + MudBlazor admin UI. All admin/console UI work has moved to `honua-console`. Do not open issues/PRs or route new work here. |
-| `honua-console` | Public | **Active admin/console UI home.** Hosts the Studio map builder and the styleId-keyed style editor (dual-mode: MapLibre/Maputnik + Esri-renderer `drawingInfo` authoring over `/ogc/styles`; ADR-0007/ADR-0048). |
+| `honua-console` | Public | Active administration UI: Catalog, Operate, Share, and retained package/style editors. The former approval-first Studio builders are legacy and targeted for retirement. Current realtime authoring lives in `honua-studio`. |
 | `honua-sdk-js` | Public | JavaScript/TypeScript SDKs for Honua, including the MCP server package. |
 | `honua-sdk-dotnet` | Public | .NET SDKs for Honua. |
 | `honua-sdk-python` | Public | Python SDK for Honua. |
@@ -143,7 +143,7 @@ Use this map when deciding where code, issues, PRs, and cross-repo coordination 
 | `honua-release` | Private | Platform release engineering: platform manifest, compatibility matrix, automated release train, cross-repo certification + E2E, BOM/release notes. **Release gates live here** — carry the `first-release-gate` label for anything that must block the first platform RC. |
 | `honua-evidence` | Public | Capability evidence aggregation ("every claim has a receipt"): joins tests, CITE, interop, benchmarks, and samples into `capability-matrix.v1.json` + the evidence index. |
 | `honua-samples` | Public | Runnable samples as executable evidence — capability-keyed manifests run in CI against a real server, published at samples.honua.io. |
-| `honua-studio` | Public | Natural-language-to-map-app BYOM builder (composed, versioned, reversible map applications). Distinct from the Studio map builder UI hosted in `honua-console`. |
+| `honua-studio` | Public | Realtime conversational map/app builder over the JavaScript SDK: typed composition updates the canvas as tools execute, with undo/redo and durable versions. This is the current Studio authoring model; do not revive the legacy Console builders. |
 | `honua-migrate` | Public | Unified migration CLI: assessment, planning, code migration, service import, reconciliation. Owns the arcpy/toolbox translation CLI surface. |
 | `honua-collect` | Public | Offline-first mobile field data collection (ELv2 open core). |
 | `honua-esri-compat` | Private | Automated Esri client compatibility verification (ArcGIS Pro/arcpy, ArcGIS API for Python, ArcGIS Maps SDK for .NET). Home for anything needing a licensed Esri environment. |
