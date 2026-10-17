@@ -29,10 +29,10 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 379,
-      "provingTestCount": 1386,
+      "entryCount": 387,
+      "provingTestCount": 1411,
       "maturity": {
-        "implemented": 376,
+        "implemented": 384,
         "preview": 2,
         "experimental": 1
       },
@@ -712,7 +712,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 50,
+      "provingTestCount": 51,
       "maturity": {
         "implemented": 2
       },
@@ -842,7 +842,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 6,
-      "provingTestCount": 168,
+      "provingTestCount": 171,
       "maturity": {
         "implemented": 6
       },
@@ -1124,7 +1124,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 31,
+      "provingTestCount": 33,
       "maturity": {
         "implemented": 2
       },
@@ -1178,7 +1178,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 79,
-      "provingTestCount": 260,
+      "provingTestCount": 261,
       "maturity": {
         "implemented": 79
       },
@@ -1276,7 +1276,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 15,
-      "provingTestCount": 77,
+      "provingTestCount": 78,
       "maturity": {
         "implemented": 15
       },
@@ -1373,10 +1373,10 @@
       "category": "Process",
       "edition": "Community",
       "status": null,
-      "entryCount": 16,
-      "provingTestCount": 215,
+      "entryCount": 18,
+      "provingTestCount": 231,
       "maturity": {
-        "implemented": 16
+        "implemented": 18
       },
       "noSurface": null,
       "cite": [],
@@ -1564,7 +1564,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 14,
+      "provingTestCount": 16,
       "maturity": {
         "implemented": 2
       },
@@ -1696,7 +1696,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 555,
+      "provingTestCount": 561,
       "maturity": {
         "implemented": 49
       },

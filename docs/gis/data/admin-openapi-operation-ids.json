@@ -39,6 +39,12 @@
       "path": "/observability/alerts/{eventId}/acknowledge"
     },
     {
+      "operationId": "activateGpProcessRelease",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/gp/process-releases/bindings/{process}/activate"
+    },
+    {
       "operationId": "addClientCertificateRevocation",
       "catalogOperationId": null,
       "method": "POST",
@@ -729,6 +735,12 @@
       "path": "/jobs/{jobId}/artifacts"
     },
     {
+      "operationId": "getConsoleJobDiagnostics",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/jobs/{jobId}/diagnostics"
+    },
+    {
       "operationId": "getConsoleJobLogs",
       "catalogOperationId": null,
       "method": "GET",
@@ -883,6 +895,18 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/import/geoservices/jobs/{jobId}"
+    },
+    {
+      "operationId": "getGpProcessBinding",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/gp/process-releases/bindings/{process}"
+    },
+    {
+      "operationId": "getGpProcessRelease",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/gp/process-releases/{digest}"
     },
     {
       "operationId": "getIdentityProviders",
@@ -1509,6 +1533,18 @@
       "path": "/import/geoservices/jobs"
     },
     {
+      "operationId": "listGpProcessBindings",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/gp/process-releases/bindings"
+    },
+    {
+      "operationId": "listGpProcessReleases",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/gp/process-releases"
+    },
+    {
       "operationId": "listInvestigations",
       "catalogOperationId": null,
       "method": "GET",
@@ -1783,6 +1819,12 @@
       "catalogOperationId": null,
       "method": "POST",
       "path": "/forms/packages/{formId}/versions/{packageVersion}/publish"
+    },
+    {
+      "operationId": "publishGpProcessRelease",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/gp/process-releases"
     },
     {
       "operationId": "publishLayer",
@@ -2167,6 +2209,12 @@
       "catalogOperationId": null,
       "method": "POST",
       "path": "/deploy/operations/{operationId}/submit"
+    },
+    {
+      "operationId": "submitGpProcessReleaseJob",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/gp/process-releases/bindings/{process}/jobs"
     },
     {
       "operationId": "submitNetworkTopologyRebuild",
