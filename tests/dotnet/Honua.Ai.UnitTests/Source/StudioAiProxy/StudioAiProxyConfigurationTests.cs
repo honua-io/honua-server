@@ -221,6 +221,51 @@ public sealed class StudioAiProxyConfigurationTests
         result.FailureMessage.Should().Contain("NotBefore is required to define the rotation overlap window");
     }
 
+    [UnitTheory]
+    [InlineData("aws:secretsmanager:honua/certification/transcript-signing")]
+    [InlineData("aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:signer-AbCdEf")]
+    [InlineData("aws:secretsmanager:honua/signer?versionId=12345678-1234-1234-1234-123456789012")]
+    [InlineData("AWS:SecretsManager:honua/signer?versionStage=AWSCURRENT")]
+    [InlineData("env://SIGNING_KEY")]
+    [InlineData("secret://transcript-signing-key")]
+    public void Validate_TranscriptSigningSecretReference_AcceptsSupportedReference(string reference)
+    {
+        var options = ConfigWith("bedrock", new StudioAiProxyProviderOptions
+        {
+            Kind = StudioAiProxyConfiguration.BedrockKind,
+            Model = "configured-model"
+        });
+        options.TranscriptSigning.KeyId = "active";
+        options.TranscriptSigning.PrivateKeyReference = reference;
+
+        var result = new StudioAiProxyConfigurationValidator().Validate(name: null, options);
+
+        result.Succeeded.Should().BeTrue(result.FailureMessage);
+    }
+
+    [UnitTheory]
+    [InlineData("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")]
+    [InlineData("aws:secretsmanager:")]
+    [InlineData("aws:secretsmanager:?versionId=12345678-1234-1234-1234-123456789012")]
+    [InlineData("aws:secretsmanager: signer")]
+    [InlineData("aws:secretsmanager:signer\n")]
+    [InlineData("aws:other-service:signer")]
+    public void Validate_TranscriptSigningInlineOrMalformedReference_Fails(string reference)
+    {
+        var options = ConfigWith("bedrock", new StudioAiProxyProviderOptions
+        {
+            Kind = StudioAiProxyConfiguration.BedrockKind,
+            Model = "configured-model"
+        });
+        options.TranscriptSigning.KeyId = "active";
+        options.TranscriptSigning.PrivateKeyReference = reference;
+
+        var result = new StudioAiProxyConfigurationValidator().Validate(name: null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("must be a secret reference, not inline key material");
+    }
+
     private static StudioAiProxyConfiguration ConfigWith(string name, StudioAiProxyProviderOptions provider) => new()
     {
         Enabled = true,
