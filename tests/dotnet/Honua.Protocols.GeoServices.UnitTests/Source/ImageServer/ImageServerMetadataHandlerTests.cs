@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -442,6 +443,168 @@ public class ImageServerMetadataHandlerTests
         tileInfo!.Lods.Should().HaveCount(19);
         tileInfo.Lods[^1].Level.Should().Be(18);
     }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_RestCatalogFields_MatchSoapGetFieldsAndAllowedFields()
+    {
+        // ArcPy lists and cursors an ImageServer catalog from SOAP GetFields /
+        // AllowedFields; they must describe the same catalog REST advertises.
+        SetupSuccessfulMetadata();
+
+        var result = await _handler.GetServiceInfoAsync(CreateImageServerContext(), 1);
+
+        var restFields = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>()
+            .Which.Value!.Fields!;
+        var soapFields = ImageServerSoapEndpoints.BuildFields(4326)
+            .Descendants("Field")
+            .Select(static field => (
+                Name: field.Element("Name")!.Value,
+                Type: field.Element("Type")!.Value,
+                HasGeometryDef: field.Element("GeometryDef") is not null))
+            .ToArray();
+
+        soapFields.Where(static field => field.Name != "Shape").Select(static field => (field.Name, field.Type))
+            .Should().Equal(restFields.Select(static field => (field.Name, field.Type)));
+        soapFields.Select(static field => field.Name).Take(2).Should().Equal("OBJECTID", "Shape");
+        soapFields.Should().ContainSingle(static field => field.HasGeometryDef)
+            .Which.Should().Be(("Shape", "esriFieldTypeGeometry", true));
+        ImageServerSoapEndpoints.SoapCatalogFieldNames()
+            .Should().Equal(soapFields.Select(static field => field.Name));
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_TemporalHintsAbsentFromCatalog_AreNotAdvertised()
+    {
+        var handler = CreateHandler(new MetadataV2ResourceTemporal
+        {
+            StartTimeField = "timestamp",
+            EndTimeField = "event_date",
+        });
+        SetupSuccessfulMetadata();
+
+        var result = await handler.GetServiceInfoAsync(CreateImageServerContext(), 1);
+
+        result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>()
+            .Which.Value!.TimeInfo.Should().BeNull(
+                "timestamp/event_date are not raster-catalog fields and no raster has an acquisition date");
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_CatalogTemporalHints_AreAdvertisedByCanonicalName()
+    {
+        var handler = CreateHandler(new MetadataV2ResourceTemporal
+        {
+            StartTimeField = "acquisitiondate",
+            EndTimeField = "timestamp",
+        });
+        SetupSuccessfulMetadata();
+
+        var result = await handler.GetServiceInfoAsync(CreateImageServerContext(), 1);
+
+        var timeInfo = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>()
+            .Which.Value!.TimeInfo;
+        timeInfo.Should().NotBeNull();
+        timeInfo!.StartTimeField.Should().Be("AcquisitionDate");
+        timeInfo.EndTimeField.Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData("timestamp", "event_date", null, false, null, null, null)]
+    [InlineData("timestamp", "event_date", null, true, "AcquisitionDate", null, null)]
+    [InlineData("Name", "BandCount", "name", false, null, null, null)]
+    [InlineData("ACQUISITIONDATE", "createdat", "name", false, "AcquisitionDate", "CreatedAt", "Name")]
+    [InlineData(null, null, null, true, "AcquisitionDate", null, null)]
+    [InlineData("created_at", "acquisition_date", null, false, "CreatedAt", null, null)]
+    [InlineData("timestamp", "CreatedAt", "Name", false, null, null, null)]
+    [InlineData("timestamp", "CreatedAt", null, true, "AcquisitionDate", "CreatedAt", null)]
+    [Operation(Operations.GetServiceInfo)]
+    public void CatalogTime_AdvertisesOnlyFieldsPresentInSoapAndRestCatalog(
+        string? startHint,
+        string? endHint,
+        string? trackHint,
+        bool hasAcquisitionDate,
+        string? expectedStart,
+        string? expectedEnd,
+        string? expectedTrack)
+    {
+        // SOAP GetServiceInfo (StartTimeFieldName/EndTimeFieldName) and REST timeInfo
+        // both resolve through ImageServerCatalogTime.
+        var raster = CreateTestRasterInfo() with
+        {
+            AcquisitionDate = hasAcquisitionDate ? DateTimeOffset.UnixEpoch.AddDays(1) : null,
+        };
+
+        var time = ImageServerCatalogTime.Resolve((startHint, endHint, trackHint), [raster]);
+
+        if (expectedStart is null && expectedEnd is null)
+        {
+            time.Should().BeNull();
+            return;
+        }
+
+        time.Should().NotBeNull();
+        time!.StartTimeField.Should().Be(expectedStart);
+        time.EndTimeField.Should().Be(expectedEnd);
+        time.TrackIdField.Should().Be(expectedTrack);
+        var soapFields = ImageServerSoapEndpoints.SoapCatalogFieldNames().ToArray();
+        new[] { time.StartTimeField, time.EndTimeField, time.TrackIdField }
+            .Where(static name => name is not null)
+            .Should().OnlyContain(name => soapFields.Contains(name));
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void SoapCatalogFields_ApplyCallerFieldMasksLikeCatalogQuery()
+    {
+        // ImageServerCatalogQueryHandler drops masked fields from the RecordSet
+        // schema; SOAP GetFields/AllowedFields must not advertise them either.
+        ImmutableArray<string> masked = ["centerx", "AcquisitionDate"];
+
+        var soapNames = ImageServerSoapEndpoints.BuildFields(4326, masked)
+            .Descendants("Field")
+            .Select(static field => field.Element("Name")!.Value)
+            .ToArray();
+
+        soapNames.Should().NotContain(["CenterX", "AcquisitionDate"]);
+        soapNames.Where(static name => name != "Shape").Should().Equal(
+            ImageServerCatalogQueryHandler.BuildCatalogFields(maskedFields: masked).Select(static field => field.Name));
+        ImageServerSoapEndpoints.SoapCatalogFieldNames(masked).Should().Equal(soapNames);
+        ImageServerSoapEndpoints.SoapCatalogFieldNames().Should().Contain(["CenterX", "AcquisitionDate"]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void CatalogTime_MaskedStartField_IsNotAdvertised()
+    {
+        var raster = CreateTestRasterInfo() with { AcquisitionDate = DateTimeOffset.UnixEpoch.AddDays(1) };
+
+        ImageServerCatalogTime.Resolve(("AcquisitionDate", null, null), [raster], ["acquisitiondate"])
+            .Should().BeNull("a masked field is absent from the advertised SOAP catalog fields");
+        var time = ImageServerCatalogTime.Resolve(("AcquisitionDate", "CreatedAt", null), [raster], ["CreatedAt"]);
+        time.Should().NotBeNull();
+        time!.StartTimeField.Should().Be("AcquisitionDate");
+        time.EndTimeField.Should().BeNull("CreatedAt is masked for this caller");
+    }
+
+    private ImageServerMetadataHandler CreateHandler(MetadataV2ResourceTemporal temporal)
+        => new(
+            new TestMetadataV2GraphBuilder()
+                .AddResource("resource-1", "test-layer", MetadataV2ResourceType.RasterDataset, temporal: temporal)
+                .AddService("service-1", "image-svc-1", protocols: [ServiceProtocols.ImageServer])
+                .AddPublication(
+                    "publication-1",
+                    "service-1",
+                    "resource-1",
+                    layerIndex: 1,
+                    serviceLocalId: "test-layer",
+                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                .BuildProvider(),
+            _rasterStore,
+            _multidimensionalInfoBuilder,
+            NullLogger<ImageServerMetadataHandler>.Instance);
 
     private DefaultHttpContext CreateImageServerContext(
         ImageServerTileMetadataOptions? tileMetadataOptions = null)

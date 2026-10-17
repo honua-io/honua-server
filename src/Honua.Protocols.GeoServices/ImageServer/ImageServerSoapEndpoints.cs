@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -356,11 +357,13 @@ internal static partial class ImageServerSoapEndpoints
         }
 
         var srid = service.Extent!.Value.Srid ?? SpatialConstants.DefaultSrid;
+        var maskedFields = await ReadCatalogMasksAsync(
+            request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
         return CreateSoapResponse(
             request.SoapNamespace,
             request.OperationNamespace,
             "GetFieldsResponse",
-            BuildFields(srid));
+            BuildFields(srid, maskedFields));
     }
 
     private static async Task<IResult> HandleGetViewAsync(
@@ -431,12 +434,15 @@ internal static partial class ImageServerSoapEndpoints
 
         var (pixelSizeX, pixelSizeY) = ImageServerKeyPropertiesHandler.ComputePixelSizes(referenceRaster);
         XNamespace xsi = XmlSchemaInstanceNamespace;
+        var maskedFields = await ReadCatalogMasksAsync(
+            request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
         var extras = await BuildServiceInfoExtrasAsync(
             request.HttpContext,
             service.Resolution.LayerId,
             rasters,
             service.Resolution.MergeStrategy,
             request.SoapNamespace,
+            maskedFields,
             cancellationToken).ConfigureAwait(false);
         if (extras.Error is not null)
         {
@@ -466,7 +472,7 @@ internal static partial class ImageServerSoapEndpoints
             new XElement("MaxNCols", MaxImageDimension),
             new XElement("MaxNRows", MaxImageDimension),
             new XElement("ServiceSourceType", "esriImageServiceSourceTypeMosaicDataset"),
-            new XElement("AllowedFields", "OBJECTID,Shape,Name"),
+            new XElement("AllowedFields", string.Join(',', SoapCatalogFieldNames(maskedFields))),
             new XElement("AllowedCompressions", "None"),
             new XElement("AllowedMosaicMethods", ImageServerMosaicRule.AllowedMosaicMethods),
             new XElement("MaxRecordCount", 1000),
@@ -1243,7 +1249,32 @@ internal static partial class ImageServerSoapEndpoints
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    private static XElement BuildFields(int srid)
+    /// <summary>
+    /// SOAP catalog field names: the neutral catalog schema
+    /// (<see cref="ImageServerCatalogFields.Schema"/>) that REST metadata and query
+    /// also project, minus the caller's field masks, with the footprint <c>Shape</c>
+    /// geometry field after the OID, as Esri mosaic catalogs list it.
+    /// GetFields, AllowedFields and QueryRasterCatalog therefore describe one schema.
+    /// </summary>
+    internal static IEnumerable<string> SoapCatalogFieldNames(ImmutableArray<string> maskedFields = default)
+        => SoapCatalogFields(maskedFields).Select(static field => field.Name);
+
+    private static IEnumerable<Field> SoapCatalogFields(ImmutableArray<string> maskedFields)
+    {
+        var catalog = ImageServerCatalogFields.Schema(maskedFields);
+        foreach (var field in catalog.Where(static field => field.Type == "esriFieldTypeOID"))
+        {
+            yield return field;
+        }
+
+        yield return new Field { Name = "Shape", Type = "esriFieldTypeGeometry", Alias = "Shape", Nullable = true };
+        foreach (var field in catalog.Where(static field => field.Type != "esriFieldTypeOID"))
+        {
+            yield return field;
+        }
+    }
+
+    internal static XElement BuildFields(int srid, ImmutableArray<string> maskedFields = default)
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
         return new XElement(
@@ -1252,39 +1283,9 @@ internal static partial class ImageServerSoapEndpoints
             new XElement(
                 "FieldArray",
                 new XAttribute(xsi + "type", "tns:ArrayOfField"),
-                BuildField("OBJECTID", "esriFieldTypeOID", false, 4, required: true),
-                BuildField("Shape", "esriFieldTypeGeometry", true, 0, required: true, geometryDef: BuildGeometryDef(srid, srid)),
-                BuildField("Name", "esriFieldTypeString", true, 255, required: false)));
-    }
-
-    private static XElement BuildField(
-        string name,
-        string type,
-        bool nullable,
-        int length,
-        bool required,
-        XElement? geometryDef = null)
-    {
-        XNamespace xsi = XmlSchemaInstanceNamespace;
-        var field = new XElement(
-            "Field",
-            new XAttribute(xsi + "type", "tns:Field"),
-            new XElement("Name", name),
-            new XElement("Type", type),
-            new XElement("IsNullable", nullable),
-            new XElement("Length", length),
-            new XElement("Precision", 0),
-            new XElement("Scale", 0),
-            new XElement("Required", required),
-            new XElement("Editable", false));
-
-        if (geometryDef is not null)
-        {
-            field.Add(geometryDef);
-        }
-
-        field.Add(new XElement("AliasName", name), new XElement("ModelName", name));
-        return field;
+                SoapCatalogFields(maskedFields).Select(field => BuildCatalogField(
+                    field,
+                    field.Type == "esriFieldTypeGeometry" ? BuildGeometryDef(srid, srid) : null))));
     }
 
     private static XElement? BuildDoubleArray(string name, IEnumerable<double> values)
