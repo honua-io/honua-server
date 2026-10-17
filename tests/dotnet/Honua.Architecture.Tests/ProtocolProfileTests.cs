@@ -210,6 +210,7 @@ public sealed class ProtocolProfileTests
         ProtocolProfile.IncludesGrpc.Should().BeTrue();
         ProtocolProfile.IncludesMcp.Should().BeTrue();
         ProtocolProfile.IsCapabilityCompiled("serve.geoservices-featureserver").Should().BeTrue();
+        ProtocolProfile.IsCapabilityCompiled("sync.offline").Should().BeTrue();
         ProtocolProfile.IsCapabilityCompiled("query.features").Should().BeTrue();
     }
 
@@ -218,7 +219,13 @@ public sealed class ProtocolProfileTests
     {
         ProtocolProfile.ValidateRuntime(Config());
         ProtocolProfile.ValidateRuntime(Config(("HONUA_PROTOCOL_PROFILE", "all")));
-        ProtocolProfile.ValidateRuntime(Config(("Protocols:Enabled", "odata,geoservices")));
+        ProtocolProfile.ValidateRuntime(Config((
+            "Protocols:Enabled",
+            "geoservices,ogc-api,ogc-classic,odata,stac,sensorthings,scene,grpc,mcp")));
+
+        var narrowed = () => ProtocolProfile.ValidateRuntime(Config(("Protocols:Enabled", "odata,geoservices")));
+        narrowed.Should().Throw<InvalidOperationException>()
+            .WithMessage("*omits compiled module*narrowed allowlist*");
 
         var mismatch = () => ProtocolProfile.ValidateRuntime(Config(("HONUA_PROTOCOL_PROFILE", "gsr")));
         mismatch.Should().Throw<InvalidOperationException>()

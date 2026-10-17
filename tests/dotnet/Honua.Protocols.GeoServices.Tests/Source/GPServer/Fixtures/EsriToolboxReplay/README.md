@@ -115,7 +115,7 @@ On 2026-09-19 the existing fixture was restarted on NativeAOT source
 `d1fc139a64ce33c817bd927bacb2103714221515`, image
 `sha256:4bac230b40b0b07e396af54e2fc801420d2957bb31a6b6dafb3d402a8444d350`.
 This nightly contains the local-name SOAP argument binding and site-root fixes.
-The [fixture evidence](../../../../../../../docs/internal/evidence/gp-desktop-fixture-d1fc139/README.md#replay-evidence-on-this-nightly)
+The [fixture evidence](../../../../../../../docs/internal/evidence/gp-desktop-fixture-d1fc139/README.md#replay-evidence)
 records readiness, the earlier failed client run, and the fresh passing replays.
 
 | Receipt | Proof |

@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
@@ -3138,7 +3139,7 @@ internal sealed partial class FeatureServerQueryHandler(
             fieldTypes[field.Name] = field.Type;
         }
 
-        var terms = HavingConjunctionRegex().Split(having);
+        var terms = SplitHavingConjunctions(having);
         var parsed = new List<HavingCondition>();
 
         foreach (var term in terms.Select(rawTerm => rawTerm.Trim()))
@@ -3707,10 +3708,72 @@ internal sealed partial class FeatureServerQueryHandler(
     }
 
     // Splits a having expression on the boolean AND conjunction (case-insensitive,
-    // word-bounded). OR is intentionally unsupported; aggregate group filters are
-    // conjunctive in the Esri contract.
-    [GeneratedRegex(@"\s+AND\s+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex HavingConjunctionRegex();
+    // with whitespace on both sides). Quoted literals stay intact, including a
+    // doubled quote escape and the letters AND inside the literal. OR is
+    // intentionally unsupported; aggregate group filters are conjunctive in the
+    // Esri contract.
+    private static List<string> SplitHavingConjunctions(string having)
+    {
+        var parts = new List<string>();
+        var current = new StringBuilder();
+        var inQuotes = false;
+        for (var i = 0; i < having.Length; i++)
+        {
+            var c = having[i];
+            if (c == '\'')
+            {
+                current.Append(c);
+                if (inQuotes && i + 1 < having.Length && having[i + 1] == '\'')
+                {
+                    current.Append('\'');
+                    i++;
+                    continue;
+                }
+
+                inQuotes = !inQuotes;
+                continue;
+            }
+
+            if (!inQuotes && IsHavingAndAt(having, i))
+            {
+                parts.Add(current.ToString());
+                current.Clear();
+                i += 3;
+                while (i < having.Length && char.IsWhiteSpace(having[i]))
+                {
+                    i++;
+                }
+
+                i--;
+                continue;
+            }
+
+            current.Append(c);
+        }
+
+        if (current.Length > 0)
+        {
+            parts.Add(current.ToString());
+        }
+
+        return parts;
+    }
+
+    private static bool IsHavingAndAt(string text, int index)
+    {
+        if (index == 0 || !char.IsWhiteSpace(text[index - 1]))
+        {
+            return false;
+        }
+
+        if (index + 4 > text.Length)
+        {
+            return false;
+        }
+
+        return text.AsSpan(index, 3).Equals("AND", StringComparison.OrdinalIgnoreCase)
+            && char.IsWhiteSpace(text[index + 3]);
+    }
 
     // Matches one 'AGG(field) <op> value' term. The value is a number, a quoted
     // string, or a date/time literal. It is validated against the statistic type
