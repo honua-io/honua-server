@@ -8,7 +8,7 @@
   "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
-  "fixtureRevision": "sha256:bb5ab167b8c29a958ca1307397a47cc7c513f8bf23dfc7a3ed8e1aacc180fe64",
+  "fixtureRevision": "sha256:c6266e3f5a8d9730a0d8ae346dea65eae3d2a5504aef0bb58dd1aa25d0b3638d",
   "serverConfigRevision": "sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a",
   "authPolicyRevision": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
   "digestAlgorithms": {
@@ -59,7 +59,7 @@
     {
       "path": "tests/seed/client-compat-auth-wave1.yaml",
       "role": "fixture",
-      "sha256": "sha256:ff855ed5e097b6eeadefdb07ab7cf7a44aaeb8bcccb8f0f1aa4f60074a699e28",
+      "sha256": "sha256:2881eff49b2e90d385ff70406bdf3a195fd2543555570eb093e8de19b5067bc4",
       "purpose": "Certification auth breadth seed: protected vector and WMS mirrors used for API-key and OIDC bearer parity against the anonymous baselines."
     },
     {

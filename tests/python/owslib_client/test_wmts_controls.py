@@ -56,7 +56,8 @@ def test_authored_seed_binds_oracle_coordinates_and_style():
     assert '"circle-color":"#2D69A5"' in seed
     assert '"circle-radius":4' in seed
     protected = (root / "tests/seed/client-compat-auth-wave1.yaml").read_text()
-    assert "SET maplibre_style = public_layer.maplibre_style" in protected
+    assert "jsonb_set(public_layer.maplibre_style" in protected
+    assert '"/tiles/2010/{z}/{x}/{y}.mvt"' in protected
     assert "layer_id = 2010 AND public_layer.layer_id = 2000" in protected
 
 

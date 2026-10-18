@@ -223,6 +223,37 @@ def test_auth02_credential_grants_access(protected_wmts: WebMapTileService, auth
     )
 
 
+@pytest.mark.parametrize("auth_mode", AUTHENTICATED_MODES, ids=lambda mode: mode.value)
+def test_protected_style_keeps_vector_tiles_on_protected_layer(
+        base_url: str, auth_mode: AuthMode) -> None:
+    """Fixture invariant only; raw HTTP checks earn no canonical-client credit."""
+    credentials = AuthCredentials.from_environment()
+    headers = credentials.headers(auth_mode)
+    layer = os.getenv("HONUA_CERT_RASTER_LAYER_ID", "2010")
+    response = requests.get(f"{base_url}/api/styles/{layer}.json", headers=headers, timeout=15)
+    assert response.status_code == 200
+    style = response.json()
+    source_id = f"layer-{layer}"
+    assert set(style["sources"]) == {source_id}
+    source = style["sources"][source_id]
+    assert source["type"] == "vector"
+    assert source["tiles"] == [f"{base_url}/tiles/{layer}/{{z}}/{{x}}/{{y}}.mvt"]
+    assert len(style["layers"]) == 1
+    circle = style["layers"][0]
+    assert circle["id"] == f"layer-{layer}-circle"
+    assert circle["source"] == source_id and circle["source-layer"] == "layer"
+    assert circle["paint"] == {"circle-radius": 4, "circle-color": "#2D69A5",
+                               "circle-opacity": 1, "circle-stroke-width": 0}
+    row, column = fixture_tile("WebMercatorQuad", 14)
+    tile_url = source["tiles"][0].format(z=14, x=column, y=row)
+    for denied_headers in ({}, credentials.negative_headers("wrong-api-key")):
+        denied = requests.get(tile_url, headers=denied_headers, timeout=15)
+        assert denied.status_code == 401, "Protected style must not lead to anonymous public tiles"
+    tile = requests.get(tile_url, headers=headers, timeout=15)
+    assert tile.status_code == 200 and tile.content
+    assert tile.headers["Content-Type"].split(";", 1)[0] == "application/vnd.mapbox-vector-tile"
+
+
 # ---------------------------------------------------------------------------
 # DISC
 # ---------------------------------------------------------------------------
