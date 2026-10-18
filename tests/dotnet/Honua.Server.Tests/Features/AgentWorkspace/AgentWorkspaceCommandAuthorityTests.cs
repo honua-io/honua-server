@@ -87,9 +87,10 @@ public sealed class AgentWorkspaceCommandAuthorityTests
     }
 
     [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task MembershipOrJournalChangeDuringHandleReadCannotProjectEarlierAuthorizedReceipt(bool changeJournal)
+    [InlineData("membership")]
+    [InlineData("journal")]
+    [InlineData("deployment-target")]
+    public async Task MembershipJournalOrDeploymentChangeDuringHandleReadCannotProjectEarlierAuthorizedReceipt(string change)
     {
         var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "human-1")], "Bearer");
         CanonicalSecurityActor.StampAuthorityClaims(identity);
@@ -115,14 +116,53 @@ public sealed class AgentWorkspaceCommandAuthorityTests
         context.Request.RouteValues["commandId"] = "known";
         var pending = AgentWorkspaceEndpoints.GetCommand(context, workspace);
         pending.IsCompleted.Should().BeFalse();
-        if (changeJournal)
+        if (change == "journal")
             document = document with { Commands = new(document.Commands, StringComparer.Ordinal)
             { ["known"] = original with { Fields = new() { ["table"] = "changed-during-read" } } } };
+        else if (change == "deployment-target") workspace.GetTargetIdAsync().Returns("target-2");
         else document = document with { Members = [] };
         delayed.SetResult(Handle("operation-1", "tenant-1"));
         ((IStatusCodeHttpResult)await pending).StatusCode.Should().Be(404);
         await workspace.DidNotReceive().SaveAsync(Arg.Any<AgentWorkspaceDocument>());
         await operations.DidNotReceive().SetAsync(Arg.Any<OperationHandle>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData("membership")]
+    [InlineData("turn")]
+    [InlineData("deployment-target")]
+    public async Task TurnResponseRechecksRetainedAuthorityAfterAssemblingMessages(string change)
+    {
+        var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "human-1")], "Bearer");
+        CanonicalSecurityActor.StampAuthorityClaims(identity);
+        var principal = new ClaimsPrincipal(identity);
+        var actor = CanonicalSecurityActor.Resolve(principal)!.ActorId;
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-1");
+        var captured = new AgentWorkspaceContext("workspace-1", "target-1", "view-1", 0, [], null, "tenant-1");
+        var turn = new AgentWorkspaceTurn("turn-1", actor, "original", captured, null);
+        var document = new AgentWorkspaceDocument
+        {
+            WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = actor, Members = [actor], TenantId = "tenant-1",
+            Turns = new() { [turn.TurnId] = turn }, Messages = [new("message-1", turn.TurnId, "user", "private original prompt")],
+        };
+        var workspace = Substitute.For<IAgentWorkspaceStore>();
+        workspace.GetTargetIdAsync().Returns("target-1");
+        var finalRead = new TaskCompletionSource<AgentWorkspaceDocument?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reads = 0;
+        workspace.GetAsync("workspace-1").Returns(_ => ++reads == 1 ? Task.FromResult<AgentWorkspaceDocument?>(document) : finalRead.Task);
+        using var services = new ServiceCollection().AddSingleton(tenant).BuildServiceProvider();
+        var context = new DefaultHttpContext { User = principal, RequestServices = services };
+        context.Request.RouteValues["workspaceId"] = "workspace-1";
+        context.Request.RouteValues["turnId"] = turn.TurnId;
+        var pending = AgentWorkspaceEndpoints.GetTurn(context, workspace);
+        pending.IsCompleted.Should().BeFalse();
+        if (change == "membership") document = document with { Members = [] };
+        else if (change == "turn") document = document with { Version = document.Version + 1, Turns = [] };
+        else workspace.GetTargetIdAsync().Returns("target-2");
+        finalRead.SetResult(document);
+        ((IStatusCodeHttpResult)await pending).StatusCode.Should().Be(404);
+        await workspace.DidNotReceive().SaveAsync(Arg.Any<AgentWorkspaceDocument>());
     }
 
     private static OperationHandle Handle(string id, string tenant) => new()

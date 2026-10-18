@@ -341,8 +341,9 @@ internal static class AgentWorkspaceEndpoints
                 next.Turns[request.TurnId] = turn with { LocalProcessSnapshot = snapshot };
             }
             await Save(store, next).ConfigureAwait(false);
+            next = next with { Version = next.Version + 1 };
         }
-        return await TurnResponse(context, next, next.Turns[request.TurnId]).ConfigureAwait(false);
+        return await TurnResponse(context, store, next, next.Turns[request.TurnId]).ConfigureAwait(false);
     }
 
     internal static async Task<IResult> GetTurn(HttpContext context, IAgentWorkspaceStore store)
@@ -350,10 +351,10 @@ internal static class AgentWorkspaceEndpoints
         var document = await Read(context, store).ConfigureAwait(false);
         var turnId = context.Request.RouteValues["turnId"]?.ToString() ?? string.Empty;
         if (!document.Turns.TryGetValue(turnId, out var turn)) return Results.NotFound();
-        return await TurnResponse(context, document, turn).ConfigureAwait(false);
+        return await TurnResponse(context, store, document, turn).ConfigureAwait(false);
     }
 
-    private static async Task<IResult> TurnResponse(HttpContext context, AgentWorkspaceDocument document, AgentWorkspaceTurn turn)
+    private static async Task<IResult> TurnResponse(HttpContext context, IAgentWorkspaceStore store, AgentWorkspaceDocument document, AgentWorkspaceTurn turn)
     {
         var projected = await Project(context, turn.Context, document).ConfigureAwait(false);
         if (projected.SelectedResources.Length != turn.Context.SelectedResources.Length || projected.Task != turn.Context.Task) return Results.Forbid();
@@ -363,8 +364,19 @@ internal static class AgentWorkspaceEndpoints
                 .ReadAsync(context.User, document.WorkspaceId, importTask.Id, importTask.Revision, importTask.ContentHash!, context.RequestAborted).ConfigureAwait(false)
             : null;
         if (projected.Task is { Kind: "dataset-import" } && importContext is null) return Results.Forbid();
+        var messages = await VisibleMessages(context, document).ConfigureAwait(false);
+        // Projection can await multiple external authorities. Do not expose the assembled
+        // snapshot after membership, deployment, or its retained turn changed meanwhile.
+        var latest = await store.GetAsync(document.WorkspaceId).ConfigureAwait(false);
+        var target = await store.GetTargetIdAsync().ConfigureAwait(false);
+        if (latest is null || latest.Version != document.Version || latest.OwnerId != document.OwnerId ||
+            latest.AgentActorId != document.AgentActorId || latest.TenantId != document.TenantId || target != document.TargetId ||
+            !AgentWorkspaceState.CanRead(latest, Actor(context), Tenant(context), target) || !latest.Turns.ContainsKey(turn.TurnId))
+            return Results.NotFound();
+        if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
+            return Results.Forbid();
         return Results.Ok(new AgentTurnResponse(turn.TurnId, "accepted", projected,
-            await VisibleMessages(context, document).ConfigureAwait(false), turn.Draft, turn.LocalProcessSnapshot, importContext));
+            messages, turn.Draft, turn.LocalProcessSnapshot, importContext));
     }
 
     private static async Task<AgentWorkspaceMessage[]> VisibleMessages(HttpContext context, AgentWorkspaceDocument document)
@@ -623,9 +635,10 @@ internal static class AgentWorkspaceEndpoints
             context.RequestServices.GetRequiredService<IOperationInstanceStore>(), context.RequestAborted,
             expectedTenantId: document.TenantId, requireExactTenant: true).ConfigureAwait(false);
         var latest = await store.GetAsync(document.WorkspaceId).ConfigureAwait(false);
+        var currentTarget = await store.GetTargetIdAsync().ConfigureAwait(false);
         var currentActor = Actor(context);
         if (latest is null || currentActor != command.ActorId || latest.OwnerId != document.OwnerId || latest.TenantId != document.TenantId ||
-            !AgentWorkspaceState.CanRead(latest, currentActor, Tenant(context), document.TargetId) ||
+            currentTarget != document.TargetId || !AgentWorkspaceState.CanRead(latest, currentActor, Tenant(context), currentTarget) ||
             !latest.Commands.TryGetValue(command.CommandId, out var retained) || !SameCommand(command, retained)) return Results.NotFound();
         if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
             return Results.Forbid();
