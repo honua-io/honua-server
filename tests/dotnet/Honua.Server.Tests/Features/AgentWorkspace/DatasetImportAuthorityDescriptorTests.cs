@@ -26,6 +26,9 @@ public sealed class DatasetImportAuthorityDescriptorTests
     [InlineData("membership")]
     [InlineData("target")]
     [InlineData("task")]
+    [InlineData("task-deleted-after-authorization")]
+    [InlineData("task-deadline-after-authorization")]
+    [InlineData("prepared-authority-after-authorization")]
     public async Task DescriptorNeverReturnsStaleAuthorityOrRevokedScopeAfterLookup(string change)
     {
         var keys = new InMemoryAdminApiKeyStore();
@@ -49,11 +52,24 @@ public sealed class DatasetImportAuthorityDescriptorTests
         var document = new AgentWorkspaceDocument
         {
             WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-1", AgentActorId = actor,
-            TenantId = "tenant-1", Members = [actor, "human-1"], DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
+            TenantId = "tenant-1", Members = [actor, "human-1"], DatasetImportTasks = new() { [task.TaskId] = [task] }, DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
         };
-        if (change == "prepared-deadline") document.DatasetImportPreparedAdmissions[task.TaskId] = new(task.TaskId, 1, task.ContentHash,
+        if (change is "prepared-deadline" or "prepared-authority-after-authorization") document.DatasetImportPreparedAdmissions[task.TaskId] = new(task.TaskId, 1, task.ContentHash,
             new string('c', 32), 1, binding.AuthorityFingerprint, actor, "human-1", binding.OriginatingTurnId, binding.OriginalTurnHash,
             policy, binding.PolicyContextFingerprint, snapshot, task.UploadAdmissionDeadline);
+        var authorizations = 0;
+        tasks.AuthorizeAsync(principal, "workspace-1", task.TaskId, 1, task.ContentHash, false, Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            if (++authorizations == 2)
+            {
+                if (change == "task-deleted-after-authorization") document = document with { DatasetImportTasks = [] };
+                else if (change == "task-deadline-after-authorization") document = document with { DatasetImportTasks = new()
+                    { [task.TaskId] = [task with { UploadAdmissionDeadline = task.UploadAdmissionDeadline.AddHours(1) }] } };
+                else if (change == "prepared-authority-after-authorization") document = document with { DatasetImportPreparedAdmissions = new()
+                    { [task.TaskId] = document.DatasetImportPreparedAdmissions[task.TaskId] with { AuthorityRevision = 2, AuthorityFingerprint = "changed" } } };
+            }
+            return allowed ? task : null;
+        });
         var store = Substitute.For<IAgentWorkspaceStore>();
         var target = "target-1";
         store.GetTargetIdAsync().Returns(_ => target);

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -36,6 +37,8 @@ internal sealed class DatasetImportAuthorityDescriptorReader(IAgentWorkspaceStor
         var target = await store.GetTargetIdAsync().ConfigureAwait(false);
         if (latest is null || latest.OwnerId != document.OwnerId || latest.AgentActorId != document.AgentActorId || target != document.TargetId ||
             !AgentWorkspaceState.CanRead(latest, actor, transport.RequestServices.GetService<ITenantContext>()?.TenantId, target) ||
+            !latest.DatasetImportTasks.TryGetValue(taskId, out var retainedTasks) ||
+            retainedTasks.SingleOrDefault(candidate => candidate.Revision == revision) is not { } retainedTask || retainedTask != task ||
             !latest.DatasetImportExecutionBindings.TryGetValue(taskId, out var retained) || retained.AuthorityRevision != binding.AuthorityRevision ||
             retained.AuthorityFingerprint != binding.AuthorityFingerprint || retained.PolicyContextFingerprint != binding.PolicyContextFingerprint ||
             retained.TaskId != binding.TaskId || retained.TaskRevision != binding.TaskRevision || retained.TaskContentHash != binding.TaskContentHash ||
@@ -50,13 +53,13 @@ internal sealed class DatasetImportAuthorityDescriptorReader(IAgentWorkspaceStor
     }
 
     private static bool SamePreparation(DatasetImportPreparedAdmission? original, DatasetImportPreparedAdmission? retained)
-        => original is null ? retained is null : retained is not null && original.TaskId == retained.TaskId &&
-            original.TaskRevision == retained.TaskRevision && original.TaskContentHash == retained.TaskContentHash &&
-            original.OperationId == retained.OperationId && original.AuthorityRevision == retained.AuthorityRevision &&
-            original.AuthorityFingerprint == retained.AuthorityFingerprint && original.PolicyContextFingerprint == retained.PolicyContextFingerprint &&
-            original.ExecutorActorId == retained.ExecutorActorId && original.InitiatingHumanActorId == retained.InitiatingHumanActorId &&
-            original.OriginatingTurnId == retained.OriginatingTurnId && original.OriginalTurnHash == retained.OriginalTurnHash &&
-            original.AcceptBefore == retained.AcceptBefore;
+    {
+        if (original is null) return retained is null;
+        if (retained is null) return false;
+        var metadata = AgentWorkspaceJsonContext.Default.GetTypeInfo(typeof(DatasetImportPreparedAdmission));
+        return metadata is not null && JsonSerializer.SerializeToUtf8Bytes(original, metadata).AsSpan()
+            .SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(retained, metadata));
+    }
 
     private async Task<DatasetImportTask?> AuthorizeAsync(ClaimsPrincipal caller, string workspaceId, string taskId,
         long revision, string hash, CancellationToken cancellationToken)
