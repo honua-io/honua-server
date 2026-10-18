@@ -86,4 +86,29 @@ public sealed class NativeEntryQualificationTests
         }
     }
 
+
+    [UnitTest]
+    public void Release_PublishesCompleteNonceAndRefusesStaleDestinationWithoutReplacingIt()
+    {
+        var directory = Path.Join(Path.GetTempPath(), $"honua-release-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var release = Path.Join(directory, "release");
+            var nonce = new string('b', 32);
+            var gate = new NativeEntryQualification(Path.Join(directory, "entry"), release, nonce, "/usr/bin/ogr2ogr");
+            gate.Release();
+            Assert.Equal(nonce, File.ReadAllText(release));
+            Assert.Single(Directory.GetFiles(directory));
+            File.WriteAllText(release, "stale");
+            Assert.Throws<IOException>(gate.Release);
+            Assert.Equal("stale", File.ReadAllText(release));
+            Assert.Single(Directory.GetFiles(directory));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
 }

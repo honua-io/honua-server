@@ -137,8 +137,33 @@ internal sealed class NativeEntryQualification
 
     internal void Release()
     {
-        using var stream = new FileStream(_release, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
-        stream.Write(System.Text.Encoding.ASCII.GetBytes(_nonce));
-        stream.Flush(flushToDisk: true);
+        var temporary = $"{_release}.{_nonce}.tmp";
+        var created = false;
+        try
+        {
+            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                created = true;
+                stream.Write(System.Text.Encoding.ASCII.GetBytes(_nonce));
+                stream.Flush(flushToDisk: true);
+            }
+            // The constructor can observe only the complete nonce. Never replace a
+            // stale release, and never expose a zero-length destination while writing.
+            File.Move(temporary, _release, overwrite: false);
+        }
+        finally
+        {
+            if (created)
+            {
+                try
+                {
+                    File.Delete(temporary);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    // Preserve the original release error; the runner kills/reaps the child.
+                }
+            }
+        }
     }
 }

@@ -811,6 +811,27 @@ class NativeEntryShimTests(unittest.TestCase):
         self.assertEqual(0, child.wait(timeout=5))
         self.assertEqual("main ran", self.effect.read_text())
 
+    def test_partial_temporary_nonce_is_not_observed_before_atomic_publication(self):
+        import time
+        child = self.start()
+        self.entry(child)
+        temporary = self.release.with_suffix(".pending")
+        with temporary.open("w") as stream:
+            stream.write(self.nonce[:4])
+            stream.flush()
+            os.fsync(stream.fileno())
+            time.sleep(0.15)
+            self.assertIsNone(child.poll())
+            self.assertFalse(self.effect.exists())
+            self.assertFalse(self.release.exists())
+            stream.write(self.nonce[4:])
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, self.release)  # atomic publication, no replacement
+        temporary.unlink()
+        self.assertEqual(0, child.wait(timeout=5))
+        self.assertEqual("main ran", self.effect.read_text())
+
     def test_cancelled_entry_child_ceases_without_running_main(self):
         child = self.start()
         self.entry(child)
