@@ -161,6 +161,25 @@ internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider service
         };
     }
 
+    public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
+        => Task.FromResult(new OperationStatus
+        {
+            OperationInstanceId = handle.OperationInstanceId,
+            OperationId = handle.OperationId,
+            CorrelationId = handle.CorrelationId,
+            AuditId = handle.AuditId,
+            ProposalId = handle.ProposalId,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            AuthorizationOutcome = handle.AuthorizationOutcome,
+            PolicyDecision = handle.PolicyDecision,
+            Status = handle.Status,
+            Result = handle.Result,
+            Reason = handle.Reason,
+            ResourceIds = handle.ResourceIds,
+            EvidenceRefs = handle.EvidenceRefs,
+        });
+
     private static string Required(OperationRequest request, string name) =>
         request.Parameters.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
             ? value : throw new GeoprocessingValidationException($"'{name}' is required.");
