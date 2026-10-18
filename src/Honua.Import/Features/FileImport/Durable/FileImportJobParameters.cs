@@ -35,6 +35,9 @@ internal static class FileImportJobParameters
     public const string ProposalId = "import.proposal_id";
     public const string OwnerActorId = "import.owner_actor_id";
     public const string TenantId = "import.tenant_id";
+    public const string AcceptanceId = "import.acceptance_id";
+    public const string AcceptanceIntent = "import.acceptance_intent_sha256";
+    public const string AcceptanceDeadline = "import.acceptance_deadline";
 
     /// <summary>Customer object URI (<c>s3://bucket/key</c>) read by the worker with the host identity.</summary>
     public const string ObjectStoreUri = "import.object_store_uri";
@@ -106,6 +109,13 @@ internal static class FileImportJobParameters
         AddIfPresent(parameters, ProposalId, request.ProposalId);
         AddIfPresent(parameters, OwnerActorId, request.Ownership?.OwnerActorId);
         AddIfPresent(parameters, TenantId, request.Ownership?.TenantId);
+        if (request.Acceptance is { } acceptance)
+        {
+            acceptance.Validate();
+            parameters[AcceptanceId] = acceptance.OperationId;
+            parameters[AcceptanceIntent] = acceptance.IntentSha256;
+            parameters[AcceptanceDeadline] = acceptance.AcceptBefore.ToString("O", CultureInfo.InvariantCulture);
+        }
         return parameters;
     }
 
@@ -166,8 +176,33 @@ internal static class FileImportJobParameters
 
         _ = long.TryParse(Get(parameters, FileSizeBytes), NumberStyles.Integer, CultureInfo.InvariantCulture, out fileSizeBytes);
 
+        ImportAcceptanceBinding? acceptance = null;
+        if (parameters.ContainsKey(AcceptanceId) || parameters.ContainsKey(AcceptanceIntent) || parameters.ContainsKey(AcceptanceDeadline))
+        {
+            if (Get(parameters, AcceptanceId) is not { } acceptanceId ||
+                Get(parameters, AcceptanceIntent) is not { } intent ||
+                !DateTimeOffset.TryParseExact(Get(parameters, AcceptanceDeadline), "O", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var deadline))
+            {
+                error = "The durable import acceptance binding is incomplete.";
+                return false;
+            }
+
+            acceptance = new ImportAcceptanceBinding(acceptanceId, intent, deadline);
+            try
+            {
+                acceptance.Validate();
+            }
+            catch (ArgumentException)
+            {
+                error = "The durable import acceptance binding is invalid.";
+                return false;
+            }
+        }
+
         request = new ImportRequest
         {
+            Acceptance = acceptance,
             Ownership = Get(parameters, OwnerActorId) is { } owner ? new(owner, Get(parameters, TenantId)) : null,
             CloudFileId = objectStoreUri is null ? cloudFileId : null,
             ObjectStoreUri = objectStoreUri,

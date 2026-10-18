@@ -36,6 +36,14 @@ public enum ImportLoadMode
 /// </summary>
 public sealed record ImportRequest
 {
+    /// <summary>
+    /// Server-issued durable acceptance binding, populated only by the canonical
+    /// coordinator after checking the frozen upload/task intent and current authority.
+    /// Ordinary upload IDs remain correlation values and do not enable replay.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ImportAcceptanceBinding? Acceptance { get; init; }
+
     /// <summary>Ownership captured by the accepting server, never bound from import form fields.</summary>
     public ImportOperationOwnership? Ownership { get; init; }
 

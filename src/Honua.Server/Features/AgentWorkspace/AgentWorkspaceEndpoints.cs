@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.AgentWorkspace.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -27,6 +28,9 @@ internal static class AgentWorkspaceEndpoints
     {
         services.AddSingleton<IAgentWorkspaceStore>(sp => new AgentWorkspaceStore(sp.GetService<IConnectionMultiplexer>(),
             sp.GetRequiredService<IConfiguration>()["AgentWorkspace:DeploymentId"]));
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<Honua.Core.Features.Import.Abstractions.IDatasetImportTaskProvider, DatasetImportTaskProvider>();
+        services.AddScoped<Honua.Core.Features.Import.Abstractions.IDatasetImportDestinationAuthorizer, DatasetImportDestinationAuthorizer>();
         services.AddScoped<IAgentWorkspaceTurnAuthorizer, AgentWorkspaceTurnAuthorizer>();
         services.AddHttpClient<ILocalProcessWorkspaceGateway, LocalProcessWorkspaceGateway>(client => client.Timeout = TimeSpan.FromSeconds(30))
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, UseProxy = false });
@@ -79,6 +83,7 @@ internal static class AgentWorkspaceEndpoints
                     AgentWorkspaceJsonContext.Default.AgentWorkspaceError, statusCode: StatusCodes.Status503ServiceUnavailable);
             }
         });
+        group.MapDatasetImportTasks();
         group.MapGet("/target", async (IAgentWorkspaceStore store) => Results.Ok(new AgentTargetResponse(await store.GetTargetIdAsync().ConfigureAwait(false))));
         group.MapPost("/devops/authorize", AuthorizeDevOps);
         group.MapPost("/workspaces", CreateWorkspace);
@@ -305,6 +310,7 @@ internal static class AgentWorkspaceEndpoints
     internal static async Task<IResult> UpdateContext(HttpContext context, IAgentWorkspaceStore store, UpdateAgentContext request)
     {
         var document = await Read(context, store).ConfigureAwait(false);
+        AgentWorkspaceCapturedContext.RequireOriginal(context, document, request.ViewId, request.ExpectedRevision);
         if (!await AgentWorkspaceResourceAuthorization.CanReadTaskAsync(context, request.Task, requireGeneration: true, workspace: document).ConfigureAwait(false)) return Results.Forbid();
         var next = AgentWorkspaceState.Update(document, request);
         // Only retain references the writer can actually see; re-evaluate for every reader too.
@@ -407,6 +413,7 @@ internal static class AgentWorkspaceEndpoints
     {
         var document = await Read(context, store).ConfigureAwait(false);
         if (request.Kind != "publish-layer" || !AgentWorkspaceState.IsIdentifier(request.ViewId)) throw new ArgumentException("Unknown draft kind or view.");
+        AgentWorkspaceCapturedContext.RequireOriginal(context, document, request.ViewId, request.ContextRevision);
         if (AgentWorkspaceState.Current(document, request.ViewId).Revision != request.ContextRevision) throw new AgentWorkspaceConflictException("The view changed.");
         if (document.Drafts.Count >= 128) throw new ArgumentException("Workspace draft limit reached.");
         var draft = new AgentWorkspaceDraft($"draft-{Guid.NewGuid():N}", 0, request.Kind,

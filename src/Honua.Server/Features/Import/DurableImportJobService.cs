@@ -80,6 +80,12 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
     public async Task<string> QueueImportAsync(ImportRequest request, long fileSize, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request.Acceptance?.Validate();
+        if (request.Acceptance is not null && !_decision.IsDurable)
+        {
+            throw new InvalidOperationException("A bound import acceptance requires a durable job runner.");
+        }
+
         switch (_decision.Mode)
         {
             case BackgroundImportRunnerMode.InProcess:
@@ -88,14 +94,46 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
                 throw new InvalidOperationException(ImportEndpoints.BackgroundImportUnavailableMessage);
         }
 
-        var jobId = Guid.NewGuid().ToString("N");
+        var jobId = request.Acceptance?.OperationId ?? Guid.NewGuid().ToString("N");
         var (queued, limits) = FileImportJobSubmission.CreateQueuedProgress(
             _scopeFactory, request, fileSize, jobId, _decision.Runner, _instanceId);
+        if (request.Acceptance is { } acceptance)
+        {
+            var existing = await _jobStore!.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            if (existing is not null)
+            {
+                RequireSameAcceptance(existing, request, fileSize);
+                return existing.OperationId;
+            }
+
+            // Upload sessions admit for at most one day, while execution receipts
+            // remain for seven. Expired unknown intents must never recreate a job
+            // whose receipt might already have been retired.
+            var now = DateTimeOffset.UtcNow;
+            if (acceptance.AcceptBefore <= now || acceptance.AcceptBefore > now.AddDays(1) ||
+                string.IsNullOrWhiteSpace(request.Ownership?.OwnerActorId))
+            {
+                throw new InvalidOperationException("The import acceptance binding is expired, unowned or outside its admission window.");
+            }
+        }
+
         await EnsureAdmittedAsync(limits, cancellationToken).ConfigureAwait(false);
         var job = BuildJobRecord(jobId, request, fileSize, _decision, DateTimeOffset.UtcNow);
 
+        if (request.Acceptance is { } bound && bound.AcceptBefore <= DateTimeOffset.UtcNow)
+        {
+            throw new InvalidOperationException("The import acceptance deadline has passed.");
+        }
+
         if (!await _jobStore!.TryCreateAsync(job, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
+            if (request.Acceptance is not null &&
+                await _jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false) is { } accepted)
+            {
+                RequireSameAcceptance(accepted, request, fileSize);
+                return accepted.OperationId;
+            }
+
             throw new InvalidOperationException($"Failed to create file-import execution job '{jobId}'.");
         }
 
@@ -150,6 +188,21 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
 
         Log.JobSubmitted(_logger, jobId, request.TableName, _decision.Runner, job.Spec.Backend);
         return jobId;
+    }
+
+    private static void RequireSameAcceptance(ExecutionJobRecord existing, ImportRequest request, long fileSize)
+    {
+        var expected = FileImportJobParameters.Build(request, fileSize);
+        // Runtime/backend resolution can append non-import parameters. Compare
+        // every immutable import input, including owner, tenant, source and audit
+        // lineage, and reject any additional import inputs on the original record.
+        var actual = existing.Spec.Parameters.Where(static pair =>
+            pair.Key.StartsWith("import.", StringComparison.Ordinal) && pair.Key != FileImportJobParameters.Runner).ToArray();
+        if (existing.Spec.Kind != ExecutionJobKind.FileImport || existing.OperationId != request.Acceptance!.OperationId ||
+            actual.Length != expected.Count || actual.Any(pair => !expected.TryGetValue(pair.Key, out var value) || value != pair.Value))
+        {
+            throw new ImportAcceptanceConflictException();
+        }
     }
 
     public async Task<ImportProgress?> GetProgressAsync(string jobId, CancellationToken cancellationToken = default)

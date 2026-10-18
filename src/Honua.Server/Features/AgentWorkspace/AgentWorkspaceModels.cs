@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.AgentWorkspace.Domain;
 
 namespace Honua.Server.Features.AgentWorkspace;
@@ -40,9 +41,16 @@ internal sealed record AgentWorkspaceDocument
     public Dictionary<string, AgentWorkspaceTurn> Turns { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, AgentWorkspaceCommand> Commands { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, AgentWorkflowAuthoringCommand> WorkflowAuthoringCommands { get; init; } = new(StringComparer.Ordinal);
+    public Dictionary<string, DatasetImportTask[]> DatasetImportTasks { get; init; } = new(StringComparer.Ordinal);
+    public Dictionary<string, DatasetImportTaskIntent> DatasetImportTaskIntents { get; init; } = new(StringComparer.Ordinal);
     public AgentWorkspaceMessage[] Messages { get; init; } = [];
     public AgentTaskReference? Task { get; init; }
 }
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record CreateDatasetImportTask(
+    [property: JsonRequired] string IntentId, [property: JsonRequired] string ViewId, [property: JsonRequired] long ContextRevision,
+    [property: JsonRequired] DatasetImportDestination Destination, [property: JsonRequired] DatasetImportSource Source,
+    [property: JsonRequired] DatasetImportTaskOptions Options);
 internal sealed record CreateAgentWorkspace([property: JsonRequired] string ViewId, string? TargetId = null);
 internal sealed record UpdateAgentContext(
     [property: JsonRequired] string ViewId, [property: JsonRequired] long ExpectedRevision, [property: JsonRequired] string TargetId,
@@ -72,6 +80,9 @@ internal sealed record AgentWorkspaceError(string Message);
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(AgentWorkspaceDocument))]
+[JsonSerializable(typeof(DatasetImportTask))]
+[JsonSerializable(typeof(CreateDatasetImportTask))]
+[JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(AgentWorkspaceContext))]
 [JsonSerializable(typeof(AgentWorkspaceDraft))]
 [JsonSerializable(typeof(CreateAgentWorkspace))]
