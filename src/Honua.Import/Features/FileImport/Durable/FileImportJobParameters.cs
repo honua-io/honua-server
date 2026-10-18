@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Import.Domain;
 
 namespace Honua.Import.FileImport.Durable;
@@ -41,6 +42,7 @@ internal static class FileImportJobParameters
     public const string StagedSourceETag = "import.staged_source_etag";
     public const string StagedSourceSha256 = "import.staged_source_sha256";
     public const string StagedSourceExpiresAt = "import.staged_source_expires_at";
+    public const string StagedTransfer = "import.staged_transfer";
 
     /// <summary>Customer object URI (<c>s3://bucket/key</c>) read by the worker with the host identity.</summary>
     public const string ObjectStoreUri = "import.object_store_uri";
@@ -87,6 +89,7 @@ internal static class FileImportJobParameters
                 throw new InvalidOperationException("The staged source binding must match the only durable input and its exact length.");
             }
         }
+        RequireTransferBinding(request.StagedSource, request.Acceptance, request.Ownership);
 
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -134,6 +137,8 @@ internal static class FileImportJobParameters
             parameters[StagedSourceETag] = stagedSource.ETag;
             parameters[StagedSourceSha256] = stagedSource.Sha256;
             AddIfPresent(parameters, StagedSourceExpiresAt, stagedSource.ExpiresAt?.ToString("O", CultureInfo.InvariantCulture));
+            if (stagedSource.Transfer is { } transfer)
+                parameters[StagedTransfer] = JsonSerializer.Serialize(transfer, ImportJsonContext.Default.ImportTransferProvenance);
         }
         return parameters;
     }
@@ -253,11 +258,34 @@ internal static class FileImportJobParameters
             }
         }
 
+        var ownership = Get(parameters, OwnerActorId) is { } owner ? new ImportOperationOwnership(owner, Get(parameters, TenantId)) : null;
+        if (parameters.ContainsKey(StagedTransfer))
+        {
+            if (stagedSource is null || Get(parameters, StagedTransfer) is not { Length: > 0 and <= 16384 } transferJson)
+            {
+                error = "The staged transfer provenance is missing or exceeds its bound.";
+                return false;
+            }
+            try
+            {
+                var transfer = JsonSerializer.Deserialize(transferJson, ImportJsonContext.Default.ImportTransferProvenance)
+                    ?? throw new ArgumentException("Missing transfer provenance.");
+                stagedSource = stagedSource with { Transfer = transfer };
+                stagedSource.Validate();
+                RequireTransferBinding(stagedSource, acceptance, ownership);
+            }
+            catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException)
+            {
+                error = "The staged transfer provenance does not match the accepted import.";
+                return false;
+            }
+        }
+
         request = new ImportRequest
         {
             Acceptance = acceptance,
             StagedSource = stagedSource,
-            Ownership = Get(parameters, OwnerActorId) is { } owner ? new(owner, Get(parameters, TenantId)) : null,
+            Ownership = ownership,
             CloudFileId = objectStoreUri is null ? cloudFileId : null,
             ObjectStoreUri = objectStoreUri,
             ObjectStoreETag = objectStoreETag,
@@ -282,6 +310,15 @@ internal static class FileImportJobParameters
             ProposalId = Get(parameters, ProposalId),
         };
         return true;
+    }
+
+    private static void RequireTransferBinding(ImportStagedSourceBinding? source, ImportAcceptanceBinding? acceptance,
+        ImportOperationOwnership? ownership)
+    {
+        if (source?.Transfer is not { } transfer) return;
+        if (acceptance is null || ownership is null || transfer.TaskContentHash != acceptance.IntentSha256 ||
+            transfer.OwnerActorId != ownership.OwnerActorId || transfer.TenantId != ownership.TenantId)
+            throw new InvalidOperationException("Transfer provenance must match accepted intent and ownership.");
     }
 
     private static string? Get(IReadOnlyDictionary<string, string> parameters, string key)

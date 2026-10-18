@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Import.Domain;
+
 namespace Honua.Import.FileImport.Resumable;
 
 /// <summary>
@@ -25,7 +27,7 @@ internal sealed class ImportScratchStorage
         _budget = budget;
     }
 
-    internal async Task<ImportScratchLease> AllocateAsync(ImportUploadSession session, string directory,
+    internal Task<ImportScratchLease> AllocateAsync(ImportUploadSession session, string directory,
         long maximumScratchBytes, CancellationToken cancellationToken = default)
     {
         RedisImportUploadStore.Validate(session);
@@ -34,11 +36,27 @@ internal sealed class ImportScratchStorage
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)),
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new ArgumentException("Scratch must use the directory bound to its storage budget.", nameof(directory));
-        if (maximumScratchBytes < 1 || session.TotalBytes > maximumScratchBytes)
+        return AllocateAsync(session.Id, session.Scope, session.TotalBytes, maximumScratchBytes, cancellationToken);
+    }
+
+    internal Task<ImportScratchLease> AllocateAsync(ImportTransferProvenance transfer, long bytes,
+        long maximumScratchBytes, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(transfer);
+        transfer.Validate();
+        return AllocateAsync(transfer.UploadId, new ImportUploadScope(transfer.OwnerActorId, transfer.TenantId,
+            transfer.TargetId, transfer.WorkspaceId, transfer.TaskId, transfer.TaskRevision), bytes, maximumScratchBytes, cancellationToken);
+    }
+
+    private async Task<ImportScratchLease> AllocateAsync(string uploadId, ImportUploadScope scope, long bytes,
+        long maximumScratchBytes, CancellationToken cancellationToken)
+    {
+        _ = RedisImportUploadStore.Key(uploadId);
+        RedisImportUploadStore.ValidateScope(scope);
+        if (maximumScratchBytes < 1 || bytes < 1 || bytes > maximumScratchBytes || bytes > RedisImportUploadStore.MaximumFileBytes)
             throw new InvalidOperationException("The source does not fit the worker scratch allowance.");
         var id = Guid.NewGuid().ToString("N");
-        var reservation = RedisImportStorageBudget.ForObject(session,
-            $"imports/resumable/{session.Id}/scratch-{id}", session.TotalBytes);
+        var reservation = new ImportStorageReservation(uploadId, scope, $"imports/resumable/{uploadId}/scratch-{id}", bytes);
         if (!await _budget.TryReserveAsync(reservation, cancellationToken).ConfigureAwait(false))
             throw new InvalidOperationException("The import scratch storage budget is exhausted.");
 
@@ -46,14 +64,14 @@ internal sealed class ImportScratchStorage
         // There is deliberately no expiry that could release a still-running writer.
         cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(_directory);
-        var path = Path.Join(_directory, $"honua-upload-{session.Id}-{id}.tmp");
+        var path = Path.Join(_directory, $"honua-upload-{uploadId}-{id}.tmp");
         var file = new FileStream(path, new FileStreamOptions
         {
             Mode = FileMode.CreateNew,
             Access = FileAccess.ReadWrite,
             Share = FileShare.None,
             Options = FileOptions.Asynchronous,
-            PreallocationSize = session.TotalBytes
+            PreallocationSize = bytes
         });
         return new ImportScratchLease(file, path, _budget, reservation);
     }

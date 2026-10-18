@@ -195,6 +195,7 @@ namespace Honua.Import.FileImport;
 [JsonSerializable(typeof(ushort))]
 [JsonSerializable(typeof(uint))]
 [JsonSerializable(typeof(ulong))]
+[JsonSerializable(typeof(ImportTransferProvenance))]
 [JsonSerializable(typeof(double))]
 [JsonSerializable(typeof(float))]
 [JsonSerializable(typeof(decimal))]

@@ -13,8 +13,9 @@ namespace Honua.Core.Features.Import.Domain;
 /// <param name="Bytes">Exact verified source length.</param>
 /// <param name="Sha256">Lowercase SHA-256 of the complete source bytes.</param>
 /// <param name="ExpiresAt">Exact source expiry, or null for a provider object without automatic expiry.</param>
+/// <param name="Transfer">Original transfer provenance, required for resumable worker scratch accounting.</param>
 public sealed record ImportStagedSourceBinding(string FileId, string ETag, long Bytes, string Sha256,
-    DateTimeOffset? ExpiresAt = null)
+    DateTimeOffset? ExpiresAt = null, ImportTransferProvenance? Transfer = null)
 {
     /// <summary>Validates a complete source receipt without granting access to the source.</summary>
     public void Validate()
@@ -24,6 +25,14 @@ public sealed record ImportStagedSourceBinding(string FileId, string ETag, long 
             Sha256 is null || Sha256.Length != 64 || Sha256.Any(static value => !char.IsAsciiHexDigitLower(value)))
         {
             throw new ArgumentException("A complete staged source generation, length and SHA-256 are required.");
+        }
+        if (Transfer is { } transfer)
+        {
+            transfer.Validate();
+            var prefix = $"imports/resumable/{transfer.UploadId}/source-";
+            if (!FileId.StartsWith(prefix, StringComparison.Ordinal) || FileId.Length != prefix.Length + 32 ||
+                FileId[prefix.Length..].Any(static value => !char.IsAsciiHexDigitLower(value)))
+                throw new ArgumentException("The retained source must belong to its original transfer.");
         }
     }
 }

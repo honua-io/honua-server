@@ -9,6 +9,7 @@ using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Import.FileImport.Resumable;
 
 namespace Honua.Import.FileImport.Durable;
 
@@ -99,6 +100,7 @@ internal sealed partial class FileImportJobExecutor(
 
         ImportResult result;
         Stream? materializedStream = null;
+        ImportScratchLease? scratchLease = null;
         string? materializedTemp = null;
         ICloudFileStorage? stagedCloud = null;
         string? stagedCloudFileId = null;
@@ -143,9 +145,9 @@ internal sealed partial class FileImportJobExecutor(
                 if (active.StagedSource is { } stagedSource)
                 {
                     var cloud = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();
-                    materializedStream = await StagedImportSourceMaterializer.OpenAsync(stagedSource, cloud,
-                        importService.Limits.MaxWorkerScratchBytes, cancellationToken).ConfigureAwait(false);
-                    active = active with { CloudFileId = null, FileStream = materializedStream };
+                    scratchLease = await StagedImportSourceMaterializer.OpenAsync(stagedSource, cloud,
+                        importService.Limits.MaxWorkerScratchBytes, scope.ServiceProvider.GetService<ImportScratchStorage>(), cancellationToken).ConfigureAwait(false);
+                    active = active with { CloudFileId = null, FileStream = scratchLease.Content };
                 }
 
                 result = await importService.ImportFileAsync(active, progress, cancellationToken).ConfigureAwait(false);
@@ -164,6 +166,19 @@ internal sealed partial class FileImportJobExecutor(
             }
             finally
             {
+                if (scratchLease is not null)
+                {
+                    try
+                    {
+                        await scratchLease.DisposeAsync().ConfigureAwait(false);
+                    }
+                    catch (Exception cleanupEx) when (cleanupEx is not OutOfMemoryException)
+                    {
+                        // Cleanup cannot change the truth of a committed import. The
+                        // unresolved reservation remains charged for reconciliation.
+                        Log.ScratchCleanupDeferred(logger, jobId, cleanupEx);
+                    }
+                }
                 if (materializedStream is not null)
                 {
                     await materializedStream.DisposeAsync().ConfigureAwait(false);
@@ -394,5 +409,8 @@ internal sealed partial class FileImportJobExecutor(
 
         [LoggerMessage(7486, LogLevel.Warning, "File-import job {JobId} could not write progress")]
         public static partial void ProgressWriteFailed(ILogger logger, string jobId, Exception exception);
+
+        [LoggerMessage(7487, LogLevel.Warning, "File-import job {JobId} requires scratch cleanup reconciliation")]
+        public static partial void ScratchCleanupDeferred(ILogger logger, string jobId, Exception exception);
     }
 }

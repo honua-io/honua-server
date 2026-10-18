@@ -65,6 +65,8 @@ internal sealed class ImportUploadSourceStorage(RedisImportUploadStore store, IC
             throw new InvalidDataException("The original upload changed before its source could be retained.");
         }
 
-        return new ImportStagedSourceBinding(file.FileId, file.ETag, file.SizeBytes, session.ContentSha256!, file.ExpiresAt);
+        return new ImportStagedSourceBinding(file.FileId, file.ETag, file.SizeBytes, session.ContentSha256!, file.ExpiresAt,
+            new ImportTransferProvenance(session.Id, session.Scope.ActorId, session.Scope.TenantId, session.Scope.TargetId,
+                session.Scope.WorkspaceId, session.Scope.TaskId, session.Scope.TaskRevision, session.IntentSha256));
     }
 }

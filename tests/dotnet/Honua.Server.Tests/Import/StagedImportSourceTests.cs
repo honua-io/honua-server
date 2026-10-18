@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.FileStorage;
 using Honua.Import.FileImport.Durable;
+using Honua.Import.FileImport.Resumable;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -24,6 +25,8 @@ public sealed class StagedImportSourceTests
 {
     [IntegrationTheory]
     [InlineData("unchanged")]
+    [InlineData("cleanup-failed")]
+    [InlineData("budget-exhausted")]
     [InlineData("replaced")]
     [InlineData("corrupt")]
     public async Task Worker_UsesOnlyExactVerifiedSourceGeneration(string scenario)
@@ -37,6 +40,10 @@ public sealed class StagedImportSourceTests
             await File.WriteAllBytesAsync(Path.Join(fixture.Root, metadata.StoragePath), new byte[receipt.Bytes]);
         }
 
+        if (scenario == "cleanup-failed") fixture.Budget.ReleaseDeletedAsync(Arg.Any<ImportStorageReservation>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new IOException("Cleanup response lost")));
+        if (scenario == "budget-exhausted") fixture.Budget.TryReserveAsync(Arg.Any<ImportStorageReservation>(), Arg.Any<CancellationToken>())
+            .Returns(false);
         var importer = Substitute.For<IFileImportService>();
         importer.Limits.Returns(new ImportLimits { MaxWorkerScratchBytes = receipt.Bytes });
         Stream? imported = null;
@@ -54,14 +61,15 @@ public sealed class StagedImportSourceTests
                     Schema = "honua_data", FeatureCount = 1, Format = SupportedFileFormat.GeoJson };
             });
         using var services = new ServiceCollection().AddSingleton<ICloudFileStorage>(fixture.Storage)
-            .AddSingleton(importer).BuildServiceProvider();
+            .AddSingleton(importer).AddSingleton(fixture.Scratch).BuildServiceProvider();
         var executor = new FileImportJobExecutor(services.GetRequiredService<IServiceScopeFactory>(),
             Substitute.For<IUniversalProgressStore>(), NullLogger<FileImportJobExecutor>.Instance);
-        var parameters = FileImportJobParameters.Build(Request(receipt), receipt.Bytes);
+        var acceptedRequest = Request(receipt);
+        var parameters = FileImportJobParameters.Build(acceptedRequest, receipt.Bytes);
         var now = DateTimeOffset.UtcNow;
         var job = new ExecutionJobRecord
         {
-            OperationId = Guid.NewGuid().ToString("N"), Status = ExecutionJobStatus.Running,
+            OperationId = acceptedRequest.Acceptance!.OperationId, Status = ExecutionJobStatus.Running,
             CreatedAt = now, UpdatedAt = now,
             Spec = new ExecutionJobSpec { Kind = ExecutionJobKind.FileImport, TargetKind = BatchComputeTargetKind.AwsBatch,
                 Backend = "in-process", WorkloadName = "file-import", Parameters = parameters }
@@ -69,12 +77,13 @@ public sealed class StagedImportSourceTests
 
         var result = await executor.ExecuteAsync(job, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
 
-        result.Status.Should().Be(scenario == "unchanged" ? ExecutionJobStatus.Succeeded : ExecutionJobStatus.Failed);
-        if (scenario == "unchanged")
+        result.Status.Should().Be(scenario is "unchanged" or "cleanup-failed" ? ExecutionJobStatus.Succeeded : ExecutionJobStatus.Failed);
+        if (scenario is "unchanged" or "cleanup-failed")
         {
             imported.Should().NotBeNull();
             imported!.CanRead.Should().BeFalse("the worker must dispose private scratch after import");
             result.FileImportOutput!.PhysicalTableName.Should().Be("roads");
+            await importer.Received(1).ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<IProgress<ImportProgress>>(), Arg.Any<CancellationToken>());
         }
         else
         {
@@ -94,6 +103,65 @@ public sealed class StagedImportSourceTests
     }
 
     [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Materialize_MissingBudgetOrProvenance_DoesNotReadProvider(bool missingProvenance)
+    {
+        using var fixture = new Fixture();
+        var source = await fixture.StageAsync();
+        if (missingProvenance) source = source with { Transfer = null };
+        var inaccessible = Substitute.For<ICloudFileStorage>();
+        await FluentActions.Invoking(() => StagedImportSourceMaterializer.OpenAsync(source, inaccessible,
+            source.Bytes, missingProvenance ? fixture.Scratch : null)).Should().ThrowAsync<InvalidOperationException>();
+        inaccessible.ReceivedCalls().Should().BeEmpty();
+        await fixture.Budget.DidNotReceive().TryReserveAsync(Arg.Any<ImportStorageReservation>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData("owner")]
+    [InlineData("tenant")]
+    [InlineData("intent")]
+    [InlineData("source-key")]
+    [InlineData("missing-acceptance")]
+    [InlineData("null-provenance")]
+    [InlineData("oversized-provenance")]
+    [InlineData("unknown-property")]
+    [InlineData("source-removed")]
+    public void Parameters_TransferProvenanceSurvivesQueueAndCannotChangeAccountingScope(string mutation)
+    {
+        var transfer = new ImportTransferProvenance(Guid.NewGuid().ToString("N"), "executor", "tenant", "target", "workspace",
+            "task", 3, new string('b', 64));
+        var source = new ImportStagedSourceBinding($"imports/resumable/{transfer.UploadId}/source-{Guid.NewGuid():N}",
+            "generation", 5L * 1024 * 1024 * 1024, new string('a', 64), Transfer: transfer);
+        var parameters = FileImportJobParameters.Build(Request(source), source.Bytes);
+        FileImportJobParameters.TryParse(parameters, out var restored, out var bytes, out _).Should().BeTrue();
+        restored!.StagedSource.Should().Be(source);
+        bytes.Should().Be(source.Bytes); // Metadata only; not a multi-GB transfer qualification.
+
+        switch (mutation)
+        {
+            case "owner": parameters[FileImportJobParameters.OwnerActorId] = "different-executor"; break;
+            case "tenant": parameters[FileImportJobParameters.TenantId] = "different-tenant"; break;
+            case "intent": parameters[FileImportJobParameters.AcceptanceIntent] = new string('c', 64); break;
+            case "source-key": parameters[FileImportJobParameters.CloudFileId] = $"imports/resumable/{Guid.NewGuid():N}/source-{Guid.NewGuid():N}"; break;
+            case "missing-acceptance":
+                parameters.Remove(FileImportJobParameters.AcceptanceId);
+                parameters.Remove(FileImportJobParameters.AcceptanceIntent);
+                parameters.Remove(FileImportJobParameters.AcceptanceDeadline);
+                break;
+            case "null-provenance": parameters[FileImportJobParameters.StagedTransfer] = "null"; break;
+            case "oversized-provenance": parameters[FileImportJobParameters.StagedTransfer] = new string('x', 16385); break;
+            case "unknown-property": parameters[FileImportJobParameters.StagedTransfer] = parameters[FileImportJobParameters.StagedTransfer][..^1] + ",\"authority\":true}"; break;
+            case "source-removed":
+                parameters.Remove(FileImportJobParameters.StagedSourceETag);
+                parameters.Remove(FileImportJobParameters.StagedSourceSha256);
+                break;
+        }
+
+        FileImportJobParameters.TryParse(parameters, out _, out _, out _).Should().BeFalse();
+    }
+
+    [IntegrationTheory]
     [InlineData(-1)]
     [InlineData(1)]
     public async Task Materialize_ActualLengthDiffersFromMetadata_RejectsSource(int delta)
@@ -106,7 +174,7 @@ public sealed class StagedImportSourceTests
         var content = new MemoryStream(new byte[source.Bytes + delta], writable: false);
         storage.DownloadAsync(source.FileId, Arg.Any<CancellationToken>()).Returns(content);
 
-        await FluentActions.Invoking(() => StagedImportSourceMaterializer.OpenAsync(source, storage, source.Bytes))
+        await FluentActions.Invoking(() => StagedImportSourceMaterializer.OpenAsync(source, storage, source.Bytes, fixture.Scratch))
             .Should().ThrowAsync<InvalidDataException>();
 
         content.CanRead.Should().BeFalse();
@@ -144,7 +212,7 @@ public sealed class StagedImportSourceTests
             return downloaded;
         });
 
-        await FluentActions.Invoking(() => StagedImportSourceMaterializer.OpenAsync(source, storage, source.Bytes))
+        await FluentActions.Invoking(() => StagedImportSourceMaterializer.OpenAsync(source, storage, source.Bytes, fixture.Scratch))
             .Should().ThrowAsync<InvalidDataException>();
 
         if (duringDownload)
@@ -189,7 +257,7 @@ public sealed class StagedImportSourceTests
             return await fixture.Storage.DownloadAsync(source.FileId, call.ArgAt<CancellationToken>(1));
         });
 
-        await FluentActions.Invoking(() => StagedImportSourceMaterializer.OpenAsync(source, storage, source.Bytes))
+        await FluentActions.Invoking(() => StagedImportSourceMaterializer.OpenAsync(source, storage, source.Bytes, fixture.Scratch))
             .Should().ThrowAsync<InvalidDataException>();
     }
 
@@ -230,7 +298,9 @@ public sealed class StagedImportSourceTests
 
     private static ImportRequest Request(ImportStagedSourceBinding source) => new()
     {
-        CloudFileId = source.FileId, StagedSource = source, FileName = "roads.geojson", TableName = "roads"
+        CloudFileId = source.FileId, StagedSource = source, FileName = "roads.geojson", TableName = "roads",
+        Ownership = source.Transfer is { } transfer ? new(transfer.OwnerActorId, transfer.TenantId) : null,
+        Acceptance = source.Transfer is { } origin ? new(Guid.NewGuid().ToString("N"), origin.TaskContentHash, DateTimeOffset.UtcNow.AddHours(1)) : null
     };
 
     private sealed class Fixture : IDisposable
@@ -238,16 +308,26 @@ public sealed class StagedImportSourceTests
         private static readonly byte[] Content = "{\"type\":\"FeatureCollection\",\"features\":[]}"u8.ToArray();
         public string Root { get; } = Path.Join(Path.GetTempPath(), "honua-source-binding-" + Guid.NewGuid().ToString("N"));
         public LocalFileStorage Storage { get; }
-        public Fixture() => Storage = new LocalFileStorage(
-            Options.Create(new LocalStorageOptions { BasePath = Root, CreateDirectoryIfNotExists = true }),
-            NullLogger<LocalFileStorage>.Instance, Substitute.For<IUploadProgressStore>());
+        public IImportStorageBudget Budget { get; } = Substitute.For<IImportStorageBudget>();
+        public ImportScratchStorage Scratch { get; }
+        public ImportTransferProvenance Transfer { get; } = new(Guid.NewGuid().ToString("N"), "executor", "tenant", "target", "workspace", "task", 1, new string('b', 64));
+        private readonly string _sourceId = Guid.NewGuid().ToString("N");
+        public Fixture()
+        {
+            Budget.TryReserveAsync(Arg.Any<ImportStorageReservation>(), Arg.Any<CancellationToken>()).Returns(true);
+            Budget.ReleaseDeletedAsync(Arg.Any<ImportStorageReservation>(), Arg.Any<CancellationToken>()).Returns(true);
+            Scratch = new ImportScratchStorage(Path.Join(Root, "scratch"), Budget);
+            Storage = new LocalFileStorage(
+                Options.Create(new LocalStorageOptions { BasePath = Root, CreateDirectoryIfNotExists = true }),
+                NullLogger<LocalFileStorage>.Instance, Substitute.For<IUploadProgressStore>());
+        }
         public async Task<ImportStagedSourceBinding> StageAsync()
         {
             await using var content = new MemoryStream(Content, writable: false);
             var result = await Storage.UploadAsync(new FileUploadRequest { Content = content, FileName = "roads.geojson",
-                ContentType = "application/geo+json", SizeBytes = Content.Length, ObjectKeyOverride = "imports/pinned-source" });
+                ContentType = "application/geo+json", SizeBytes = Content.Length, ObjectKeyOverride = $"imports/resumable/{Transfer.UploadId}/source-{_sourceId}" });
             result.Success.Should().BeTrue();
-            return new(result.File!.FileId, result.File.ETag!, Content.Length, Convert.ToHexStringLower(SHA256.HashData(Content)));
+            return new(result.File!.FileId, result.File.ETag!, Content.Length, Convert.ToHexStringLower(SHA256.HashData(Content)), Transfer: Transfer);
         }
         public void Dispose() => Directory.Delete(Root, recursive: true);
     }

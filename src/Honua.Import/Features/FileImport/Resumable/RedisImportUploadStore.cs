@@ -312,6 +312,11 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
         if (session.StagedSource is { } source)
         {
             source.Validate();
+            if (source.Transfer is { } transfer && (transfer.UploadId != session.Id || transfer.OwnerActorId != session.Scope.ActorId ||
+                transfer.TenantId != session.Scope.TenantId || transfer.TargetId != session.Scope.TargetId ||
+                transfer.WorkspaceId != session.Scope.WorkspaceId || transfer.TaskId != session.Scope.TaskId ||
+                transfer.TaskRevision != session.Scope.TaskRevision || transfer.TaskContentHash != session.IntentSha256))
+                throw new ArgumentException("The staged source provenance must match its original upload.", nameof(session));
             if (session.State != ImportUploadState.Sealed || source.Bytes != session.TotalBytes ||
                 source.Sha256 != session.ContentSha256 ||
                 source.ExpiresAt is null || source.ExpiresAt <= session.ExpiresAt ||

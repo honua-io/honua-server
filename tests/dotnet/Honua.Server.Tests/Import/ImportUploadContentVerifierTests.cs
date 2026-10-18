@@ -336,9 +336,17 @@ public sealed class ImportUploadContentVerifierTests(RedisFixture redis)
         // Expire the transfer receipt; the retained job source is independently readable.
         (await restart.GetDatabase().KeyExpireAsync(RedisImportUploadStore.Key(session.Id), TimeSpan.Zero)).Should().BeTrue();
         (await restartedStore.GetAsync(session.Id, session.Scope)).Should().BeNull();
-        await using var input = await Honua.Import.FileImport.Durable.StagedImportSourceMaterializer.OpenAsync(
-            bound.StagedSource!, disk.OpenStorage(), session.TotalBytes);
-        Convert.ToHexStringLower(await SHA256.HashDataAsync(input)).Should().Be(digest);
+        var workerBudget = new RedisImportStorageBudget(restart, disk.Root + ":worker-scratch",
+            new ImportStorageBudgetLimits(session.TotalBytes, session.TotalBytes, session.TotalBytes, 10));
+        await using (var input = await Honua.Import.FileImport.Durable.StagedImportSourceMaterializer.OpenAsync(
+            bound.StagedSource!, disk.OpenStorage(), session.TotalBytes, new ImportScratchStorage(Path.Join(disk.Root, "worker-scratch"), workerBudget)))
+        {
+            Convert.ToHexStringLower(await SHA256.HashDataAsync(input.Content)).Should().Be(digest);
+            ((long)await restart.GetDatabase().HashGetAsync(workerBudget.Key, "bytes")).Should().Be(session.TotalBytes);
+            bound.StagedSource!.Transfer!.OwnerActorId.Should().Be(session.Scope.ActorId);
+            bound.StagedSource.Transfer.TaskContentHash.Should().Be(session.IntentSha256);
+        }
+        ((long)await restart.GetDatabase().HashGetAsync(workerBudget.Key, "bytes")).Should().Be(0);
     }
 
     [IntegrationTest]

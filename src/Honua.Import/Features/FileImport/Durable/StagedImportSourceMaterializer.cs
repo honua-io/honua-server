@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Import.FileImport.Resumable;
 
 namespace Honua.Import.FileImport.Durable;
 
@@ -16,8 +17,8 @@ namespace Honua.Import.FileImport.Durable;
 /// </summary>
 internal static class StagedImportSourceMaterializer
 {
-    internal static async Task<FileStream> OpenAsync(ImportStagedSourceBinding source, ICloudFileStorage storage,
-        long maximumScratchBytes, CancellationToken cancellationToken = default)
+    internal static async Task<ImportScratchLease> OpenAsync(ImportStagedSourceBinding source, ICloudFileStorage storage,
+        long maximumScratchBytes, ImportScratchStorage? scratch = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(storage);
@@ -30,20 +31,17 @@ internal static class StagedImportSourceMaterializer
         {
             throw new InvalidOperationException("The staged source exceeds the configured worker scratch allowance.");
         }
+        if (scratch is null || source.Transfer is null)
+            throw new InvalidOperationException("The staged source requires original transfer provenance and aggregate scratch accounting.");
 
         cancellationToken.ThrowIfCancellationRequested();
         RequireGeneration(await storage.GetMetadataAsync(source.FileId, cancellationToken).ConfigureAwait(false), source);
-        var file = new FileStream(Path.Join(Path.GetTempPath(), $"honua-staged-import-{Guid.NewGuid():N}.tmp"), new FileStreamOptions
-        {
-            Mode = FileMode.CreateNew,
-            Access = FileAccess.ReadWrite,
-            Share = FileShare.None,
-            Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose,
-            PreallocationSize = source.Bytes
-        });
-        var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
+        var lease = await scratch.AllocateAsync(source.Transfer, source.Bytes, maximumScratchBytes, cancellationToken).ConfigureAwait(false);
+        var file = lease.Content;
+        byte[]? buffer = null;
         try
         {
+            buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
             await using var input = await storage.DownloadAsync(source.FileId, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidDataException("The accepted staged source is unavailable.");
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -71,16 +69,16 @@ internal static class StagedImportSourceMaterializer
             await file.FlushAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             file.Position = 0;
-            return file;
+            return lease;
         }
         catch
         {
-            await file.DisposeAsync().ConfigureAwait(false);
+            await lease.DisposeAsync().ConfigureAwait(false);
             throw;
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
+            if (buffer is not null) ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
         }
     }
 
