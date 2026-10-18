@@ -155,7 +155,14 @@ internal static class AgentWorkspaceEndpoints
                 deploy.Environment != target.Environment || deploy.TargetKind != target.TargetKind ||
                 deploy.Backend != target.Backend || operation.Audit.TenantId != tenant) return Results.Forbid();
         }
-        return Results.Ok(new AgentDevOpsAuthorizationResponse(request.TargetId, target.TargetId, target.Environment, runtimeKind, target.Backend, tenant));
+        return Results.Ok(new AgentDevOpsAuthorizationResponse(request.TargetId, target.TargetId, target.Environment, runtimeKind, target.Backend, tenant)
+        {
+            TargetName = target.TargetName,
+            UsesCustomProviderEndpoint = runtimeKind == "aws-lambda" &&
+                (target.Parameters.TryGetValue("aws.service_url", out var awsUrl) && !string.IsNullOrWhiteSpace(awsUrl) ||
+                 target.Parameters.TryGetValue("lambda.service_url", out var lambdaUrl) && !string.IsNullOrWhiteSpace(lambdaUrl)),
+            ResourceParameters = AgentDevOpsResourceIdentity.Project(target, runtimeKind),
+        });
     }
 
     private static bool DevOpsArgumentsMatchEnvironment(AgentDevOpsAuthorizationRequest request)

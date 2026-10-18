@@ -30,7 +30,7 @@ public sealed class AgentDevOpsAuthorizationTests
         using var fixture = Create();
         var request = new AgentDevOpsAuthorizationRequest("server-1", "ecs-1", "dev", null);
         var result = await AgentWorkspaceEndpoints.AuthorizeDevOps(fixture.Context, fixture.Workspace, request);
-        ((IValueHttpResult)result).Value.Should().Be(new AgentDevOpsAuthorizationResponse("server-1", "ecs-1", "dev", "aws-ecs", "honua-aws-ecs-alb", "tenant-a"));
+        ((IValueHttpResult)result).Value.Should().BeEquivalentTo(new AgentDevOpsAuthorizationResponse("server-1", "ecs-1", "dev", "aws-ecs", "honua-aws-ecs-alb", "tenant-a") { TargetName = "cell", ResourceParameters = [] });
         await fixture.Operator.Received().EvaluateAsync(fixture.Context.User,
             Arg.Is<OperatorAuthorizationRequest>(value => value.ResourceId == "ecs-1" && value.Operation == OperatorOperation.Read),
             Arg.Any<CancellationToken>());
@@ -67,6 +67,50 @@ public sealed class AgentDevOpsAuthorizationTests
             json.RootElement.TryGetProperty("tenantId", out var tenant).Should().BeTrue("explicit null is different from an old receipt without tenant binding");
             tenant.GetString().Should().Be(expectedTenant);
         }
+    }
+
+    [UnitTest]
+    public async Task ResourceReceiptUsesOnlyRegisteredRuntimeIdentityAndDoesNotInventMissingPins()
+    {
+        using var fixture = Create();
+        var functionArn = "arn:aws:lambda:us-west-2:123456789012:function:honua";
+        var target = new DeployTargetDefinition
+        {
+            TargetId = "lambda-1", Environment = "dev", TargetKind = DeployTargetKind.AwsLambda,
+            Backend = "honua-gitops-aws-lambda", TargetName = functionArn,
+            Parameters = new Dictionary<string, string>
+            {
+                ["aws.lambda.alias_name"] = "live", ["lambda.function_arn"] = functionArn,
+                ["aws.service_url"] = "https://user:secret@example.test",
+                ["credentials"] = "private-value", ["kubernetes.cluster_arn"] = "unrelated-runtime",
+                ["telemetry.healthz.headers.Authorization"] = "Bearer private-token",
+            },
+        };
+        fixture.Registry.GetAsync("lambda-1", Arg.Any<CancellationToken>()).Returns(Task.FromResult<DeployTargetDefinition?>(target));
+        var request = new AgentDevOpsAuthorizationRequest("server-1", "lambda-1", "dev", "install_handoff", Args(new { }));
+        var result = await AgentWorkspaceEndpoints.AuthorizeDevOps(fixture.Context, fixture.Workspace, request);
+        var receipt = ((IValueHttpResult)result).Value.Should().BeOfType<AgentDevOpsAuthorizationResponse>().Subject;
+        receipt.TargetName.Should().Be(functionArn);
+        receipt.UsesCustomProviderEndpoint.Should().BeTrue();
+        receipt.ResourceParameters.Should().BeEquivalentTo(new Dictionary<string, string>
+        { ["aws.lambda.alias_name"] = "live", ["lambda.function_arn"] = functionArn });
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(receipt, AgentWorkspaceJsonContext.Default.AgentDevOpsAuthorizationResponse));
+        json.RootElement.GetProperty("targetName").GetString().Should().Be(functionArn);
+        json.RootElement.GetProperty("usesCustomProviderEndpoint").GetBoolean().Should().BeTrue();
+        json.RootElement.GetProperty("resourceParameters").EnumerateObject().Should().HaveCount(2);
+        json.RootElement.GetRawText().Should().NotContain("private-").And.NotContain("user:secret").And.NotContain("unrelated-runtime");
+
+        // A legacy short name is preserved as such. The consumer must refuse a
+        // v2 resource-bound handoff rather than infer an account from its own credentials.
+        fixture.Registry.GetAsync("lambda-1", Arg.Any<CancellationToken>()).Returns(Task.FromResult<DeployTargetDefinition?>(target with
+        { TargetName = "honua", Parameters = new Dictionary<string, string>() }));
+        result = await AgentWorkspaceEndpoints.AuthorizeDevOps(fixture.Context, fixture.Workspace, request);
+        receipt = ((IValueHttpResult)result).Value.Should().BeOfType<AgentDevOpsAuthorizationResponse>().Subject;
+        receipt.TargetName.Should().Be("honua");
+        receipt.ResourceParameters.Should().BeEmpty();
+        receipt.UsesCustomProviderEndpoint.Should().BeFalse();
+        using var standardJson = JsonDocument.Parse(JsonSerializer.Serialize(receipt, AgentWorkspaceJsonContext.Default.AgentDevOpsAuthorizationResponse));
+        standardJson.RootElement.GetProperty("usesCustomProviderEndpoint").GetBoolean().Should().BeFalse();
     }
 
     [UnitTest]
@@ -132,7 +176,7 @@ public sealed class AgentDevOpsAuthorizationTests
             fixture.Registry.GetAsync("cloud-1", Arg.Any<CancellationToken>()).Returns(Task.FromResult<DeployTargetDefinition?>(target));
             var read = new AgentDevOpsAuthorizationRequest("server-1", "cloud-1", "dev", null);
             var result = await AgentWorkspaceEndpoints.AuthorizeDevOps(fixture.Context, fixture.Workspace, read);
-            ((IValueHttpResult)result).Value.Should().Be(new AgentDevOpsAuthorizationResponse("server-1", "cloud-1", "dev", runtime, backend, "tenant-a"));
+            ((IValueHttpResult)result).Value.Should().BeEquivalentTo(new AgentDevOpsAuthorizationResponse("server-1", "cloud-1", "dev", runtime, backend, "tenant-a") { TargetName = "cell", ResourceParameters = [] });
             var provision = read with { CanonicalTool = "provision_infrastructure", Arguments = Args(new { stack = runtime, variablesJson = "{\"environment\":\"dev\"}" }) };
             Status(await AgentWorkspaceEndpoints.AuthorizeDevOps(fixture.Context, fixture.Workspace, provision)).Should().Be(200);
             Status(await AgentWorkspaceEndpoints.AuthorizeDevOps(fixture.Context, fixture.Workspace,
