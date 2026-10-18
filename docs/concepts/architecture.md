@@ -141,7 +141,7 @@ deploy API shifts weights or swaps revisions through it:
 
 | Target | Deploy backend | Rollout mechanism |
 |---|---|---|
-| Kubernetes + Argo Rollouts | `honua-kubernetes-argo-rollouts` | Canary analysis |
+| Kubernetes / AWS EKS | `honua-kubernetes-deployment` | Native Deployment rollout and observed immutable-revision rollback; no Argo or weighted-canary dependency |
 | AWS ECS/Fargate | `honua-aws-ecs-alb` | ALB weighted target groups |
 | AWS Lambda | `honua-gitops-aws-lambda` | Alias weighted versions |
 | Azure Container Apps | `honua-azure-container-apps-revision` | Revision traffic split |

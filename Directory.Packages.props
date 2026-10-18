@@ -21,6 +21,8 @@
     <PackageVersion Include="AWSSDK.ElasticLoadBalancingV2" Version="4.0.5" />
     <PackageVersion Include="AWSSDK.Lambda" Version="4.0.14.1" />
     <PackageVersion Include="AWSSDK.LocationService" Version="4.0.3.25" />
+    <PackageVersion Include="DnsClient" Version="1.8.0" />
+    <PackageVersion Include="AWSSDK.Route53" Version="4.0.100.14" />
     <PackageVersion Include="AWSSDK.S3" Version="4.0.21.2" />
     <PackageVersion Include="AWSSDK.SecurityToken" Version="4.0.7.8" />
     <PackageVersion Include="AWSSDK.IdentityManagement" Version="4.0.8.1" />
