@@ -48,6 +48,20 @@ public sealed class OgcStylesCaseAuthorizationTests
         unmatched.Should().BeNull();
     }
 
+    [UnitTest]
+    public async Task AuthorizeStyleAsync_SyntheticLayerAlias_RequiresTheUnderlyingPrivateResourcePolicy()
+    {
+        var provider = new TestMetadataV2GraphBuilder()
+            .AddResource("private-layer", "private-parcels", accessPolicy: new AccessPolicy { AllowedRoles = ["gis-admin"] })
+            .AddStorageBinding("private-binding", "private-layer", "private_parcels", storageLayerId: 42)
+            .AddService("maps", "maps", protocols: [ServiceProtocols.OgcApiMaps])
+            .AddPublication("private-publication", "maps", "private-layer", serviceLocalId: "parcels")
+            .BuildProvider();
+        var denied = await OgcStylesEndpoints.AuthorizeStyleAsync(CreateViewerContext(), "style-layer-42", provider, CancellationToken.None);
+        denied.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
     private static DefaultHttpContext CreateViewerContext()
     {
         var services = new ServiceCollection()

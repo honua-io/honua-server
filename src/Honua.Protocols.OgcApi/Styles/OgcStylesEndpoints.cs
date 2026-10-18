@@ -378,8 +378,20 @@ public static class OgcStylesEndpoints
         // Ordinal, matching OgcStyleProjection.ResolveResourceAsync. A case-variant
         // name is a different resource; authorizing the first ignore-case hit would
         // check one layer and serve another's stylesheet.
-        var resource = snapshot.Graph.Resources.FirstOrDefault(resource =>
-            string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal));
+        var layerId = 0;
+        var synthetic = styleId.StartsWith("style-layer-", StringComparison.Ordinal)
+            && int.TryParse(styleId.AsSpan("style-layer-".Length), System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out layerId)
+            && styleId == "style-layer-" + layerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        // Use the projection's actual precedence: canonical layer aliases bind the
+        // underlying resource; an ordinary standalone catalog ID wins a name collision.
+        if (!synthetic && context.RequestServices.GetService<IStyleCatalog>() is { } catalog
+            && await catalog.GetStyleAsync(styleId, cancellationToken).ConfigureAwait(false) is not null)
+            return null;
+        var resource = synthetic
+            ? snapshot.Graph.Resources.FirstOrDefault(resource => snapshot.ResolveStorageLayerId(resource) == layerId)
+            : snapshot.Graph.Resources.FirstOrDefault(resource =>
+                string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal));
         if (resource is null)
         {
             // Standalone catalog styles have no layer policy and retain their existing
