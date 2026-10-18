@@ -1319,7 +1319,6 @@ jobs:
       - name: Validate CI router and single merge authority
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.run_attempt > 1) && steps.ci-surface.outputs.ci_surface == 'true'
         run: |
-          python3 -m pip install -r scripts/ci/okf-requirements.txt
           scripts/ci/validate-ci-router.sh
           bash scripts/ci/validate-single-merge-authority.sh
 

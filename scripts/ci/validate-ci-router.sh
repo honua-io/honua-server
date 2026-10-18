@@ -25,6 +25,12 @@ require_command jq
 # shellcheck source=scripts/ci/lib/python-resolve.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/python-resolve.sh"
 PYTHON_BIN="$(honua_resolve_python || true)"
+if [[ -n "${PYTHON_BIN}" ]]; then
+  # The generated-output controls execute the canonical OKF graph reader.
+  # Bootstrap here so direct/local, batch CI and PR callers share the same
+  # declared dependency and resolved interpreter.
+  "${PYTHON_BIN}" -m pip install -r "${SCRIPT_DIR}/okf-requirements.txt"
+fi
 
 # CR-safe jq: strip the CRLF the Windows jq binary emits in text mode (no-op on
 # Linux). Sourced AFTER require_command above so that guard probes the real

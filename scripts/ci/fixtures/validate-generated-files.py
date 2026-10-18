@@ -3,9 +3,11 @@
 from pathlib import Path
 import os
 import datetime
+import shlex
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -20,14 +22,17 @@ class GeneratedGraphFreshness(unittest.TestCase):
                 ('.github/actions/lean-gate/action.yml', 'Regenerate projections and report advisory drift',
                  'bash scripts/ci/regenerate-generated-files.sh'),
                 ('.github/workflows/ci.yml', 'Regenerate foundation projections and report advisory drift',
-                 'bash scripts/ci/regenerate-generated-files.sh'),
-                ('.github/workflows/pr-gate.yml', 'Validate CI router and single merge authority',
-                 'scripts/ci/validate-ci-router.sh')):
+                 'bash scripts/ci/regenerate-generated-files.sh')):
             with self.subTest(caller=path):
                 source = (ROOT / path).read_text()
                 block = source.split('- name: ' + name, 1)[1].split('- name:', 1)[0]
                 self.assertLess(block.index('python3 -m pip install -r scripts/ci/okf-requirements.txt'),
                                 block.index(command))
+        router = (ROOT / 'scripts/ci/validate-ci-router.sh').read_text()
+        self.assertLess(router.index('"${PYTHON_BIN}" -m pip install -r "${SCRIPT_DIR}/okf-requirements.txt"'),
+                        router.index('"${PYTHON_BIN}" scripts/ci/fixtures/validate-generated-files.py'))
+        self.assertLess(router.index('PYTHON_BIN="$(honua_resolve_python || true)"'),
+                        router.index('-m pip install'))
 
     def test_graph_is_owned_without_including_authored_evidence(self):
         paths = subprocess.check_output(
@@ -75,17 +80,30 @@ class GeneratedGraphFreshness(unittest.TestCase):
                     'from pathlib import Path\n'
                     'with Path("docs/okf/capabilities/test.md").open("a") as stream:\n'
                     '    stream.write("Updated generated capability facts.\\n")\n')
-                (ci / 'regenerate-generated-files.sh').write_text(source)
+                # A Windows python3 Store alias may be unusable even while the
+                # parent was resolved as python/py. Normalize only interpreter
+                # spelling in this isolated copy; preserve maintained ordering.
+                (ci / 'regenerate-generated-files.sh').write_text(
+                    source.replace('python3 ', shlex.quote(sys.executable) + ' '))
+                tools = repo / 'broken-alias'
+                tools.mkdir()
+                alias = tools / 'python3'
+                alias.write_text('#!/usr/bin/env bash\nexit 97\n')
+                alias.chmod(alias.stat().st_mode | stat.S_IEXEC)
+                environment = {**os.environ, 'PATH': str(tools) + os.pathsep + os.environ['PATH']}
+                broken = subprocess.run(['bash', '-c', 'python3 --version'], cwd=repo,
+                                        env=environment, capture_output=True, text=True)
+                self.assertEqual(broken.returncode, 97, 'The broken-alias control must actually be active')
 
                 def generate(*args):
-                    return subprocess.run(['python3', 'scripts/ci/generate-okf-graph.py', *args],
-                                          cwd=repo, capture_output=True, text=True)
+                    return subprocess.run([sys.executable, 'scripts/ci/generate-okf-graph.py', *args],
+                                          cwd=repo, env=environment, capture_output=True, text=True)
 
                 initial = generate()
                 self.assertEqual(initial.returncode, 0, initial.stdout + initial.stderr)
                 before = (repo / 'docs/okf/domain-graph.v1.json').read_bytes()
                 execution = subprocess.run(['bash', 'scripts/ci/regenerate-generated-files.sh'],
-                                           cwd=repo, capture_output=True, text=True)
+                                           cwd=repo, env=environment, capture_output=True, text=True)
                 self.assertEqual(execution.returncode, 0, execution.stdout + execution.stderr)
                 self.assertIn('Updated generated capability facts.', page.read_text())
                 check = generate('--check')
