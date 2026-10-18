@@ -352,3 +352,23 @@ Before adding a new workflow or check:
 3. **Document the new check** in this file and in `workflow-inventory.md`.
 4. **Use path filters** for PR-lane checks that only apply to specific code areas.
 5. **Follow artifact conventions** from `config-conventions.md`.
+
+### Positive execution for server shards
+
+`run-server-test-shard.sh` enables VSTest `RunConfiguration.TreatNoTestsAsError`
+for every catalogued shard and removes only that invocation's named TRX before
+launch. A successful process exit also requires the existing TRX tripwire to
+find at least one passing case, no failed/unknown outcomes, and declared counters
+consistent with actual result rows. All-skipped, absent, empty or malformed TRX
+cannot pass; legitimate partial skips retain their existing policy. A child
+failure or timeout retains its original exit code even if partial TRX contains
+passing cases.
+
+The retained `*.timing.json` includes `execution` with actual result counts,
+TRX SHA-256, source SHA/dirty flag, project, and runner/verifier hashes. The timing
+record retains the effective filter and original shard status. Its count status
+can be positive while the overall shard fails (for example a killed child after
+partial passing results); consumers must require the overall successful outcome
+as well. Missing counts stay missing. Synthetic supervisor fixtures are labelled
+as such and do not qualify a candidate. These files are diagnostic provenance;
+local files alone do not constitute a trusted release attestation.

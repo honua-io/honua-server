@@ -16,18 +16,20 @@ for attempt in 1 2 3 4 5 6 7 8; do
 done
 
 mkdir -p /output
+lane_status=0
 
 # OpenLayers Vitest suite.
 if [[ -f tests/js/package.json ]]; then
     pushd tests/js >/dev/null
     npm install --no-audit --no-fund --prefer-offline
     HONUA_BASE_URL="${HONUA_BASE_URL}" \
-        npx vitest run --reporter=default || true
+        npx vitest run --reporter=default || lane_status=1
+    HONUA_BASE_URL="${HONUA_BASE_URL}" npm run test:openlayers:render || lane_status=1
     popd >/dev/null
 
     shopt -s nullglob
     for f in tests/js/*.cert.json tests/js/certification-evidence/*.cert.json; do
-        cp "$f" /output/ 2>/dev/null || true
+        cp "$f" /output/ 2>/dev/null || lane_status=1
     done
 fi
 
@@ -36,13 +38,15 @@ if [[ -f tests/js-browser/package.json ]]; then
     pushd tests/js-browser >/dev/null
     npm install --no-audit --no-fund --prefer-offline
     HONUA_BASE_URL="${HONUA_BASE_URL}" \
-        npx playwright test --config playwright.maplibre.config.ts || true
+        npx playwright test --config playwright.maplibre.config.ts || lane_status=1
     popd >/dev/null
 
     shopt -s nullglob
     for f in tests/js-browser/test-results/*.cert.json; do
-        cp "$f" /output/ 2>/dev/null || true
+        cp "$f" /output/ 2>/dev/null || lane_status=1
     done
 fi
 
 echo "OpenLayers lane complete; output written to /output."
+
+exit "$lane_status"
