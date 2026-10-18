@@ -50,6 +50,7 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
         if (_ownsPublicationLock)
         {
             _publicationOwner!.RequireActive();
+            if (afterCommit is not null) throw new InvalidOperationException("Post-commit activation belongs to the outer publication transaction.");
             return await mutation(this, cancellationToken).ConfigureAwait(false);
         }
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

@@ -60,6 +60,13 @@ internal sealed class WorkflowPackageApprovedReplay
         if (record is null || record.RevokedAt is not null || record.ExpiresAt <= now ||
             !record.Permissions.Order(StringComparer.Ordinal).SequenceEqual(Payload.Permissions.Order(StringComparer.Ordinal))) Deny();
         await RevalidateMembershipAsync(_services, Payload.AuthorSecurityContext, cancellationToken).ConfigureAwait(false);
+        // Reuse the full current turn authorizer after the serialization wait, including
+        // frozen resources/tasks and native local-process snapshot checks. The private
+        // accessor carries the revalidated actual key, never the approving human.
+        var access = await Authorization.ResolveAsync(Principal, cancellationToken, Payload.WorkspaceId, Payload.TurnId, true).ConfigureAwait(false);
+        var binding = access.TurnBinding;
+        if (binding is null || binding.OwnerActorId != Payload.OwnerActorId || binding.TargetId != Payload.TargetId ||
+            binding.ReleaseId != Payload.ReleaseId || binding.TenantId != Payload.TenantId) Deny();
         var workspaces = _services.GetRequiredService<IAgentWorkspaceStore>();
         var document = await workspaces.GetAsync(Payload.WorkspaceId).ConfigureAwait(false);
         if (document is null || document.OwnerId != Payload.OwnerActorId ||

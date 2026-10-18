@@ -57,7 +57,7 @@ public sealed class WorkflowPackageSchedulerCommitTests(RedisFixture redis)
             using var human = fixture.CreateAdminClient();
             var graph = new WorkflowGraph
             {
-                Nodes = [new WorkflowNode { NodeId = "area", NodeTypeId = "process:geometry.area", Parameters = new()
+                Nodes = [new WorkflowNode { NodeId = "area", NodeTypeId = "process:geometry.area", Parameters = new Dictionary<string, string>()
                 {
                     ["wkb"] = "AQMAAAABAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAA=", ["srid"] = "4326",
                 } }],
