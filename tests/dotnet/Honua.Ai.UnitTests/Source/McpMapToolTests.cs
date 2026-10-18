@@ -263,6 +263,8 @@ public sealed class McpMapToolTests
         var structured = result.GetProperty("structuredContent");
         structured.GetProperty("serviceId").GetString().Should().Be(ServiceId);
         structured.GetProperty("layerId").GetInt32().Should().Be(LayerIndex);
+        structured.GetProperty("processLayerId").GetInt32().Should().Be(StorageLayerId);
+        structured.TryGetProperty("processLayerUnavailableReason", out _).Should().BeFalse();
         structured.GetProperty("geometryType").GetString().Should().Be(nameof(MetadataV2GeometryType.Polygon));
         structured.GetProperty("srid").GetInt32().Should().Be(4326);
         structured.GetProperty("rowCount").GetInt64().Should().Be(42);
@@ -298,9 +300,44 @@ public sealed class McpMapToolTests
         var structured = response.Result!.Value.GetProperty("structuredContent");
         structured.TryGetProperty("rowCount", out _).Should().BeFalse(
             "includeRowCount=false must omit rowCount");
+        structured.GetProperty("processLayerId").GetInt32().Should().Be(StorageLayerId);
         structured.GetProperty("fieldCount").GetInt32().Should().Be(3);
 
         await reader.DidNotReceive().CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_describe_layer")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task DescribeLayer_BindingIdentityCollision_DoesNotOfferDifferentProcessSource(bool differentResource)
+    {
+        var builder = new TestMetadataV2GraphBuilder().AddResource(ResourceId, "Parcels");
+        if (differentResource)
+        {
+            builder.AddResource("res-other", "Other source");
+        }
+        var graph = builder
+            .AddStorageBinding("bind-first", differentResource ? "res-other" : ResourceId,
+                "public.first", storageLayerId: StorageLayerId)
+            .AddStorageBinding("bind-selected", ResourceId, "public.selected", storageLayerId: StorageLayerId)
+            .AddService(ServiceId, ServiceName)
+            .AddPublication("pub-selected", ServiceId, ResourceId, layerIndex: LayerIndex, storageBindingId: "bind-selected")
+            .BuildProvider();
+        using var services = BuildServices(graphProvider: graph);
+        var response = await BuildSurface().DispatchAsync(AuthenticatedContext(services),
+            ToolCall("collision", DescribeLayerTool.ToolName,
+                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"includeRowCount":false}"""),
+            CancellationToken.None);
+
+        var structured = response!.Result!.Value.GetProperty("structuredContent");
+        structured.GetProperty("layerId").GetInt32().Should().Be(LayerIndex);
+        structured.TryGetProperty("processLayerId", out _).Should().BeFalse();
+        structured.GetProperty("processLayerUnavailableReason").GetString().Should().NotBeNullOrEmpty();
     }
 
     [UnitTest]
@@ -1357,10 +1394,11 @@ public sealed class McpMapToolTests
         ITemporaryFileService? temporaryFileService = null,
         AccessPolicy? accessPolicy = null,
         AccessPolicy? servicePolicy = null,
-        IPermissionResolver? permissionResolver = null)
+        IPermissionResolver? permissionResolver = null,
+        IMetadataV2GraphProvider? graphProvider = null)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider(accessPolicy, servicePolicy));
+        services.AddSingleton<IMetadataV2GraphProvider>(graphProvider ?? BuildGraphProvider(accessPolicy, servicePolicy));
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddOptions<RbacOptions>();
         if (permissionResolver is not null)

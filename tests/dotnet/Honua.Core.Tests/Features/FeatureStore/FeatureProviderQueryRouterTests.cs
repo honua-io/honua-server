@@ -160,6 +160,82 @@ public sealed class FeatureProviderQueryRouterTests
         provider.LastBinding.StorageLayerId.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ResolveStorageReaderAsync_UsesExactBindingWithoutInventingPublication(bool published)
+    {
+        var connectionId = Guid.NewGuid();
+        var reader = new Mock<IFeatureReader>(MockBehavior.Strict).Object;
+        var provider = new CapturingBindableProvider(reader);
+        var router = CreateRouter(connectionId, DataProviderNames.Postgis, provider);
+        var (original, _, resource, _) = CreateSnapshot(connectionId.ToString(), DataProviderNames.Postgis);
+        var graph = published ? original.Graph : original.Graph with { Services = [], Publications = [] };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "process", DateTimeOffset.UtcNow);
+
+        var resolved = await router.ResolveStorageReaderAsync(snapshot, 1, FeatureProviderReadOperation.Query);
+
+        resolved.Should().BeSameAs(reader);
+        provider.LastBinding.Should().NotBeNull();
+        provider.LastBinding!.Resource.Should().BeSameAs(resource);
+        provider.LastBinding.StorageBinding.Metadata.Id.Should().Be("binding-roads");
+        provider.LastBinding.StorageMapping.QualifiedName.Should().Be("public.roads");
+        provider.LastBinding.Connection!.ConnectionId.Should().Be(connectionId);
+        provider.LastBinding.Service.Should().BeNull();
+        provider.LastBinding.Publication.Should().BeNull();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ResolveStorageReaderAsync_PublicationIndexIsNotStorageId_RefusesFallback()
+    {
+        var connectionId = Guid.NewGuid();
+        var provider = new CapturingBindableProvider(new Mock<IFeatureReader>(MockBehavior.Strict).Object);
+        var router = CreateRouter(connectionId, DataProviderNames.Postgis, provider);
+        var (original, _, _, _) = CreateSnapshot(connectionId.ToString(), DataProviderNames.Postgis);
+        var graph = original.Graph with
+        {
+            StorageBindings = original.Graph.StorageBindings.Select(binding => binding with { StorageLayerId = 42 }).ToArray()
+        };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "different-id", DateTimeOffset.UtcNow);
+
+        var act = () => router.ResolveStorageReaderAsync(snapshot, 1, FeatureProviderReadOperation.Query);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        provider.LastBinding.Should().BeNull();
+        await router.ResolveStorageReaderAsync(snapshot, 42, FeatureProviderReadOperation.Query);
+        provider.LastBinding!.StorageLayerId.Should().Be(42);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ResolveStorageReaderAsync_MissingConnection_RefusesDefaultProviderFallback()
+    {
+        var configuredConnection = Guid.NewGuid();
+        var provider = new CapturingBindableProvider(new Mock<IFeatureReader>(MockBehavior.Strict).Object);
+        var router = CreateRouter(configuredConnection, DataProviderNames.Postgis, provider);
+        var (snapshot, _, _, _) = CreateSnapshot(Guid.NewGuid().ToString(), DataProviderNames.Postgis);
+
+        var act = () => router.ResolveStorageReaderAsync(snapshot, 1, FeatureProviderReadOperation.Query);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        provider.LastBinding.Should().BeNull();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ResolveStorageReaderAsync_UnsupportedCapability_UsesCanonicalProviderCheck()
+    {
+        var connectionId = Guid.NewGuid();
+        var reader = new Mock<IFeatureReader>(MockBehavior.Strict).Object;
+        var provider = CreateProvider(DataProviderNames.DuckDb,
+            FeatureProviderCapabilities.ReadOnlyAnalytical with { SupportsStatistics = false }, reader);
+        var router = CreateRouter(connectionId, DataProviderNames.DuckDb, provider);
+        var (snapshot, _, _, _) = CreateSnapshot(connectionId.ToString());
+
+        var act = () => router.ResolveStorageReaderAsync(snapshot, 1, FeatureProviderReadOperation.Statistics);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*does not support statistics operations*");
+    }
+
     private static FeatureProviderQueryRouter CreateRouter(
         Guid connectionId,
         string connectionProvider,

@@ -9,6 +9,7 @@ using System.Threading;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -32,15 +33,18 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
     private readonly IStreamingFeatureStore _streamingStore;
     private readonly IMetadataV2GraphProvider? _metadata;
     private readonly ILayerSelectionFilterTranslator? _selectionTranslator;
+    private readonly FeatureProviderQueryRouter? _queryRouter;
 
     public HonuaLayerDagSource(
         IStreamingFeatureStore streamingStore,
         IMetadataV2GraphProvider? metadata = null,
-        ILayerSelectionFilterTranslator? selectionTranslator = null)
+        ILayerSelectionFilterTranslator? selectionTranslator = null,
+        FeatureProviderQueryRouter? queryRouter = null)
     {
         _streamingStore = streamingStore;
         _metadata = metadata;
         _selectionTranslator = selectionTranslator;
+        _queryRouter = queryRouter;
     }
 
     public string SourceId => "source.honua-layer";
@@ -72,8 +76,14 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
                 "This job carries no submitter security context, so its layer reads cannot be constrained to the submitting caller.");
         }
 
+        if (_queryRouter is not null && _metadata is null)
+        {
+            throw new InvalidOperationException("The process source catalog is unavailable.");
+        }
+
         var query = BuildQuery(request);
         MetadataV2Resource? resource = null;
+        var streamingStore = _streamingStore;
         if (_metadata is not null)
         {
             var snapshot = await _metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -82,6 +92,13 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
                 throw new InvalidOperationException("Source layer does not exist.");
             }
             query = query with { SpatialReferenceSrid = snapshot.ResolveStorageSrid(layerId) };
+            if (_queryRouter is not null)
+            {
+                var reader = await _queryRouter.ResolveStorageReaderAsync(
+                    snapshot, layerId, FeatureProviderReadOperation.Query, cancellationToken).ConfigureAwait(false);
+                streamingStore = reader as IStreamingFeatureStore
+                    ?? throw new InvalidOperationException("This process source provider does not support streaming reads.");
+            }
         }
 
         if (request.HasCanonicalSelectors)
@@ -93,7 +110,7 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
         var wkbReader = new WKBReader();
         var geoJsonWriter = new GeoJsonWriter();
 
-        await foreach (var feature in _streamingStore
+        await foreach (var feature in streamingStore
             .StreamFeaturesAsync(layerId, query, cancellationToken)
             .ConfigureAwait(false))
         {

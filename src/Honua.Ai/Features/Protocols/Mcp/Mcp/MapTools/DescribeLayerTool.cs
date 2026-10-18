@@ -35,6 +35,11 @@ internal sealed class DescribeLayerTool : IMcpTool
             "serviceId": { "type": "string" },
             "serviceName": { "type": "string" },
             "layerId": { "type": "integer" },
+            "processLayerId": {
+              "type": "integer",
+              "description": "Verified storage-layer reference for process layer-id parameters. Distinct from layerId. Present only when the publication resolves to the same indexed binding used by the process runtime; execution separately checks current permissions and process capabilities."
+            },
+            "processLayerUnavailableReason": { "type": "string" },
             "name": { "type": "string" },
             "type": { "type": "string" },
             "geometryType": { "type": "string" },
@@ -113,7 +118,8 @@ internal sealed class DescribeLayerTool : IMcpTool
         Name = ToolName,
         Title = "Describe layer",
         Description = "Describe a published layer's field schema (name, type, nullability, alias), row count, geometry type, spatial reference, and extent. "
-            + "Call this before honua_query_features to learn the exact field names/types to use in where and outFields.",
+            + "Call this before honua_query_features to learn the exact field names/types to use in where and outFields. "
+            + "For process layer-id parameters use processLayerId, never the service-local layerId. An absent processLayerId means this publication cannot be safely addressed by the current process layer reference.",
         InputSchema = InputSchema,
         OutputSchema = OutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Describe layer")
@@ -149,6 +155,9 @@ internal sealed class DescribeLayerTool : IMcpTool
         }
 
         var output = BuildOutput(context, argument.LayerId!.Value, rowCount);
+        var processReference = MapToolLayerResolver.ResolveProcessReference(snapshot, context);
+        output.ProcessLayerId = processReference.LayerId;
+        output.ProcessLayerUnavailableReason = processReference.UnavailableReason;
         return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpDescribeLayerOutput);
     }
 
