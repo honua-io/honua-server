@@ -17,6 +17,12 @@ public static class ExecutionQualificationBarrier
     /// <summary>Environment variable naming the shared barrier directory.</summary>
     public const string RootEnvironmentVariable = "HONUA_GP_QUALIFICATION_BARRIER_ROOT";
 
+    /// <summary>
+    /// Optional exact barrier name to pause at; when unset, all barriers retain
+    /// their existing behavior. This selects qualification staging only.
+    /// </summary>
+    public const string PauseAtEnvironmentVariable = "HONUA_GP_QUALIFICATION_PAUSE_AT";
+
     /// <summary>Environment variable enabling the deliberate cancellation-ignoring mode.</summary>
     public const string ExecutorModeEnvironmentVariable = "HONUA_GP_QUALIFICATION_EXECUTOR_MODE";
 
@@ -70,6 +76,12 @@ public static class ExecutionQualificationBarrier
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(barrier);
+        var pauseAt = Environment.GetEnvironmentVariable(PauseAtEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(pauseAt) && !string.Equals(pauseAt, barrier, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         var root = Environment.GetEnvironmentVariable(RootEnvironmentVariable);
         if (string.IsNullOrWhiteSpace(root))
         {

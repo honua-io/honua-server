@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -22,6 +23,7 @@ SCHEMA = "honua.gp-native-observation/v1"
 TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 MAX_FILES, MAX_BYTES = 4096, 128 * 1024 * 1024
+MAX_ENTRIES, MAX_DEPTH, MAX_BARRIER_AGE_SECONDS = 4096, 32, 300
 
 
 class Refused(ValueError):
@@ -33,8 +35,29 @@ def require(condition, code):
         raise Refused(code)
 
 
+def open_directory(path):
+    """Refuse symlinks in every component, including trusted mount roots."""
+    path = Path(path)
+    require(path.is_absolute() and ".." not in path.parts, "directory-path")
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in path.parts[1:]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 def read_json(path):
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    path = Path(path).absolute()
+    directory = open_directory(path.parent)
+    try:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    finally:
+        os.close(directory)
     with os.fdopen(fd, "rb") as stream:
         require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode), "non-regular-json")
         data = stream.read(65537)
@@ -83,7 +106,7 @@ def process(pid):
 def inventory(root, relative):
     """Open each component relative to an owned directory FD; never follow links."""
     require(all(TOKEN.fullmatch(x) for x in relative.split("/")), "inventory-path")
-    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    fd = open_directory(root)
     try:
         for part in relative.split("/"):
             try:
@@ -93,12 +116,19 @@ def inventory(root, relative):
             os.close(fd)
             fd = child
         root_stat = os.fstat(fd)
-        rows, total = [], 0
+        rows, total, entries = [], 0, 0
 
-        def walk(directory, prefix):
-            nonlocal total
+        def walk(directory, prefix, depth=0):
+            nonlocal total, entries
+            require(depth <= MAX_DEPTH, "inventory-depth")
             directory_before = os.fstat(directory)
-            for name in sorted(os.listdir(directory)):
+            names = []
+            with os.scandir(directory) as listing:
+                for item in listing:
+                    entries += 1
+                    require(entries <= MAX_ENTRIES, "inventory-limit")
+                    names.append(item.name)
+            for name in sorted(names):
                 require(name not in (".", ".."), "inventory-name")
                 before = os.stat(name, dir_fd=directory, follow_symlinks=False)
                 require(not stat.S_ISLNK(before.st_mode), "inventory-symlink")
@@ -107,7 +137,7 @@ def inventory(root, relative):
                     try:
                         require((os.fstat(nested).st_dev, os.fstat(nested).st_ino) ==
                                 (before.st_dev, before.st_ino), "inventory-race")
-                        walk(nested, prefix + name + "/")
+                        walk(nested, prefix + name + "/", depth + 1)
                     finally:
                         os.close(nested)
                     continue
@@ -154,6 +184,8 @@ def observe(config, job, nonce, phase, expected=None):
               "policySha256": policy_digest, "store": {"reference": value["storeReference"],
                   "configurationDigest": value["configurationDigest"], "attestationSha256": marker_digest},
               "outputInventory": inventory(value["outputRoot"], value["keyPrefix"] + "/" + job)}
+    scope = {key: value[key] for key in ("role", "barrierRoot", "scratchRoot", "outputRoot", "keyPrefix")}
+    result["scopeSha256"] = hashlib.sha256(json.dumps(scope, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     if phase == "store":
         return result
     require(value["barrierRoot"] is not None, "barrier-policy-required")
@@ -163,6 +195,9 @@ def observe(config, job, nonce, phase, expected=None):
     require(type(ready.get("workerProcessId")) is int and ready["workerProcessId"] > 0
             and type(ready.get("childProcessId")) is int and ready["childProcessId"] > 0
             and isinstance(ready.get("readyAt"), str), "barrier-process-identity")
+    ready_at = datetime.fromisoformat(ready["readyAt"].replace("Z", "+00:00"))
+    require(ready_at.tzinfo is not None and 0 <= (datetime.now(timezone.utc) - ready_at).total_seconds()
+            <= MAX_BARRIER_AGE_SECONDS, "barrier-stale")
     result["barrier"] = {key: ready[key] for key in (
         "operationId", "workerId", "workerProcessId", "childProcessId", "readyAt")}
     result["barrier"]["sha256"] = barrier_digest
@@ -180,6 +215,7 @@ def observe(config, job, nonce, phase, expected=None):
                 "pidNamespace": namespace, "barrierSha256": barrier_digest}
     if phase == "before":
         require(child is not None and child["parentPid"] == worker["pid"], "native-child-not-running")
+        require(child["startTicks"] >= worker["startTicks"], "native-child-identity")
         cwd = Path(f"/proc/{child['pid']}/cwd").resolve(strict=True)
         root = Path(value["scratchRoot"])
         require(cwd != root and cwd.is_relative_to(root), "native-scratch-scope")
@@ -198,18 +234,31 @@ def observe(config, job, nonce, phase, expected=None):
         require(child is None, "native-child-still-present")
         result["process"] = {**expected, "childAbsent": True}
         result["scratchInventory"] = inventory(value["scratchRoot"], expected["scratchRelative"])
+    require(process(worker["pid"]) == worker and process(ready["childProcessId"]) == child,
+            "process-observation-race")
+    require(read_json(Path(value["barrierRoot"]) / job / "native-process-started.ready.json")[1]
+            == barrier_digest, "barrier-observation-race")
     return result
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--policy", default="/var/run/honua/qualification/observer-policy.json")
+    parser.add_argument("--policy", default="/run/honua/observer-policy/observer-policy.json")
     parser.add_argument("--job", required=True)
     parser.add_argument("--nonce", required=True)
     parser.add_argument("--phase", choices=("before", "after", "started", "store"), required=True)
     parser.add_argument("--expected", help="base64url encoded retained before-process identity")
     args = parser.parse_args()
     try:
+        # ECS Exec launches as root even though this image's worker runs 1001.
+        # Read /proc with the worker UID, without granting SYS_PTRACE or keeping
+        # root privileges. No policy or job-controlled input selects this UID.
+        if os.geteuid() == 0:
+            os.setgroups([])
+            os.setgid(1001)
+            os.setuid(1001)
+        require(os.getresuid() == (1001, 1001, 1001) and os.getresgid() == (1001, 1001, 1001),
+                "native-image-user-required")
         expected = json.loads(base64.urlsafe_b64decode(args.expected)) if args.expected else None
         result = observe(args.policy, args.job, args.nonce, args.phase, expected)
     except (Refused, OSError, ValueError, TypeError, KeyError, OverflowError):

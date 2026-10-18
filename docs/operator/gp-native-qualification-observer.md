@@ -15,19 +15,26 @@ nonexecution refusal; EKS remains Preview. The existing GP denominator is unchan
 Use **ECS Exec into an explicitly enabled diagnostic sidecar**, not an HTTP
 debug endpoint. Pin the sidecar and native worker to the same reviewed native
 image digest containing `/app/gp_native_observer.py`. Override only the sidecar
-entry point to `python3` with `-c`, `import time; time.sleep(86400)`; it does not
+entry point to `/usr/bin/python3` with `-I`, `-B`, `-c`, `import time; time.sleep(86400)`; it does not
 start a second worker. Declare `pidMode: task` so the separate observer process
 can read the original worker and child process. Mount the worker scratch,
 qualification-barrier and shared-output volumes at the same absolute paths in
-both containers, **read-only in the sidecar**. Keep the worker's existing user,
+both containers, **read-only in the sidecar**. The policy mount must also be
+read-only and inaccessible to job writes. Keep the worker's existing user,
 readonly-root, capability and credential restrictions.
+
+ECS Exec launches its command as root. Before reading policy, files or process
+metadata, the observer drops supplementary groups and switches permanently to
+the native image's UID/GID 1001. Keep the worker at that image user and make the
+read-only policy and scoped mounts readable by 1001. This permits the Linux
+same-user `/proc` checks without adding `SYS_PTRACE` to either container.
 
 ECS Exec needs a writable filesystem for its agent. The auxiliary diagnostic
 sidecar may supply that; do not disable the application's readonly-root setting
 to make a probe work. This is opt-in qualification deployment configuration, not
 a default production sidecar. Both AWS ECS and AWS Batch support ECS Exec;
 review the [ECS requirements](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html)
-and [Batch Fargate configuration](https://docs.aws.amazon.com/batch/latest/userguide/create-job-definition-Fargate.html)
+and [Batch support announcement](https://aws.amazon.com/about-aws/whats-new/2025/04/aws-batch-amazon-elastic-container-service-exec-firelens-log-router/)
 before adopting a task definition. A missing agent or unsupported task profile
 is a blocked observation.
 
@@ -55,14 +62,18 @@ is created or changed by the observer.
 ## Explicit policy
 
 Mount a JSON policy read-only at
-`/var/run/honua/qualification/observer-policy.json`:
+`/run/honua/observer-policy/observer-policy.json`, on a separate policy volume
+that is not mounted in the worker:
+
+Use canonical `/run` mount paths. Ubuntu's `/var/run` is a symlink, and the
+observer deliberately refuses symlinks in every path component.
 
 ```json
 {
   "schema": "honua.gp-observer-policy/v1",
   "enabled": true,
   "role": "worker",
-  "barrierRoot": "/var/run/honua/qualification",
+  "barrierRoot": "/run/honua/qualification",
   "scratchRoot": "/tmp/honua-gdal-worker",
   "outputRoot": "/var/lib/honua/gp-outputs",
   "keyPrefix": "gp/outputs",
@@ -76,17 +87,26 @@ The independent persistent-store observer uses `role: store-observer` and null
 entry observations (or null for inventory only). Its output root, prefix and store identities must
 match. Both roles require the existing `.honua-gp-store.json` marker with local
 provider and shared-persistent storage. Missing roots, policy, attestation or
-matching job barrier fail closed. The worker must explicitly set the existing
+matching job barrier fail closed. The release producer also refuses overlapping
+mounts, executable/import-path shadows, inherited volumes and diagnostic launch
+environment overrides. The observer script is root-owned and read-only, with a
+root-owned, non-writable `/app` directory; the Exec child cannot replace it after
+dropping privileges. The worker must explicitly set the existing
 `HONUA_GP_QUALIFICATION_BARRIER_ROOT`; its native-process-started record supplies
-the actual worker and child IDs. No new simulated operation is introduced.
+the actual worker and child IDs. Set `HONUA_GP_QUALIFICATION_PAUSE_AT` to
+`native-process-started` in the qualification worker configuration so a submitted
+job passes the earlier barriers and pauses at native entry without any writable
+observer control channel. Unset preserves the existing all-barrier harness.
+An unsupported selection cannot produce the required native readiness record.
+No new simulated operation is introduced.
 
 The maintained producer sends a fresh 128-bit nonce and invokes:
 
 ```text
-python3 /app/gp_native_observer.py --job JOB --nonce NONCE --phase before
-python3 /app/gp_native_observer.py --job JOB --nonce NONCE --phase after --expected BASE64URL_BEFORE_PROCESS
-python3 /app/gp_native_observer.py --job JOB --nonce NONCE --phase started
-python3 /app/gp_native_observer.py --job JOB --nonce NONCE --phase store
+/usr/bin/python3 -I -B /app/gp_native_observer.py --job JOB --nonce NONCE --phase before
+/usr/bin/python3 -I -B /app/gp_native_observer.py --job JOB --nonce NONCE --phase after --expected BASE64URL_BEFORE_PROCESS
+/usr/bin/python3 -I -B /app/gp_native_observer.py --job JOB --nonce NONCE --phase started
+/usr/bin/python3 -I -B /app/gp_native_observer.py --job JOB --nonce NONCE --phase store
 ```
 
 `started` reads the exact native-entry barrier and expressly does not assert a
@@ -95,8 +115,11 @@ RUNNING before cancelling. `before` requires a live, non-zombie direct child and
 PID-namespace inode and worker/child start ticks. `after` requires the original
 worker identity and barrier bytes, and refuses any remaining child PID,
 including reuse. Filesystem inventories hash every regular job-scoped file;
-symlinks, special files, races, traversal, more than 4,096 files or more than
-128 MiB fail closed. No file contents, process arguments, environments or
+symlinks in any path component, special files, races, traversal, more than 4,096
+entries (including empty directories), depth over 32, or more than 128 MiB fail
+closed. Native-entry barriers must be timezone-aware, no more than five minutes
+old, and not in the future. Keep the entire qualification cancellation and late
+observation window within that bound. No file contents, process arguments, environments or
 credentials are emitted. A reader must still bind the task/container/image,
 nonce, observation time, job and source/run provenance independently.
 

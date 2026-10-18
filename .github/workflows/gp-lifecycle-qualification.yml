@@ -6,6 +6,8 @@ on:
     paths:
       - 'scripts/qualification/gp-lifecycle-harness.sh'
       - 'scripts/qualification/test_gp_lifecycle_harness.py'
+      - 'scripts/qualification/gp_native_observer.py'
+      - 'docker/worker-gdal/Dockerfile'
       - 'scripts/qualification/mcp/**'
       - '.github/workflows/gp-lifecycle-qualification.yml'
   push:
@@ -13,6 +15,8 @@ on:
     paths:
       - 'scripts/qualification/gp-lifecycle-harness.sh'
       - 'scripts/qualification/test_gp_lifecycle_harness.py'
+      - 'scripts/qualification/gp_native_observer.py'
+      - 'docker/worker-gdal/Dockerfile'
       - 'scripts/qualification/mcp/**'
       - '.github/workflows/gp-lifecycle-qualification.yml'
   workflow_dispatch:

@@ -1,6 +1,7 @@
 """Executable tests for the GP qualification receipt boundary."""
 
 import copy
+from datetime import datetime, timezone
 import importlib.util
 import json
 import math
@@ -520,7 +521,7 @@ class NativeObserverTests(unittest.TestCase):
         self.ready_path = self.barriers / "job-1/native-process-started.ready.json"
         self.ready = {"operationId": "job-1", "workerId": "worker-1", "barrier": "native-process-started",
                       "workerProcessId": os.getpid(), "childProcessId": self.child.pid,
-                      "readyAt": "2026-10-18T10:00:00Z"}
+                      "readyAt": datetime.now(timezone.utc).isoformat()}
         self.ready_path.write_text(json.dumps(self.ready))
 
     def write_policy(self):
@@ -640,6 +641,38 @@ class NativeObserverTests(unittest.TestCase):
         with (folder / "large").open("wb") as stream:
             stream.truncate(self.observer.MAX_BYTES + 1)
         with self.assertRaisesRegex(self.observer.Refused, "inventory-limit"):
+            self.observe()
+
+    def test_barrier_parent_symlink_is_refused(self):
+        original = self.barriers / "job-1"
+        moved = self.barriers / "retained"
+        original.rename(moved)
+        original.symlink_to(moved, target_is_directory=True)
+        with self.assertRaises(OSError):
+            self.observe()
+
+    def test_stale_and_future_barriers_cannot_prove_native_entry(self):
+        for ready_at in ("2000-01-01T00:00:00Z", "2999-01-01T00:00:00Z"):
+            with self.subTest(ready_at=ready_at):
+                self.ready_path.write_text(json.dumps({**self.ready, "readyAt": ready_at}))
+                with self.assertRaisesRegex(self.observer.Refused, "barrier-stale"):
+                    self.observe("started")
+
+    def test_empty_directories_count_toward_inventory_bounds(self):
+        folder = self.outputs / "gp/outputs/job-1"
+        folder.mkdir(parents=True)
+        self.observer.MAX_ENTRIES = 3
+        for i in range(4):
+            (folder / str(i)).mkdir()
+        with self.assertRaisesRegex(self.observer.Refused, "inventory-limit"):
+            self.observe()
+
+    def test_deep_directory_inventory_is_refused(self):
+        folder = self.outputs / "gp/outputs/job-1"
+        for _ in range(self.observer.MAX_DEPTH + 2):
+            folder /= "nested"
+        folder.mkdir(parents=True)
+        with self.assertRaisesRegex(self.observer.Refused, "inventory-depth"):
             self.observe()
 
 
