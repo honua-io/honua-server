@@ -447,7 +447,10 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
             CompletedAt = DateTimeOffset.UtcNow,
             FileImportOutput = new FileImportOutputReceipt
             {
-                PhysicalTableName = "provider_actual_42", Schema = "tenant_data", FeatureCount = 17, DetectedSrid = 4326,
+                PhysicalTableName = "provider_actual_42",
+                Schema = "tenant_data",
+                FeatureCount = 17,
+                DetectedSrid = 4326,
             },
         };
         await jobStore.TryCreateAsync(record);

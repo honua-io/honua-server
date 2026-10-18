@@ -405,16 +405,16 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
         {
             ExecutionJobStatus.Succeeded when job.FileImportOutput is { FeatureCount: >= 0 } output
                 && !string.IsNullOrWhiteSpace(output.PhysicalTableName) && !string.IsNullOrWhiteSpace(output.Schema) => progress with
-            {
-                Status = ImportStatus.Completed,
-                CompletedAt = job.CompletedAt ?? job.UpdatedAt,
-                PhysicalTableName = output.PhysicalTableName,
-                Schema = output.Schema,
-                FeaturesProcessed = output.FeatureCount,
-                DetectedSrid = output.DetectedSrid,
-                Warnings = job.Warnings,
-                CurrentPhase = "Import completed",
-            },
+                {
+                    Status = ImportStatus.Completed,
+                    CompletedAt = job.CompletedAt ?? job.UpdatedAt,
+                    PhysicalTableName = output.PhysicalTableName,
+                    Schema = output.Schema,
+                    FeaturesProcessed = output.FeatureCount,
+                    DetectedSrid = output.DetectedSrid,
+                    Warnings = job.Warnings,
+                    CurrentPhase = "Import completed",
+                },
             // Older jobs and importers without an actual output identity remain explicit:
             // the requested table is not proof of the physical output.
             ExecutionJobStatus.Succeeded => progress with

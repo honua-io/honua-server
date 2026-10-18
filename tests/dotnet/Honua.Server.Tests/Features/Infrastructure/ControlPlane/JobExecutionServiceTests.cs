@@ -40,7 +40,9 @@ public sealed class JobExecutionServiceTests
             .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
         var receipt = new FileImportOutputReceipt
         {
-            PhysicalTableName = "actual_table", Schema = "tenant_schema", FeatureCount = 17,
+            PhysicalTableName = "actual_table",
+            Schema = "tenant_schema",
+            FeatureCount = 17,
         };
         var executor = Substitute.For<IJobExecutor>();
         executor.Kind.Returns(kind);
