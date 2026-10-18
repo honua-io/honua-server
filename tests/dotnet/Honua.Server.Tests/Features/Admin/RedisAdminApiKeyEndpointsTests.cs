@@ -24,6 +24,7 @@ public sealed class RedisAdminApiKeyEndpointsTests(RedisFixture redis) : IAsyncL
     private const string BootstrapKey = "redis-api-key-http-bootstrap";
     private const string RegistryPrefix = "honua:auth:admin-api-key:";
     private readonly List<Guid> _createdIds = [];
+    private readonly StoreTimeProvider _storeTime = new();
     private ConnectionMultiplexer _connection = null!;
     private WebAppFixture _fixture = null!;
     private HttpClient _admin = null!;
@@ -40,7 +41,7 @@ public sealed class RedisAdminApiKeyEndpointsTests(RedisFixture redis) : IAsyncL
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IAdminApiKeyStore>();
-                services.AddSingleton<IAdminApiKeyStore>(new RedisAdminApiKeyStore(_connection));
+                services.AddSingleton<IAdminApiKeyStore>(new RedisAdminApiKeyStore(_connection, _storeTime));
             });
         await _fixture.InitializeAsync();
         _admin = CreateClient(BootstrapKey);
@@ -144,7 +145,10 @@ public sealed class RedisAdminApiKeyEndpointsTests(RedisFixture redis) : IAsyncL
     [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
     public async Task Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata(string operation, string expectedStatus)
     {
-        var expiresAt = DateTimeOffset.UtcNow.AddSeconds(10);
+        // Setup can take longer than the credential lifetime on a busy test host.
+        // Hold only the store's validity clock while exercising the pre-expiry write.
+        // Redis still uses real TTLs, and the store returns to real time before denial.
+        var expiresAt = _storeTime.Freeze().AddSeconds(10);
         using var body = new StringContent(JsonSerializer.Serialize(new
         {
             name = "redis-expiry-" + operation,
@@ -178,6 +182,7 @@ public sealed class RedisAdminApiKeyEndpointsTests(RedisFixture redis) : IAsyncL
             Assert.Equal(HttpStatusCode.OK, revoke.StatusCode);
         }
 
+        _storeTime.Resume();
         // Use real time: advancing only a test clock cannot reproduce Redis TTL deletion.
         var delay = expiresAt.AddMilliseconds(250) - DateTimeOffset.UtcNow;
         if (delay > TimeSpan.Zero)
@@ -461,4 +466,24 @@ public sealed class RedisAdminApiKeyEndpointsTests(RedisFixture redis) : IAsyncL
 
     private HttpClient CreateClient(string key) =>
         _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", key));
+    private sealed class StoreTimeProvider : TimeProvider
+    {
+        private long _frozenUtcTicks;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            var ticks = Interlocked.Read(ref _frozenUtcTicks);
+            return ticks == 0 ? DateTimeOffset.UtcNow : new DateTimeOffset(ticks, TimeSpan.Zero);
+        }
+
+        internal DateTimeOffset Freeze()
+        {
+            var now = DateTimeOffset.UtcNow;
+            Interlocked.Exchange(ref _frozenUtcTicks, now.UtcTicks);
+            return now;
+        }
+
+        internal void Resume() => Interlocked.Exchange(ref _frozenUtcTicks, 0);
+    }
+
 }
