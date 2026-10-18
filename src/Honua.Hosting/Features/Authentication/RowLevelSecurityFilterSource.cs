@@ -92,12 +92,14 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
             return [];
         }
 
-        var roles = RbacRoleClaims.Enumerate(
-            principal,
-            _rbacOptions,
-            JobSecurityScope.Current is null
-                ? _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices
-                : _backgroundServices);
+        var roles = AgentCredentialAuthority.IsDelegated(principal)
+            ? AgentCredentialAuthority.SourceRoles(principal)
+            : RbacRoleClaims.Enumerate(
+                principal,
+                _rbacOptions,
+                JobSecurityScope.Current is null
+                    ? _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices
+                    : _backgroundServices);
 
         var layerName = resource.Metadata.Name;
         if (string.IsNullOrWhiteSpace(layerName))
@@ -181,9 +183,13 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
     /// </summary>
     private (FilterExpression Expression, SqlFragment Sql) BuildPredicate(RlsPolicy policy, ClaimsPrincipal principal, MetadataV2Resource resource)
     {
-        var values = principal
-            .FindAll(policy.ClaimType)
-            .Select(static claim => claim.Value)
+        // Managed role restrictions remain effective without projecting those roles
+        // into the principal's administrative authorization identity.
+        var claimValues = AgentCredentialAuthority.IsDelegated(principal) &&
+            (policy.ClaimType == ClaimTypes.Role || policy.ClaimType == (principal.Identity as ClaimsIdentity)?.RoleClaimType)
+            ? AgentCredentialAuthority.SourceRoles(principal)
+            : principal.FindAll(policy.ClaimType).Select(static claim => claim.Value);
+        var values = claimValues
             .Where(static value => !string.IsNullOrWhiteSpace(value))
             .Distinct(StringComparer.Ordinal)
             .ToList();

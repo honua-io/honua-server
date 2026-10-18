@@ -41,12 +41,14 @@ internal sealed partial class RowLevelSecurityFilterSource
             return new ReadSecurityResolution(null, ImmutableArray<string>.Empty);
         }
 
-        var roles = RbacRoleClaims.Enumerate(
-            principal,
-            _rbacOptions,
-            JobSecurityScope.Current is null
-                ? _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices
-                : _backgroundServices);
+        var roles = AgentCredentialAuthority.IsDelegated(principal)
+            ? AgentCredentialAuthority.SourceRoles(principal)
+            : RbacRoleClaims.Enumerate(
+                principal,
+                _rbacOptions,
+                JobSecurityScope.Current is null
+                    ? _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices
+                    : _backgroundServices);
         var services = await ResolveServiceNamesAsync(resource, cancellationToken).ConfigureAwait(false);
         var policies = await ((ICombinedReadPolicyStore)_policyStore).GetEffectiveReadPoliciesAsync(
             ((FieldMaskSource)fieldSource).PolicyStore,

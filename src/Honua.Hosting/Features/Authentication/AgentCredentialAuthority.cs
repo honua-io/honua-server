@@ -57,6 +57,8 @@ public sealed record AgentCredentialSnapshot
     public required string Kind { get; init; }
     /// <summary>Stored API key ID or delegation profile ID.</summary>
     public required string Id { get; init; }
+    /// <summary>Authentication-time stored credential version; no secret key material.</summary>
+    public string? CredentialVersion { get; init; }
     /// <summary>Delegation generation captured at proposal time.</summary>
     public long Generation { get; init; }
     /// <summary>Exact issuer, audience, subject and tenant captured at proposal time.</summary>
@@ -76,7 +78,7 @@ public sealed record AgentCredentialSnapshot
 internal static class AgentCredentialAuthority
 {
     internal const string ValidationClaim = "honua:delegated_agent_validation";
-    private static readonly string[] ValidationClaimTypes = ["iss", "sub", "aud", "exp", "tenant_id", "tid", "scope", "scp"];
+    private static readonly string[] ValidationClaimTypes = ["iss", "sub", "aud", "exp", "tenant_id", "tid", "scope", "scp", ClaimTypes.NameIdentifier];
     private const string GrantClaim = "honua:delegated_agent_acl";
     private const string DelegatedOnlyClaim = "honua:delegated_agent_only";
     private const string GenerationClaim = "honua:delegated_agent_generation";
@@ -85,15 +87,17 @@ internal static class AgentCredentialAuthority
     private const string DelegatedKind = "oidc-delegated-agent";
 
     // Called only by JwtBearer's successful validation event, before custom mappings.
-    internal static void MarkValidated(ClaimsIdentity identity, IServiceProvider? services = null)
+    internal static void MarkValidated(ClaimsIdentity identity, IServiceProvider? services = null, string? validatedIssuer = null)
     {
         foreach (var existing in identity.FindAll(ValidationClaim).ToArray()) identity.RemoveClaim(existing);
         var marker = CanonicalSecurityActor.CreateStampedClaim(ValidationClaim, "validated");
+        if (validatedIssuer is not null) marker.Properties["validated-issuer"] = validatedIssuer;
         var types = ValidationClaimTypes
             .Concat(services is null ? [] : Profiles(services).Select(p => p.TenantClaimType));
         foreach (var type in types.Distinct(StringComparer.Ordinal))
         {
             var values = identity.FindAll(type).ToArray();
+            marker.Properties["count:" + type] = values.Length.ToString(System.Globalization.CultureInfo.InvariantCulture);
             // Ambiguous identities fail closed, including duplicate equal values.
             if (values.Length == 1) marker.Properties[type] = values[0].Value;
         }
@@ -103,12 +107,13 @@ internal static class AgentCredentialAuthority
             if (!identity.HasClaim(c => c.Type == "sub") && subjects.Length == 1) marker.Properties["sub"] = subjects[0].Value;
         }
         var audiences = identity.FindAll("aud").ToArray();
-        marker.Properties["audience-count"] = audiences.Length.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        marker.Properties["aud-count"] = audiences.Length.ToString(System.Globalization.CultureInfo.InvariantCulture);
         for (var i = 0; i < audiences.Length; i++) marker.Properties["audience-" + i.ToString(System.Globalization.CultureInfo.InvariantCulture)] = audiences[i].Value;
         identity.AddClaim(marker);
     }
 
     internal static bool IsAgent(ClaimsPrincipal principal) => principal.Identity?.IsAuthenticated == true &&
+        !ApiKeyAuthenticationHandler.IsTrustedNonStoredOperator(principal) &&
         principal.HasClaim("permission", "agent:workspace") &&
         (principal.HasClaim(c => c.Type == "api_key_id") || TrustedProfile(principal) is not null);
 
@@ -117,10 +122,10 @@ internal static class AgentCredentialAuthority
         if (services is null || principal.Identity is not ClaimsIdentity { IsAuthenticated: true } identity) return principal;
         var marker = principal.FindAll(ValidationClaim).SingleOrDefault(CanonicalSecurityActor.IsFrameworkOwnedClaim);
         if (marker is null) return principal;
-        var reserved = Audiences(services).Any(a => a.Issuer == Value(marker, "iss") &&
+        var validatedIssuer = Value(marker, "validated-issuer") ?? Value(marker, "iss");
+        var reserved = Audiences(services).Any(a => a.Issuer == validatedIssuer &&
             marker.Properties.Any(property => property.Key.StartsWith("audience-", StringComparison.Ordinal) && property.Value == a.Audience));
-        var dedicatedAudience = Audiences(services).Any(a => marker.Properties.Any(property =>
-            property.Key.StartsWith("audience-", StringComparison.Ordinal) && property.Value == a.Audience));
+        var dedicatedAudience = reserved;
         var knownSubject = Profiles(services).Any(p => p.Issuer == Value(marker, "iss") && p.Subject == Value(marker, "sub"));
         if (!dedicatedAudience && !knownSubject) return principal;
         // Quarantine workloads before eligibility checks: a removed/disabled profile may
@@ -130,6 +135,7 @@ internal static class AgentCredentialAuthority
         if (!reserved || !long.TryParse(Value(marker, "exp"), out var expiry) ||
             expiry <= Now(services).ToUnixTimeSeconds()) return principal;
         var profiles = Profiles(services).Where(p => Valid(p, services) &&
+            !HasAmbiguousBinding(marker, p.TenantClaimType) &&
             p.Issuer == Value(marker, "iss") && p.Subject == Value(marker, "sub") &&
             (Value(marker, "tenant_id") is null || Value(marker, "tenant_id") == p.Tenant) &&
             (Value(marker, "tid") is null || Value(marker, "tid") == p.Tenant) &&
@@ -137,6 +143,7 @@ internal static class AgentCredentialAuthority
             (Value(marker, "scope") ?? Value(marker, "scp") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(p.RequiredScope, StringComparer.Ordinal)).ToArray();
         if (profiles.Length != 1) return principal;
         var profile = profiles[0];
+        if (CanonicalSecurityActor.Resolve(principal)?.SubjectId != profile.Subject) return principal;
         var authority = await ResolveAuthorityAsync(profile, services, default).ConfigureAwait(false);
         var permissions = authority.Permissions;
         if (!permissions.Contains("agent:workspace", StringComparer.Ordinal)) return principal;
@@ -164,7 +171,7 @@ internal static class AgentCredentialAuthority
         if (!IsAgent(principal)) return null;
         var binding = TrustedProfile(principal);
         var snapshot = binding is null
-            ? new AgentCredentialSnapshot { Kind = "api-key", Id = principal.FindFirst("api_key_id")!.Value, Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray() }
+            ? new AgentCredentialSnapshot { Kind = "api-key", Id = principal.FindFirst("api_key_id")!.Value, CredentialVersion = StoredApiKeyCredentialVersion.GetStamped(principal), Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray() }
             : new AgentCredentialSnapshot { Kind = DelegatedKind, Id = binding.Value, Generation = long.TryParse(Value(binding, "generation"), out var generation) ? generation : 0,
                 Binding = [Value(binding, "issuer") ?? "", Value(binding, "audience") ?? "", Value(binding, "subject") ?? "", Value(binding, "tenant") ?? "", Value(binding, "tenant-claim") ?? "", Value(binding, "required-scope") ?? ""],
                 RoleGrantFingerprints = principal.FindAll(GrantClaim).Where(CanonicalSecurityActor.IsFrameworkOwnedClaim).Select(c => c.Value).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
@@ -181,8 +188,8 @@ internal static class AgentCredentialAuthority
         {
             if (!Guid.TryParse(snapshot.Id, out var id) || id == Guid.Empty) return null;
             var key = await services.GetRequiredService<IAdminApiKeyStore>().GetAsync(id, cancellationToken).ConfigureAwait(false);
-            if (key is null || key.RevokedAt is not null || key.ExpiresAt <= Now(services) || !Same(key.Permissions, snapshot.Permissions)) return null;
-            return ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(key.Id, key.Name, key.Permissions);
+            if (key is null || snapshot.CredentialVersion is null || snapshot.CredentialVersion != StoredApiKeyCredentialVersion.FromRecord(key) || key.RevokedAt is not null || key.ExpiresAt <= Now(services) || !Same(key.Permissions, snapshot.Permissions)) return null;
+            return ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(key);
         }
         if (snapshot.Kind != DelegatedKind || snapshot.TokenExpiresAt <= Now(services)) return null;
         var matches = Profiles(services).Where(p => p.Id == snapshot.Id).ToArray();
@@ -217,13 +224,14 @@ internal static class AgentCredentialAuthority
     internal static async Task<bool> IsCurrentAsync(ClaimsPrincipal principal, IServiceProvider services, CancellationToken cancellationToken)
     {
         if (principal.Identity?.IsAuthenticated != true) return false;
+        if (ApiKeyAuthenticationHandler.IsTrustedNonStoredOperator(principal)) return true;
         if (IsDelegated(principal))
         {
             if (services.GetService<ITenantContext>() is { } tenant && !MatchesTenant(principal, tenant.TenantId)) return false;
             return await CaptureAsync(principal, services, cancellationToken).ConfigureAwait(false) is not null;
         }
         if (principal.FindFirst("api_key_id") is not { } keyId) return true;
-        var snapshot = new AgentCredentialSnapshot { Kind = "api-key", Id = keyId.Value,
+        var snapshot = new AgentCredentialSnapshot { Kind = "api-key", Id = keyId.Value, CredentialVersion = StoredApiKeyCredentialVersion.GetStamped(principal),
             Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray() };
         var current = await RevalidateAsync(snapshot, services, cancellationToken).ConfigureAwait(false);
         return current is not null && CanonicalSecurityActor.Resolve(current)?.ActorId == CanonicalSecurityActor.Resolve(principal)?.ActorId;
@@ -304,21 +312,21 @@ internal static class AgentCredentialAuthority
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { return new([], [], []); }
     }
+    private static bool HasAmbiguousBinding(Claim marker, string tenantClaimType) =>
+        Count(marker, "sub") > 1 || Count(marker, ClaimTypes.NameIdentifier) > 1 ||
+        Count(marker, "tenant_id") > 1 || Count(marker, "tid") > 1 || Count(marker, tenantClaimType) > 1;
+
+    private static int Count(Claim marker, string type) =>
+        int.TryParse(Value(marker, "count:" + type), out var count) ? count : 0;
+
     private static bool Covered(string permission, IReadOnlyList<PermissionGrant> grants)
     {
         if (LayerScopedWriteKey.IsMalformedResourceGrant(permission)) return false;
         if (permission.StartsWith("read:", StringComparison.Ordinal) || permission.StartsWith("write:", StringComparison.Ordinal))
         {
-            var read = permission.StartsWith("read:", StringComparison.Ordinal);
-            var scope = permission[(permission.IndexOf(':') + 1)..].Split('/');
-            var service = scope[0];
-            var layer = scope.Length == 2 ? scope[1] : "*";
-            AuthorizationOperation[] operations = read
-                ? [AuthorizationOperation.Query, AuthorizationOperation.Metadata, AuthorizationOperation.Export]
-                : [AuthorizationOperation.Insert, AuthorizationOperation.Update, AuthorizationOperation.Delete];
-            return operations.Any(operation => grants.Any(grant =>
-                (grant.Service == "*" || grant.Service == service) && (grant.Layer == "*" || grant.Layer == layer) &&
-                AuthorizationOperationExtensions.Satisfies(grant.Operation, operation)));
+            // This is only the configured ceiling. Every actual data operation also
+            // intersects the fresh canonical role grants through AuthorizeSnapshot.
+            return true;
         }
         // Coarse workspace/admin capabilities are explicit global canonical role grants.
         return permission.Split(':') is [var resource, var action] && resource is "agent" or "admin" &&

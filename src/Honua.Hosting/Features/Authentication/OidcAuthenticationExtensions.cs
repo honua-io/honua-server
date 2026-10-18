@@ -705,7 +705,7 @@ public static partial class OidcAuthenticationExtensions
                     // while leaving every non-OAuth principal's grant decision untouched.
                     if (context.Principal?.Identity is ClaimsIdentity bearerIdentity)
                     {
-                        AgentCredentialAuthority.MarkValidated(bearerIdentity, context.HttpContext.RequestServices);
+                        AgentCredentialAuthority.MarkValidated(bearerIdentity, context.HttpContext.RequestServices, context.SecurityToken.Issuer);
                         // JsonWebTokenHandler may create a ClaimsIdentity whose
                         // AuthenticationType is a generic federation value rather than the
                         // concrete ticket scheme. Retain the scheme selected and validated by

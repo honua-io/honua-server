@@ -83,7 +83,10 @@ internal sealed class SharedStyleEditExecutor(IServiceProvider services) : Honua
             KeyId = credential.Kind == "api-key" ? Guid.Parse(credential.Id) : Guid.Empty,
             Credential = credential,
             Permissions = credential.Permissions,
-            AuthorSecurityContext = await services.GetRequiredService<WorkflowAuthorSecurityContextCapturer>().CaptureAsync(http.User, cancellationToken).ConfigureAwait(false),
+            AuthorSecurityContext = AgentCredentialAuthority.IsDelegated(http.User)
+                ? new Honua.Core.Features.Authorization.Domain.JobSecurityContext(actor, turn.Binding.TenantId,
+                    credential.Permissions.Select(permission => new Honua.Core.Features.Authorization.Domain.JobSecurityClaim("permission", permission)).ToArray()) { OwnerActorId = actor }
+                : await services.GetRequiredService<WorkflowAuthorSecurityContextCapturer>().CaptureAsync(http.User, cancellationToken).ConfigureAwait(false),
             WorkspaceId = turn.Binding.WorkspaceId,
             TurnId = turn.Binding.TurnId,
             OwnerActorId = turn.Binding.OwnerActorId!,

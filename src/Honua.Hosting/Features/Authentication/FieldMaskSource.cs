@@ -79,12 +79,14 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
             return ImmutableArray<string>.Empty;
         }
 
-        var roles = RbacRoleClaims.Enumerate(
-            principal,
-            _rbacOptions,
-            JobSecurityScope.Current is null
-                ? _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices
-                : _backgroundServices);
+        var roles = AgentCredentialAuthority.IsDelegated(principal)
+            ? AgentCredentialAuthority.SourceRoles(principal)
+            : RbacRoleClaims.Enumerate(
+                principal,
+                _rbacOptions,
+                JobSecurityScope.Current is null
+                    ? _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices
+                    : _backgroundServices);
 
         var layerName = resource.Metadata.Name;
         if (string.IsNullOrWhiteSpace(layerName))

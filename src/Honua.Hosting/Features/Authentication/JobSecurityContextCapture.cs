@@ -169,6 +169,15 @@ internal static class JobSecurityContextCapture
     {
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(options);
+        if (AgentCredentialAuthority.IsDelegated(principal))
+        {
+            // JobSecurityClaim stores values, not validated claim provenance. Until the
+            // durable executor revalidates a credential binding, serializing a delegated
+            // identity would lose its ceiling and managed row/field restrictions.
+            throw new Microsoft.AspNetCore.Http.BadHttpRequestException(
+                "Delegated credentials require credential-aware durable execution.",
+                Microsoft.AspNetCore.Http.StatusCodes.Status403Forbidden);
+        }
 
         var roleClaimTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {

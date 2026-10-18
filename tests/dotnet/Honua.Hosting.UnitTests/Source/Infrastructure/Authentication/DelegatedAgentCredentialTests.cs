@@ -3,6 +3,11 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
+using Microsoft.AspNetCore.Http;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Identity.Abstractions;
@@ -11,6 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication;
 using NSubstitute;
 using Xunit;
 
@@ -28,12 +34,18 @@ public sealed class DelegatedAgentCredentialTests
     [InlineData("multi-audience")]
     [InlineData("duplicate-subject")]
     [InlineData("duplicate-tenant")]
+    [InlineData("canonical-subject")]
+    [InlineData("ambiguous-alternate-tenant")]
+    [InlineData("ambiguous-name-identifier")]
     public async Task Bind_RejectsMismatchedOrUnvalidatedToken(string mismatch)
     {
         using var fixture = new Fixture();
         var principal = Token(mismatch);
         if (mismatch == "duplicate-subject") ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("sub", "subject"));
         if (mismatch == "duplicate-tenant") ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("tenant_id", "tenant"));
+        if (mismatch == "ambiguous-alternate-tenant") ((ClaimsIdentity)principal.Identity!).AddClaims([new("tid", "tenant"), new("tid", "tenant")]);
+        if (mismatch == "ambiguous-name-identifier") ((ClaimsIdentity)principal.Identity!).AddClaims([new(ClaimTypes.NameIdentifier, "subject"), new(ClaimTypes.NameIdentifier, "subject")]);
+        if (mismatch == "canonical-subject") ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim(ClaimTypes.NameIdentifier, "different-subject"));
         if (mismatch == "multi-audience") ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("aud", "other"));
         if (mismatch != "unvalidated") AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
         await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
@@ -138,7 +150,7 @@ public sealed class DelegatedAgentCredentialTests
         using var fixture = new Fixture();
         var store = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var created = await store.CreateAsync("key", ["agent:workspace", "admin:read"], null, null, default);
-        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record.Id, created.Record.Name, created.Record.Permissions);
+        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
         var snapshot = await AgentCredentialAuthority.CaptureAsync(principal, fixture.Services, default);
         snapshot.Should().NotBeNull();
         await store.RevokeAsync(created.Record.Id, default);
@@ -149,7 +161,7 @@ public sealed class DelegatedAgentCredentialTests
     public async Task QueryOnlyCanonicalRole_DoesNotGainMetadataExportOrDifferentLayer()
     {
         using var fixture = new Fixture();
-        fixture.Profile.Permissions = ["agent:workspace", "read:parcels/0"];
+        fixture.Profile.Permissions = ["agent:workspace", "read:*"];
         fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions = [
                 new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" },
@@ -177,7 +189,7 @@ public sealed class DelegatedAgentCredentialTests
         using var fixture = new Fixture();
         var store = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var created = await store.CreateAsync("reader", ["admin:read"], null, null, default);
-        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record.Id, "reader", created.Record.Permissions);
+        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
         (await AgentCredentialAuthority.IsCurrentAsync(principal, fixture.Services, default)).Should().BeTrue();
         await store.RevokeAsync(created.Record.Id, default);
         (await AgentCredentialAuthority.IsCurrentAsync(principal, fixture.Services, default)).Should().BeFalse();
@@ -198,6 +210,105 @@ public sealed class DelegatedAgentCredentialTests
         var allowed = new AuthorizationHandlerContext([requirement], human, "another-agent-proposal");
         await new AdminApproveAuthorizationHandler().HandleAsync(allowed);
         allowed.HasSucceeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task DelegatedCredential_PreservesManagedRowAndFieldRestrictionsWithoutAdminRole()
+    {
+        using var fixture = new Fixture();
+        var principal = Token();
+        AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
+        await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
+        principal.IsInRole("worker").Should().BeFalse();
+        var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = principal, RequestServices = fixture.Services } };
+        var resource = new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "parcels", Name = "parcels" } };
+        var graph = Substitute.For<IMetadataV2GraphProvider>();
+        var masks = Substitute.For<IFieldMaskPolicyStore>();
+        masks.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), "parcels", Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<IReadOnlyList<string>>(0).Contains("worker")
+                ? new FieldMaskPolicy[] { new() { Role = "worker", Service = "*", Layer = "parcels", Attribute = "secret" } }
+                : []);
+        var fields = new FieldMaskSource(accessor, masks, graph, Options.Create(new RbacOptions()), NullLogger<FieldMaskSource>.Instance);
+        (await fields.ResolveAsync(resource)).Should().Equal("secret");
+        var rows = Substitute.For<IRlsPolicyStore>();
+        rows.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), "parcels", Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<IReadOnlyList<string>>(0).Contains("worker")
+                ? new RlsPolicy[] { new() { Role = "worker", Service = "*", Layer = "parcels", Attribute = "owner_role", ClaimType = ClaimTypes.Role } }
+                : []);
+        var filters = Substitute.For<IFilterExpressionService>();
+        filters.Normalize(Arg.Any<FilterExpression>(), resource).Returns(call => call.ArgAt<FilterExpression>(0));
+        filters.Translate(Arg.Any<FilterExpression>(), resource)
+            .Returns(call => FilterTranslationResult.Success(call.ArgAt<FilterExpression>(0), new SqlFragment("TRUE", [])));
+        var rls = new RowLevelSecurityFilterSource(accessor, rows, graph, filters, Options.Create(new RbacOptions()), NullLogger<RowLevelSecurityFilterSource>.Instance);
+        var expressions = await rls.ResolveExpressionsAsync(resource);
+        expressions.Should().ContainSingle();
+        // The restriction compares against the managed role, never the kind marker.
+        var predicate = expressions[0].Should().BeOfType<BinaryExpression>().Subject;
+        predicate.Right.Should().BeOfType<ValueList>().Subject.Values.Cast<Literal>().Select(value => value.Value).Should().Equal("worker");
+        principal.IsInRole("worker").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task StoredKeyRotation_InvalidatesRetainedPrincipalAndSealedSnapshotWithUnchangedIdAndGrants()
+    {
+        using var fixture = new Fixture();
+        var store = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var created = await store.CreateAsync("worker", ["agent:workspace"], null, null, default);
+        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
+        var snapshot = await AgentCredentialAuthority.CaptureAsync(principal, fixture.Services, default);
+        snapshot.Should().NotBeNull();
+        (await AgentCredentialAuthority.IsCurrentAsync(principal, fixture.Services, default)).Should().BeTrue();
+        var rotated = await store.RotateAsync(created.Record.Id, default);
+        rotated.Should().NotBeNull();
+        rotated!.Record.Id.Should().Be(created.Record.Id);
+        rotated.Record.Permissions.Should().Equal(created.Record.Permissions);
+        (await AgentCredentialAuthority.IsCurrentAsync(principal, fixture.Services, default)).Should().BeFalse();
+        (await AgentCredentialAuthority.RevalidateAsync(snapshot!, fixture.Services, default)).Should().BeNull();
+        var validated = await store.ValidateAsync(rotated.Key, default);
+        validated.Should().NotBeNull();
+        var current = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(validated!.Record);
+        (await AgentCredentialAuthority.IsCurrentAsync(current, fixture.Services, default)).Should().BeTrue();
+        (await AgentCredentialAuthority.CaptureAsync(current, fixture.Services, default)).Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ActualBootstrapOrDevelopmentOperator_IsCurrentButCannotCaptureDeferredAgentAuthority(bool developmentBypass)
+    {
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(new ApiKeyAuthenticationDependencies(Options.Create(new ApiKeyAuthenticationOptions
+        {
+            AdminPassword = "bootstrap-credential-consumer-test", EnvironmentName = "Test", IsTestMode = true,
+            DevAuthBypass = developmentBypass ? "true" : "false", DevAuthBypassAcknowledged = "true"
+        })));
+        services.AddAuthentication(AuthenticationExtensions.ApiKeyScheme)
+            .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(AuthenticationExtensions.ApiKeyScheme, _ => { });
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        if (!developmentBypass) context.Request.Headers["X-API-Key"] = "bootstrap-credential-consumer-test";
+        var authenticated = await context.AuthenticateAsync(AuthenticationExtensions.ApiKeyScheme);
+        authenticated.Succeeded.Should().BeTrue();
+        var principal = authenticated.Principal!;
+        (await AgentCredentialAuthority.IsCurrentAsync(principal, scope.ServiceProvider, default)).Should().BeTrue();
+        AgentCredentialAuthority.IsAgent(principal).Should().BeFalse();
+        (await AgentCredentialAuthority.CaptureAsync(principal, scope.ServiceProvider, default)).Should().BeNull();
+        var untrusted = new ClaimsPrincipal(new ClaimsIdentity(principal.Claims.Select(claim => new Claim(claim.Type, claim.Value)), AuthenticationExtensions.ApiKeyScheme));
+        using var fixture = new Fixture();
+        (await AgentCredentialAuthority.IsCurrentAsync(untrusted, fixture.Services, default)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task DelegatedCredential_CannotEnterLegacyDurableJobSnapshot()
+    {
+        using var fixture = new Fixture();
+        var principal = Token();
+        AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
+        await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
+        var capture = () => JobSecurityContextCapture.Capture(principal, new RbacOptions());
+        capture.Should().Throw<BadHttpRequestException>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        (await AgentCredentialAuthority.CaptureAsync(principal, fixture.Services, default)).Should().NotBeNull();
     }
 
     private static ClaimsPrincipal Token(string? mismatch = null) => new(new ClaimsIdentity([

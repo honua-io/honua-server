@@ -276,3 +276,43 @@ More general failures: [Troubleshooting](../deploy/troubleshooting.md).
 - [Control access to services and layers](access-control.md)
 - [Production security checklist](production-checklist.md)
 - [TLS and mTLS](tls-and-mtls.md)
+
+
+### Delegated agent access tokens
+
+A delegated workload uses a dedicated OIDC issuer/client audience registered in
+`Oidc:DelegatedAgentAudiences`. Keep this registration when retiring
+or removing individual profiles. Every successfully validated token for that
+issuer/audience remains classified as a workload, including tokens with no scope
+or no active profile; it cannot recover the managed account's human privileges.
+The host must not share that registered client audience with ordinary human login.
+
+`Oidc:DelegatedAgents` binds an enabled, unexpired profile to one
+exact issuer, audience, subject and tenant claim. The default tenant claim is
+`tenant_id`, matching AgentCore's forwarded JWT contract. The required scope is
+`agent:workspace`. The current implementation deliberately accepts one audience;
+multiple audiences and ambiguous subject or tenant claims fail closed. JWT signature,
+issuer, audience and lifetime validation remain mandatory in the normal bearer
+pipeline. A tenant header cannot establish the credential's tenant.
+
+Each profile has a stable `Id`, positive `Generation`, expiry and permission ceiling.
+Change its generation to invalidate pending snapshots when changing enrollment.
+Current managed membership and canonical role grants remain authoritative. Resource
+access intersects the configured ceiling with the existing canonical role evaluator;
+the ceiling cannot create resource access. Managed row filters and field masks
+remain in force. A delegated workload cannot approve or reject proposals, including
+another actor's proposals, even when its underlying managed account is an administrator.
+
+Approval snapshots contain credential bindings and grant fingerprints, never bearer
+secrets. Replay rechecks the current profile, membership, role grants, tenant and
+permission ceiling and cannot outlive the originating token. Disabling, removing or
+expiring the profile, revoking membership or changing grants invalidates the replay.
+Stored API keys retain their own identity and are rechecked against authentication-time
+credential versions; rotating a key invalidates old principals and pending snapshots
+even when its stored ID and permission list remain unchanged.
+
+Delegated credentials currently fail closed when a surface tries to create a generic
+durable job security snapshot. Scheduled workflow execution and deferred GP jobs
+remain unavailable for these credentials until their executors revalidate a canonical
+credential binding. Shared-style approval replay uses its own sealed credential
+snapshot and does not dispatch that legacy job context.

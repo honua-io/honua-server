@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
@@ -30,6 +31,10 @@ public sealed class DelegatedAgentJwtBearerTests
     [InlineData("wrong-audience", false)]
     [InlineData("wrong-subject", false)]
     [InlineData("wrong-tenant", false)]
+    [InlineData("multi-audience", false)]
+    [InlineData("duplicate-subject", false)]
+    [InlineData("duplicate-tenant", false)]
+    [InlineData("duplicate-alternate-tenant", false)]
     [InlineData("expired", false)]
     [InlineData("forged-signature", false)]
     [InlineData("removed-profile-omitted-scope-admin", false)]
@@ -85,6 +90,10 @@ public sealed class DelegatedAgentJwtBearerTests
             notBefore: DateTime.UtcNow.AddMinutes(-10),
             expires: variant == "expired" ? DateTime.UtcNow.AddMinutes(-1) : DateTime.UtcNow.AddMinutes(5),
             signingCredentials: new SigningCredentials(variant == "forged-signature" ? new RsaSecurityKey(otherRsa) : key, SecurityAlgorithms.RsaSha256));
+        if (variant == "multi-audience") token.Payload["aud"] = new[] { "honua", "other" };
+        if (variant == "duplicate-subject") token.Payload["sub"] = new[] { "subject", "subject" };
+        if (variant == "duplicate-tenant") token.Payload["tenant_id"] = new[] { "tenant", "tenant" };
+        if (variant == "duplicate-alternate-tenant") token.Payload["tid"] = new[] { "tenant", "tenant" };
         var context = new DefaultHttpContext { RequestServices = provider };
         context.Request.Headers.Authorization = "Bearer " + new JwtSecurityTokenHandler().WriteToken(token);
         var result = await context.AuthenticateAsync(OidcAuthenticationExtensions.JwtBearerScheme);
@@ -93,6 +102,9 @@ public sealed class DelegatedAgentJwtBearerTests
         {
             result.Principal!.IsInRole("admin").Should().BeFalse();
             AdminApiKeyPermission.IsAuthorized(result.Principal, "POST").Should().BeFalse();
+            var approval = new AuthorizationHandlerContext([new AdminApproveRequirement()], result.Principal, "another-agent-proposal");
+            await new AdminApproveAuthorizationHandler().HandleAsync(approval);
+            approval.HasFailed.Should().BeTrue();
         }
         if (expectedAgent)
         {
