@@ -10,7 +10,6 @@ from .conftest import OgrResult
 from .controlled_wfs import source_document
 from .test_wfs_query import TestWfsQuery as WfsQueries
 
-
 pytestmark = pytest.mark.gdal
 
 
