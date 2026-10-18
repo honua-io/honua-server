@@ -16,6 +16,24 @@ CANONICAL_BBOX = (-122.495, 37.705, -122.455, 37.735)
 WORKER_BBOX = (-122.411, 37.783, -122.408, 37.786)
 
 
+def _coordinates_match(actual, expected):
+    if isinstance(expected, (list, tuple)):
+        return isinstance(actual, (list, tuple)) and len(actual) == len(expected) and all(
+            _coordinates_match(left, right) for left, right in zip(actual, expected, strict=True))
+    return actual == pytest.approx(expected, abs=1e-8, rel=0)
+
+
+def _geometry_matches(actual, expected):
+    """Retain type, structure and all ordinates within 1e-8, including Z if present.
+
+    Normalize only representation: ring direction/start and component ordering.
+    Coordinate counts, holes and geometry types must remain identical.
+    """
+    left = actual.normalize().__geo_interface__
+    right = expected.normalize().__geo_interface__
+    return left["type"] == right["type"] and _coordinates_match(left["coordinates"], right["coordinates"])
+
+
 def authored_geometries():
     """Both maintained lane modes have authored data; neither uses observed outputs as truth."""
     if os.environ.get("HONUA_BASE_URL"):
@@ -69,6 +87,7 @@ def exact_rows(document, expected, typename, *, bounds=None):
             assert actual.intersects(box(*bounds)), "spatial query returned out-of-bounds geometry"
             expected_geometry = shape(expected[identifier]["geometry"])
             assert actual.bounds == pytest.approx(expected_geometry.bounds, abs=1e-8, rel=0), "spatial query changed coordinate bounds"
+            assert _geometry_matches(actual, expected_geometry), "spatial query changed geometry structure or coordinates"
     assert observed == {key: value["name"] for key, value in expected.items()}, "unexpected exact feature identity/name set"
 
 
@@ -88,7 +107,7 @@ def source_subset(document, typename):
         expected = authored[name]
         assert (geometry is None) == (expected is None), "source fixture geometry presence differs"
         if expected is not None:
-            assert shape(geometry).equals_exact(shape(expected), tolerance=1e-8), "source fixture geometry differs"
+            assert _geometry_matches(shape(geometry), shape(expected)), "source fixture geometry differs"
             if shape(expected).intersects(box(*bounds)):
                 selected[identifier] = {"name": name, "geometry": expected}
     assert {row["name"] for row in selected.values()} == expected_names, "authored window changed"

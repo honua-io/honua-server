@@ -102,6 +102,56 @@ def test_actual_attribute_probe_rejects_nonsemantic_success(monkeypatch, fault):
         run_probe(document, output, "attribute")
 
 
+@pytest.mark.parametrize("fault", ["changed-type", "moved-interior", "removed-vertex", "extra-hole"])
+def test_worker_spatial_probe_rejects_same_bounds_geometry_corruption(monkeypatch, fault):
+    from shapely.geometry import shape
+
+    monkeypatch.delenv("HONUA_BASE_URL", raising=False)
+    document = source_document()
+    expected, _ = source_subset(document, "fixture:points")
+    output = {"type": "FeatureCollection", "features": [deepcopy(row) for row in document["features"] if row["id"] in expected]}
+    target = next(row for row in output["features"] if row["properties"]["name"] == ("beta" if fault in {"changed-type", "moved-interior"} else "epsilon"))
+    original = deepcopy(target["geometry"])
+    if fault == "changed-type":
+        target["geometry"]["type"] = "LineString"
+    elif fault == "moved-interior":
+        target["geometry"]["coordinates"][1][0] += .0002
+    elif fault == "removed-vertex":
+        del target["geometry"]["coordinates"][0][1]
+    else:
+        target["geometry"]["coordinates"].append([
+            [-122.418, 37.776], [-122.417, 37.776], [-122.417, 37.777], [-122.418, 37.777], [-122.418, 37.776]])
+    assert shape(target["geometry"]).is_valid
+    assert shape(target["geometry"]).bounds == shape(original).bounds
+    with pytest.raises(AssertionError, match="geometry structure or coordinates"):
+        run_probe(document, output, "bbox")
+
+
+def test_worker_spatial_probe_accepts_ring_and_component_representation_normalization(monkeypatch):
+    monkeypatch.delenv("HONUA_BASE_URL", raising=False)
+    document = source_document()
+    expected, _ = source_subset(document, "fixture:points")
+    output = {"type": "FeatureCollection", "features": [deepcopy(row) for row in document["features"] if row["id"] in expected]}
+    for row in output["features"]:
+        if row["properties"]["name"] == "beta":
+            row["geometry"]["coordinates"].reverse()
+        elif row["properties"]["name"] == "epsilon":
+            ring = row["geometry"]["coordinates"][0][:-1]
+            ring = list(reversed(ring[1:] + ring[:1]))
+            row["geometry"]["coordinates"][0] = [*ring, ring[0]]
+    assert len(run_probe(document, output, "bbox")) == 1
+
+
+def test_canonical_point_probe_rejects_unexpected_extra_ordinate(monkeypatch):
+    monkeypatch.setenv("HONUA_BASE_URL", "http://controlled")
+    document = source_document()
+    output = deepcopy(document)
+    output["features"] = output["features"][:3]
+    output["features"][0]["geometry"]["coordinates"].append(1)
+    with pytest.raises(AssertionError, match="geometry structure or coordinates"):
+        run_probe(document, output, "bbox")
+
+
 @pytest.mark.parametrize("fault", ["outside", "changed-bounds", "small-coordinate-drift", "null", "empty", "duplicate", "null-only-empty-window"])
 def test_actual_spatial_probes_reject_wrong_rows_and_coordinates(monkeypatch, fault):
     monkeypatch.setenv("HONUA_BASE_URL", "http://controlled")
