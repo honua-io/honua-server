@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
+using System.Text.Json.Serialization;
+
 namespace Honua.Core.Features.Authorization.Domain;
 
 /// <summary>
@@ -66,6 +69,26 @@ public sealed record JobSecurityContext(
     /// Absent on snapshots captured before separate workspace routing metadata was introduced.
     /// </summary>
     public string? WorkspaceOwnerId { get; init; }
+
+    /// <summary>
+    /// Sealed credential identity for agent execution. This is metadata, never a bearer token.
+    /// Workers must revalidate it through the current credential authority before execution.
+    /// </summary>
+    public AgentCredentialSnapshot? AgentCredential { get; init; }
+
+    /// <summary>Recognized role aliases used only for policy lookup; values always come from current roles.</summary>
+    public string[] AgentPolicyRoleClaimTypes { get; init; } = [];
+
+    /// <summary>
+    /// Transient execution deadline established by current credential authority.
+    /// Workers must revalidate before trusting this value and cancel execution at the deadline.
+    /// </summary>
+    [JsonIgnore]
+    public DateTimeOffset? CredentialExpiresAt { get; init; }
+
+    /// <summary>Live, freshly validated identity; deliberately excluded from every durable payload.</summary>
+    [JsonIgnore]
+    internal ClaimsPrincipal? CurrentAgentPrincipal { get; init; }
 }
 
 /// <summary>
