@@ -310,6 +310,16 @@ public sealed class OperationDispatcher : IOperationInvoker
                     .EvaluateAsync(descriptor, request, invocationContext, cancellationToken)
                     .ConfigureAwait(false)
                 : PolicyDecision.Allowed;
+            if (decision.Kind == PolicyDecisionKind.Allow && string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)
+                && !string.IsNullOrWhiteSpace(invocationContext.RequiredApprovalPolicyRef))
+            {
+                decision = new PolicyDecision
+                {
+                    Kind = PolicyDecisionKind.RequireApproval,
+                    ApprovalLane = "control-plane",
+                    Reason = invocationContext.RequiredApprovalPolicyRef,
+                };
+            }
             envelope = envelope with
             {
                 OperationId = descriptor.OperationId,

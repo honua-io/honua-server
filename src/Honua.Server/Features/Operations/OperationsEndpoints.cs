@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
@@ -123,7 +124,8 @@ internal static class OperationsEndpoints
         string id,
         OperationInvokeRequest request,
         IOperationInvoker invoker,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool durableOperatorApproval)
     {
         SetNoStore(context);
         if (!await OperationAdminAuthorization.IsAuthorizedAsync(
@@ -162,7 +164,12 @@ internal static class OperationsEndpoints
         }
     }
 
-    private static async Task<IResult> HandleSubmitOperation(
+    internal static Task<IResult> HandleSubmitOperation(
+        HttpContext context, string id, OperationInvokeRequest request,
+        IOperationCatalog catalog, IOperationInvoker invoker, CancellationToken cancellationToken)
+        => HandleSubmitOperationWithApproval(context, id, request, catalog, invoker, cancellationToken, false);
+
+    internal static async Task<IResult> HandleSubmitOperationWithApproval(
         HttpContext context,
         string id,
         OperationInvokeRequest request,
@@ -219,14 +226,28 @@ internal static class OperationsEndpoints
             }
         }
 
+        string? requiredApprovalPolicyRef = null;
         if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
         {
             var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-            var approvalResult = gate.EvaluateApproval(
-                context, OperatorResourceType.Catalog, OperatorOperation.Publish);
-            if (approvalResult != null)
+            if (durableOperatorApproval && descriptor.OperationId == ServicePublishOperation.OperationId)
             {
-                return approvalResult;
+                var approval = gate.CheckApproval(context.User, new OperatorAuthorizationRequest
+                {
+                    ResourceType = OperatorResourceType.Catalog,
+                    Operation = OperatorOperation.Publish,
+                });
+                if (approval.IsRequired)
+                {
+                    requiredApprovalPolicyRef = !string.IsNullOrWhiteSpace(approval.PolicyRef)
+                        ? approval.PolicyRef : "operator:publish-approval";
+                }
+            }
+            else
+            {
+                var approvalResult = gate.EvaluateApproval(
+                    context, OperatorResourceType.Catalog, OperatorOperation.Publish);
+                if (approvalResult != null) return approvalResult;
             }
         }
 
@@ -245,6 +266,10 @@ internal static class OperationsEndpoints
             var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
             var policyContext = new OperationPolicyContext
             {
+                RequiredApprovalPolicyRef = requiredApprovalPolicyRef,
+                IdempotencyRequestHash = durableOperatorApproval && idempotencyKey is not null
+                    ? Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(request,
+                        OperationsJsonContext.Default.OperationInvokeRequest))) : null,
                 PrincipalId = principalId,
                 TenantId = tenantId,
                 IdempotencyKey = idempotencyKey is null
@@ -296,7 +321,7 @@ internal static class OperationsEndpoints
         }
     }
 
-    private static async Task<IResult> HandleGetHandleStatus(
+    internal static async Task<IResult> HandleGetHandleStatus(
         HttpContext context,
         string handleId,
         IOperationInstanceStore instanceStore,
@@ -462,7 +487,7 @@ internal static class OperationsEndpoints
 
     // Bind the caller's key to its tenant and principal, so one caller's key can never resolve
     // another caller's durable invocation or sealed proposal.
-    private static string ScopeIdempotencyKey(string key, string? tenantId, string? principalId)
+    internal static string ScopeIdempotencyKey(string key, string? tenantId, string? principalId)
         => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
             $"{tenantId ?? "<default>"}:{principalId ?? "<anonymous>"}:{key}")));
 

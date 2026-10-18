@@ -77,6 +77,12 @@ public sealed record OperationSecretReference
 public sealed record OperationPolicyContext
 {
     /// <summary>
+    /// Additional approval requirement evaluated by a trusted transport's operator gate.
+    /// This can only restrict an allow decision; it never overrides a denial or grants replay authority.
+    /// </summary>
+    public string? RequiredApprovalPolicyRef { get; init; }
+
+    /// <summary>
     /// Durable proposal identity when the canonical proposal runtime is replaying an approved
     /// sealed request. Protocol adapters must never populate this field.
     /// </summary>

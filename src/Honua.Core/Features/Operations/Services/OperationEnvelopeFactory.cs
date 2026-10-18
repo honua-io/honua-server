@@ -389,7 +389,8 @@ public sealed class OperationEnvelopeFactory(
         },
     };
 
-    private static string DeriveIdempotentInstanceId(string operationId, string idempotencyKey, string? tenantId)
+    /// <summary>Resolves the stable receipt identity for an already principal-scoped idempotency key.</summary>
+    public static string DeriveIdempotentInstanceId(string operationId, string idempotencyKey, string? tenantId)
     {
         var key = $"{operationId}:{idempotencyKey}";
         var material = System.Text.Encoding.UTF8.GetBytes(tenantId is null ? key : $"{tenantId.Length}:{tenantId}:{key}");
