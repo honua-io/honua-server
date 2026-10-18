@@ -619,9 +619,24 @@ internal static class AgentWorkspaceEndpoints
         if (command is null || command.ActorId != Actor(context)) return Results.NotFound();
         if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
             return Results.Forbid();
-        return await OperationsEndpoints.HandleGetBoundHandleStatus(context, command.OperationInstanceId,
+        var result = await OperationsEndpoints.HandleGetBoundHandleStatus(context, command.OperationInstanceId,
             context.RequestServices.GetRequiredService<IOperationInstanceStore>(), context.RequestAborted,
             expectedTenantId: document.TenantId, requireExactTenant: true).ConfigureAwait(false);
+        var latest = await store.GetAsync(document.WorkspaceId).ConfigureAwait(false);
+        var currentActor = Actor(context);
+        if (latest is null || currentActor != command.ActorId || latest.OwnerId != document.OwnerId || latest.TenantId != document.TenantId ||
+            !AgentWorkspaceState.CanRead(latest, currentActor, Tenant(context), document.TargetId) ||
+            !latest.Commands.TryGetValue(command.CommandId, out var retained) || !SameCommand(command, retained)) return Results.NotFound();
+        if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
+            return Results.Forbid();
+        return result;
     }
+    private static bool SameCommand(AgentWorkspaceCommand original, AgentWorkspaceCommand retained)
+        => original.CommandId == retained.CommandId && original.ActorId == retained.ActorId && original.DraftId == retained.DraftId &&
+            original.DraftRevision == retained.DraftRevision && original.IdempotencyKey == retained.IdempotencyKey &&
+            original.OperationInstanceId == retained.OperationInstanceId && original.RetryBefore == retained.RetryBefore &&
+            original.OriginatingTurnId == retained.OriginatingTurnId && original.Fields.Count == retained.Fields.Count &&
+            original.Fields.All(pair => retained.Fields.TryGetValue(pair.Key, out var value) && value == pair.Value);
+
 }
 internal sealed class AgentWorkspaceNotFoundException : Exception;

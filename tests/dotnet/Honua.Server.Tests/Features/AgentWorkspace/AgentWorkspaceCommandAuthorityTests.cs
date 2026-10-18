@@ -86,6 +86,45 @@ public sealed class AgentWorkspaceCommandAuthorityTests
         ((IStatusCodeHttpResult)result).StatusCode.Should().Be(404);
     }
 
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MembershipOrJournalChangeDuringHandleReadCannotProjectEarlierAuthorizedReceipt(bool changeJournal)
+    {
+        var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "human-1")], "Bearer");
+        CanonicalSecurityActor.StampAuthorityClaims(identity);
+        var principal = new ClaimsPrincipal(identity);
+        var actor = CanonicalSecurityActor.Resolve(principal)!.ActorId;
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-1");
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), Arg.Any<string>()).Returns(AuthorizationResult.Success());
+        var document = new AgentWorkspaceDocument
+        { WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = actor, Members = [actor], TenantId = "tenant-1" };
+        var original = new AgentWorkspaceCommand("known", actor, "draft-1", 0, "key", "operation-1", new() { ["table"] = "original" }, DateTimeOffset.UtcNow.AddHours(1));
+        document.Commands[original.CommandId] = original;
+        var workspace = Substitute.For<IAgentWorkspaceStore>();
+        workspace.GetTargetIdAsync().Returns("target-1");
+        workspace.GetAsync("workspace-1").Returns(_ => document);
+        var operations = Substitute.For<IOperationInstanceStore>();
+        var delayed = new TaskCompletionSource<OperationHandle?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        operations.GetAsync("operation-1", Arg.Any<CancellationToken>()).Returns(delayed.Task);
+        using var services = new ServiceCollection().AddSingleton(tenant).AddSingleton(authorization).AddSingleton(operations).BuildServiceProvider();
+        var context = new DefaultHttpContext { User = principal, RequestServices = services };
+        context.Request.RouteValues["workspaceId"] = "workspace-1";
+        context.Request.RouteValues["commandId"] = "known";
+        var pending = AgentWorkspaceEndpoints.GetCommand(context, workspace);
+        pending.IsCompleted.Should().BeFalse();
+        if (changeJournal)
+            document = document with { Commands = new(document.Commands, StringComparer.Ordinal)
+            { ["known"] = original with { Fields = new() { ["table"] = "changed-during-read" } } } };
+        else document = document with { Members = [] };
+        delayed.SetResult(Handle("operation-1", "tenant-1"));
+        ((IStatusCodeHttpResult)await pending).StatusCode.Should().Be(404);
+        await workspace.DidNotReceive().SaveAsync(Arg.Any<AgentWorkspaceDocument>());
+        await operations.DidNotReceive().SetAsync(Arg.Any<OperationHandle>(), Arg.Any<CancellationToken>());
+    }
+
     private static OperationHandle Handle(string id, string tenant) => new()
     {
         OperationInstanceId = id, OperationId = "service.publish", TenantId = tenant, Status = OperationHandleStatus.RequiresApproval,
