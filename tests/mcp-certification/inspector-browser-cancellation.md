@@ -13,7 +13,8 @@ and never uses an AbortSignal. A positive Inspector proof requires all of:
 
 - The exact authored query reaches a real PostgreSQL relation-lock blocker.
 - The actual client sends a session-bound, typed `notifications/cancelled` while
-  its original upstream request is still open. The proxy never shields aborts.
+  its original upstream request is still open. Its envelope must declare JSON-RPC
+  `2.0` and omit an own `id`, including `null`. The proxy never shields aborts.
 - The actual UI initialization binds that session and negotiated protocol
   version; the consumer compares it with its reported client protocol identity.
 - The public Cancel button disappears and Execute Tool is enabled again,
@@ -43,6 +44,11 @@ blocked after more than three server monitor periods, so the proof must fail.
 These controls never qualify a Honua candidate, AWS target or another Inspector
 version. The existing workflow retains separate exact-source counts and marks
 them `candidateQualified: false`.
+
+Seven authored malformed-envelope controls require refusal before forwarding or
+recording cancellation, with the original request pending until owned cleanup.
+They cover missing and incorrectly typed/versioned `jsonrpc` values and an own
+`id` containing null, a number or a string.
 
 The canonical adapter still needs candidate-bound execution of this helper.
 Inspector initial ping and unknown-tool error addressability remain separate

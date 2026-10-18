@@ -7,8 +7,11 @@ import { cancellationWireObserver, queryArguments } from './inspector-browser-ca
 import { until } from './postgres-cancellation-observer.mjs';
 import { fixture } from './test/cancellation-fixture.mjs';
 
+const malformedEnvelopes = ['missing-jsonrpc', 'wrong-jsonrpc', 'numeric-jsonrpc', 'null-jsonrpc',
+  'null-notification-id', 'numeric-notification-id', 'string-notification-id'];
+
 async function exercise(mode) {
-  let reply; let original; let reached = false;
+  let reply; let original; let reached = false; let notificationForwarded = 0;
   const peer = createServer(async (request, response) => {
     const chunks = []; for await (const chunk of request) chunks.push(chunk);
     const message = JSON.parse(Buffer.concat(chunks));
@@ -33,6 +36,7 @@ async function exercise(mode) {
       };
       return;
     }
+    if (message.method === 'notifications/cancelled') notificationForwarded++;
     response.writeHead(202).end(); reply();
   });
   await new Promise((resolve) => peer.listen(0, '127.0.0.1', resolve));
@@ -40,20 +44,41 @@ async function exercise(mode) {
   const abort = new AbortController();
   const post = (message, session = 'control-session', signal) => fetch(wire.endpoint, { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Mcp-Session-Id': session }, body: JSON.stringify(message), signal });
-  let outcome;
+  let outcome; let originalSettled = false;
   try {
     if (mode !== 'no-initialization') await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
     wire.arm(queryArguments(fixture));
     outcome = post({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'honua_query_features', arguments: queryArguments(fixture) } }, undefined, abort.signal)
-      .then((response) => response.text()).catch(() => undefined);
+      .then((response) => response.text()).catch(() => undefined).finally(() => { originalSettled = true; });
     await until(() => reached && wire.capture, 2_000);
+    const observed = wire.capture;
     if (mode === 'local-abort') { abort.abort(); await outcome; }
     if (mode !== 'no-notification' && mode !== 'local-abort') {
-      await post({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: mode === 'wrong-id-type' ? '7' : 7 } },
+      const notification = { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: mode === 'wrong-id-type' ? '7' : 7 } };
+      if (mode === 'missing-jsonrpc') delete notification.jsonrpc;
+      if (mode === 'wrong-jsonrpc') notification.jsonrpc = '1.0';
+      if (mode === 'numeric-jsonrpc') notification.jsonrpc = 2;
+      if (mode === 'null-jsonrpc') notification.jsonrpc = null;
+      if (mode === 'null-notification-id') notification.id = null;
+      if (mode === 'numeric-notification-id') notification.id = 7;
+      if (mode === 'string-notification-id') notification.id = '7';
+      const response = await post(notification,
         mode === 'wrong-session' ? 'other-session' : 'control-session');
+      if (malformedEnvelopes.includes(mode)) {
+        assert.equal(response.status, 502, 'malformed cancellation must be refused');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        assert.equal(notificationForwarded, 0, 'malformed cancellation must not reach the peer');
+        assert.equal(originalSettled, false, 'original request must remain pending until cleanup');
+        assert.equal(original.destroyed, false);
+        assert.equal(observed.complete, false);
+        assert.equal(observed.aborted, false);
+        assert.equal(observed.notification, false);
+        assert.equal(observed.upstreamOpenAtNotification, false);
+        assert.deepEqual(observed.responses, []);
+      }
     }
     if (['no-notification', 'dropped'].includes(mode)) reply();
-    if (mode !== 'local-abort' && !['wrong-session', 'wrong-id-type'].includes(mode)) await outcome;
+    if (mode !== 'local-abort' && !['wrong-session', 'wrong-id-type', ...malformedEnvelopes].includes(mode)) await outcome;
     if (['json', 'gzip-sse'].includes(mode)) {
       assert.equal(wire.assertTerminal().id, 7);
     } else assert.throws(() => wire.assertTerminal(), /Inspector cancellation proof failed/);
@@ -65,6 +90,6 @@ async function exercise(mode) {
 }
 
 for (const mode of ['json', 'gzip-sse', 'no-initialization', 'initialization-session', 'wrong-terminal', 'missing-error-message', 'nonstring-error-message', 'result-present', 'duplicate', 'no-notification',
-  'wrong-id-type', 'wrong-session', 'local-abort', 'dropped']) {
+  'wrong-id-type', 'wrong-session', 'local-abort', 'dropped', ...malformedEnvelopes]) {
   test(`independent cancellation observer ${mode}`, { timeout: 5_000 }, () => exercise(mode));
 }

@@ -39,6 +39,8 @@ for (const dropCancellation of [false, true]) {
         const chunks = []; for await (const chunk of request) chunks.push(chunk);
         const message = JSON.parse(Buffer.concat(chunks));
         if (message.method === 'notifications/cancelled') {
+          assert.equal(message.jsonrpc, '2.0');
+          assert.equal(Object.hasOwn(message, 'id'), false);
           // Any actual installed-client integer is valid; correlate to original.
           assert.equal(message.params.requestId, initialResponse.id);
           assert.equal(request.headers['mcp-session-id'], 'ui-control-session');
