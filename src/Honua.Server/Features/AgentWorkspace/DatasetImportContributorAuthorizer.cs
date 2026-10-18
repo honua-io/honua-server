@@ -32,7 +32,7 @@ internal sealed class DatasetImportContributorAuthorizer(IAgentWorkspaceStore st
         var document = await store.GetAsync(workspaceId).ConfigureAwait(false);
         if (document is null || !document.DatasetImportExecutionBindings.TryGetValue(taskId, out var binding) ||
             !document.DatasetImportTasks.TryGetValue(taskId, out var versions) ||
-            versions.SingleOrDefault(task => task.Revision == revision) is not { } task ||
+            versions.SingleOrDefault(candidateVersion => candidateVersion.Revision == revision) is not { } task ||
             !Bound(document, binding, task, actor, tenant, target, contentHash)) return null;
         var executor = await AgentCredentialAuthority.RevalidateAsync(binding.ExecutorAuthority, services, cancellationToken).ConfigureAwait(false);
         if (executor is null || CanonicalSecurityActor.Resolve(executor)?.ActorId != binding.ExecutorActorId) return null;

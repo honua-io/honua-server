@@ -111,7 +111,7 @@ internal static class DatasetImportTaskService
     private static async Task<IResult> AuthorizedVersion(HttpContext context, AgentWorkspaceDocument workspace, string taskId, long revision)
     {
         if (!workspace.DatasetImportTasks.TryGetValue(taskId, out var versions)) return Results.NotFound();
-        var candidate = versions.SingleOrDefault(task => task.Revision == revision);
+        var candidate = versions.SingleOrDefault(candidateVersion => candidateVersion.Revision == revision);
         if (candidate is null) return Results.NotFound();
         var task = await context.RequestServices.GetRequiredService<IDatasetImportTaskProvider>().AuthorizeAsync(context.User,
             workspace.WorkspaceId, taskId, revision, candidate.ContentHash, false, context.RequestAborted).ConfigureAwait(false);
