@@ -218,7 +218,7 @@ public sealed class WorkflowPackageApprovedReplayTests
             workspaces.GetAsync("workspace").Returns(document);
             var payload = new WorkflowPackageApprovalPayload
             {
-                AuthorSecurityContext = JobSecurityContextCapture.Capture(principal, new Honua.Core.Features.Authorization.Domain.RbacOptions(), Tenant()),
+                AuthorSecurityContext = JobSecurityContextCapture.Capture(principal, new RbacOptions(), Tenant()),
                 Intent = new() { Action = "delete", PackageId = "package", Version = 1, PackageHash = hash, PublicationId = "publication" },
                 KeyId = created.Record.Id,
                 ActorId = actor,

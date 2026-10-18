@@ -8,6 +8,7 @@ using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Server.Features.WorkflowPackages;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -47,7 +48,7 @@ public sealed class WorkflowPackageSchedulerCommitTests(RedisFixture redis)
             Assert.DoesNotContain(await definitions.ListScheduledAsync(cancellationToken), item => item.WorkflowId == definitionId);
             Assert.Null(await catalog.GetPublicationAsync(publicationId, cancellationToken));
             observed = true;
-            if (commitBeforeFailure) await transaction.CommitAsync(cancellationToken);
+            if (commitBeforeFailure) await transaction.CommitSafelyAsync(cancellationToken);
             throw new IOException("Injected publication commit receipt failure.");
         });
         await fixture.InitializeAsync();

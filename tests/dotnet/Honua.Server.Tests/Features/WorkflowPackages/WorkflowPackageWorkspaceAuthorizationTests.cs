@@ -216,7 +216,7 @@ public sealed class WorkflowPackageWorkspaceAuthorizationTests
         (await authoring.ReadAsync(principal, "workspace-a", "turn-a", first.PackageId, 1, CancellationToken.None)).Should().Be(first);
         (await store.ListPublicationsAsync()).Should().BeEmpty();
         // No execution method is invoked: only canonical authorization and plan validation.
-        jobs.ReceivedCalls().Should().OnlyContain(call => call.GetMethodInfo().Name is "EnsureCallerAuthorizedAsync" or "ValidatePlan");
+        jobs.ReceivedCalls().Should().OnlyContain(call => call.GetMethodInfo().Name == "EnsureCallerAuthorizedAsync" || call.GetMethodInfo().Name == "ValidatePlan");
         turns.AuthorizeAsync(principal, "workspace-a", "turn-a", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<AgentWorkspaceTurnAuthorization?>(null));
         var revoked = () => authoring.ReadAsync(principal, "workspace-a", "turn-a", first.PackageId, 1, CancellationToken.None);

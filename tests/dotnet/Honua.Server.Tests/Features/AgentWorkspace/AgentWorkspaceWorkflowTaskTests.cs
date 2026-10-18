@@ -108,7 +108,7 @@ public sealed class AgentWorkspaceWorkflowTaskTests
         attached.WorkflowAuthoringCommands[command.CommandId].AttachmentState.Should().Be("Attached");
         attached.WorkflowAuthoringCommands[command.CommandId].AttachedRevision.Should().Be(2);
         attached.Turns[command.TurnId].Context.Revision.Should().Be(1);
-        var later = AgentWorkspaceState.Update(attached, new("tab-1", 2, "target-1", [], Reference));
+        var later = AgentWorkspaceState.Update(attached, new("tab-1", 2, "target-1", [], Reference, "console"));
         AgentWorkspaceState.AttachWorkflowArtifact(later, later.WorkflowAuthoringCommands[command.CommandId], command.PackageId, 1, Hash)
             .Should().BeSameAs(later);
         later.Task.Should().Be(Reference);
@@ -118,7 +118,7 @@ public sealed class AgentWorkspaceWorkflowTaskTests
     public void HumanNavigationProducesDurableConflictWithoutDiscardingArtifactOrReattachingOnRetry()
     {
         var (document, command) = AuthoringDocument();
-        var navigated = AgentWorkspaceState.Update(document, new("tab-1", 1, "target-1", [], Reference));
+        var navigated = AgentWorkspaceState.Update(document, new("tab-1", 1, "target-1", [], Reference, "console"));
         var conflict = AgentWorkspaceState.AttachWorkflowArtifact(navigated, command, command.PackageId, 1, Hash);
         conflict.Task.Should().Be(Reference);
         conflict.WorkflowAuthoringCommands[command.CommandId].AttachmentState.Should().Be("Conflict");
@@ -135,7 +135,7 @@ public sealed class AgentWorkspaceWorkflowTaskTests
         {
             WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-owner", Members = ["human-owner", "agent"]
         };
-        document = AgentWorkspaceState.Update(document, new("tab-1", 0, "target-1", [], null));
+        document = AgentWorkspaceState.Update(document, new("tab-1", 0, "target-1", [], null, "console"));
         document = AgentWorkspaceState.AddTurn(document, "agent", new("turn-1", "tab-1", 1, "Create a process"));
         var command = new AgentWorkflowAuthoringCommand("command-1", "agent", document.WorkspaceId, "turn-1", "fingerprint",
             "agent-workflow-1", 1, Hash, document.OwnerId, "public", document.TargetId, "release-1", "tab-1", 1);
