@@ -451,6 +451,20 @@ internal sealed class WorkflowPackageService(
         // that row is still active, so a concurrent delete or disable cannot observe an
         // enabled cron for a publication that is already gone or turned off. A failed write
         // removes the row and the definition.
+        var saved = await SerializePublicationMutationAsync(
+            (locked, token) => locked.PersistPublicationAsync(publication, scheduleDefinition, token), cancellationToken).ConfigureAwait(false);
+
+        WorkflowPackageLog.PackagePublished(logger, packageId, version, publicationId, request.Target.ToString());
+
+        await EmitMetadataReleaseArtifactAsync(saved, principal, cancellationToken).ConfigureAwait(false);
+        return saved;
+    }
+
+    private async Task<WorkflowPublication> PersistPublicationAsync(WorkflowPublication publication,
+        WorkflowDefinition? scheduleDefinition, CancellationToken cancellationToken)
+    {
+        if (authorSecurityContextCapturer?.ApprovedReplay is { } replay)
+            await replay.RevalidateKeyAndMembershipAsync(cancellationToken).ConfigureAwait(false);
         var saved = await store.SavePublicationAsync(publication, cancellationToken).ConfigureAwait(false);
         if (scheduleDefinition is not null)
         {
@@ -464,14 +478,11 @@ internal sealed class WorkflowPackageService(
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                await CompensateFailedSchedulePublishAsync(publicationId, workflowDefinitionId, ex).ConfigureAwait(false);
+                await CompensateFailedSchedulePublishAsync(publication.PublicationId, publication.WorkflowDefinitionId, ex).ConfigureAwait(false);
                 throw;
             }
         }
 
-        WorkflowPackageLog.PackagePublished(logger, packageId, version, publicationId, request.Target.ToString());
-
-        await EmitMetadataReleaseArtifactAsync(saved, principal, cancellationToken).ConfigureAwait(false);
         return saved;
     }
 
@@ -554,10 +565,18 @@ internal sealed class WorkflowPackageService(
         string publicationId, ClaimsPrincipal? principal, CancellationToken cancellationToken)
     {
         var access = await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false);
+        return await SerializePublicationMutationAsync(
+            (locked, token) => locked.DeletePublicationCoreAsync(publicationId, access, token), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<WorkflowPublication?> DeletePublicationCoreAsync(string publicationId, WorkflowPackageAccess? access,
+        CancellationToken cancellationToken)
+    {
         var existing = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
         if (existing is null || !await CanAccessPublicationAsync(access, existing, cancellationToken).ConfigureAwait(false)) return null;
         EnsureLegacyGovernanceAuthority(access, new() { Action = "delete", PackageId = existing.PackageId,
             Version = existing.PackageVersion, PackageHash = existing.PackageHash, PublicationId = publicationId });
+        await RequireApprovedPublicationPinAsync(existing, cancellationToken).ConfigureAwait(false);
         await SyncScheduleDefinitionAsync(existing, remove: true, enabled: false, cancellationToken).ConfigureAwait(false);
         return await store.DeletePublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
     }
@@ -570,13 +589,45 @@ internal sealed class WorkflowPackageService(
         string publicationId, WorkflowPublicationStatus status, ClaimsPrincipal? principal, CancellationToken cancellationToken)
     {
         var access = await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false);
+        return await SerializePublicationMutationAsync(
+            (locked, token) => locked.SetPublicationStatusCoreAsync(publicationId, status, access, token), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<WorkflowPublication?> SetPublicationStatusCoreAsync(string publicationId, WorkflowPublicationStatus status,
+        WorkflowPackageAccess? access, CancellationToken cancellationToken)
+    {
         var existing = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
         if (existing is null || !await CanAccessPublicationAsync(access, existing, cancellationToken).ConfigureAwait(false)) return null;
         EnsureLegacyGovernanceAuthority(access, new() { Action = "set-status", PackageId = existing.PackageId,
             Version = existing.PackageVersion, PackageHash = existing.PackageHash, PublicationId = publicationId, Status = status });
+        await RequireApprovedPublicationPinAsync(existing, cancellationToken).ConfigureAwait(false);
         await SyncScheduleDefinitionAsync(existing, remove: false,
             enabled: status == WorkflowPublicationStatus.Active, cancellationToken).ConfigureAwait(false);
         return await store.SetPublicationStatusAsync(publicationId, status, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task RequireApprovedPublicationPinAsync(WorkflowPublication current, CancellationToken cancellationToken)
+    {
+        if (authorSecurityContextCapturer?.ApprovedReplay is not { } replay) return;
+        await replay.RevalidateKeyAndMembershipAsync(cancellationToken).ConfigureAwait(false);
+        if (replay.Payload.PublicationFingerprint != WorkflowPackageApprovedReplay.Fingerprint(current))
+            throw new GeoprocessingPreconditionFailedException("The reviewed workflow publication changed; submit a new proposal.");
+        if (current.Target == WorkflowPublicationTarget.Schedule && current.WorkflowDefinitionId is { } id &&
+            IsLegacySharedScheduleDefinitionId(current.PackageId, current.PackageVersion, id))
+            throw new GeoprocessingPreconditionFailedException("Legacy shared schedules require human migration before automatic governance.");
+    }
+
+    private Task<TResult> SerializePublicationMutationAsync<TResult>(
+        Func<WorkflowPackageService, CancellationToken, Task<TResult>> mutation, CancellationToken cancellationToken)
+    {
+        var journal = workflowDefinitionStore is null ? null : new WorkflowPublicationSchedulerJournal(workflowDefinitionStore);
+        return store.ExecuteSerializedPublicationMutationAsync(async (lockedStore, token) =>
+        {
+            if (journal is not null) journal.Catalog = lockedStore;
+            var locked = new WorkflowPackageService(lockedStore, nodeRegistry, geoprocessingJobService, clock, logger,
+                journal, orchestrationEngine, metadataReleaseService, authorSecurityContextCapturer);
+            return await mutation(locked, token).ConfigureAwait(false);
+        }, (committed, _, token) => journal?.ReconcileAsync(committed, token) ?? Task.CompletedTask, cancellationToken);
     }
 
     private async Task<bool> CanAccessPublicationAsync(

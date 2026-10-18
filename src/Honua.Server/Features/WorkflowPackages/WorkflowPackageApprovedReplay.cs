@@ -25,13 +25,15 @@ namespace Honua.Server.Features.WorkflowPackages;
 internal sealed class WorkflowPackageApprovedReplay
 {
     private WorkflowPackageApprovedReplay(WorkflowPackageApprovalPayload payload, ClaimsPrincipal principal,
-        WorkflowPackageAuthorization authorization)
+        WorkflowPackageAuthorization authorization, IServiceProvider services)
     {
         Payload = payload;
         Principal = principal;
         Authorization = authorization;
+        _services = services;
     }
 
+    private readonly IServiceProvider _services;
     public WorkflowPackageApprovalPayload Payload { get; }
     public ClaimsPrincipal Principal { get; }
     public WorkflowPackageAuthorization Authorization { get; }
@@ -41,6 +43,20 @@ internal sealed class WorkflowPackageApprovedReplay
            access.TenantId == Payload.TenantId && access.DelegatedOwnerActorId == Payload.OwnerActorId &&
            JsonSerializer.Serialize(intent, WorkflowPackageGovernanceJsonContext.Default.WorkflowPackageGovernanceIntent) ==
            JsonSerializer.Serialize(Payload.Intent, WorkflowPackageGovernanceJsonContext.Default.WorkflowPackageGovernanceIntent);
+
+    internal async Task RevalidateKeyAndMembershipAsync(CancellationToken cancellationToken)
+    {
+        var record = await _services.GetRequiredService<IAdminApiKeyStore>().GetAsync(Payload.KeyId, cancellationToken).ConfigureAwait(false);
+        var now = _services.GetRequiredService<TimeProvider>().GetUtcNow();
+        if (record is null || record.RevokedAt is not null || record.ExpiresAt <= now ||
+            !record.Permissions.Order(StringComparer.Ordinal).SequenceEqual(Payload.Permissions.Order(StringComparer.Ordinal))) Deny();
+        var workspaces = _services.GetRequiredService<IAgentWorkspaceStore>();
+        var document = await workspaces.GetAsync(Payload.WorkspaceId).ConfigureAwait(false);
+        if (document is null || document.OwnerId != Payload.OwnerActorId ||
+            !document.Turns.ContainsKey(Payload.TurnId) ||
+            !AgentWorkspaceState.CanRead(document, Payload.ActorId, Payload.TenantId, await workspaces.GetTargetIdAsync().ConfigureAwait(false)) ||
+            document.TargetId != Payload.TargetId || _services.GetRequiredService<IConfiguration>()["AgentWorkspace:ReleaseId"] != Payload.ReleaseId) Deny();
+    }
 
     public WorkflowPackageService CreateService(IServiceProvider services)
         => services.GetRequiredService<WorkflowPackageService>().WithAuthorSecurity(new WorkflowAuthorSecurityContextCapturer(
@@ -107,7 +123,7 @@ internal sealed class WorkflowPackageApprovedReplay
         var authorization = new WorkflowPackageAuthorization(accessor, services.GetRequiredService<ITenantContext>(), turns);
         var access = await authorization.ResolveAsync(principal, cancellationToken, payload.WorkspaceId, payload.TurnId, true).ConfigureAwait(false);
         await VerifyResourceAsync(services, payload, access, cancellationToken).ConfigureAwait(false);
-        return new(payload, pinnedPrincipal, authorization);
+        return new(payload, pinnedPrincipal, authorization, services);
     }
 
     public static async Task VerifyResourceAsync(IServiceProvider services, WorkflowPackageApprovalPayload payload,

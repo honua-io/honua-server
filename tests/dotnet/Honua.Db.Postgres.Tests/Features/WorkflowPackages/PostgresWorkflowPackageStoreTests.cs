@@ -21,6 +21,86 @@ namespace Honua.Db.Postgres.Tests.Features.WorkflowPackages;
 public sealed class PostgresWorkflowPackageStoreTests(PostgresFixture fixture)
 {
     [IntegrationTest]
+    public async Task PublicationMutation_SerializesTwoStoreInstances_AndSupportsPrivateInstanceReentry()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresWorkflowPackageStoreTests) + "Serialized");
+        try
+        {
+            await ApplyMigrationAsync(schema);
+            var writer = new PostgresWorkflowPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var peer = new PostgresWorkflowPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var package = await writer.SavePackageAsync(SamplePackage("package"));
+            var hash = WorkflowPackageGraphHasher.Compute(package.Graph);
+            await writer.CreateVersionAsync(package.PackageId, hash, package.Graph, WorkflowPackageValidationResult.Success(hash), "fixture");
+            await writer.SavePublicationAsync(SamplePublication("package", 1, "publication"));
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var first = writer.ExecuteSerializedPublicationMutationAsync(async (locked, token) =>
+            {
+                entered.SetResult();
+                await release.Task.WaitAsync(token);
+                // Reentry on the supplied instance uses the held connection/transaction.
+                return await locked.SetPublicationStatusAsync("publication", WorkflowPublicationStatus.Disabled, token);
+            }, static (_, _, _) => Task.CompletedTask);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var second = peer.DeletePublicationAsync("publication");
+            try
+            {
+                await Task.Delay(100);
+                second.IsCompleted.Should().BeFalse("a different store instance must contend on the database lock");
+            }
+            finally { release.TrySetResult(); }
+            (await first)!.Status.Should().Be(WorkflowPublicationStatus.Disabled);
+            (await second)!.Status.Should().Be(WorkflowPublicationStatus.Disabled);
+            (await peer.GetPublicationAsync("publication")).Should().BeNull();
+        }
+        finally { await fixture.DropSchemaAsync(schema); }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PublicationFailure_ReconcilesCommittedCatalog_IncludingLostCommitReceipt(bool loseCommitReceipt)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresWorkflowPackageStoreTests) + "CommitRecovery");
+        try
+        {
+            await ApplyMigrationAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var seed = new PostgresWorkflowPackageStore(provider, schema);
+            var package = await seed.SavePackageAsync(SamplePackage("package"));
+            var hash = WorkflowPackageGraphHasher.Compute(package.Graph);
+            await seed.CreateVersionAsync(package.PackageId, hash, package.Graph, WorkflowPackageValidationResult.Success(hash), "fixture");
+            await seed.SavePublicationAsync(SamplePublication("package", 1, "publication"));
+            var writer = new PostgresWorkflowPackageStore(provider, schema, loseCommitReceipt ? async (transaction, token) =>
+            {
+                await transaction.CommitAsync(token);
+                throw new IOException("Injected lost commit response after real PostgreSQL commit.");
+            } : null);
+            WorkflowPublicationStatus? observedCommittedStatus = null;
+            var changedScheduler = false;
+            var mutation = () => writer.ExecuteSerializedPublicationMutationAsync(async (locked, token) =>
+            {
+                changedScheduler = true;
+                var updated = await locked.SetPublicationStatusAsync("publication", WorkflowPublicationStatus.Disabled, token);
+                if (!loseCommitReceipt) throw new IOException("Injected failure after scheduler/catalog writes before commit.");
+                return updated;
+            }, async (committed, _, token) =>
+            {
+                observedCommittedStatus = (await committed.GetPublicationAsync("publication", token))!.Status;
+                changedScheduler = observedCommittedStatus == WorkflowPublicationStatus.Disabled;
+            });
+            await mutation.Should().ThrowAsync<IOException>();
+            observedCommittedStatus.Should().Be(loseCommitReceipt ? WorkflowPublicationStatus.Disabled : WorkflowPublicationStatus.Active);
+            changedScheduler.Should().Be(loseCommitReceipt);
+            // The session/mutex is released even on both failure paths.
+            var peer = new PostgresWorkflowPackageStore(provider, schema);
+            (await peer.SetPublicationStatusAsync("publication", WorkflowPublicationStatus.Active))!.Status.Should().Be(WorkflowPublicationStatus.Active);
+        }
+        finally { await fixture.DropSchemaAsync(schema); }
+    }
+
+    [IntegrationTest]
     public async Task InitialVersion_IsAtomicAcrossPeers_AndRetryNeverOverwritesHumanDraftOrAppendsVersion()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresWorkflowPackageStoreTests) + "InitialOnce");

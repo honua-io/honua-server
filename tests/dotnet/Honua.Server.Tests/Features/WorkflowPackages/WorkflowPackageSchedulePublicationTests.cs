@@ -118,96 +118,71 @@ public sealed class WorkflowPackageSchedulePublicationTests
 
         Assert.Null(await packages.GetPublicationAsync("pub-fail"));
         Assert.Empty(await definitions.ListAsync());
-        Assert.Equal(1, definitions.DeleteCalls);
     }
 
-    [UnitTest]
-    public async Task Publish_DeletedWhileTheDefinitionIsWritten_DoesNotLeaveACron()
+    [UnitTheory]
+    [InlineData("delete", 1)]
+    [InlineData("disable", 1)]
+    [InlineData("disable", 2)]
+    public async Task ConcurrentHumanMutation_WaitsForPublicationSchedulerCommit_ThenReconcilesItsOwnTransition(string action, int pauseAt)
     {
         var packages = new InMemoryWorkflowPackageStore();
         var inner = new FakeWorkflowDefinitionStore();
-        var definitions = new HookedDefinitionStore(inner, async (_, _, cancellationToken) =>
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var definitions = new HookedDefinitionStore(inner, async (call, _, token) =>
         {
-            await packages.DeletePublicationAsync("pub-race", cancellationToken);
+            if (call != pauseAt) return;
+            entered.TrySetResult();
+            await release.Task.WaitAsync(token);
         });
-        var service = CreateService(packages, definitions);
-        var version = await PublishableVersionAsync(service, packages);
-        var definitionId = WorkflowPackageService.ScheduleWorkflowDefinitionId(
-            version.PackageId, version.Version, "pub-race");
-
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.PublishVersionAsync(
-            version.PackageId,
-            version.Version,
-            ScheduleRequest("pub-race", enabled: true, scheduleEnabled: true, cron: "0 * * * *"),
-            Author(),
-            CancellationToken.None));
-
-        Assert.Contains("removed before its schedule could be armed", exception.Message, StringComparison.Ordinal);
-        Assert.Null(await packages.GetPublicationAsync("pub-race"));
-        Assert.Null(await definitions.GetAsync(definitionId));
+        var publisher = CreateService(packages, definitions);
+        var human = CreateService(packages, definitions);
+        var version = await PublishableVersionAsync(publisher, packages);
+        var publish = publisher.PublishVersionAsync(version.PackageId, version.Version,
+            ScheduleRequest("pub-race", enabled: true, scheduleEnabled: true, cron: "*/5 * * * *"), Author(), CancellationToken.None);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var change = action == "delete" ? human.DeletePublicationAsync("pub-race", CancellationToken.None)
+            : human.SetPublicationStatusAsync("pub-race", WorkflowPublicationStatus.Disabled, CancellationToken.None);
+        try
+        {
+            await Task.Delay(50);
+            Assert.False(change.IsCompleted, "Independent human API mutations must use the same publication lock.");
+        }
+        finally { release.TrySetResult(); }
+        var publication = await publish;
+        await change;
+        if (action == "delete")
+        {
+            Assert.Null(await packages.GetPublicationAsync("pub-race"));
+            Assert.Null(await definitions.GetAsync(publication.WorkflowDefinitionId!));
+        }
+        else
+        {
+            Assert.Equal(WorkflowPublicationStatus.Disabled, (await packages.GetPublicationAsync("pub-race"))!.Status);
+            Assert.False((await definitions.GetAsync(publication.WorkflowDefinitionId!))!.Trigger!.Enabled);
+        }
         Assert.Empty(await definitions.ListScheduledAsync());
     }
 
     [UnitTest]
-    public async Task Publish_DisabledWhileTheDefinitionIsWritten_DoesNotArmTheCron()
+    public async Task SchedulerWriteFailure_BeforeCatalogUpdate_RestoresCommittedActiveTrigger()
     {
-        var packages = new InMemoryWorkflowPackageStore();
-        var inner = new FakeWorkflowDefinitionStore();
-        var definitions = new HookedDefinitionStore(inner, async (call, _, cancellationToken) =>
+        var harness = CreateHarness();
+        var version = await PublishableVersionAsync(harness);
+        var published = await harness.Service.PublishVersionAsync(version.PackageId, version.Version,
+            ScheduleRequest("pub-recover", true, true, "0 * * * *"), Author(), CancellationToken.None);
+        var failing = new HookedDefinitionStore(harness.Definitions, async (call, definition, token) =>
         {
-            if (call == 1)
-            {
-                await packages.SetPublicationStatusAsync(
-                    "pub-disarm",
-                    WorkflowPublicationStatus.Disabled,
-                    cancellationToken);
-            }
+            if (call != 1) return;
+            // The scheduler accepted the side effect, but its response failed before SQL/catalog change.
+            await harness.Definitions.SetAsync(definition, token);
+            throw new IOException("Injected failure after scheduler accepted the write.");
         });
-        var service = CreateService(packages, definitions);
-        var version = await PublishableVersionAsync(service, packages);
-
-        var publication = await service.PublishVersionAsync(
-            version.PackageId,
-            version.Version,
-            ScheduleRequest("pub-disarm", enabled: true, scheduleEnabled: true, cron: "*/5 * * * *"),
-            Author(),
-            CancellationToken.None);
-
-        Assert.Equal(WorkflowPublicationStatus.Disabled, publication.Status);
-        var definition = await definitions.GetAsync(publication.WorkflowDefinitionId!);
-        Assert.NotNull(definition);
-        Assert.False(definition!.Trigger!.Enabled);
-        Assert.Empty(await definitions.ListScheduledAsync());
-    }
-
-    [UnitTest]
-    public async Task Publish_DisabledAfterTheTriggerIsArmed_DisarmsTheCron()
-    {
-        var packages = new InMemoryWorkflowPackageStore();
-        var inner = new FakeWorkflowDefinitionStore();
-        var definitions = new HookedDefinitionStore(inner, async (call, definition, cancellationToken) =>
-        {
-            if (call == 2 && definition.Trigger?.Enabled == true)
-            {
-                await packages.SetPublicationStatusAsync(
-                    "pub-late",
-                    WorkflowPublicationStatus.Disabled,
-                    cancellationToken);
-            }
-        });
-        var service = CreateService(packages, definitions);
-        var version = await PublishableVersionAsync(service, packages);
-
-        var publication = await service.PublishVersionAsync(
-            version.PackageId,
-            version.Version,
-            ScheduleRequest("pub-late", enabled: true, scheduleEnabled: true, cron: "0 0 * * *"),
-            Author(),
-            CancellationToken.None);
-
-        Assert.Equal(WorkflowPublicationStatus.Disabled, publication.Status);
-        Assert.False((await definitions.GetAsync(publication.WorkflowDefinitionId!))!.Trigger!.Enabled);
-        Assert.Empty(await definitions.ListScheduledAsync());
+        var service = CreateService(harness.Packages, failing);
+        await Assert.ThrowsAsync<IOException>(() => service.SetPublicationStatusAsync("pub-recover", WorkflowPublicationStatus.Disabled, CancellationToken.None));
+        Assert.Equal(WorkflowPublicationStatus.Active, (await harness.Packages.GetPublicationAsync("pub-recover"))!.Status);
+        Assert.True((await harness.Definitions.GetAsync(published.WorkflowDefinitionId!))!.Trigger!.Enabled);
     }
 
     [UnitTest]
@@ -700,8 +675,15 @@ public sealed class WorkflowPackageSchedulePublicationTests
             => inner.ReleaseTriggerClaimAsync(workflowId, cursorKind, marker, cancellationToken);
     }
 
-    private sealed class SaveFailingPackageStore(InMemoryWorkflowPackageStore inner) : IWorkflowPackageStore
+    private sealed class SaveFailingPackageStore(IWorkflowPackageStore inner) : IWorkflowPackageStore
     {
+        public Task<TResult> ExecuteSerializedPublicationMutationAsync<TResult>(
+            Func<IWorkflowPackageStore, CancellationToken, Task<TResult>> mutation,
+            Func<IWorkflowPackageStore, Exception, CancellationToken, Task> reconcile,
+            CancellationToken cancellationToken = default)
+            => inner.ExecuteSerializedPublicationMutationAsync((locked, token) => mutation(new SaveFailingPackageStore(locked), token),
+                (locked, exception, token) => reconcile(new SaveFailingPackageStore(locked), exception, token), cancellationToken);
+
         public Task<IReadOnlyList<WorkflowPackage>> ListPackagesAsync(CancellationToken cancellationToken = default)
             => inner.ListPackagesAsync(cancellationToken);
 

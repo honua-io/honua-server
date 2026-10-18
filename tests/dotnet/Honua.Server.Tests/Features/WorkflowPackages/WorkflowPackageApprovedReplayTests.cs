@@ -48,6 +48,19 @@ public sealed class WorkflowPackageApprovedReplayTests
         ambient.HttpContext.Should().BeSameAs(fixture.Approver);
     }
 
+    [UnitTest]
+    public async Task HumanReplacementAfterReplayVerification_IsRefusedInsideMutationLock()
+    {
+        var fixture = await Fixture.Create();
+        var replay = await WorkflowPackageApprovedReplay.VerifyAsync(fixture.Services, fixture.Request, fixture.Context, CancellationToken.None);
+        var original = (await fixture.Packages.GetPublicationAsync("publication"))!;
+        await fixture.Packages.DeletePublicationAsync("publication");
+        var replacement = await fixture.Packages.SavePublicationAsync(original with { CreatedAt = original.CreatedAt.AddMinutes(1), CreatedBy = "different-human" });
+        var invoke = () => replay.CreateService(fixture.Services).DeletePublicationAsync("publication", replay.Principal, CancellationToken.None);
+        await invoke.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+        (await fixture.Packages.GetPublicationAsync("publication")).Should().Be(replacement);
+    }
+
     [UnitTheory]
     [InlineData("status")]
     [InlineData("seal")]
