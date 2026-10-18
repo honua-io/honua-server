@@ -110,7 +110,7 @@ internal enum McpSessionTermination
 /// random value rendered as lowercase hex satisfies all three.
 /// </para>
 /// </remarks>
-internal sealed class McpSessionManager
+internal sealed partial class McpSessionManager
 {
     /// <summary>
     /// HTTP header carrying the MCP session id on initialize responses and on

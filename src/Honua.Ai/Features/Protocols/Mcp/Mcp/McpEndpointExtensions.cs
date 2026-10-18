@@ -732,7 +732,63 @@ internal static class McpEndpointExtensions
         // same way regardless of how JsonElement? surfaced missing fields.
         request.Id = idState.Kind == RequestIdKind.Notification ? null : idState.Element;
 
-        return await surface.DispatchAsync(context, request, cancellationToken).ConfigureAwait(false);
+        var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
+        var sessionId = context.Request.Headers[McpSessionManager.SessionHeaderName].ToString();
+        var principalKey = McpAuthorizationHelper.ResolveSessionBindingKey(context);
+        if (request.Id is null || request.Method is null
+            || request.Method.StartsWith("notifications/", StringComparison.Ordinal)
+            || request.Method == "initialize" || request.JsonRpc != "2.0")
+        {
+            var notificationResponse = await surface.DispatchAsync(context, request, cancellationToken).ConfigureAwait(false);
+            if (notificationResponse is null && request.Method == "notifications/cancelled"
+                && principalKey is not null && request.Params is { ValueKind: JsonValueKind.Object } parameters
+                && parameters.TryGetProperty("requestId", out var targetId))
+            {
+                // Invalid cancellation parameters and unknown ids have no effect;
+                // notifications never produce JSON-RPC responses or create work.
+                await sessions.CancelRequestAsync(sessionId, principalKey, targetId, cancellationToken).ConfigureAwait(false);
+            }
+
+            return notificationResponse;
+        }
+
+        McpSessionManager.McpRequestLease? lease;
+        try
+        {
+            var admission = await sessions.StartRequestAsync(sessionId, principalKey!, request.Id.Value, cancellationToken).ConfigureAwait(false);
+            lease = admission.Lease;
+            if (admission.State != McpRequestState.Active)
+            {
+                return ErrorResponse(request.Id, McpErrorMapper.InvalidRequest(
+                    admission.State == McpRequestState.Duplicate
+                        ? "A request with this id is already active in this session."
+                        : "The session cannot admit another active request."));
+            }
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested
+            && ex is (StackExchange.Redis.RedisException or TimeoutException or OperationCanceledException or JsonException or ObjectDisposedException))
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.RequestRegistryUnavailable());
+        }
+
+        await using (lease)
+        {
+            try
+            {
+                var response = await surface.DispatchAsync(context, request, lease?.Token ?? cancellationToken).ConfigureAwait(false);
+                if (lease is not null && !await lease.CompleteAsync().ConfigureAwait(false))
+                {
+                    return ErrorResponse(request.Id, McpErrorMapper.RequestCancelled());
+                }
+
+                return response;
+            }
+            catch (OperationCanceledException) when (lease is not null && lease.Token.IsCancellationRequested
+                && !cancellationToken.IsCancellationRequested)
+            {
+                return ErrorResponse(request.Id, McpErrorMapper.RequestCancelled());
+            }
+        }
     }
 
     private static async Task WriteSingleAsync(
@@ -993,7 +1049,7 @@ internal static class McpEndpointExtensions
     /// without coercing to a CLR numeric type, since the id is preserved and
     /// echoed back as the original <see cref="JsonElement"/>.
     /// </summary>
-    private static bool IsIntegerNumberToken(JsonElement element)
+    internal static bool IsIntegerNumberToken(JsonElement element)
     {
         var raw = element.GetRawText().AsSpan();
         if (raw.Length == 0)

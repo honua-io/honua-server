@@ -24,6 +24,107 @@ public sealed class RedisMcpSessionStoreTests(RedisFixture redis)
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(30);
 
     [IntegrationTest]
+    public async Task ConcurrentReplicaAdmissions_ShareThePrincipalQuota_AndDuplicateCompensationCannotReleaseAnotherGeneration()
+    {
+        await using var connectionA = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var connectionB = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var a = new RedisMcpSessionStore(connectionA);
+        var b = new RedisMcpSessionStore(connectionB);
+        var sessions = Enumerable.Range(0, 5).Select(_ => Guid.NewGuid().ToString("N")).ToArray();
+        var principal = "quota-proof:" + Guid.NewGuid().ToString("N");
+        var generations = Enumerable.Range(0, McpRequestBounds.PerPrincipal + 1).Select(_ => Guid.NewGuid().ToString("N")).ToArray();
+        foreach (var session in sessions)
+        {
+            await a.SaveAsync(new McpSessionRecord(session, principal, false, null, DateTimeOffset.UtcNow),
+                IdleTimeout, CancellationToken.None);
+        }
+
+        try
+        {
+            var states = await Task.WhenAll(generations.Select((generation, i) =>
+                (i % 2 == 0 ? a : b).UpdateRequestAsync(sessions[i % sessions.Length], principal, "r" + i,
+                    generation, McpRequestOperation.Register, CancellationToken.None)));
+            Assert.Equal(McpRequestBounds.PerPrincipal, states.Count(state => state == McpRequestState.Active));
+            Assert.Single(states.Where(state => state == McpRequestState.Capacity));
+            var database = connectionA.GetDatabase();
+            Assert.Equal(McpRequestBounds.PerPrincipal,
+                await database.SortedSetLengthAsync(RedisMcpSessionStore.PrincipalRequestKey(principal)));
+
+            var first = Array.FindIndex(states, state => state == McpRequestState.Active);
+            Assert.Equal(McpRequestState.Active, await a.UpdateRequestAsync(sessions[first % sessions.Length], principal,
+                "r" + first, generations[first], McpRequestOperation.Finish, CancellationToken.None));
+            var another = Array.FindIndex(states, first + 1, state => state == McpRequestState.Active);
+            Assert.Equal(McpRequestState.Duplicate, await b.UpdateRequestAsync(sessions[another % sessions.Length], principal,
+                "r" + another, Guid.NewGuid().ToString("N"), McpRequestOperation.Register, CancellationToken.None));
+            Assert.Equal(McpRequestBounds.PerPrincipal - 1,
+                await database.SortedSetLengthAsync(RedisMcpSessionStore.PrincipalRequestKey(principal)));
+            Assert.Equal(McpRequestState.Active, await b.UpdateRequestAsync(sessions[first % sessions.Length], principal,
+                "r" + first, Guid.NewGuid().ToString("N"), McpRequestOperation.Register, CancellationToken.None));
+            // A delayed old finish cannot free the replacement's quota member.
+            Assert.Equal(McpRequestState.Missing, await a.UpdateRequestAsync(sessions[first % sessions.Length], principal,
+                "r" + first, generations[first], McpRequestOperation.Finish, CancellationToken.None));
+            Assert.Equal(McpRequestBounds.PerPrincipal,
+                await database.SortedSetLengthAsync(RedisMcpSessionStore.PrincipalRequestKey(principal)));
+        }
+        finally
+        {
+            foreach (var session in sessions)
+            {
+                await connectionA.GetDatabase().KeyDeleteAsync(RedisMcpSessionStore.RequestKeys(session));
+            }
+
+            await connectionA.GetDatabase().KeyDeleteAsync(RedisMcpSessionStore.PrincipalRequestKey(principal));
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ActiveRequest_CancelledOnAnotherConnection_IsAuthoritativeTypedAndGenerationBound()
+    {
+        await using var connectionA = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var connectionB = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var a = new RedisMcpSessionStore(connectionA);
+        var b = new RedisMcpSessionStore(connectionB);
+        var session = Guid.NewGuid().ToString("N");
+        var principal = "alice|tenant:a|" + session;
+        var generation = Guid.NewGuid().ToString("N");
+        var replacement = Guid.NewGuid().ToString("N");
+        await a.SaveAsync(new McpSessionRecord(session, principal, false, null, DateTimeOffset.UtcNow),
+            IdleTimeout, CancellationToken.None);
+        try
+        {
+            McpSessionManager.TryRequestKey(System.Text.Json.JsonDocument.Parse("7").RootElement, out var number);
+            McpSessionManager.TryRequestKey(System.Text.Json.JsonDocument.Parse("\"7\"").RootElement, out var text);
+            Task<McpRequestState> Update(RedisMcpSessionStore store, string key, string owner, string epoch, McpRequestOperation operation) =>
+                store.UpdateRequestAsync(session, owner, key, epoch, operation, CancellationToken.None);
+
+            Assert.Equal(McpRequestState.Active, await Update(a, number, principal, generation, McpRequestOperation.Register));
+            Assert.Equal(McpRequestState.Duplicate, await Update(b, number, principal, replacement, McpRequestOperation.Register));
+            Assert.Equal(McpRequestState.Missing, await Update(b, number, "alice|tenant:b", "", McpRequestOperation.Cancel));
+            Assert.Equal(McpRequestState.Missing, await Update(b, number, "alice|tenant:b", generation, McpRequestOperation.Finish));
+            Assert.Equal(McpRequestState.Missing, await Update(b, text, principal, "", McpRequestOperation.Cancel));
+            Assert.Equal(McpRequestState.Active, await Update(a, number, principal, generation, McpRequestOperation.Read));
+
+            Assert.Equal(McpRequestState.Cancelled, await Update(b, number, principal, "", McpRequestOperation.Cancel));
+            Assert.Equal(McpRequestState.Cancelled, await Update(b, number, principal, "", McpRequestOperation.Cancel));
+            Assert.Equal(McpRequestState.Cancelled, await Update(a, number, principal, generation, McpRequestOperation.Finish));
+            Assert.Equal(McpRequestState.Active, await Update(b, number, principal, replacement, McpRequestOperation.Register));
+            Assert.Equal(McpRequestState.Missing, await Update(a, number, principal, generation, McpRequestOperation.Finish));
+            Assert.Equal(McpRequestState.Active, await Update(b, number, principal, replacement, McpRequestOperation.Read));
+
+            // A missed session-removal broadcast cannot preserve cancellation
+            // authority or let a finished handler claim successful completion.
+            await connectionA.GetDatabase().KeyDeleteAsync(RedisMcpSessionStore.Key(session));
+            Assert.Equal(McpRequestState.Missing, await Update(b, number, principal, replacement, McpRequestOperation.Read));
+            Assert.Equal(McpRequestState.Missing, await Update(b, number, principal, replacement, McpRequestOperation.Finish));
+            Assert.False(await connectionA.GetDatabase().KeyExistsAsync(RedisMcpSessionStore.RequestKeys(session)[1]));
+        }
+        finally
+        {
+            await connectionA.GetDatabase().KeyDeleteAsync(RedisMcpSessionStore.Key(session));
+        }
+    }
+
+    [IntegrationTest]
     public async Task SessionMintedOnA_IsServedByB_WithTheSameViewPrincipalAndCapabilities()
     {
         await using var connectionA = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
