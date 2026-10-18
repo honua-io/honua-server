@@ -56,6 +56,7 @@ internal sealed class WorkflowPackageAuthorization(
             turnId = headerTurn.ToString();
         }
         string? delegatedOwner = null;
+        Honua.Core.Features.AgentWorkspace.Domain.AgentWorkspaceTurnAuthorization? trustedBinding = null;
         if (workspaceId is not null || turnId is not null)
         {
             if (!agent || turns is null || !Identifier(workspaceId) || !Identifier(turnId))
@@ -65,8 +66,9 @@ internal sealed class WorkflowPackageAuthorization(
                 binding.TenantId != tenantContext.TenantId || string.IsNullOrWhiteSpace(binding.OwnerActorId))
                 throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
             delegatedOwner = binding.OwnerActorId;
+            trustedBinding = binding;
         }
-        return new(actor.ActorId, tenantContext.TenantId, actor.IsDurablyRevalidatable, agent, delegatedOwner, context);
+        return new(actor.ActorId, tenantContext.TenantId, actor.IsDurablyRevalidatable, agent, delegatedOwner, context, trustedBinding);
     }
 
     private static bool Identifier(string? value)
@@ -75,7 +77,8 @@ internal sealed class WorkflowPackageAuthorization(
 
 /// <summary>Trusted, request-local ownership evidence; never bound from client JSON.</summary>
 internal sealed record WorkflowPackageAccess(
-    string ActorId, string? TenantId, bool DurableActor, bool WorkspaceAgent, string? DelegatedOwnerActorId, HttpContext? Context)
+    string ActorId, string? TenantId, bool DurableActor, bool WorkspaceAgent, string? DelegatedOwnerActorId, HttpContext? Context,
+    Honua.Core.Features.AgentWorkspace.Domain.AgentWorkspaceTurnAuthorization? TurnBinding = null)
 {
     public bool CanAccess(WorkflowPackageOwnership? owner)
     {

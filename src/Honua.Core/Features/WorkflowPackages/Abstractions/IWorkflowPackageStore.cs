@@ -11,6 +11,14 @@ namespace Honua.Core.Features.WorkflowPackages.Abstractions;
 public interface IWorkflowPackageStore
 {
     /// <summary>
+    /// Atomically creates a new draft and immutable version1, or reconciles that exact
+    /// initial version. Never upserts an existing draft or appends another version.
+    /// </summary>
+    Task<WorkflowPackageVersion> CreateInitialVersionOnceAsync(WorkflowPackage package,
+        WorkflowPackageValidationResult validation, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Atomic immutable workflow creation is unavailable.");
+
+    /// <summary>
     /// Lists package drafts.
     /// </summary>
     Task<IReadOnlyList<WorkflowPackage>> ListPackagesAsync(CancellationToken cancellationToken = default);

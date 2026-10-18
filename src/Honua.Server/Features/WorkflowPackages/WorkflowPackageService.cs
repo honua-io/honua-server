@@ -142,6 +142,29 @@ internal sealed class WorkflowPackageService(
         return saved;
     }
 
+    internal async Task<WorkflowPackageVersion> CreateInitialAuthoringVersionAsync(string packageId, string name,
+        WorkflowGraph graph, ClaimsPrincipal principal, string workspaceId, string turnId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new GeoprocessingValidationException("Workflow package name is required.");
+        var access = await ResolveAccessAsync(principal, cancellationToken, true, workspaceId, turnId).ConfigureAwait(false);
+        if (access?.WorkspaceAgent != true || string.IsNullOrWhiteSpace(access.DelegatedOwnerActorId))
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        var package = new WorkflowPackage
+        {
+            PackageId = packageId, Name = name.Trim(), Graph = graph, Ownership = access.Ownership,
+            CreatedAt = clock.GetUtcNow(), UpdatedAt = clock.GetUtcNow(), CreatedBy = access.ActorId, UpdatedBy = access.ActorId,
+        };
+        var initial = await store.GetVersionAsync(packageId, 1, cancellationToken).ConfigureAwait(false);
+        if (initial is not null)
+        {
+            WorkflowPackageContent.RequireInitialVersion(package, initial);
+            return initial;
+        }
+        var validation = await ValidateGraphAsync(graph, principal, null, cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid) throw new WorkflowPackageValidationException(validation);
+        return await store.CreateInitialVersionOnceAsync(package, validation, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<WorkflowPackageVersion> CreateVersionAsync(
         string packageId,
         ClaimsPrincipal principal,

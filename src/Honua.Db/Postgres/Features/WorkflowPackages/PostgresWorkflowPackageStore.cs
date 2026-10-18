@@ -32,6 +32,76 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
         _publicationsTable = SchemaSearchPath.QualifyTable("workflow_publications", schemaName);
     }
 
+    public async Task<WorkflowPackageVersion> CreateInitialVersionOnceAsync(WorkflowPackage package,
+        WorkflowPackageValidationResult validation, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(package);
+        ArgumentNullException.ThrowIfNull(validation);
+        var hash = WorkflowPackageGraphHasher.Compute(package.Graph);
+        if (!validation.IsValid || validation.PackageHash != hash)
+            throw new WorkflowPackageGraphConflictException(package.PackageId);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        int inserted;
+        await using (var create = new NpgsqlCommand($"""
+            INSERT INTO {_packagesTable} (
+                package_id, name, description, namespace, graph_json, latest_version,
+                created_at, updated_at, created_by, updated_by, metadata_json, owner_actor_id, owner_tenant_id)
+            VALUES (@package_id, @name, @description, @namespace, @graph_json::jsonb, 1,
+                @created_at, @updated_at, @created_by, @updated_by, @metadata_json::jsonb, @owner_actor_id, @owner_tenant_id)
+            ON CONFLICT (package_id) DO NOTHING
+            """, connection, transaction))
+        {
+            BindPackage(create, package);
+            inserted = await create.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        // Both concurrent/resumed commands serialize on the same package row. Insertion and
+        // immutable version1 share this transaction: there is no externally editable draft gap.
+        await using (var rowLock = new NpgsqlCommand($"SELECT package_id FROM {_packagesTable} WHERE package_id = @package_id FOR UPDATE", connection, transaction))
+        {
+            rowLock.Parameters.AddWithValue("package_id", package.PackageId);
+            await rowLock.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        }
+        WorkflowPackageVersion? existing = null;
+        await using (var read = new NpgsqlCommand(VersionSelect() + " WHERE package_id = @package_id AND version = 1", connection, transaction))
+        {
+            read.Parameters.AddWithValue("package_id", package.PackageId);
+            await using var reader = await read.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) existing = ReadVersion(reader);
+        }
+        if (existing is not null)
+        {
+            WorkflowPackageContent.RequireInitialVersion(package, existing);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            return existing;
+        }
+        if (inserted != 1) throw new WorkflowPackageGraphConflictException(package.PackageId);
+        WorkflowPackageVersion created;
+        await using (var insert = new NpgsqlCommand($"""
+            INSERT INTO {_versionsTable} (
+                package_id, version, schema_version, package_hash, graph_json, validation_json, created_at, created_by, owner_actor_id, owner_tenant_id)
+            VALUES (@package_id, 1, @schema_version, @package_hash, @graph_json::jsonb, @validation_json::jsonb,
+                @created_at, @created_by, @owner_actor_id, @owner_tenant_id)
+            RETURNING package_id, version, schema_version, package_hash, graph_json::text, validation_json::text,
+                created_at, created_by, owner_actor_id, owner_tenant_id
+            """, connection, transaction))
+        {
+            insert.Parameters.AddWithValue("package_id", package.PackageId);
+            insert.Parameters.AddWithValue("schema_version", package.Graph.SchemaVersion);
+            insert.Parameters.AddWithValue("package_hash", hash);
+            insert.Parameters.Add(JsonParameter("graph_json", JsonSerializer.Serialize(package.Graph, WorkflowPackageStoreJsonContext.Default.WorkflowGraph)));
+            insert.Parameters.Add(JsonParameter("validation_json", JsonSerializer.Serialize(validation, WorkflowPackageStoreJsonContext.Default.WorkflowPackageValidationResult)));
+            insert.Parameters.AddWithValue("created_at", package.CreatedAt);
+            insert.Parameters.AddWithValue("created_by", (object?)package.CreatedBy ?? DBNull.Value);
+            BindOwnership(insert, package.Ownership);
+            await using var reader = await insert.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) throw new InvalidOperationException("Initial workflow version was not persisted.");
+            created = ReadVersion(reader);
+        }
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        return created;
+    }
+
     public async Task<IReadOnlyList<WorkflowPackage>> ListPackagesAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"""

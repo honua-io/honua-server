@@ -21,6 +21,41 @@ namespace Honua.Db.Postgres.Tests.Features.WorkflowPackages;
 public sealed class PostgresWorkflowPackageStoreTests(PostgresFixture fixture)
 {
     [IntegrationTest]
+    public async Task InitialVersion_IsAtomicAcrossPeers_AndRetryNeverOverwritesHumanDraftOrAppendsVersion()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresWorkflowPackageStoreTests) + "InitialOnce");
+        try
+        {
+            await ApplyMigrationAsync(schema);
+            var writer = new PostgresWorkflowPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var peer = new PostgresWorkflowPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var package = SamplePackage("command-reserved") with
+            {
+                Ownership = new() { OwnerActorId = "human", TenantId = "public" }, CreatedBy = "agent",
+            };
+            var hash = WorkflowPackageGraphHasher.Compute(package.Graph);
+            var validation = WorkflowPackageValidationResult.Success(hash);
+            var results = await Task.WhenAll(writer.CreateInitialVersionOnceAsync(package, validation), peer.CreateInitialVersionOnceAsync(package, validation));
+            results.Should().OnlyContain(version => version.Version == 1 && version.PackageId == package.PackageId);
+            (await peer.ListVersionsAsync(package.PackageId)).Should().ContainSingle();
+            // Model a lost receipt/restarted adapter, followed by a human editing the mutable draft.
+            await peer.SavePackageAsync(package with { Name = "Human edited", Graph = package.Graph with { EditorMetadata = new Dictionary<string, string> { ["edit"] = "human" } } });
+            var restarted = new PostgresWorkflowPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var retry = await restarted.CreateInitialVersionOnceAsync(package, validation);
+            retry.Version.Should().Be(1);
+            WorkflowPackageContent.SameGraph(retry.Graph, package.Graph).Should().BeTrue();
+            (await restarted.GetPackageAsync(package.PackageId))!.Name.Should().Be("Human edited");
+            (await restarted.ListVersionsAsync(package.PackageId)).Should().ContainSingle();
+            var changed = package with { Graph = package.Graph with { EditorMetadata = new Dictionary<string, string> { ["edit"] = "different command payload" } } };
+            // Executable hash deliberately ignores editor metadata; exact-byte reconciliation may not.
+            WorkflowPackageGraphHasher.Compute(changed.Graph).Should().Be(hash);
+            var mismatch = () => restarted.CreateInitialVersionOnceAsync(changed, validation);
+            await mismatch.Should().ThrowAsync<WorkflowPackageGraphConflictException>();
+        }
+        finally { await fixture.DropSchemaAsync(schema); }
+    }
+
+    [IntegrationTest]
     public async Task PackageVersionAndPublication_SurviveRestart_AndAreVisibleToAPeer()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresWorkflowPackageStoreTests));

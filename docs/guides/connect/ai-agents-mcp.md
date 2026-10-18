@@ -170,11 +170,14 @@ An applied style with no style layers draws nothing for that layer. The caption 
 The `honua_studio_*` tools compose the same server-resident draft the Studio UI observes: create, read and update a draft; add and remove layers, widgets, controls and interaction bindings; set styles, visibility and the view; validate and preview; save an immutable version; reopen a version as a new draft; and propose a saved version for governed publication. The tool table is in [Studio MCP tools](../../studio/mcp-tools.md).
 
 For built-in process graphs, `honua_workflow_package` supports `list`, `read`
-(with `packageId` and immutable `version`), and `create` (with `name` and `graph`).
+(with `packageId` and immutable `version`), and `create` (with `commandId`, `name` and `graph`).
 Every call requires `workspaceId` and `turnId`; the server rechecks the actual
 agent key against the frozen turn and derives ownership from the persisted
 workspace owner. Native workspace headers must match these explicit locators.
-Each `create` produces a new package and validated immutable version, keeping
+Each new command produces a new package and validated immutable version. Retry
+the same command ID and exact name/graph after a lost response to reconcile
+its existing immutable version; reusing that ID with changed input is refused.
+This keeps
 previous Studio process references stable. The result's `version` contains the
 package ID, version number and package hash. Validation does not establish that
 the workflow has executed successfully. Publication, schedules and execution

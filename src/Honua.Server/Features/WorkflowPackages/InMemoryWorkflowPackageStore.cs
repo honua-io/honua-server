@@ -25,6 +25,36 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
     private readonly ConcurrentDictionary<string, WorkflowPublication> _publications = new(StringComparer.Ordinal);
     private readonly object _gate = new();
 
+    public Task<WorkflowPackageVersion> CreateInitialVersionOnceAsync(WorkflowPackage package,
+        WorkflowPackageValidationResult validation, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(package);
+        ArgumentNullException.ThrowIfNull(validation);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            var hash = WorkflowPackageGraphHasher.Compute(package.Graph);
+            if (!validation.IsValid || validation.PackageHash != hash)
+                throw new WorkflowPackageGraphConflictException(package.PackageId);
+            var existing = _versions.GetValueOrDefault(package.PackageId)?.SingleOrDefault(version => version.Version == 1);
+            if (existing is not null)
+            {
+                WorkflowPackageContent.RequireInitialVersion(package, existing);
+                return Task.FromResult(existing);
+            }
+            if (_packages.ContainsKey(package.PackageId)) throw new WorkflowPackageGraphConflictException(package.PackageId);
+            var created = new WorkflowPackageVersion
+            {
+                PackageId = package.PackageId, Version = 1, PackageHash = hash, Graph = package.Graph,
+                SchemaVersion = package.Graph.SchemaVersion, Validation = validation, Ownership = package.Ownership,
+                CreatedBy = package.CreatedBy, CreatedAt = package.CreatedAt,
+            };
+            _packages[package.PackageId] = package with { LatestVersion = 1 };
+            _versions[package.PackageId] = [created];
+            return Task.FromResult(created);
+        }
+    }
+
     public Task<IReadOnlyList<WorkflowPackage>> ListPackagesAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

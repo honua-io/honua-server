@@ -12,6 +12,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.WorkflowPackages;
+using Honua.Server.Features.AgentWorkspace;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -167,10 +168,41 @@ public sealed class WorkflowPackageWorkspaceAuthorizationTests
         var packages = new WorkflowPackageService(store, registry, jobs, TimeProvider.System,
             NullLogger<WorkflowPackageService>.Instance,
             authorSecurityContextCapturer: new WorkflowAuthorSecurityContextCapturer(tenantContext: TenantContext(), packageAuthorization: authorization));
-        var authoring = new WorkflowPackageAuthoring(packages, authorization);
+        var workspaces = Substitute.For<IAgentWorkspaceStore>();
+        var document = new AgentWorkspaceDocument
+        {
+            WorkspaceId = "workspace-a", TargetId = "target-a", OwnerId = Human, TenantId = Tenant,
+            Members = [Human, CanonicalSecurityActor.Resolve(principal)!.ActorId],
+        };
+        var gate = new object();
+        workspaces.GetTargetIdAsync().Returns("target-a");
+        workspaces.GetAsync("workspace-a").Returns(_ => { lock (gate) return Task.FromResult<AgentWorkspaceDocument?>(document); });
+        workspaces.SaveAsync(Arg.Any<AgentWorkspaceDocument>()).Returns(call =>
+        {
+            lock (gate)
+            {
+                var next = call.Arg<AgentWorkspaceDocument>();
+                if (next.Version != document.Version) return Task.FromResult(false);
+                document = next with { Version = next.Version + 1 };
+                return Task.FromResult(true);
+            }
+        });
+        var authoring = new WorkflowPackageAuthoring(packages, authorization, workspaces);
         var graph = new WorkflowGraph { Nodes = [new WorkflowNode { NodeId = "echo", NodeTypeId = "process:test.echo" }] };
-        var first = await authoring.CreateAsync(principal, "workspace-a", "turn-a", "First", graph, CancellationToken.None);
-        var second = await authoring.CreateAsync(principal, "workspace-a", "turn-a", "Edited", graph, CancellationToken.None);
+        var first = await authoring.CreateAsync(principal, "workspace-a", "turn-a", "command-first", "First", graph, CancellationToken.None);
+        var second = await authoring.CreateAsync(principal, "workspace-a", "turn-a", "command-edited", "Edited", graph, CancellationToken.None);
+        var retries = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ =>
+            new WorkflowPackageAuthoring(packages, authorization, workspaces).CreateAsync(principal, "workspace-a", "turn-a",
+                "command-first", "First", graph, CancellationToken.None)));
+        retries.Should().OnlyContain(version => version.PackageId == first.PackageId && version.Version == 1);
+        (await store.ListVersionsAsync(first.PackageId)).Should().ContainSingle();
+        var mismatch = () => authoring.CreateAsync(principal, "workspace-a", "turn-a", "command-first", "Changed name", graph, CancellationToken.None);
+        await mismatch.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+        var mutable = (await store.GetPackageAsync(first.PackageId))!;
+        await store.SavePackageAsync(mutable with { Name = "Human edit", Graph = new() { Nodes = [] } });
+        var reconciled = await authoring.CreateAsync(principal, "workspace-a", "turn-a", "command-first", "First", graph, CancellationToken.None);
+        reconciled.Should().Be(first);
+        (await store.GetPackageAsync(first.PackageId))!.Name.Should().Be("Human edit");
         second.PackageId.Should().NotBe(first.PackageId);
         first.Version.Should().Be(1);
         second.Version.Should().Be(1);

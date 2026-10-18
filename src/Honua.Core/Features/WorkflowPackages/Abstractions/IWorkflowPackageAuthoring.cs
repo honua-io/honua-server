@@ -15,6 +15,6 @@ public interface IWorkflowPackageAuthoring
     /// <summary>Reads an immutable version without disclosing other owners' resources.</summary>
     Task<WorkflowPackageVersion?> ReadAsync(ClaimsPrincipal principal, string workspaceId, string turnId, string packageId, int version, CancellationToken cancellationToken);
 
-    /// <summary>Creates a new package and validated immutable version; never modifies a previous package or executes the graph.</summary>
-    Task<WorkflowPackageVersion> CreateAsync(ClaimsPrincipal principal, string workspaceId, string turnId, string name, WorkflowGraph graph, CancellationToken cancellationToken);
+    /// <summary>Creates a command-bound new package and validated immutable version; retries reconcile the same version; never modifies a previous package or executes the graph.</summary>
+    Task<WorkflowPackageVersion> CreateAsync(ClaimsPrincipal principal, string workspaceId, string turnId, string commandId, string name, WorkflowGraph graph, CancellationToken cancellationToken);
 }
