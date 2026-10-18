@@ -74,20 +74,22 @@ public sealed class MetadataV2LifecycleRoutingTests
         // The resolver is invoked positionally, so a renamed or reordered parameter must
         // fail here rather than silently feed a value into the wrong slot.
         var parameters = method!.GetParameters();
-        parameters.Length.Should().BeGreaterThanOrEqualTo(3);
-        parameters[0].Name.Should().Be("snapshot");
-        parameters[1].Name.Should().Be("layerId");
-        parameters[2].Name.Should().Be("resource");
+        parameters.Length.Should().BeGreaterThanOrEqualTo(4);
+        parameters[0].Name.Should().Be("context");
+        parameters[1].Name.Should().Be("snapshot");
+        parameters[2].Name.Should().Be("layerId");
+        parameters[3].Name.Should().Be("resource");
         var arguments = new object?[parameters.Length];
-        arguments[0] = snapshot;
-        arguments[1] = 7;
+        arguments[0] = new DefaultHttpContext();
+        arguments[1] = snapshot;
+        arguments[2] = 7;
 
         var resolved = (bool)method.Invoke(null, arguments)!;
 
         resolved.Should().BeFalse();
         // Every out parameter must come back empty: neither the resource behind the
         // retired binding nor the service that owns it may leak to the coverage route.
-        for (var index = 2; index < arguments.Length; index++)
+        for (var index = 3; index < arguments.Length; index++)
         {
             arguments[index].Should().BeNull(
                 "out parameter '{0}' must stay empty when the binding is retired",
