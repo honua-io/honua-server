@@ -169,13 +169,13 @@ internal static class JobSecurityContextCapture
     {
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(options);
-        if (AgentCredentialAuthority.IsDelegated(principal))
+        if (AgentCredentialAuthority.IsAgent(principal) || AgentCredentialAuthority.IsDelegated(principal))
         {
             // JobSecurityClaim stores values, not validated claim provenance. Until the
-            // durable executor revalidates a credential binding, serializing a delegated
-            // identity would lose its ceiling and managed row/field restrictions.
+            // durable executor revalidates a credential binding, serializing an agent
+            // identity would lose credential version, ceiling, and managed restrictions.
             throw new Microsoft.AspNetCore.Http.BadHttpRequestException(
-                "Delegated credentials require credential-aware durable execution.",
+                "Agent credentials require credential-aware durable execution.",
                 Microsoft.AspNetCore.Http.StatusCodes.Status403Forbidden);
         }
 
@@ -266,6 +266,10 @@ internal static class JobSecurityContextCapture
         };
     }
 
+    private static bool SnapshotIndicatesStoredAgent(JobSecurityContext context) =>
+        context.Claims.Any(static claim => claim.Type == "api_key_id") &&
+        context.Claims.Any(static claim => claim.Type == "permission" && claim.Value == "agent:workspace");
+
     /// <summary>
     /// Restores a policy-evaluation principal from a pinned snapshot. The original claim types
     /// are preserved verbatim, so role enumeration and RLS claim lookups resolve exactly as they
@@ -276,6 +280,10 @@ internal static class JobSecurityContextCapture
     public static ClaimsPrincipal Restore(JobSecurityContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
+        if (SnapshotIndicatesStoredAgent(context))
+        {
+            throw new UnauthorizedAccessException("Legacy agent snapshots lack current credential authority.");
+        }
 
         var claims = context.Claims
             .Where(static claim => !string.IsNullOrWhiteSpace(claim.Type)
@@ -373,6 +381,11 @@ internal static class JobSecurityContextCapture
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(options);
+        if (SnapshotIndicatesStoredAgent(context))
+        {
+            return new JobSecurityContextMembershipResult(StripRoleClaims(context, options),
+                JobSecurityContextMembershipStatus.ManagedUnresolved, HasRemovedRoles: true);
+        }
 
         // Resolution of a managed identity can miss in three ways: no membership authority is
         // configured, the snapshot carries no identifier the authority can key on, or the

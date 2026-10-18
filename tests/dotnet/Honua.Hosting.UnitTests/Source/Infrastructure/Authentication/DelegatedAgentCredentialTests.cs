@@ -165,6 +165,25 @@ public sealed class DelegatedAgentCredentialTests
     }
 
     [Fact]
+    public async Task StoredAgent_GenericDurableCaptureAndLegacyRestoreFailClosed()
+    {
+        using var fixture = new Fixture();
+        var created = await fixture.Services.GetRequiredService<IAdminApiKeyStore>()
+            .CreateAsync("worker", ["agent:workspace", "admin:read"], null, null, default);
+        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
+        var capture = () => JobSecurityContextCapture.Capture(principal, new RbacOptions());
+        capture.Should().Throw<BadHttpRequestException>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        (await AgentCredentialAuthority.CaptureAsync(principal, fixture.Services, default)).Should().NotBeNull();
+        var legacy = new JobSecurityContext("worker", null,
+            [new("api_key_id", created.Record.Id.ToString()), new("permission", "agent:workspace"), new(ClaimTypes.Role, "admin")]);
+        var restore = () => JobSecurityContextCapture.Restore(legacy);
+        restore.Should().Throw<UnauthorizedAccessException>();
+        var result = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(legacy, null, new RbacOptions());
+        result.HasRemovedRoles.Should().BeTrue();
+        result.Status.Should().Be(JobSecurityContextMembershipStatus.ManagedUnresolved);
+    }
+
+    [Fact]
     public async Task QueryOnlyCanonicalRole_DoesNotGainMetadataExportOrDifferentLayer()
     {
         using var fixture = new Fixture();
@@ -313,6 +332,8 @@ public sealed class DelegatedAgentCredentialTests
         var principal = authenticated.Principal!;
         (await AgentCredentialAuthority.IsCurrentAsync(principal, scope.ServiceProvider, default)).Should().BeTrue();
         AgentCredentialAuthority.IsAgent(principal).Should().BeFalse();
+        var ordinarySnapshot = JobSecurityContextCapture.Capture(principal, new RbacOptions());
+        JobSecurityContextCapture.Restore(ordinarySnapshot).Identity!.IsAuthenticated.Should().BeTrue();
         (await AgentCredentialAuthority.CaptureAsync(principal, scope.ServiceProvider, default)).Should().BeNull();
         var untrusted = new ClaimsPrincipal(new ClaimsIdentity(principal.Claims.Select(claim => new Claim(claim.Type, claim.Value)), AuthenticationExtensions.ApiKeyScheme));
         using var fixture = new Fixture();

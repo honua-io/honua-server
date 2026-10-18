@@ -139,7 +139,7 @@ internal sealed class SharedStyleApprovedReplay
 
     private static async Task RequireRolesAsync(IServiceProvider services, JobSecurityContext snapshot, CancellationToken cancellationToken, AgentCredentialSnapshot? credential = null)
     {
-        if (credential is { Kind: "oidc-delegated-agent" })
+        if (credential is not null)
         {
             if (await AgentCredentialAuthority.RevalidateAsync(credential, services, cancellationToken).ConfigureAwait(false) is null) Deny();
             return;
