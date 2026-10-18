@@ -120,3 +120,16 @@ infer old appearance from a version number. Expired, missing, unverified, or no
 longer authorized receipts cannot restore automatically. The current style table
 alone is not a revision archive. Validation and source tests do not establish
 rendering or browser qualification.
+
+Governed edits also write an immutable SQL execution receipt in the same transaction
+as the style bytes. The receipt binds the canonical operation/proposal, sealed request,
+original actor, tenant, schema, target, reviewed stored/effective content and result.
+It contains no credentials or style documents. Receipt retention is currently indefinite;
+automatic recovery still requires the retained, verified canonical proposal and its
+original durable human approval claim. Legacy executing proposals without that claim
+require manual investigation. An authenticated original requester polling
+`honua://proposals/{proposalId}` can adopt a matching committed receipt into the existing
+operation and proposal without actuating another edit or obtaining another approval.
+Recovery rechecks current key, roles, membership, tenant and readable scope, preserves
+terminal operation results, and refreshes projections from current canonical storage.
+A missing receipt never proves success and cannot advance canonical state.
