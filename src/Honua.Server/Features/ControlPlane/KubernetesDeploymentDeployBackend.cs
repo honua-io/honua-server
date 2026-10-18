@@ -273,11 +273,13 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
         JsonElement service, int servicePort, CancellationToken cancellationToken)
     {
         if (!Uri.TryCreate(Required(spec, "kubernetes.public_url"), UriKind.Absolute, out var publicUrl) || publicUrl.Scheme != "https") return false;
+        List<Uri> proofUrls = [];
         foreach (var key in new[] { RollbackDataPlaneCompletion.ReadinessUrlParameterKey, RollbackDataPlaneCompletion.FunctionalQueryUrlParameterKey })
         {
             if (!spec.Parameters.TryGetValue(key, out var raw) || !Uri.TryCreate(raw, UriKind.Absolute, out var probeUrl) ||
                 probeUrl.Scheme != publicUrl.Scheme || probeUrl.IdnHost != publicUrl.IdnHost || probeUrl.Port != publicUrl.Port ||
                 !probeUrl.AbsolutePath.StartsWith(publicUrl.AbsolutePath.TrimEnd('/') + "/", StringComparison.Ordinal)) return false;
+            proofUrls.Add(probeUrl);
         }
         var kind = Required(spec, "kubernetes.route_kind");
         if (kind == "LoadBalancerService")
@@ -291,6 +293,11 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
         if (kind != "Ingress" || Required(spec, "kubernetes.route_host") != publicUrl.IdnHost || publicUrl.Port != 443 ||
             !publicUrl.AbsolutePath.StartsWith(Required(spec, "kubernetes.route_path").TrimEnd('/') + "/", StringComparison.Ordinal) &&
             publicUrl.AbsolutePath.TrimEnd('/') != Required(spec, "kubernetes.route_path").TrimEnd('/')) return false;
+        var routePath = Required(spec, "kubernetes.route_path");
+        var pathType = Required(spec, "kubernetes.route_path_type");
+        if (pathType is not ("Exact" or "Prefix") || proofUrls.Any(probe => pathType == "Exact"
+                ? probe.AbsolutePath != routePath
+                : probe.AbsolutePath != routePath && !probe.AbsolutePath.StartsWith(routePath.TrimEnd('/') + "/", StringComparison.Ordinal))) return false;
         var ns = Uri.EscapeDataString(Required(spec, "kubernetes.namespace"));
         var name = Uri.EscapeDataString(Required(spec, "kubernetes.route_name"));
         using var response = await connection.SendAsync(HttpMethod.Get, $"/apis/networking.k8s.io/v1/namespaces/{ns}/ingresses/{name}", null, cancellationToken).ConfigureAwait(false);
