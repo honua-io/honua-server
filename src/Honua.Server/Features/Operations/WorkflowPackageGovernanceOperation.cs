@@ -22,14 +22,22 @@ internal static class WorkflowPackageGovernanceOperation
     public const string OperationId = "workflow-package.governance";
     public static OperationDescriptor BuildDescriptor() => new()
     {
-        OperationId = OperationId, ProviderId = ServicePublishOperation.ProviderId,
-        Title = "Govern immutable workflow publication", Category = "workflow",
+        OperationId = OperationId,
+        ProviderId = ServicePublishOperation.ProviderId,
+        Title = "Govern immutable workflow publication",
+        Category = "workflow",
         Description = "Publish, delete or change the status of an exact immutable workflow publication after distinct human approval.",
-        ExecutionKind = OperationExecutionKind.Synchronous, ApprovalModel = OperationApprovalModel.OperatorGate,
-        Policy = new() { SideEffectClass = OperationSideEffectClass.MutatesMetadata,
-            BlastRadiusClass = OperationBlastRadiusClass.ServiceScope, Determinism = OperationDeterminism.RuntimeDynamic,
-            SupportsDryRun = true },
-        InputSchema = [], OutputSchema = [],
+        ExecutionKind = OperationExecutionKind.Synchronous,
+        ApprovalModel = OperationApprovalModel.OperatorGate,
+        Policy = new()
+        {
+            SideEffectClass = OperationSideEffectClass.MutatesMetadata,
+            BlastRadiusClass = OperationBlastRadiusClass.ServiceScope,
+            Determinism = OperationDeterminism.RuntimeDynamic,
+            SupportsDryRun = true
+        },
+        InputSchema = [],
+        OutputSchema = [],
     };
 }
 
@@ -80,16 +88,26 @@ internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider service
         {
             Intent = intent,
             AuthorSecurityContext = await services.GetRequiredService<WorkflowAuthorSecurityContextCapturer>().CaptureAsync(principal, cancellationToken).ConfigureAwait(false),
-            KeyId = keyId, ActorId = access.ActorId, Permissions = record!.Permissions.ToArray(),
-            TenantId = access.TenantId!, SchemaName = context.SchemaName, WorkspaceId = workspace, TurnId = turn, OwnerActorId = access.DelegatedOwnerActorId!,
-            TargetId = binding!.TargetId, ReleaseId = binding.ReleaseId,
+            KeyId = keyId,
+            ActorId = access.ActorId,
+            Permissions = record!.Permissions.ToArray(),
+            TenantId = access.TenantId!,
+            SchemaName = context.SchemaName,
+            WorkspaceId = workspace,
+            TurnId = turn,
+            OwnerActorId = access.DelegatedOwnerActorId!,
+            TargetId = binding!.TargetId,
+            ReleaseId = binding.ReleaseId,
             PublicationFingerprint = publication is null ? null : WorkflowPackageApprovedReplay.Fingerprint(publication),
         };
         await WorkflowPackageApprovedReplay.VerifyResourceAsync(services, payload, access, cancellationToken).ConfigureAwait(false);
-        return request with { Parameters = new Dictionary<string, string?>
+        return request with
         {
-            ["sealedPayload"] = JsonSerializer.Serialize(payload, WorkflowPackageGovernanceJsonContext.Default.WorkflowPackageApprovalPayload),
-        } };
+            Parameters = new Dictionary<string, string?>
+            {
+                ["sealedPayload"] = JsonSerializer.Serialize(payload, WorkflowPackageGovernanceJsonContext.Default.WorkflowPackageApprovalPayload),
+            }
+        };
     }
 
     public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
@@ -110,8 +128,11 @@ internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider service
         {
             "publish" => await packageService.PublishVersionAsync(intent.PackageId, intent.Version, new()
             {
-                PublicationId = intent.PublicationId, Target = intent.Target, ProcessId = intent.ProcessId,
-                Schedule = intent.Schedule, Enabled = intent.Enabled,
+                PublicationId = intent.PublicationId,
+                Target = intent.Target,
+                ProcessId = intent.ProcessId,
+                Schedule = intent.Schedule,
+                Enabled = intent.Enabled,
             }, replay.Principal, cancellationToken).ConfigureAwait(false),
             "delete" => await packageService.DeletePublicationAsync(intent.PublicationId, replay.Principal, cancellationToken).ConfigureAwait(false),
             "set-status" => await packageService.SetPublicationStatusAsync(intent.PublicationId, intent.Status, replay.Principal, cancellationToken).ConfigureAwait(false),
@@ -121,11 +142,22 @@ internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider service
         var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
         return new OperationHandle
         {
-            OperationId = OperationId, OperationInstanceId = context.OperationInstanceId ?? throw new InvalidOperationException("Missing canonical operation instance."),
-            CorrelationId = context.CorrelationId ?? "", Status = OperationHandleStatus.Completed, CreatedAt = now, UpdatedAt = now,
-            Result = new OperationResultSummary { Summary = $"Workflow publication {intent.Action} completed.",
-                Details = new Dictionary<string, string> { ["packageId"] = intent.PackageId, ["publicationId"] = publication.PublicationId,
-                    ["packageHash"] = intent.PackageHash } },
+            OperationId = OperationId,
+            OperationInstanceId = context.OperationInstanceId ?? throw new InvalidOperationException("Missing canonical operation instance."),
+            CorrelationId = context.CorrelationId ?? "",
+            Status = OperationHandleStatus.Completed,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Result = new OperationResultSummary
+            {
+                Summary = $"Workflow publication {intent.Action} completed.",
+                Details = new Dictionary<string, string>
+                {
+                    ["packageId"] = intent.PackageId,
+                    ["publicationId"] = publication.PublicationId,
+                    ["packageHash"] = intent.PackageHash
+                }
+            },
         };
     }
 
@@ -151,14 +183,19 @@ internal sealed class WorkflowPackageGovernanceApprovalMapper : IOperationApprov
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         return new OperationGatewayRequest
         {
-            OperationInstanceId = context.OperationInstanceId, OperationId = OperationId, Kind = OperationClass.AdminConfigChange,
-            RequestedBy = context.PrincipalId, Reason = decision.Reason, CorrelationId = context.CorrelationId,
+            OperationInstanceId = context.OperationInstanceId,
+            OperationId = OperationId,
+            Kind = OperationClass.AdminConfigChange,
+            RequestedBy = context.PrincipalId,
+            Reason = decision.Reason,
+            CorrelationId = context.CorrelationId,
             ExecutionPayload = serialized,
             Plan = new OperationProposalPlan
             {
                 Summary = $"Workflow {payload.Intent.Action}: {payload.Intent.PackageId} version {payload.Intent.Version}, publication {payload.Intent.PublicationId}.",
                 Diff = [$"Immutable content hash: {payload.Intent.PackageHash}", $"Workspace: {payload.WorkspaceId}, frozen turn: {payload.TurnId}"],
-                RiskLevel = ProposalRiskLevel.Medium, ExecutionPayload = serialized,
+                RiskLevel = ProposalRiskLevel.Medium,
+                ExecutionPayload = serialized,
             },
         };
     }
@@ -170,7 +207,8 @@ internal sealed class WorkflowPackageGovernanceApprovalMapper : IOperationApprov
         return new OperationApprovalReplayMapping
         {
             Request = new OperationRequest { OperationId = OperationId, Parameters = new Dictionary<string, string?> { ["sealedPayload"] = serialized } },
-            TenantId = payload.TenantId, SchemaName = payload.SchemaName,
+            TenantId = payload.TenantId,
+            SchemaName = payload.SchemaName,
         };
     }
 }

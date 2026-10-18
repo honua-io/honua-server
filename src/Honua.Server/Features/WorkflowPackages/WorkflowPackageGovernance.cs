@@ -41,7 +41,8 @@ internal sealed class WorkflowPackageGovernance(IOperationInvoker invoker, IHttp
             OperationId = WorkflowPackageGovernanceOperation.OperationId,
             Parameters = new Dictionary<string, string?>
             {
-                ["workspaceId"] = workspaceId, ["turnId"] = turnId,
+                ["workspaceId"] = workspaceId,
+                ["turnId"] = turnId,
                 ["intent"] = intentJson,
             },
         }, new OperationPolicyContext
@@ -49,8 +50,10 @@ internal sealed class WorkflowPackageGovernance(IOperationInvoker invoker, IHttp
             PrincipalId = actor,
             TenantId = access.TenantId,
             SchemaName = context.RequestServices.GetService<Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext>()?.CurrentSchema,
-            AuthorizationOutcome = decision.AuthorizationOutcome, RequiredApprovalPolicyRef = "agent-workspace.human-approval",
-            IdempotencyKey = $"workflow-governance:{requestHash}", IdempotencyRequestHash = requestHash,
+            AuthorizationOutcome = decision.AuthorizationOutcome,
+            RequiredApprovalPolicyRef = "agent-workspace.human-approval",
+            IdempotencyKey = $"workflow-governance:{requestHash}",
+            IdempotencyRequestHash = requestHash,
         }, cancellationToken).ConfigureAwait(false);
     }
 }

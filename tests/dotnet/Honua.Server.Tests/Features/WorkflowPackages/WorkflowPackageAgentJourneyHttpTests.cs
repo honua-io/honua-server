@@ -108,7 +108,10 @@ public sealed class WorkflowPackageAgentJourneyHttpTests(RedisFixture redis)
             // reference, never an invented draft id or client-provided ownership field.
             var attached = await Read(await human.PutAsJsonAsync(workspaceRoot + "/context", new
             {
-                viewId = "workflow-tab", expectedRevision = 0, targetId = target.GetProperty("targetId").GetString(), selectedResources = Array.Empty<object>(),
+                viewId = "workflow-tab",
+                expectedRevision = 0,
+                targetId = target.GetProperty("targetId").GetString(),
+                selectedResources = Array.Empty<object>(),
                 task = new { kind = "workflow-package", id = packageId, revision = 1, contentHash = hash },
             }), HttpStatusCode.OK);
             attached.GetProperty("task").GetProperty("contentHash").GetString().Should().Be(hash);
@@ -125,13 +128,20 @@ public sealed class WorkflowPackageAgentJourneyHttpTests(RedisFixture redis)
             agentVersion.GetProperty("version").GetProperty("packageHash").GetString().Should().Be(hash);
             (await human.PutAsJsonAsync(workspaceRoot + "/context", new
             {
-                viewId = "workflow-tab", expectedRevision = 1, targetId = target.GetProperty("targetId").GetString(), selectedResources = Array.Empty<object>(),
+                viewId = "workflow-tab",
+                expectedRevision = 1,
+                targetId = target.GetProperty("targetId").GetString(),
+                selectedResources = Array.Empty<object>(),
                 task = new { kind = "workflow-package", id = packageId, revision = 1, contentHash = new string('0', 64) },
             })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
             var publicationId = "workflow-http-publication-" + Guid.NewGuid().ToString("N");
             var scheduled = await ProposeAndApprove(new WorkflowPackageGovernanceIntent
             {
-                Action = "publish", PackageId = packageId, Version = 1, PackageHash = hash, PublicationId = publicationId,
+                Action = "publish",
+                PackageId = packageId,
+                Version = 1,
+                PackageHash = hash,
+                PublicationId = publicationId,
                 Target = WorkflowPublicationTarget.Schedule,
                 Schedule = new() { Enabled = true, CronExpression = "0 0 1 1 *", TimeZone = "UTC" },
             });
@@ -140,11 +150,25 @@ public sealed class WorkflowPackageAgentJourneyHttpTests(RedisFixture redis)
             definition.Should().NotBeNull();
             definition!.Trigger!.Enabled.Should().BeTrue();
             definition.AuthorSecurityContext!.OwnerActorId.Should().Be($"apikey:api-key:{keyId}");
-            await ProposeAndApprove(new() { Action = "set-status", PackageId = packageId, Version = 1, PackageHash = hash,
-                PublicationId = publicationId, Status = WorkflowPublicationStatus.Disabled });
+            await ProposeAndApprove(new()
+            {
+                Action = "set-status",
+                PackageId = packageId,
+                Version = 1,
+                PackageHash = hash,
+                PublicationId = publicationId,
+                Status = WorkflowPublicationStatus.Disabled
+            });
             (await definitions.GetAsync(scheduled.WorkflowDefinitionId!))!.Trigger!.Enabled.Should().BeFalse();
-            await ProposeAndApprove(new() { Action = "set-status", PackageId = packageId, Version = 1, PackageHash = hash,
-                PublicationId = publicationId, Status = WorkflowPublicationStatus.Active });
+            await ProposeAndApprove(new()
+            {
+                Action = "set-status",
+                PackageId = packageId,
+                Version = 1,
+                PackageHash = hash,
+                PublicationId = publicationId,
+                Status = WorkflowPublicationStatus.Active
+            });
             (await definitions.GetAsync(scheduled.WorkflowDefinitionId!))!.Trigger!.Enabled.Should().BeTrue();
             await ProposeAndApprove(new() { Action = "delete", PackageId = packageId, Version = 1, PackageHash = hash, PublicationId = publicationId });
             (await packages.GetPublicationAsync(publicationId)).Should().BeNull();

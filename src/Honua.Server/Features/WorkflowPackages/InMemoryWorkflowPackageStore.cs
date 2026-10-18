@@ -102,9 +102,15 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
             if (_packages.ContainsKey(package.PackageId)) throw new WorkflowPackageGraphConflictException(package.PackageId);
             var created = new WorkflowPackageVersion
             {
-                PackageId = package.PackageId, Version = 1, PackageHash = hash, Graph = package.Graph,
-                SchemaVersion = package.Graph.SchemaVersion, Validation = validation, Ownership = package.Ownership,
-                CreatedBy = package.CreatedBy, CreatedAt = package.CreatedAt,
+                PackageId = package.PackageId,
+                Version = 1,
+                PackageHash = hash,
+                Graph = package.Graph,
+                SchemaVersion = package.Graph.SchemaVersion,
+                Validation = validation,
+                Ownership = package.Ownership,
+                CreatedBy = package.CreatedBy,
+                CreatedAt = package.CreatedAt,
             };
             _packages[package.PackageId] = package with { LatestVersion = 1 };
             _versions[package.PackageId] = [created];

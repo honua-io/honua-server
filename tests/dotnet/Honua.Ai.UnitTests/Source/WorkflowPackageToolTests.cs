@@ -24,13 +24,21 @@ public sealed class WorkflowPackageToolTests
         var context = Context(authoring);
         var version = new WorkflowPackageVersion
         {
-            PackageId = "package-a", Version = 3, PackageHash = "hash-a", Graph = new() { Nodes = [] },
-            Validation = WorkflowPackageValidationResult.Success("hash-a"), CreatedAt = DateTimeOffset.UnixEpoch,
+            PackageId = "package-a",
+            Version = 3,
+            PackageHash = "hash-a",
+            Graph = new() { Nodes = [] },
+            Validation = WorkflowPackageValidationResult.Success("hash-a"),
+            CreatedAt = DateTimeOffset.UnixEpoch,
         };
         authoring.ReadAsync(context.User, "workspace-a", "turn-a", "package-a", 3, Arg.Any<CancellationToken>()).Returns(version);
         var result = await new WorkflowPackageTool().InvokeAsync(context, JsonSerializer.SerializeToElement(new
         {
-            action = "read", workspaceId = "workspace-a", turnId = "turn-a", packageId = "package-a", version = 3,
+            action = "read",
+            workspaceId = "workspace-a",
+            turnId = "turn-a",
+            packageId = "package-a",
+            version = 3,
         }), CancellationToken.None);
         result.IsError.Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("version").GetProperty("packageHash").GetString().Should().Be("hash-a");
@@ -56,7 +64,11 @@ public sealed class WorkflowPackageToolTests
         var authoring = Substitute.For<IWorkflowPackageAuthoring>();
         var invoke = () => new WorkflowPackageTool().InvokeAsync(Context(authoring), JsonSerializer.SerializeToElement(new
         {
-            action = "read", workspaceId = "workspace-a", turnId = "turn-a", packageId = "foreign", version = 1,
+            action = "read",
+            workspaceId = "workspace-a",
+            turnId = "turn-a",
+            packageId = "foreign",
+            version = 1,
         }), CancellationToken.None);
         await invoke.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }

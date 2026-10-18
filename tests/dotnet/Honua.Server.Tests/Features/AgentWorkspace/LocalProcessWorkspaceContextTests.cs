@@ -145,7 +145,11 @@ public sealed class LocalProcessWorkspaceContextTests
             var actor = CanonicalSecurityActor.Resolve(principal)!.ActorId;
             Document = new()
             {
-                WorkspaceId = "workspace", TargetId = "target", OwnerId = owner, TenantId = "tenant", Members = [owner, actor],
+                WorkspaceId = "workspace",
+                TargetId = "target",
+                OwnerId = owner,
+                TenantId = "tenant",
+                Members = [owner, actor],
                 Task = new(ProjectId, 1, "local-process-workspace", ContentHash: Digest),
             };
             Document.Views["view"] = [new("workspace", "target", "view", 1, [], Document.Task, "tenant")];

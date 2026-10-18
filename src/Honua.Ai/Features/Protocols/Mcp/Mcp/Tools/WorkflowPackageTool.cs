@@ -34,12 +34,14 @@ internal sealed class WorkflowPackageTool : IMcpTool
 
     public McpToolDescriptor Describe() => new()
     {
-        Name = Name, Title = "Author built-in workflow package",
+        Name = Name,
+        Title = "Author built-in workflow package",
         Description = "List visible workflow packages, read an immutable version, or create a new package plus validated immutable version. "
             + "Supply the authorized workspace and frozen turn; ownership comes from the server's verified workspace owner. "
             + "Each edit uses a new commandId and new package; retrying the same command reconciles its immutable version: use the returned packageId/version/content hash in Studio process nodes. "
             + "Validation is not execution verification. This tool never publishes, schedules, enables, or runs a workflow.",
-        InputSchema = Schema, OutputSchema = WorkflowPackageToolSchemas.AuthoringOutput,
+        InputSchema = Schema,
+        OutputSchema = WorkflowPackageToolSchemas.AuthoringOutput,
         Annotations = McpToolAnnotationSets.Write("Author built-in workflow package", destructive: false, idempotent: true),
     };
 

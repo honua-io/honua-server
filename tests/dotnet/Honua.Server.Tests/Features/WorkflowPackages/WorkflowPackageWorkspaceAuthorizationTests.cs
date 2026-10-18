@@ -155,7 +155,9 @@ public sealed class WorkflowPackageWorkspaceAuthorizationTests
         var registry = Substitute.For<IWorkflowNodeRegistry>();
         registry.GetSnapshotAsync(Arg.Any<CancellationToken>()).Returns(new WorkflowNodeRegistrySnapshot
         {
-            RegistryVersion = "fixture", GeneratedAt = DateTimeOffset.UnixEpoch, Providers = [],
+            RegistryVersion = "fixture",
+            GeneratedAt = DateTimeOffset.UnixEpoch,
+            Providers = [],
             Nodes = [new WorkflowNodeDefinition
             {
                 NodeTypeId = "process:test.echo", ProviderId = "test", RuntimeKind = WorkflowNodeRuntimeKind.Geoprocessing,
@@ -171,7 +173,10 @@ public sealed class WorkflowPackageWorkspaceAuthorizationTests
         var workspaces = Substitute.For<IAgentWorkspaceStore>();
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = "workspace-a", TargetId = "target-a", OwnerId = Human, TenantId = Tenant,
+            WorkspaceId = "workspace-a",
+            TargetId = "target-a",
+            OwnerId = Human,
+            TenantId = Tenant,
             Members = [Human, CanonicalSecurityActor.Resolve(principal)!.ActorId],
         };
         var gate = new object();
@@ -257,7 +262,11 @@ public sealed class WorkflowPackageWorkspaceAuthorizationTests
         var graph = new WorkflowGraph { Nodes = [] };
         await store.SavePackageAsync(new WorkflowPackage
         {
-            PackageId = id, Name = id, Graph = graph, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            PackageId = id,
+            Name = id,
+            Graph = graph,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Ownership = owner is null ? null : new() { OwnerActorId = owner, TenantId = tenant },
         });
         var hash = WorkflowPackageGraphHasher.Compute(graph);
@@ -267,8 +276,13 @@ public sealed class WorkflowPackageWorkspaceAuthorizationTests
     private static Task<WorkflowPublication> Publication(InMemoryWorkflowPackageStore store, string package, string id)
         => store.SavePublicationAsync(new WorkflowPublication
         {
-            PublicationId = id, PackageId = package, PackageVersion = 1, PackageHash = "fixture-hash",
-            Target = WorkflowPublicationTarget.Job, Status = WorkflowPublicationStatus.Active,
-            Eligibility = WorkflowPackageValidationResult.Success("fixture-hash"), CreatedAt = DateTimeOffset.UtcNow,
+            PublicationId = id,
+            PackageId = package,
+            PackageVersion = 1,
+            PackageHash = "fixture-hash",
+            Target = WorkflowPublicationTarget.Job,
+            Status = WorkflowPublicationStatus.Active,
+            Eligibility = WorkflowPackageValidationResult.Success("fixture-hash"),
+            CreatedAt = DateTimeOffset.UtcNow,
         });
 }

@@ -81,7 +81,7 @@ internal sealed partial class PostgresWorkflowPackageStore
                 try { await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false); }
                 catch (Exception rollbackFailure) when (rollbackFailure is not OutOfMemoryException) { /* Commit may already have succeeded. */ }
                 using var recovery = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-                if (connection.State != System.Data.ConnectionState.Open)
+                if (connection.Connection.State != System.Data.ConnectionState.Open)
                 {
                     // A disconnected session no longer owns a usable mutex. Reacquire it on a
                     // fresh authenticated provider connection and reconcile CURRENT committed
@@ -103,7 +103,7 @@ internal sealed partial class PostgresWorkflowPackageStore
         }
         finally
         {
-            if (connection.State == System.Data.ConnectionState.Open)
+            if (connection.Connection.State == System.Data.ConnectionState.Open)
             {
                 try
                 {

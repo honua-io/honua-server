@@ -56,7 +56,9 @@ public sealed class WorkflowPackageWorkspaceHttpTests
             var graph = new WorkflowGraph { Nodes = [] };
             var created = await Read(await owner.PostAsJsonAsync("/api/v1/console/workflow-packages", new
             {
-                packageId = id, name = "Owned draft", graph,
+                packageId = id,
+                name = "Owned draft",
+                graph,
                 metadata = new Dictionary<string, string> { ["ownerActorId"] = "forged-owner", ["tenantId"] = "forged-tenant" },
             }), HttpStatusCode.Created);
             var ownership = created.GetProperty("data").GetProperty("ownership");
@@ -70,9 +72,14 @@ public sealed class WorkflowPackageWorkspaceHttpTests
             var publication = "http-publication-" + Guid.NewGuid().ToString("N");
             await store.SavePublicationAsync(new WorkflowPublication
             {
-                PublicationId = publication, PackageId = id, PackageVersion = 1, PackageHash = hash,
-                Target = WorkflowPublicationTarget.Job, Status = WorkflowPublicationStatus.Active,
-                Eligibility = WorkflowPackageValidationResult.Success(hash), CreatedAt = DateTimeOffset.UtcNow,
+                PublicationId = publication,
+                PackageId = id,
+                PackageVersion = 1,
+                PackageHash = hash,
+                Target = WorkflowPublicationTarget.Job,
+                Status = WorkflowPublicationStatus.Active,
+                Eligibility = WorkflowPackageValidationResult.Success(hash),
+                CreatedAt = DateTimeOffset.UtcNow,
             });
             string root = $"/api/v1/console/workflow-packages/{id}";
             (await owner.GetAsync(root)).StatusCode.Should().Be(HttpStatusCode.OK);
@@ -104,7 +111,8 @@ public sealed class WorkflowPackageWorkspaceHttpTests
             var tenantId = id + "-tenant";
             await store.SavePackageAsync(package with
             {
-                PackageId = tenantId, Ownership = package.Ownership! with { TenantId = "another-tenant" },
+                PackageId = tenantId,
+                Ownership = package.Ownership! with { TenantId = "another-tenant" },
             });
             (await owner.GetAsync($"/api/v1/console/workflow-packages/{tenantId}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
             (await admin.PostAsync($"/api/v1/admin/api-keys/{keyA.Id}/revoke", null)).EnsureSuccessStatusCode();
@@ -120,7 +128,8 @@ public sealed class WorkflowPackageWorkspaceHttpTests
     {
         var body = await Read(await admin.PostAsJsonAsync("/api/v1/admin/api-keys", new
         {
-            name, permissions = new[] { "admin:read", "admin:write", "read:*", "agent:workspace" },
+            name,
+            permissions = new[] { "admin:read", "admin:write", "read:*", "agent:workspace" },
         }), HttpStatusCode.Created);
         return (body.GetProperty("data").GetProperty("apiKey").GetProperty("id").GetString()!,
             body.GetProperty("data").GetProperty("key").GetString()!);

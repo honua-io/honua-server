@@ -72,7 +72,9 @@ public sealed class WorkflowPackageSchedulerCommitTests(RedisFixture redis)
             definitionId = WorkflowPackageService.ScheduleWorkflowDefinitionId(packageId, 1, publicationId);
             using var publish = await human.PostAsJsonAsync(root + "/versions/1/publish", new
             {
-                publicationId, target = "Schedule", enabled = true,
+                publicationId,
+                target = "Schedule",
+                enabled = true,
                 schedule = new { cronExpression = "0 0 1 1 *", timeZone = "UTC", enabled = true },
             });
             Assert.False(publish.IsSuccessStatusCode);

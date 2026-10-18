@@ -156,8 +156,14 @@ internal sealed class WorkflowPackageService(
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         var package = new WorkflowPackage
         {
-            PackageId = command.PackageId, Name = name.Trim(), Graph = graph, Ownership = access.Ownership,
-            CreatedAt = clock.GetUtcNow(), UpdatedAt = clock.GetUtcNow(), CreatedBy = access.ActorId, UpdatedBy = access.ActorId,
+            PackageId = command.PackageId,
+            Name = name.Trim(),
+            Graph = graph,
+            Ownership = access.Ownership,
+            CreatedAt = clock.GetUtcNow(),
+            UpdatedAt = clock.GetUtcNow(),
+            CreatedBy = access.ActorId,
+            UpdatedBy = access.ActorId,
         };
         var initial = await store.GetVersionAsync(command.PackageId, 1, cancellationToken).ConfigureAwait(false);
         if (initial is not null)
@@ -310,9 +316,18 @@ internal sealed class WorkflowPackageService(
 
         var packageVersion = await RequireVersionAsync(packageId, version, cancellationToken, principal).ConfigureAwait(false);
         EnsureLegacyGovernanceAuthority(await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false),
-            new() { Action = "publish", PackageId = packageId, Version = version, PackageHash = packageVersion.PackageHash,
-                PublicationId = request.PublicationId ?? "", Target = request.Target, ProcessId = request.ProcessId,
-                Schedule = request.Schedule, Enabled = request.Enabled });
+            new()
+            {
+                Action = "publish",
+                PackageId = packageId,
+                Version = version,
+                PackageHash = packageVersion.PackageHash,
+                PublicationId = request.PublicationId ?? "",
+                Target = request.Target,
+                ProcessId = request.ProcessId,
+                Schedule = request.Schedule,
+                Enabled = request.Enabled
+            });
         var eligibility = await ValidateGraphAsync(packageVersion.Graph, principal, request.Target, cancellationToken).ConfigureAwait(false);
         if (!eligibility.IsValid)
         {
@@ -574,8 +589,14 @@ internal sealed class WorkflowPackageService(
     {
         var existing = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
         if (existing is null || !await CanAccessPublicationAsync(access, existing, cancellationToken).ConfigureAwait(false)) return null;
-        EnsureLegacyGovernanceAuthority(access, new() { Action = "delete", PackageId = existing.PackageId,
-            Version = existing.PackageVersion, PackageHash = existing.PackageHash, PublicationId = publicationId });
+        EnsureLegacyGovernanceAuthority(access, new()
+        {
+            Action = "delete",
+            PackageId = existing.PackageId,
+            Version = existing.PackageVersion,
+            PackageHash = existing.PackageHash,
+            PublicationId = publicationId
+        });
         await RequireApprovedPublicationPinAsync(existing, cancellationToken).ConfigureAwait(false);
         await SyncScheduleDefinitionAsync(existing, remove: true, enabled: false, cancellationToken).ConfigureAwait(false);
         return await store.DeletePublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
@@ -598,8 +619,15 @@ internal sealed class WorkflowPackageService(
     {
         var existing = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
         if (existing is null || !await CanAccessPublicationAsync(access, existing, cancellationToken).ConfigureAwait(false)) return null;
-        EnsureLegacyGovernanceAuthority(access, new() { Action = "set-status", PackageId = existing.PackageId,
-            Version = existing.PackageVersion, PackageHash = existing.PackageHash, PublicationId = publicationId, Status = status });
+        EnsureLegacyGovernanceAuthority(access, new()
+        {
+            Action = "set-status",
+            PackageId = existing.PackageId,
+            Version = existing.PackageVersion,
+            PackageHash = existing.PackageHash,
+            PublicationId = publicationId,
+            Status = status
+        });
         await RequireApprovedPublicationPinAsync(existing, cancellationToken).ConfigureAwait(false);
         await SyncScheduleDefinitionAsync(existing, remove: false,
             enabled: status == WorkflowPublicationStatus.Active, cancellationToken).ConfigureAwait(false);

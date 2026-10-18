@@ -76,7 +76,8 @@ public sealed class PostgresWorkflowPackageStoreTests(PostgresFixture fixture)
             {
                 await transaction.CommitAsync(token);
                 throw new IOException("Injected lost commit response after real PostgreSQL commit.");
-            } : null);
+            }
+            : null);
             WorkflowPublicationStatus? observedCommittedStatus = null;
             var changedScheduler = false;
             var mutation = () => writer.ExecuteSerializedPublicationMutationAsync(async (locked, token) =>
@@ -111,7 +112,8 @@ public sealed class PostgresWorkflowPackageStoreTests(PostgresFixture fixture)
             var peer = new PostgresWorkflowPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
             var package = SamplePackage("command-reserved") with
             {
-                Ownership = new() { OwnerActorId = "human", TenantId = "public" }, CreatedBy = "agent",
+                Ownership = new() { OwnerActorId = "human", TenantId = "public" },
+                CreatedBy = "agent",
             };
             var hash = WorkflowPackageGraphHasher.Compute(package.Graph);
             var validation = WorkflowPackageValidationResult.Success(hash);

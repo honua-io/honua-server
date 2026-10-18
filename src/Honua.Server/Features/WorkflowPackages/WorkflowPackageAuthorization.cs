@@ -93,6 +93,7 @@ internal sealed record WorkflowPackageAccess(
 
     public WorkflowPackageOwnership? Ownership => DurableActor ? new()
     {
-        OwnerActorId = DelegatedOwnerActorId ?? ActorId, TenantId = TenantId,
+        OwnerActorId = DelegatedOwnerActorId ?? ActorId,
+        TenantId = TenantId,
     } : null;
 }

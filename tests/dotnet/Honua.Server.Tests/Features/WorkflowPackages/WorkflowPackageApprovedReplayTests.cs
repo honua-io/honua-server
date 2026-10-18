@@ -184,20 +184,33 @@ public sealed class WorkflowPackageApprovedReplayTests
             var hash = WorkflowPackageGraphHasher.Compute(graph);
             await packages.SavePackageAsync(new WorkflowPackage
             {
-                PackageId = "package", Name = "Package", Graph = graph, CreatedAt = DateTimeOffset.UnixEpoch, UpdatedAt = DateTimeOffset.UnixEpoch,
+                PackageId = "package",
+                Name = "Package",
+                Graph = graph,
+                CreatedAt = DateTimeOffset.UnixEpoch,
+                UpdatedAt = DateTimeOffset.UnixEpoch,
                 Ownership = new() { OwnerActorId = owner, TenantId = "public" },
             });
             await packages.CreateVersionAsync("package", hash, graph, WorkflowPackageValidationResult.Success(hash), actor);
             var publication = await packages.SavePublicationAsync(new WorkflowPublication
             {
-                PublicationId = "publication", PackageId = "package", PackageVersion = 1, PackageHash = hash,
-                Target = WorkflowPublicationTarget.Job, Status = WorkflowPublicationStatus.Active,
-                Eligibility = WorkflowPackageValidationResult.Success(hash), CreatedAt = DateTimeOffset.UnixEpoch,
+                PublicationId = "publication",
+                PackageId = "package",
+                PackageVersion = 1,
+                PackageHash = hash,
+                Target = WorkflowPublicationTarget.Job,
+                Status = WorkflowPublicationStatus.Active,
+                Eligibility = WorkflowPackageValidationResult.Success(hash),
+                CreatedAt = DateTimeOffset.UnixEpoch,
             });
             var context = new AgentWorkspaceContext("workspace", "target", "view", 1, [], null, "public");
             var document = new AgentWorkspaceDocument
             {
-                WorkspaceId = "workspace", TargetId = "target", OwnerId = owner, TenantId = "public", Members = [actor, owner],
+                WorkspaceId = "workspace",
+                TargetId = "target",
+                OwnerId = owner,
+                TenantId = "public",
+                Members = [actor, owner],
                 Turns = new() { ["turn"] = new("turn", actor, "Remove this exact publication", context, null) },
             };
             var workspaces = Substitute.For<IAgentWorkspaceStore>();
@@ -207,25 +220,45 @@ public sealed class WorkflowPackageApprovedReplayTests
             {
                 AuthorSecurityContext = JobSecurityContextCapture.Capture(principal, new Honua.Core.Features.Authorization.Domain.RbacOptions(), Tenant()),
                 Intent = new() { Action = "delete", PackageId = "package", Version = 1, PackageHash = hash, PublicationId = "publication" },
-                KeyId = created.Record.Id, ActorId = actor, Permissions = created.Record.Permissions.ToArray(), TenantId = "public",
-                WorkspaceId = "workspace", TurnId = "turn", OwnerActorId = owner, TargetId = "target", ReleaseId = "release",
+                KeyId = created.Record.Id,
+                ActorId = actor,
+                Permissions = created.Record.Permissions.ToArray(),
+                TenantId = "public",
+                WorkspaceId = "workspace",
+                TurnId = "turn",
+                OwnerActorId = owner,
+                TargetId = "target",
+                ReleaseId = "release",
                 PublicationFingerprint = WorkflowPackageApprovedReplay.Fingerprint(publication),
             };
             var serialized = JsonSerializer.Serialize(payload, WorkflowPackageGovernanceJsonContext.Default.WorkflowPackageApprovalPayload);
             var plan = new OperationProposalPlan { Summary = "Remove publication", ExecutionPayload = serialized };
             var proposal = new OperationProposal
             {
-                ProposalId = "proposal", OperationId = WorkflowPackageGovernanceOperation.OperationId, Kind = Honua.Core.Features.Guardrails.Domain.OperationClass.AdminConfigChange,
-                Status = OperationProposalStatus.Executing, RequestedBy = actor, TenantId = "public", Plan = plan,
-                SealedPlanHash = OperationApprovalPlanSeal.Compute(plan), Audit = new() { OperationInstanceId = "instance" },
-                CreatedAt = DateTimeOffset.UnixEpoch, UpdatedAt = DateTimeOffset.UnixEpoch,
+                ProposalId = "proposal",
+                OperationId = WorkflowPackageGovernanceOperation.OperationId,
+                Kind = Honua.Core.Features.Guardrails.Domain.OperationClass.AdminConfigChange,
+                Status = OperationProposalStatus.Executing,
+                RequestedBy = actor,
+                TenantId = "public",
+                Plan = plan,
+                SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
+                Audit = new() { OperationInstanceId = "instance" },
+                CreatedAt = DateTimeOffset.UnixEpoch,
+                UpdatedAt = DateTimeOffset.UnixEpoch,
             };
             var proposals = Substitute.For<IOperationProposalStore>();
             proposals.GetAsync("proposal", Arg.Any<CancellationToken>()).Returns(proposal);
             var fixture = new Fixture
             {
-                Services = null!, Packages = packages, Keys = keys, KeyId = created.Record.Id, Proposals = proposals,
-                Workspaces = workspaces, Document = document, Proposal = proposal,
+                Services = null!,
+                Packages = packages,
+                Keys = keys,
+                KeyId = created.Record.Id,
+                Proposals = proposals,
+                Workspaces = workspaces,
+                Document = document,
+                Proposal = proposal,
                 Request = new() { OperationId = WorkflowPackageGovernanceOperation.OperationId, Parameters = new Dictionary<string, string?> { ["sealedPayload"] = serialized } },
                 Context = new() { PrincipalId = actor, TenantId = "public", OperationInstanceId = "instance", ApprovedProposalId = "proposal", ApprovedPlanHash = proposal.SealedPlanHash },
                 Approver = new() { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "distinct-human")], "Human")) },

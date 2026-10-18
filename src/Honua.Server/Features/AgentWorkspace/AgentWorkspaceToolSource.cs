@@ -64,7 +64,8 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
     public string WorkflowFamily => "lifecycle";
     public McpToolDescriptor Describe() => new()
     {
-        Name = Name, Description = description,
+        Name = Name,
+        Description = description,
         InputSchema = ParseJson($"{{\"type\":\"object\",\"properties\":{{{properties}}},\"required\":[{required}],\"additionalProperties\":false}}"),
         Annotations = new() { ReadOnlyHint = readOnly, DestructiveHint = action == "submit_draft", IdempotentHint = action != "create" && action != "create_draft" },
         Meta = ParseJson("""{"honua.studio":{"family":"honua.workspace.canonical","view":"workspace","revision":"1"}}"""),
