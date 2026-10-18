@@ -224,6 +224,21 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
                 new { commandId = "different-actor-command", submit.expectedRevision, viewId = "tab-a" }))
                 .StatusCode.Should().Be(HttpStatusCode.Conflict);
 
+            // A CAS loser can recover read-only even when its alias was never accepted.
+            var recoveryQuery = $"?draftId={currentDraft.GetProperty("id").GetString()}&draftRevision={submit.expectedRevision}";
+            var discovered = await Read(await agent.GetAsync(root + "/commands/unpersisted-tab" + recoveryQuery), HttpStatusCode.OK);
+            discovered.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(instanceId);
+            (await agent.GetAsync(root + "/commands/unpersisted-tab")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await human.GetAsync(root + "/commands/unpersisted-tab" + recoveryQuery)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await agent.GetAsync(root + "/commands/command-one?draftId=other&draftRevision=0"))
+                .StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await agent.GetAsync(root + "/commands/unpersisted-tab?draftRevision=0"))
+                .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var afterDiscovery = await fixture.Services.GetRequiredService<IAgentWorkspaceStore>()
+                .GetAsync(created.GetProperty("workspaceId").GetString()!);
+            afterDiscovery!.Version.Should().Be(persisted.Version);
+            afterDiscovery.Commands.Should().NotContainKey("unpersisted-tab");
+
             // A deliberate retry is a newly reviewed revision, never a new command id
             // for the consumed revision. Empty PATCH still uses the canonical draft CAS.
             var retryDraft = await Read(await agent.PatchAsJsonAsync(draftPath,

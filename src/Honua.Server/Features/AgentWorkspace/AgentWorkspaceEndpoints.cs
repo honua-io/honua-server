@@ -523,7 +523,32 @@ internal static class AgentWorkspaceEndpoints
     {
         var document = await Read(context, store).ConfigureAwait(false);
         var commandId = context.Request.RouteValues["commandId"]?.ToString() ?? string.Empty;
-        if (!document.Commands.TryGetValue(commandId, out var command)) return Results.NotFound();
+        document.Commands.TryGetValue(commandId, out var command);
+        if (context.Request.Query.ContainsKey("draftId") || context.Request.Query.ContainsKey("draftRevision"))
+        {
+            var draftIds = context.Request.Query["draftId"];
+            var revisions = context.Request.Query["draftRevision"];
+            if (draftIds.Count != 1 || revisions.Count != 1 || !AgentWorkspaceState.IsIdentifier(draftIds[0]) ||
+                !long.TryParse(revisions[0], System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var revision))
+                throw new ArgumentException("An exact draft id and revision are required for command recovery.");
+            if (command is not null)
+            {
+                if (command.DraftId != draftIds[0] || command.DraftRevision != revision) return Results.NotFound();
+            }
+            else
+            {
+                // A losing tab may never have persisted its command alias. Discover
+                // the original same-actor receipt without dispatch or any state write.
+                var actor = Actor(context);
+                var originals = document.Commands.Values.Where(value => value.ActorId == actor &&
+                    value.DraftId == draftIds[0] && value.DraftRevision == revision).ToArray();
+                if (originals.Select(value => value.OperationInstanceId).Distinct(StringComparer.Ordinal).Count() != 1)
+                    return Results.NotFound();
+                command = originals[0];
+            }
+        }
+        if (command is null) return Results.NotFound();
         return await OperationsEndpoints.HandleGetHandleStatus(context, command.OperationInstanceId,
             context.RequestServices.GetRequiredService<IOperationInstanceStore>(), context.RequestAborted).ConfigureAwait(false);
     }
