@@ -599,16 +599,6 @@ public sealed class McpAuthorizationTests
         await _groundingService.DidNotReceiveWithAnyArgs().GroundAsync(default!, default!, default);
     }
 
-    [UnitTest]
-    public void CoreInspectionResources_AreFunctionalResources_ForTelemetryTagging()
-    {
-        IMcpResource workspace = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
-        IMcpResource catalog = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
-
-        workspace.Should().NotBeAssignableTo<IStubMcpResource>();
-        catalog.Should().NotBeAssignableTo<IStubMcpResource>();
-    }
-
     // The dispatcher-level auth gate runs before param parsing and tool/resource
     // lookup, so malformed payloads and unknown names from anonymous callers
     // still surface the `unauthenticated` reauthentication signal instead of

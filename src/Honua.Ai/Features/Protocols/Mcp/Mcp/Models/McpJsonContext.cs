@@ -85,7 +85,6 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 [JsonSerializable(typeof(McpPackageDraftOutput))]
 [JsonSerializable(typeof(McpPackageDraftFinding))]
 [JsonSerializable(typeof(McpProposalResource))]
-[JsonSerializable(typeof(McpNotImplementedOutput))]
 [JsonSerializable(typeof(McpToolErrorOutput))]
 [JsonSerializable(typeof(McpPlanAnalysisArgument))]
 [JsonSerializable(typeof(McpPlanAnalysisOutput))]

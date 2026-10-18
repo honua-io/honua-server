@@ -72,7 +72,6 @@ internal static class McpTelemetry
     {
         public const string Ok = "ok";
         public const string Error = "error";
-        public const string NotImplemented = "not_implemented";
     }
 
     /// <summary>

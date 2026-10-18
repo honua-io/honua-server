@@ -147,35 +147,3 @@ public static class GeocodeProviderNames
     /// <returns>Array of provider names</returns>
     public static string[] GetAll() => [Nominatim, AmazonLocation, AzureMaps, Local];
 }
-
-/// <summary>
-/// Common spatial reference systems used in geocoding
-/// </summary>
-public static class GeocodeSpatialReferenceSystems
-{
-    /// <summary>
-    /// WGS 84 (World Geodetic System 1984)
-    /// </summary>
-    public const int Wgs84 = 4326;
-
-    /// <summary>
-    /// Web Mercator (used by most web mapping services)
-    /// </summary>
-    public const int WebMercator = 3857;
-
-    /// <summary>
-    /// NAD 83 (North American Datum 1983)
-    /// </summary>
-    public const int Nad83 = 4269;
-
-    /// <summary>
-    /// GCJ-02 (Chinese coordinate system)
-    /// </summary>
-    public const int Gcj02 = 4490;
-
-    /// <summary>
-    /// Get commonly supported spatial reference systems
-    /// </summary>
-    /// <returns>Array of WKID values</returns>
-    public static int[] GetCommon() => [Wgs84, WebMercator, Nad83];
-}

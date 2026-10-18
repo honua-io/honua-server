@@ -119,21 +119,3 @@ public interface IPublishExecutor
         PublishIntent intent,
         CancellationToken cancellationToken = default);
 }
-
-/// <summary>
-/// Executes a one-way refresh operation, pulling source content into a published service.
-/// Refresh is strictly one-way from the authoritative source; bidirectional sync and CDC
-/// are out of scope.
-/// </summary>
-public interface IRefreshExecutor
-{
-    /// <summary>
-    /// Executes a refresh for the given request.
-    /// </summary>
-    /// <param name="request">Refresh request specifying the service and scope.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The result of the refresh operation.</returns>
-    Task<RefreshResult> ExecuteAsync(
-        RefreshRequest request,
-        CancellationToken cancellationToken = default);
-}

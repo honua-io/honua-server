@@ -985,22 +985,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <see cref="Models.McpNotImplementedOutput"/>.</summary>
-    public static readonly JsonElement NotImplementedOutputSchema = Parse(
-        """
-        {
-          "type": "object",
-          "required": ["status", "tool", "blockedBy", "contract", "nextSteps"],
-          "properties": {
-            "status": { "type": "string", "const": "not_implemented" },
-            "tool": { "type": "string" },
-            "blockedBy": { "type": "string" },
-            "contract": { "type": "string" },
-            "nextSteps": { "type": "array", "items": { "type": "string" } }
-          }
-        }
-        """);
-
     /// <summary>
     /// Schema for <see cref="Models.McpOperationToolOutput"/> — the structured
     /// result of a published operations-toolset operation projected as a
