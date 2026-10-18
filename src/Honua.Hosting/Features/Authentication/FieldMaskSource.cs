@@ -23,9 +23,9 @@ namespace Honua.Infrastructure.Authentication;
 /// the caller explicitly requests it.
 /// </summary>
 /// <remarks>
-/// Returning an empty set means "no masking applies". When there is no request context
-/// (e.g. a background job), no masking is applied here — field masking is a request-scoped
-/// concern keyed on the caller's roles.
+/// Returning an empty set means "no masking applies". Reads use an active job's captured
+/// submitter, otherwise the request principal. Server-internal reads without either
+/// identity have no caller-specific mask.
 /// </remarks>
 internal sealed partial class FieldMaskSource : IFieldMaskSource
 {
@@ -82,7 +82,9 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
         var roles = RbacRoleClaims.Enumerate(
             principal,
             _rbacOptions,
-            _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices);
+            JobSecurityScope.Current is null
+                ? _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices
+                : _backgroundServices);
 
         var layerName = resource.Metadata.Name;
         if (string.IsNullOrWhiteSpace(layerName))
@@ -135,7 +137,7 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var snapshot = ValidatedMetadataSnapshot.Find(_httpContextAccessor.HttpContext, resource)
+            var snapshot = (JobSecurityScope.Current is null ? ValidatedMetadataSnapshot.Find(_httpContextAccessor.HttpContext, resource) : null)
                 ?? await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             return snapshot.Index.ServiceNamesByResource.TryGetValue(resource.Metadata.Id, out var names)
                 ? names
@@ -157,37 +159,6 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
         public static partial void ServiceResolutionFailed(ILogger logger, string layer, Exception exception);
     }
 
-    /// <summary>
-    /// Resolves the principal masking is evaluated against: the live request user when one
-    /// exists, otherwise the submitter snapshot pinned on the executing background job
-    /// (honua-server#3068). Returns <see langword="null"/> only when there is neither — a
-    /// server-internal read with no caller whose masks could apply.
-    /// </summary>
-    /// <exception cref="UnauthorizedAccessException">
-    /// Thrown when a job-execution scope is active but carries no submitter snapshot. The read
-    /// cannot be masked for the submitting caller, so it is refused rather than silently
-    /// returning every attribute unmasked.
-    /// </exception>
     private ClaimsPrincipal? ResolvePrincipal()
-    {
-        var requestPrincipal = _httpContextAccessor.HttpContext?.User;
-        if (requestPrincipal is not null)
-        {
-            return requestPrincipal;
-        }
-
-        var scope = JobSecurityScope.Current;
-        if (scope is null)
-        {
-            return null;
-        }
-
-        if (scope.Submitter is null)
-        {
-            throw new UnauthorizedAccessException(
-                "This job carries no submitter security context, so field masking cannot be enforced on its reads.");
-        }
-
-        return JobSecurityContextCapture.Restore(scope.Submitter);
-    }
+        => JobSecurityContextCapture.ResolveReadPrincipal(_httpContextAccessor.HttpContext?.User);
 }

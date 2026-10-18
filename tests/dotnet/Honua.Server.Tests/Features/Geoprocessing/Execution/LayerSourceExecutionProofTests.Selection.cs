@@ -13,6 +13,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -334,7 +335,8 @@ public sealed partial class LayerSourceExecutionProofTests
             "the proof must exercise the production selection translator registration");
         var metadata = _fixture.GetService<IMetadataV2GraphProvider>();
         return new ServiceCollection()
-            .AddSingleton<IDagFeatureSource>(new HonuaLayerDagSource(store, metadata, translator))
+            .AddSingleton<IDagFeatureSource>(new HonuaLayerDagSource(store, metadata, translator,
+                _fixture.GetService<FeatureProviderQueryRouter>()))
             .AddSingleton(metadata)
             .BuildServiceProvider();
     }

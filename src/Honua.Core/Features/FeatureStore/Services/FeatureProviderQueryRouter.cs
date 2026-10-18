@@ -113,9 +113,11 @@ public sealed class FeatureProviderQueryRouter
 
             var providerBinding = await ResolveProviderBindingAsync(
                 snapshot, null, resource, null, binding, storageLayerId, operation, cancellationToken).ConfigureAwait(false);
-            return providerBinding.Provider is IBindableFeatureDataProvider bindable
-                ? bindable.CreateReaderForBinding(providerBinding)
-                : providerBinding.Provider.Reader;
+            if (providerBinding.Provider is not IBindableFeatureDataProvider bindable)
+            {
+                throw new InvalidOperationException("The process source provider cannot bind an exact storage source.");
+            }
+            return bindable.CreateReaderForBinding(providerBinding);
         }
         catch (InvalidOperationException ex)
         {
@@ -232,23 +234,25 @@ public sealed class FeatureProviderQueryRouter
         MetadataV2StorageBinding storageBinding,
         CancellationToken cancellationToken)
     {
-        var v2Connection = snapshot.ResolveConnection(storageBinding);
-        if (v2Connection == null)
+        if (string.IsNullOrEmpty(storageBinding.ConnectionId))
         {
             return (null, _defaultProviderName, null);
+        }
+
+        var v2Connection = snapshot.ResolveConnection(storageBinding);
+        if (v2Connection is null)
+        {
+            return (null, null, storageBinding.ConnectionId);
         }
 
         var connection = await _connectionRegistry
             .GetConnectionAsync(v2Connection.Metadata.Id, cancellationToken)
             .ConfigureAwait(false);
-        if (connection != null)
-        {
-            return (connection, connection.NormalizedProvider, null);
-        }
-
-        return string.IsNullOrWhiteSpace(v2Connection.Provider)
+        // A declared provider is not a connection. Losing a registered credential must
+        // never redirect a bound table to a same-named table in the managed database.
+        return connection is null
             ? (null, null, v2Connection.Metadata.Id)
-            : (null, DataProviderNames.Normalize(v2Connection.Provider!), null);
+            : (connection, connection.NormalizedProvider, null);
     }
 
     private static void EnsureOperationSupported(

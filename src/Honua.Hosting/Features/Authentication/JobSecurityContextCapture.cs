@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Security;
@@ -37,6 +38,25 @@ namespace Honua.Infrastructure.Authentication;
 /// </remarks>
 internal static class JobSecurityContextCapture
 {
+    /// <summary>
+    /// Resolves read-policy identity. An executing job always uses its captured submitter,
+    /// even when dispatch still has an approver or administrator HTTP context. An active
+    /// job without a submitter fails closed; ordinary requests keep their live principal.
+    /// </summary>
+    public static ClaimsPrincipal? ResolveReadPrincipal(ClaimsPrincipal? requestPrincipal)
+    {
+        var scope = JobSecurityScope.Current;
+        if (scope is null)
+        {
+            return requestPrincipal;
+        }
+        if (scope.Submitter is null)
+        {
+            throw new UnauthorizedAccessException("This job carries no submitter security context for its reads.");
+        }
+        return Restore(scope.Submitter);
+    }
+
     /// <summary>Tenant claim type mirrored from the portal-token grammar.</summary>
     private const string TenantClaimType = "tenant_id";
 

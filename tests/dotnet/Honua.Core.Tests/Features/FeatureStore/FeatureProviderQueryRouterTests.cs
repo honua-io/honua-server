@@ -208,16 +208,24 @@ public sealed class FeatureProviderQueryRouterTests
     }
 
     [Trait("Tier", "Fast")]
-    [Fact]
-    public async Task ResolveStorageReaderAsync_MissingConnection_RefusesDefaultProviderFallback()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ResolveStorageReaderAsync_MissingConnection_RefusesDefaultProviderFallback(bool metadataPresent)
     {
         var configuredConnection = Guid.NewGuid();
         var provider = new CapturingBindableProvider(new Mock<IFeatureReader>(MockBehavior.Strict).Object);
         var router = CreateRouter(configuredConnection, DataProviderNames.Postgis, provider);
-        var (snapshot, _, _, _) = CreateSnapshot(Guid.NewGuid().ToString(), DataProviderNames.Postgis);
+        var (original, service, resource, publication) = CreateSnapshot(Guid.NewGuid().ToString(), DataProviderNames.Postgis);
+        var snapshot = metadataPresent ? original : new MetadataV2GraphSnapshot(
+            original.Graph with { Connections = [] }, "missing-connection", DateTimeOffset.UtcNow);
 
         var act = () => router.ResolveStorageReaderAsync(snapshot, 1, FeatureProviderReadOperation.Query);
         await act.Should().ThrowAsync<InvalidOperationException>();
+        var publishedRead = () => router.ResolveReaderAsync(snapshot, service, resource, publication, 1,
+            FeatureProviderReadOperation.Query);
+        await publishedRead.Should().ThrowAsync<InvalidOperationException>();
+        (await router.TryResolveProviderAsync(snapshot, snapshot.Graph.StorageBindings.Single())).Should().BeNull();
         provider.LastBinding.Should().BeNull();
     }
 

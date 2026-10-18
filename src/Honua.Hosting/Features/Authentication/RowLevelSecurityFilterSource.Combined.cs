@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 
@@ -43,7 +44,9 @@ internal sealed partial class RowLevelSecurityFilterSource
         var roles = RbacRoleClaims.Enumerate(
             principal,
             _rbacOptions,
-            _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices);
+            JobSecurityScope.Current is null
+                ? _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices
+                : _backgroundServices);
         var services = await ResolveServiceNamesAsync(resource, cancellationToken).ConfigureAwait(false);
         var policies = await ((ICombinedReadPolicyStore)_policyStore).GetEffectiveReadPoliciesAsync(
             ((FieldMaskSource)fieldSource).PolicyStore,
