@@ -8,7 +8,7 @@ namespace Honua.Server.Features.AgentWorkspace;
 // This is shared workflow state, not an execution language. Mutations continue through
 // the canonical operation dispatcher under the requesting principal's authorization.
 internal sealed record AgentResourceReference(string Kind, string Id, string? ServiceId = null);
-internal sealed record AgentTaskReference(string Id, long Revision, string Kind = "publish-layer", string? PackageKey = null);
+internal sealed record AgentTaskReference(string Id, long Revision, string Kind = "publish-layer", string? PackageKey = null, string? ContentHash = null);
 internal sealed record AgentWorkspaceContext(
     string WorkspaceId, string TargetId, string ViewId, long Revision,
     AgentResourceReference[] SelectedResources, AgentTaskReference? Task, string? TenantId = null);

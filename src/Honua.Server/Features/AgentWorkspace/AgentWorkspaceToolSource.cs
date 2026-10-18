@@ -25,7 +25,7 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
 {
     private const string Identifier = """{"type":"string","pattern":"^[A-Za-z0-9_-]{1,128}$"}""";
     private const string Fields = """{"type":"object","properties":{"connectionId":{"type":"string","maxLength":256},"schema":{"type":"string","maxLength":256},"table":{"type":"string","maxLength":256},"serviceName":{"type":"string","maxLength":256},"layerName":{"type":"string","maxLength":256}},"additionalProperties":false}""";
-    private const string TaskSchema = """{"type":["object","null"],"properties":{"id":{"type":"string"},"revision":{"type":"integer","minimum":0},"kind":{"type":"string","enum":["publish-layer","studio-composition"]},"packageKey":{"type":"string","minLength":1,"maxLength":256}},"required":["id","revision"],"additionalProperties":false}""";
+    private const string TaskSchema = """{"type":["object","null"],"properties":{"id":{"type":"string"},"revision":{"type":"integer","minimum":0},"kind":{"type":"string","enum":["publish-layer","studio-composition","workflow-package"]},"packageKey":{"type":"string","minLength":1,"maxLength":256},"contentHash":{"type":"string","pattern":"^[0-9a-f]{64}$"}},"required":["id","revision"],"additionalProperties":false}""";
     private static string Property(string name, string schema) => $"\"{name}\":{schema}";
     private static readonly string Workspace = Property("workspaceId", Identifier);
     private static readonly string View = Property("viewId", Identifier);

@@ -5,6 +5,8 @@ using System.Globalization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
@@ -35,11 +37,28 @@ internal static class AgentWorkspaceResourceAuthorization
         return (await AccessPolicyHelpers.EvaluateResourceAccessAsync(context, resource, service,
             AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false)).IsAllowed;
     }
-    public static async Task<bool> CanReadTaskAsync(HttpContext context, AgentTaskReference? task, bool requireGeneration = false)
+    public static async Task<bool> CanReadTaskAsync(HttpContext context, AgentTaskReference? task, bool requireGeneration = false,
+        AgentWorkspaceDocument? workspace = null)
     {
         if (task is null) return true;
         if (!AgentWorkspaceState.IsValidTaskReference(task)) return false;
         if (task.Kind == "publish-layer") return true; // Workspace membership protects workspace-owned forms.
+        if (task.Kind == "workflow-package")
+        {
+            var version = await context.RequestServices.GetRequiredService<IWorkflowPackageStore>()
+                .GetVersionAsync(task.Id, checked((int)task.Revision), context.RequestAborted).ConfigureAwait(false);
+            var tenant = context.RequestServices.GetService<ITenantContext>();
+            var actor = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
+            if (version?.Ownership is not { } ownership || tenant is null || actor is null ||
+                ownership.TenantId != tenant.TenantId || version.PackageId != task.Id || version.Version != task.Revision ||
+                version.PackageHash != task.ContentHash) return false;
+            if (ownership.OwnerActorId == actor) return true;
+            // Delegation comes only from the persisted workspace membership and owner.
+            // A model-supplied package id, metadata tenant, or admin role cannot establish it.
+            return workspace is not null && ownership.OwnerActorId == workspace.OwnerId &&
+                context.User.HasClaim("permission", "agent:workspace") && context.User.FindFirst("api_key_id") is not null &&
+                AgentWorkspaceState.CanRead(workspace, actor, tenant.TenantId, workspace.TargetId);
+        }
         var draft = await context.RequestServices.GetRequiredService<IStudioPackageLifecycleService>()
             .GetDraftAsync(Guid.Parse(task.Id), context.RequestAborted).ConfigureAwait(false);
         if (draft is null || draft.PackageKey != task.PackageKey ||

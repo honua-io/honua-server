@@ -47,7 +47,7 @@ internal sealed class AgentWorkspaceTurnAuthorizer(
                 return null;
             }
         }
-        if (!await AgentWorkspaceResourceAuthorization.CanReadTaskAsync(context, turn.Context.Task).ConfigureAwait(false)) return null;
+        if (!await AgentWorkspaceResourceAuthorization.CanReadTaskAsync(context, turn.Context.Task, workspace: document).ConfigureAwait(false)) return null;
         return new(workspaceId, turnId, turn.Context.TargetId, tenant, release);
     }
 }

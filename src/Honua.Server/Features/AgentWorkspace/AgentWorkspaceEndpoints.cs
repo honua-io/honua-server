@@ -246,10 +246,10 @@ internal static class AgentWorkspaceEndpoints
             document.Views.Add(viewId, [snapshot]);
             await Save(store, document).ConfigureAwait(false);
         }
-        return Results.Ok(await Project(context, snapshot).ConfigureAwait(false));
+        return Results.Ok(await Project(context, snapshot, document).ConfigureAwait(false));
     }
 
-    private static async Task<AgentWorkspaceContext> Project(HttpContext context, AgentWorkspaceContext snapshot)
+    private static async Task<AgentWorkspaceContext> Project(HttpContext context, AgentWorkspaceContext snapshot, AgentWorkspaceDocument document)
     {
         var resources = new List<AgentResourceReference>();
         foreach (var resource in snapshot.SelectedResources)
@@ -259,17 +259,17 @@ internal static class AgentWorkspaceEndpoints
                 resources.Add(resource);
             }
         }
-        var task = await AgentWorkspaceResourceAuthorization.CanReadTaskAsync(context, snapshot.Task).ConfigureAwait(false) ? snapshot.Task : null;
+        var task = await AgentWorkspaceResourceAuthorization.CanReadTaskAsync(context, snapshot.Task, workspace: document).ConfigureAwait(false) ? snapshot.Task : null;
         return snapshot with { SelectedResources = resources.ToArray(), Task = task };
     }
 
     internal static async Task<IResult> UpdateContext(HttpContext context, IAgentWorkspaceStore store, UpdateAgentContext request)
     {
         var document = await Read(context, store).ConfigureAwait(false);
-        if (!await AgentWorkspaceResourceAuthorization.CanReadTaskAsync(context, request.Task, requireGeneration: true).ConfigureAwait(false)) return Results.Forbid();
+        if (!await AgentWorkspaceResourceAuthorization.CanReadTaskAsync(context, request.Task, requireGeneration: true, workspace: document).ConfigureAwait(false)) return Results.Forbid();
         var next = AgentWorkspaceState.Update(document, request);
         // Only retain references the writer can actually see; re-evaluate for every reader too.
-        var projected = await Project(context, AgentWorkspaceState.Current(next, request.ViewId)).ConfigureAwait(false);
+        var projected = await Project(context, AgentWorkspaceState.Current(next, request.ViewId), next).ConfigureAwait(false);
         if (projected.SelectedResources.Length != request.SelectedResources.Length) return Results.Forbid();
         await Save(store, next).ConfigureAwait(false);
         return Results.Ok(projected);
@@ -281,7 +281,7 @@ internal static class AgentWorkspaceEndpoints
         var next = AgentWorkspaceState.AddTurn(document, Actor(context), request);
         if (!ReferenceEquals(document, next))
         {
-            if (!await AgentWorkspaceResourceAuthorization.CanReadTaskAsync(context, next.Turns[request.TurnId].Context.Task, requireGeneration: true).ConfigureAwait(false)) return Results.Forbid();
+            if (!await AgentWorkspaceResourceAuthorization.CanReadTaskAsync(context, next.Turns[request.TurnId].Context.Task, requireGeneration: true, workspace: next).ConfigureAwait(false)) return Results.Forbid();
             await Save(store, next).ConfigureAwait(false);
         }
         return await TurnResponse(context, next, next.Turns[request.TurnId]).ConfigureAwait(false);
@@ -297,7 +297,7 @@ internal static class AgentWorkspaceEndpoints
 
     private static async Task<IResult> TurnResponse(HttpContext context, AgentWorkspaceDocument document, AgentWorkspaceTurn turn)
     {
-        var projected = await Project(context, turn.Context).ConfigureAwait(false);
+        var projected = await Project(context, turn.Context, document).ConfigureAwait(false);
         if (projected.SelectedResources.Length != turn.Context.SelectedResources.Length || projected.Task != turn.Context.Task) return Results.Forbid();
         return Results.Ok(new AgentTurnResponse(turn.TurnId, "accepted", projected,
             await VisibleMessages(context, document).ConfigureAwait(false), turn.Draft));
@@ -309,7 +309,7 @@ internal static class AgentWorkspaceEndpoints
         foreach (var message in document.Messages)
         {
             if (!document.Turns.TryGetValue(message.TurnId, out var turn)) continue;
-            var permitted = await Project(context, turn.Context).ConfigureAwait(false);
+            var permitted = await Project(context, turn.Context, document).ConfigureAwait(false);
             // Free-form conversation may name a selected resource. Do not disclose a
             // conversation turn whose captured selection the current reader cannot see.
             if (permitted.SelectedResources.Length == turn.Context.SelectedResources.Length && permitted.Task == turn.Context.Task) messages.Add(message);
@@ -330,7 +330,7 @@ internal static class AgentWorkspaceEndpoints
         if (!AgentWorkspaceState.IsIdentifier(request.MessageId) || !AgentWorkspaceState.IsIdentifier(request.TurnId) ||
             string.IsNullOrWhiteSpace(request.Content) || request.Content.Length > 16000 || !document.Turns.TryGetValue(request.TurnId, out var turn))
             throw new ArgumentException("A known turn, message id and bounded content are required.");
-        var projected = await Project(context, turn.Context).ConfigureAwait(false);
+        var projected = await Project(context, turn.Context, document).ConfigureAwait(false);
         if (projected.SelectedResources.Length != turn.Context.SelectedResources.Length || projected.Task != turn.Context.Task) return Results.Forbid();
         var existing = document.Messages.SingleOrDefault(message => message.Id == request.MessageId);
         if (existing is not null)
