@@ -273,10 +273,11 @@ require(
 )
 require(
     r"steps\.ci-surface\.outputs\.ci_surface == 'true'\n"
-    r"\s+run: \|\n\s+scripts/ci/validate-ci-router\.sh\n"
+    r"\s+run: \|\n\s+python3 -m pip install -r scripts/ci/okf-requirements\.txt\n"
+    r"\s+scripts/ci/validate-ci-router\.sh\n"
     r"\s+bash scripts/ci/validate-single-merge-authority\.sh",
-    "run both trunk-only router guard scripts in PR Gate when a PR touches "
-    "the CI surface",
+    "install the canonical YAML reader and run both trunk-only router guard "
+    "scripts in PR Gate when a PR touches the CI surface",
     text=PR_GATE_TEXT,
 )
 require(
