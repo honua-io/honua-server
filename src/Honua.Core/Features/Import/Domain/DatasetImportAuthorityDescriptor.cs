@@ -14,10 +14,9 @@ namespace Honua.Core.Features.Import.Domain;
 /// <param name="AuthorityRevision">Current separate authority revision.</param>
 /// <param name="AuthorityFingerprint">Current credential-authority fingerprint.</param>
 /// <param name="PolicyContextFingerprint">Immutable original policy-context fingerprint.</param>
-/// <param name="CredentialExpiresAt">Current sealed authority expiry, independent of upload deadline.</param>
 /// <param name="UploadAdmissionDeadline">Original immutable deadline.</param>
 /// <param name="PreparedOperationId">Original prepared operation, if any; preparation is not acceptance proof.</param>
 public sealed record DatasetImportAuthorityDescriptor(string TaskId, long TaskRevision, string TaskContentHash,
     string ExecutorActorId, string? InitiatingHumanActorId, string OriginatingTurnId, string OriginalTurnHash,
     long AuthorityRevision, string AuthorityFingerprint, string PolicyContextFingerprint,
-    DateTimeOffset CredentialExpiresAt, DateTimeOffset UploadAdmissionDeadline, string? PreparedOperationId);
+    DateTimeOffset UploadAdmissionDeadline, string? PreparedOperationId);

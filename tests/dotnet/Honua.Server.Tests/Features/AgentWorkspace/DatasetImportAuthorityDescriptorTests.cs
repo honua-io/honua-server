@@ -22,6 +22,7 @@ public sealed class DatasetImportAuthorityDescriptorTests
     [InlineData("unchanged")]
     [InlineData("renewal")]
     [InlineData("preparation")]
+    [InlineData("prepared-deadline")]
     [InlineData("membership")]
     [InlineData("target")]
     [InlineData("task")]
@@ -50,6 +51,9 @@ public sealed class DatasetImportAuthorityDescriptorTests
             WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-1", AgentActorId = actor,
             TenantId = "tenant-1", Members = [actor, "human-1"], DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
         };
+        if (change == "prepared-deadline") document.DatasetImportPreparedAdmissions[task.TaskId] = new(task.TaskId, 1, task.ContentHash,
+            new string('c', 32), 1, binding.AuthorityFingerprint, actor, "human-1", binding.OriginatingTurnId, binding.OriginalTurnHash,
+            policy, binding.PolicyContextFingerprint, snapshot, task.UploadAdmissionDeadline);
         var store = Substitute.For<IAgentWorkspaceStore>();
         var target = "target-1";
         store.GetTargetIdAsync().Returns(_ => target);
@@ -64,6 +68,8 @@ public sealed class DatasetImportAuthorityDescriptorTests
                 else if (change == "task") allowed = false;
                 else if (change == "renewal") document = document with { DatasetImportExecutionBindings = new()
                     { [task.TaskId] = binding with { AuthorityRevision = 2, AuthorityFingerprint = "authority-2" } } };
+                else if (change == "prepared-deadline") document = document with { DatasetImportPreparedAdmissions = new()
+                    { [task.TaskId] = document.DatasetImportPreparedAdmissions[task.TaskId] with { AcceptBefore = task.UploadAdmissionDeadline.AddHours(1) } } };
                 else if (change == "preparation") document = document with { DatasetImportPreparedAdmissions = new()
                     { [task.TaskId] = new(task.TaskId, 1, task.ContentHash, new string('c', 32), 1, binding.AuthorityFingerprint,
                         actor, "human-1", binding.OriginatingTurnId, binding.OriginalTurnHash, policy,

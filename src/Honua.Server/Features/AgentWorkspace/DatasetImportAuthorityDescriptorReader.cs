@@ -28,7 +28,9 @@ internal sealed class DatasetImportAuthorityDescriptorReader(IAgentWorkspaceStor
         var prepared = document.DatasetImportPreparedAdmissions.GetValueOrDefault(taskId);
         if (prepared is not null && (prepared.TaskRevision != revision || prepared.TaskContentHash != contentHash ||
             prepared.AuthorityRevision != binding.AuthorityRevision || prepared.AuthorityFingerprint != binding.AuthorityFingerprint ||
-            prepared.PolicyContextFingerprint != binding.PolicyContextFingerprint)) return null;
+            prepared.PolicyContextFingerprint != binding.PolicyContextFingerprint || prepared.AcceptBefore != task.UploadAdmissionDeadline ||
+            prepared.ExecutorActorId != binding.ExecutorActorId || prepared.InitiatingHumanActorId != binding.InitiatingHumanActorId ||
+            prepared.OriginatingTurnId != binding.OriginatingTurnId || prepared.OriginalTurnHash != binding.OriginalTurnHash)) return null;
         if (await AuthorizeAsync(caller, workspaceId, taskId, revision, contentHash, cancellationToken).ConfigureAwait(false) is null) return null;
         var latest = await store.GetAsync(workspaceId).ConfigureAwait(false);
         var target = await store.GetTargetIdAsync().ConfigureAwait(false);
@@ -40,12 +42,21 @@ internal sealed class DatasetImportAuthorityDescriptorReader(IAgentWorkspaceStor
             retained.ExecutorActorId != binding.ExecutorActorId || retained.InitiatingHumanActorId != binding.InitiatingHumanActorId ||
             retained.OriginatingTurnId != binding.OriginatingTurnId || retained.OriginalTurnHash != binding.OriginalTurnHash ||
             retained.ExecutorAuthority.TokenExpiresAt != binding.ExecutorAuthority.TokenExpiresAt ||
-            latest.DatasetImportPreparedAdmissions.GetValueOrDefault(taskId)?.OperationId != prepared?.OperationId ||
+            !SamePreparation(prepared, latest.DatasetImportPreparedAdmissions.GetValueOrDefault(taskId)) ||
             !await AgentCredentialAuthority.IsCurrentAsync(caller, transport.RequestServices, cancellationToken).ConfigureAwait(false)) return null;
         return new(taskId, revision, contentHash, binding.ExecutorActorId, binding.InitiatingHumanActorId, binding.OriginatingTurnId,
             binding.OriginalTurnHash, binding.AuthorityRevision, binding.AuthorityFingerprint, binding.PolicyContextFingerprint,
-            binding.ExecutorAuthority.TokenExpiresAt, task.UploadAdmissionDeadline, prepared?.OperationId);
+            task.UploadAdmissionDeadline, prepared?.OperationId);
     }
+
+    private static bool SamePreparation(DatasetImportPreparedAdmission? original, DatasetImportPreparedAdmission? retained)
+        => original is null ? retained is null : retained is not null && original.TaskId == retained.TaskId &&
+            original.TaskRevision == retained.TaskRevision && original.TaskContentHash == retained.TaskContentHash &&
+            original.OperationId == retained.OperationId && original.AuthorityRevision == retained.AuthorityRevision &&
+            original.AuthorityFingerprint == retained.AuthorityFingerprint && original.PolicyContextFingerprint == retained.PolicyContextFingerprint &&
+            original.ExecutorActorId == retained.ExecutorActorId && original.InitiatingHumanActorId == retained.InitiatingHumanActorId &&
+            original.OriginatingTurnId == retained.OriginatingTurnId && original.OriginalTurnHash == retained.OriginalTurnHash &&
+            original.AcceptBefore == retained.AcceptBefore;
 
     private async Task<DatasetImportTask?> AuthorizeAsync(ClaimsPrincipal caller, string workspaceId, string taskId,
         long revision, string hash, CancellationToken cancellationToken)
