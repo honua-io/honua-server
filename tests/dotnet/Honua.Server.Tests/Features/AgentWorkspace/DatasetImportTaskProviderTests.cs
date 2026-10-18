@@ -58,4 +58,40 @@ public sealed class DatasetImportTaskProviderTests
         store.GetAsync("workspace-1").Returns(document with { Members = [] });
         (await provider.AuthorizeAsync(principal, "workspace-1", task.TaskId, 1, task.ContentHash, false)).Should().BeNull();
     }
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SlowExternalCheckCannotRetainRevokedCredentialOrWorkspaceMembership(bool revokeCredential)
+    {
+        var keys = new InMemoryAdminApiKeyStore();
+        var created = await keys.CreateAsync("import-agent", ["agent:workspace", "admin:read"], null, null, default);
+        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
+        var actor = CanonicalSecurityActor.Resolve(principal)!.ActorId;
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-1");
+        var destination = Substitute.For<IDatasetImportDestinationAuthorizer>();
+        var delayed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        destination.IsAuthorizedAsync(principal, "target-1", Arg.Any<DatasetImportDestination>(), Arg.Any<DatasetImportTaskOptions>(),
+            false, Arg.Any<CancellationToken>()).Returns(delayed.Task);
+        using var services = new ServiceCollection().AddSingleton(tenant).AddSingleton(destination)
+            .AddSingleton<IAdminApiKeyStore>(keys).BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services, User = principal };
+        var store = Substitute.For<IAgentWorkspaceStore>();
+        store.GetTargetIdAsync().Returns("target-1");
+        var task = new DatasetImportTask("import-task-1", 1, "", actor, "tenant-1", "target-1", "workspace-1",
+            new("public", "roads"), new("browser-file", "roads.geojson", 5, new string('a', 64)), new(), DateTimeOffset.UtcNow.AddHours(24));
+        task = task with { ContentHash = DatasetImportTaskState.ContentHash(task) };
+        var document = new AgentWorkspaceDocument
+        { WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = actor, Members = [actor], TenantId = "tenant-1" };
+        document.DatasetImportTasks[task.TaskId] = [task];
+        store.GetAsync("workspace-1").Returns(document);
+        var provider = new DatasetImportTaskProvider(store, new HttpContextAccessor { HttpContext = context });
+        var pending = provider.AuthorizeAsync(principal, "workspace-1", task.TaskId, 1, task.ContentHash, false);
+        pending.IsCompleted.Should().BeFalse();
+        if (revokeCredential) await keys.RevokeAsync(created.Record.Id, default);
+        else store.GetAsync("workspace-1").Returns(document with { Members = [] });
+        delayed.SetResult(true);
+        (await pending).Should().BeNull();
+    }
+
 }

@@ -3,6 +3,8 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
@@ -50,6 +52,8 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             var created = await Json(await client.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "tab-1" }));
             var workspaceId = created.GetProperty("workspaceId").GetString()!;
             var root = $"/api/v1/agent/workspaces/{workspaceId}";
+            using var oversized = new UnknownLengthJson(Encoding.UTF8.GetBytes("{\"intentId\":\"" + new string('x', 70000) + "\"}"));
+            (await client.PostAsync(root + "/dataset-import-tasks", oversized)).StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
             var request = new CreateDatasetImportTask("intent-1", "tab-1", 0, new("public", "roads"),
                 new("browser-file", "roads.geojson", 5L * 1024 * 1024 * 1024, new string('a', 64)), new());
             // Discard the accepted response: only the original client intent is known.
@@ -106,6 +110,19 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             return document.RootElement.Clone();
         }
+    }
+
+    private sealed class UnknownLengthJson : HttpContent
+    {
+        private readonly byte[] _bytes;
+        public UnknownLengthJson(byte[] bytes)
+        {
+            _bytes = bytes;
+            Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        }
+        protected override bool TryComputeLength(out long length) { length = 0; return false; }
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+            => stream.WriteAsync(_bytes).AsTask();
     }
 
     private sealed class DestinationPolicy : IDatasetImportDestinationAuthorizer

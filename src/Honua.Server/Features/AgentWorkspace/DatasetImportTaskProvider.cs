@@ -38,6 +38,14 @@ internal sealed class DatasetImportTaskProvider(IAgentWorkspaceStore store, IHtt
             .IsAuthorizedAsync(principal, target, task.Destination, task.Options, requireWrite, cancellationToken).ConfigureAwait(false)) return null;
         var sourceContext = new DefaultHttpContext { RequestServices = transport.RequestServices, User = principal, RequestAborted = cancellationToken };
         if (!await SourceAuthorizedAsync(sourceContext, document, task.Source, cancellationToken).ConfigureAwait(false)) return null;
+        // Source/destination checks can await external providers. Membership and stored
+        // credentials must still be current when returning this retained authorization.
+        var latest = await store.GetAsync(workspaceId).ConfigureAwait(false);
+        if (latest is null || !AgentWorkspaceState.CanRead(latest, actor, tenant, target) ||
+            !latest.DatasetImportTasks.TryGetValue(taskId, out var latestVersions) ||
+            latestVersions.SingleOrDefault(item => item.Revision == revision) is not { } latestTask ||
+            latestTask != task ||
+            !await AgentCredentialAuthority.IsCurrentAsync(principal, transport.RequestServices, cancellationToken).ConfigureAwait(false)) return null;
         return task;
     }
 
