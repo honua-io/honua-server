@@ -112,6 +112,9 @@ internal static class AgentWorkspaceState
         {
             "publish-layer" => IsIdentifier(task.Id) && task.PackageKey is null && task.ContentHash is null,
             "studio-composition" => Guid.TryParse(task.Id, out _) && task.PackageKey is { Length: > 0 and <= 256 } && !task.PackageKey.Any(char.IsControl) && task.ContentHash is null,
+            "local-process-workspace" => task.Id is { Length: 32 } && task.Id.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') &&
+                task.Revision > 0 && task.PackageKey is null && task.ContentHash is { Length: 64 } &&
+                task.ContentHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f'),
             // Package ids are opaque store keys; generated slugs can contain Unicode.
             "workflow-package" => task.Id is { Length: > 0 and <= 256 } && task.Id == task.Id.Trim() && !task.Id.Any(char.IsControl) &&
                 task.Revision is > 0 and <= int.MaxValue && task.PackageKey is null &&

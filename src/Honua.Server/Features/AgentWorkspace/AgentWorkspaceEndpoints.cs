@@ -28,7 +28,10 @@ internal static class AgentWorkspaceEndpoints
         services.AddSingleton<IAgentWorkspaceStore>(sp => new AgentWorkspaceStore(sp.GetService<IConnectionMultiplexer>(),
             sp.GetRequiredService<IConfiguration>()["AgentWorkspace:DeploymentId"]));
         services.AddScoped<IAgentWorkspaceTurnAuthorizer, AgentWorkspaceTurnAuthorizer>();
+        services.AddHttpClient<ILocalProcessWorkspaceGateway, LocalProcessWorkspaceGateway>(client => client.Timeout = TimeSpan.FromSeconds(30))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, UseProxy = false });
         services.AddSingleton<IMcpToolSource, AgentWorkspaceToolSource>();
+        services.AddSingleton<IMcpToolSource, LocalProcessWorkspaceToolSource>();
     }
 
     public static void MapAgentWorkspace(this IEndpointRouteBuilder endpoints)
@@ -39,7 +42,8 @@ internal static class AgentWorkspaceEndpoints
         {
             var context = invocation.HttpContext;
             context.Response.Headers.CacheControl = "no-store";
-            if (context.Request.ContentLength > 65536)
+            var bodyLimit = context.Request.Path.Value?.Contains("/processes/local/", StringComparison.Ordinal) == true ? 2 * 1024 * 1024 : 65536;
+            if (context.Request.ContentLength > bodyLimit)
             {
                 return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
             }
@@ -59,6 +63,11 @@ internal static class AgentWorkspaceEndpoints
             catch (AgentWorkspaceNotFoundException)
             {
                 return Results.NotFound();
+            }
+            catch (LocalProcessWorkspaceException exception)
+            {
+                return Results.Json(new AgentWorkspaceError(exception.Message), AgentWorkspaceJsonContext.Default.AgentWorkspaceError,
+                    statusCode: exception.StatusCode);
             }
             catch (ArgumentException exception)
             {
@@ -84,6 +93,7 @@ internal static class AgentWorkspaceEndpoints
         group.MapPatch("/workspaces/{workspaceId}/drafts/{draftId}", PatchDraft);
         group.MapPost("/workspaces/{workspaceId}/drafts/{draftId}/submit", SubmitDraft);
         group.MapGet("/workspaces/{workspaceId}/commands/{commandId}", GetCommand);
+        group.MapLocalProcesses();
     }
 
     internal static async Task<IResult> AuthorizeDevOps(HttpContext context, IAgentWorkspaceStore store, AgentDevOpsAuthorizationRequest request)
@@ -282,6 +292,16 @@ internal static class AgentWorkspaceEndpoints
         if (!ReferenceEquals(document, next))
         {
             if (!await AgentWorkspaceResourceAuthorization.CanReadTaskAsync(context, next.Turns[request.TurnId].Context.Task, requireGeneration: true, workspace: next).ConfigureAwait(false)) return Results.Forbid();
+            var turn = next.Turns[request.TurnId];
+            if (turn.Context.Task is { Kind: "local-process-workspace" } task)
+            {
+                if (LocalProcessWorkspaceAuthorization.TrustedAccess(context, next) is not { } access) return Results.Forbid();
+                var snapshot = await context.RequestServices.GetRequiredService<ILocalProcessWorkspaceGateway>()
+                    .SnapshotAsync(access, new(task.Id, task.Revision, task.ContentHash!), context.RequestAborted).ConfigureAwait(false);
+                if (snapshot.ProjectId != task.Id || snapshot.Revision != task.Revision || snapshot.SnapshotDigest != task.ContentHash)
+                    throw new LocalProcessWorkspaceException(502, "The captured local process does not match the submitted selection.");
+                next.Turns[request.TurnId] = turn with { LocalProcessSnapshot = snapshot };
+            }
             await Save(store, next).ConfigureAwait(false);
         }
         return await TurnResponse(context, next, next.Turns[request.TurnId]).ConfigureAwait(false);
@@ -299,8 +319,9 @@ internal static class AgentWorkspaceEndpoints
     {
         var projected = await Project(context, turn.Context, document).ConfigureAwait(false);
         if (projected.SelectedResources.Length != turn.Context.SelectedResources.Length || projected.Task != turn.Context.Task) return Results.Forbid();
+        if (!await LocalProcessWorkspaceAuthorization.CanReadTurnAsync(context, document, turn).ConfigureAwait(false)) return Results.Forbid();
         return Results.Ok(new AgentTurnResponse(turn.TurnId, "accepted", projected,
-            await VisibleMessages(context, document).ConfigureAwait(false), turn.Draft));
+            await VisibleMessages(context, document).ConfigureAwait(false), turn.Draft, turn.LocalProcessSnapshot));
     }
 
     private static async Task<AgentWorkspaceMessage[]> VisibleMessages(HttpContext context, AgentWorkspaceDocument document)
@@ -312,7 +333,8 @@ internal static class AgentWorkspaceEndpoints
             var permitted = await Project(context, turn.Context, document).ConfigureAwait(false);
             // Free-form conversation may name a selected resource. Do not disclose a
             // conversation turn whose captured selection the current reader cannot see.
-            if (permitted.SelectedResources.Length == turn.Context.SelectedResources.Length && permitted.Task == turn.Context.Task) messages.Add(message);
+            if (permitted.SelectedResources.Length == turn.Context.SelectedResources.Length && permitted.Task == turn.Context.Task &&
+                await LocalProcessWorkspaceAuthorization.CanReadTurnAsync(context, document, turn).ConfigureAwait(false)) messages.Add(message);
         }
         return messages.ToArray();
     }

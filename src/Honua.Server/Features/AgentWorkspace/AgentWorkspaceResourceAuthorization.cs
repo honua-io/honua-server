@@ -44,6 +44,8 @@ internal static class AgentWorkspaceResourceAuthorization
         if (task is null) return true;
         if (!AgentWorkspaceState.IsValidTaskReference(task)) return false;
         if (task.Kind == "publish-layer") return true; // Workspace membership protects workspace-owned forms.
+        if (task.Kind == "local-process-workspace")
+            return await LocalProcessWorkspaceAuthorization.CanReadTaskAsync(context, workspace, task, requireGeneration).ConfigureAwait(false);
         if (task.Kind == "workflow-package")
         {
             var version = await context.RequestServices.GetRequiredService<IWorkflowPackageStore>()

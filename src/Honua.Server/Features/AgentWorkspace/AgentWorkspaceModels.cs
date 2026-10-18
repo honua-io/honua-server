@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.AgentWorkspace.Domain;
 
 namespace Honua.Server.Features.AgentWorkspace;
 
@@ -14,7 +15,8 @@ internal sealed record AgentWorkspaceContext(
     AgentResourceReference[] SelectedResources, AgentTaskReference? Task, string? TenantId = null);
 internal sealed record AgentWorkspaceMessage(string Id, string TurnId, string Role, string Content, string EvidenceKind = "conversation");
 internal sealed record AgentWorkspaceTurn(
-    string TurnId, string ActorId, string Prompt, AgentWorkspaceContext Context, AgentWorkspaceDraft? Draft);
+    string TurnId, string ActorId, string Prompt, AgentWorkspaceContext Context, AgentWorkspaceDraft? Draft,
+    LocalProcessSnapshot? LocalProcessSnapshot = null);
 internal sealed record AgentWorkspaceDraft(
     string Id, long Revision, string Kind, Dictionary<string, string> Fields, string[] Validation);
 internal sealed record AgentWorkspaceCommand(
@@ -50,7 +52,8 @@ internal sealed record AgentDevOpsAuthorizationRequest(
     Dictionary<string, System.Text.Json.JsonElement>? Arguments = null);
 internal sealed record AgentDevOpsAuthorizationResponse(string TargetId, string DeployTargetId, string Environment);
 internal sealed record AgentConversationResponse(AgentWorkspaceMessage[] Messages);
-internal sealed record AgentTurnResponse(string TurnId, string Status, AgentWorkspaceContext Context, AgentWorkspaceMessage[] Messages, AgentWorkspaceDraft? Draft);
+internal sealed record AgentTurnResponse(string TurnId, string Status, AgentWorkspaceContext Context, AgentWorkspaceMessage[] Messages,
+    AgentWorkspaceDraft? Draft, LocalProcessSnapshot? LocalProcessSnapshot = null);
 internal sealed record AgentWorkspaceError(string Message);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
