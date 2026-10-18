@@ -35,6 +35,13 @@ public sealed record ImportLimits
     public long MaxUploadFileBytes { get; init; } = FileSizeConstants.OneHundredMB;
 
     /// <summary>
+    /// Maximum private source scratch bytes per worker when verifying a pinned staged
+    /// upload before import. Independent of upload transport and memory budgets.
+    /// Default: 1 GiB. Aggregate disk quotas and archive expansion limits still apply.
+    /// </summary>
+    public long MaxWorkerScratchBytes { get; init; } = FileSizeConstants.OneGB;
+
+    /// <summary>
     /// File size threshold in bytes above which imports are queued for background processing.
     /// Default: 100MB (104857600 bytes).
     /// </summary>

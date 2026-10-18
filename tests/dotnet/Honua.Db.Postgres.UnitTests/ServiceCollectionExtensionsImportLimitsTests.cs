@@ -52,6 +52,8 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
                 ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua_test;Username=honua;Password=test",
                 ["Import:Limits:BatchSize"] = "-1",
                 ["Import:Limits:MaxMemoryBytes"] = "-2",
+                ["Import:Limits:MaxUploadFileBytes"] = "-2",
+                ["Import:Limits:MaxWorkerScratchBytes"] = "-2",
                 ["Import:Limits:BackgroundJobThresholdBytes"] = "-3",
                 ["Import:Limits:MaxObjectStoreImportBytes"] = "-11",
                 ["Import:Limits:MaxPreviewSizeBytes"] = "-4",
@@ -73,6 +75,8 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
 
         limits.BatchSize.Should().Be(defaults.BatchSize);
         limits.MaxMemoryBytes.Should().Be(defaults.MaxMemoryBytes);
+        limits.MaxUploadFileBytes.Should().Be(defaults.MaxUploadFileBytes);
+        limits.MaxWorkerScratchBytes.Should().Be(defaults.MaxWorkerScratchBytes);
         limits.BackgroundJobThresholdBytes.Should().Be(defaults.BackgroundJobThresholdBytes);
         limits.MaxObjectStoreImportBytes.Should().Be(defaults.MaxObjectStoreImportBytes);
         limits.MaxPreviewSizeBytes.Should().Be(defaults.MaxPreviewSizeBytes);
@@ -93,6 +97,8 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
                 ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua_test;Username=honua;Password=test",
                 ["Import:Limits:BatchSize"] = "250",
                 ["Import:Limits:MaxMemoryBytes"] = "2048",
+                ["Import:Limits:MaxUploadFileBytes"] = "5368709120",
+                ["Import:Limits:MaxWorkerScratchBytes"] = "6442450944",
                 ["Import:Limits:BackgroundJobThresholdBytes"] = "4096",
                 ["Import:Limits:MaxObjectStoreImportBytes"] = "8192",
                 ["Import:Limits:MaxPreviewSizeBytes"] = "1024",
@@ -114,6 +120,8 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
 
         limits.BatchSize.Should().Be(250);
         limits.MaxMemoryBytes.Should().Be(2048);
+        limits.MaxUploadFileBytes.Should().Be(5368709120L);
+        limits.MaxWorkerScratchBytes.Should().Be(6442450944L);
         limits.BackgroundJobThresholdBytes.Should().Be(4096);
         limits.MaxObjectStoreImportBytes.Should().Be(8192);
         limits.MaxPreviewSizeBytes.Should().Be(1024);

@@ -175,6 +175,45 @@ public sealed class BoundImportAcceptanceTests(RedisFixture redis)
         FileImportJobParameters.TryParse(parameters, out _, out _, out _).Should().BeFalse();
     }
 
+    [IntegrationTest]
+    public async Task AcceptedStagedGeneration_CannotBeChangedOrDowngradedOnReplay()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = Store(connection);
+        using var harness = new Harness(store);
+        var request = Request();
+        request = request with { StagedSource = new(request.CloudFileId!, "generation-1", 100, new string('a', 64)) };
+        var id = await harness.Service.QueueImportAsync(request, 100);
+        var original = (await store.GetAsync(id))!;
+        FileImportJobParameters.TryParse(original.Spec.Parameters, out var restored, out _, out _).Should().BeTrue();
+        restored!.StagedSource.Should().Be(request.StagedSource);
+        (await harness.Service.QueueImportAsync(request, 100)).Should().Be(id);
+        ImportRequest[] changed =
+        [
+            request with { StagedSource = null },
+            request with { StagedSource = request.StagedSource! with { ETag = "generation-2" } },
+            request with { StagedSource = request.StagedSource! with { Sha256 = new string('b', 64) } }
+        ];
+        foreach (var mutation in changed)
+        {
+            await FluentActions.Invoking(() => harness.Service.QueueImportAsync(mutation, 100))
+                .Should().ThrowAsync<ImportAcceptanceConflictException>();
+        }
+        (await store.GetAsync(id)).Should().BeEquivalentTo(original);
+        await harness.Queue.Received(1).EnqueueAsync(id, Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task StagedSource_WithoutAcceptanceStillCannotFallBackToUnverifiedInProcessRunner()
+    {
+        using var harness = new Harness(Substitute.For<IExecutionJobStore>(), durable: false);
+        var request = Request();
+        request = request with { Acceptance = null, StagedSource = new(request.CloudFileId!, "generation", 100, new string('a', 64)) };
+        await FluentActions.Invoking(() => harness.Service.QueueImportAsync(request, 100))
+            .Should().ThrowAsync<InvalidOperationException>();
+        harness.InProcess.ReceivedCalls().Should().BeEmpty();
+    }
+
     private static RedisExecutionJobStore Store(IConnectionMultiplexer connection) =>
         new(connection, NullLogger<RedisExecutionJobStore>.Instance);
 

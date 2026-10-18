@@ -140,6 +140,14 @@ internal sealed partial class FileImportJobExecutor(
                 }
 
                 var importService = scope.ServiceProvider.GetRequiredService<IFileImportService>();
+                if (active.StagedSource is { } stagedSource)
+                {
+                    var cloud = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();
+                    materializedStream = await StagedImportSourceMaterializer.OpenAsync(stagedSource, cloud,
+                        importService.Limits.MaxWorkerScratchBytes, cancellationToken).ConfigureAwait(false);
+                    active = active with { CloudFileId = null, FileStream = materializedStream };
+                }
+
                 result = await importService.ImportFileAsync(active, progress, cancellationToken).ConfigureAwait(false);
 
                 if (result.Success)

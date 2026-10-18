@@ -81,9 +81,10 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
     {
         ArgumentNullException.ThrowIfNull(request);
         request.Acceptance?.Validate();
-        if (request.Acceptance is not null && !_decision.IsDurable)
+        request.StagedSource?.Validate();
+        if ((request.Acceptance is not null || request.StagedSource is not null) && !_decision.IsDurable)
         {
-            throw new InvalidOperationException("A bound import acceptance requires a durable job runner.");
+            throw new InvalidOperationException("A bound import acceptance or staged source requires a durable job runner.");
         }
 
         switch (_decision.Mode)

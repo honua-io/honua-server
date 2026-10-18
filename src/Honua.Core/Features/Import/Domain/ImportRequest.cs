@@ -44,6 +44,13 @@ public sealed record ImportRequest
     [System.Text.Json.Serialization.JsonIgnore]
     public ImportAcceptanceBinding? Acceptance { get; init; }
 
+    /// <summary>
+    /// Server-retained shared-storage source generation and digest. A bound worker
+    /// verifies these exact bytes before import; request JSON cannot supply this receipt.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ImportStagedSourceBinding? StagedSource { get; init; }
+
     /// <summary>Ownership captured by the accepting server, never bound from import form fields.</summary>
     public ImportOperationOwnership? Ownership { get; init; }
 

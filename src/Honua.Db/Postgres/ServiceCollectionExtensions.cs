@@ -688,6 +688,8 @@ internal static class ServiceCollectionExtensions
                 {
                     BatchSize = ParsePositiveIntOrDefault(section["BatchSize"], limits.BatchSize),
                     MaxMemoryBytes = ParsePositiveLongOrDefault(section["MaxMemoryBytes"], limits.MaxMemoryBytes),
+                    MaxUploadFileBytes = ParsePositiveLongOrDefault(section["MaxUploadFileBytes"], limits.MaxUploadFileBytes),
+                    MaxWorkerScratchBytes = ParsePositiveLongOrDefault(section["MaxWorkerScratchBytes"], limits.MaxWorkerScratchBytes),
                     BackgroundJobThresholdBytes = ParsePositiveLongOrDefault(
                         section["BackgroundJobThresholdBytes"],
                         limits.BackgroundJobThresholdBytes),

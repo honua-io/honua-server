@@ -38,6 +38,8 @@ internal static class FileImportJobParameters
     public const string AcceptanceId = "import.acceptance_id";
     public const string AcceptanceIntent = "import.acceptance_intent_sha256";
     public const string AcceptanceDeadline = "import.acceptance_deadline";
+    public const string StagedSourceETag = "import.staged_source_etag";
+    public const string StagedSourceSha256 = "import.staged_source_sha256";
 
     /// <summary>Customer object URI (<c>s3://bucket/key</c>) read by the worker with the host identity.</summary>
     public const string ObjectStoreUri = "import.object_store_uri";
@@ -73,6 +75,16 @@ internal static class FileImportJobParameters
         if (request.CsvOptions is not null)
         {
             throw new NotSupportedException("CSV import options are not carried by durable file-import jobs.");
+        }
+
+        if (request.StagedSource is { } source)
+        {
+            source.Validate();
+            if (!request.UsesCloudStorage || request.UsesObjectStore || request.FileStream is not null ||
+                request.LocalFilePath is not null || source.FileId != request.CloudFileId || source.Bytes != fileSizeBytes)
+            {
+                throw new InvalidOperationException("The staged source binding must match the only durable input and its exact length.");
+            }
         }
 
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -115,6 +127,11 @@ internal static class FileImportJobParameters
             parameters[AcceptanceId] = acceptance.OperationId;
             parameters[AcceptanceIntent] = acceptance.IntentSha256;
             parameters[AcceptanceDeadline] = acceptance.AcceptBefore.ToString("O", CultureInfo.InvariantCulture);
+        }
+        if (request.StagedSource is { } stagedSource)
+        {
+            parameters[StagedSourceETag] = stagedSource.ETag;
+            parameters[StagedSourceSha256] = stagedSource.Sha256;
         }
         return parameters;
     }
@@ -176,6 +193,28 @@ internal static class FileImportJobParameters
 
         _ = long.TryParse(Get(parameters, FileSizeBytes), NumberStyles.Integer, CultureInfo.InvariantCulture, out fileSizeBytes);
 
+        ImportStagedSourceBinding? stagedSource = null;
+        if (parameters.ContainsKey(StagedSourceETag) || parameters.ContainsKey(StagedSourceSha256))
+        {
+            if (cloudFileId is null || objectStoreUri is not null || Get(parameters, StagedSourceETag) is not { } stagedETag ||
+                Get(parameters, StagedSourceSha256) is not { } stagedSha256)
+            {
+                error = "The staged import source binding is incomplete or ambiguous.";
+                return false;
+            }
+
+            stagedSource = new ImportStagedSourceBinding(cloudFileId, stagedETag, fileSizeBytes, stagedSha256);
+            try
+            {
+                stagedSource.Validate();
+            }
+            catch (ArgumentException)
+            {
+                error = "The staged import source binding is invalid.";
+                return false;
+            }
+        }
+
         ImportAcceptanceBinding? acceptance = null;
         if (parameters.ContainsKey(AcceptanceId) || parameters.ContainsKey(AcceptanceIntent) || parameters.ContainsKey(AcceptanceDeadline))
         {
@@ -203,6 +242,7 @@ internal static class FileImportJobParameters
         request = new ImportRequest
         {
             Acceptance = acceptance,
+            StagedSource = stagedSource,
             Ownership = Get(parameters, OwnerActorId) is { } owner ? new(owner, Get(parameters, TenantId)) : null,
             CloudFileId = objectStoreUri is null ? cloudFileId : null,
             ObjectStoreUri = objectStoreUri,
