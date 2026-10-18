@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://honua.io/schemas/mcp/extensions/studio_set_map_style.schema.json",
+  "title": "Honua Studio map-local style extension",
+  "description": "Honua extension; pending formalization in the geospatial MCP map/app composition family.",
+  "type": "object",
+  "required": [
+    "draftId",
+    "generation",
+    "mapSpec"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "draftId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Studio package draft id (map/app/dashboard family)."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "mapSpec": {
+      "type": "object",
+      "required": [
+        "version",
+        "sources",
+        "layers"
+      ],
+      "description": "Resolved map-local style, at most 1 MiB. Existing sources/assets remain identical. Shared style bindings are converted to a local snapshot, never edited in the catalog.",
+      "properties": {
+        "version": {
+          "const": 8
+        },
+        "sources": {
+          "type": "object"
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

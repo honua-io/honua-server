@@ -32,7 +32,7 @@ internal sealed class SetStudioMapStyleTool : StudioCompositionToolBase, IMcpToo
     {
         Name = ToolName,
         Title = "Set Studio map-local style",
-        Description = "Save a resolved MapLibre appearance in this draft under generation checking. "
+        Description = "Save a resolved MapLibre appearance in a map/app/dashboard draft under generation checking. "
             + "This map only: converts shared style bindings to a local snapshot and leaves the shared catalog unchanged. "
             + "Explain that impact before choosing full-style editing. Sources, glyphs, sprites and other external asset "
             + "bindings must match the existing authorized mapSpec; initialize that document through the composition workflow first. "

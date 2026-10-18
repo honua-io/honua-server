@@ -115,6 +115,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
             new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
             new SetStudioLayerStyleTool(jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
+            new SetStudioMapStyleTool(jobService, NullLogger<SetStudioMapStyleTool>.Instance),
             new SetStudioLayerVisibilityTool(jobService, NullLogger<SetStudioLayerVisibilityTool>.Instance),
             new SetStudioViewTool(jobService, NullLogger<SetStudioViewTool>.Instance),
             new AddStudioWidgetTool(jobService, NullLogger<AddStudioWidgetTool>.Instance),

@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:2fd1835e94c9d5ea99c894c3ba69f9695b1116b240a944c5978670377902ef1c",
+  "bundleDigest": "sha256:1e681043508818d27aec7c59990ceb165e19233ecbc3ace8b2f0522ae43ae01c",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2649,7 +2649,7 @@
     {
       "id": "guides/secure/authentication",
       "path": "guides/secure/authentication.md",
-      "documentDigest": "sha256:84adb867aa850394b381e0fb3df5063fece1c80efd9c64b248d45c2583c8921d",
+      "documentDigest": "sha256:0fcf8b27724d82788304387cf23aebf5055c4083df383ea34d6b5e4dc02821a8",
       "metadata": {
         "type": "guide",
         "title": "Authenticate clients",

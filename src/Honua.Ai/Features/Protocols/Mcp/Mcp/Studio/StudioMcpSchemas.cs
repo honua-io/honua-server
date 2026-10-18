@@ -348,7 +348,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "mapSpec"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid" },
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1 },
             "mapSpec": {
               "type": "object",
