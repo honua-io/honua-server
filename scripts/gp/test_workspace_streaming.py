@@ -182,4 +182,46 @@ class StreamingWorkspaceTests(unittest.TestCase):
         self.assertIn("fsize=134217728:134217728", argv)
 
 
+class FixtureMetadataTests(unittest.TestCase):
+    def test_actual_large_json_geojson_and_csv_fixtures_are_metadata_only_and_code_remains_editable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); project = root / "project"; project.mkdir()
+            (project / "honua-gp.yaml").write_text("schema: honua.gp-process/v1\n")
+            code = project / "process.py"; code.write_text("def execute(context):\n    return None\n")
+            fixtures = project / "fixtures"; fixtures.mkdir()
+            expected = {}
+            for extension in ("json", "geojson", "csv"):
+                path = fixtures / ("large-input." + extension)
+                marker = "LARGE-FIXTURE-CONTENT" * 20000
+                if extension == "geojson":
+                    data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [0, 0]}, "properties": {"data": marker}}]}).encode()
+                elif extension == "json": data = json.dumps({"data": marker}).encode()
+                else: data = ("name,value\n" + "LARGE-FIXTURE-CONTENT,1\n" * 20000).encode()
+                self.assertGreater(len(data), 256 * 1024)
+                path.write_bytes(data)
+                expected[path.relative_to(project).as_posix()] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+            workspace = Workspace(project, IMAGE, root / "runs")
+            from workspace_service import read_regular as original_read
+            def editor_read(path, *args, **kwargs):
+                self.assertNotIn("fixtures", path.relative_to(project).parts)
+                self.assertLessEqual(args[0], 256 * 1024)
+                return original_read(path, *args, **kwargs)
+            from unittest.mock import patch
+            with patch("workspace_service.read_regular", side_effect=editor_read):
+                result = workspace.project_files()
+            self.assertEqual({item["path"] for item in result["files"]}, {"honua-gp.yaml", "process.py"})
+            self.assertEqual(len(result["readOnlyFiles"]), 3)
+            for item in result["readOnlyFiles"]:
+                self.assertEqual(item, {"path": item["path"], **expected[item["path"]], "role": "fixture", "readOnly": True})
+                self.assertNotIn("content", item)
+            self.assertNotIn("LARGE-FIXTURE-CONTENT", json.dumps(result))
+            source = next(item for item in result["files"] if item["path"] == "process.py")
+            workspace.write("process.py", "def execute(context):\n    return 'corrected'\n", source["sha256"])
+            self.assertEqual(code.read_text(), "def execute(context):\n    return 'corrected'\n")
+            with self.assertRaises(ValueError): workspace.write("fixtures/large-input.json", "modified fixture", expected["fixtures/large-input.json"]["sha256"])
+            manifest = snapshot(project, root / "snapshot")
+            self.assertTrue(all(item["role"] == "fixture" for item in manifest["files"] if item["path"].startswith("fixtures/")))
+            self.assertTrue(all(item["role"] == "source" for item in manifest["files"] if item["path"] == "process.py"))
+
+
 if __name__ == "__main__": unittest.main()

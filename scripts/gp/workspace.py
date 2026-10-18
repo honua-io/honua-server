@@ -202,6 +202,14 @@ def stream_regular(path: Path, limit: int, destination: Path | None = None, chun
         os.close(descriptor)
 
 
+def file_role(relative: Path) -> str:
+    # Canonical authoring fixtures live under fixtures/. GIS data elsewhere is
+    # also an input, never a source editor buffer. JSON configuration outside
+    # fixtures remains source, and is metadata-only if above the editor cap.
+    data_extensions = {".geojson", ".csv", ".gpkg", ".fgb", ".parquet", ".geoparquet", ".shp", ".shx", ".dbf", ".prj", ".wkb", ".wkt", ".gpx", ".kml", ".kmz", ".tif", ".tiff", ".zip"}
+    return "fixture" if (bool(relative.parts) and relative.parts[0] == "fixtures") or relative.suffix.lower() in data_extensions else "source"
+
+
 def source_manifest(project: Path, limits: WorkspaceLimits = DEFAULT_LIMITS) -> dict:
     return _capture(project, None, limits)
 
@@ -233,13 +241,13 @@ def _capture(project: Path, destination: Path | None, limits: WorkspaceLimits) -
             if source.name.lower() in {"nuget.config", "pip.conf"}:
                 config = read_regular(source, 256 * 1024, project)
                 if re.search(rb"(?i)(packagesourcecredentials|cleartextpassword|\[apikeys\]|https?://[^/\s]+:[^/\s]+@)", config): continue
-            kind = "fixture" if relative.parts[0] == "fixtures" else "source"
+            kind = file_role(relative)
             budget = limits.fixture_bytes if kind == "fixture" else limits.source_bytes
             remaining = min(budget - totals[kind], limits.snapshot_bytes - sum(totals.values()))
             if len(files) >= limits.max_files: raise ValueError("Snapshot file-count budget exceeded.")
             size, digest = stream_regular(source, remaining, None if destination is None else destination / relative, limits.chunk_bytes, project)
             totals[kind] += size
-            files.append({"path": relative.as_posix(), "bytes": size, "sha256": digest})
+            files.append({"path": relative.as_posix(), "bytes": size, "sha256": digest, "role": kind})
     identity = {"files": files, "limits": limits.record()}
     encoded = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
     return {"schema": "honua.gp.workspace-snapshot/v2", "digest": hashlib.sha256(encoded).hexdigest(), **identity}

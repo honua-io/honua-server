@@ -195,8 +195,9 @@ class ScopedWorkspace:
 
     def project_files(self, access: Access) -> dict:
         with self.lock:
-            self._authorize(access); self._refresh()
-            result = self.workspace.project_files() | self._identity(access)
+            self._authorize(access)
+            manifest = self._refresh()
+            result = self.workspace.project_files(manifest) | self._identity(access)
             if access.delegated: result.pop("ideHandoff", None)
             return result
 
@@ -256,7 +257,8 @@ class ScopedWorkspace:
             # Older successful runs retain their original file-only digest and
             # implicit bounded profile. This compatibility is read-only; never
             # submit an execution under an unbound legacy limits identity.
-            encoded = json.dumps(manifest["files"], sort_keys=True, separators=(",", ":")).encode()
+            legacy_files = [{key: item[key] for key in ("path", "bytes", "sha256")} for item in manifest["files"]]
+            encoded = json.dumps(legacy_files, sort_keys=True, separators=(",", ":")).encode()
             matches = matches or hashlib.sha256(encoded).hexdigest() == digest
         if not matches: raise FileExistsError("Retained snapshot bytes changed; no run was submitted.")
         return record, directory / "source"

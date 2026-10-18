@@ -17,7 +17,7 @@ import threading
 import uuid
 from urllib.parse import unquote, urlsplit
 
-from workspace import ArtifactReader, DEFAULT_LIMITS, EXCLUDED, MAX_BYTES, WorkspaceLimits, command, read_regular, run, sanitized, secret_path, snapshot
+from workspace import ArtifactReader, DEFAULT_LIMITS, EXCLUDED, MAX_BYTES, WorkspaceLimits, command, file_role, read_regular, run, sanitized, secret_path, snapshot, source_manifest
 
 SOURCE_EXCLUDED = EXCLUDED | {".honua"}
 EDITABLE = {".py", ".cs", ".csproj", ".json", ".yaml", ".yml", ".lock", ".toml", ".geojson", ".csv", ".wkt"}
@@ -51,24 +51,28 @@ class Workspace:
         if not target.resolve().is_relative_to(root): raise ValueError("Source path is outside the project.")
         return target
 
-    def project_files(self) -> dict:
-        files = []
-        total = 0
+    def project_files(self, manifest: dict | None = None) -> dict:
+        files, read_only, total = [], [], 0
         with self.lock:
-            for root, directories, names in os.walk(self.project, followlinks=False):
-                directories[:] = [name for name in directories if name not in SOURCE_EXCLUDED and not secret_path(Path(root).relative_to(self.project) / name) and not (Path(root) / name).is_symlink()]
-                for name in sorted(names):
-                    candidate = Path(root) / name
-                    if candidate.suffix not in EDITABLE or candidate.is_symlink() or secret_path(candidate.relative_to(self.project)): continue
-                    path = self.source(candidate.relative_to(self.project).as_posix())
-                    content = read_regular(path, MAX_SOURCE_BYTES).decode()
-                    total += len(content.encode())
-                    if total > 8 * 1024 * 1024: raise ValueError("Source editor size budget exceeded.")
-                    files.append({"path": path.relative_to(self.project).as_posix(), "content": content,
-                                  "sha256": hashlib.sha256(content.encode()).hexdigest()})
-        return {"files": files, "image": self.image, "ideHandoff": {"kind": "vscode", "workspace": str(self.project)}}
+            manifest = manifest or source_manifest(self.project, self.limits)
+            for item in manifest["files"]:
+                relative = Path(item["path"])
+                if any(part in SOURCE_EXCLUDED for part in relative.parts): continue
+                if item["role"] == "fixture" or item["bytes"] > MAX_SOURCE_BYTES or relative.suffix not in EDITABLE:
+                    read_only.append(item | {"readOnly": True})
+                    continue
+                path = self.source(item["path"])
+                content = read_regular(path, MAX_SOURCE_BYTES, self.project)
+                if len(content) != item["bytes"] or hashlib.sha256(content).hexdigest() != item["sha256"]:
+                    raise FileExistsError("Project changed during enumeration; refresh its actual revision.")
+                total += len(content)
+                if total > 8 * 1024 * 1024: raise ValueError("Source editor size budget exceeded.")
+                files.append({"path": item["path"], "content": content.decode(), "sha256": item["sha256"]})
+        return {"files": files, "readOnlyFiles": read_only, "image": self.image,
+                "ideHandoff": {"kind": "vscode", "workspace": str(self.project)}}
 
     def write(self, relative: str, content: str, expected: str) -> dict:
+        if file_role(Path(relative)) == "fixture": raise ValueError("Fixture inputs are read-only in the code editor; edit them in the paired project and capture a new snapshot.")
         data = content.encode()
         if len(data) > MAX_SOURCE_BYTES: raise ValueError("Source file exceeds the editor budget.")
         with self.lock:

@@ -141,3 +141,11 @@ exact Content-Length describe the immutable artifact. The final chunk is withhel
 until the streamed digest is verified; a changed file or revoked grant aborts the
 body rather than producing a successful replacement. No byte-range, resumable
 upload, or durable upload-acceptance capability is implied by this reader.
+
+Project enumeration returns actual code/configuration text only within the existing
+256 KiB per-file editor limit. Fixture inputs and larger/noneditable files are
+returned separately as `readOnlyFiles` metadata (`path`, `bytes`, `sha256`, `role`,
+`readOnly: true`), derived from the streamed manifest. Standard `fixtures/` files
+and GIS data have the fixture role. Their content is never loaded into the code
+editor, and fixture writes through that editor are refused; changes in the paired
+project are detected through the next observed revision and snapshot digest.
