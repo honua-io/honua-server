@@ -55,6 +55,10 @@ internal static class DatasetImportTaskService
             var origin = AgentWorkspaceCapturedContext.ReadBoundTurn(context, workspace);
             if (origin is null || (workspace.OwnerId != actor &&
                 (workspace.AgentActorId != actor || origin.ActorId != workspace.OwnerId))) return Results.Forbid();
+            var authorizedTurn = await context.RequestServices.GetRequiredService<Honua.Core.Features.AgentWorkspace.Abstractions.IAgentWorkspaceTurnAuthorizer>()
+                .AuthorizeAsync(context.User, workspace.WorkspaceId, origin.TurnId, context.RequestAborted).ConfigureAwait(false);
+            if (authorizedTurn is null || authorizedTurn.OwnerActorId != workspace.OwnerId ||
+                authorizedTurn.TargetId != workspace.TargetId || authorizedTurn.TenantId != workspace.TenantId) return Results.Forbid();
             var authority = await AgentCredentialAuthority.CaptureAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false);
             if (authority is null) return Results.Forbid();
             var authorityHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(authority,
