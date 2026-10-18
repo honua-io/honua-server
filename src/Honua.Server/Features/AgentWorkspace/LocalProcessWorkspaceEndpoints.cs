@@ -67,7 +67,8 @@ internal static class LocalProcessWorkspaceEndpoints
             var document = await context.RequestServices.GetRequiredService<IAgentWorkspaceStore>()
                 .GetAsync(access.WorkspaceId).ConfigureAwait(false);
             var turnId = context.Request.Headers["X-Honua-Turn"].ToString();
-            var snapshot = document!.Turns[turnId].LocalProcessSnapshot!;
+            if (document is null || !document.Turns.TryGetValue(turnId, out var turn) || turn.LocalProcessSnapshot is not { } snapshot)
+                throw new LocalProcessWorkspaceException(404, "The captured local-process turn is no longer available.");
             file = await gateway.ReadSnapshotSourceAsync(access, snapshot.SnapshotId, Route(context, "path"), context.RequestAborted).ConfigureAwait(false);
         }
         else file = await gateway.ReadSourceAsync(access, Route(context, "path"), context.RequestAborted).ConfigureAwait(false);

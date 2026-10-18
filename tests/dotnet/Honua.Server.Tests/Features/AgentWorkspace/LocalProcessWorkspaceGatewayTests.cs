@@ -73,6 +73,23 @@ public sealed class LocalProcessWorkspaceGatewayTests
         Assert.Equal(503, failure.StatusCode);
     }
 
+    [UnitTheory]
+    [InlineData("")]
+    [InlineData("command_with_underscores")]
+    [InlineData("../command")]
+    [InlineData("\u00e9")]
+    public async Task RunAndReconciliation_RejectInvalidCommandIdsBeforeSending(string commandId)
+    {
+        using var handler = new Handler(_ => throw new InvalidOperationException("Must not send."));
+        using var client = new HttpClient(handler);
+        var gateway = Create(client);
+        await Assert.ThrowsAsync<ArgumentException>(() => gateway.RunAsync(Access,
+            new("p", new string('a', 32), new string('b', 64), commandId), CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(() => gateway.GetCommandAsync(Access, commandId, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(() => gateway.GetCommandAsync(Access, new string('a', 81), CancellationToken.None));
+        Assert.Equal(0, handler.Calls);
+    }
+
     [UnitTest]
     public async Task ReadArtifact_RejectsChangedSuccessfulOutput()
     {

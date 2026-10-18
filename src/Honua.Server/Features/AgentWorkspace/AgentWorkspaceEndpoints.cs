@@ -327,14 +327,20 @@ internal static class AgentWorkspaceEndpoints
     private static async Task<AgentWorkspaceMessage[]> VisibleMessages(HttpContext context, AgentWorkspaceDocument document)
     {
         var messages = new List<AgentWorkspaceMessage>();
+        var visibleTurns = new Dictionary<string, bool>(StringComparer.Ordinal);
         foreach (var message in document.Messages)
         {
-            if (!document.Turns.TryGetValue(message.TurnId, out var turn)) continue;
-            var permitted = await Project(context, turn.Context, document).ConfigureAwait(false);
-            // Free-form conversation may name a selected resource. Do not disclose a
-            // conversation turn whose captured selection the current reader cannot see.
-            if (permitted.SelectedResources.Length == turn.Context.SelectedResources.Length && permitted.Task == turn.Context.Task &&
-                await LocalProcessWorkspaceAuthorization.CanReadTurnAsync(context, document, turn).ConfigureAwait(false)) messages.Add(message);
+            if (!visibleTurns.TryGetValue(message.TurnId, out var visible))
+            {
+                if (!document.Turns.TryGetValue(message.TurnId, out var turn)) continue;
+                var permitted = await Project(context, turn.Context, document).ConfigureAwait(false);
+                // Conversation can name selected resources. Verify each immutable turn once
+                // per response; repeated messages must not rehash the same process snapshot.
+                visible = permitted.SelectedResources.Length == turn.Context.SelectedResources.Length && permitted.Task == turn.Context.Task &&
+                    await LocalProcessWorkspaceAuthorization.CanReadTurnAsync(context, document, turn).ConfigureAwait(false);
+                visibleTurns[message.TurnId] = visible;
+            }
+            if (visible) messages.Add(message);
         }
         return messages.ToArray();
     }

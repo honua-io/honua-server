@@ -24,6 +24,7 @@ internal sealed class LocalProcessWorkspaceToolSource(IAgentWorkspaceStore store
 internal sealed class LocalProcessWorkspaceTool(string action, string description, string fields, string required, bool readOnly) : IMcpTool
 {
     private const string Id = """{"type":"string","pattern":"^[A-Za-z0-9_-]{1,128}$"}""";
+    private const string CommandId = """{"type":"string","pattern":"^[A-Za-z0-9-]{1,80}$"}""";
     private const string ProcessId = """{"type":"string","pattern":"^[a-f0-9]{32}$"}""";
     private const string Digest = """{"type":"string","pattern":"^[a-f0-9]{64}$"}""";
     private const string Path = """{"type":"string","minLength":1,"maxLength":1024}""";
@@ -45,10 +46,10 @@ internal sealed class LocalProcessWorkspaceTool(string action, string descriptio
             $"{Field("snapshotId", ProcessId)},{Field("path", Path)}", "\"snapshotId\",\"path\"", true),
         new LocalProcessWorkspaceTool("list_runs", "Discover up to 32 recent local runs in this workspace, including runs started in Studio. Use actual returned run ids to inspect diagnostics.", "", "", true),
         new LocalProcessWorkspaceTool("run", "Run exact retained source and inputs in the configured isolated sandbox. Persist commandId before calling; after a lost response use get_command before retrying. A local run is not a published workflow service.",
-            $"{Project},{Field("snapshotId", ProcessId)},{Field("snapshotDigest", Digest)},\"commandId\":{{\"type\":\"string\",\"pattern\":\"^[A-Za-z0-9-]{{1,80}}$\"}}",
+            $"{Project},{Field("snapshotId", ProcessId)},{Field("snapshotDigest", Digest)},{Field("commandId", CommandId)}",
             "\"projectId\",\"snapshotId\",\"snapshotDigest\",\"commandId\"", false),
         new LocalProcessWorkspaceTool("get_run", "Read actual local execution status, bounded diagnostics and verified output references.", Field("runId", ProcessId), "\"runId\"", true),
-        new LocalProcessWorkspaceTool("get_command", "Reconcile a durable local run command after an uncertain response. Unknown acceptance never authorizes a fresh execution.", Field("commandId", Id), "\"commandId\"", true),
+        new LocalProcessWorkspaceTool("get_command", "Reconcile a durable local run command after an uncertain response. Unknown acceptance never authorizes a fresh execution.", Field("commandId", CommandId), "\"commandId\"", true),
         new LocalProcessWorkspaceTool("cancel", "Request cancellation of an actual local run and retain the canonical terminal result.", Field("runId", ProcessId), "\"runId\"", false),
         new LocalProcessWorkspaceTool("read_artifact", "Read actual verified UTF-8 output from a successful local run (maximum 4 MiB). For GeoJSON, pass these bytes to honua_ingest_dataset, then use its actual connection/table receipt to publish and map. This tool does not import or publish.",
             $"{Field("runId", ProcessId)},{Field("path", Path)}", "\"runId\",\"path\"", true),
@@ -91,7 +92,8 @@ internal sealed class LocalProcessWorkspaceTool(string action, string descriptio
                     else
                     {
                         var document = await httpContext.RequestServices.GetRequiredService<IAgentWorkspaceStore>().GetAsync(workspaceId).ConfigureAwait(false);
-                        var snapshot = document!.Turns[turnId].LocalProcessSnapshot!;
+                        if (document is null || !document.Turns.TryGetValue(turnId, out var turn) || turn.LocalProcessSnapshot is not { } snapshot)
+                            throw new LocalProcessWorkspaceException(404, "The captured local-process turn is no longer available.");
                         result = await gateway.ReadSnapshotSourceAsync(access, snapshot.SnapshotId, String(args, "path"), cancellationToken).ConfigureAwait(false);
                     }
                     break;

@@ -80,8 +80,11 @@ internal sealed class LocalProcessWorkspaceGateway : ILocalProcessWorkspaceGatew
             LocalProcessJsonContext.Default.LocalProcessSourceFile, cancellationToken);
 
     public Task<LocalProcessRun> RunAsync(LocalProcessWorkspaceAccess access, LocalProcessRunRequest request, CancellationToken cancellationToken)
-        => Send(access, HttpMethod.Post, "runs", request, LocalProcessJsonContext.Default.LocalProcessRunRequest,
+    {
+        _ = CommandIdentifier(request.CommandId);
+        return Send(access, HttpMethod.Post, "runs", request, LocalProcessJsonContext.Default.LocalProcessRunRequest,
             LocalProcessJsonContext.Default.LocalProcessRun, cancellationToken);
+    }
 
     public Task<LocalProcessRun> GetRunAsync(LocalProcessWorkspaceAccess access, string runId, CancellationToken cancellationToken)
         => Get(access, "runs/" + Hex(runId, 32), LocalProcessJsonContext.Default.LocalProcessRun, cancellationToken);
@@ -90,7 +93,7 @@ internal sealed class LocalProcessWorkspaceGateway : ILocalProcessWorkspaceGatew
         => Get(access, "runs", LocalProcessJsonContext.Default.LocalProcessRunList, cancellationToken);
 
     public Task<LocalProcessRun> GetCommandAsync(LocalProcessWorkspaceAccess access, string commandId, CancellationToken cancellationToken)
-        => Get(access, "commands/" + Identifier(commandId), LocalProcessJsonContext.Default.LocalProcessRun, cancellationToken);
+        => Get(access, "commands/" + CommandIdentifier(commandId), LocalProcessJsonContext.Default.LocalProcessRun, cancellationToken);
 
     public Task<LocalProcessRun> CancelAsync(LocalProcessWorkspaceAccess access, string runId, CancellationToken cancellationToken)
         => Get(access, "runs/" + Hex(runId, 32) + "/cancel", LocalProcessJsonContext.Default.LocalProcessRun, cancellationToken, HttpMethod.Post);
@@ -213,6 +216,9 @@ internal sealed class LocalProcessWorkspaceGateway : ILocalProcessWorkspaceGatew
     }
 
     private static string Identifier(string value) => AgentWorkspaceState.IsIdentifier(value) ? value : throw new ArgumentException("Invalid workspace identifier.");
+    private static string CommandIdentifier(string value) => value is { Length: >= 1 and <= 80 } &&
+        value.All(character => character is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '-')
+            ? value : throw new ArgumentException("Invalid local-process command identifier.");
     private static bool IsHex(string value, int length) => value is not null && value.Length == length && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
     private static string Hex(string value, int length) => IsHex(value, length) ? value : throw new ArgumentException("Invalid process identity or digest.");
 
