@@ -60,6 +60,12 @@ internal sealed class WorkflowAuthorSecurityContextCapturer(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
+        if (approvedReplay is not null)
+        {
+            if (CanonicalSecurityActor.Resolve(principal)?.ActorId != approvedReplay.Payload.ActorId)
+                throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+            return approvedReplay.Payload.AuthorSecurityContext;
+        }
         var membershipManaged = await JobSecurityContextCapture
             .IsManagedMembershipAsync(principal, principalMembershipSource, cancellationToken)
             .ConfigureAwait(false);

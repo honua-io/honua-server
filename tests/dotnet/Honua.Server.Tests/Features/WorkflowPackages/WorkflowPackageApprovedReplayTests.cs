@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
@@ -37,6 +38,9 @@ public sealed class WorkflowPackageApprovedReplayTests
         var replay = await WorkflowPackageApprovedReplay.VerifyAsync(fixture.Services, fixture.Request, fixture.Context, CancellationToken.None);
         ambient.HttpContext.Should().BeSameAs(fixture.Approver);
         replay.Principal.HasClaim("permission", "agent:workspace").Should().BeTrue();
+        replay.Principal.HasClaim("rls-group", "original-narrow-group").Should().BeTrue();
+        (await new WorkflowAuthorSecurityContextCapturer(approvedReplay: replay).CaptureAsync(replay.Principal, CancellationToken.None))
+            .Should().BeSameAs(replay.Payload.AuthorSecurityContext);
         replay.Principal.IsInRole("admin").Should().BeTrue("the agent role cannot exempt the key from this proof");
         var deleted = await replay.CreateService(fixture.Services).DeletePublicationAsync("publication", replay.Principal, CancellationToken.None);
         deleted.Should().NotBeNull();
@@ -83,6 +87,22 @@ public sealed class WorkflowPackageApprovedReplayTests
         (await fixture.Packages.GetPublicationAsync("publication")).Should().NotBeNull();
     }
 
+    [UnitTheory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    public async Task ChangedLiveRoleMembership_CannotWidenOrRetainStaleAuthorRlsSnapshot(bool active, bool expanded)
+    {
+        var fixture = await Fixture.Create();
+        var membership = Substitute.For<IPrincipalMembershipSource>();
+        membership.ResolveMembershipAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new PrincipalMembership(active, expanded ? ["admin", "expanded-data-role"] : []));
+        var services = fixture.Rebuild(fixture.Keys, membership);
+        var invoke = () => WorkflowPackageApprovedReplay.VerifyAsync(services, fixture.Request, fixture.Context, CancellationToken.None);
+        await invoke.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        (await fixture.Packages.GetPublicationAsync("publication")).Should().NotBeNull();
+    }
+
     private sealed record Fixture
     {
         public required ServiceProvider Services { get; init; }
@@ -97,19 +117,27 @@ public sealed class WorkflowPackageApprovedReplayTests
         public required OperationPolicyContext Context { get; init; }
         public required DefaultHttpContext Approver { get; init; }
 
-        public ServiceProvider Rebuild(IAdminApiKeyStore keys)
+        public ServiceProvider Rebuild(IAdminApiKeyStore keys, IPrincipalMembershipSource? membership = null)
         {
             var tenant = Substitute.For<ITenantContext>();
             tenant.TenantId.Returns("public");
             var authorization = Substitute.For<IAuthorizationService>();
             authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>()).Returns(AuthorizationResult.Success());
-            return new ServiceCollection().AddSingleton(Proposals).AddSingleton(Workspaces)
+            var services = new ServiceCollection().AddSingleton(Proposals).AddSingleton(Workspaces)
                 .AddSingleton<IAdminApiKeyStore>(keys).AddSingleton<IWorkflowPackageStore>(Packages)
                 .AddSingleton(tenant).AddSingleton(authorization).AddSingleton(TimeProvider.System)
                 .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
                 { ["AgentWorkspace:ReleaseId"] = "release" }).Build())
                 .AddSingleton(new WorkflowPackageService(Packages, null!, null!, TimeProvider.System, NullLogger<WorkflowPackageService>.Instance))
-                .BuildServiceProvider();
+                .AddSingleton<IPrincipalMembershipSource>(membership ?? Substitute.For<IPrincipalMembershipSource>());
+            return services.BuildServiceProvider();
+        }
+
+        private static ITenantContext Tenant()
+        {
+            var tenant = Substitute.For<ITenantContext>();
+            tenant.TenantId.Returns("public");
+            return tenant;
         }
 
         public static async Task<Fixture> Create()
@@ -117,6 +145,7 @@ public sealed class WorkflowPackageApprovedReplayTests
             var keys = new InMemoryAdminApiKeyStore();
             var created = await keys.CreateAsync("original-agent", ["admin", "agent:workspace"], null, "human", CancellationToken.None);
             var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record.Id, created.Record.Name, created.Record.Permissions);
+            ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("rls-group", "original-narrow-group"));
             var actor = CanonicalSecurityActor.Resolve(principal)!.ActorId;
             var owner = "human:owner";
             var packages = new InMemoryWorkflowPackageStore();
@@ -145,6 +174,7 @@ public sealed class WorkflowPackageApprovedReplayTests
             workspaces.GetAsync("workspace").Returns(document);
             var payload = new WorkflowPackageApprovalPayload
             {
+                AuthorSecurityContext = JobSecurityContextCapture.Capture(principal, new Honua.Core.Features.Authorization.Domain.RbacOptions(), Tenant()),
                 Intent = new() { Action = "delete", PackageId = "package", Version = 1, PackageHash = hash, PublicationId = "publication" },
                 KeyId = created.Record.Id, ActorId = actor, Permissions = created.Record.Permissions.ToArray(), TenantId = "public",
                 WorkspaceId = "workspace", TurnId = "turn", OwnerActorId = owner, TargetId = "target", ReleaseId = "release",

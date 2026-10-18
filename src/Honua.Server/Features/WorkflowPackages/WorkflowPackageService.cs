@@ -150,7 +150,7 @@ internal sealed class WorkflowPackageService(
         var access = await ResolveAccessAsync(principal, cancellationToken, true, command.WorkspaceId, command.TurnId).ConfigureAwait(false);
         if (access?.WorkspaceAgent != true || access.ActorId != command.ActorId ||
             access.DelegatedOwnerActorId != command.OwnerActorId || access.TenantId != command.TenantId ||
-            access.TurnBinding?.TargetId != command.TargetId || access.TurnBinding.ReleaseId != command.ReleaseId ||
+            access.TurnBinding is null || access.TurnBinding.TargetId != command.TargetId || access.TurnBinding.ReleaseId != command.ReleaseId ||
             command.ExpectedVersion != 1 || command.PackageHash != WorkflowPackageGraphHasher.Compute(graph) ||
             command.RequestFingerprint != WorkflowPackageContent.Fingerprint(name, graph))
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);

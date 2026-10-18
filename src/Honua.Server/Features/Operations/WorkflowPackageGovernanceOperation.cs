@@ -78,7 +78,9 @@ internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider service
             .GetPublicationAsync(intent.PublicationId, cancellationToken).ConfigureAwait(false);
         var payload = new WorkflowPackageApprovalPayload
         {
-            Intent = intent, KeyId = keyId, ActorId = access.ActorId, Permissions = record!.Permissions.ToArray(),
+            Intent = intent,
+            AuthorSecurityContext = await services.GetRequiredService<WorkflowAuthorSecurityContextCapturer>().CaptureAsync(principal, cancellationToken).ConfigureAwait(false),
+            KeyId = keyId, ActorId = access.ActorId, Permissions = record!.Permissions.ToArray(),
             TenantId = access.TenantId!, SchemaName = context.SchemaName, WorkspaceId = workspace, TurnId = turn, OwnerActorId = access.DelegatedOwnerActorId!,
             TargetId = binding!.TargetId, ReleaseId = binding.ReleaseId,
             PublicationFingerprint = publication is null ? null : WorkflowPackageApprovedReplay.Fingerprint(publication),

@@ -76,6 +76,22 @@ internal sealed class WorkflowPackageApprovedReplay
         var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(record!.Id, record.Name, record.Permissions);
         if (CanonicalSecurityActor.Resolve(principal)?.ActorId != payload.ActorId ||
             !principal.HasClaim("permission", "agent:workspace")) Deny();
+        var snapshot = payload.AuthorSecurityContext;
+        if (snapshot.OwnerActorId != payload.ActorId || snapshot.TenantId != payload.TenantId ||
+            !snapshot.Claims.Where(claim => claim.Type == "permission").Select(claim => claim.Value)
+                .Order(StringComparer.Ordinal).SequenceEqual(payload.Permissions.Order(StringComparer.Ordinal))) Deny();
+        var membership = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(snapshot,
+            services.GetService<IPrincipalMembershipSource>(), services.GetService<IOptions<RbacOptions>>()?.Value ?? new(),
+            cancellationToken).ConfigureAwait(false);
+        if (membership.HasRemovedRoles || membership.Status is JobSecurityContextMembershipStatus.Changed or
+            JobSecurityContextMembershipStatus.Inactive or JobSecurityContextMembershipStatus.ManagedUnresolved) Deny();
+        // Carry original claims/RLS inputs into actuation, never newly expanded memberships.
+        var restored = JobSecurityContextCapture.Restore(snapshot);
+        var pinnedIdentity = new ClaimsIdentity(restored.Claims, AuthenticationExtensions.ApiKeyScheme,
+            ClaimTypes.Name, restored.Identity is ClaimsIdentity restoredIdentity ? restoredIdentity.RoleClaimType : ClaimTypes.Role);
+        CanonicalSecurityActor.StampAuthorityClaims(pinnedIdentity);
+        var pinnedPrincipal = new ClaimsPrincipal(pinnedIdentity);
+        if (CanonicalSecurityActor.Resolve(pinnedPrincipal)?.ActorId != payload.ActorId) Deny();
         var privateContext = new DefaultHttpContext { User = principal, RequestServices = services };
         privateContext.Request.Method = HttpMethods.Post;
         privateContext.Request.Headers["X-Honua-Workspace"] = payload.WorkspaceId;
@@ -91,7 +107,7 @@ internal sealed class WorkflowPackageApprovedReplay
         var authorization = new WorkflowPackageAuthorization(accessor, services.GetRequiredService<ITenantContext>(), turns);
         var access = await authorization.ResolveAsync(principal, cancellationToken, payload.WorkspaceId, payload.TurnId, true).ConfigureAwait(false);
         await VerifyResourceAsync(services, payload, access, cancellationToken).ConfigureAwait(false);
-        return new(payload, principal, authorization);
+        return new(payload, pinnedPrincipal, authorization);
     }
 
     public static async Task VerifyResourceAsync(IServiceProvider services, WorkflowPackageApprovalPayload payload,
