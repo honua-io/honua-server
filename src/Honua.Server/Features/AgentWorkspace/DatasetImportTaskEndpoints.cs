@@ -14,7 +14,8 @@ internal static class DatasetImportTaskEndpoints
 {
     internal static void MapDatasetImportTasks(this RouteGroupBuilder group)
     {
-        group.MapPost("/workspaces/{workspaceId}/dataset-import-tasks", Create);
+        group.MapPost("/workspaces/{workspaceId}/dataset-import-tasks", Create)
+            .Accepts<CreateDatasetImportTask>("application/json");
         group.MapGet("/workspaces/{workspaceId}/dataset-import-task-intents/{intentId}", ReadIntent);
         group.MapGet("/workspaces/{workspaceId}/dataset-import-tasks/{taskId}/versions/{revision:long}", ReadVersion);
     }
@@ -49,6 +50,7 @@ internal static class DatasetImportTaskEndpoints
                 throw new AgentWorkspaceConflictException("The original import intent has different immutable inputs.");
             return await AuthorizedVersion(context, workspace, existing.TaskId, existing.Revision).ConfigureAwait(false);
         }
+        AgentWorkspaceCapturedContext.RequireOriginal(context, workspace, request.ViewId, request.ContextRevision);
         var current = AgentWorkspaceState.Current(workspace, request.ViewId);
         if (current.Revision != request.ContextRevision)
             throw new AgentWorkspaceConflictException("The workspace context changed. Review the import destination before creating a task.");

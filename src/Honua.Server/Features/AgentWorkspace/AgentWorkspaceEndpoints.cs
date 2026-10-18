@@ -310,6 +310,7 @@ internal static class AgentWorkspaceEndpoints
     internal static async Task<IResult> UpdateContext(HttpContext context, IAgentWorkspaceStore store, UpdateAgentContext request)
     {
         var document = await Read(context, store).ConfigureAwait(false);
+        AgentWorkspaceCapturedContext.RequireOriginal(context, document, request.ViewId, request.ExpectedRevision);
         if (!await AgentWorkspaceResourceAuthorization.CanReadTaskAsync(context, request.Task, requireGeneration: true, workspace: document).ConfigureAwait(false)) return Results.Forbid();
         var next = AgentWorkspaceState.Update(document, request);
         // Only retain references the writer can actually see; re-evaluate for every reader too.
@@ -412,6 +413,7 @@ internal static class AgentWorkspaceEndpoints
     {
         var document = await Read(context, store).ConfigureAwait(false);
         if (request.Kind != "publish-layer" || !AgentWorkspaceState.IsIdentifier(request.ViewId)) throw new ArgumentException("Unknown draft kind or view.");
+        AgentWorkspaceCapturedContext.RequireOriginal(context, document, request.ViewId, request.ContextRevision);
         if (AgentWorkspaceState.Current(document, request.ViewId).Revision != request.ContextRevision) throw new AgentWorkspaceConflictException("The view changed.");
         if (document.Drafts.Count >= 128) throw new ArgumentException("Workspace draft limit reached.");
         var draft = new AgentWorkspaceDraft($"draft-{Guid.NewGuid():N}", 0, request.Kind,

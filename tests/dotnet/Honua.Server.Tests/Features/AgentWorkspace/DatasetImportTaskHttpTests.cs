@@ -15,6 +15,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 
@@ -48,6 +50,12 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
         await fixture.InitializeAsync();
         try
         {
+            var endpoint = fixture.Services.GetServices<EndpointDataSource>().SelectMany(source => source.Endpoints)
+                .OfType<RouteEndpoint>().Single(endpoint => endpoint.RoutePattern.RawText?.EndsWith("/dataset-import-tasks", StringComparison.Ordinal) == true);
+            var bodyMetadata = endpoint.Metadata.GetMetadata<IAcceptsMetadata>();
+            bodyMetadata.Should().NotBeNull();
+            bodyMetadata!.RequestType.Should().Be(typeof(CreateDatasetImportTask));
+            bodyMetadata.ContentTypes.Should().Contain("application/json");
             using var client = fixture.CreateAdminClient();
             var created = await Json(await client.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "tab-1" }));
             var workspaceId = created.GetProperty("workspaceId").GetString()!;

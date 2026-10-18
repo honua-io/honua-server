@@ -31,7 +31,8 @@ public sealed class DatasetImportDestinationAuthorizerTests
         var sessions = Substitute.For<IDatabaseSessionFactory>();
         sessions.OpenAsync(Arg.Any<CancellationToken>()).Returns(session);
         session.QuerySingleOrDefaultAsync<bool>(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<CancellationToken>()).Returns(true);
-        var authorizer = new DatasetImportDestinationAuthorizer(accessor, new ConfigurationBuilder().Build(), sessions);
+        var configuration = new ConfigurationBuilder().Build();
+        var authorizer = new DatasetImportDestinationAuthorizer(accessor, configuration, sessions);
         var target = new DatasetImportDestination("public", "roads");
         foreach (var mode in new[] { ImportLoadMode.Append, ImportLoadMode.Replace })
             (await authorizer.IsAuthorizedAsync(principal, "target-1", target, new(mode), true)).Should().BeFalse();
@@ -43,5 +44,9 @@ public sealed class DatasetImportDestinationAuthorizerTests
         session.QuerySingleOrDefaultAsync<bool>(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<CancellationToken>()).Returns(false);
         (await authorizer.IsAuthorizedAsync(principal, "target-1", target, new(), true)).Should().BeTrue();
         (await authorizer.IsAuthorizedAsync(principal, "target-other", target, new(), true)).Should().BeFalse();
+        sessions.ClearReceivedCalls();
+        configuration["DataSource:Provider"] = "duckdb";
+        (await authorizer.IsAuthorizedAsync(principal, "target-1", target, new(), true)).Should().BeFalse();
+        await sessions.DidNotReceive().OpenAsync(Arg.Any<CancellationToken>());
     }
 }

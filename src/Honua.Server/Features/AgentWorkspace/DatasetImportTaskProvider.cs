@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.AgentWorkspace.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -80,7 +81,8 @@ internal sealed class DatasetImportDestinationAuthorizer(IHttpContextAccessor ac
         CancellationToken cancellationToken = default)
     {
         var transport = accessor.HttpContext;
-        if (transport is null || !ImportTargetSchemaPolicy.IsAllowed(destination.Schema, configuration) ||
+        if (transport is null || DataProviderNames.Normalize(configuration["DataSource:Provider"]) is not (DataProviderNames.Postgis or DataProviderNames.PostgreSql) ||
+            !ImportTargetSchemaPolicy.IsAllowed(destination.Schema, configuration) ||
             options.LoadMode is not (ImportLoadMode.Append or ImportLoadMode.Replace) ||
             targetId != await transport.RequestServices.GetRequiredService<IAgentWorkspaceStore>().GetTargetIdAsync().ConfigureAwait(false)) return false;
         var context = new DefaultHttpContext { RequestServices = transport.RequestServices, User = principal, RequestAborted = cancellationToken };
