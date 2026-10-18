@@ -167,6 +167,37 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             observed.GetProperty("datasetImportContext").GetProperty("contentHash").GetString().Should().Be(task.GetProperty("contentHash").GetString());
             // Explanation does not grant access through the strict transfer-owner resource.
             (await agent.GetAsync(root + $"/dataset-import-tasks/{taskId}/versions/1")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // A separate agent-executed intent keeps its actual owner and sealed authority;
+            // the initiating human comes only from the retained original turn.
+            var executionWorkspace = await Json(await human.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "execution-tab" }));
+            var executionId = executionWorkspace.GetProperty("workspaceId").GetString()!;
+            var executionRoot = $"/api/v1/agent/workspaces/{executionId}";
+            await Json(await human.PostAsJsonAsync(executionRoot + "/turns", new { turnId = "turn-create-import", viewId = "execution-tab",
+                contextRevision = 0, prompt = "Prepare an import for my selected file" }));
+            var executionRequest = request with { IntentId = "agent-import-intent", ViewId = "execution-tab" };
+            agent.DefaultRequestHeaders.Add("X-Honua-Workspace", executionId);
+            agent.DefaultRequestHeaders.Add("X-Honua-Turn", "turn-create-import");
+            var executionTask = await Json(await agent.PostAsJsonAsync(executionRoot + "/dataset-import-tasks", executionRequest));
+            var executionTaskId = executionTask.GetProperty("taskId").GetString()!;
+            var executionDocument = (await fixture.Services.GetRequiredService<IAgentWorkspaceStore>().GetAsync(executionId))!;
+            var binding = executionDocument.DatasetImportExecutionBindings[executionTaskId];
+            binding.ExecutorActorId.Should().Be(linkedActor);
+            binding.InitiatingHumanActorId.Should().Be(executionDocument.OwnerId);
+            binding.OriginatingTurnId.Should().Be("turn-create-import");
+            binding.TaskContentHash.Should().Be(executionTask.GetProperty("contentHash").GetString());
+            binding.AuthorityRevision.Should().Be(1);
+            binding.AuthorityFingerprint.Should().HaveLength(64);
+            binding.OriginalTurnHash.Should().HaveLength(64);
+            binding.ExecutorAuthority.Id.Should().Be(keyId);
+            executionDocument.DatasetImportTasks[executionTaskId].Single().OwnerActorId.Should().Be(linkedActor);
+            var replay = await Json(await agent.PostAsJsonAsync(executionRoot + "/dataset-import-tasks", executionRequest));
+            replay.GetProperty("taskId").GetString().Should().Be(executionTaskId);
+            var replayDocument = (await fixture.Services.GetRequiredService<IAgentWorkspaceStore>().GetAsync(executionId))!;
+            replayDocument.Version.Should().Be(executionDocument.Version);
+            replayDocument.DatasetImportExecutionBindings.Should().ContainSingle();
+            executionTask.TryGetProperty("executorAuthority", out _).Should().BeFalse();
+            agent.DefaultRequestHeaders.Remove("X-Honua-Workspace");
+            agent.DefaultRequestHeaders.Remove("X-Honua-Turn");
             policy.AllowRead = false;
             (await agent.GetAsync(root + "/turns/turn-explain")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
             policy.AllowRead = true;

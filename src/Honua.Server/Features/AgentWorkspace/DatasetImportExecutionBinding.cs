@@ -12,8 +12,9 @@ internal sealed record DatasetImportExecutionBinding(
     long TaskRevision,
     string TaskContentHash,
     long AuthorityRevision,
+    string AuthorityFingerprint,
     string ExecutorActorId,
-    string InitiatingHumanActorId,
+    string? InitiatingHumanActorId,
     string OriginatingTurnId,
     string OriginalTurnHash,
     AgentCredentialSnapshot ExecutorAuthority);

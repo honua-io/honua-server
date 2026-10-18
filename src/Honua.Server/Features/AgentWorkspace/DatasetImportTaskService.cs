@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Security.Cryptography;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -47,7 +48,23 @@ internal static class DatasetImportTaskService
         var tasks = new Dictionary<string, DatasetImportTask[]>(workspace.DatasetImportTasks, StringComparer.Ordinal) { [task.TaskId] = [task] };
         var intents = new Dictionary<string, DatasetImportTaskIntent>(workspace.DatasetImportTaskIntents, StringComparer.Ordinal)
         { [key] = new(actor, request.IntentId, fingerprint, task.TaskId, task.Revision) };
-        var next = AgentWorkspaceState.Update(workspace with { DatasetImportTasks = tasks, DatasetImportTaskIntents = intents },
+        var bindings = new Dictionary<string, DatasetImportExecutionBinding>(workspace.DatasetImportExecutionBindings, StringComparer.Ordinal);
+        if (AgentCredentialAuthority.IsAgent(context.User))
+        {
+            var origin = AgentWorkspaceCapturedContext.ReadBoundTurn(context, workspace);
+            if (origin is null || (workspace.OwnerId != actor &&
+                (workspace.AgentActorId != actor || origin.ActorId != workspace.OwnerId))) return Results.Forbid();
+            var authority = await AgentCredentialAuthority.CaptureAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false);
+            if (authority is null) return Results.Forbid();
+            var authorityHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(authority,
+                AgentWorkspaceJsonContext.Default.AgentCredentialSnapshot)));
+            var turnHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(origin,
+                AgentWorkspaceJsonContext.Default.AgentWorkspaceTurn)));
+            bindings[task.TaskId] = new(task.TaskId, task.Revision, task.ContentHash, 1, authorityHash, actor,
+                workspace.OwnerId == actor ? null : workspace.OwnerId, origin.TurnId, turnHash, authority);
+        }
+        var next = AgentWorkspaceState.Update(workspace with { DatasetImportTasks = tasks, DatasetImportTaskIntents = intents,
+            DatasetImportExecutionBindings = bindings },
             new(request.ViewId, request.ContextRevision, workspace.TargetId, current.SelectedResources,
                 new(task.TaskId, task.Revision, "dataset-import", ContentHash: task.ContentHash), "form"));
         if (!await store.SaveAsync(next).ConfigureAwait(false))

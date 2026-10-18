@@ -43,6 +43,7 @@ internal sealed record AgentWorkspaceDocument
     public Dictionary<string, AgentWorkspaceTurn> Turns { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, AgentWorkspaceCommand> Commands { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, AgentWorkflowAuthoringCommand> WorkflowAuthoringCommands { get; init; } = new(StringComparer.Ordinal);
+    public Dictionary<string, DatasetImportExecutionBinding> DatasetImportExecutionBindings { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, DatasetImportTask[]> DatasetImportTasks { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, DatasetImportTaskIntent> DatasetImportTaskIntents { get; init; } = new(StringComparer.Ordinal);
     public AgentWorkspaceMessage[] Messages { get; init; } = [];
@@ -83,6 +84,7 @@ internal sealed record AgentWorkspaceError(string Message);
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(AgentWorkspaceDocument))]
 [JsonSerializable(typeof(AgentWorkspaceTurn))]
+[JsonSerializable(typeof(Honua.Infrastructure.Authentication.AgentCredentialSnapshot))]
 [JsonSerializable(typeof(DatasetImportTask))]
 [JsonSerializable(typeof(CreateDatasetImportTask))]
 [JsonSerializable(typeof(string[]))]
