@@ -60,7 +60,7 @@ public static class SavedMapOperationIdempotency
                     }
 
                     firstProperty = false;
-                    buffer.Append(JsonSerializer.Serialize(property.Name));
+                    buffer.Append('"').Append(JsonEncodedText.Encode(property.Name).ToString()).Append('"');
                     buffer.Append(':');
                     WriteCanonical(buffer, property.Value);
                 }
