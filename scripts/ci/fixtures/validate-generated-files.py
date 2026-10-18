@@ -13,6 +13,22 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class GeneratedGraphFreshness(unittest.TestCase):
+    def test_graph_callers_declare_the_canonical_yaml_reader(self):
+        for path, name, command in (
+                ('.github/workflows/generated-files-on-trunk.yml', 'Regenerate repository projections',
+                 'bash scripts/ci/regenerate-generated-files.sh'),
+                ('.github/actions/lean-gate/action.yml', 'Regenerate projections and report advisory drift',
+                 'bash scripts/ci/regenerate-generated-files.sh'),
+                ('.github/workflows/ci.yml', 'Regenerate foundation projections and report advisory drift',
+                 'bash scripts/ci/regenerate-generated-files.sh'),
+                ('.github/workflows/pr-gate.yml', 'Validate CI router and single merge authority',
+                 'scripts/ci/validate-ci-router.sh')):
+            with self.subTest(caller=path):
+                source = (ROOT / path).read_text()
+                block = source.split('- name: ' + name, 1)[1].split('- name:', 1)[0]
+                self.assertLess(block.index('python3 -m pip install -r scripts/ci/okf-requirements.txt'),
+                                block.index(command))
+
     def test_graph_is_owned_without_including_authored_evidence(self):
         paths = subprocess.check_output(
             ['bash', '-c', 'source scripts/ci/generated-files.sh; printf "%s\\n" "${GENERATED_FILES[@]}"'],

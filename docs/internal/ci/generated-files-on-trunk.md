@@ -52,7 +52,10 @@ and validation stay intact.
 ## Execution and write contract
 
 The single allowlist is `scripts/ci/generated-files.sh`. Regeneration uses the
-existing emitters in dependency order. Like the existing trailing foundation
+existing emitters in dependency order. Generated-workflow, lean-gate,
+foundation and router call sites install the canonical YAML reader from
+`scripts/ci/okf-requirements.txt` before graph generation or its controls.
+Like the existing trailing foundation
 build, the trunk writer skips the duplicate analyzer pass with
 `/p:RunAnalyzers=false`; PR Gate still enforces analyzers and warnings-as-errors.
 Compiler errors, generator execution, and authored-input tests remain strict.
@@ -129,6 +132,7 @@ needed for that case, unlike the direct-push design it replaces.
 Run from an isolated worktree (the generators overwrite the seven projections):
 
 ```bash
+python3 -m pip install -r scripts/ci/okf-requirements.txt
 python3 scripts/ci/fixtures/validate-generated-files.py
 bash scripts/ci/validate-ci-router.sh
 UseSharedCompilation=true bash scripts/ci/regenerate-generated-files.sh --configuration Release /p:RunAnalyzers=false
