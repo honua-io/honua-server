@@ -6,6 +6,9 @@ using FluentAssertions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -15,6 +18,38 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [SecurityTest]
 public sealed class StoredApiKeyCredentialVersionTests
 {
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NonStoredOperator_RequiresActualHandlerSchemeAndFrameworkProvenance(bool developmentBypass)
+    {
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(new ApiKeyAuthenticationDependencies(Options.Create(new ApiKeyAuthenticationOptions
+        {
+            AdminPassword = "bootstrap-only-test-password", EnvironmentName = "Test", IsTestMode = true,
+            DevAuthBypass = developmentBypass ? "true" : "false", DevAuthBypassAcknowledged = "true",
+        })));
+        services.AddAuthentication(AuthenticationExtensions.ApiKeyScheme)
+            .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(AuthenticationExtensions.ApiKeyScheme, _ => { });
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        if (!developmentBypass) context.Request.Headers["X-API-Key"] = "bootstrap-only-test-password";
+        var authenticated = await context.AuthenticateAsync(AuthenticationExtensions.ApiKeyScheme);
+        authenticated.Succeeded.Should().BeTrue();
+        var principal = authenticated.Principal!;
+        ApiKeyAuthenticationHandler.IsTrustedNonStoredOperator(principal).Should().BeTrue();
+        StoredApiKeyCredentialVersion.GetStamped(principal).Should().BeNull();
+
+        var externalCopy = new ClaimsPrincipal(new ClaimsIdentity(
+            principal.Claims.Select(claim => new Claim(claim.Type, claim.Value)), AuthenticationExtensions.ApiKeyScheme));
+        ApiKeyAuthenticationHandler.IsTrustedNonStoredOperator(externalCopy).Should().BeFalse();
+        var wrongScheme = new ClaimsPrincipal(new ClaimsIdentity(principal.Claims, "Bearer"));
+        ApiKeyAuthenticationHandler.IsTrustedNonStoredOperator(wrongScheme).Should().BeFalse();
+        var ambiguous = new ClaimsPrincipal([(ClaimsIdentity)principal.Identity!, new ClaimsIdentity()]);
+        ApiKeyAuthenticationHandler.IsTrustedNonStoredOperator(ambiguous).Should().BeFalse();
+    }
+
     [UnitTest]
     public async Task ActualAuthentication_RotationChangesVersionWithoutChangingActorOrGrants()
     {
@@ -22,6 +57,7 @@ public sealed class StoredApiKeyCredentialVersionTests
         var created = await store.CreateAsync("agent", ["admin:read", "agent:workspace"],
             DateTimeOffset.UtcNow.AddMinutes(15), "test", default);
         var original = await AuthenticateAsync(store, created.Key);
+        ApiKeyAuthenticationHandler.IsTrustedNonStoredOperator(original).Should().BeFalse();
         var originalVersion = StoredApiKeyCredentialVersion.GetStamped(original);
         originalVersion.Should().Be(StoredApiKeyCredentialVersion.FromRecord(created.Record));
         originalVersion.Should().NotBe(Convert.ToHexStringLower(created.Record.KeyHash));

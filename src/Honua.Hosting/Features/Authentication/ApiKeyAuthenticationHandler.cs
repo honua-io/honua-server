@@ -435,6 +435,35 @@ internal sealed class ApiKeyAuthenticationHandler(
     }
 
     /// <summary>
+    /// Recognizes only this handler's bootstrap or test-bypass operator. These are
+    /// subject to their existing request policy, never stored-agent replay authority.
+    /// </summary>
+    internal static bool IsTrustedNonStoredOperator(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        var identities = principal.Identities.ToArray();
+        if (identities.Length != 1 || !identities[0].IsAuthenticated ||
+            identities[0].AuthenticationType != AuthenticationExtensions.ApiKeyScheme ||
+            principal.HasClaim(claim => string.Equals(claim.Type, "permission", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(claim.Type, "api_key_name", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(claim.Type, StoredApiKeyCredentialVersion.ClaimType, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        var kinds = principal.FindAll("auth_type").ToArray();
+        var ids = principal.FindAll("api_key_id").ToArray();
+        if (kinds.Length != 1 || ids.Length != 1 || !CanonicalSecurityActor.IsFrameworkOwnedClaim(kinds[0]) ||
+            !CanonicalSecurityActor.IsFrameworkOwnedClaim(ids[0]) || !Guid.TryParse(ids[0].Value, out var id))
+        {
+            return false;
+        }
+
+        return (kinds[0].Value == "admin" && id == BootstrapAdminActorId) ||
+            (kinds[0].Value == "dev-bypass" && id == DevelopmentBypassActorId);
+    }
+
+    /// <summary>
     /// Creates a successful authentication result with admin claims
     /// </summary>
     private static AuthenticateResult CreateSuccessfulAuthenticationResult(
