@@ -3,10 +3,12 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.WorkflowPackages;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.WorkflowPackages;
 
@@ -40,8 +42,11 @@ public sealed class WorkflowPackageOwnershipTests
     public async Task Service_StampsCanonicalActor_AndCannotLaunderMetadataIntoOwnership()
     {
         var store = new InMemoryWorkflowPackageStore();
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("trusted-tenant");
         var service = new WorkflowPackageService(store, null!, null!, TimeProvider.System,
-            NullLogger<WorkflowPackageService>.Instance);
+            NullLogger<WorkflowPackageService>.Instance,
+            authorSecurityContextCapturer: new WorkflowAuthorSecurityContextCapturer(tenantContext: tenant));
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.NameIdentifier, "subject", ClaimValueTypes.String, "trusted-issuer"),
              new Claim(ClaimTypes.Name, "display-name")], "authenticated-test"));
@@ -53,9 +58,20 @@ public sealed class WorkflowPackageOwnershipTests
         var saved = await service.SavePackageAsync(request, principal, CancellationToken.None);
         saved.Ownership.Should().NotBeNull();
         saved.Ownership!.OwnerActorId.Should().Be(CanonicalSecurityActor.Resolve(principal)!.ActorId);
-        saved.Ownership.TenantId.Should().BeNull();
+        saved.Ownership.TenantId.Should().Be("trusted-tenant");
         var other = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "other")], "authenticated-test"));
         var updated = await service.SavePackageAsync(request with { PackageId = saved.PackageId }, other, CancellationToken.None);
         updated.Ownership.Should().Be(saved.Ownership);
+    }
+
+    [Fact]
+    public void MissingTenantResolverOrUnstableActorCannotCreateTrustedOwnership()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "owner")], "Bearer"));
+        new WorkflowAuthorSecurityContextCapturer().CaptureOwnership(principal).Should().BeNull();
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("trusted-tenant");
+        var anonymous = new ClaimsPrincipal(new ClaimsIdentity());
+        new WorkflowAuthorSecurityContextCapturer(tenantContext: tenant).CaptureOwnership(anonymous).Should().BeNull();
     }
 }
