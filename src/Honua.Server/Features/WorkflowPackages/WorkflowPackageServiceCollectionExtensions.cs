@@ -37,9 +37,14 @@ internal static class WorkflowPackageServiceCollectionExtensions
         // source) is composed behind one collaborator so the publish service stays within its
         // dependency-fan-out budget. Wired here to mirror the previous inline capture exactly: the
         // membership source stays unbound in this path (as it was before), so behavior is unchanged.
+        services.AddHttpContextAccessor();
+        services.TryAddScoped<WorkflowPackageAuthorization>();
+        services.TryAddScoped<IWorkflowPackageAuthoring, WorkflowPackageAuthoring>();
+        services.TryAddScoped<IWorkflowPackageGovernance, WorkflowPackageGovernance>();
         services.TryAddScoped(sp => new WorkflowAuthorSecurityContextCapturer(
             sp.GetService<IOptions<RbacOptions>>(),
-            sp.GetService<ITenantContext>()));
+            sp.GetService<ITenantContext>(),
+            packageAuthorization: sp.GetRequiredService<WorkflowPackageAuthorization>()));
         services.TryAddScoped(sp => new WorkflowPackageService(
             sp.GetRequiredService<IWorkflowPackageStore>(),
             sp.GetRequiredService<IWorkflowNodeRegistry>(),

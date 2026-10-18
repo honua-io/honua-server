@@ -16,20 +16,94 @@ namespace Honua.Db.Postgres.Features.WorkflowPackages;
 /// versions, and publications are rows in the metadata schema, so a restart or a
 /// peer replica sees the same records.
 /// </summary>
-internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
+internal sealed partial class PostgresWorkflowPackageStore : IWorkflowPackageStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _packagesTable;
     private readonly string _versionsTable;
     private readonly string _publicationsTable;
 
-    public PostgresWorkflowPackageStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
+    public PostgresWorkflowPackageStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null,
+        Func<NpgsqlTransaction, CancellationToken, Task>? publicationCommit = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         _connectionProvider = connectionProvider;
+        _publicationCommit = publicationCommit;
         _packagesTable = SchemaSearchPath.QualifyTable("workflow_packages", schemaName);
         _versionsTable = SchemaSearchPath.QualifyTable("workflow_package_versions", schemaName);
         _publicationsTable = SchemaSearchPath.QualifyTable("workflow_publications", schemaName);
+    }
+
+    public async Task<WorkflowPackageVersion> CreateInitialVersionOnceAsync(WorkflowPackage package,
+        WorkflowPackageValidationResult validation, CancellationToken cancellationToken = default)
+    {
+        if (_publicationConnection is not null) throw new InvalidOperationException("Version creation is separate from publication governance.");
+        ArgumentNullException.ThrowIfNull(package);
+        ArgumentNullException.ThrowIfNull(validation);
+        var hash = WorkflowPackageGraphHasher.Compute(package.Graph);
+        if (!validation.IsValid || validation.PackageHash != hash)
+            throw new WorkflowPackageGraphConflictException(package.PackageId);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        int inserted;
+        await using (var create = new NpgsqlCommand($"""
+            INSERT INTO {_packagesTable} (
+                package_id, name, description, namespace, graph_json, latest_version,
+                created_at, updated_at, created_by, updated_by, metadata_json, owner_actor_id, owner_tenant_id)
+            VALUES (@package_id, @name, @description, @namespace, @graph_json::jsonb, 1,
+                @created_at, @updated_at, @created_by, @updated_by, @metadata_json::jsonb, @owner_actor_id, @owner_tenant_id)
+            ON CONFLICT (package_id) DO NOTHING
+            """, connection, transaction))
+        {
+            BindPackage(create, package);
+            inserted = await create.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        // Both concurrent/resumed commands serialize on the same package row. Insertion and
+        // immutable version1 share this transaction: there is no externally editable draft gap.
+        await using (var rowLock = new NpgsqlCommand($"SELECT package_id FROM {_packagesTable} WHERE package_id = @package_id FOR UPDATE", connection, transaction))
+        {
+            rowLock.Parameters.AddWithValue("package_id", package.PackageId);
+            await rowLock.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        }
+        WorkflowPackageVersion? existing = null;
+        await using (var read = new NpgsqlCommand(VersionSelect() + " WHERE package_id = @package_id AND version = 1", connection, transaction))
+        {
+            read.Parameters.AddWithValue("package_id", package.PackageId);
+            await using var reader = await read.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) existing = ReadVersion(reader);
+        }
+        if (existing is not null)
+        {
+            WorkflowPackageContent.RequireInitialVersion(package, existing);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            return existing;
+        }
+        if (inserted != 1) throw new WorkflowPackageGraphConflictException(package.PackageId);
+        WorkflowPackageVersion created;
+        await using (var insert = new NpgsqlCommand($"""
+            INSERT INTO {_versionsTable} (
+                package_id, version, schema_version, package_hash, graph_json, validation_json, created_at, created_by, owner_actor_id, owner_tenant_id)
+            VALUES (@package_id, 1, @schema_version, @package_hash, @graph_json::jsonb, @validation_json::jsonb,
+                @created_at, @created_by, @owner_actor_id, @owner_tenant_id)
+            RETURNING package_id, version, schema_version, package_hash, graph_json::text, validation_json::text,
+                created_at, created_by, owner_actor_id, owner_tenant_id
+            """, connection, transaction))
+        {
+            insert.Parameters.AddWithValue("package_id", package.PackageId);
+            insert.Parameters.AddWithValue("schema_version", package.Graph.SchemaVersion);
+            insert.Parameters.AddWithValue("package_hash", hash);
+            insert.Parameters.Add(JsonParameter("graph_json", JsonSerializer.Serialize(package.Graph, WorkflowPackageStoreJsonContext.Default.WorkflowGraph)));
+            insert.Parameters.Add(JsonParameter("validation_json", JsonSerializer.Serialize(validation, WorkflowPackageStoreJsonContext.Default.WorkflowPackageValidationResult)));
+            insert.Parameters.AddWithValue("created_at", package.CreatedAt);
+            insert.Parameters.AddWithValue("created_by", (object?)package.CreatedBy ?? DBNull.Value);
+            BindOwnership(insert, package.Ownership);
+            await using var reader = await insert.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) throw new InvalidOperationException("Initial workflow version was not persisted.");
+            created = ReadVersion(reader);
+        }
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        return created;
     }
 
     public async Task<IReadOnlyList<WorkflowPackage>> ListPackagesAsync(CancellationToken cancellationToken = default)
@@ -40,8 +114,9 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
             FROM {_packagesTable}
             ORDER BY name, package_id
             """;
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
+        await using var command = new NpgsqlCommand(sql, connection, _publicationTransaction);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         var packages = new List<WorkflowPackage>();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -61,8 +136,9 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
             FROM {_packagesTable}
             WHERE package_id = @package_id
             """;
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
+        await using var command = new NpgsqlCommand(sql, connection, _publicationTransaction);
         command.Parameters.AddWithValue("package_id", packageId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadPackage(reader) : null;
@@ -92,8 +168,9 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
             RETURNING package_id, name, description, namespace, graph_json::text, latest_version,
                       created_at, updated_at, created_by, updated_by, metadata_json::text, owner_actor_id, owner_tenant_id
             """;
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
+        await using var command = new NpgsqlCommand(sql, connection, _publicationTransaction);
         BindPackage(command, package);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -112,12 +189,14 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
         string? createdBy,
         CancellationToken cancellationToken = default)
     {
+        if (_publicationConnection is not null) throw new InvalidOperationException("Version creation is separate from publication governance.");
         ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
         ArgumentException.ThrowIfNullOrWhiteSpace(packageHash);
         ArgumentNullException.ThrowIfNull(validatedGraph);
         ArgumentNullException.ThrowIfNull(validation);
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         WorkflowGraph lockedGraph;
         WorkflowPackageOwnership? lockedOwnership;
@@ -217,8 +296,9 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
         var sql = VersionSelect() + " WHERE package_id = @package_id AND version = @version";
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
+        await using var command = new NpgsqlCommand(sql, connection, _publicationTransaction);
         command.Parameters.AddWithValue("package_id", packageId);
         command.Parameters.AddWithValue("version", version);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -231,8 +311,9 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
         var sql = VersionSelect() + " WHERE package_id = @package_id ORDER BY version DESC";
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
+        await using var command = new NpgsqlCommand(sql, connection, _publicationTransaction);
         command.Parameters.AddWithValue("package_id", packageId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         var versions = new List<WorkflowPackageVersion>();
@@ -248,6 +329,8 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
         WorkflowPublication publication,
         CancellationToken cancellationToken = default)
     {
+        if (_publicationConnection is null) return await ExecuteSerializedPublicationMutationAsync((locked, token) => locked.SavePublicationAsync(publication, token),
+            static (_, _, _) => Task.CompletedTask, cancellationToken).ConfigureAwait(false);
         ArgumentNullException.ThrowIfNull(publication);
         var sql = $"""
             INSERT INTO {_publicationsTable} (
@@ -261,8 +344,9 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
                       schedule_json::text, workflow_definition_id, endpoint_path, eligibility_json::text,
                       created_at, created_by, provenance_json::text
             """;
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
+        await using var command = new NpgsqlCommand(sql, connection, _publicationTransaction);
         BindPublication(command, publication);
         try
         {
@@ -286,8 +370,9 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
         var sql = PublicationSelect() + " WHERE publication_id = @publication_id";
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
+        await using var command = new NpgsqlCommand(sql, connection, _publicationTransaction);
         command.Parameters.AddWithValue("publication_id", publicationId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadPublication(reader) : null;
@@ -304,8 +389,9 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
         }
 
         sql += " ORDER BY created_at DESC, publication_id";
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
+        await using var command = new NpgsqlCommand(sql, connection, _publicationTransaction);
         if (!string.IsNullOrWhiteSpace(packageId))
         {
             command.Parameters.AddWithValue("package_id", packageId);
@@ -325,11 +411,14 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
         string publicationId,
         CancellationToken cancellationToken = default)
     {
+        if (_publicationConnection is null) return await ExecuteSerializedPublicationMutationAsync((locked, token) => locked.DeletePublicationAsync(publicationId, token),
+            static (_, _, _) => Task.CompletedTask, cancellationToken).ConfigureAwait(false);
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
         var sql = "DELETE FROM " + _publicationsTable + " WHERE publication_id = @publication_id RETURNING "
             + PublicationColumns();
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
+        await using var command = new NpgsqlCommand(sql, connection, _publicationTransaction);
         command.Parameters.AddWithValue("publication_id", publicationId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadPublication(reader) : null;
@@ -340,6 +429,8 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
         WorkflowPublicationStatus status,
         CancellationToken cancellationToken = default)
     {
+        if (_publicationConnection is null) return await ExecuteSerializedPublicationMutationAsync((locked, token) => locked.SetPublicationStatusAsync(publicationId, status, token),
+            static (_, _, _) => Task.CompletedTask, cancellationToken).ConfigureAwait(false);
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
         var sql = $"""
             UPDATE {_publicationsTable}
@@ -347,8 +438,9 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
             WHERE publication_id = @publication_id
             RETURNING {PublicationColumns()}
             """;
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
+        await using var command = new NpgsqlCommand(sql, connection, _publicationTransaction);
         command.Parameters.AddWithValue("publication_id", publicationId);
         command.Parameters.AddWithValue("status", status.ToString());
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -361,6 +453,8 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
         string replacementDefinitionId,
         CancellationToken cancellationToken = default)
     {
+        if (_publicationConnection is null) return await ExecuteSerializedPublicationMutationAsync((locked, token) => locked.TryReplaceWorkflowDefinitionIdAsync(publicationId, expectedDefinitionId, replacementDefinitionId, token),
+            static (_, _, _) => Task.CompletedTask, cancellationToken).ConfigureAwait(false);
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedDefinitionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(replacementDefinitionId);
@@ -370,8 +464,9 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
             WHERE publication_id = @publication_id
               AND workflow_definition_id = @expected_definition_id
             """;
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var connectionLease = await OpenWorkflowConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionLease.Connection;
+        await using var command = new NpgsqlCommand(sql, connection, _publicationTransaction);
         command.Parameters.AddWithValue("publication_id", publicationId);
         command.Parameters.AddWithValue("expected_definition_id", expectedDefinitionId);
         command.Parameters.AddWithValue("replacement_definition_id", replacementDefinitionId);

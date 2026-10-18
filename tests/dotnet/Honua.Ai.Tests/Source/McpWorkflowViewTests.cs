@@ -66,6 +66,17 @@ public sealed class McpWorkflowViewTests
     }
 
     [UnitTest]
+    public async Task BuiltInWorkflowAuthoringAndApproval_AreDiscoverableInDistinctVersionedStages()
+    {
+        var view = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
+        view.Names.Should().Contain("honua_workflow_package").And.Contain("honua_workflow_package_propose");
+        StageOf(view, "compose").Should().Contain("honua_workflow_package").And.NotContain("honua_workflow_package_propose");
+        StageOf(view, "publication").Should().Contain("honua_workflow_package_propose");
+        McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v4");
+        McpWorkflowViewCatalog.Configure.Revision.Should().Be("configure.v2");
+    }
+
+    [UnitTest]
     public async Task SetupView_EligibleLifecycleOperationAddedAndRemoved_RefreshesMembership()
     {
         McpDataAccessSurface Surface(params IMcpToolSource[] sources) => new(
@@ -180,6 +191,7 @@ public sealed class McpWorkflowViewTests
             "honua_studio_preview_draft",
             "honua_studio_save_version",
             "honua_studio_get_version",
+            "honua_workflow_package",
             "honua_studio_reopen_version",
             "honua_studio_add_layer",
             "honua_studio_remove_layer",
@@ -193,6 +205,7 @@ public sealed class McpWorkflowViewTests
             "honua_studio_add_control",
             "honua_studio_remove_control",
             "honua_studio_propose_publication",
+            "honua_workflow_package_propose",
             "honua_supported_operation_kinds",
         ]);
         view.Names.Should().HaveCount(39);
@@ -283,6 +296,14 @@ public sealed class McpWorkflowViewTests
             studio.GetProperty("revision").GetString().Should().Be(McpWorkflowViewCatalog.Setup.Revision);
             McpWorkflowViewCatalog.Setup.FindStageIndex(name).Should().Be(
                 McpWorkflowViewCatalog.Setup.Stages.ToList().FindIndex(stage => stage.Id == "compose"));
+        }
+
+        foreach (var name in new[] { "honua_workflow_package", "honua_workflow_package_propose" })
+        {
+            var descriptor = full.Tools.Single(t => t.GetProperty("name").GetString() == name);
+            descriptor.GetProperty("_meta").GetProperty("honua.studio").GetProperty("family").GetString()
+                .Should().Be("honua.workspace.canonical", "native discovery must retain canonical workflow authoring and governance tools");
+            descriptor.GetRawText().Should().Be(view.Tools.Single(t => t.GetProperty("name").GetString() == name).GetRawText());
         }
 
         fullStudio.GetProperty("annotations").ValueKind.Should().Be(JsonValueKind.Object);

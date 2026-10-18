@@ -125,6 +125,8 @@ internal static class OperationsServiceCollectionExtensions
 
         services.TryAddDeferredOperationExecutor<SharedStyleEditExecutor>(SharedStyleEditOperation.OperationId);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, SharedStyleEditApprovalMapper>());
+        services.TryAddDeferredOperationExecutor<WorkflowPackageGovernanceExecutor>(WorkflowPackageGovernanceOperation.OperationId);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, WorkflowPackageGovernanceApprovalMapper>());
         services.TryAddDeferredOperationExecutor<StylePresetExecutor>(StylePresetOperation.OperationId);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, StylePresetApprovalMapper>());
 

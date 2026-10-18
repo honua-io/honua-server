@@ -46,8 +46,15 @@ public sealed class LocalProcessWorkspaceHttpIntegrationTests(RedisFixture redis
         string projectId = new('a', 32), digest = new('b', 64), snapshotId = new('c', 32), runId = new('d', 32);
         var snapshot = new LocalProcessSnapshot(projectId, snapshotId, digest, "sha256:test-runtime", 1);
         var file = new LocalProcessSourceFile("process.py", "print('fixture')", digest);
-        var run = new LocalProcessRun { ProjectId = projectId, SnapshotId = snapshotId, SnapshotDigest = digest,
-            RunId = runId, Status = "succeeded", Image = snapshot.Image };
+        var run = new LocalProcessRun
+        {
+            ProjectId = projectId,
+            SnapshotId = snapshotId,
+            SnapshotDigest = digest,
+            RunId = runId,
+            Status = "succeeded",
+            Image = snapshot.Image
+        };
         static LocalProcessProjectBinding Binding(LocalProcessWorkspaceAccess access) => new(access.OwnerActorId, access.TenantId, access.TargetId, access.WorkspaceId);
         gateway.GetIdentityAsync(Arg.Any<LocalProcessWorkspaceAccess>(), Arg.Any<CancellationToken>())
             .Returns(call => new LocalProcessProjectIdentity(projectId, 1, digest, snapshot.Image, Binding(call.Arg<LocalProcessWorkspaceAccess>())));

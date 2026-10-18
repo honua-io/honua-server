@@ -169,6 +169,28 @@ An applied style with no style layers draws nothing for that layer. The caption 
 
 The `honua_studio_*` tools compose the same server-resident draft the Studio UI observes: create, read and update a draft; add and remove layers, widgets, controls and interaction bindings; set styles, visibility and the view; validate and preview; save an immutable version; reopen a version as a new draft; and propose a saved version for governed publication. The tool table is in [Studio MCP tools](../../studio/mcp-tools.md).
 
+For built-in process graphs, `honua_workflow_package` supports `list`, `read`
+(with `packageId` and immutable `version`), and `create` (with `commandId`, `name` and `graph`).
+Every call requires `workspaceId` and `turnId`; the server rechecks the actual
+agent key against the frozen turn and derives ownership from the persisted
+workspace owner. Native workspace headers must match these explicit locators.
+Each new command produces a new package and validated immutable version. Retry
+the same command ID and exact name/graph after a lost response to reconcile
+its existing immutable version; reusing that ID with changed input is refused.
+This keeps previous Studio process references stable. The result's `version` contains the
+package ID, version number and package hash. Validation does not establish that
+the workflow has executed successfully. Publication, schedules and execution
+are separate governed actions.
+
+`honua_workflow_package_propose` proposes publication, deletion or status changes
+for that exact version through the canonical human approval inbox. The agent
+cannot approve its own proposal, including when its scoped key carries an admin
+role. Studio attaches the immutable reference as
+`{kind: "workflow-package", id: packageId, revision: version, contentHash: packageHash}`
+and reads the stored version before accepting it. These workspace tools require
+the corresponding preview server build; older published images do not acquire
+them through client configuration alone.
+
 Two rules matter when driving them:
 
 - **Draft mutations that accept `generation` are generation-checked.** Pass the latest generation returned by a successful draft read or mutation. A stale value returns `failed_precondition` with the current generation; fetch the draft again and reconcile rather than resubmitting blindly. `honua_studio_validate_draft` and `honua_studio_preview_draft` are read-only and never advance the generation, so calling them between mutations is safe.
@@ -227,7 +249,7 @@ The curated prompts select `configure` or `analyze`, not `setup`. Each view is b
 | `configure` | The closed admin roster (server status, API-key reads, connection create and test, import from URL, layer publish, access policy), inline ingest, service publish, layer reads, style and render, and the Studio composition, save, get-version, and publication tools. |
 | `operate` | Health, findings, events, alerts, platform-release status, deploy operations, and `honua_propose_finding`. |
 | `analyze` | Grounding, geocoding, layer reads, and the plan / validate / execute / job tools. A published-layer buffer is process `analytics.buffer-aggregate` (`layerId`). `geometry.buffer` accepts one WKB and does not read a published layer. |
-| `setup` | The bounded terminal path (`setup.v3`): readiness, ingest, publish, verify, style and render, bounded GP, Studio composition and lifecycle (including `honua_studio_get_version`), and publication submit. `honua_studio_propose_publication` stays in the publication stage. Curated prompts select `configure` or `analyze` instead, because those views also carry the admin roster or the analysis path. |
+| `setup` | The bounded terminal path (`setup.v4`): readiness, ingest, publish, verify, style and render, bounded GP, Studio composition and lifecycle (including `honua_studio_get_version`), and publication submit. `honua_studio_propose_publication` stays in the publication stage. Curated prompts select `configure` or `analyze` instead, because those views also carry the admin roster or the analysis path. |
 | `default` | The 12-tool discovery surface. It does not contain the admin roster. |
 
 A view is **discovery, not authority**:

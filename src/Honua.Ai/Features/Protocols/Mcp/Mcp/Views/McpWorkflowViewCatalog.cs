@@ -102,7 +102,7 @@ internal static class McpWorkflowViewCatalog
             + "layer, verify access, apply canonical style and render, run bounded geoprocessing, compose and save "
             + "Studio maps/dashboards, then submit a publication and poll its status. Select this view to receive "
             + "only the descriptors that path needs; the full paginated catalog is an explicit escape hatch.",
-        Revision = "setup.v3",
+        Revision = "setup.v4",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -197,6 +197,7 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_studio_preview_draft"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_save_version"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_get_version"),
+                    McpWorkflowViewMemberRule.Exact("honua_workflow_package"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_reopen_version"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_add_layer"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_remove_layer"),
@@ -214,7 +215,8 @@ internal static class McpWorkflowViewCatalog
 
                 // Publication submit belongs to the publication stage below even
                 // though it shares the studio_ family prefix.
-                Exclusions = [McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication")],
+                Exclusions = [McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication"),
+                    McpWorkflowViewMemberRule.Exact("honua_workflow_package_propose")],
             },
             new McpWorkflowViewStageDefinition
             {
@@ -226,6 +228,7 @@ internal static class McpWorkflowViewCatalog
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication"),
+                    McpWorkflowViewMemberRule.Exact("honua_workflow_package_propose"),
                     McpWorkflowViewMemberRule.Exact("honua_supported_operation_kinds"),
                 ],
             },
@@ -243,7 +246,7 @@ internal static class McpWorkflowViewCatalog
         Description =
             "The bounded path an admin uses to connect or ingest data, publish a layer, set access, "
             + "style and render a map, then compose, save, read, and propose a Studio map, app, or dashboard.",
-        Revision = "configure.v1",
+        Revision = "configure.v2",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -322,8 +325,10 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_studio_preview_draft"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_save_version"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_get_version"),
+                    McpWorkflowViewMemberRule.Exact("honua_workflow_package"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_reopen_version"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication"),
+                    McpWorkflowViewMemberRule.Exact("honua_workflow_package_propose"),
                 ],
             },
             new McpWorkflowViewStageDefinition

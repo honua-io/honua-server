@@ -22,6 +22,11 @@ internal sealed record AgentWorkspaceDraft(
 internal sealed record AgentWorkspaceCommand(
     string CommandId, string ActorId, string DraftId, long DraftRevision, string IdempotencyKey,
     string OperationInstanceId, Dictionary<string, string> Fields, DateTimeOffset RetryBefore);
+internal sealed record AgentWorkflowAuthoringCommand(
+    string CommandId, string ActorId, string WorkspaceId, string TurnId, string RequestFingerprint,
+    string PackageId, int ExpectedVersion, string PackageHash, string OwnerActorId, string TenantId,
+    string TargetId, string ReleaseId, string? CapturedViewId = null, long? CapturedContextRevision = null,
+    string AttachmentState = "Pending", long? AttachedRevision = null);
 internal sealed record AgentWorkspaceDocument
 {
     public required string WorkspaceId { get; init; }
@@ -34,6 +39,7 @@ internal sealed record AgentWorkspaceDocument
     public Dictionary<string, AgentWorkspaceDraft> Drafts { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, AgentWorkspaceTurn> Turns { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, AgentWorkspaceCommand> Commands { get; init; } = new(StringComparer.Ordinal);
+    public Dictionary<string, AgentWorkflowAuthoringCommand> WorkflowAuthoringCommands { get; init; } = new(StringComparer.Ordinal);
     public AgentWorkspaceMessage[] Messages { get; init; } = [];
     public AgentTaskReference? Task { get; init; }
 }

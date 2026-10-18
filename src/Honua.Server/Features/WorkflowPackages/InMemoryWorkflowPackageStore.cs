@@ -24,6 +24,99 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
     private readonly ConcurrentDictionary<string, List<WorkflowPackageVersion>> _versions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, WorkflowPublication> _publications = new(StringComparer.Ordinal);
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _publicationGate = new(1, 1);
+    private readonly bool _ownsPublicationLock;
+    private readonly PublicationLockOwner? _publicationOwner;
+
+    public InMemoryWorkflowPackageStore() { }
+    private InMemoryWorkflowPackageStore(InMemoryWorkflowPackageStore owner)
+    {
+        _packages = owner._packages; _versions = owner._versions; _publications = owner._publications;
+        _gate = owner._gate; _publicationGate = owner._publicationGate; _ownsPublicationLock = true; _publicationOwner = new();
+    }
+
+    public async Task<TResult> ExecuteSerializedPublicationMutationAsync<TResult>(
+        Func<IWorkflowPackageStore, CancellationToken, Task<TResult>> mutation,
+        Func<IWorkflowPackageStore, Exception, CancellationToken, Task> reconcile,
+        CancellationToken cancellationToken = default)
+        => await ExecuteSerializedPublicationMutationAsync(mutation, reconcile, null, cancellationToken).ConfigureAwait(false);
+
+    public async Task<TResult> ExecuteSerializedPublicationMutationAsync<TResult>(
+        Func<IWorkflowPackageStore, CancellationToken, Task<TResult>> mutation,
+        Func<IWorkflowPackageStore, Exception, CancellationToken, Task> reconcile,
+        Func<IWorkflowPackageStore, CancellationToken, Task>? afterCommit,
+        CancellationToken cancellationToken = default)
+    {
+        if (_ownsPublicationLock)
+        {
+            _publicationOwner!.RequireActive();
+            if (afterCommit is not null) throw new InvalidOperationException("Post-commit activation belongs to the outer publication transaction.");
+            return await mutation(this, cancellationToken).ConfigureAwait(false);
+        }
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        bounded.CancelAfter(TimeSpan.FromSeconds(60));
+        await _publicationGate.WaitAsync(bounded.Token).ConfigureAwait(false);
+        var locked = new InMemoryWorkflowPackageStore(this);
+        try
+        {
+            var result = await mutation(locked, bounded.Token).ConfigureAwait(false);
+            if (afterCommit is not null) await afterCommit(locked, bounded.Token).ConfigureAwait(false);
+            return result;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            using var recovery = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await reconcile(locked, exception, recovery.Token).ConfigureAwait(false);
+            throw;
+        }
+        finally { locked._publicationOwner!.Active = false; _publicationGate.Release(); }
+    }
+
+
+    private sealed class PublicationLockOwner
+    {
+        public bool Active { get; set; } = true;
+        public void RequireActive()
+        {
+            if (!Active) throw new InvalidOperationException("The publication mutation callback has ended.");
+        }
+    }
+
+    public Task<WorkflowPackageVersion> CreateInitialVersionOnceAsync(WorkflowPackage package,
+        WorkflowPackageValidationResult validation, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(package);
+        ArgumentNullException.ThrowIfNull(validation);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            var hash = WorkflowPackageGraphHasher.Compute(package.Graph);
+            if (!validation.IsValid || validation.PackageHash != hash)
+                throw new WorkflowPackageGraphConflictException(package.PackageId);
+            var existing = _versions.GetValueOrDefault(package.PackageId)?.SingleOrDefault(version => version.Version == 1);
+            if (existing is not null)
+            {
+                WorkflowPackageContent.RequireInitialVersion(package, existing);
+                return Task.FromResult(existing);
+            }
+            if (_packages.ContainsKey(package.PackageId)) throw new WorkflowPackageGraphConflictException(package.PackageId);
+            var created = new WorkflowPackageVersion
+            {
+                PackageId = package.PackageId,
+                Version = 1,
+                PackageHash = hash,
+                Graph = package.Graph,
+                SchemaVersion = package.Graph.SchemaVersion,
+                Validation = validation,
+                Ownership = package.Ownership,
+                CreatedBy = package.CreatedBy,
+                CreatedAt = package.CreatedAt,
+            };
+            _packages[package.PackageId] = package with { LatestVersion = 1 };
+            _versions[package.PackageId] = [created];
+            return Task.FromResult(created);
+        }
+    }
 
     public Task<IReadOnlyList<WorkflowPackage>> ListPackagesAsync(CancellationToken cancellationToken = default)
     {
@@ -162,6 +255,9 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
         WorkflowPublication publication,
         CancellationToken cancellationToken = default)
     {
+        _publicationOwner?.RequireActive();
+        if (!_ownsPublicationLock) return ExecuteSerializedPublicationMutationAsync((locked, token) => locked.SavePublicationAsync(publication, token),
+            static (_, _, _) => Task.CompletedTask, cancellationToken);
         ArgumentNullException.ThrowIfNull(publication);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -203,6 +299,9 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
         string publicationId,
         CancellationToken cancellationToken = default)
     {
+        _publicationOwner?.RequireActive();
+        if (!_ownsPublicationLock) return ExecuteSerializedPublicationMutationAsync((locked, token) => locked.DeletePublicationAsync(publicationId, token),
+            static (_, _, _) => Task.CompletedTask, cancellationToken);
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
         cancellationToken.ThrowIfCancellationRequested();
         _publications.TryRemove(publicationId, out var publication);
@@ -214,6 +313,9 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
         WorkflowPublicationStatus status,
         CancellationToken cancellationToken = default)
     {
+        _publicationOwner?.RequireActive();
+        if (!_ownsPublicationLock) return ExecuteSerializedPublicationMutationAsync((locked, token) => locked.SetPublicationStatusAsync(publicationId, status, token),
+            static (_, _, _) => Task.CompletedTask, cancellationToken);
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -236,6 +338,9 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
         string replacementDefinitionId,
         CancellationToken cancellationToken = default)
     {
+        _publicationOwner?.RequireActive();
+        if (!_ownsPublicationLock) return ExecuteSerializedPublicationMutationAsync((locked, token) => locked.TryReplaceWorkflowDefinitionIdAsync(publicationId, expectedDefinitionId, replacementDefinitionId, token),
+            static (_, _, _) => Task.CompletedTask, cancellationToken);
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedDefinitionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(replacementDefinitionId);

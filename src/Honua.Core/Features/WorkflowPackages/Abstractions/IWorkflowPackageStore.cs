@@ -11,6 +11,36 @@ namespace Honua.Core.Features.WorkflowPackages.Abstractions;
 public interface IWorkflowPackageStore
 {
     /// <summary>
+    /// Serializes low-frequency publication catalog and scheduler changes across store instances.
+    /// The callback receives a private lock-owning store; reentry uses that instance only.
+    /// On failure, recovery reads committed catalog state under the same serialization before returning an error.
+    /// </summary>
+    Task<TResult> ExecuteSerializedPublicationMutationAsync<TResult>(
+        Func<IWorkflowPackageStore, CancellationToken, Task<TResult>> mutation,
+        Func<IWorkflowPackageStore, Exception, CancellationToken, Task> reconcile,
+        CancellationToken cancellationToken = default)
+        => ExecuteSerializedPublicationMutationAsync(mutation, reconcile, null, cancellationToken);
+
+    /// <summary>
+    /// Runs a scheduler activation phase only after catalog commit, while retaining the same
+    /// serialization. Enabled triggers must remain dormant until this callback.
+    /// </summary>
+    Task<TResult> ExecuteSerializedPublicationMutationAsync<TResult>(
+        Func<IWorkflowPackageStore, CancellationToken, Task<TResult>> mutation,
+        Func<IWorkflowPackageStore, Exception, CancellationToken, Task> reconcile,
+        Func<IWorkflowPackageStore, CancellationToken, Task>? afterCommit,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Serialized workflow publication governance is unavailable.");
+
+    /// <summary>
+    /// Atomically creates a new draft and immutable version1, or reconciles that exact
+    /// initial version. Never upserts an existing draft or appends another version.
+    /// </summary>
+    Task<WorkflowPackageVersion> CreateInitialVersionOnceAsync(WorkflowPackage package,
+        WorkflowPackageValidationResult validation, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Atomic immutable workflow creation is unavailable.");
+
+    /// <summary>
     /// Lists package drafts.
     /// </summary>
     Task<IReadOnlyList<WorkflowPackage>> ListPackagesAsync(CancellationToken cancellationToken = default);

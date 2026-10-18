@@ -8,6 +8,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
+using Honua.Geoprocessing;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.WorkflowPackages;
@@ -24,8 +25,23 @@ namespace Honua.Server.Features.WorkflowPackages;
 internal sealed class WorkflowAuthorSecurityContextCapturer(
     IOptions<RbacOptions>? rbacOptions = null,
     ITenantContext? tenantContext = null,
-    IPrincipalMembershipSource? principalMembershipSource = null)
+    IPrincipalMembershipSource? principalMembershipSource = null,
+    WorkflowPackageAuthorization? packageAuthorization = null,
+    WorkflowPackageApprovedReplay? approvedReplay = null)
 {
+    internal WorkflowPackageApprovedReplay? ApprovedReplay => approvedReplay;
+
+    /// <summary>Resolves resource access without letting missing policy widen a delegated agent's authority.</summary>
+    public async Task<WorkflowPackageAccess?> ResolvePackageAccessAsync(
+        ClaimsPrincipal? principal, CancellationToken cancellationToken, bool write = false, string? workspaceId = null, string? turnId = null)
+    {
+        if (packageAuthorization is not null)
+            return await packageAuthorization.ResolveAsync(principal, cancellationToken, workspaceId, turnId, write: write).ConfigureAwait(false);
+        if (principal?.HasClaim("permission", "agent:workspace") == true)
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        return null;
+    }
+
     /// <summary>Captures immutable package ownership from the authenticated actor and trusted tenant context.</summary>
     public WorkflowPackageOwnership? CaptureOwnership(ClaimsPrincipal principal)
         => CanonicalSecurityActor.Resolve(principal) is { IsDurablyRevalidatable: true } actor && tenantContext is not null
@@ -44,6 +60,12 @@ internal sealed class WorkflowAuthorSecurityContextCapturer(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
+        if (approvedReplay is not null)
+        {
+            if (CanonicalSecurityActor.Resolve(principal)?.ActorId != approvedReplay.Payload.ActorId)
+                throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+            return approvedReplay.Payload.AuthorSecurityContext;
+        }
         var membershipManaged = await JobSecurityContextCapture
             .IsManagedMembershipAsync(principal, principalMembershipSource, cancellationToken)
             .ConfigureAwait(false);

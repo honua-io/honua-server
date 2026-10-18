@@ -98,6 +98,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_list_capabilities",
         "honua_studio_save_version",
         "honua_studio_get_version",
+        "honua_workflow_package",
+        "honua_workflow_package_propose",
         "honua_studio_reopen_version",
         "honua_studio_create_draft",
         "honua_studio_get_draft",
@@ -459,6 +461,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             // drops composed chrome (and, when cascading, its bindings), so it is destructive.
             ["honua_studio_add_control"] = (Destructive: false, Idempotent: true),
             ["honua_studio_remove_control"] = (Destructive: true, Idempotent: false),
+            ["honua_workflow_package"] = (Destructive: false, Idempotent: true),
+            ["honua_workflow_package_propose"] = (Destructive: true, Idempotent: true),
             ["honua_studio_propose_publication"] = (Destructive: false, Idempotent: true),
         };
 
