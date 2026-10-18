@@ -83,8 +83,8 @@ export async function openInspectorPublicUi({ inspectorEntry, chromium, endpoint
     };
     const connect = page.getByRole('switch', { name: /^Connect or disconnect/ });
     await setChecked(connect, true);
-    const tools = page.getByRole('tab', { name: /^Tools/ });
-    if (await tools.count()) await tools.click();
+    const tools = page.getByRole('radio', { name: 'Tools', exact: true });
+    await setChecked(tools, true);
     stage = 'public tool selection';
     await page.getByText(toolLabel, { exact: true }).first().click();
     stage = 'public argument editor';
