@@ -279,8 +279,10 @@ jobs:
 
       - name: Stage current-run envelopes
         shell: bash
+        env:
+          EXPECTED_LANES: ${{ join(fromJSON(needs.prepare.outputs.lanes), ',') }}
         run: |
-          scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output
+          scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output "$EXPECTED_LANES"
           python3 scripts/client-compat/validate-envelope-source.py docker/client-compat/output "${{ github.sha }}"
 
       - name: Compare against baselines and refresh gap report
