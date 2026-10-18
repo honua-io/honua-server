@@ -23,6 +23,37 @@ internal sealed partial class RedisExecutionJobStore(
     private const int MaxQueryLimit = 200;
     private const int QueryBatchSize = 256;
 
+    // Acceptance and recovery discovery are one Redis operation. A process loss after
+    // this commit can leave delivery pending, but cannot hide the job from the sweep.
+    // Check key types before writing: Lua runtime errors do not roll back earlier writes.
+    private const string CreateWithIndexesScript = """
+        if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+        if ARGV[4] == '1' then
+            for i = 2, 3 do
+                local kind = redis.call('TYPE', KEYS[i]).ok
+                if kind ~= 'none' and kind ~= 'set' then
+                    return redis.error_reply('WRONGTYPE execution job active index is not a set')
+                end
+            end
+        end
+        for i = 4, #KEYS do
+            local kind = redis.call('TYPE', KEYS[i]).ok
+            if kind ~= 'none' and kind ~= 'zset' then
+                return redis.error_reply('WRONGTYPE execution job query index is not a sorted set')
+            end
+        end
+        redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+        if ARGV[4] == '1' then
+            redis.call('SADD', KEYS[2], ARGV[3])
+            redis.call('SADD', KEYS[3], ARGV[3])
+        end
+        for i = 4, #KEYS do
+            redis.call('ZADD', KEYS[i], ARGV[5], ARGV[3])
+            redis.call('PEXPIRE', KEYS[i], ARGV[6])
+        end
+        return 1
+        """;
+
     private const string CasSetScript = """
         local current = redis.call('GET', KEYS[1])
         if current == false then return 0 end
@@ -83,19 +114,28 @@ internal sealed partial class RedisExecutionJobStore(
 
         var versioned = job with { Version = 1 };
         var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.ExecutionJobRecord);
-        var created = await _database.StringSetAsync(
-                GetJobKey(job.OperationId),
-                payload,
-                ttl ?? DefaultRetention,
-                when: When.NotExists)
-            .ConfigureAwait(false);
+        var retention = ttl ?? DefaultRetention;
+        ArgumentOutOfRangeException.ThrowIfLessThan(retention.TotalMilliseconds, 1, nameof(ttl));
+        RedisKey[] keys =
+        [
+            GetJobKey(job.OperationId), ActiveJobsKey, GetKindActiveKey(job.Spec.Kind),
+            .. GetQueryIndexKeys(versioned).Select(static key => (RedisKey)key)
+        ];
+        var created = (long)await _database.ScriptEvaluateAsync(
+            CreateWithIndexesScript,
+            keys: keys,
+            values:
+            [
+                payload, (long)retention.TotalMilliseconds, job.OperationId,
+                IsTerminal(job.Status) ? 0 : 1, job.CreatedAt.ToUnixTimeMilliseconds(),
+                (long)DefaultRetention.TotalMilliseconds
+            ]).ConfigureAwait(false) == 1;
 
         if (!created)
         {
             return false;
         }
 
-        await UpdateIndexesAsync(previous: null, versioned).ConfigureAwait(false);
         Log.ExecutionJobCreated(logger, job.OperationId, versioned.Spec.Kind.ToString(), versioned.Status.ToString());
         return true;
     }

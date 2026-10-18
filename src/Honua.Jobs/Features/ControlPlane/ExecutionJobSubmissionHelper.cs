@@ -18,7 +18,7 @@ internal static partial class ExecutionJobSubmissionHelper
     // and the background sweep repair it after a cancelled request or process loss.
     public static bool NeedsLocalDispatchRepair(ExecutionJobRecord job)
         => job.Status == ExecutionJobStatus.Queued
-            && job.Spec.Kind == ExecutionJobKind.Geoprocessing
+            && job.Spec.Kind is ExecutionJobKind.Geoprocessing or ExecutionJobKind.FileImport
             && job.AttemptCount == 0
             && job.ClaimedBy == null
             && !job.CancellationRequestedAt.HasValue

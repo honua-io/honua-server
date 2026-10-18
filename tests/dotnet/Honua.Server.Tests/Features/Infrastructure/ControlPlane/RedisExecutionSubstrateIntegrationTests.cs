@@ -10,6 +10,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -23,12 +24,117 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 {
+    [IntegrationTheory]
+    [InlineData("controlplane:job:active")]
+    [InlineData("controlplane:job:active:geoprocessing")]
+    [InlineData("controlplane:job:index:created:all")]
+    [InlineData("controlplane:job:index:created:status:queued")]
+    public async Task ExecutionJobStore_CreateWithInvalidIndex_LeavesNoAcceptedJob(string invalidIndex)
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var operationId = $"job-create-refused-{Guid.NewGuid():N}";
+        await harness.Database.StringSetAsync(invalidIndex, "wrong-type");
+
+        await FluentActions.Invoking(() => harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId)))
+            .Should().ThrowAsync<RedisServerException>();
+
+        (await harness.JobStore.GetAsync(operationId)).Should().BeNull(
+            "an index error must be detected before accepting the durable job");
+        (await harness.Database.StringGetAsync(invalidIndex)).Should().Be((RedisValue)"wrong-type");
+        await harness.Database.KeyDeleteAsync(invalidIndex);
+        (await harness.JobStore.ListActiveAsync()).Should().BeEmpty();
+        (await harness.JobStore.QueryAsync(new ExecutionJobQuery())).Items.Should().BeEmpty();
+    }
+
     [IntegrationTest]
-    public async Task JobReconciliation_PersistedLocalJobWithoutDelivery_ReplacementWorkerExecutesOnce()
+    public async Task ExecutionJobStore_ConcurrentCreate_PersistsOneRecordWithOnlyItsIndexes()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var operationId = $"job-create-race-{Guid.NewGuid():N}";
+        var first = CreateQueuedJob(operationId) with { Audit = new OperationAuditInfo { RequestedBy = "first-owner" } };
+        var second = first with { Audit = new OperationAuditInfo { RequestedBy = "second-owner" } };
+
+        var created = await Task.WhenAll(harness.JobStore.TryCreateAsync(first), harness.JobStore.TryCreateAsync(second));
+
+        created.Count(value => value).Should().Be(1);
+        var stored = (await harness.JobStore.GetAsync(operationId))!;
+        stored.Version.Should().Be(1);
+        var losingOwner = stored.Audit.RequestedBy == "first-owner" ? "second-owner" : "first-owner";
+        (await harness.JobStore.QueryAsync(new ExecutionJobQuery { RequestedBy = stored.Audit.RequestedBy }))
+            .Items.Should().ContainSingle(job => job.OperationId == operationId);
+        (await harness.JobStore.QueryAsync(new ExecutionJobQuery { RequestedBy = losingOwner })).Items.Should().BeEmpty();
+        (await harness.JobStore.ListActiveAsync(ExecutionJobKind.Geoprocessing))
+            .Should().ContainSingle(job => job.OperationId == operationId);
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_LostCreateReply_ReplacementConnectionFindsOriginalJobAndRefusesDuplicate()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var database = Substitute.For<IDatabase>();
+        database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
+            .Returns(async call =>
+            {
+                // Execute the actual production Lua against Redis, then lose only the reply.
+                await harness.Database.ScriptEvaluateAsync(
+                    call.ArgAt<string>(0), call.ArgAt<RedisKey[]>(1), call.ArgAt<RedisValue[]>(2));
+                throw new RedisConnectionException(ConnectionFailureType.SocketFailure, "Create reply lost after commit");
+            });
+        var connection = Substitute.For<IConnectionMultiplexer>();
+        connection.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        var acceptingStore = new RedisExecutionJobStore(connection, NullLogger<RedisExecutionJobStore>.Instance);
+        var original = CreateQueuedJob($"job-lost-create-reply-{Guid.NewGuid():N}") with
+        {
+            Audit = new OperationAuditInfo { RequestedBy = "original-owner" },
+        };
+        await FluentActions.Invoking(() => acceptingStore.TryCreateAsync(original))
+            .Should().ThrowAsync<RedisConnectionException>();
+
+        await using var replacementConnection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var replacementStore = new RedisExecutionJobStore(replacementConnection, NullLogger<RedisExecutionJobStore>.Instance);
+        (await replacementStore.GetAsync(original.OperationId))!.Audit.RequestedBy.Should().Be("original-owner");
+        (await replacementStore.ListActiveAsync(ExecutionJobKind.Geoprocessing))
+            .Should().ContainSingle(job => job.OperationId == original.OperationId);
+        (await replacementStore.QueryAsync(new ExecutionJobQuery { RequestedBy = "original-owner" }))
+            .Items.Should().ContainSingle(job => job.OperationId == original.OperationId);
+        (await replacementStore.TryCreateAsync(original with
+        {
+            Audit = new OperationAuditInfo { RequestedBy = "replacement-owner" },
+        })).Should().BeFalse();
+        (await replacementStore.GetAsync(original.OperationId))!.Version.Should().Be(1);
+        (await replacementStore.QueryAsync(new ExecutionJobQuery { RequestedBy = "replacement-owner" }))
+            .Items.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_CreateExpiresAllQueryIndexes_WithRealRedis()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var job = CreateQueuedJob($"job-index-ttl-{Guid.NewGuid():N}") with
+        {
+            Audit = new OperationAuditInfo { RequestedBy = "ttl-owner", CorrelationId = "ttl-correlation" },
+        };
+        (await harness.JobStore.TryCreateAsync(job, TimeSpan.FromMinutes(5))).Should().BeTrue();
+
+        var keys = harness.Server.Keys(pattern: "controlplane:job:index:created:*").ToArray();
+        keys.Length.Should().BeGreaterThanOrEqualTo(5);
+        foreach (var key in keys)
+        {
+            var ttl = await harness.Database.KeyTimeToLiveAsync(key);
+            ttl.Should().NotBeNull($"query index {key} must not become immortal");
+            ttl!.Value.Should().BeGreaterThan(TimeSpan.Zero).And.BeLessThanOrEqualTo(TimeSpan.FromDays(7));
+            (await harness.Database.SortedSetScoreAsync(key, job.OperationId)).Should().NotBeNull();
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(ExecutionJobKind.Geoprocessing)]
+    [InlineData(ExecutionJobKind.FileImport)]
+    public async Task JobReconciliation_PersistedLocalJobWithoutDelivery_ReplacementWorkerExecutesOnce(ExecutionJobKind kind)
     {
         await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
         var queued = CreateQueuedJob($"interrupted-admission-{Guid.NewGuid():N}");
-        queued = queued with { Spec = queued.Spec with { Backend = "local" }, Priority = OperationPriority.High };
+        queued = queued with { Spec = queued.Spec with { Backend = "local", Kind = kind }, Priority = OperationPriority.High };
         await harness.JobStore.TryCreateAsync(queued);
         // Simulate process loss after durable creation: no progress or pending membership.
         using var sweep = new JobReconciliationService(harness.JobStore, harness.Queue, harness.Queue,
@@ -38,7 +144,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         (await harness.Queue.GetQueueDepthAsync()).Should().Be(1);
         var executions = 0;
         var callback = new RecordingTerminalCallback();
-        var executor = new DelegatingJobExecutor(ExecutionJobKind.Geoprocessing, (_, _, _) =>
+        var executor = new DelegatingJobExecutor(kind, (_, _, _) =>
         {
             Interlocked.Increment(ref executions);
             return Task.FromResult(JobExecutionResult.Succeeded());
