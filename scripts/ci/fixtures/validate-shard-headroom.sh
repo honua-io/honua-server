@@ -45,6 +45,7 @@ set -euo pipefail
 mode="${HONUA_FIXTURE_MODE:-chatty}"
 seconds="${HONUA_FIXTURE_SECONDS:-2}"
 echo "stub dotnet test starting (mode=${mode})"
+python3 scripts/ci/fixtures/write-shard-trx.py "$@"
 case "${mode}" in
   chatty|failing)
     end=$(( $(date +%s) + seconds ))
