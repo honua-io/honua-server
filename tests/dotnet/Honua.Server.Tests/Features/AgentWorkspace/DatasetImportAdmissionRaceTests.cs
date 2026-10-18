@@ -5,6 +5,8 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.AgentWorkspace.Abstractions;
+using Honua.Core.Features.AgentWorkspace.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -42,10 +44,13 @@ public sealed class DatasetImportAdmissionRaceTests(RedisFixture redis)
         var actor = CanonicalSecurityActor.Resolve(principal)!.ActorId;
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns("tenant-1");
-        using var services = new ServiceCollection().AddSingleton<IAdminApiKeyStore>(keys).AddSingleton(tenant)
+        var turns = Substitute.For<IAgentWorkspaceTurnAuthorizer>();
+        using var services = new ServiceCollection().AddSingleton(turns).AddSingleton<IAdminApiKeyStore>(keys).AddSingleton(tenant)
             .AddSingleton<TimeProvider>(TimeProvider.System).BuildServiceProvider();
         var context = new DefaultHttpContext { User = principal, RequestServices = services };
         var target = await store.GetTargetIdAsync();
+        turns.AuthorizeAsync(principal, workspaceId, "turn-1", Arg.Any<CancellationToken>())
+            .Returns(new AgentWorkspaceTurnAuthorization(workspaceId, "turn-1", target, "tenant-1", "test-release", "human-1"));
         var task = new DatasetImportTask("import-task-1", 1, string.Empty, actor, "tenant-1", target, workspaceId,
             new("public", "new_table"), new("browser-file", "large.geojson", 5L * 1024 * 1024 * 1024, new string('a', 64)),
             new(), DateTimeOffset.UtcNow.AddHours(24));

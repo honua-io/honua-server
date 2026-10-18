@@ -32,7 +32,7 @@ internal static class DatasetImportAuthorityRenewalService
         {
             if (original.RenewalId != request.RenewalId || original.PreviousAuthorityRevision != request.ExpectedAuthorityRevision)
                 throw new AgentWorkspaceConflictException("The original renewal has different immutable inputs.");
-            return await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false)
+            return await CanReturnAsync(context, store, document, taskId, taskRevision, request.TaskContentHash).ConfigureAwait(false)
                 ? original : null;
         }
         if (document.DatasetImportPreparedAdmissions.ContainsKey(taskId))
@@ -49,6 +49,10 @@ internal static class DatasetImportAuthorityRenewalService
             binding.OriginalTurnHash != Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(turn, AgentWorkspaceJsonContext.Default.AgentWorkspaceTurn))) ||
             (binding.InitiatingHumanActorId is not null && (document.OwnerId != binding.InitiatingHumanActorId || document.AgentActorId != actor)))
             return null;
+        var authorizedTurn = await context.RequestServices.GetRequiredService<Honua.Core.Features.AgentWorkspace.Abstractions.IAgentWorkspaceTurnAuthorizer>()
+            .AuthorizeAsync(context.User, workspaceId, binding.OriginatingTurnId, context.RequestAborted).ConfigureAwait(false);
+        if (authorizedTurn is null || authorizedTurn.OwnerActorId != document.OwnerId ||
+            authorizedTurn.TargetId != document.TargetId || authorizedTurn.TenantId != document.TenantId) return null;
         var policyCapture = context.RequestServices.GetService<Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture>();
         if (policyCapture is null) return null;
         var freshPolicy = await policyCapture.CaptureCurrentAsync(context.RequestAborted).ConfigureAwait(false);
@@ -67,10 +71,28 @@ internal static class DatasetImportAuthorityRenewalService
         { [taskId] = binding with { AuthorityRevision = nextRevision, AuthorityFingerprint = fingerprint, ExecutorAuthority = fresh } };
         var renewals = new Dictionary<string, DatasetImportAuthorityRenewal>(document.DatasetImportAuthorityRenewals, StringComparer.Ordinal)
         { [renewalKey] = receipt };
+        if (!await CanReturnAsync(context, store, document, taskId, taskRevision, request.TaskContentHash, true).ConfigureAwait(false)) return null;
         // Admission preparation and renewal both compare-and-set this same document.
         // A losing writer cannot replace a sealed snapshot or advance authority twice.
         if (!await store.SaveAsync(document with { DatasetImportExecutionBindings = bindings, DatasetImportAuthorityRenewals = renewals }).ConfigureAwait(false))
             throw new AgentWorkspaceConflictException("Import admission or authority changed concurrently. Recover the original renewal receipt before retrying.");
-        return receipt;
+        return await CanReturnAsync(context, store, document, taskId, taskRevision, request.TaskContentHash).ConfigureAwait(false)
+            ? receipt : null;
+    }
+
+    private static async Task<bool> CanReturnAsync(HttpContext context, IAgentWorkspaceStore store,
+        AgentWorkspaceDocument original, string taskId, long revision, string contentHash, bool requireWrite = false)
+    {
+        var task = await context.RequestServices.GetRequiredService<IDatasetImportTaskProvider>()
+            .AuthorizeAsync(context.User, original.WorkspaceId, taskId, revision, contentHash, requireWrite, context.RequestAborted).ConfigureAwait(false);
+        if (task is null) return false;
+        var latest = await store.GetAsync(original.WorkspaceId).ConfigureAwait(false);
+        var target = await store.GetTargetIdAsync().ConfigureAwait(false);
+        var actor = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
+        return actor is not null && latest is not null && latest.OwnerId == original.OwnerId &&
+            latest.AgentActorId == original.AgentActorId && latest.TenantId == original.TenantId && target == original.TargetId &&
+            AgentWorkspaceState.CanRead(latest, actor,
+                context.RequestServices.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId, target) &&
+            await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false);
     }
 }

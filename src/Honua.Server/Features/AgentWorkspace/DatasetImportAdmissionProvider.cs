@@ -54,6 +54,10 @@ internal sealed class DatasetImportAdmissionProvider(IAgentWorkspaceStore store,
             task.UploadAdmissionDeadline <= services.GetRequiredService<TimeProvider>().GetUtcNow() ||
             await AgentCredentialAuthority.RevalidateAsync(binding.ExecutorAuthority, services, cancellationToken).ConfigureAwait(false) is null ||
             !await CurrentAsync(executor, document, cancellationToken).ConfigureAwait(false)) return null;
+        var authorizedTurn = await services.GetRequiredService<Honua.Core.Features.AgentWorkspace.Abstractions.IAgentWorkspaceTurnAuthorizer>()
+            .AuthorizeAsync(executor, workspaceId, binding.OriginatingTurnId, cancellationToken).ConfigureAwait(false);
+        if (authorizedTurn is null || authorizedTurn.OwnerActorId != document.OwnerId ||
+            authorizedTurn.TargetId != document.TargetId || authorizedTurn.TenantId != document.TenantId) return null;
         if (document.DatasetImportPreparedAdmissions.ContainsKey(taskId))
             throw new AgentWorkspaceConflictException("Import admission changed concurrently. Read the original preparation.");
         var identity = JsonSerializer.SerializeToUtf8Bytes(new[] { document.TargetId, document.WorkspaceId, taskId,
