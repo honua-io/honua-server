@@ -33,4 +33,28 @@ public interface IDatasetImportAdmissionProvider
     /// <returns>The retained preparation, or null when absent or unauthorized.</returns>
     Task<DatasetImportPreparedAdmission?> ReadAsync(ClaimsPrincipal executor, string workspaceId, string taskId,
         long taskRevision, string taskContentHash, CancellationToken cancellationToken = default);
+    /// <summary>Prepares through explicit original-human contribution authorization without substituting executor identity.</summary>
+    /// <param name="contributor">Actual framework-authenticated initiating human.</param>
+    /// <param name="workspaceId">Original workspace.</param>
+    /// <param name="taskId">Original task.</param>
+    /// <param name="taskRevision">Original immutable revision.</param>
+    /// <param name="taskContentHash">Original immutable content hash.</param>
+    /// <param name="authorityRevision">Reviewed current executor authority revision.</param>
+    /// <param name="authorityFingerprint">Reviewed current executor authority fingerprint.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The original sealed executor-owned preparation, or null when unauthorized.</returns>
+    Task<DatasetImportPreparedAdmission?> PrepareContributionAsync(ClaimsPrincipal contributor, string workspaceId, string taskId,
+        long taskRevision, string taskContentHash, long authorityRevision, string authorityFingerprint,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Observes original preparation through explicit initiating-human authorization without mutation.</summary>
+    /// <param name="contributor">Actual framework-authenticated initiating human.</param>
+    /// <param name="workspaceId">Original workspace.</param>
+    /// <param name="taskId">Original task.</param>
+    /// <param name="taskRevision">Original immutable revision.</param>
+    /// <param name="taskContentHash">Original immutable content hash.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The original executor-owned preparation, or null when absent or unauthorized.</returns>
+    Task<DatasetImportPreparedAdmission?> ReadContributionAsync(ClaimsPrincipal contributor, string workspaceId, string taskId,
+        long taskRevision, string taskContentHash, CancellationToken cancellationToken = default);
 }
