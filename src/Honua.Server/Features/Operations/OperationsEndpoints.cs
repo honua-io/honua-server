@@ -321,14 +321,21 @@ internal static class OperationsEndpoints
         }
     }
 
-    internal static async Task<IResult> HandleGetHandleStatus(
+    internal static Task<IResult> HandleGetHandleStatus(HttpContext context, string handleId,
+        IOperationInstanceStore instanceStore, CancellationToken cancellationToken)
+        => HandleGetBoundHandleStatus(context, handleId, instanceStore, cancellationToken, null, false);
+
+    internal static async Task<IResult> HandleGetBoundHandleStatus(
         HttpContext context,
         string handleId,
         IOperationInstanceStore instanceStore,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? expectedTenantId,
+        bool requireExactTenant)
     {
         SetNoStore(context);
-        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+        if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, cancellationToken).ConfigureAwait(false) ||
+            !await OperationAdminAuthorization.IsAuthorizedAsync(
                 context,
                 context.User,
                 OperationSideEffectClass.ReadOnly,
@@ -338,7 +345,11 @@ internal static class OperationsEndpoints
         }
 
         var handle = await instanceStore.GetAsync(handleId, cancellationToken).ConfigureAwait(false);
-        if (handle is null || !OperationTenantAuthorization.CanAccess(context, handle.TenantId))
+        if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, cancellationToken).ConfigureAwait(false) ||
+            !await OperationAdminAuthorization.IsAuthorizedAsync(context, context.User, OperationSideEffectClass.ReadOnly, cancellationToken).ConfigureAwait(false))
+            return Results.Forbid();
+        if (handle is null || handle.OperationInstanceId != handleId ||
+            requireExactTenant && handle.TenantId != expectedTenantId || !OperationTenantAuthorization.CanAccess(context, handle.TenantId))
         {
             return NotFound(context, $"Operation handle '{handleId}' was not found.");
         }
@@ -353,6 +364,9 @@ internal static class OperationsEndpoints
             if (executor is not null)
             {
                 var live = await executor.GetStatusAsync(handle, cancellationToken).ConfigureAwait(false);
+                if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, cancellationToken).ConfigureAwait(false) ||
+                    !await OperationAdminAuthorization.IsAuthorizedAsync(context, context.User, OperationSideEffectClass.ReadOnly, cancellationToken).ConfigureAwait(false))
+                    return Results.Forbid();
                 return Results.Json(
                     ApiResponse<OperationStatus>.CreateSuccess(live with
                     {

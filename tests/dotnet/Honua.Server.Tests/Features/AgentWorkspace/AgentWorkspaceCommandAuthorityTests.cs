@@ -1,0 +1,94 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Security.Claims;
+using FluentAssertions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
+using Honua.Server.Features.AgentWorkspace;
+using Honua.Server.Features.Operations;
+using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
+
+namespace Honua.Server.Tests.Features.AgentWorkspace;
+
+public sealed class AgentWorkspaceCommandAuthorityTests
+{
+    [UnitTest]
+    public async Task CurrentWorkspaceMembershipCannotReadAnotherActorsKnownCommand()
+    {
+        var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "human-1")], "Bearer");
+        CanonicalSecurityActor.StampAuthorityClaims(identity);
+        var principal = new ClaimsPrincipal(identity);
+        var actor = CanonicalSecurityActor.Resolve(principal)!.ActorId;
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-1");
+        var document = new AgentWorkspaceDocument
+        { WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = actor, Members = [actor, "another-actor"], TenantId = "tenant-1" };
+        document.Commands["known"] = new("known", "another-actor", "draft-1", 0, "key", "operation-1", new(), DateTimeOffset.UtcNow.AddHours(1));
+        var store = Substitute.For<IAgentWorkspaceStore>();
+        store.GetTargetIdAsync().Returns("target-1");
+        store.GetAsync("workspace-1").Returns(document);
+        using var services = new ServiceCollection().AddSingleton(tenant).BuildServiceProvider();
+        var context = new DefaultHttpContext { User = principal, RequestServices = services };
+        context.Request.RouteValues["workspaceId"] = "workspace-1";
+        context.Request.RouteValues["commandId"] = "known";
+        // No operation store is registered: foreign actor refusal precedes reading any handle.
+        var result = await AgentWorkspaceEndpoints.GetCommand(context, store);
+        ((IStatusCodeHttpResult)result).StatusCode.Should().Be(404);
+    }
+
+    [UnitTest]
+    public async Task RetainedCredentialRevokedDuringStatusReadCannotProjectReceipt()
+    {
+        var keys = new InMemoryAdminApiKeyStore();
+        var created = await keys.CreateAsync("status-agent", ["admin:read", "agent:workspace"], null, null, default);
+        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), Arg.Any<string>()).Returns(AuthorizationResult.Success());
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-1");
+        using var services = new ServiceCollection().AddSingleton<IAdminApiKeyStore>(keys).AddSingleton(authorization).AddSingleton(tenant).BuildServiceProvider();
+        var context = new DefaultHttpContext { User = principal, RequestServices = services };
+        context.Request.Path = "/api/v1/agent/workspaces/workspace-1/commands/known";
+        var operations = Substitute.For<IOperationInstanceStore>();
+        var delayed = new TaskCompletionSource<OperationHandle?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        operations.GetAsync("operation-1", Arg.Any<CancellationToken>()).Returns(delayed.Task);
+        var pending = OperationsEndpoints.HandleGetBoundHandleStatus(context, "operation-1", operations, default, "tenant-1", true);
+        pending.IsCompleted.Should().BeFalse();
+        await keys.RevokeAsync(created.Record.Id, default);
+        delayed.SetResult(Handle("operation-1", "tenant-1"));
+        ((IStatusCodeHttpResult)await pending).StatusCode.Should().Be(403);
+        await operations.DidNotReceive().SetAsync(Arg.Any<OperationHandle>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData("operation-1", "tenant-2")]
+    [InlineData("different-operation", "tenant-1")]
+    public async Task WorkspaceReceiptRequiresExactTenantAndOperationIdentity(string actualId, string actualTenant)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "platform-human"), new Claim(ClaimTypes.Role, "platform_admin")], "Bearer"));
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), Arg.Any<string>()).Returns(AuthorizationResult.Success());
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-1");
+        using var services = new ServiceCollection().AddSingleton(authorization).AddSingleton(tenant).BuildServiceProvider();
+        var context = new DefaultHttpContext { User = principal, RequestServices = services };
+        var operations = Substitute.For<IOperationInstanceStore>();
+        operations.GetAsync("operation-1", Arg.Any<CancellationToken>()).Returns(Handle(actualId, actualTenant));
+        var result = await OperationsEndpoints.HandleGetBoundHandleStatus(context, "operation-1", operations, default, "tenant-1", true);
+        ((IStatusCodeHttpResult)result).StatusCode.Should().Be(404);
+    }
+
+    private static OperationHandle Handle(string id, string tenant) => new()
+    {
+        OperationInstanceId = id, OperationId = "service.publish", TenantId = tenant, Status = OperationHandleStatus.RequiresApproval,
+        CorrelationId = "correlation-1", CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+    };
+}

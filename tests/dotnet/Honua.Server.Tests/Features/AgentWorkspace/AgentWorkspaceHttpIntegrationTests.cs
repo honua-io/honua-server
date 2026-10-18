@@ -209,6 +209,7 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             (await agent.PostAsJsonAsync($"/api/v1/admin/proposals/{proposalId}/approve", new { reason = "Agent may not approve its own proposal" })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
             var replay = await Read(await agent.PostAsJsonAsync(draftPath + "/submit", submit), HttpStatusCode.OK);
             replay.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(instanceId);
+            (await human.GetAsync(root + "/commands/command-one")).StatusCode.Should().Be(HttpStatusCode.NotFound);
             var receipt = await Read(await agent.GetAsync(root + "/commands/command-one"), HttpStatusCode.OK);
             receipt.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(instanceId);
             // Different tabs mint different command ids for one reviewed revision. They must

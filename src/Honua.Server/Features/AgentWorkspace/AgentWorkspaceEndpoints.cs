@@ -608,9 +608,12 @@ internal static class AgentWorkspaceEndpoints
                 command = originals[0];
             }
         }
-        if (command is null) return Results.NotFound();
-        return await OperationsEndpoints.HandleGetHandleStatus(context, command.OperationInstanceId,
-            context.RequestServices.GetRequiredService<IOperationInstanceStore>(), context.RequestAborted).ConfigureAwait(false);
+        if (command is null || command.ActorId != Actor(context)) return Results.NotFound();
+        if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
+            return Results.Forbid();
+        return await OperationsEndpoints.HandleGetBoundHandleStatus(context, command.OperationInstanceId,
+            context.RequestServices.GetRequiredService<IOperationInstanceStore>(), context.RequestAborted,
+            expectedTenantId: document.TenantId, requireExactTenant: true).ConfigureAwait(false);
     }
 }
 internal sealed class AgentWorkspaceNotFoundException : Exception;
