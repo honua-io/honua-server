@@ -309,6 +309,47 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         (await _storage.GetMetadataAsync(objectKey))!.ETag.Should().Be(replacement.File!.ETag);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConditionalMutations_ReusedUploadId_CannotModifyReplacementAfterRestart(bool sameContent)
+    {
+        const string objectKey = "imports/reused-upload.geojson";
+        const string uploadId = "caller-correlation-id";
+        var originalBytes = "original-generation"u8.ToArray();
+        var replacementBytes = sameContent ? originalBytes : "replacement-generation"u8.ToArray();
+        await using var originalContent = new MemoryStream(originalBytes);
+        var request = new FileUploadRequest
+        {
+            Content = originalContent,
+            FileName = "data.geojson",
+            ContentType = "application/geo+json",
+            ObjectKeyOverride = objectKey,
+            UploadId = uploadId
+        };
+        var original = await _storage.UploadAsync(request);
+        original.Success.Should().BeTrue();
+
+        await using var replacementContent = new MemoryStream(replacementBytes);
+        var replacement = await _storage.UploadIfMatchAsync(
+            request with { Content = replacementContent }, original.File!.ETag);
+        replacement.Success.Should().BeTrue();
+        replacement.File!.Metadata["UploadId"].Should().Be(uploadId);
+        replacement.File.ETag.Should().NotBe(original.File.ETag,
+            "a retry correlation ID and identical bytes must not reuse an object generation");
+
+        // Generation identity must survive a process restart, not just the in-memory index.
+        var restarted = CreateStorage(_testBasePath);
+        (await restarted.DeleteIfMatchAsync(objectKey, original.File.ETag!)).Should().BeFalse();
+        await using var staleContent = new MemoryStream("stale-writer"u8.ToArray());
+        var stale = await restarted.UploadIfMatchAsync(
+            request with { Content = staleContent }, original.File.ETag);
+        stale.Success.Should().BeFalse();
+        (await restarted.DownloadBytesAsync(objectKey)).Should().Equal(replacementBytes);
+        (await restarted.GetMetadataAsync(objectKey))!.ETag.Should().Be(replacement.File.ETag);
+        (await restarted.DeleteIfMatchAsync(objectKey, replacement.File.ETag!)).Should().BeTrue();
+    }
+
     [UnitTest]
     public async Task UploadBatchAsync_MultipleFiles_ShouldUploadAll()
     {

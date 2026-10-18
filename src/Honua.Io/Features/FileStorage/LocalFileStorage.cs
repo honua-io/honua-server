@@ -199,7 +199,10 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 UploadedAt = uploadedAt,
                 ExpiresAt = expiresAt,
                 ContentHash = contentHash,
-                ETag = uploadId,
+                // UploadId is caller-controlled correlation and may be reused after a
+                // lost response. Each write needs an independent generation so a stale
+                // conditional delete or overwrite cannot act on a replacement object.
+                ETag = Guid.NewGuid().ToString("N"),
                 Metadata = request.Metadata.Add("UploadId", uploadId),
                 Provider = CloudStorageProvider.Local
             };
