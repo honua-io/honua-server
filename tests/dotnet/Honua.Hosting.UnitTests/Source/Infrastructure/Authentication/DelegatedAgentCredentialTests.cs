@@ -372,6 +372,25 @@ public sealed class DelegatedAgentCredentialTests
         AdminApiKeyPermission.CanManageApiKeys(human).Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("admin:write", false, false)]
+    [InlineData("admin:write", true, false)]
+    [InlineData("admin", true, false)]
+    [InlineData("admin", false, true)]
+    public async Task StoredCredential_AuthorityManagementRequiresFullNonAgentAuthority(string grant, bool workspaceAgent, bool allowed)
+    {
+        var keys = new InMemoryAdminApiKeyStore();
+        var grants = workspaceAgent ? new[] { grant, "agent:workspace" } : new[] { grant };
+        var key = await keys.CreateAsync("credential-management", grants, null, null, default);
+        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(key.Record);
+        using var services = new ServiceCollection().AddLogging()
+            .AddAuthorization(CredentialAuthorityManagementAuthorization.Configure).BuildServiceProvider();
+        var authorization = services.GetRequiredService<IAuthorizationService>();
+        (await authorization.AuthorizeAsync(principal, null, CredentialAuthorityManagementAuthorization.PolicyName))
+            .Succeeded.Should().Be(allowed);
+        AdminApiKeyPermission.CanManageApiKeys(principal).Should().Be(allowed);
+    }
+
     private static ClaimsPrincipal Token(string? mismatch = null) => new(new ClaimsIdentity([
         new Claim("scope", "agent:workspace"),
         new Claim("exp", (mismatch == "expired" ? DateTimeOffset.UtcNow.AddMinutes(-1) : DateTimeOffset.UtcNow.AddMinutes(10)).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)),

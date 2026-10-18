@@ -150,7 +150,6 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
                 if (delegatedAgent) client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", material);
                 else client.DefaultRequestHeaders.Add("X-API-Key", material);
             });
-            if (delegatedAgent)
             {
                 // A workload's admin:write metadata capability must not escape
                 // its profile by issuing another credential or changing trust/RBAC.

@@ -317,10 +317,12 @@ remain unavailable for these credentials until their executors revalidate a cano
 credential binding. Shared-style approval replay uses its own sealed credential
 snapshot and does not dispatch that legacy job context.
 
-A delegated profile's `admin:write` capability does not permit minting or rotating
+An agent's `admin:write` capability does not permit minting, rotating or revoking
 independent credentials, editing certificate trust mappings, changing OAuth clients
-or scope mappings, or changing user/role authority. Those mutation routes add the
-canonical non-delegated authority guard to their existing administrative policies.
-This prevents a workload from escaping profile expiry/revocation or approval denial
-through a second credential. Ordinary human administrative flows retain their
-existing authorization checks.
+or scope mappings, or changing user/role authority. This applies to both delegated
+OIDC workloads and stored keys marked `agent:workspace`. Operational API keys without
+full credential-management authority also cannot make these trust changes. Those
+mutation routes require credential-management authority in addition to their existing
+administrative policies. This prevents a workload from escaping expiry, revocation
+or approval denial through a second credential. Ordinary human administrative flows
+retain their existing authorization checks.

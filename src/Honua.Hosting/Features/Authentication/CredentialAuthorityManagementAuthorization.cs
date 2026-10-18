@@ -11,9 +11,9 @@ namespace Honua.Infrastructure.Authentication;
 /// </summary>
 internal static class CredentialAuthorityManagementAuthorization
 {
-    internal const string PolicyName = "NonDelegatedCredentialAuthorityManagement";
+    internal const string PolicyName = "CredentialAuthorityManagement";
 
     internal static void Configure(AuthorizationOptions options) => options.AddPolicy(PolicyName,
         policy => policy.RequireAuthenticatedUser().RequireAssertion(context =>
-            !AgentCredentialAuthority.IsDelegated(context.User)));
+            AdminApiKeyPermission.CanManageApiKeys(context.User)));
 }
