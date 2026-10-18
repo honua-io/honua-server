@@ -92,7 +92,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
             return [];
         }
 
-        var roles = AgentCredentialAuthority.IsDelegated(principal)
+        IReadOnlyList<string> roles = AgentCredentialAuthority.IsDelegated(principal)
             ? AgentCredentialAuthority.SourceRoles(principal)
             : RbacRoleClaims.Enumerate(
                 principal,

@@ -79,7 +79,7 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
             return ImmutableArray<string>.Empty;
         }
 
-        var roles = AgentCredentialAuthority.IsDelegated(principal)
+        IReadOnlyList<string> roles = AgentCredentialAuthority.IsDelegated(principal)
             ? AgentCredentialAuthority.SourceRoles(principal)
             : RbacRoleClaims.Enumerate(
                 principal,

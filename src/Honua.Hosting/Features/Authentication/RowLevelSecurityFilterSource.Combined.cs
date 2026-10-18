@@ -41,7 +41,7 @@ internal sealed partial class RowLevelSecurityFilterSource
             return new ReadSecurityResolution(null, ImmutableArray<string>.Empty);
         }
 
-        var roles = AgentCredentialAuthority.IsDelegated(principal)
+        IReadOnlyList<string> roles = AgentCredentialAuthority.IsDelegated(principal)
             ? AgentCredentialAuthority.SourceRoles(principal)
             : RbacRoleClaims.Enumerate(
                 principal,
