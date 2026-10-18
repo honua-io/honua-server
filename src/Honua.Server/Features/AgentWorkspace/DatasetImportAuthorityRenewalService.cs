@@ -53,11 +53,11 @@ internal static class DatasetImportAuthorityRenewalService
         if (policyCapture is null) return null;
         var freshPolicy = await policyCapture.CaptureCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var fresh = freshPolicy.AgentCredential;
-        // Exact comparison remains fail-closed until the canonical refresh comparator
-        // handles token transport metadata while preserving original policy inputs.
+        // Compare canonical renewal lineage, retaining every original policy value.
+        // Refresh metadata is never substituted into the frozen policy context.
         if (fresh is null || !DatasetImportExecutionAuthority.SameLineage(binding.ExecutorAuthority, fresh) ||
             binding.PolicyContextFingerprint != JobSecurityContextFingerprint.Compute(binding.ExecutorPolicyContext) ||
-            binding.PolicyContextFingerprint != JobSecurityContextFingerprint.Compute(freshPolicy)) return null;
+            JobSecurityContextFingerprint.ComputeRenewalLineage(binding.ExecutorPolicyContext) != JobSecurityContextFingerprint.ComputeRenewalLineage(freshPolicy)) return null;
         if (fresh.TokenExpiresAt <= binding.ExecutorAuthority.TokenExpiresAt)
             throw new AgentWorkspaceConflictException("Renewal requires a refreshed expiry under the same executor authority.");
         var fingerprint = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(fresh, AgentWorkspaceJsonContext.Default.AgentCredentialSnapshot)));
