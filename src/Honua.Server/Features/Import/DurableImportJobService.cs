@@ -25,9 +25,9 @@ namespace Honua.Server.Features.Import;
 /// <item>long-lived host without a runner: the in-process <c>UniversalImportJobService</c>;</item>
 /// <item>Lambda host without a runner: refused (the endpoint answers the typed 503 first).</item>
 /// </list>
-/// Reads always go through the import job document; a durable job whose execution record ended
-/// without the worker writing a terminal document (crash, cancel, timeout, rejected submission)
-/// is projected onto it, so a job never reads as <c>processing</c> forever.
+/// Reads use the import job document, falling back to the original durable spec if the document
+/// is missing. Terminal execution records project their outcome without inferring lost output
+/// table details or dispatching another job.
 /// </summary>
 internal sealed partial class DurableImportJobService : IImportJobService, IDisposable
 {
@@ -155,13 +155,49 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
     public async Task<ImportProgress?> GetProgressAsync(string jobId, CancellationToken cancellationToken = default)
     {
         var progress = await _inProcess.GetProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (progress is null || IsTerminal(progress.Status) || _jobStore is null)
+        if (_jobStore is null || progress is not null && IsTerminal(progress.Status))
         {
             return progress;
         }
 
         var job = await _jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        return job is null ? progress : ProjectExecutionOutcome(progress, job);
+        if (job is null || job.Spec.Kind != ExecutionJobKind.FileImport)
+        {
+            return progress;
+        }
+
+        // The progress document has shorter retention than the durable job and can also be
+        // absent after a crash between acceptance and its first write. Reconstruct a read-only
+        // projection from the original spec, including its owner; never redispatch or persist
+        // this fallback over a worker's concurrent progress write.
+        progress ??= RestoreProgress(job);
+        return progress is null ? null : ProjectExecutionOutcome(progress, job);
+    }
+
+    private ImportProgress? RestoreProgress(ExecutionJobRecord job)
+    {
+        if (!FileImportJobParameters.TryParse(job.Spec.Parameters, out var request, out var size, out _)
+            || request is null)
+        {
+            return null;
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var format = scope.ServiceProvider.GetRequiredService<IFileImportService>().DetectFormat(request.FileName);
+        return ImportProgress.CreateInitial(
+            job.OperationId, request.TableName, format, size, request.FileName,
+            request.SourceKind, request.SourceUrl, request.CloudFileId, request.UploadId,
+            operationInstanceId: request.OperationInstanceId,
+            correlationId: request.CorrelationId,
+            auditId: request.AuditId,
+            proposalId: request.ProposalId,
+            ownership: request.Ownership) with
+        {
+            StartedAt = job.CreatedAt,
+            Status = job.Status == ExecutionJobStatus.Running ? ImportStatus.Processing : ImportStatus.Queued,
+            Runner = job.Spec.Parameters.GetValueOrDefault(FileImportJobParameters.Runner),
+            CurrentPhase = job.Status == ExecutionJobStatus.Running ? "Import running" : "Queued",
+        };
     }
 
     public async Task<bool> CancelJobAsync(string jobId, CancellationToken cancellationToken = default)
@@ -362,6 +398,17 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
 
         return job.Status switch
         {
+            // A successful execution record proves completion, but cannot recover the actual
+            // physical table/schema or feature count from a lost output receipt. Clients must
+            // refuse publication until those details are independently recovered.
+            ExecutionJobStatus.Succeeded => progress with
+            {
+                Status = ImportStatus.Completed,
+                CompletedAt = job.CompletedAt ?? job.UpdatedAt,
+                PhysicalTableName = null,
+                Schema = null,
+                CurrentPhase = "Import finished; output details unavailable",
+            },
             ExecutionJobStatus.Failed => progress with
             {
                 Status = ImportStatus.Failed,

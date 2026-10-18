@@ -320,6 +320,100 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
         (await service.CancelJobAsync(jobId)).Should().BeFalse("a terminal job cannot be cancelled again");
     }
 
+    [UnitTheory]
+    [InlineData(ExecutionJobStatus.Queued, ImportStatus.Queued)]
+    [InlineData(ExecutionJobStatus.Provisioning, ImportStatus.Queued)]
+    [InlineData(ExecutionJobStatus.Running, ImportStatus.Processing)]
+    [InlineData(ExecutionJobStatus.Succeeded, ImportStatus.Completed)]
+    [InlineData(ExecutionJobStatus.Failed, ImportStatus.Failed)]
+    [InlineData(ExecutionJobStatus.Cancelled, ImportStatus.Cancelled)]
+    public async Task GetProgressAsync_MissingProjection_RecoversOriginalJobWithoutDispatch(
+        ExecutionJobStatus executionStatus, ImportStatus expectedStatus)
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new InMemoryProgressStore();
+        var queue = Substitute.For<IJobQueue>();
+        var decision = BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false);
+        var request = StagedRequest() with
+        {
+            Ownership = new ImportOperationOwnership("stored-key:original", "original-tenant"),
+            UploadId = "original-upload",
+        };
+        var acceptedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var record = DurableImportJobService.BuildJobRecord("accepted-job", request, 2048, decision, acceptedAt) with
+        {
+            Status = executionStatus,
+            UpdatedAt = acceptedAt.AddMinutes(5),
+            CompletedAt = executionStatus is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled
+                ? acceptedAt.AddMinutes(5) : null,
+        };
+        await jobStore.TryCreateAsync(record);
+        using var service = CreateService(decision,
+            new ProgressReadingImportJobService(progressStore), jobStore, progressStore, [], queue);
+
+        var recovered = await service.GetProgressAsync(record.OperationId);
+
+        recovered.Should().NotBeNull();
+        recovered!.Status.Should().Be(expectedStatus);
+        recovered.JobId.Should().Be(record.OperationId);
+        recovered.Ownership.Should().Be(request.Ownership);
+        recovered.UploadId.Should().Be(request.UploadId);
+        recovered.OperationInstanceId.Should().Be(request.OperationInstanceId);
+        recovered.StartedAt.Should().Be(acceptedAt);
+        recovered.CompletedAt.Should().Be(record.CompletedAt);
+        recovered.FileName.Should().Be(request.FileName);
+        recovered.PhysicalTableName.Should().BeNull("the requested name is not a committed output receipt");
+        recovered.Schema.Should().BeNull();
+        recovered.InstanceId.Should().BeNull("the observer is not the original accepting worker");
+        await queue.DidNotReceiveWithAnyArgs().EnqueueAsync(default!, default, default);
+        (await progressStore.GetProgressAsync<ImportProgress>(record.OperationId)).Should().BeNull(
+            "a read must not overwrite a worker's concurrent progress projection");
+    }
+
+    [UnitTest]
+    public async Task GetProgressAsync_MissingProjection_RejectsOtherJobKindsAndMalformedImportSpecs()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new InMemoryProgressStore();
+        var decision = BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false);
+        var valid = DurableImportJobService.BuildJobRecord("other-kind", StagedRequest(), 10, decision, DateTimeOffset.UtcNow);
+        await jobStore.TryCreateAsync(valid with { Spec = valid.Spec with { Kind = ExecutionJobKind.Geoprocessing } });
+        await jobStore.TryCreateAsync(valid with
+        {
+            OperationId = "malformed",
+            Spec = valid.Spec with { Parameters = new Dictionary<string, string>() },
+        });
+        using var service = CreateService(decision,
+            new ProgressReadingImportJobService(progressStore), jobStore, progressStore, []);
+
+        (await service.GetProgressAsync("other-kind")).Should().BeNull();
+        (await service.GetProgressAsync("malformed")).Should().BeNull();
+        (await service.GetProgressAsync("missing")).Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task GetProgressAsync_ExpiredSuccessfulProjection_DoesNotInventOutputOrRestartJob()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new InMemoryProgressStore();
+        var backend = new StubBatchComputeBackend(BatchBackendName, BatchComputeTargetKind.AwsBatch);
+        using var service = CreateService(
+            BackgroundImportRunnerDecision.Decide(true, GpBatchWorkload(), frozenBetweenRequests: true),
+            new ProgressReadingImportJobService(progressStore), jobStore, progressStore, [backend]);
+        var jobId = await service.QueueImportAsync(StagedRequest(), 2048);
+        var record = (await jobStore.GetAsync(jobId))!;
+        await jobStore.SetAsync(record with { Status = ExecutionJobStatus.Succeeded, CompletedAt = DateTimeOffset.UtcNow });
+        await progressStore.DeleteProgressAsync(jobId);
+
+        var recovered = await service.GetProgressAsync(jobId);
+
+        recovered!.Status.Should().Be(ImportStatus.Completed);
+        recovered.PhysicalTableName.Should().BeNull();
+        recovered.Schema.Should().BeNull();
+        recovered.CurrentPhase.Should().Contain("output details unavailable");
+        backend.StartCalls.Should().Be(1);
+    }
+
     [UnitTest]
     public void FileImportJobParameters_RoundTripTheStagedRequest()
     {
