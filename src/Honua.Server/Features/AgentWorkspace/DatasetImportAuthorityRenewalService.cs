@@ -25,7 +25,8 @@ internal static class DatasetImportAuthorityRenewalService
         if (document is null || !document.DatasetImportExecutionBindings.TryGetValue(taskId, out var binding) ||
             binding.TaskRevision != taskRevision || binding.TaskContentHash != request.TaskContentHash || binding.ExecutorActorId != actor)
             return null;
-        var renewalKey = DatasetImportTaskState.IntentKey(taskId, request.RenewalId);
+        AgentWorkspaceCapturedContext.ReadBoundTurn(context, document);
+        var renewalKey = DatasetImportTaskState.RenewalKey(taskId, taskRevision, request.TaskContentHash, request.RenewalId);
         // Recover the persisted original receipt before comparing a newly refreshed token.
         // The retry's token can be newer than the token that performed this renewal.
         if (document.DatasetImportAuthorityRenewals.TryGetValue(renewalKey, out var original))

@@ -15,6 +15,10 @@ internal static class DatasetImportTaskState
     internal static string IntentKey(string actorId, string intentId)
         => Digest(JsonSerializer.Serialize(new[] { actorId, intentId }, AgentWorkspaceJsonContext.Default.StringArray));
 
+    internal static string RenewalKey(string taskId, long revision, string contentHash, string renewalId)
+        => Digest(JsonSerializer.Serialize(new[] { taskId, revision.ToString(System.Globalization.CultureInfo.InvariantCulture), contentHash, renewalId },
+            AgentWorkspaceJsonContext.Default.StringArray));
+
     internal static string ContentHash(DatasetImportTask task)
         => Digest(JsonSerializer.Serialize(task with { ContentHash = string.Empty }, AgentWorkspaceJsonContext.Default.DatasetImportTask));
 

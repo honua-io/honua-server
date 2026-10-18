@@ -23,6 +23,8 @@ public sealed class DatasetImportRenewalReceiptTests
     [InlineData("target")]
     [InlineData("task")]
     [InlineData("later-authority")]
+    [InlineData("foreign-revision")]
+    [InlineData("foreign-hash")]
     public async Task OriginalReceiptRechecksAuthorityAfterLookupAndNeverRenewsTwice(string change)
     {
         var keys = new InMemoryAdminApiKeyStore();
@@ -49,7 +51,8 @@ public sealed class DatasetImportRenewalReceiptTests
             WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-1", AgentActorId = actor,
             TenantId = "tenant-1", Members = [actor, "human-1"],
             DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
-            DatasetImportAuthorityRenewals = new() { [DatasetImportTaskState.IntentKey(task.TaskId, original.RenewalId)] = original },
+            DatasetImportAuthorityRenewals = new() { [DatasetImportTaskState.RenewalKey(task.TaskId, change == "foreign-revision" ? task.Revision + 1 : task.Revision,
+                change == "foreign-hash" ? new string('b', 64) : task.ContentHash, original.RenewalId)] = original },
         };
         var store = Substitute.For<IAgentWorkspaceStore>();
         var target = "target-1";
@@ -66,6 +69,14 @@ public sealed class DatasetImportRenewalReceiptTests
             }
             return observed;
         });
+        if (change is "foreign-revision" or "foreign-hash")
+        {
+            await FluentActions.Awaiting(async () => await DatasetImportAuthorityRenewalService.RenewAsync(context, store,
+                "workspace-1", task.TaskId, 1, new(original.RenewalId, original.PreviousAuthorityRevision, task.ContentHash)))
+                .Should().ThrowAsync<AgentWorkspaceConflictException>();
+            await store.DidNotReceive().SaveAsync(Arg.Any<AgentWorkspaceDocument>());
+            return;
+        }
         var recovered = await DatasetImportAuthorityRenewalService.RenewAsync(context, store, "workspace-1", task.TaskId, 1,
             new(original.RenewalId, original.PreviousAuthorityRevision, task.ContentHash));
         if (change == "later-authority") recovered.Should().BeSameAs(original);
