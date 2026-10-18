@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -71,8 +72,19 @@ def restore(project: Path, config: Path, cache: Path, credential: str | None):
 def restore_summary(execution, label: str) -> dict:
     """Classify captured diagnostics without retaining their secret-bearing text."""
     diagnostics = execution.stdout + execution.stderr
+    # NuGet reports the package registration endpoint when the service index
+    # was readable but the package endpoint requires authentication. Accept
+    # only this governed package's endpoint, never an arbitrary HTTP401.
+    endpoint = "/honua-io/download/" + PACKAGE.lower() + "/index.json"
+    package_endpoint = False
+    for value in re.findall(r"https://[^\s<>\"']+", diagnostics):
+        parsed = urlsplit(value.rstrip(".,;)"))
+        if (parsed.scheme == "https" and parsed.netloc == "nuget.pkg.github.com"
+                and parsed.path == endpoint and not parsed.query and not parsed.fragment):
+            package_endpoint = True
     return {"schema": "honua.nuget-auth-attempt/v1", "attempt": label,
             "exitCode": execution.returncode, "governedFeedMentioned": FEED in diagnostics,
+            "governedPackageEndpointMentioned": package_endpoint,
             "authorizationStatusCodes": sorted(set(re.findall(r"\b(?:401|403)\b", diagnostics))),
             "nugetErrorCodes": sorted(set(re.findall(r"\bNU[0-9]{4}\b", diagnostics)))}
 
@@ -106,7 +118,8 @@ def prove() -> dict:
             summary = restore_summary(execution, label)
             print(json.dumps(summary, sort_keys=True), flush=True)
             if label == "anonymous":
-                if execution.returncode == 0 or not summary["governedFeedMentioned"] or not summary["authorizationStatusCodes"]:
+                governed_endpoint = summary["governedFeedMentioned"] or summary["governedPackageEndpointMentioned"]
+                if execution.returncode == 0 or not governed_endpoint or not summary["authorizationStatusCodes"]:
                     raise ProofError("Anonymous cold restore did not establish the expected private-feed refusal.")
                 result["anonymousRestoreRefused"] = True
             else:

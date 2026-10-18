@@ -153,6 +153,7 @@ class CredentialTests(unittest.TestCase):
         summary = proof.restore_summary(result, 'anonymous')
         self.assertEqual(summary, {'schema': 'honua.nuget-auth-attempt/v1', 'attempt': 'anonymous',
                          'exitCode': 1, 'governedFeedMentioned': True,
+                         'governedPackageEndpointMentioned': False,
                          'authorizationStatusCodes': ['401', '403'], 'nugetErrorCodes': ['NU1101', 'NU1301']})
         serialized = json.dumps(summary)
         self.assertNotIn(TOKEN, serialized)
@@ -161,6 +162,20 @@ class CredentialTests(unittest.TestCase):
         success = proof.restore_summary(subprocess.CompletedProcess([], 0, '', ''), 'authenticated')
         self.assertEqual(success['exitCode'], 0)
         self.assertEqual(success['nugetErrorCodes'], [])
+
+    def test_only_governed_private_package_endpoint_can_bind_refusal(self):
+        endpoint = 'https://nuget.pkg.github.com/honua-io/download/honua.sdk.admin/index.json'
+        for address, expected in ((endpoint, True),
+                (endpoint.replace('nuget.pkg.github.com', 'unrelated.invalid'), False),
+                (endpoint.replace('/honua-io/', '/another-owner/'), False),
+                (endpoint.replace('honua.sdk.admin', 'unrelated.package'), False),
+                (endpoint + '?redirect=unrelated', False),
+                (endpoint.replace('https://', 'http://'), False)):
+            with self.subTest(address=address):
+                summary = proof.restore_summary(subprocess.CompletedProcess([], 1,
+                           'error NU1301 ' + address + ' response401: ' + TOKEN, ''), 'anonymous')
+                self.assertEqual(summary['governedPackageEndpointMentioned'], expected)
+                self.assertNotIn(TOKEN, json.dumps(summary))
 
     def test_action_and_workflow_keep_real_proof_and_credential_contract(self):
         action = (ACTION / 'action.yml').read_text()
