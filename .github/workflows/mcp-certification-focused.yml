@@ -66,6 +66,7 @@ jobs:
           test "$(git rev-parse HEAD)" = 372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4
           npm ci --ignore-scripts
           test "$(node -p "require('./node_modules/@modelcontextprotocol/sdk/package.json').version")" = 1.32.1
+          test "$(node -p "require('./node_modules/@modelcontextprotocol/inspector/package.json').version")" = 2.10.1
       - name: Exercise the final server-owned control paths
         shell: bash
         env:
@@ -80,6 +81,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "${EXPECTED_SERVER_SOURCE}"
           ln -s "${GITHUB_WORKSPACE}/.mcp-client/certification/node_modules" tests/mcp-certification/node_modules
           mkdir -p artifacts/mcp-cancellation-controls
+          node --test tests/mcp-certification/inspector-addressability.test.mjs | tee artifacts/mcp-cancellation-controls/inspector-addressability.tap
           node --test tests/mcp-certification/test/*.test.mjs | tee artifacts/mcp-cancellation-controls/wire.tap
           node --test tests/mcp-certification/test/postgres-observer.integration.mjs | tee artifacts/mcp-cancellation-controls/postgres.tap
           python3 - <<'PY'
@@ -89,8 +91,10 @@ jobs:
           import subprocess
           evidence = {'schema': 'honua.mcp-cancellation-controls/v1', 'candidateQualified': False,
                       'serverSource': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
-                      'canonicalClientSource': '372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4', 'sdkVersion': '1.32.1', 'controls': {}}
-          for name, floor in [('wire', 10), ('postgres', 1)]:
+                      'canonicalClientSource': '372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4', 'sdkVersion': '1.32.1',
+                      'inspectorVersion': '2.10.1', 'inspectorAddressability': {'initialPing': 'unsupported-public-cli',
+                          'unknownToolWireError': 'locally-refused-not-server-proof'}, 'controls': {}}
+          for name, floor in [('wire', 10), ('postgres', 1), ('inspector-addressability', 3)]:
               text = Path(f'artifacts/mcp-cancellation-controls/{name}.tap').read_text()
               counts = {key: int(value) for key, value in re.findall(r'^# (tests|pass|fail|skipped|cancelled) (\d+)$', text, re.M)}
               assert counts.get('tests', 0) >= floor, (name, counts)
