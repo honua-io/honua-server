@@ -61,7 +61,7 @@ internal static partial class AdminApiKeyEndpoints
         return TypedResults.Ok(ApiResponse<IReadOnlyList<AdminApiKeyResponse>>.CreateSuccess(response));
     }
 
-    private static async Task<Results<Created<ApiResponse<AdminApiKeySecretResponse>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Created<ApiResponse<AdminApiKeySecretResponse>>, BadRequest<ApiResponse<object>>, StatusCodeHttpResult>>
         HandleCreateApiKey(
             CreateAdminApiKeyRequest request,
             [FromServices] IAdminApiKeyStore store,
@@ -71,6 +71,11 @@ internal static partial class AdminApiKeyEndpoints
         if (!TryValidateCreateRequest(request, out var permissions, out var validationMessage))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(validationMessage));
+        }
+
+        if (!AdminApiKeyPermission.CanManageApiKeys(context.User))
+        {
+            return TypedResults.StatusCode(StatusCodes.Status403Forbidden);
         }
 
         var result = await store.CreateAsync(
@@ -92,12 +97,17 @@ internal static partial class AdminApiKeyEndpoints
             ApiResponse<AdminApiKeySecretResponse>.CreateSuccess(response));
     }
 
-    private static async Task<Results<Ok<ApiResponse<AdminApiKeySecretResponse>>, NotFound<ApiResponse<object>>>> HandleRotateApiKey(
+    private static async Task<Results<Ok<ApiResponse<AdminApiKeySecretResponse>>, NotFound<ApiResponse<object>>, StatusCodeHttpResult>> HandleRotateApiKey(
         Guid id,
         [FromServices] IAdminApiKeyStore store,
         [FromServices] ILogger<AdminApiKeyEndpointsLog> logger,
         HttpContext context)
     {
+        if (!AdminApiKeyPermission.CanManageApiKeys(context.User))
+        {
+            return TypedResults.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
         var result = await store.RotateAsync(id, context.RequestAborted);
         if (result is null)
         {
@@ -114,12 +124,17 @@ internal static partial class AdminApiKeyEndpoints
         return TypedResults.Ok(ApiResponse<AdminApiKeySecretResponse>.CreateSuccess(response));
     }
 
-    private static async Task<Results<Ok<ApiResponse<AdminApiKeyResponse>>, NotFound<ApiResponse<object>>>> HandleRevokeApiKey(
+    private static async Task<Results<Ok<ApiResponse<AdminApiKeyResponse>>, NotFound<ApiResponse<object>>, StatusCodeHttpResult>> HandleRevokeApiKey(
         Guid id,
         [FromServices] IAdminApiKeyStore store,
         [FromServices] ILogger<AdminApiKeyEndpointsLog> logger,
         HttpContext context)
     {
+        if (!AdminApiKeyPermission.CanManageApiKeys(context.User))
+        {
+            return TypedResults.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
         var record = await store.RevokeAsync(id, context.RequestAborted);
         if (record is null)
         {

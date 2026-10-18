@@ -135,6 +135,39 @@ internal static class AdminApiKeyPermission
         => ResolveAccessLevel(principal) == AdminAccessLevel.Write;
 
     /// <summary>
+    /// Requires full credential-management authority after the endpoint's admin
+    /// policy has authorized the request. Operational keys cannot mint or rotate
+    /// credentials, including equal-scope replacements that outlive revocation.
+    /// </summary>
+    internal static bool CanManageApiKeys(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        if (principal.Identity?.IsAuthenticated != true)
+        {
+            return false;
+        }
+
+        // Human OIDC administrators retain the authority established by the admin
+        // policy. Exact-operation credentials are minted only by the approved
+        // operation executor; the transport policy checks their method and path.
+        if (principal.FindFirst("api_key_id") is null || principal.IsInRole(ApprovedOperationRole))
+        {
+            return true;
+        }
+
+        var grants = principal.FindAll(PermissionClaimType)
+            .Select(claim => claim.Value.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if ((grants.Count == 0 && principal.IsInRole("admin")) ||
+            grants.Any(grant => FullAdminGrants.Contains(grant, StringComparer.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Determines whether a principal is authorized for an admin request whose
     /// HTTP method is <paramref name="httpMethod"/>. Safe (read) methods require at
     /// least <see cref="AdminAccessLevel.Read"/>; mutating methods require

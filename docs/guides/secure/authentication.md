@@ -65,6 +65,13 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 
 The response's `data.key` is shown once — store it immediately. Manage the lifecycle with `POST /api/v1/admin/api-keys/{id}/rotate` (returns a new secret), `POST .../{id}/revoke`, and `GET .../{id}/effective-permissions`.
 
+Create, rotate, and revoke keys through a full administrator session or a
+separately approved credential-management operation. Operational keys such as
+`admin:write` and `admin:manage` can inspect permitted key metadata but cannot
+manage API keys, including replacement keys with the same grants. These
+lifecycle operations cannot be used by a scoped key to acquire approval grants
+or create keys that survive revocation of its original credential.
+
 Credential expiry denies authentication while preserving the managed key's
 metadata, so administrators can still inspect its expired or revoked status.
 Redis retains this metadata for 3,650 days after expiry, or after the latest
