@@ -74,4 +74,5 @@ def assert_tile_denied(response, expected_scheme: str) -> None:
     root = ElementTree.fromstring(response.content)
     assert root.tag == "{http://www.opengis.net/ows/1.1}ExceptionReport", root.tag
     exceptions = root.findall("{http://www.opengis.net/ows/1.1}Exception")
-    assert exceptions and all(e.get("exceptionCode") == "AccessDenied" for e in exceptions)
+    codes = [exception.get("exceptionCode") for exception in exceptions]
+    assert codes and all(code == "AccessDenied" for code in codes), f"WMTS auth exception codes: {codes}"

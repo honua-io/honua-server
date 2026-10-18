@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -94,6 +95,74 @@ public sealed class InvalidTokenProtocolResponseTests
 
     [UnitTheory]
     [Operation(Operations.Security)]
+    [InlineData("/rest/services/protected/MapServer/WMTS", "?SERVICE=WMTS&REQUEST=GetTile")]
+    [InlineData("/rest/services/protected/MapServer/WMTS/2010/default/WebMercatorQuad/5/12/5.png", "")]
+    [InlineData("/ogc/services/protected/wmts", "?SERVICE=WMTS&REQUEST=GetTile")]
+    public async Task Wmts_InvalidToken_Returns401AccessDeniedBeforeHandler(string path, string query)
+    {
+        var context = await RejectAsync(path, query);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        context.Response.Headers.WWWAuthenticate.ToString().Should().Be("Bearer");
+        AssertWmtsException(context, "AccessDenied").Should().Contain(InvalidTokenDetail);
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Security)]
+    [InlineData(StatusCodes.Status401Unauthorized, "Authentication required.")]
+    [InlineData(StatusCodes.Status401Unauthorized, "Invalid API key.")]
+    [InlineData(StatusCodes.Status401Unauthorized, "Bearer token has expired.")]
+    [InlineData(StatusCodes.Status403Forbidden, "Required read permission is missing.")]
+    public async Task Wmts_AuthenticationRefusal_PreservesStatusAndUsesAccessDenied(int status, string detail)
+    {
+        var context = CreateContext("/rest/services/protected/MapServer/WMTS", "?SERVICE=WMTS&REQUEST=GetTile");
+        await StandardErrorResponseFormatter.FormatError(
+            context, new StandardErrorResponse(status, "Access refused", detail)).ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(status);
+        context.Response.Headers.CacheControl.ToString().Should().Contain("no-store");
+        AssertWmtsException(context, "AccessDenied").Should().Contain(detail);
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Security)]
+    [InlineData("/rest/services/protected/MapServer/WMTS", StatusCodes.Status400BadRequest, "Missing LAYER.", "MissingParameterValue")]
+    [InlineData("/rest/services/protected/MapServer/WMTS", StatusCodes.Status400BadRequest, "Invalid tile index.", "InvalidParameterValue")]
+    [InlineData("/rest/services/protected/MapServer/WMTS", StatusCodes.Status501NotImplemented, "Unsupported operation.", "OperationNotSupported")]
+    [InlineData("/rest/services/protected/MapServer/WMTS", StatusCodes.Status500InternalServerError, "Internal failure.", "NoApplicableCode")]
+    [InlineData("/wfs", StatusCodes.Status400BadRequest, "Missing LAYER.", "MissingParameterValue")]
+    [InlineData("/wfs", StatusCodes.Status400BadRequest, "Invalid tile index.", "InvalidParameterValue")]
+    [InlineData("/wfs", StatusCodes.Status501NotImplemented, "Unsupported operation.", "OperationNotSupported")]
+    [InlineData("/wfs", StatusCodes.Status500InternalServerError, "Internal failure.", "NoApplicableCode")]
+    public async Task Ogc_NonAuthenticationErrors_KeepExistingCodes(string path, int status, string detail, string code)
+    {
+        var context = CreateContext(path, "");
+        await StandardErrorResponseFormatter.FormatError(
+            context, new StandardErrorResponse(status, "Request refused", detail)).ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(status);
+        ReadBody(context).Should().Contain($"exceptionCode=\"{code}\"");
+        context.Response.Headers.WWWAuthenticate.ToString().Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Security)]
+    [InlineData(StatusCodes.Status401Unauthorized)]
+    [InlineData(StatusCodes.Status403Forbidden)]
+    public async Task Wmts_ExplicitProtocolCode_KeepsExistingEnvelopeContract(int status)
+    {
+        var context = CreateContext("/ogc/services/protected/wmts", "?SERVICE=WMTS&REQUEST=GetTile");
+        await StandardErrorResponseFormatter.FormatError(
+            context,
+            new StandardErrorResponse(status, "Authentication required", "Tenant claim required."),
+            new ErrorResponseFormatterOptions { WmtsExceptionCode = "AuthenticationRequired" }).ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(status);
+        AssertWmtsException(context, "AuthenticationRequired");
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Security)]
     [InlineData("/rest/services/arcgis_compat_protected/FeatureServer/0/query", "?f=json&where=1%3D1")]
     [InlineData("/rest/services/arcgis_compat_protected/MapServer", "?f=json")]
     public async Task GeoServicesRest_InvalidToken_Retains200And498(string path, string query)
@@ -154,5 +223,18 @@ public sealed class InvalidTokenProtocolResponseTests
         context.Response.Body.Position = 0;
         using var reader = new StreamReader(context.Response.Body);
         return reader.ReadToEnd();
+    }
+
+    private static string AssertWmtsException(HttpContext context, string code)
+    {
+        context.Response.ContentType.Should().StartWith("application/xml");
+        XNamespace ows = "http://www.opengis.net/ows/1.1";
+        var body = ReadBody(context);
+        var report = XDocument.Parse(body).Root
+            ?? throw new InvalidOperationException("WMTS exception report requires an XML root.");
+        report.Name.Should().Be(ows + "ExceptionReport");
+        report.Elements(ows + "Exception").Should().ContainSingle()
+            .Which.Attribute("exceptionCode")!.Value.Should().Be(code);
+        return body;
     }
 }
