@@ -15,6 +15,7 @@ using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Geoprocessing;
 using Honua.Server.Features.Orchestration;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
@@ -43,21 +44,50 @@ internal sealed class WorkflowPackageService(
     private const string WorkflowReleaseTargetEnvironment = "production";
 
     public Task<IReadOnlyList<WorkflowPackage>> ListPackagesAsync(CancellationToken cancellationToken)
-        => store.ListPackagesAsync(cancellationToken);
+        => ListPackagesAsync(null, cancellationToken);
+
+    public async Task<IReadOnlyList<WorkflowPackage>> ListPackagesAsync(ClaimsPrincipal? principal, CancellationToken cancellationToken)
+    {
+        var access = await ResolveAccessAsync(principal, cancellationToken).ConfigureAwait(false);
+        var packages = await store.ListPackagesAsync(cancellationToken).ConfigureAwait(false);
+        return packages.Where(package => CanAccess(access, package.Ownership)).ToArray();
+    }
 
     public Task<WorkflowPackage?> GetPackageAsync(string packageId, CancellationToken cancellationToken)
-        => store.GetPackageAsync(packageId, cancellationToken);
+        => GetPackageAsync(packageId, null, cancellationToken);
 
-    public Task<IReadOnlyList<WorkflowPackageVersion>> ListVersionsAsync(
-        string packageId,
-        CancellationToken cancellationToken)
-        => store.ListVersionsAsync(packageId, cancellationToken);
+    public async Task<WorkflowPackage?> GetPackageAsync(string packageId, ClaimsPrincipal? principal, CancellationToken cancellationToken)
+    {
+        var access = await ResolveAccessAsync(principal, cancellationToken).ConfigureAwait(false);
+        var package = await store.GetPackageAsync(packageId, cancellationToken).ConfigureAwait(false);
+        return package is not null && CanAccess(access, package.Ownership) ? package : null;
+    }
 
-    public Task<WorkflowPackageVersion?> GetVersionAsync(
-        string packageId,
-        int version,
-        CancellationToken cancellationToken)
-        => store.GetVersionAsync(packageId, version, cancellationToken);
+    public Task<IReadOnlyList<WorkflowPackageVersion>> ListVersionsAsync(string packageId, CancellationToken cancellationToken)
+        => ListVersionsAsync(packageId, null, cancellationToken);
+
+    public async Task<IReadOnlyList<WorkflowPackageVersion>> ListVersionsAsync(
+        string packageId, ClaimsPrincipal? principal, CancellationToken cancellationToken)
+    {
+        var access = await ResolveAccessAsync(principal, cancellationToken).ConfigureAwait(false);
+        var package = await store.GetPackageAsync(packageId, cancellationToken).ConfigureAwait(false);
+        if (package is null || !CanAccess(access, package.Ownership)) return [];
+        var versions = await store.ListVersionsAsync(packageId, cancellationToken).ConfigureAwait(false);
+        return versions.Where(version => CanAccess(access, version.Ownership)).ToArray();
+    }
+
+    public Task<WorkflowPackageVersion?> GetVersionAsync(string packageId, int version, CancellationToken cancellationToken)
+        => GetVersionAsync(packageId, version, null, cancellationToken);
+
+    public async Task<WorkflowPackageVersion?> GetVersionAsync(
+        string packageId, int version, ClaimsPrincipal? principal, CancellationToken cancellationToken)
+    {
+        var access = await ResolveAccessAsync(principal, cancellationToken).ConfigureAwait(false);
+        var package = await store.GetPackageAsync(packageId, cancellationToken).ConfigureAwait(false);
+        if (package is null || !CanAccess(access, package.Ownership)) return null;
+        var result = await store.GetVersionAsync(packageId, version, cancellationToken).ConfigureAwait(false);
+        return result is not null && CanAccess(access, result.Ownership) ? result : null;
+    }
 
     public async Task<WorkflowPackage> SavePackageAsync(
         SaveWorkflowPackageRequest request,
@@ -80,14 +110,17 @@ internal sealed class WorkflowPackageService(
         var packageId = string.IsNullOrWhiteSpace(request.PackageId)
             ? CreatePackageId(request.Name)
             : request.PackageId.Trim();
+        var access = await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false);
         var existing = await store.GetPackageAsync(packageId, cancellationToken).ConfigureAwait(false);
+        if (existing is not null && !CanAccess(access, existing.Ownership))
+            throw new KeyNotFoundException($"Workflow package '{packageId}' was not found.");
 
         var package = new WorkflowPackage
         {
             PackageId = packageId,
             Ownership = existing is not null
                 ? existing.Ownership
-                : authorSecurityContextCapturer?.CaptureOwnership(principal),
+                : access?.Ownership ?? authorSecurityContextCapturer?.CaptureOwnership(principal),
             Name = request.Name.Trim(),
             Description = Normalize(request.Description),
             Namespace = Normalize(request.Namespace),
@@ -110,7 +143,8 @@ internal sealed class WorkflowPackageService(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
-        var package = await RequirePackageAsync(packageId, cancellationToken).ConfigureAwait(false);
+        _ = await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false);
+        var package = await RequirePackageAsync(packageId, cancellationToken, principal).ConfigureAwait(false);
         var validatedGraph = package.Graph;
         var validation = await ValidateGraphAsync(validatedGraph, principal, target: null, cancellationToken).ConfigureAwait(false);
         var hash = ComputePackageHash(validatedGraph);
@@ -135,7 +169,7 @@ internal sealed class WorkflowPackageService(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
-        var packageVersion = await RequireVersionAsync(packageId, version, cancellationToken).ConfigureAwait(false);
+        var packageVersion = await RequireVersionAsync(packageId, version, cancellationToken, principal).ConfigureAwait(false);
         return await ValidateGraphAsync(packageVersion.Graph, principal, target: null, cancellationToken).ConfigureAwait(false);
     }
 
@@ -145,7 +179,7 @@ internal sealed class WorkflowPackageService(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
-        var packageVersion = await RequireVersionAsync(packageId, version, cancellationToken).ConfigureAwait(false);
+        var packageVersion = await RequireVersionAsync(packageId, version, cancellationToken, principal).ConfigureAwait(false);
         var validation = await ValidateGraphAsync(packageVersion.Graph, principal, target: null, cancellationToken).ConfigureAwait(false);
         var outputSchemas = await ResolveOutputSchemasAsync(packageVersion.Graph, cancellationToken).ConfigureAwait(false);
         var now = clock.GetUtcNow();
@@ -241,7 +275,8 @@ internal sealed class WorkflowPackageService(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var packageVersion = await RequireVersionAsync(packageId, version, cancellationToken).ConfigureAwait(false);
+        var packageVersion = await RequireVersionAsync(packageId, version, cancellationToken, principal).ConfigureAwait(false);
+        EnsureLegacyGovernanceAuthority(await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false));
         var eligibility = await ValidateGraphAsync(packageVersion.Graph, principal, request.Target, cancellationToken).ConfigureAwait(false);
         if (!eligibility.IsValid)
         {
@@ -461,50 +496,64 @@ internal sealed class WorkflowPackageService(
         }
     }
 
-    public Task<IReadOnlyList<WorkflowPublication>> ListPublicationsAsync(
-        string? packageId,
-        CancellationToken cancellationToken)
-        => store.ListPublicationsAsync(packageId, cancellationToken);
+    public Task<IReadOnlyList<WorkflowPublication>> ListPublicationsAsync(string? packageId, CancellationToken cancellationToken)
+        => ListPublicationsAsync(packageId, null, cancellationToken);
 
-    /// <summary>
-    /// Deletes a publication and, for a schedule publication, removes the owning workflow
-    /// definition so the scheduler cannot keep firing it.
-    /// </summary>
-    public async Task<WorkflowPublication?> DeletePublicationAsync(
-        string publicationId,
-        CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<WorkflowPublication>> ListPublicationsAsync(
+        string? packageId, ClaimsPrincipal? principal, CancellationToken cancellationToken)
     {
-        var existing = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
-        if (existing is null)
+        var access = await ResolveAccessAsync(principal, cancellationToken).ConfigureAwait(false);
+        var result = new List<WorkflowPublication>();
+        foreach (var publication in await store.ListPublicationsAsync(packageId, cancellationToken).ConfigureAwait(false))
         {
-            return null;
+            if (await CanAccessPublicationAsync(access, publication, cancellationToken).ConfigureAwait(false)) result.Add(publication);
         }
+        return result;
+    }
 
+    public Task<WorkflowPublication?> DeletePublicationAsync(string publicationId, CancellationToken cancellationToken)
+        => DeletePublicationAsync(publicationId, null, cancellationToken);
+
+    public async Task<WorkflowPublication?> DeletePublicationAsync(
+        string publicationId, ClaimsPrincipal? principal, CancellationToken cancellationToken)
+    {
+        var access = await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false);
+        var existing = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
+        if (existing is null || !await CanAccessPublicationAsync(access, existing, cancellationToken).ConfigureAwait(false)) return null;
+        EnsureLegacyGovernanceAuthority(access);
         await SyncScheduleDefinitionAsync(existing, remove: true, enabled: false, cancellationToken).ConfigureAwait(false);
         return await store.DeletePublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Sets a publication's status and, for a schedule publication, enables or disables the
-    /// owning workflow definition's trigger to match.
-    /// </summary>
-    public async Task<WorkflowPublication?> SetPublicationStatusAsync(
-        string publicationId,
-        WorkflowPublicationStatus status,
-        CancellationToken cancellationToken)
-    {
-        var existing = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
-        if (existing is null)
-        {
-            return null;
-        }
+    public Task<WorkflowPublication?> SetPublicationStatusAsync(
+        string publicationId, WorkflowPublicationStatus status, CancellationToken cancellationToken)
+        => SetPublicationStatusAsync(publicationId, status, null, cancellationToken);
 
-        await SyncScheduleDefinitionAsync(
-            existing,
-            remove: false,
-            enabled: status == WorkflowPublicationStatus.Active,
-            cancellationToken).ConfigureAwait(false);
+    public async Task<WorkflowPublication?> SetPublicationStatusAsync(
+        string publicationId, WorkflowPublicationStatus status, ClaimsPrincipal? principal, CancellationToken cancellationToken)
+    {
+        var access = await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false);
+        var existing = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
+        if (existing is null || !await CanAccessPublicationAsync(access, existing, cancellationToken).ConfigureAwait(false)) return null;
+        EnsureLegacyGovernanceAuthority(access);
+        await SyncScheduleDefinitionAsync(existing, remove: false,
+            enabled: status == WorkflowPublicationStatus.Active, cancellationToken).ConfigureAwait(false);
         return await store.SetPublicationStatusAsync(publicationId, status, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> CanAccessPublicationAsync(
+        WorkflowPackageAccess? access, WorkflowPublication publication, CancellationToken cancellationToken)
+    {
+        var package = await store.GetPackageAsync(publication.PackageId, cancellationToken).ConfigureAwait(false);
+        var version = await store.GetVersionAsync(publication.PackageId, publication.PackageVersion, cancellationToken).ConfigureAwait(false);
+        if (access?.WorkspaceAgent != true && (package is null || version is null)) return true; // Human legacy cleanup.
+        return package is not null && version is not null && CanAccess(access, package.Ownership) && CanAccess(access, version.Ownership);
+    }
+
+    private static void EnsureLegacyGovernanceAuthority(WorkflowPackageAccess? access)
+    {
+        if (access?.WorkspaceAgent == true)
+            throw new GeoprocessingApprovalRequiredException("agent-workspace.human-approval");
     }
 
     private async Task SyncScheduleDefinitionAsync(
@@ -563,6 +612,10 @@ internal sealed class WorkflowPackageService(
         var publication = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Workflow publication '{publicationId}' was not found.");
 
+        var access = await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false);
+        if (!await CanAccessPublicationAsync(access, publication, cancellationToken).ConfigureAwait(false))
+            throw new KeyNotFoundException($"Workflow publication '{publicationId}' was not found.");
+
         if (publication.Status != WorkflowPublicationStatus.Active)
         {
             throw new InvalidOperationException($"Workflow publication '{publicationId}' is disabled.");
@@ -571,7 +624,7 @@ internal sealed class WorkflowPackageService(
         var version = await RequireVersionAsync(
             publication.PackageId,
             publication.PackageVersion,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken, principal).ConfigureAwait(false);
 
         var provenance = BuildRunProvenance(publication.Provenance, request.Parameters);
 
@@ -1071,17 +1124,28 @@ internal sealed class WorkflowPackageService(
         return kinds.Count == 0 ? [ArtifactKind.File] : kinds.ToArray();
     }
 
+    private Task<WorkflowPackageAccess?> ResolveAccessAsync(ClaimsPrincipal? principal, CancellationToken cancellationToken, bool write = false)
+    {
+        if (authorSecurityContextCapturer is not null)
+            return authorSecurityContextCapturer.ResolvePackageAccessAsync(principal, cancellationToken, write);
+        // Directly constructed internal/test compositions retain their prior behavior, but
+        // an explicitly supplied workspace credential never gains authority from missing policy.
+        if (principal?.HasClaim("permission", "agent:workspace") == true)
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        return Task.FromResult<WorkflowPackageAccess?>(null);
+    }
+
+    private static bool CanAccess(WorkflowPackageAccess? access, WorkflowPackageOwnership? owner)
+        => access is null || access.CanAccess(owner);
+
     private async Task<WorkflowPackage> RequirePackageAsync(
-        string packageId,
-        CancellationToken cancellationToken)
-        => await store.GetPackageAsync(packageId, cancellationToken).ConfigureAwait(false)
+        string packageId, CancellationToken cancellationToken, ClaimsPrincipal? principal = null)
+        => await GetPackageAsync(packageId, principal, cancellationToken).ConfigureAwait(false)
            ?? throw new KeyNotFoundException($"Workflow package '{packageId}' was not found.");
 
     private async Task<WorkflowPackageVersion> RequireVersionAsync(
-        string packageId,
-        int version,
-        CancellationToken cancellationToken)
-        => await store.GetVersionAsync(packageId, version, cancellationToken).ConfigureAwait(false)
+        string packageId, int version, CancellationToken cancellationToken, ClaimsPrincipal? principal = null)
+        => await GetVersionAsync(packageId, version, principal, cancellationToken).ConfigureAwait(false)
            ?? throw new KeyNotFoundException($"Workflow package '{packageId}' version {version} was not found.");
 
     private static Dictionary<string, string> BuildProvenance(
@@ -1341,7 +1405,8 @@ internal sealed class WorkflowPackageService(
                 .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
 
     private static string? ResolveActor(ClaimsPrincipal principal)
-        => principal.Identity?.Name
+        => CanonicalSecurityActor.Resolve(principal)?.ActorId
+           ?? principal.Identity?.Name
            ?? principal.FindFirst("sub")?.Value
            ?? principal.FindFirst("client_id")?.Value;
 }

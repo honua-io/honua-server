@@ -154,47 +154,51 @@ internal static class WorkflowPackageEndpoints
         HttpContext context,
         WorkflowPackageService service,
         CancellationToken cancellationToken)
-    {
-        SetNoStore(context);
-        var packages = await service.ListPackagesAsync(cancellationToken).ConfigureAwait(false);
-        return TypedResults.Ok(ApiResponse<WorkflowPackageListResponse>.CreateSuccess(new WorkflowPackageListResponse
+        => await ExecuteVersionMutationAsync(context, async () =>
         {
-            Items = packages.ToArray()
-        }));
-    }
+            var packages = await service.ListPackagesAsync(context.User, cancellationToken).ConfigureAwait(false);
+            return TypedResults.Ok(ApiResponse<WorkflowPackageListResponse>.CreateSuccess(new WorkflowPackageListResponse
+            {
+                Items = packages.ToArray()
+            }));
+        }).ConfigureAwait(false);
 
     private static async Task<IResult> HandleSavePackage(
         HttpContext context,
         SaveWorkflowPackageRequest request,
         WorkflowPackageService service,
         CancellationToken cancellationToken)
-    {
-        SetNoStore(context);
-        try
+        => await ExecuteVersionMutationAsync(context, async () =>
         {
-            var package = await service.SavePackageAsync(request, context.User, cancellationToken).ConfigureAwait(false);
-            return TypedResults.Created(
-                $"/api/v1/console/workflow-packages/{package.PackageId}",
-                ApiResponse<WorkflowPackage>.CreateSuccess(package));
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(context, ex.Message);
-        }
-    }
+            try
+            {
+                var package = await service.SavePackageAsync(request, context.User, cancellationToken).ConfigureAwait(false);
+                return TypedResults.Created(
+                    $"/api/v1/console/workflow-packages/{package.PackageId}",
+                    ApiResponse<WorkflowPackage>.CreateSuccess(package));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(context, ex.Message);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(context, ex.Message);
+            }
+        }).ConfigureAwait(false);
 
     private static async Task<IResult> HandleGetPackage(
         HttpContext context,
         string packageId,
         WorkflowPackageService service,
         CancellationToken cancellationToken)
-    {
-        SetNoStore(context);
-        var package = await service.GetPackageAsync(packageId, cancellationToken).ConfigureAwait(false);
-        return package == null
-            ? NotFound(context, $"Workflow package '{packageId}' was not found.")
-            : TypedResults.Ok(ApiResponse<WorkflowPackage>.CreateSuccess(package));
-    }
+        => await ExecuteVersionMutationAsync(context, async () =>
+        {
+            var package = await service.GetPackageAsync(packageId, context.User, cancellationToken).ConfigureAwait(false);
+            return package == null
+                ? NotFound(context, $"Workflow package '{packageId}' was not found.")
+                : TypedResults.Ok(ApiResponse<WorkflowPackage>.CreateSuccess(package));
+        }).ConfigureAwait(false);
 
     private static async Task<IResult> HandleUpdatePackage(
         HttpContext context,
@@ -202,46 +206,50 @@ internal static class WorkflowPackageEndpoints
         SaveWorkflowPackageRequest request,
         WorkflowPackageService service,
         CancellationToken cancellationToken)
-    {
-        SetNoStore(context);
-        if (!string.IsNullOrWhiteSpace(request.PackageId) &&
-            !string.Equals(packageId, request.PackageId, StringComparison.Ordinal))
+        => await ExecuteVersionMutationAsync(context, async () =>
         {
-            return BadRequest(context, "Route packageId must match request packageId.");
-        }
+            if (!string.IsNullOrWhiteSpace(request.PackageId) &&
+                !string.Equals(packageId, request.PackageId, StringComparison.Ordinal))
+            {
+                return BadRequest(context, "Route packageId must match request packageId.");
+            }
 
-        var existing = await service.GetPackageAsync(packageId, cancellationToken).ConfigureAwait(false);
-        if (existing == null)
-        {
-            return NotFound(context, $"Workflow package '{packageId}' was not found.");
-        }
+            var existing = await service.GetPackageAsync(packageId, context.User, cancellationToken).ConfigureAwait(false);
+            if (existing == null)
+            {
+                return NotFound(context, $"Workflow package '{packageId}' was not found.");
+            }
 
-        try
-        {
-            var package = await service
-                .SavePackageAsync(request with { PackageId = packageId }, context.User, cancellationToken)
-                .ConfigureAwait(false);
-            return TypedResults.Ok(ApiResponse<WorkflowPackage>.CreateSuccess(package));
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(context, ex.Message);
-        }
-    }
+            try
+            {
+                var package = await service
+                    .SavePackageAsync(request with { PackageId = packageId }, context.User, cancellationToken)
+                    .ConfigureAwait(false);
+                return TypedResults.Ok(ApiResponse<WorkflowPackage>.CreateSuccess(package));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(context, ex.Message);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(context, ex.Message);
+            }
+        }).ConfigureAwait(false);
 
     private static async Task<IResult> HandleListVersions(
         HttpContext context,
         string packageId,
         WorkflowPackageService service,
         CancellationToken cancellationToken)
-    {
-        SetNoStore(context);
-        var versions = await service.ListVersionsAsync(packageId, cancellationToken).ConfigureAwait(false);
-        return TypedResults.Ok(ApiResponse<WorkflowPackageVersionListResponse>.CreateSuccess(new WorkflowPackageVersionListResponse
+        => await ExecuteVersionMutationAsync(context, async () =>
         {
-            Items = versions.ToArray()
-        }));
-    }
+            var versions = await service.ListVersionsAsync(packageId, context.User, cancellationToken).ConfigureAwait(false);
+            return TypedResults.Ok(ApiResponse<WorkflowPackageVersionListResponse>.CreateSuccess(new WorkflowPackageVersionListResponse
+            {
+                Items = versions.ToArray()
+            }));
+        }).ConfigureAwait(false);
 
     private static async Task<IResult> HandleCreateVersion(
         HttpContext context,
@@ -264,13 +272,13 @@ internal static class WorkflowPackageEndpoints
         int packageVersion,
         WorkflowPackageService service,
         CancellationToken cancellationToken)
-    {
-        SetNoStore(context);
-        var version = await service.GetVersionAsync(packageId, packageVersion, cancellationToken).ConfigureAwait(false);
-        return version == null
-            ? NotFound(context, $"Workflow package '{packageId}' version {packageVersion} was not found.")
-            : TypedResults.Ok(ApiResponse<WorkflowPackageVersion>.CreateSuccess(version));
-    }
+        => await ExecuteVersionMutationAsync(context, async () =>
+        {
+            var version = await service.GetVersionAsync(packageId, packageVersion, context.User, cancellationToken).ConfigureAwait(false);
+            return version == null
+                ? NotFound(context, $"Workflow package '{packageId}' version {packageVersion} was not found.")
+                : TypedResults.Ok(ApiResponse<WorkflowPackageVersion>.CreateSuccess(version));
+        }).ConfigureAwait(false);
 
     private static async Task<IResult> HandleValidateVersion(
         HttpContext context,
@@ -324,13 +332,13 @@ internal static class WorkflowPackageEndpoints
         string publicationId,
         WorkflowPackageService service,
         CancellationToken cancellationToken)
-    {
-        SetNoStore(context);
-        var deleted = await service.DeletePublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
-        return deleted is null
-            ? NotFound(context, $"Workflow publication '{publicationId}' was not found.")
-            : TypedResults.Ok(ApiResponse<WorkflowPublication>.CreateSuccess(deleted));
-    }
+        => await ExecuteVersionMutationAsync(context, async () =>
+        {
+            var deleted = await service.DeletePublicationAsync(publicationId, context.User, cancellationToken).ConfigureAwait(false);
+            return deleted is null
+                ? NotFound(context, $"Workflow publication '{publicationId}' was not found.")
+                : TypedResults.Ok(ApiResponse<WorkflowPublication>.CreateSuccess(deleted));
+        }).ConfigureAwait(false);
 
     private static async Task<IResult> HandleSetPublicationStatus(
         HttpContext context,
@@ -338,26 +346,26 @@ internal static class WorkflowPackageEndpoints
         SetWorkflowPublicationStatusRequest request,
         WorkflowPackageService service,
         CancellationToken cancellationToken)
-    {
-        SetNoStore(context);
-        var updated = await service.SetPublicationStatusAsync(publicationId, request.Status, cancellationToken).ConfigureAwait(false);
-        return updated is null
-            ? NotFound(context, $"Workflow publication '{publicationId}' was not found.")
-            : TypedResults.Ok(ApiResponse<WorkflowPublication>.CreateSuccess(updated));
-    }
+        => await ExecuteVersionMutationAsync(context, async () =>
+        {
+            var updated = await service.SetPublicationStatusAsync(publicationId, request.Status, context.User, cancellationToken).ConfigureAwait(false);
+            return updated is null
+                ? NotFound(context, $"Workflow publication '{publicationId}' was not found.")
+                : TypedResults.Ok(ApiResponse<WorkflowPublication>.CreateSuccess(updated));
+        }).ConfigureAwait(false);
 
     private static async Task<IResult> HandleListPublications(
         HttpContext context,
         WorkflowPackageService service,
         CancellationToken cancellationToken)
-    {
-        SetNoStore(context);
-        var publications = await service.ListPublicationsAsync(null, cancellationToken).ConfigureAwait(false);
-        return TypedResults.Ok(ApiResponse<WorkflowPublicationListResponse>.CreateSuccess(new WorkflowPublicationListResponse
+        => await ExecuteVersionMutationAsync(context, async () =>
         {
-            Items = publications.ToArray()
-        }));
-    }
+            var publications = await service.ListPublicationsAsync(null, context.User, cancellationToken).ConfigureAwait(false);
+            return TypedResults.Ok(ApiResponse<WorkflowPublicationListResponse>.CreateSuccess(new WorkflowPublicationListResponse
+            {
+                Items = publications.ToArray()
+            }));
+        }).ConfigureAwait(false);
 
     private static async Task<IResult> HandleRunPublication(
         HttpContext context,
