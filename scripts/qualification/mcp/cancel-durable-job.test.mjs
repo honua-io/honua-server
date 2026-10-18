@@ -33,7 +33,9 @@ async function run(mode) {
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
-    return { result: await cancelDurableJob({ baseUrl: `http://127.0.0.1:${server.address().port}`, apiKey: 'control-key', jobId: 'job-1' }), calls };
+    try {
+      return { result: await cancelDurableJob({ baseUrl: `http://127.0.0.1:${server.address().port}`, apiKey: 'control-key', jobId: 'job-1' }), calls };
+    } catch (error) { return { error, calls }; }
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
@@ -41,7 +43,8 @@ async function run(mode) {
 }
 
 test('actual installed SDK discovers and repeats durable cancellation, declaring acknowledgement only', async () => {
-  const { result, calls } = await run('positive');
+  const { result, error, calls } = await run('positive');
+  assert.equal(error, undefined, error?.message);
   assert.equal(result.executionCessationProven, false);
   assert.equal(result.sdkVersion, '1.32.1');
   assert.match(result.adapterSha256, /^[a-f0-9]{64}$/);
@@ -54,7 +57,15 @@ test('actual installed SDK discovers and repeats durable cancellation, declaring
 
 for (const mode of ['missing-tool', 'cursor-loop', 'wrong-job', 'false-ack', 'completed', 'output', 'contradictory-text', 'tool-error', 'nonboolean-error', 'empty']) {
   test(`installed SDK adapter rejects ${mode}`, async () => {
-    await assert.rejects(run(mode));
+    const { error, calls } = await run(mode);
+    assert.ok(error, 'malformed peer response must fail');
+    assert.ok(calls.some(({ body }) => body.method === 'tools/list'), 'must reach actual SDK discovery');
+    if (!['missing-tool', 'cursor-loop'].includes(mode)) {
+      assert.ok(calls.some(({ body }) => body.method === 'tools/call'), 'must reach actual SDK cancellation');
+    }
+    const expected = mode === 'missing-tool' ? /missing-cancellation-tool/ : mode === 'cursor-loop' ? /incomplete-discovery/
+      : mode === 'tool-error' ? /tool-error/ : mode === 'nonboolean-error' ? /isError|boolean|validation/i : /invalid-acknowledgement/;
+    assert.match(error.message, expected);
   });
 }
 

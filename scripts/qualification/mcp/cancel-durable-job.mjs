@@ -27,9 +27,18 @@ export async function cancelDurableJob({ baseUrl, apiKey, jobId }) {
   if (endpoint.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname)
     || endpoint.username || endpoint.password || !apiKey || !/^[A-Za-z0-9_-]{1,128}$/.test(jobId)) throw new Error('invalid-owned-target');
   const require = createRequire(import.meta.url);
-  const sdkPath = require.resolve('@modelcontextprotocol/sdk/package.json');
-  const sdk = JSON.parse(await readFile(sdkPath, 'utf8'));
-  const lockBytes = await readFile(resolve(dirname(sdkPath), '../../..', 'package-lock.json'));
+  // Package exports map package.json to a generated dist package on this SDK;
+  // locate its actual named root from the authenticated installed entry point.
+  let packageRoot = dirname(require.resolve('@modelcontextprotocol/sdk/client/index.js'));
+  let sdk;
+  for (let depth = 0; depth < 6; depth++, packageRoot = dirname(packageRoot)) {
+    let candidate;
+    try { candidate = JSON.parse(await readFile(resolve(packageRoot, 'package.json'), 'utf8')); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (candidate?.name === '@modelcontextprotocol/sdk') { sdk = candidate; break; }
+  }
+  if (!sdk) throw new Error('missing-installed-sdk-root');
+  const lockBytes = await readFile(resolve(packageRoot, '../../..', 'package-lock.json'));
   const lockSha256 = createHash('sha256').update(lockBytes).digest('hex');
   const installed = JSON.parse(lockBytes).packages['node_modules/@modelcontextprotocol/sdk'];
   if (sdk.version !== SDK_VERSION || installed?.version !== SDK_VERSION
