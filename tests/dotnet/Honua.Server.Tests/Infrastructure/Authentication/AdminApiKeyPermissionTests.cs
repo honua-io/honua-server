@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
+using Honua.TestKit.Attributes;
 using Xunit;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
@@ -15,6 +16,45 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 /// </summary>
 public sealed class AdminApiKeyPermissionTests
 {
+    [UnitTheory]
+    [InlineData("admin:read", false)]
+    [InlineData("admin:write", false)]
+    [InlineData("admin:manage", false)]
+    [InlineData("admin:approve", false)]
+    [InlineData("admin", true)]
+    [InlineData(" ADMIN:* ", true)]
+    [InlineData("*", true)]
+    public void ApiKeyManagement_RequiresFullAdministrativeGrant(string grant, bool expected)
+    {
+        var principal = AdminPrincipal(grant);
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("api_key_id", Guid.NewGuid().ToString()));
+        AdminApiKeyPermission.CanManageApiKeys(principal).Should().Be(expected);
+    }
+
+    [UnitTest]
+    public void BootstrapAndHumanAdmin_RetainCredentialManagement()
+    {
+        var bootstrap = AdminPrincipal();
+        ((ClaimsIdentity)bootstrap.Identity!).AddClaim(new Claim("api_key_id", Guid.NewGuid().ToString()));
+        AdminApiKeyPermission.CanManageApiKeys(bootstrap).Should().BeTrue();
+        AdminApiKeyPermission.CanManageApiKeys(AdminPrincipal()).Should().BeTrue();
+        AdminApiKeyPermission.CanManageApiKeys(new ClaimsPrincipal()).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void ApprovedOperationCredential_RetainsManagementWithinItsTransportPolicy()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([
+            new Claim(ClaimTypes.Role, AdminApiKeyPermission.ApprovedOperationRole),
+            new Claim("api_key_id", Guid.NewGuid().ToString()),
+            new Claim(AdminApiKeyPermission.PermissionClaimType,
+                AdminApiKeyPermission.CreateApprovedOperationGrant("POST", "/api/v1/admin/api-keys")),
+        ], "Test"));
+        AdminApiKeyPermission.IsAuthorized(principal, "POST", "/api/v1/admin/api-keys").Should().BeTrue();
+        AdminApiKeyPermission.CanManageApiKeys(principal).Should().BeTrue();
+        AdminApiKeyPermission.IsAuthorized(principal, "POST", "/api/v1/admin/api-keys/other/rotate").Should().BeFalse();
+    }
+
     private static ClaimsPrincipal AdminPrincipal(params string[] permissions)
     {
         var claims = new List<Claim> { new(ClaimTypes.Role, "admin") };

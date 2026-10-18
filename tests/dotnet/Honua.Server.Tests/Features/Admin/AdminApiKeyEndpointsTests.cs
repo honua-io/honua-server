@@ -210,6 +210,32 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
+    public async Task OperationalKey_CannotManageCredentials()
+    {
+        var agent = await CreateApiKeyAsync("local-agent", permissions: ["admin:read", "admin:write", "read:*"]);
+        var approver = await CreateApiKeyAsync("separate-approver", permissions: ["admin:read", "admin:approve"]);
+        using var agentClient = CreateApiKeyClient(agent.Key);
+        string[][] requestedGrants = [["admin:approve"], ["admin:*"], [], ["write:roads"], ["admin:read"]];
+        foreach (var permissions in requestedGrants)
+        {
+            var response = await agentClient.PostAsJsonAsync("/api/v1/admin/api-keys",
+                new CreateAdminApiKeyRequest { Name = "denied-delegation", Permissions = permissions }, _jsonOptions);
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+
+        var rotate = await agentClient.PostAsync($"/api/v1/admin/api-keys/{approver.ApiKey.Id}/rotate", content: null);
+        Assert.Equal(HttpStatusCode.Forbidden, rotate.StatusCode);
+        var revoke = await agentClient.PostAsync($"/api/v1/admin/api-keys/{approver.ApiKey.Id}/revoke", content: null);
+        Assert.Equal(HttpStatusCode.Forbidden, revoke.StatusCode);
+
+        using var approverClient = CreateApiKeyClient(approver.Key);
+        Assert.Equal(HttpStatusCode.OK, (await approverClient.GetAsync("/api/v1/admin/api-keys")).StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
     public async Task FullAdminScopedKey_RetainsFullAdminAuthority()
     {
         // #1985: the default-minted key carries admin:* and must keep full admin
