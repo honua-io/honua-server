@@ -38,11 +38,18 @@ public sealed partial class ReadPolicyLookupTests
         var fields = new InMemoryFieldMaskPolicyStore();
         await rows.CreatePolicyAsync(new RlsPolicy
         {
-            Role = "reader", Service = "alpha", Layer = "parcels", Attribute = "region", ClaimType = "region"
+            Role = "reader",
+            Service = "alpha",
+            Layer = "parcels",
+            Attribute = "region",
+            ClaimType = "region"
         });
         await fields.CreatePolicyAsync(new FieldMaskPolicy
         {
-            Role = "reader", Service = "alpha", Layer = "parcels", Attribute = "secret"
+            Role = "reader",
+            Service = "alpha",
+            Layer = "parcels",
+            Attribute = "secret"
         });
         var filters = Substitute.For<IFilterExpressionService>();
         filters.Normalize(Arg.Any<FilterExpression>(), resource).Returns(call => call.ArgAt<FilterExpression>(0));

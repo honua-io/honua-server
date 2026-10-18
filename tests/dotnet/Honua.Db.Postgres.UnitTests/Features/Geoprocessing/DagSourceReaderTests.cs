@@ -394,6 +394,7 @@ public sealed class DagSourceReaderTests
             .Returns(_ => ToAsync(new Feature
             {
                 Id = 87,
+                Geometry = null,
                 Attributes = ImmutableDictionary<string, object?>.Empty.Add("source", "live-table")
             }));
         var provider = Substitute.For<IFeatureDataProvider, IBindableFeatureDataProvider>();

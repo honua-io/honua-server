@@ -186,7 +186,7 @@ public sealed class McpProviderRoutingTests
         ((IBindableFeatureDataProvider)provider).Received(1).CreateReaderForBinding(
             Arg.Is<FeatureProviderBinding>(binding => binding.Connection == connection
                 && binding.StorageLayerId == 42 && binding.StorageBinding.Metadata.Id == "bind-remote"
-                && binding.Publication.Metadata.Id == "pub-remote"));
+                && binding.Publication != null && binding.Publication.Metadata.Id == "pub-remote"));
         await connections.Received(1).GetConnectionAsync(connection.Id, Arg.Any<CancellationToken>());
         defaultReader.ReceivedCalls().Should().BeEmpty();
         unboundReader.ReceivedCalls().Should().BeEmpty();

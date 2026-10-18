@@ -79,12 +79,18 @@ public sealed class LayerSourceBindingSecurityTests : IAsyncLifetime
         var resource = snapshot.Index.ResourcesByStorageLayerId[0];
         await _fixture.GetService<IRlsPolicyStore>().CreatePolicyAsync(new RlsPolicy
         {
-            Service = "*", Layer = resource.Metadata.Name, Role = "gp-limited",
-            Attribute = "name", ClaimType = "gp_allowed_name"
+            Service = "*",
+            Layer = resource.Metadata.Name,
+            Role = "gp-limited",
+            Attribute = "name",
+            ClaimType = "gp_allowed_name"
         });
         await _fixture.GetService<IFieldMaskPolicyStore>().CreatePolicyAsync(new FieldMaskPolicy
         {
-            Service = "*", Layer = resource.Metadata.Name, Role = "gp-limited", Attribute = "description"
+            Service = "*",
+            Layer = resource.Metadata.Name,
+            Role = "gp-limited",
+            Attribute = "description"
         });
         var accessor = _fixture.GetService<IHttpContextAccessor>();
         var previous = accessor.HttpContext;
