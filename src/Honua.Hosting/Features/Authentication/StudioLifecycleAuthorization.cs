@@ -29,8 +29,9 @@ internal sealed class StudioLifecycleRequirement : IAuthorizationRequirement;
 
 /// <summary>
 /// Additional boundary for the Studio AI proxy. The general Studio lifecycle policy may admit
-/// scoped API keys so they can own drafts, but model-provider access is reserved for interactive
-/// OIDC/session users and administrators until a dedicated Studio AI permission exists.
+/// scoped API keys so they can own drafts. Model-provider access additionally requires an
+/// interactive identity, administration, or the dedicated agent workspace credential family.
+/// Agent workspace membership and immutable turn binding are verified after tenant resolution.
 /// </summary>
 internal sealed class StudioAiProxyRequirement : IAuthorizationRequirement;
 
@@ -60,6 +61,17 @@ internal sealed class StudioLifecycleAuthorizationHandler(
         AuthorizationHandlerContext context,
         StudioLifecycleRequirement requirement)
     {
+        if (_options.CurrentValue.Enabled
+            && context.Requirements.Any(static candidate => candidate is StudioAiProxyRequirement)
+            && StudioAiProxyAuthorizationHandler.IsWorkspaceAgentEligible(context.User))
+        {
+            // The dedicated proxy policy may admit a scoped agent after the feature flag is enabled.
+            // This does not widen general Studio lifecycle writes or grant admin model overrides.
+            // Actual turn/tenant/resource authorization runs inside the AI endpoint after tenant resolution.
+            context.Succeed(requirement);
+            return Task.CompletedTask;
+        }
+
         if (IsRecognizedAdmin(context.User, _adminRoleOptions.CurrentValue))
         {
             // Preserve the scoped admin-permission boundary this policy replaced (#1985) --
@@ -137,8 +149,8 @@ internal sealed class StudioLifecycleAuthorizationHandler(
 }
 
 /// <summary>
-/// Keeps non-admin API keys out of the Studio AI proxy while preserving both interactive
-/// end-user access and the existing admin family.
+/// Admits interactive users and administrators, or a narrowly scoped workspace agent credential.
+/// Credential eligibility alone never authorizes a workspace turn or a signed transcript.
 /// </summary>
 internal sealed class StudioAiProxyAuthorizationHandler(
     IOptionsMonitor<AdminRoleOptions> adminRoleOptions)
@@ -163,9 +175,22 @@ internal sealed class StudioAiProxyAuthorizationHandler(
             return Task.CompletedTask;
         }
 
+        if (IsWorkspaceAgentEligible(context.User))
+        {
+            // This stage runs before tenant resolution. It admits only the narrow credential
+            // family; the endpoint must authorize actual workspace membership and turn afterwards.
+            context.Succeed(requirement);
+            return Task.CompletedTask;
+        }
+
         context.Fail(new AuthorizationFailureReason(this, InteractivePrincipalRequiredCode));
         return Task.CompletedTask;
     }
+
+    internal static bool IsWorkspaceAgentEligible(ClaimsPrincipal principal) =>
+        principal.Identities.Any(identity => identity.IsAuthenticated
+            && string.Equals(identity.AuthenticationType, AuthenticationExtensions.ApiKeyScheme, StringComparison.Ordinal)
+            && identity.HasClaim("permission", "agent:workspace"));
 }
 
 /// <summary>
