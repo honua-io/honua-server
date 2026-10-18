@@ -25,7 +25,8 @@ public static class ImportAdminAuthorization
         ArgumentNullException.ThrowIfNull(transportContext);
         ArgumentNullException.ThrowIfNull(principal);
 
-        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+        if (!await AgentCredentialAuthority.IsCurrentAsync(principal, transportContext.RequestServices, cancellationToken).ConfigureAwait(false) ||
+            !await OperationAdminAuthorization.IsAuthorizedAsync(
                 transportContext,
                 principal,
                 OperationSideEffectClass.CreatesMetadata,

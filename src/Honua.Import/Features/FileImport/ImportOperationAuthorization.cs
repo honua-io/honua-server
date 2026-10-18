@@ -22,7 +22,8 @@ internal static class ImportOperationAuthorization
     internal static async Task<bool> CanAccessAsync(HttpContext context, ImportOperationOwnership? ownership,
         CancellationToken cancellationToken)
     {
-        if (!await OperationAdminAuthorization.IsAuthorizedAsync(context, context.User,
+        if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, cancellationToken).ConfigureAwait(false) ||
+            !await OperationAdminAuthorization.IsAuthorizedAsync(context, context.User,
                 OperationSideEffectClass.ReadOnly, cancellationToken).ConfigureAwait(false))
         {
             return false;
@@ -34,7 +35,7 @@ internal static class ImportOperationAuthorization
             return false;
         }
 
-        var agent = context.User.HasClaim("permission", "agent:workspace");
+        var agent = AgentCredentialAuthority.IsAgent(context.User);
         if (!agent)
         {
             return OperationTenantAuthorization.CanAccess(context, ownership?.TenantId);

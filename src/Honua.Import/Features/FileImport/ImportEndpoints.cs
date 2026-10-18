@@ -697,6 +697,13 @@ internal static partial class ImportEndpoints
                 await ReportAcceptedUploadAsync(context, uploadId, request, cancellationToken).ConfigureAwait(false);
             }
 
+            // Staging can outlive the credential that authorized the upload. Recheck
+            // before accepting a job or starting the synchronous data mutation.
+            if (!await AuthorizeImportMutationAsync(context, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
             var importRequest = new ImportRequest
             {
                 Ownership = ImportOperationAuthorization.Capture(context),
@@ -1418,7 +1425,7 @@ internal static partial class ImportEndpoints
             return;
         }
 
-        var scope = ImportUploadScope.Capture(context);
+        var scope = await ImportUploadScope.CaptureCurrentAsync(context, context.RequestAborted).ConfigureAwait(false);
         if (scope is null)
         {
             await Results.Forbid().ExecuteAsync(context);
@@ -1513,7 +1520,7 @@ internal static partial class ImportEndpoints
             return;
         }
 
-        var scope = ImportUploadScope.Capture(context);
+        var scope = await ImportUploadScope.CaptureCurrentAsync(context, context.RequestAborted).ConfigureAwait(false);
         if (scope is null)
         {
             await Results.Forbid().ExecuteAsync(context);

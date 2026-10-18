@@ -119,6 +119,11 @@ internal static partial class ImportEndpoints
             return;
         }
 
+        if (!await AuthorizeImportMutationAsync(context, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var importRequest = admission.Request! with { Ownership = ImportOperationAuthorization.Capture(context) };
         try
         {

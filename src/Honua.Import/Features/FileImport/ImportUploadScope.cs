@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Import.FileImport;
 
@@ -27,6 +28,10 @@ internal sealed class ImportUploadScope
 
     internal static ImportUploadScope? Capture(HttpContext context) =>
         ImportOperationAuthorization.Capture(context) is { } ownership ? new(ownership) : null;
+
+    internal static async Task<ImportUploadScope?> CaptureCurrentAsync(HttpContext context, CancellationToken cancellationToken) =>
+        await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, cancellationToken).ConfigureAwait(false)
+            ? Capture(context) : null;
 
     internal static bool IsClientId(string? id) => !string.IsNullOrEmpty(id) && id.Length <= 128 &&
         id.All(static ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' or '.' or ':');
