@@ -46,6 +46,7 @@ internal sealed class DatasetImportAdmissionProvider(IAgentWorkspaceStore store,
             binding.TaskRevision != taskRevision || binding.TaskContentHash != taskContentHash ||
             binding.AuthorityRevision != authorityRevision || binding.AuthorityFingerprint != authorityFingerprint ||
             binding.ExecutorActorId != task.OwnerActorId || binding.ExecutorActorId != CanonicalSecurityActor.Resolve(executor)?.ActorId ||
+            (binding.InitiatingHumanActorId is not null && (document.OwnerId != binding.InitiatingHumanActorId || document.AgentActorId != binding.ExecutorActorId)) ||
             !document.Turns.TryGetValue(binding.OriginatingTurnId, out var turn) ||
             binding.OriginalTurnHash != Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(turn, AgentWorkspaceJsonContext.Default.AgentWorkspaceTurn))) ||
             task.UploadAdmissionDeadline <= services.GetRequiredService<TimeProvider>().GetUtcNow() ||
