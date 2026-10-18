@@ -92,21 +92,31 @@ export async function openInspectorPublicUi({ inspectorEntry, chromium, endpoint
     await setChecked(editJson, true);
     const task = page.getByLabel('Run as task', { exact: true });
     if (await task.count()) await setChecked(task, false);
+    const action = async (name, run) => {
+      try { return await run(); }
+      catch (error) {
+        if (onControlFailure) await onControlFailure(name, page, error).catch(() => {});
+        throw new Error(`public Inspector UI interaction failed at ${name}`);
+      }
+    };
     const execute = async (arguments_) => {
-      const editor = page.getByRole('textbox', { name: 'Arguments JSON', exact: true });
-      await editor.click();
+      // Ace appends its current cursor row to the accessible editor label.
+      // Its native text input supports keyboard entry, not pointer hit testing.
+      const editor = page.getByLabel(/^Arguments JSON(?:,|$)/);
       await editor.press('ControlOrMeta+A');
       await page.keyboard.insertText(JSON.stringify(arguments_));
       await page.getByRole('button', { name: 'Execute Tool', exact: true }).click();
     };
     let savedArguments;
     return {
-      async execute(arguments_) { savedArguments = arguments_; await execute(arguments_); },
-      async cancel() { await page.getByRole('button', { name: 'Cancel', exact: true }).click(); },
+      async execute(arguments_) { savedArguments = arguments_; await action('public argument entry and execution', () => execute(arguments_)); },
+      async cancel() { await action('public Cancel button', () => page.getByRole('button', { name: 'Cancel', exact: true }).click()); },
       async recover() {
-        await page.getByRole('button', { name: 'Execute Tool', exact: true }).waitFor({ state: 'visible' });
-        await execute(savedArguments);
-        await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor({ state: 'hidden' });
+        await action('public recovery execution', async () => {
+          await page.getByRole('button', { name: 'Execute Tool', exact: true }).waitFor({ state: 'visible' });
+          await execute(savedArguments);
+          await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor({ state: 'hidden' });
+        });
       },
       close,
     };
