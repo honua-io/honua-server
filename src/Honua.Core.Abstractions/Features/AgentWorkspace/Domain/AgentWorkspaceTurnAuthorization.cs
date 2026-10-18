@@ -9,9 +9,11 @@ namespace Honua.Core.Features.AgentWorkspace.Domain;
 /// <param name="TargetId">Actual deployment target captured by the turn.</param>
 /// <param name="TenantId">Server-resolved tenant owning the authorized turn.</param>
 /// <param name="ReleaseId">Configured release identity permitted to request signed transcripts.</param>
+/// <param name="OwnerActorId">Persisted workspace owner after current membership authorization; never caller-supplied ownership.</param>
 public sealed record AgentWorkspaceTurnAuthorization(
     string WorkspaceId,
     string TurnId,
     string TargetId,
     string TenantId,
-    string ReleaseId);
+    string ReleaseId,
+    string? OwnerActorId = null);
