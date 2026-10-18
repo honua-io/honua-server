@@ -24,6 +24,7 @@ public sealed class WorkflowPackageToolTests
         var context = Context(authoring);
         var version = new WorkflowPackageVersion
         {
+            SchemaVersion = "workflow-package.v1",
             PackageId = "package-a",
             Version = 3,
             PackageHash = "hash-a",
@@ -54,6 +55,7 @@ public sealed class WorkflowPackageToolTests
         var graph = new WorkflowGraph { Nodes = [] };
         var version = new WorkflowPackageVersion
         {
+            SchemaVersion = "workflow-package.v1",
             PackageId = "package-created", Version = 1, PackageHash = new string('a', 64), Graph = graph,
             Validation = WorkflowPackageValidationResult.Success(new string('a', 64)), CreatedAt = DateTimeOffset.UnixEpoch,
         };

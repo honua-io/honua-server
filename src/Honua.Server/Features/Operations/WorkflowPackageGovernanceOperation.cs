@@ -41,7 +41,7 @@ internal static class WorkflowPackageGovernanceOperation
     };
 }
 
-internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider services) : IOperationExecutor, IOperationRequestPreparer
+internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider services) : Honua.Core.Features.Operations.Abstractions.IOperationExecutor, IOperationRequestPreparer
 {
     public string OperationId => WorkflowPackageGovernanceOperation.OperationId;
 
