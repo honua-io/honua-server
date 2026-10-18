@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.AgentWorkspace;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -195,6 +196,61 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             replay.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(instanceId);
             var receipt = await Read(await agent.GetAsync(root + "/commands/command-one"), HttpStatusCode.OK);
             receipt.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(instanceId);
+            // Different tabs mint different command ids for one reviewed revision. They must
+            // converge on the original operation, including after a Redis CAS collision.
+            var concurrentCommands = new[] { "command-tab-b", "command-tab-c" };
+            var concurrentResponses = await Task.WhenAll(concurrentCommands.Select(commandId =>
+                agent.PostAsJsonAsync(draftPath + "/submit", new { commandId, submit.expectedRevision, viewId = "tab-a" })));
+            foreach (var response in concurrentResponses)
+            {
+                using (response)
+                {
+                    response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Conflict);
+                }
+            }
+            foreach (var commandId in concurrentCommands)
+            {
+                var recovered = await Read(await agent.PostAsJsonAsync(draftPath + "/submit",
+                    new { commandId, submit.expectedRevision, viewId = "tab-a" }), HttpStatusCode.OK);
+                recovered.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(instanceId);
+                var recoveredReceipt = await Read(await agent.GetAsync(root + "/commands/" + commandId), HttpStatusCode.OK);
+                recoveredReceipt.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(instanceId);
+            }
+            var persisted = await fixture.Services.GetRequiredService<IAgentWorkspaceStore>()
+                .GetAsync(created.GetProperty("workspaceId").GetString()!);
+            persisted!.Commands.Values.Where(command => command.DraftId == currentDraft.GetProperty("id").GetString())
+                .Select(command => command.OperationInstanceId).Distinct().Should().ContainSingle();
+            (await human.PostAsJsonAsync(draftPath + "/submit",
+                new { commandId = "different-actor-command", submit.expectedRevision, viewId = "tab-a" }))
+                .StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+            // A deliberate retry is a newly reviewed revision, never a new command id
+            // for the consumed revision. Empty PATCH still uses the canonical draft CAS.
+            var retryDraft = await Read(await agent.PatchAsJsonAsync(draftPath,
+                new { viewId = "tab-a", expectedRevision = submit.expectedRevision, changes = new { } }), HttpStatusCode.OK);
+            var retryRevision = retryDraft.GetProperty("revision").GetInt64();
+            retryRevision.Should().Be(submit.expectedRevision + 1);
+            var freshCommands = new[] { "fresh-tab-a", "fresh-tab-b" };
+            var freshResponses = await Task.WhenAll(freshCommands.Select(commandId => agent.PostAsJsonAsync(draftPath + "/submit",
+                new { commandId, expectedRevision = retryRevision, viewId = "tab-a" })));
+            foreach (var response in freshResponses)
+            {
+                using (response)
+                {
+                    response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Conflict);
+                }
+            }
+            var freshInstances = new List<string>();
+            foreach (var commandId in freshCommands)
+            {
+                var recovered = await Read(await agent.PostAsJsonAsync(draftPath + "/submit",
+                    new { commandId, expectedRevision = retryRevision, viewId = "tab-a" }), HttpStatusCode.OK);
+                freshInstances.Add(recovered.GetProperty("data").GetProperty("operationInstanceId").GetString()!);
+            }
+            freshInstances.Distinct().Should().ContainSingle().Which.Should().NotBe(instanceId);
+            var originalAfterEdit = await Read(await agent.PostAsJsonAsync(draftPath + "/submit",
+                new { commandId = "old-revision-recovery", submit.expectedRevision, viewId = "tab-a" }), HttpStatusCode.OK);
+            originalAfterEdit.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(instanceId);
             (await human.PostAsJsonAsync(draftPath + "/submit", submit)).StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await foreign.GetAsync(root + "/commands/command-one")).StatusCode.Should().Be(HttpStatusCode.NotFound);
             (await bootstrap.PostAsync($"/api/v1/admin/api-keys/{agentKey.Id}/revoke", null)).EnsureSuccessStatusCode();

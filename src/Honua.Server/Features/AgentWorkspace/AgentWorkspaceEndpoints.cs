@@ -455,14 +455,28 @@ internal static class AgentWorkspaceEndpoints
         }
         else
         {
-            if (draft.Revision != request.ExpectedRevision) throw new AgentWorkspaceConflictException("The shared draft changed.");
             if (document.Commands.Count >= 256) throw new ArgumentException("Workspace command limit reached.");
-            var key = "workspace:" + Convert.ToHexStringLower(SHA256.HashData(
-                Encoding.UTF8.GetBytes($"{document.WorkspaceId}:{request.CommandId}")));
-            command = new(request.CommandId, actor, draft.Id, draft.Revision, key,
-                OperationEnvelopeFactory.DeriveIdempotentInstanceId(ServicePublishOperation.OperationId,
-                    OperationsEndpoints.ScopeIdempotencyKey(key, document.TenantId, actor), document.TenantId),
-                new(draft.Fields, StringComparer.Ordinal), DateTimeOffset.UtcNow.AddDays(1));
+            var priorCommands = document.Commands.Values
+                .Where(value => value.DraftId == draft.Id && value.DraftRevision == request.ExpectedRevision).ToArray();
+            if (priorCommands.Length > 0)
+            {
+                var original = priorCommands[0];
+                if (priorCommands.Any(value => value.ActorId != actor || value.OperationInstanceId != original.OperationInstanceId))
+                    throw new AgentWorkspaceConflictException("This draft revision has already been submitted. Inspect its original command receipt.");
+                // An alias preserves the original actor, frozen input, retry deadline and
+                // operation identity. Another tab cannot consume the same revision twice.
+                command = original with { CommandId = request.CommandId };
+            }
+            else
+            {
+                if (draft.Revision != request.ExpectedRevision) throw new AgentWorkspaceConflictException("The shared draft changed.");
+                var key = "workspace:" + Convert.ToHexStringLower(SHA256.HashData(
+                    Encoding.UTF8.GetBytes($"{document.WorkspaceId}:{request.CommandId}")));
+                command = new(request.CommandId, actor, draft.Id, draft.Revision, key,
+                    OperationEnvelopeFactory.DeriveIdempotentInstanceId(ServicePublishOperation.OperationId,
+                        OperationsEndpoints.ScopeIdempotencyKey(key, document.TenantId, actor), document.TenantId),
+                    new(draft.Fields, StringComparer.Ordinal), DateTimeOffset.UtcNow.AddDays(1));
+            }
             document.Commands.Add(command.CommandId, command);
             // Persist the input and execution identity BEFORE dispatch. A lost response
             // is reconciled against the same canonical operation, never a fresh mutation.
