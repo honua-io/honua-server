@@ -142,19 +142,24 @@ internal sealed class WorkflowPackageService(
         return saved;
     }
 
-    internal async Task<WorkflowPackageVersion> CreateInitialAuthoringVersionAsync(string packageId, string name,
-        WorkflowGraph graph, ClaimsPrincipal principal, string workspaceId, string turnId, CancellationToken cancellationToken)
+    internal async Task<WorkflowPackageVersion> CreateInitialAuthoringVersionAsync(
+        Honua.Server.Features.AgentWorkspace.AgentWorkflowAuthoringCommand command, string name,
+        WorkflowGraph graph, ClaimsPrincipal principal, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new GeoprocessingValidationException("Workflow package name is required.");
-        var access = await ResolveAccessAsync(principal, cancellationToken, true, workspaceId, turnId).ConfigureAwait(false);
-        if (access?.WorkspaceAgent != true || string.IsNullOrWhiteSpace(access.DelegatedOwnerActorId))
+        var access = await ResolveAccessAsync(principal, cancellationToken, true, command.WorkspaceId, command.TurnId).ConfigureAwait(false);
+        if (access?.WorkspaceAgent != true || access.ActorId != command.ActorId ||
+            access.DelegatedOwnerActorId != command.OwnerActorId || access.TenantId != command.TenantId ||
+            access.TurnBinding?.TargetId != command.TargetId || access.TurnBinding.ReleaseId != command.ReleaseId ||
+            command.ExpectedVersion != 1 || command.PackageHash != WorkflowPackageGraphHasher.Compute(graph) ||
+            command.RequestFingerprint != WorkflowPackageContent.Fingerprint(name, graph))
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         var package = new WorkflowPackage
         {
-            PackageId = packageId, Name = name.Trim(), Graph = graph, Ownership = access.Ownership,
+            PackageId = command.PackageId, Name = name.Trim(), Graph = graph, Ownership = access.Ownership,
             CreatedAt = clock.GetUtcNow(), UpdatedAt = clock.GetUtcNow(), CreatedBy = access.ActorId, UpdatedBy = access.ActorId,
         };
-        var initial = await store.GetVersionAsync(packageId, 1, cancellationToken).ConfigureAwait(false);
+        var initial = await store.GetVersionAsync(command.PackageId, 1, cancellationToken).ConfigureAwait(false);
         if (initial is not null)
         {
             WorkflowPackageContent.RequireInitialVersion(package, initial);

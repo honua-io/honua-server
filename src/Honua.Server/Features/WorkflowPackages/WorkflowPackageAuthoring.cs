@@ -41,7 +41,7 @@ internal sealed class WorkflowPackageAuthoring(WorkflowPackageService packages, 
             var access = await RequireWorkspaceAsync(principal, workspaceId, turnId, true, cancellationToken).ConfigureAwait(false);
             var binding = access.TurnBinding!;
             var document = await workspaces.GetAsync(workspaceId).ConfigureAwait(false);
-            if (document is null || !AgentWorkspaceState.CanRead(document, access.ActorId, access.TenantId,
+            if (document is null || document.OwnerId != access.DelegatedOwnerActorId || !AgentWorkspaceState.CanRead(document, access.ActorId, access.TenantId,
                     await workspaces.GetTargetIdAsync().ConfigureAwait(false)))
                 throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
             if (document.WorkflowAuthoringCommands.TryGetValue(commandId, out reserved))
@@ -65,8 +65,7 @@ internal sealed class WorkflowPackageAuthoring(WorkflowPackageService packages, 
         if (reserved is null) throw new GeoprocessingPreconditionFailedException("Concurrent workspace mutation; retry the same command.");
         // The command tuple is durable before the first package write. Atomic store creation
         // fixes version1 to the requested bytes; neither retry nor concurrent human edits upsert it.
-        return await packages.CreateInitialAuthoringVersionAsync(reserved.PackageId, name, graph, principal,
-            workspaceId, turnId, cancellationToken).ConfigureAwait(false);
+        return await packages.CreateInitialAuthoringVersionAsync(reserved, name, graph, principal, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<WorkflowPackageAccess> RequireWorkspaceAsync(ClaimsPrincipal principal, string workspaceId, string turnId, bool write,
