@@ -29,7 +29,7 @@ public sealed class RedisWorkflowRunStoreTests(RedisFixture redis)
         var command = new WorkflowRunCommand(run.RunId, "immutable-input-hash");
         var writers = Enumerable.Range(0, 8).Select(_ => new RedisWorkflowRunStore(connection));
         var accepted = await Task.WhenAll(writers.Select(store => store.TryCreateIdempotentAsync(run, scope, command)));
-        Assert.Single(accepted.Where(value => value));
+        Assert.Single(accepted, value => value);
         var database = connection.GetDatabase();
         Assert.Null(await database.KeyTimeToLiveAsync($"orchestration:run:command:{scope}"));
         Assert.NotNull(await database.KeyTimeToLiveAsync($"orchestration:run:{run.RunId}"));

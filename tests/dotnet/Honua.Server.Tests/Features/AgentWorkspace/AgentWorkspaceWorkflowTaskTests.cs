@@ -83,9 +83,9 @@ public sealed class AgentWorkspaceWorkflowTaskTests
         {
             WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-owner", Members = ["human-owner"]
         };
-        document = AgentWorkspaceState.Update(document, new("tab-1", 0, "target-1", [], Reference));
+        document = AgentWorkspaceState.Update(document, new("tab-1", 0, "target-1", [], Reference, "console"));
         document = AgentWorkspaceState.AddTurn(document, "human-owner", new("turn-1", "tab-1", 1, "Explain this process"));
-        document = AgentWorkspaceState.Update(document, new("tab-1", 1, "target-1", [], Reference with { Revision = 3 }));
+        document = AgentWorkspaceState.Update(document, new("tab-1", 1, "target-1", [], Reference with { Revision = 3 }, "console"));
         document.Turns["turn-1"].Context.Task.Should().Be(Reference);
         document.Turns["turn-1"].Draft.Should().BeNull();
         foreach (var invalid in new[]

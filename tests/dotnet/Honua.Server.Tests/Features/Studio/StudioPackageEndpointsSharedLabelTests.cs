@@ -177,7 +177,7 @@ public sealed partial class StudioPackageEndpointsTests
         saved = await SaveBody(snapshot, JsonNode.Parse(stableBody.GetRawText())!.AsObject());
 
         // Clear one owner without removing the other owner's live reference.
-        var cleared = JsonNode.Parse(saved.Envelope.Body.Value.GetRawText())!.AsObject();
+        var cleared = JsonNode.Parse(saved.Envelope.Body!.Value.GetRawText())!.AsObject();
         cleared["layers"]![0]!.AsObject().Remove("styleRef");
         saved = await SaveBody(saved, cleared);
         var remainingIds = saved.Envelope.Body!.Value.GetProperty("mapSpec").GetProperty("layers").EnumerateArray()
