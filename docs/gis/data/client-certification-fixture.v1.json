@@ -1195,6 +1195,11 @@
       "description": "itemType field present in collection metadata."
     },
     {
+      "id": "JS-EXT-OL-WFS-GETFEATURE-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OpenLayers WFS parses a populated unfiltered GetFeature response; this does not prove core query filtering."
+    },
+    {
       "id": "JS-EXT-TILES-DISC-01",
       "scenarioFacetId": "SF-DISC-CATALOG",
       "description": "OGC API Tiles landing page."
@@ -2490,6 +2495,9 @@
               "CERT-CONN-02"
             ]
           },
+          "extensionCases": [
+            "JS-EXT-OL-WFS-GETFEATURE-01"
+          ],
           "notes": "The OpenLayers WFS suite reads the bare /wfs capabilities document and picks the first feature type that returns features; it binds no pinned identity."
         },
         {

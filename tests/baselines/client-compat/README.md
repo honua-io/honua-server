@@ -129,3 +129,16 @@ special handling.
 The baseline-bump cadence is scheduled quarterly via `/schedule`. Don't bump
 baselines as part of an unrelated feature PR — that hides regressions inside
 unrelated review.
+
+### Reviewed OpenLayers WFS false-positive correction (#6304)
+
+The original `js/wfs` baseline labeled an unfiltered GetFeature read as
+`CERT-QFLT-01` filtering. The reviewed correction keeps that required core ID
+present as `skip`, rather than claiming filtering or removing its applicability.
+The actual immutable-image rehearsal at producer `549043d645d5ef4539450fccb6739b8a33df422e`
+observed that skip plus a passing unfiltered-parsing extension
+`JS-EXT-OL-WFS-GETFEATURE-01`. Only that false pass and the new extension are
+corrected; historical envelope metadata and other case statuses are retained.
+The baseline is an expected-status comparison, not release qualification:
+the canonical fixture still requires `CERT-QFLT-01` and the release verifier
+rejects skipped required filtering even when unfiltered retrieval passes.
