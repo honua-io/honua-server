@@ -20,6 +20,7 @@ import time
 
 
 SCHEMA = "honua.gp-native-observation/v1"
+NATIVE_EXECUTABLES = ("/usr/bin/ogr2ogr", "/usr/local/bin/ogr2ogr")
 TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
 # Match GeoprocessingOutputStagingOptions; store names and prefixes are not job tokens.
 STORE_REFERENCE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}\Z")
@@ -208,8 +209,28 @@ def observe(config, job, nonce, phase, expected=None):
             <= MAX_BARRIER_AGE_SECONDS, "barrier-stale")
     result["barrier"] = {key: ready[key] for key in (
         "operationId", "workerId", "workerProcessId", "childProcessId", "readyAt")}
-    result["barrier"]["sha256"] = barrier_digest
+    entry_path = Path(value["barrierRoot"]) / job / "native-process-started.entry.json"
+    entry, entry_digest = read_json(entry_path)
+    require(entry.get("schema") == "honua.gp-native-entry/v1"
+            and entry.get("boundary") == "native-exec-entry-paused"
+            and type(entry.get("pid")) is int and entry["pid"] == ready["childProcessId"]
+            and type(entry.get("parentPid")) is int and entry["parentPid"] == ready["workerProcessId"]
+            and isinstance(entry.get("nonce"), str) and re.fullmatch(r"[0-9a-f]{32}", entry["nonce"]),
+            "native-entry-identity")
+    executables = {str(Path(path).resolve(strict=True)) for path in NATIVE_EXECUTABLES if Path(path).exists()}
+    require(entry.get("executable") in executables, "native-entry-executable")
+    require(0 <= time.time() - entry_path.stat().st_mtime <= MAX_BARRIER_AGE_SECONDS
+            and entry_path.stat().st_mtime <= ready_at.timestamp() + 1, "native-entry-stale")
+    # Preserve the process identity keyset while binding BOTH immutable receipts.
+    # sha256 is SHA256(ASCII(readySha256 + "\n" + nativeEntrySha256)).
+    bound_digest = hashlib.sha256((barrier_digest + "\n" + entry_digest).encode("ascii")).hexdigest()
+    result["barrier"].update({"sha256": bound_digest, "readySha256": barrier_digest,
+                            "nativeEntrySha256": entry_digest, "nativeExecutable": entry["executable"],
+                            "nativeEntryBoundary": entry["boundary"]})
     if phase == "started":
+        require(read_json(entry_path)[1] == entry_digest
+                and read_json(Path(value["barrierRoot"]) / job / "native-process-started.ready.json")[1]
+                == barrier_digest, "native-entry-observation-race")
         # This is independent filesystem evidence of native entry, NOT a claim
         # that a PID is currently alive. Batch must also observe its exact task
         # RUNNING before cancel and STOPPED afterwards through provider APIs.
@@ -220,9 +241,11 @@ def observe(config, job, nonce, phase, expected=None):
     boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
     namespace = os.stat("/proc/self/ns/pid").st_ino
     identity = {"workerId": ready["workerId"], "worker": worker, "bootId": boot,
-                "pidNamespace": namespace, "barrierSha256": barrier_digest}
+                "pidNamespace": namespace, "barrierSha256": bound_digest}
     if phase == "before":
         require(child is not None and child["parentPid"] == worker["pid"], "native-child-not-running")
+        require(str(Path(f"/proc/{child['pid']}/exe").resolve(strict=True)) == entry["executable"],
+                "native-entry-executable-mismatch")
         require(child["startTicks"] >= worker["startTicks"], "native-child-identity")
         cwd = Path(f"/proc/{child['pid']}/cwd").resolve(strict=True)
         root = Path(value["scratchRoot"])
@@ -246,6 +269,7 @@ def observe(config, job, nonce, phase, expected=None):
             "process-observation-race")
     require(read_json(Path(value["barrierRoot"]) / job / "native-process-started.ready.json")[1]
             == barrier_digest, "barrier-observation-race")
+    require(read_json(entry_path)[1] == entry_digest, "native-entry-observation-race")
     return result
 
 

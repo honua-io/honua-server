@@ -50,6 +50,7 @@
   },
   "worker_native_patterns": [
     "scripts/qualification/gp_native_observer.py",
+    "scripts/qualification/verify_native_entry_image.py",
     ".dockerignore",
     "docker/worker-gdal/**",
     "scripts/ci/verify-serving-image-boundary.py",
@@ -106,6 +107,7 @@
       "scripts/docker/restore-dotnet-with-github-packages.sh",
       "scripts/ci/verify-serving-image-boundary.py",
       "scripts/qualification/gp_native_observer.py",
+      "scripts/qualification/verify_native_entry_image.py",
       "tests/dotnet/Honua.Worker.Gdal.Tests/ProductionWorkerContainerHandoffTests.cs",
       "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/NativeWorkerPublicApiTests.cs",
       "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",

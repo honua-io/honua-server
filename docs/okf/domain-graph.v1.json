@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:c303b57d1d67b92178456838eab421b7ec88556414873d0c5871833f7974b367",
+  "bundleDigest": "sha256:f9af872712ccaa709c8e18668c00b1e9553c747dbbc0b349e99979bdcc734671",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7431,7 +7431,7 @@
     {
       "id": "operator/gp-native-qualification-observer",
       "path": "operator/gp-native-qualification-observer.md",
-      "documentDigest": "sha256:6221a306743d16289bb6b63c8c8a8d1bbc463b816b32a3f2b0e6245ab5e7f7dc",
+      "documentDigest": "sha256:a4e78462717ef38333adb3d0b3b99cc5f20c3660d45d34ab3277296ff828d84a",
       "metadata": {
         "type": "reference"
       },

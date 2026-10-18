@@ -133,6 +133,11 @@ RUN apt-get update \
  && test -x /opt/pdal/bin/pdal \
  && rm -rf /tmp/pdal.tar.gz /tmp/pdal-source /tmp/pdal-build /var/lib/apt/lists/*
 
+# Compile the opt-in native-entry constructor against the identical runtime libc.
+COPY docker/worker-gdal/native-entry.c /tmp/honua-native-entry.c
+RUN mkdir -p /opt/honua \
+ && cc -std=c11 -Wall -Wextra -Werror -fPIC -shared /tmp/honua-native-entry.c -o /opt/honua/libhonua_gp_entry.so
+
 # ---------------------------------------------------------------------------
 # Runtime stage: GDAL base + .NET runtime + published worker.
 # ---------------------------------------------------------------------------
@@ -262,6 +267,7 @@ COPY --from=build --chown=1001:1001 /app .
 # Qualification-only read-only OS/store observer. It refuses execution without
 # an explicit mounted policy; it is invoked by governed ECS Exec, never the job.
 COPY --chown=0:0 --chmod=0444 scripts/qualification/gp_native_observer.py /app/gp_native_observer.py
+COPY --from=pdal-build --chown=0:0 --chmod=0444 /opt/honua/libhonua_gp_entry.so /app/libhonua_gp_entry.so
 
 # Guard: the custom worker steps (e.g. the Euclidean allocation step, #2255) must
 # be published alongside the worker assemblies so the executors can invoke them.

@@ -46,6 +46,7 @@ on:
       - 'scripts/docker/restore-dotnet-with-github-packages.sh'
       - 'scripts/ci/verify-serving-image-boundary.py'
       - 'scripts/qualification/gp_native_observer.py'
+      - 'scripts/qualification/verify_native_entry_image.py'
       - 'tests/dotnet/Honua.Worker.Gdal.Tests/ProductionWorkerContainerHandoffTests.cs'
       - 'tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/NativeWorkerPublicApiTests.cs'
       - 'tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj'
@@ -131,6 +132,12 @@ jobs:
           cache-to: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-worker-gdal-amd64,mode=max' || '' }}
           provenance: false
           sbom: false
+
+      - name: Prove actual image native entry hold and cancellation
+        run: >-
+          python3 scripts/qualification/verify_native_entry_image.py
+          --image honua-worker-gdal:boundary --source-sha "${{ github.sha }}"
+          --output tests/TestResults/native-entry-image.json
 
       - name: Start attested Redis for worker smoke test
         run: >-
@@ -286,7 +293,9 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: worker-gdal-certification
-          path: tests/TestResults/*.trx
+          path: |
+            tests/TestResults/*.trx
+            tests/TestResults/native-entry-image.json
           if-no-files-found: warn
 
       - name: Create worker vulnerability report

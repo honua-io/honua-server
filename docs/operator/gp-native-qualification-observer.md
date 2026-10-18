@@ -104,6 +104,31 @@ observer control channel. Unset preserves the existing all-barrier harness.
 An unsupported selection cannot produce the required native readiness record.
 No new simulated operation is introduced.
 
+The selected entry lane uses only the image's native `ogr2ogr` ELF executable.
+A fixed, root-owned `/app/libhonua_gp_entry.so` is injected into that child by
+reviewed worker code; no caller selects a loader path. Its constructor runs
+**after actual exec, before native main**, publishes a fresh nonce/PID/parent/
+resolved-executable handshake, and waits for the worker's nonce-bound release.
+The worker validates that actual executable before publishing managed readiness.
+Any handshake, startup or IO failure kills and boundedly reaps the child.
+Production-default execution gets no shim environment. Earlier all-barrier
+qualification semantics are retained when the phase selector is unset.
+
+This boundary is `native-exec-entry-paused`: it proves deterministic cancellation
+of an actual native executable at entry. It does not assert that GDAL processed
+input or reached a mid-operation fault boundary. That wider lifecycle matrix
+remains open. A script, shell, missing shim, old managed-only readiness file,
+stale handshake or executable mismatch cannot establish this observation.
+
+Each non-store observation adds `barrier.nativeEntryBoundary`,
+`barrier.nativeExecutable`, `barrier.readySha256` and
+`barrier.nativeEntrySha256`. The existing `barrier.sha256` and
+`process.barrierSha256` bind both files as
+`SHA256(ASCII(readySha256 + "\n" + nativeEntrySha256))`.
+The retained before identity therefore refuses changed entry bytes on after
+readback without changing the process-identity keyset. The release producer must
+require these fields and the explicit boundary; old observations are nonpass.
+
 The maintained producer sends a fresh 128-bit nonce and invokes:
 
 ```text

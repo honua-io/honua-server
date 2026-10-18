@@ -88,6 +88,7 @@ internal sealed partial class ProcessGdalCommandRunner(
             azureOptions.Value,
             configuration);
 
+        var nativeEntry = NativeEntryQualification.Prepare(startInfo);
         Log.RunningTool(logger, tool, string.Join(' ', arguments));
 
         using var process = new Process { StartInfo = startInfo };
@@ -109,27 +110,7 @@ internal sealed partial class ProcessGdalCommandRunner(
             }
         };
 
-        if (!process.Start())
-        {
-            throw new InvalidOperationException($"Failed to start GDAL tool '{tool}'.");
-        }
-
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-
-        try
-        {
-            await ExecutionQualificationBarrier.WaitAsync(
-                "native-process-started",
-                cancellationToken,
-                process.Id).ConfigureAwait(false);
-            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            TryKill(process);
-            throw;
-        }
+        await RunProcessAsync(process, nativeEntry, cancellationToken).ConfigureAwait(false);
 
         // Ensure async stream readers flush before the buffers are read.
         await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
@@ -143,6 +124,44 @@ internal sealed partial class ProcessGdalCommandRunner(
 
         Log.ToolCompleted(logger, tool, result.ExitCode);
         return result;
+    }
+
+    internal static async Task RunProcessAsync(
+        Process process, NativeEntryQualification? nativeEntry, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!process.Start())
+            {
+                throw new InvalidOperationException("Failed to start the GDAL tool.");
+            }
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            if (nativeEntry is not null)
+            {
+                await nativeEntry.WaitAsync(process, cancellationToken).ConfigureAwait(false);
+            }
+            await ExecutionQualificationBarrier.WaitAsync(
+                "native-process-started", cancellationToken, process.Id).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            nativeEntry?.Release();
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Any launch/reader/handshake/IO failure must kill a child held before main,
+            // not just operator cancellation. Reap is bounded and preserves the original error.
+            TryKill(process);
+            try
+            {
+                await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)
+            {
+                // Independent observation still refuses a surviving/unreaped native child.
+            }
+            throw;
+        }
     }
 
     internal static void ApplyHardenedEnvironment(

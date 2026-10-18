@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -523,6 +524,14 @@ class NativeObserverTests(unittest.TestCase):
                       "workerProcessId": os.getpid(), "childProcessId": self.child.pid,
                       "readyAt": datetime.now(timezone.utc).isoformat()}
         self.ready_path.write_text(json.dumps(self.ready))
+        # OS-contract fixtures use a real Python child; native loader/main behavior
+        # is independently exercised by the compiled ELF controls below.
+        self.observer.NATIVE_EXECUTABLES = (sys.executable,)
+        self.entry_path = self.barriers / "job-1/native-process-started.entry.json"
+        self.entry = {"schema": "honua.gp-native-entry/v1", "boundary": "native-exec-entry-paused",
+                      "pid": self.child.pid, "parentPid": os.getpid(), "nonce": "c" * 32,
+                      "executable": str(Path(sys.executable).resolve())}
+        self.entry_path.write_text(json.dumps(self.entry))
 
     def write_policy(self):
         self.policy_path.write_text(json.dumps(self.policy))
@@ -545,6 +554,22 @@ class NativeObserverTests(unittest.TestCase):
         self.assertEqual(before["process"]["worker"], after["process"]["worker"])
         self.assertEqual([], after["outputInventory"]["files"])
         self.assertFalse(after["qualification"])
+
+    def test_managed_only_stale_wrong_executable_and_changed_entry_are_refused(self):
+        before = self.observe()
+        self.entry_path.unlink()
+        with self.assertRaises(OSError):
+            self.observe()
+        for field, invalid in (("nonce", "stale"), ("pid", self.child.pid + 1),
+                               ("executable", "/bin/false"), ("boundary", "managed-only")):
+            self.entry_path.write_text(json.dumps({**self.entry, field: invalid}))
+            with self.assertRaises(self.observer.Refused):
+                self.observe()
+        self.entry_path.write_text(json.dumps(self.entry))
+        self.stop_child()
+        self.entry_path.write_text(json.dumps({**self.entry, "nonce": "d" * 32}))
+        with self.assertRaisesRegex(self.observer.Refused, "worker-identity-changed"):
+            self.observe("after", before["process"])
 
     def test_live_child_never_becomes_cessation(self):
         before = self.observe()
@@ -717,6 +742,121 @@ class NativeObserverTests(unittest.TestCase):
         folder.mkdir(parents=True)
         with self.assertRaisesRegex(self.observer.Refused, "inventory-depth"):
             self.observe()
+
+
+@unittest.skipUnless(sys.platform == "linux", "ELF loader controls require Linux")
+class NativeEntryShimTests(unittest.TestCase):
+    """Real compiled fast-exit ELF; a sleeping shell is never native-entry evidence."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.temporary.name).resolve()
+        cls.library, cls.executable = cls.root / "entry.so", cls.root / "ogr2ogr"
+        fixture = cls.root / "fast.c"
+        fixture.write_text('#include <stdio.h>\nint main(int n,char **v){if(n!=2)return 2;FILE *f=fopen(v[1],"w");if(!f)return 3;fputs("main ran",f);return fclose(f);}\n')
+        for args in (("-fPIC", "-shared", str(ROOT / "docker/worker-gdal/native-entry.c"), "-o", str(cls.library)),
+                     (str(fixture), "-o", str(cls.executable))):
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", *args], check=True,
+                           stdout=subprocess.PIPE)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temporary.cleanup()
+
+    def start(self, **overrides):
+        directory = Path(tempfile.mkdtemp(dir=self.root))
+        self.record, self.release, self.effect = (directory / name for name in ("entry.json", "release", "effect"))
+        self.nonce = "b" * 32
+        environment = {**os.environ, "LD_PRELOAD": str(self.library),
+                       "HONUA_GP_NATIVE_ENTRY_RECORD": str(self.record),
+                       "HONUA_GP_NATIVE_ENTRY_RELEASE": str(self.release),
+                       "HONUA_GP_NATIVE_ENTRY_NONCE": self.nonce, **overrides}
+        environment = {key: value for key, value in environment.items() if value is not None}
+        child = subprocess.Popen([str(self.executable), str(self.effect)], env=environment,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        self.addCleanup(self.stop, child)
+        return child
+
+    @staticmethod
+    def stop(child):
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=5)
+        child.stderr.close()
+
+    def entry(self, child):
+        import time
+        deadline = time.monotonic() + 5
+        while not self.record.exists():
+            if child.poll() is not None or time.monotonic() >= deadline:
+                self.fail("actual ELF did not publish native entry")
+            time.sleep(0.01)
+        value = json.loads(self.record.read_text())
+        self.assertEqual(child.pid, value["pid"])
+        self.assertEqual(os.getpid(), value["parentPid"])
+        self.assertEqual(str(self.executable), value["executable"])
+        self.assertEqual(self.executable, Path(f"/proc/{child.pid}/exe").resolve(strict=True))
+        self.assertEqual("native-exec-entry-paused", value["boundary"])
+        return value
+
+    def test_actual_exec_fast_main_and_effects_are_held_until_fresh_release(self):
+        import time
+        child = self.start()
+        self.assertEqual(self.nonce, self.entry(child)["nonce"])
+        time.sleep(0.15)
+        self.assertIsNone(child.poll())
+        self.assertFalse(self.effect.exists(), "actual main must not win a Process.Start/observer race")
+        self.release.write_text(self.nonce)
+        self.assertEqual(0, child.wait(timeout=5))
+        self.assertEqual("main ran", self.effect.read_text())
+
+    def test_cancelled_entry_child_ceases_without_running_main(self):
+        child = self.start()
+        self.entry(child)
+        child.terminate()
+        child.wait(timeout=5)
+        self.assertFalse(Path(f"/proc/{child.pid}").exists())
+        self.assertFalse(self.effect.exists())
+
+    def test_stale_release_nonce_and_symlink_release_cannot_run_main(self):
+        for linked in (False, True):
+            with self.subTest(linked=linked):
+                child = self.start()
+                self.entry(child)
+                if linked:
+                    target = self.release.with_suffix(".target")
+                    target.write_text(self.nonce)
+                    self.release.symlink_to(target)
+                else:
+                    self.release.write_text("c" * 32)
+                self.assertEqual(125, child.wait(timeout=5))
+                self.assertFalse(self.effect.exists())
+
+    def test_missing_or_malformed_handshake_cannot_run_main(self):
+        for nonce in ("", "not-a-nonce"):
+            child = self.start(HONUA_GP_NATIVE_ENTRY_NONCE=nonce)
+            self.assertEqual(125, child.wait(timeout=5))
+            self.assertFalse(self.effect.exists())
+
+    def test_partial_handshake_and_linked_parent_directory_are_refused(self):
+        child = self.start(HONUA_GP_NATIVE_ENTRY_NONCE=None)
+        self.assertEqual(125, child.wait(timeout=5))
+        self.assertFalse(self.effect.exists())
+        real, linked = self.root / "real-directory", self.root / "linked-directory"
+        real.mkdir()
+        linked.symlink_to(real, target_is_directory=True)
+        child = self.start(HONUA_GP_NATIVE_ENTRY_RECORD=str(linked / "entry.json"),
+                           HONUA_GP_NATIVE_ENTRY_RELEASE=str(linked / "release"))
+        self.assertEqual(125, child.wait(timeout=5))
+        self.assertFalse(self.effect.exists())
+
+    def test_loader_is_inert_without_any_qualification_handshake(self):
+        effect = self.root / "default-effect"
+        environment = {key: value for key, value in os.environ.items() if not key.startswith("HONUA_GP_NATIVE_ENTRY_")}
+        environment["LD_PRELOAD"] = str(self.library)
+        subprocess.run([str(self.executable), str(effect)], env=environment, check=True, timeout=5)
+        self.assertEqual("main ran", effect.read_text())
 
 
 if __name__ == "__main__":
