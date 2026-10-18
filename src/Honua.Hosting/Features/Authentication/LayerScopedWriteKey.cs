@@ -212,7 +212,7 @@ internal static class LayerScopedWriteKey
     /// <returns><see langword="true"/> when the principal is a scoped key or a frozen job capability.</returns>
     public static bool IsScopedWritePrincipal(ClaimsPrincipal? principal)
         => principal is not null &&
-           (principal.HasClaim("auth_type", AuthType) ||
+           (AgentCredentialAuthority.IsDelegated(principal) || principal.HasClaim("auth_type", AuthType) ||
             principal.HasClaim("auth_type", ScopedJobTokenIssuer.AuthTypeClaimValue));
 
     /// <summary>
@@ -239,6 +239,7 @@ internal static class LayerScopedWriteKey
     internal static readonly IReadOnlyList<string> ScopeGovernanceRoles =
     [
         ScopedKeyRole,
+        AgentCredentialAuthority.DelegatedRole,
         AdminApiKeyPermission.ScopedAdminRole,
         AdminApiKeyPermission.ApprovedOperationRole,
     ];

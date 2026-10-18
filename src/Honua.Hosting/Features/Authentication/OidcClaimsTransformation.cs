@@ -331,9 +331,8 @@ internal sealed class OidcClaimsTransformation(
                 ClaimTypes.Role));
         }
 
-        return await ManagedMembershipRevalidation
-            .ApplyAsync(result, membershipSource)
-            .ConfigureAwait(false);
+        result = await ManagedMembershipRevalidation.ApplyAsync(result, membershipSource).ConfigureAwait(false);
+        return await AgentCredentialAuthority.BindOidcAsync(result, serviceProvider).ConfigureAwait(false);
     }
 
     private static string? FindClaimValue(ClaimsIdentity identity, params string[] claimTypes)

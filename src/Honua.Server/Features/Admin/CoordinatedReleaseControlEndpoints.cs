@@ -51,6 +51,7 @@ internal static class CoordinatedReleaseControlEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapPost("/operations/{operationId}/approve/{gate}", HandleApproveGate)
+            .RequireAdminApproveAuthorization()
             .WithDisplayName("Approve Coordinated Release Gate")
             .WithSummary("Approves the container-swap or data-affecting gate so the conductor can advance.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))

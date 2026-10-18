@@ -55,16 +55,17 @@ internal sealed class SharedStyleApprovedReplay
         var payload = await RequireProposalAsync(services, request, context, cancellationToken, receiptOnly).ConfigureAwait(false);
         if (payload.TenantId != context.TenantId || payload.TenantId != services.GetRequiredService<ITenantContext>().TenantId ||
             payload.SchemaName != context.SchemaName || payload.SchemaName != services.GetService<ISchemaContext>()?.CurrentSchema) Deny();
-        var key = await services.GetRequiredService<IAdminApiKeyStore>().GetAsync(payload.KeyId, cancellationToken).ConfigureAwait(false);
-        var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
-        if (key is null || key.RevokedAt is not null || key.ExpiresAt <= now ||
-            !key.Permissions.Order(StringComparer.Ordinal).SequenceEqual(payload.Permissions.Order(StringComparer.Ordinal))) Deny();
-        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(key!.Id, key.Name, key.Permissions);
+        // Legacy seals contain an actual key ID; new seals discriminate credential kinds.
+        var credential = payload.Credential ?? new AgentCredentialSnapshot
+        { Kind = "api-key", Id = payload.KeyId.ToString("D"), Permissions = payload.Permissions };
+        if (!credential.Permissions.Order(StringComparer.Ordinal).SequenceEqual(payload.Permissions.Order(StringComparer.Ordinal))) Deny();
+        var principal = await AgentCredentialAuthority.RevalidateAsync(credential, services, cancellationToken).ConfigureAwait(false);
+        if (principal is null) Deny();
         if (CanonicalSecurityActor.Resolve(principal)?.ActorId != payload.ActorId || !principal.HasClaim("permission", "agent:workspace") ||
             payload.AuthorSecurityContext.OwnerActorId != payload.ActorId || payload.AuthorSecurityContext.TenantId != payload.TenantId ||
             !payload.AuthorSecurityContext.Claims.Where(claim => claim.Type == "permission").Select(claim => claim.Value)
                 .Order(StringComparer.Ordinal).SequenceEqual(payload.Permissions.Order(StringComparer.Ordinal))) Deny();
-        await RequireRolesAsync(services, payload.AuthorSecurityContext, cancellationToken).ConfigureAwait(false);
+        await RequireRolesAsync(services, payload.AuthorSecurityContext, cancellationToken, payload.Credential).ConfigureAwait(false);
         var original = new DefaultHttpContext { User = principal, RequestServices = services };
         original.Request.Method = HttpMethods.Post;
         original.Request.Headers["X-Honua-Workspace"] = payload.WorkspaceId;
@@ -100,7 +101,7 @@ internal sealed class SharedStyleApprovedReplay
     {
         // Repeat all mutable authority after waiting for the canonical store lock.
         _ = await RequireProposalAsync(_services, _request, _policy, cancellationToken).ConfigureAwait(false);
-        await RequireRolesAsync(_services, Payload.AuthorSecurityContext, cancellationToken).ConfigureAwait(false);
+        await RequireRolesAsync(_services, Payload.AuthorSecurityContext, cancellationToken, Payload.Credential).ConfigureAwait(false);
         var turn = await SharedStyleWorkspaceAuthorization.AuthorizeAsync(_context, _context.User,
             Payload.WorkspaceId, Payload.TurnId, cancellationToken).ConfigureAwait(false);
         RequireBinding(Payload, turn);
@@ -113,7 +114,7 @@ internal sealed class SharedStyleApprovedReplay
     internal async Task RevalidateReceiptAsync(CancellationToken cancellationToken)
     {
         _ = await RequireProposalAsync(_services, _request, _policy, cancellationToken, true).ConfigureAwait(false);
-        await RequireRolesAsync(_services, Payload.AuthorSecurityContext, cancellationToken).ConfigureAwait(false);
+        await RequireRolesAsync(_services, Payload.AuthorSecurityContext, cancellationToken, Payload.Credential).ConfigureAwait(false);
         var turn = await SharedStyleWorkspaceAuthorization.AuthorizeAsync(_context, _context.User,
             Payload.WorkspaceId, Payload.TurnId, cancellationToken).ConfigureAwait(false);
         RequireBinding(Payload, turn);
@@ -136,8 +137,13 @@ internal sealed class SharedStyleApprovedReplay
             turn.Binding.ReleaseId != payload.ReleaseId || turn.Binding.TenantId != payload.TenantId) Deny();
     }
 
-    private static async Task RequireRolesAsync(IServiceProvider services, JobSecurityContext snapshot, CancellationToken cancellationToken)
+    private static async Task RequireRolesAsync(IServiceProvider services, JobSecurityContext snapshot, CancellationToken cancellationToken, AgentCredentialSnapshot? credential = null)
     {
+        if (credential is { Kind: "oidc-delegated-agent" })
+        {
+            if (await AgentCredentialAuthority.RevalidateAsync(credential, services, cancellationToken).ConfigureAwait(false) is null) Deny();
+            return;
+        }
         var membership = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(snapshot,
             services.GetService<IPrincipalMembershipSource>(), services.GetService<IOptions<RbacOptions>>()?.Value ?? new(), cancellationToken).ConfigureAwait(false);
         if (membership.HasRemovedRoles || membership.Status is JobSecurityContextMembershipStatus.Changed or

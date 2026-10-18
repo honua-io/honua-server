@@ -18,6 +18,12 @@ public sealed class OidcAuthenticationOptions
     /// </summary>
     public bool Enabled { get; set; }
 
+    /// <summary>Host-owned delegated agent profiles, disabled unless explicitly configured.</summary>
+    public OidcDelegatedAgentProfile[] DelegatedAgents { get; set; } = [];
+
+    /// <summary>Dedicated workload issuer/client bindings; retained independently of subject profiles.</summary>
+    public OidcDelegatedAgentAudience[] DelegatedAgentAudiences { get; set; } = [];
+
     /// <summary>
     /// Gets or sets the Azure AD provider configuration.
     /// </summary>

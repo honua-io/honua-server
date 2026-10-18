@@ -42,6 +42,7 @@ internal static class CanonicalSecurityActor
     {
         "permission", "auth_type", "api_key_id", "api_key_name", "plan", "honua_plan",
         "portal_token_binding", StoredApiKeyCredentialVersion.ClaimType,
+        "honua:delegated_agent_validation", "honua:delegated_agent_profile", "honua:delegated_agent_only", "honua:delegated_agent_generation", "honua:delegated_agent_acl",
     };
 
     /// <summary>

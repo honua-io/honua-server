@@ -2,6 +2,17 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Cryptography;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.Security;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
+using NSubstitute;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
@@ -34,9 +45,10 @@ namespace Honua.Server.Tests.Features.Styling;
 public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
 {
     [IntegrationTheory]
-    [InlineData("none")]
-    [InlineData("throw")]
-    [InlineData("cancel")]
+    [InlineData("none", false)]
+    [InlineData("none", true)]
+    [InlineData("throw", false)]
+    [InlineData("cancel", false)]
     [Operation(Operations.Update)]
     [Endpoint("GET /ogc/styles/{styleId}/impact")]
     [Endpoint("GET /api/v1/agent/workspaces/{workspaceId}/operations/{operationInstanceId}")]
@@ -46,18 +58,52 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
     [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
-    public async Task FrozenSharedStyle_AgentProposes_HumanApproves_ExactBytesCommitAndLostResponseReconciles(string postCommitFault)
+    public async Task FrozenSharedStyle_AgentProposes_HumanApproves_ExactBytesCommitAndLostResponseReconciles(string postCommitFault, bool delegatedAgent)
     {
-        var membership = new MutableMembership();
+        using var rsa = RSA.Create(2048);
+        var signingKey = new RsaSecurityKey(rsa) { KeyId = "shared-style-workload" };
+        var membership = new MutableMembership { WorkloadOnly = delegatedAgent, Current = delegatedAgent ? new(true, ["worker"]) : null };
+        var initialMembership = membership.Current;
         var fault = new PostCommitFault();
         var fixture = new WebAppFixture().UseKestrel().ConfigureWebHost(builder =>
         {
             builder.ConfigureTestServices(services =>
             {
                 services.AddSingleton<IPrincipalMembershipSource>(membership);
+                if (delegatedAgent)
+                {
+                    services.Configure<OidcAuthenticationOptions>(options =>
+                    {
+                        options.DelegatedAgentAudiences = [new() { Issuer = "https://workload.example", Audience = "honua-workloads" }];
+                        options.DelegatedAgents = [new() { Id = "style-agent", Generation = 1, Enabled = true, Issuer = "https://workload.example", Audience = "honua-workloads",
+                            Subject = "shared-style-agent", Tenant = "public", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1), Permissions = ["agent:workspace", "admin:write", "read:*"] }];
+                    });
+                    services.PostConfigure<JwtBearerOptions>(OidcAuthenticationExtensions.JwtBearerScheme, options =>
+                    {
+                        var discovery = new OpenIdConnectConfiguration { Issuer = "https://workload.example" };
+                        discovery.SigningKeys.Add(signingKey);
+                        options.ConfigurationManager = new StaticConfigurationManager<OpenIdConnectConfiguration>(discovery);
+                    });
+                    var roles = Substitute.For<IRoleStore>();
+                    roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+                        .Returns(new EffectivePermissions { UserId = "shared-style-agent", Roles = ["worker"], Permissions = [
+                            new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" },
+                            new PermissionGrant { Service = "admin", Layer = "*", Operation = "write" },
+                            new PermissionGrant { Service = "*", Layer = "*", Operation = "*" }] });
+                    services.RemoveAll<IRoleStore>();
+                    services.AddSingleton(roles);
+                }
                 services.AddKeyedScoped<IOperationExecutor>(SharedStyleEditOperation.OperationId,
                     (provider, _) => new FaultingStyleExecutor(new SharedStyleEditExecutor(provider), fault));
             });
+            if (delegatedAgent)
+            {
+                builder.UseSetting("Oidc:Enabled", "true");
+                builder.UseSetting("Oidc:Generic:Enabled", "true");
+                builder.UseSetting("Oidc:Generic:Authority", "https://workload.example");
+                builder.UseSetting("Oidc:Generic:ClientId", "honua-workloads");
+                builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
+            }
             builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
             builder.UseSetting("HONUA_DEV_AUTH", "false");
@@ -74,17 +120,36 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
         try
         {
             using var bootstrap = fixture.CreateAdminClient();
-            var issued = await Read(await bootstrap.PostAsJsonAsync("/api/v1/admin/api-keys", new
-            { name = "shared-style-agent", permissions = new[] { "admin", "read:*", "agent:workspace" } }), HttpStatusCode.Created);
-            var material = issued.GetProperty("data").GetProperty("key").GetString()!;
-            var keyId = issued.GetProperty("data").GetProperty("apiKey").GetProperty("id").GetString()!;
-            fixture.Services.GetRequiredService<IConfiguration>()["AgentWorkspace:LocalAgentPrincipalId"] = "apikey:api-key:" + keyId;
+            string material;
+            string keyId;
+            if (delegatedAgent)
+            {
+                var jwt = new JwtSecurityToken("https://workload.example", "honua-workloads",
+                    [new Claim("sub", "shared-style-agent"), new Claim("tenant_id", "public"), new Claim("scope", "agent:workspace honua.mcp.full")],
+                    DateTime.UtcNow.AddMinutes(-1), DateTime.UtcNow.AddMinutes(20), new SigningCredentials(signingKey, SecurityAlgorithms.RsaSha256));
+                material = new JwtSecurityTokenHandler().WriteToken(jwt);
+                keyId = "";
+                fixture.Services.GetRequiredService<IConfiguration>()["AgentWorkspace:LocalAgentPrincipalId"] = CanonicalSecurityActor.Resolve(
+                    new ClaimsPrincipal(new ClaimsIdentity([new Claim("iss", "https://workload.example"), new Claim("sub", "shared-style-agent")], OidcAuthenticationExtensions.JwtBearerScheme)))!.ActorId;
+            }
+            else
+            {
+                var issued = await Read(await bootstrap.PostAsJsonAsync("/api/v1/admin/api-keys", new
+                { name = "shared-style-agent", permissions = new[] { "admin", "read:*", "agent:workspace" } }), HttpStatusCode.Created);
+                material = issued.GetProperty("data").GetProperty("key").GetString()!;
+                keyId = issued.GetProperty("data").GetProperty("apiKey").GetProperty("id").GetString()!;
+                fixture.Services.GetRequiredService<IConfiguration>()["AgentWorkspace:LocalAgentPrincipalId"] = "apikey:api-key:" + keyId;
+            }
             var token = fixture.Services.GetRequiredService<OperatorBearerTokenService>().Issue(
                 [new() { Type = ClaimTypes.NameIdentifier, Value = "shared-style-human" }, new() { Type = ClaimTypes.Role, Value = "admin" },
                  new() { Type = "tenant_id", Value = "public" }], DateTimeOffset.UtcNow.AddMinutes(10));
             token.Should().NotBeNull();
             using var human = fixture.CreateClient(client => client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token!.Token));
-            using var agent = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", material));
+            using var agent = fixture.CreateClient(client =>
+            {
+                if (delegatedAgent) client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", material);
+                else client.DefaultRequestHeaders.Add("X-API-Key", material);
+            });
             using (var legacy = await agent.PutAsJsonAsync($"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style",
                 new { mapLibreStyle = new { version = 8, sources = new { }, layers = Array.Empty<object>() } }))
                 legacy.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -142,6 +207,16 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
             var proposalStore = scope.ServiceProvider.GetRequiredService<IOperationProposalStore>();
             var instanceStore = scope.ServiceProvider.GetRequiredService<IOperationInstanceStore>();
             var waitingProposal = (await proposalStore.GetAsync(proposalId))!;
+            if (delegatedAgent)
+            {
+                var other = waitingProposal with { ProposalId = "other-agent-" + Guid.NewGuid().ToString("N"), RequestedBy = "different-agent", Version = 0 };
+                (await proposalStore.TryCreateAsync(other)).Should().BeTrue();
+                using var forbiddenApproval = await agent.PostAsync("/api/v1/admin/proposals/" + other.ProposalId + "/approve", null);
+                forbiddenApproval.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                using var forbiddenRejection = await agent.PostAsJsonAsync("/api/v1/admin/proposals/" + other.ProposalId + "/reject", new { reason = "agent must not decide another actor's proposal" });
+                forbiddenRejection.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                (await proposalStore.GetAsync(other.ProposalId))!.Status.Should().Be(other.Status);
+            }
             var waitingHandle = (await instanceStore.GetAsync(operationId))!;
             // A durable human claim without SQL proof must remain exactly unchanged on actual MCP status read.
             await SetProposalState(proposalStore, waitingProposal with
@@ -232,10 +307,18 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
             var removedDocument = (await workspaceStore.GetAsync(workspaceId))!;
             (await workspaceStore.SaveAsync(workspaceDocument with { Version = removedDocument.Version })).Should().BeTrue();
             membership.Current = new(false, []);
-            IsFailure(await ProposalEnvelope(agent, proposalId)).Should().BeTrue();
-            IsFailure(await Rpc(agent, "honua_workspace_get_command", new { workspaceId, operationInstanceId = operationId })).Should().BeTrue();
+            if (delegatedAgent)
+            {
+                using var inactive = await agent.GetAsync(root + "/operations/" + operationId);
+                inactive.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            }
+            else
+            {
+                IsFailure(await ProposalEnvelope(agent, proposalId)).Should().BeTrue();
+                IsFailure(await Rpc(agent, "honua_workspace_get_command", new { workspaceId, operationInstanceId = operationId })).Should().BeTrue();
+            }
             (await instanceStore.GetAsync(operationId))!.Status.Should().Be(pendingStatus);
-            membership.Current = null;
+            membership.Current = initialMembership;
             if (postCommitFault == "throw")
             {
                 var originalRetry = await Tool(agent, "honua_shared_style_propose", arguments);
@@ -319,7 +402,8 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
             var restoredOperationId = restoredProposal.Audit.OperationInstanceId!;
             var restoredHandle = (await instanceStore.GetAsync(restoredOperationId))!;
             await instanceStore.SetAsync(restoredHandle with { Status = OperationHandleStatus.Accepted });
-            await scope.ServiceProvider.GetRequiredService<IAdminApiKeyStore>().RevokeAsync(Guid.Parse(keyId), CancellationToken.None);
+            if (delegatedAgent) membership.Current = new(false, []);
+            else await scope.ServiceProvider.GetRequiredService<IAdminApiKeyStore>().RevokeAsync(Guid.Parse(keyId), CancellationToken.None);
             using var revokedResponse = await agent.PostAsJsonAsync("/mcp", new
             { jsonrpc = "2.0", id = "revoked", method = "resources/read", @params = new { uri = "honua://proposals/" + restoreId } });
             revokedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -347,8 +431,9 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
     private sealed class MutableMembership : IPrincipalMembershipSource
     {
         public PrincipalMembership? Current { get; set; }
+        public bool WorkloadOnly { get; init; }
         public Task<PrincipalMembership?> ResolveMembershipAsync(string principalId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Current);
+            => Task.FromResult(WorkloadOnly && principalId != "shared-style-agent" ? null : Current);
     }
 
     private static async Task<JsonElement> ProposalEnvelope(HttpClient client, string id)

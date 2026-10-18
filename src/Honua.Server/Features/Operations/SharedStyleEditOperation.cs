@@ -75,14 +75,14 @@ internal sealed class SharedStyleEditExecutor(IServiceProvider services) : Honua
         if (!current.Impact.CanEdit) throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         var (candidate, error) = await SharedStyleCandidatePreparation.PrepareAsync(current, intent.Style.GetRawText(), false, http, cancellationToken).ConfigureAwait(false);
         if (error is not null) throw new GeoprocessingValidationException(error.ErrorMessage ?? "The proposed style is invalid.");
-        var keyId = Guid.Parse(http.User.FindFirst("api_key_id")!.Value);
-        var record = await services.GetRequiredService<IAdminApiKeyStore>().GetAsync(keyId, cancellationToken).ConfigureAwait(false)
+        var credential = await AgentCredentialAuthority.CaptureAsync(http.User, services, cancellationToken).ConfigureAwait(false)
             ?? throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         var payload = new SharedStyleApprovalPayload
         {
             ActorId = actor,
-            KeyId = keyId,
-            Permissions = record.Permissions.ToArray(),
+            KeyId = credential.Kind == "api-key" ? Guid.Parse(credential.Id) : Guid.Empty,
+            Credential = credential,
+            Permissions = credential.Permissions,
             AuthorSecurityContext = await services.GetRequiredService<WorkflowAuthorSecurityContextCapturer>().CaptureAsync(http.User, cancellationToken).ConfigureAwait(false),
             WorkspaceId = turn.Binding.WorkspaceId,
             TurnId = turn.Binding.TurnId,

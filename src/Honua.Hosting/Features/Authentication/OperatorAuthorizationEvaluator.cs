@@ -44,6 +44,15 @@ internal sealed class OperatorAuthorizationEvaluator(
             return AccessDecision.RequiresAuth("Authentication is required for operator resources.");
         }
 
+        if (AgentCredentialAuthority.IsDelegated(principal))
+        {
+            var level = AdminApiKeyPermission.ResolveAccessLevel(principal);
+            return level == AdminApiKeyPermission.AdminAccessLevel.Write ||
+                (level == AdminApiKeyPermission.AdminAccessLevel.Read && request.Operation is OperatorOperation.Read or OperatorOperation.Discover)
+                ? AccessDecision.Allowed()
+                : AccessDecision.Forbidden("Delegated credential ceiling does not grant this operator operation.");
+        }
+
         var userId = ResolveGrantSubjectId(principal);
         var roleNames = RbacRoleClaims.Enumerate(principal, rbacOptions.Value, serviceProvider);
         var isAdmin = roleNames.Any(role =>

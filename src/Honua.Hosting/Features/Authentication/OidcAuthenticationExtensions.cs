@@ -267,7 +267,7 @@ public static partial class OidcAuthenticationExtensions
                 "administrator",
                 "Administrator",
                 AdminApiKeyPermission.ApprovedOperationRole,
-                AdminApiKeyPermission.ScopedAdminRole);
+                AdminApiKeyPermission.ScopedAdminRole, AgentCredentialAuthority.DelegatedRole);
 
             UpdateRolePolicy(
                 authzOptions,
@@ -705,6 +705,7 @@ public static partial class OidcAuthenticationExtensions
                     // while leaving every non-OAuth principal's grant decision untouched.
                     if (context.Principal?.Identity is ClaimsIdentity bearerIdentity)
                     {
+                        AgentCredentialAuthority.MarkValidated(bearerIdentity, context.HttpContext.RequestServices);
                         // JsonWebTokenHandler may create a ClaimsIdentity whose
                         // AuthenticationType is a generic federation value rather than the
                         // concrete ticket scheme. Retain the scheme selected and validated by

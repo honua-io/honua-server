@@ -1,0 +1,103 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
+using NSubstitute;
+using Xunit;
+
+namespace Honua.Hosting.UnitTests.Infrastructure.Authentication;
+
+public sealed class DelegatedAgentJwtBearerTests
+{
+    [Theory]
+    [InlineData("valid", true)]
+    [InlineData("wrong-issuer", false)]
+    [InlineData("wrong-audience", false)]
+    [InlineData("wrong-subject", false)]
+    [InlineData("wrong-tenant", false)]
+    [InlineData("expired", false)]
+    [InlineData("forged-signature", false)]
+    [InlineData("removed-profile-omitted-scope-admin", false)]
+    [InlineData("disabled-profile-admin", false)]
+    [InlineData("active-profile-omitted-scope", false)]
+    public async Task ProductionJwtBearerPipeline_RequiresValidatedExactProfile(string variant, bool expectedAgent)
+    {
+        using var rsa = RSA.Create(2048);
+        using var otherRsa = RSA.Create(2048);
+        var key = new RsaSecurityKey(rsa) { KeyId = "trusted" };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Oidc:Enabled"] = "true", ["Oidc:Generic:Enabled"] = "true",
+            ["Oidc:Generic:Authority"] = "https://issuer.example", ["Oidc:Generic:ClientId"] = "honua",
+            ["Oidc:TokenValidation:EnableTokenReplayProtection"] = "false"
+        }).Build();
+        var services = new ServiceCollection().AddLogging().AddMemoryCache();
+        services.AddSingleton<IConfiguration>(config);
+        services.AddOidcAuthentication(config);
+        services.Configure<OidcAuthenticationOptions>(options =>
+        {
+            options.DelegatedAgentAudiences = [new() { Issuer = "https://issuer.example", Audience = "honua" }];
+            options.DelegatedAgents = variant == "removed-profile-omitted-scope-admin" ? [] : [new OidcDelegatedAgentProfile
+            {
+                Id = "worker", Generation = 1, Enabled = variant != "disabled-profile-admin", Issuer = "https://issuer.example", Audience = "honua",
+                Subject = "subject", Tenant = "tenant", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1), Permissions = ["agent:workspace"]
+            }];
+        });
+        services.PostConfigure<JwtBearerOptions>(OidcAuthenticationExtensions.JwtBearerScheme, options =>
+        {
+            var discovery = new OpenIdConnectConfiguration { Issuer = "https://issuer.example" };
+            discovery.SigningKeys.Add(key);
+            options.ConfigurationManager = new StaticConfigurationManager<OpenIdConnectConfiguration>(discovery);
+            options.TokenValidationParameters.ValidIssuer = "https://issuer.example";
+            options.TokenValidationParameters.ValidAudience = "honua";
+            options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
+        });
+        var membership = Substitute.For<IPrincipalMembershipSource>();
+        membership.ResolveMembershipAsync("subject", "https://issuer.example", Arg.Any<CancellationToken>())
+            .Returns(new PrincipalMembership(true, ["admin"]));
+        var roles = Substitute.For<IRoleStore>();
+        roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions = [new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" }] });
+        services.AddSingleton(membership).AddSingleton(roles);
+        await using var provider = services.BuildServiceProvider();
+        var token = new JwtSecurityToken(
+            issuer: variant == "wrong-issuer" ? "https://evil.example" : "https://issuer.example",
+            audience: variant == "wrong-audience" ? "other" : "honua",
+            claims: [new Claim("scope", variant.Contains("omitted-scope", StringComparison.Ordinal) ? "" : "agent:workspace"), new Claim("sub", variant == "wrong-subject" ? "other" : "subject"),
+                new Claim("tenant_id", variant == "wrong-tenant" ? "other" : "tenant"),
+                new Claim("permission", "agent:workspace"), new Claim("api_key_id", Guid.NewGuid().ToString()),
+                new Claim("auth_type", "admin-api-key"), new Claim(ClaimTypes.Role, "admin")],
+            notBefore: DateTime.UtcNow.AddMinutes(-10),
+            expires: variant == "expired" ? DateTime.UtcNow.AddMinutes(-1) : DateTime.UtcNow.AddMinutes(5),
+            signingCredentials: new SigningCredentials(variant == "forged-signature" ? new RsaSecurityKey(otherRsa) : key, SecurityAlgorithms.RsaSha256));
+        var context = new DefaultHttpContext { RequestServices = provider };
+        context.Request.Headers.Authorization = "Bearer " + new JwtSecurityTokenHandler().WriteToken(token);
+        var result = await context.AuthenticateAsync(OidcAuthenticationExtensions.JwtBearerScheme);
+        (result.Succeeded && AgentCredentialAuthority.IsAgent(result.Principal!)).Should().Be(expectedAgent);
+        if (result.Succeeded)
+        {
+            result.Principal!.IsInRole("admin").Should().BeFalse();
+            AdminApiKeyPermission.IsAuthorized(result.Principal, "POST").Should().BeFalse();
+        }
+        if (expectedAgent)
+        {
+            result.Principal!.FindFirst("api_key_id").Should().BeNull();
+            result.Principal.FindFirst("auth_type")!.Value.Should().NotBe("admin-api-key");
+        }
+    }
+}

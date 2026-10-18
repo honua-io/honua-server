@@ -6,6 +6,7 @@ using Honua.Core.Features.AgentWorkspace.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Security;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.AgentWorkspace;
 
 namespace Honua.Server.Features.Styling;
@@ -19,7 +20,7 @@ internal static class SharedStyleWorkspaceAuthorization
     {
         var actor = CanonicalSecurityActor.Resolve(principal)?.ActorId;
         if (actor is null || actor != CanonicalSecurityActor.Resolve(context.User)?.ActorId ||
-            !context.User.HasClaim("permission", "agent:workspace") || context.User.FindFirst("api_key_id") is null ||
+            !AgentCredentialAuthority.IsAgent(context.User) ||
             !AgentWorkspaceState.IsIdentifier(workspaceId) || !AgentWorkspaceState.IsIdentifier(turnId)) Deny();
         var headers = context.Request.Headers;
         if (headers["X-Honua-Workspace"].Count > 1 || headers["X-Honua-Turn"].Count > 1 ||

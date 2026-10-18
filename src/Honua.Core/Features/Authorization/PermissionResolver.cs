@@ -50,6 +50,14 @@ public sealed class PermissionResolver : IPermissionResolver
         string service,
         string? layer,
         AuthorizationOperation operation)
+        => AuthorizeSnapshot(effectivePermissions, service, layer, operation);
+
+    /// <summary>Evaluates a materialized canonical grant snapshot with the same operation-aware matcher.</summary>
+    public static PermissionDecision AuthorizeSnapshot(
+        EffectivePermissions effectivePermissions,
+        string service,
+        string? layer,
+        AuthorizationOperation operation)
     {
         ArgumentNullException.ThrowIfNull(effectivePermissions);
         ArgumentException.ThrowIfNullOrWhiteSpace(service);

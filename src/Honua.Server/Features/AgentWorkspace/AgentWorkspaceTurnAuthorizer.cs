@@ -24,10 +24,11 @@ internal sealed class AgentWorkspaceTurnAuthorizer(
         var context = accessor.HttpContext;
         if (context is null || principal.Identity?.IsAuthenticated != true ||
             !AgentWorkspaceState.IsIdentifier(workspaceId) || !AgentWorkspaceState.IsIdentifier(turnId) ||
-            !principal.HasClaim("permission", "agent:workspace") || principal.FindFirst("api_key_id") is null)
+            !AgentCredentialAuthority.IsAgent(principal))
         {
             return null;
         }
+        if (!await AgentCredentialAuthority.IsCurrentAsync(principal, context.RequestServices, cancellationToken).ConfigureAwait(false)) return null;
         var actor = CanonicalSecurityActor.Resolve(principal)?.ActorId;
         var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId;
         var release = configuration["AgentWorkspace:ReleaseId"];

@@ -222,6 +222,9 @@ internal static class AccessPolicyHelpers
         var scopedKeyDecision = EvaluateScopedKeyAccess(context.User, serviceName, null, operation);
         if (scopedKeyDecision is { } decision)
         {
+            if (decision.IsAllowed && AgentCredentialAuthority.IsDelegated(context.User))
+                decision = await EvaluateGrantCoreAsync(context.RequestServices, context.User, serviceName, null, operation, cancellationToken, context.Items).ConfigureAwait(false) == GrantOutcome.Allow
+                    ? AccessDecision.Allowed() : AccessDecision.Forbidden("Current canonical role grants do not authorize the delegated request.");
             return CreateAccessDeniedResult(context, decision);
         }
 
@@ -318,8 +321,9 @@ internal static class AccessPolicyHelpers
         // Tenant scope gates before grant evaluation (#1580): a per-operation grant
         // must never authorize access to another tenant's resource.
         if (applyTenantScope &&
-            !(MetadataV2TenantVisibility.IsVisibleToTenant(resource, tenantId)
-                && MetadataV2TenantVisibility.IsVisibleToTenant(service, tenantId)))
+            (!AgentCredentialAuthority.MatchesTenant(principal, tenantId) ||
+             !(MetadataV2TenantVisibility.IsVisibleToTenant(resource, tenantId)
+                && MetadataV2TenantVisibility.IsVisibleToTenant(service, tenantId))))
         {
             return AccessDecision.Forbidden(TenantScopeDeniedReason);
         }
@@ -334,6 +338,9 @@ internal static class AccessPolicyHelpers
         var scopedKeyDecision = EvaluateScopedKeyAccess(principal, serviceName, resource.Metadata.Name, operation);
         if (scopedKeyDecision is { } decision)
         {
+            if (decision.IsAllowed && AgentCredentialAuthority.IsDelegated(principal) && !string.IsNullOrWhiteSpace(serviceName))
+                return await EvaluateGrantCoreAsync(services, principal, serviceName, resource.Metadata.Name, operation, cancellationToken, requestCache).ConfigureAwait(false) == GrantOutcome.Allow
+                    ? AccessDecision.Allowed() : AccessDecision.Forbidden("Current canonical role grants do not authorize the delegated request.");
             return decision;
         }
 
@@ -400,12 +407,22 @@ internal static class AccessPolicyHelpers
             return null;
         }
 
+        // Detached canonical metadata has no service URL scope. Its existing admin
+        // permission boundary still applies; associated data resources are checked separately.
+        if (AgentCredentialAuthority.IsDelegated(principal) && string.IsNullOrWhiteSpace(serviceName) &&
+            operation == AuthorizationOperation.Metadata)
+            return AdminApiKeyPermission.ResolveAccessLevel(principal) >= AdminApiKeyPermission.AdminAccessLevel.Read
+                ? AccessDecision.Allowed() : AccessDecision.Forbidden("Delegated credential does not grant metadata administration.");
+
         var allowed = operation is AuthorizationOperation.Query or AuthorizationOperation.Read
             or AuthorizationOperation.Metadata or AuthorizationOperation.Export
             ? LayerScopedWriteKey.AllowsRead(principal, serviceName, layerName)
             : operation is AuthorizationOperation.Insert or AuthorizationOperation.Update or AuthorizationOperation.Delete
               && LayerScopedWriteKey.IsScopedWritePrincipal(principal)
               && LayerScopedWriteKey.AllowsWrite(principal, serviceName, layerName);
+
+        if (allowed && AgentCredentialAuthority.IsDelegated(principal))
+            allowed = !string.IsNullOrWhiteSpace(serviceName) && AgentCredentialAuthority.AuthorizesCanonicalGrant(principal, serviceName, layerName, operation);
 
         return allowed
             ? AccessDecision.Allowed()
@@ -452,7 +469,9 @@ internal static class AccessPolicyHelpers
         }
 
         var options = services.GetRequiredService<IOptions<RbacOptions>>().Value;
-        var roles = RbacRoleClaims.Enumerate(principal, options, services);
+        var roles = AgentCredentialAuthority.IsDelegated(principal)
+            ? AgentCredentialAuthority.SourceRoles(principal).ToList()
+            : RbacRoleClaims.Enumerate(principal, options, services);
         if (roles.Count == 0)
         {
             // No roles to resolve grants from — defer to the coarse policy.
