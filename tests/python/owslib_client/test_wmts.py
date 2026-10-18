@@ -19,20 +19,24 @@ error surface.
 
 from __future__ import annotations
 
+import copy
 import io
 import math
+import os
 import re
 
 import pytest
+import requests
 from owslib.ogcapi.features import Features
 from owslib.util import ServiceException, openURL
 from owslib.wmts import WebMapTileService
 from PIL import Image
-
 from shared import canonical_fixture as fx
+from shared.cert_auth import AUTHENTICATED_MODES, AuthCredentials, AuthMode
 from shared.cert_envelope import CertificationEvidenceCollector
 
-from .conftest import AdminProbe, LaneConfig, Timer
+from .conftest import LaneConfig, Timer
+from .wmts_oracles import assert_fixture_pixels, assert_tile_denied, fixture_tile
 
 pytestmark = pytest.mark.owslib_client
 
@@ -140,33 +144,72 @@ def test_conn02_transport(base_url: str, wmts_collector: CertificationEvidenceCo
     )
 
 
+@pytest.fixture(scope="session")
+def protected_wmts(lane_config: LaneConfig) -> WebMapTileService:
+    """Discover the maintained protected mirror with a valid fixture credential."""
+    service = os.getenv("HONUA_CERT_RASTER_SERVICE_ID", "cert_auth_raster")
+    url = f"{lane_config.base_url}/rest/services/{service}/MapServer/WMTS"
+    client = WebMapTileService(url, headers=AuthCredentials.from_environment().headers(AuthMode.API_KEY))
+    layer = os.getenv("HONUA_CERT_RASTER_LAYER_ID", "2010")
+    assert layer in client.contents, f"Protected WMTS did not advertise configured layer {layer}"
+    return client
+
+
+def _protected_tile_request(prototype: WebMapTileService, headers: dict[str, str], encoding: str):
+    """Exercise WebMapTileService.gettile itself for both advertised encodings."""
+    client = copy.copy(prototype)
+    client.headers = dict(headers)
+    client.restonly = encoding == "rest"
+    assert encoding in ("rest", "kvp")
+    layer = os.getenv("HONUA_CERT_RASTER_LAYER_ID", "2010")
+    row, column = fixture_tile("WebMercatorQuad", 5)
+    arguments = {"layer": layer, "style": "default", "format": "image/png",
+                 "tilematrixset": "WebMercatorQuad", "tilematrix": "5", "row": row, "column": column}
+    url = (client.buildTileResource(**arguments) if client.restonly
+           else client.url + "?" + client.buildTileRequest(**arguments))
+    # A public/admin endpoint cannot stand in for this protected tile request.
+    assert url.startswith(prototype.url), f"Tile binding escaped protected WMTS service: {url}"
+    return client, arguments, url
+
+
 @pytest.mark.cert("CERT-AUTH-01")
-def test_auth01_anonymous_rejected(admin_probe: AdminProbe,
+@pytest.mark.parametrize("encoding", ("kvp", "rest"))
+@pytest.mark.parametrize("credential", ("anonymous", "wrong-api-key", "expired-oidc-bearer"))
+def test_auth01_anonymous_rejected(protected_wmts: WebMapTileService, credential: str,
+                                   encoding: str,
                                    wmts_collector: CertificationEvidenceCollector) -> None:
-    assert admin_probe.anonymous_status in (401, 403), admin_probe
-    assert "ApiKey" in admin_probe.challenge and fx.ADMIN_API_KEY_HEADER in admin_probe.challenge
+    credentials = AuthCredentials.from_environment()
+    headers = {} if credential == "anonymous" else credentials.negative_headers(credential)
+    client, arguments, url = _protected_tile_request(protected_wmts, headers, encoding)
+    with pytest.raises(requests.HTTPError) as excinfo:
+        client.gettile(base_url=client.url, **arguments)
+    response = excinfo.value.response
+    assert response is not None, "OWSLib denial must retain its actual HTTP response"
+    scheme = "Bearer" if credential == "expired-oidc-bearer" else "ApiKey"
+    assert_tile_denied(response, scheme)
     wmts_collector.record(
-        "CERT-AUTH-01", "pass",
-        notes=(
-            f"Anonymous GET {fx.ADMIN_PROBE_PATH} -> {admin_probe.anonymous_status}, "
-            f"WWW-Authenticate: {admin_probe.challenge}. The WMTS surface is anonymous in this "
-            "fixture, so the control plane substantiates the AUTH facets."
-        ),
-        evidence_ref=fx.ADMIN_PROBE_PATH,
+        "CERT-AUTH-01", "pass", notes=(
+            f"Actual OWSLib {encoding} protected GetTile with {credential}: HTTP401, "
+            f"{scheme} challenge and OWS AccessDenied; no image bytes. Admin probes earn no WMTS credit."
+        ), evidence_ref=url, client_identity="OWSLib", protocol_version="1.0.0", request_url=url,
     )
 
 
 @pytest.mark.cert("CERT-AUTH-02")
-def test_auth02_credential_grants_access(admin_probe: AdminProbe,
+@pytest.mark.parametrize("encoding", ("kvp", "rest"))
+@pytest.mark.parametrize("auth_mode", AUTHENTICATED_MODES, ids=lambda mode: mode.value)
+def test_auth02_credential_grants_access(protected_wmts: WebMapTileService, auth_mode: AuthMode,
+                                         encoding: str,
                                          wmts_collector: CertificationEvidenceCollector) -> None:
-    assert admin_probe.authenticated_status // 100 == 2, admin_probe
+    client, arguments, url = _protected_tile_request(
+        protected_wmts, AuthCredentials.from_environment().headers(auth_mode), encoding)
+    image, _ = _png(client.gettile(base_url=client.url, **arguments))
+    count = assert_fixture_pixels(image, "WebMercatorQuad", 5, arguments["row"], arguments["column"])
     wmts_collector.record(
-        "CERT-AUTH-02", "pass",
-        notes=(
-            f"Accepted scheme {admin_probe.scheme} -> {admin_probe.authenticated_status}; ladder: "
-            + ", ".join(f"{name}={code}" for name, code in admin_probe.attempts)
-        ),
-        evidence_ref=fx.ADMIN_PROBE_PATH,
+        "CERT-AUTH-02", "pass", measured_count=count, notes=(
+            f"Actual OWSLib {encoding} protected GetTile with {auth_mode.value}: "
+            f"{count} authored point/style pixels at independently expected grid positions."
+        ), evidence_ref=url, client_identity="OWSLib", protocol_version="1.0.0", request_url=url,
     )
 
 
@@ -382,12 +425,13 @@ def test_rndr01_gettile(wmts: WebMapTileService, wmts_layer: str,
     assert image.size == (int(matrix.tilewidth), int(matrix.tileheight)), (
         f"tile is {image.size}, capabilities declare {matrix.tilewidth}x{matrix.tileheight}"
     )
+    painted = assert_fixture_pixels(image, "WebMercatorQuad", 5, row, column)
     wmts_collector.record(
         "CERT-RNDR-01", "pass",
         duration_ms=timer.ms,
         measured_count=len(payload),
         notes=(
-            f"GetTile(WebMercatorQuad/5/{row}/{column}) returned a decodable {image.size[0]}x"
+            f"GetTile(WebMercatorQuad/5/{row}/{column}) contained {painted} authored-style pixels at independent positions in a decodable {image.size[0]}x"
             f"{image.size[1]} PNG ({len(payload)} bytes) whose dimensions match the TileWidth/"
             "TileHeight the capabilities declare. This is server-rendered imagery accepted and "
             "decoded by the client, not client-side drawing: OWSLib has no drawing surface."
@@ -413,7 +457,7 @@ def test_ext_zoom_sweep(wmts: WebMapTileService, wmts_layer: str,
         image, _ = _png(wmts.gettile(
             layer=wmts_layer, style="default", format="image/png",
             tilematrixset="WebMercatorQuad", tilematrix=identifier, row=row, column=column))
-        assert image.size == (256, 256)
+        assert_fixture_pixels(image, "WebMercatorQuad", int(identifier), row, column)
         observed[identifier] = (row, column)
     wmts_collector.record(
         "NB-OWS-WMTS-TILE-01", "pass",
@@ -450,7 +494,7 @@ def test_ext_second_tile_matrix_set(wmts: WebMapTileService, wmts_layer: str,
     image, _ = _png(wmts.gettile(
         layer=wmts_layer, style="default", format="image/png",
         tilematrixset="WorldCRS84Quad", tilematrix="4", row=row, column=column))
-    assert image.size == (256, 256)
+    assert_fixture_pixels(image, "WorldCRS84Quad", 4, row, column)
     wmts_collector.record(
         "NB-OWS-WMTS-TILE-02", "pass",
         measured_count=1,
@@ -473,7 +517,8 @@ def test_ext_rest_matches_kvp(wmts: WebMapTileService, wmts_layer: str,
         layer=wmts_layer, style="default", format="image/png",
         tilematrixset="WebMercatorQuad", tilematrix="5", row=12, column=5)
     rest_image, rest_bytes = _png(openURL(rest_url, timeout=30))
-    assert kvp_image.size == rest_image.size
+    assert_fixture_pixels(kvp_image, "WebMercatorQuad", 5, 12, 5)
+    assert_fixture_pixels(rest_image, "WebMercatorQuad", 5, 12, 5)
     assert kvp_bytes == rest_bytes, (
         "the RESTful and KVP encodings of the same tile returned different bytes"
     )
@@ -515,7 +560,7 @@ def test_geom02_tile_matrix_set_is_honoured(wmts: WebMapTileService, wmts_layer:
     image, _ = _png(wmts.gettile(
         layer=wmts_layer, style="default", format="image/png",
         tilematrixset=requested, tilematrix="3", row=3, column=1))
-    assert image.size == (int(matrix.tilewidth), int(matrix.tileheight))
+    assert_fixture_pixels(image, requested, 3, 3, 1)
 
     # Asking the same layer for a tile index that is only valid in the *other*
     # grid proves the matrix set is actually resolved rather than ignored.
