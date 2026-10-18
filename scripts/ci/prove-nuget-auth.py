@@ -57,13 +57,16 @@ def restore(project: Path, config: Path, cache: Path, credential: str | None):
     environment.update(NUGET_PACKAGES=str(cache / "packages"),
                        NUGET_HTTP_CACHE_PATH=str(cache / "http"),
                        NUGET_PLUGINS_CACHE_PATH=str(cache / "plugins"),
-                       DOTNET_CLI_HOME=str(cache / "cli"), DOTNET_NOLOGO="true")
+                       DOTNET_CLI_HOME=str(cache / "cli"), DOTNET_NOLOGO="true",
+                       DOTNET_CLI_USE_MSBUILD_SERVER="false", MSBUILDDISABLENODEREUSE="1")
+    # A persistent build server must never retain this disposable CLI/cache
+    # environment and pass deleted paths to subsequent ordinary builds.
     # Capture diagnostics privately. Do not echo a subprocess error, environment
     # value or raw NuGet output into job logs or artifacts.
     try:
         return subprocess.run(["dotnet", "restore", str(project), "--configfile", str(config),
                                "--packages", str(cache / "packages"), "--no-cache",
-                               "--force-evaluate", "--verbosity", "quiet"], cwd=cache,
+                               "--force-evaluate", "--disable-build-servers", "--verbosity", "quiet"], cwd=cache,
                               env=environment, capture_output=True, text=True, timeout=150)
     except (OSError, subprocess.TimeoutExpired):
         raise ProofError("Bounded private-feed restore could not complete.") from None

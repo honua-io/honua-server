@@ -123,17 +123,23 @@ class CredentialTests(unittest.TestCase):
         cache = self.parent / 'isolated'
         cache.mkdir()
         for credential in (None, 'Username=unit;Password=' + TOKEN):
-            with patch.dict(os.environ, {proof.KEY: 'stale-credential'}, clear=False), \
+            with patch.dict(os.environ, {proof.KEY: 'stale-credential',
+                            'DOTNET_CLI_USE_MSBUILD_SERVER': 'true', 'MSBUILDDISABLENODEREUSE': '0'}, clear=False), \
                     patch.object(proof.subprocess, 'run') as run:
                 proof.restore(cache / 'Probe.csproj', self.root / 'NuGet.config', cache, credential)
+                self.assertEqual(os.environ['DOTNET_CLI_USE_MSBUILD_SERVER'], 'true')
+                self.assertEqual(os.environ['MSBUILDDISABLENODEREUSE'], '0')
             call = run.call_args
             self.assertIn('--no-cache', call.args[0])
             self.assertIn('--force-evaluate', call.args[0])
+            self.assertIn('--disable-build-servers', call.args[0])
             environment = call.kwargs['env']
             self.assertEqual(environment.get(proof.KEY), credential)
             self.assertEqual(environment['NUGET_PACKAGES'], str(cache / 'packages'))
             self.assertEqual(environment['NUGET_HTTP_CACHE_PATH'], str(cache / 'http'))
             self.assertEqual(environment['NUGET_PLUGINS_CACHE_PATH'], str(cache / 'plugins'))
+            self.assertEqual(environment['DOTNET_CLI_USE_MSBUILD_SERVER'], 'false')
+            self.assertEqual(environment['MSBUILDDISABLENODEREUSE'], '1')
             self.assertTrue(call.kwargs['capture_output'])
             self.assertEqual(call.kwargs['timeout'], 150)
 
