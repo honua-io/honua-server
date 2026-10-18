@@ -70,6 +70,9 @@ internal sealed class SharedStyleEditor(IStyleCatalog catalog, StyleEditImpactSe
         if (replay.Receipt is { } receipt)
         {
             await replay.RevalidateReceiptAsync(cancellationToken).ConfigureAwait(false);
+            // Idempotent refresh repairs a crash after SQL commit but before cache/graph projection.
+            // Refresh reads current canonical bytes; the historical candidate is never reapplied.
+            await RefreshAsync(replay.Expected.StoreSnapshot).ConfigureAwait(false);
             return receipt;
         }
         var outcome = await catalog.ApplyEditOnceAsync(replay.Expected.StoreSnapshot,
@@ -78,7 +81,7 @@ internal sealed class SharedStyleEditor(IStyleCatalog catalog, StyleEditImpactSe
             cancellationToken).ConfigureAwait(false);
         if (outcome is null)
             throw new Honua.Geoprocessing.GeoprocessingPreconditionFailedException("The reviewed shared style changed; submit a new proposal.");
-        if (outcome.UpdatedSnapshot is { } updated) await RefreshAsync(updated).ConfigureAwait(false);
+        await RefreshAsync(outcome.UpdatedSnapshot ?? replay.Expected.StoreSnapshot).ConfigureAwait(false);
         return outcome.Receipt;
     }
 

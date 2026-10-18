@@ -14,6 +14,28 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 public sealed class DeferredOperationExecutorTests
 {
     [UnitTest]
+    public async Task ProductionDeferredRegistration_ForwardsReadOnlyReceiptWithoutSubmitting()
+    {
+        var inner = Substitute.For<IOperationExecutor, IOperationCommittedReceiptReader>();
+        inner.OperationId.Returns("style.replace-shared");
+        var request = new OperationRequest { OperationId = inner.OperationId };
+        var context = new OperationPolicyContext { PrincipalId = "original-agent" };
+        var handle = new OperationHandle { OperationId = inner.OperationId, OperationInstanceId = "instance",
+            CorrelationId = "correlation", Status = OperationHandleStatus.Completed,
+            CreatedAt = DateTimeOffset.UnixEpoch, UpdatedAt = DateTimeOffset.UnixEpoch };
+        ((IOperationCommittedReceiptReader)inner).ReadCommittedReceiptAsync(request, context, CancellationToken.None).Returns(handle);
+        var services = new ServiceCollection();
+        services.AddDeferredOperationExecutor(inner.OperationId, _ => inner);
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var wrapper = scope.ServiceProvider.GetRequiredService<IOperationExecutor>();
+        (await ((IOperationCommittedReceiptReader)wrapper).ReadCommittedReceiptAsync(request, context)).Should().BeSameAs(handle);
+        await inner.DidNotReceiveWithAnyArgs().SubmitAsync(default!, default!, default);
+        var unsupported = new DeferredOperationExecutor("healthy", () => new DisposableExecutor(() => { }));
+        (await unsupported.ReadCommittedReceiptAsync(new() { OperationId = "healthy" }, context)).Should().BeNull();
+    }
+
+    [UnitTest]
     public async Task Registration_OnlyConstructsSelectedActuator_AndScopeOwnsItsLifetime()
     {
         var services = new ServiceCollection();

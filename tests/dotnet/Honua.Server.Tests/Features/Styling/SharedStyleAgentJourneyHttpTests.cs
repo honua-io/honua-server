@@ -10,6 +10,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
@@ -107,6 +109,18 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
             await using var scope = fixture.Services.CreateAsyncScope();
             var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
             (await catalog.GetStyleAsync(styleId))!.StyleVersion.Should().Be(task.revision);
+            var proposalStore = scope.ServiceProvider.GetRequiredService<IOperationProposalStore>();
+            var instanceStore = scope.ServiceProvider.GetRequiredService<IOperationInstanceStore>();
+            var waitingProposal = (await proposalStore.GetAsync(proposalId))!;
+            var waitingHandle = (await instanceStore.GetAsync(operationId))!;
+            // A durable human claim without SQL proof must remain exactly unchanged on actual MCP status read.
+            await SetProposalState(proposalStore, waitingProposal with { Status = OperationProposalStatus.Executing,
+                ApprovedByAtClaim = "shared-style-human", ApprovedAtClaim = DateTimeOffset.UtcNow });
+            var beforeMissingReceipt = (await proposalStore.GetAsync(proposalId))!;
+            (await ReadProposal(agent, proposalId)).GetProperty("status").GetString().Should().Be("Executing");
+            (await proposalStore.GetAsync(proposalId)).Should().BeEquivalentTo(beforeMissingReceipt);
+            (await instanceStore.GetAsync(operationId)).Should().BeEquivalentTo(waitingHandle);
+            await SetProposalState(proposalStore, waitingProposal);
             (await agent.PostAsync("/api/v1/admin/proposals/" + proposalId + "/approve", null)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
             using var inbox = await human.GetAsync("/api/v1/admin/proposals/" + proposalId);
             var inboxText = await inbox.Content.ReadAsStringAsync();
@@ -119,6 +133,26 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
             committed.StyleVersion.Should().Be(task.revision + 1);
             using var stored = JsonDocument.Parse(committed.MapLibreStyleJson);
             stored.RootElement.GetProperty("layers")[0].GetProperty("paint").GetProperty("background-color").GetString().Should().Be("#8844aa");
+            // Reconstruct the durable records left by a process stop after the actual SQL commit,
+            // before canonical completion persistence. This is a crash-window regression, not a process-kill certification.
+            var successfulProposal = (await proposalStore.GetAsync(proposalId))!;
+            successfulProposal.ApprovedByAtClaim.Should().NotBeNullOrWhiteSpace();
+            successfulProposal.ApprovedAtClaim.Should().NotBeNull();
+            await SetProposalState(proposalStore, successfulProposal with { Status = OperationProposalStatus.Executing,
+                ResolvedBy = null, ResolvedAt = null });
+            await instanceStore.SetAsync(waitingHandle with { Status = OperationHandleStatus.Accepted });
+            var recovered = await Task.WhenAll(ReadProposal(agent, proposalId), ReadProposal(agent, proposalId));
+            recovered.Should().OnlyContain(value => value.GetProperty("status").GetString() == "Succeeded");
+            var recoveredProposal = (await proposalStore.GetAsync(proposalId))!;
+            recoveredProposal.ResolvedBy.Should().Be(successfulProposal.ApprovedByAtClaim);
+            recoveredProposal.Audit.OperationInstanceId.Should().Be(operationId);
+            (await instanceStore.GetAsync(operationId))!.Status.Should().Be(OperationHandleStatus.Completed);
+            (await catalog.GetStyleAsync(styleId))!.StyleVersion.Should().Be(task.revision + 1);
+            // The reverse ordering (original completion already persisted) is a terminal no-op for the handle.
+            var terminal = (await instanceStore.GetAsync(operationId))!;
+            await SetProposalState(proposalStore, recoveredProposal with { Status = OperationProposalStatus.Executing });
+            (await ReadProposal(agent, proposalId)).GetProperty("status").GetString().Should().Be("Succeeded");
+            (await instanceStore.GetAsync(operationId)).Should().BeEquivalentTo(terminal);
             // A lost response reconciles the canonical operation even though its own mutation advanced the focused style.
             (await Tool(agent, "honua_shared_style_propose", arguments)).GetProperty("operationInstanceId").GetString().Should().Be(operationId);
             (await catalog.GetStyleAsync(styleId))!.StyleVersion.Should().Be(task.revision + 1);
@@ -158,6 +192,21 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
     }
     private static bool IsFailure(JsonElement envelope) => envelope.TryGetProperty("error", out _) ||
         envelope.TryGetProperty("result", out var result) && result.TryGetProperty("isError", out var error) && error.GetBoolean();
+    private static async Task SetProposalState(IOperationProposalStore store, OperationProposal proposal)
+    {
+        var current = (await store.GetAsync(proposal.ProposalId))!;
+        (await store.TrySetAsync(proposal with { Version = current.Version })).Should().BeTrue();
+    }
+
+    private static async Task<JsonElement> ReadProposal(HttpClient client, string id)
+    {
+        var envelope = await Read(await client.PostAsJsonAsync("/mcp", new
+        { jsonrpc = "2.0", id = Guid.NewGuid().ToString("N"), method = "resources/read", @params = new { uri = "honua://proposals/" + id } }), HttpStatusCode.OK);
+        envelope.TryGetProperty("error", out _).Should().BeFalse();
+        using var parsed = JsonDocument.Parse(envelope.GetProperty("result").GetProperty("contents")[0].GetProperty("text").GetString()!);
+        return parsed.RootElement.Clone();
+    }
+
     private static async Task<JsonElement> Rpc(HttpClient client, string name, object arguments)
         => await Read(await client.PostAsJsonAsync("/mcp", new
         { jsonrpc = "2.0", id = Guid.NewGuid().ToString("N"), method = "tools/call", @params = new { name, arguments } }), HttpStatusCode.OK);

@@ -64,7 +64,7 @@ internal sealed partial class PostgresStyleCatalog
         string[] fields = [identity.OperationId, identity.ProposalId, identity.RequestHash, identity.ActorId,
             identity.TenantId, identity.SchemaName, identity.TargetId, identity.StyleId,
             identity.ExpectedVersion.ToString(CultureInfo.InvariantCulture), identity.ExpectedContentHash,
-            identity.ExpectedImpactHash, identity.CandidateHash];
+            identity.ExpectedImpactHash, identity.CandidateHash, identity.ExpectedStoredContentHash];
         var canonical = string.Concat(fields.Select(value => value.Length.ToString(CultureInfo.InvariantCulture) + ":" + value));
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
@@ -74,10 +74,10 @@ internal sealed partial class PostgresStyleCatalog
         ArgumentNullException.ThrowIfNull(identity);
         string[] values = [identity.OperationId, identity.ProposalId, identity.RequestHash, identity.ActorId,
             identity.TenantId, identity.SchemaName, identity.TargetId, identity.StyleId,
-            identity.ExpectedContentHash, identity.ExpectedImpactHash, identity.CandidateHash];
+            identity.ExpectedContentHash, identity.ExpectedImpactHash, identity.CandidateHash, identity.ExpectedStoredContentHash];
         if (identity.ExpectedVersion < 0 || values.Any(value => string.IsNullOrWhiteSpace(value) || value.Length > 1024))
             throw new ArgumentException("A complete bounded canonical style execution identity is required.", nameof(identity));
-        foreach (var hash in new[] { identity.RequestHash, identity.ExpectedContentHash, identity.ExpectedImpactHash, identity.CandidateHash })
+        foreach (var hash in new[] { identity.RequestHash, identity.ExpectedContentHash, identity.ExpectedImpactHash, identity.CandidateHash, identity.ExpectedStoredContentHash })
             if (hash.Length != 64 || hash.Any(character => character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f')))
                 throw new ArgumentException("Canonical hashes must be SHA-256 lowercase hexadecimal.", nameof(identity));
     }

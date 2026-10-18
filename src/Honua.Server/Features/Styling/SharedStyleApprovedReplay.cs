@@ -43,12 +43,16 @@ internal sealed class SharedStyleApprovedReplay
         Payload.ActorId, Payload.TenantId, Payload.SchemaName ?? "honua", Payload.TargetId,
         Payload.StoreSnapshot.StyleId, Payload.Impact.StyleVersion, Payload.Impact.ContentHash,
         Payload.Impact.ImpactHash ?? throw new InvalidOperationException("Missing reviewed impact hash."),
-        StyleEditHashes.Content(Payload.Candidate.MapLibreJson));
+        StyleEditHashes.Content(Payload.Candidate.MapLibreJson),
+        StyleEditHashes.Content(string.IsNullOrWhiteSpace(Payload.StoreSnapshot.LayerStyle is { } layer
+            ? layer.MapLibreStyleJson : Payload.StoreSnapshot.CatalogStyle?.MapLibreStyleJson)
+            ? "null" : (Payload.StoreSnapshot.LayerStyle is { } storedLayer
+                ? storedLayer.MapLibreStyleJson : Payload.StoreSnapshot.CatalogStyle!.MapLibreStyleJson)!));
 
     internal static async Task<SharedStyleApprovedReplay> VerifyAsync(IServiceProvider services, OperationRequest request,
-        OperationPolicyContext context, CancellationToken cancellationToken)
+        OperationPolicyContext context, CancellationToken cancellationToken, bool receiptOnly = false)
     {
-        var payload = await RequireProposalAsync(services, request, context, cancellationToken).ConfigureAwait(false);
+        var payload = await RequireProposalAsync(services, request, context, cancellationToken, receiptOnly).ConfigureAwait(false);
         if (payload.TenantId != context.TenantId || payload.TenantId != services.GetRequiredService<ITenantContext>().TenantId ||
             payload.SchemaName != context.SchemaName || payload.SchemaName != services.GetService<ISchemaContext>()?.CurrentSchema) Deny();
         var key = await services.GetRequiredService<IAdminApiKeyStore>().GetAsync(payload.KeyId, cancellationToken).ConfigureAwait(false);
@@ -81,6 +85,7 @@ internal sealed class SharedStyleApprovedReplay
             if (!current.CompleteReadableScope || !current.Impact.ImpactComplete) Deny();
             return new(payload, expected, services, request, context, original, impacts) { Receipt = receipt };
         }
+        if (receiptOnly) return replay; // No receipt: read-only recovery cannot prepare or execute a mutation.
         SharedStyleAgentEditor.RequireTask(turn, current!);
         SharedStyleEditor.RequireUnchanged(expected, current);
         // Updated validation policy cannot quietly reinterpret the approved bytes.
@@ -107,7 +112,7 @@ internal sealed class SharedStyleApprovedReplay
 
     internal async Task RevalidateReceiptAsync(CancellationToken cancellationToken)
     {
-        _ = await RequireProposalAsync(_services, _request, _policy, cancellationToken).ConfigureAwait(false);
+        _ = await RequireProposalAsync(_services, _request, _policy, cancellationToken, true).ConfigureAwait(false);
         await RequireRolesAsync(_services, Payload.AuthorSecurityContext, cancellationToken).ConfigureAwait(false);
         var turn = await SharedStyleWorkspaceAuthorization.AuthorizeAsync(_context, _context.User,
             Payload.WorkspaceId, Payload.TurnId, cancellationToken).ConfigureAwait(false);
@@ -140,16 +145,18 @@ internal sealed class SharedStyleApprovedReplay
     }
 
     private static async Task<SharedStyleApprovalPayload> RequireProposalAsync(IServiceProvider services, OperationRequest request,
-        OperationPolicyContext context, CancellationToken cancellationToken)
+        OperationPolicyContext context, CancellationToken cancellationToken, bool receiptOnly = false)
     {
         if (request.OperationId != SharedStyleEditOperation.OperationId || string.IsNullOrWhiteSpace(context.ApprovedProposalId) ||
             string.IsNullOrWhiteSpace(context.ApprovedPlanHash)) Deny();
         var proposal = await services.GetRequiredService<IOperationProposalStore>().GetAsync(context.ApprovedProposalId!, cancellationToken).ConfigureAwait(false);
-        if (proposal is null || proposal.Status != OperationProposalStatus.Executing || proposal.OperationId != request.OperationId ||
+        if (proposal is null || (proposal.Status != OperationProposalStatus.Executing && !(receiptOnly && proposal.Status == OperationProposalStatus.Succeeded)) || proposal.OperationId != request.OperationId ||
             proposal.RequestedBy != context.PrincipalId || proposal.Audit.OperationInstanceId != context.OperationInstanceId ||
             proposal.SealedPlanHash != context.ApprovedPlanHash || proposal.SealedPlanHash != OperationApprovalPlanSeal.Compute(proposal.Plan) ||
             proposal.Plan.ExecutionPayload is null || !request.Parameters.TryGetValue("sealedPayload", out var supplied) ||
             supplied != proposal.Plan.ExecutionPayload) Deny();
+        if (receiptOnly && (string.IsNullOrWhiteSpace(proposal!.ApprovedByAtClaim) || proposal.ApprovedAtClaim is null ||
+            proposal.ApprovedByAtClaim.Equals(proposal.RequestedBy, StringComparison.OrdinalIgnoreCase))) Deny();
         var payload = JsonSerializer.Deserialize(proposal!.Plan.ExecutionPayload!, SharedStyleGovernanceJsonContext.Default.SharedStyleApprovalPayload)
             ?? throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         if (payload.ActorId != proposal.RequestedBy) Deny();

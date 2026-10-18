@@ -29,7 +29,7 @@ internal static class SharedStyleEditOperation
     };
 }
 
-internal sealed class SharedStyleEditExecutor(IServiceProvider services) : IOperationExecutor, IOperationRequestPreparer
+internal sealed class SharedStyleEditExecutor(IServiceProvider services) : IOperationExecutor, IOperationCommittedReceiptReader, IOperationRequestPreparer
 {
     public string OperationId => SharedStyleEditOperation.OperationId;
 
@@ -90,6 +90,23 @@ internal sealed class SharedStyleEditExecutor(IServiceProvider services) : IOper
         // Even an unexpected Allow decision cannot skip the canonical sealed approval proof.
         var replay = await SharedStyleApprovedReplay.VerifyAsync(services, request, context, cancellationToken).ConfigureAwait(false);
         var outcome = await services.GetRequiredService<SharedStyleEditor>().ApplyReviewedOnceAsync(replay, cancellationToken).ConfigureAwait(false);
+        return CompletedHandle(replay, outcome, context);
+    }
+
+    public async Task<OperationHandle?> ReadCommittedReceiptAsync(OperationRequest request, OperationPolicyContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var replay = await SharedStyleApprovedReplay.VerifyAsync(services, request, context, cancellationToken, receiptOnly: true).ConfigureAwait(false);
+        if (replay.Receipt is null) return null;
+        await replay.RevalidateReceiptAsync(cancellationToken).ConfigureAwait(false);
+        // The same canonical editor performs only idempotent projection refresh for an existing receipt.
+        var receipt = await services.GetRequiredService<SharedStyleEditor>().ApplyReviewedOnceAsync(replay, cancellationToken).ConfigureAwait(false);
+        return CompletedHandle(replay, receipt, context);
+    }
+
+    private OperationHandle CompletedHandle(SharedStyleApprovedReplay replay,
+        Honua.Core.Features.Styling.Domain.StyleMutationReceipt outcome, OperationPolicyContext context)
+    {
         var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
         return new()
         {

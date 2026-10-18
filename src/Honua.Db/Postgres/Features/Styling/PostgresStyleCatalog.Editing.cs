@@ -46,12 +46,12 @@ internal sealed partial class PostgresStyleCatalog
         var authoritativeJson = expected.LayerStyle is { } layerSnapshot
             ? layerSnapshot.MapLibreStyleJson : expected.CatalogStyle?.MapLibreStyleJson;
         if (identity.ExpectedVersion != authoritativeVersion || identity.ActorId != revisedBy ||
-            identity.SchemaName != _resolvedSchemaName || identity.StyleId != expected.StyleId || authoritativeJson is null)
+            identity.SchemaName != _resolvedSchemaName || identity.StyleId != expected.StyleId)
             throw new ArgumentException("Mutation identity does not match the reviewed canonical actor, schema or revision.", nameof(identity));
-        using var expectedDocument = System.Text.Json.JsonDocument.Parse(authoritativeJson);
+        using var expectedDocument = System.Text.Json.JsonDocument.Parse(string.IsNullOrWhiteSpace(authoritativeJson) ? "null" : authoritativeJson);
         var expectedCanonical = Honua.Core.Features.Collaboration.Operations.SavedMapOperationIdempotency.CanonicalPayload(expectedDocument.RootElement);
         var expectedHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(expectedCanonical)));
-        if (identity.ExpectedContentHash != expectedHash)
+        if (identity.ExpectedStoredContentHash != expectedHash)
             throw new ArgumentException("Mutation identity does not match the reviewed canonical content.", nameof(identity));
         using var candidateDocument = System.Text.Json.JsonDocument.Parse(mapLibreStyleJson);
         var candidateCanonical = Honua.Core.Features.Collaboration.Operations.SavedMapOperationIdempotency.CanonicalPayload(candidateDocument.RootElement);

@@ -49,3 +49,11 @@ public interface IOperationExecutor
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default);
 }
+
+/// <summary>Optional read-only recovery proof on the existing executor. It must never actuate a mutation.</summary>
+public interface IOperationCommittedReceiptReader
+{
+    /// <summary>Revalidates sealed approval and current authority, returning only a matching durable committed receipt.</summary>
+    Task<OperationHandle?> ReadCommittedReceiptAsync(OperationRequest request, OperationPolicyContext context,
+        CancellationToken cancellationToken = default);
+}
