@@ -8,6 +8,8 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Security;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
@@ -27,7 +29,8 @@ internal sealed class WorkflowPackageService(
     IWorkflowDefinitionStore? workflowDefinitionStore = null,
     WorkflowOrchestrationEngine? orchestrationEngine = null,
     IMetadataReleaseService? metadataReleaseService = null,
-    WorkflowAuthorSecurityContextCapturer? authorSecurityContextCapturer = null)
+    WorkflowAuthorSecurityContextCapturer? authorSecurityContextCapturer = null,
+    ITenantContext? tenantContext = null)
 {
     /// <summary>
     /// Default source environment recorded on the metadata release package emitted when a
@@ -85,6 +88,11 @@ internal sealed class WorkflowPackageService(
         var package = new WorkflowPackage
         {
             PackageId = packageId,
+            Ownership = existing is not null
+                ? existing.Ownership
+                : CanonicalSecurityActor.Resolve(principal) is { IsDurablyRevalidatable: true } actor
+                    ? new WorkflowPackageOwnership { OwnerActorId = actor.ActorId, TenantId = tenantContext?.TenantId }
+                    : null,
             Name = request.Name.Trim(),
             Description = Normalize(request.Description),
             Namespace = Normalize(request.Namespace),
