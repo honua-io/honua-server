@@ -11,7 +11,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationsToolset;
 
 public sealed class AgentApprovalEntitlementTests
 {
