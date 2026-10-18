@@ -324,6 +324,28 @@ for child in "OGC Classic Maps Core" "OGC Classic Maps Supporting"; do
   assert_descriptor "wms-capacity-registration-${child}" \
     "src/Honua.Server/EndpointRegistry.cs" "targeted" false "${child}"
 done
+# #6332: every inherited trigger selects both whole-class FeatureServer children.
+for changed in \
+  tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerMutationScenarioTests.cs \
+  tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerQueryParameterTests.cs \
+  tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicationTests.cs; do
+  assert_exact_shards "featureserver-capacity-${changed##*/}" "${changed}" \
+    '["FeatureServer Editing and Relationships","FeatureServer Query Services and Replication"]'
+done
+for child in "FeatureServer Editing and Relationships" "FeatureServer Query Services and Replication"; do
+  assert_descriptor "featureserver-capacity-runtime-${child}" \
+    "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEndpoints.cs" "targeted" false "${child}"
+  assert_descriptor "featureserver-capacity-registration-${child}" \
+    "src/Honua.Server/EndpointRegistry.cs" "targeted" false "${child}"
+  assert_excludes_shard "featureserver-capacity-imageserver-exclusion-${child}" \
+    "src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs" "${child}"
+  assert_excludes_shard "featureserver-capacity-scene-exclusion-${child}" \
+    "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" "${child}"
+  assert_excludes_shard "featureserver-capacity-auth-exclusion-${child}" \
+    "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" "${child}"
+  assert_excludes_shard "featureserver-capacity-raster-exclusion-${child}" \
+    "src/Honua.Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" "${child}"
+done
 # The serialized [Collection("Database")] write-path concurrency class owns its
 # own shard; it must route there and nowhere else.
 assert_exact_shards \
@@ -381,7 +403,7 @@ assert_exact_shards \
 assert_exact_shards \
   "geometry-audit-test-only-owner" \
   "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/GeoServicesGeometryConverterAuditTests.cs" \
-  '["FeatureServer Endpoints Query Services and Replication"]'
+  '["FeatureServer Editing and Relationships","FeatureServer Query Services and Replication"]'
 assert_exact_shards \
   "headroom-split-geoservices-imageserver" \
   "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs" \
@@ -491,7 +513,7 @@ assert_descriptor \
   "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEndpoints.cs" \
   "targeted" \
   "false" \
-  "FeatureServer Endpoints Query Services and Replication"
+  "FeatureServer Query Services and Replication"
 
 assert_descriptor \
   "shared-infrastructure" \
@@ -656,11 +678,11 @@ assert_excludes_shard \
   "GeoServices ImageServer"
 
 # Conversely, a single GeoServices ImageServer change targets ImageServer and
-# must EXCLUDE the FeatureServer Endpoints Query Services and Replication shard.
+# must EXCLUDE the FeatureServer Query Services and Replication shard.
 assert_excludes_shard \
   "imageserver-excludes-featureserver" \
   "src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs" \
-  "FeatureServer Endpoints Query Services and Replication"
+  "FeatureServer Query Services and Replication"
 
 # An OData-only feature change targets the OData shard family (targeted, not
 # run_all) and excludes an unrelated protocol shard.
@@ -685,7 +707,7 @@ assert_exact_shards \
 assert_excludes_shard \
   "scene-excludes-featureserver" \
   "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" \
-  "FeatureServer Endpoints Query Services and Replication"
+  "FeatureServer Query Services and Replication"
 
 # A Geocoding (GeocodeServer) change targets the dedicated Geocoding shard and
 # excludes unrelated shards. Before this shard existed, geocoding source lived
@@ -1133,7 +1155,7 @@ assert_descriptor \
   "src/Honua.Server/Program.cs" \
   "targeted" \
   "false" \
-  "FeatureServer Endpoints Query Services and Replication"
+  "FeatureServer Query Services and Replication"
 assert_descriptor \
   "program-registration-includes-mcp-sessions" \
   "src/Honua.Server/Program.cs" \
@@ -1203,7 +1225,7 @@ assert_descriptor \
 assert_excludes_shard \
   "hosting-authentication-excludes-featureserver" \
   "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
-  "FeatureServer Endpoints Query Services and Replication"
+  "FeatureServer Query Services and Replication"
 
 # A Honua.Hosting/Features/Security/ change -> same auth/security shards.
 assert_descriptor \
@@ -1288,7 +1310,7 @@ assert_descriptor \
 assert_excludes_shard \
   "raster-core-excludes-featureserver" \
   "src/Honua.Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" \
-  "FeatureServer Endpoints Query Services and Replication"
+  "FeatureServer Query Services and Replication"
 
 # #1944 collaboration: src/Honua.Server/Features/Collaboration/ (and the Core and Cloud Contracts
 # slice) is owned by the Server Features Miscellaneous catch-all (Features.Collaboration.*
@@ -1317,7 +1339,7 @@ assert_descriptor \
       'src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerQueryHandler.cs')" \
   "targeted" \
   "false" \
-  "FeatureServer Endpoints Query Services and Replication"
+  "FeatureServer Query Services and Replication"
 # Its own OData query path is included too.
 assert_descriptor \
   "hosting-output-format-services-includes-odata" \
@@ -1579,6 +1601,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/test-admin-authorization-partition.py
 "${PYTHON_BIN}" scripts/ci/test-admin-runtime-partition.py
 "${PYTHON_BIN}" scripts/ci/test-wms-capacity-partition.py
+"${PYTHON_BIN}" scripts/ci/test-featureserver-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
@@ -1942,7 +1965,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.EditOwnerSubjectTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "FeatureServer Endpoints Query Services and Replication" \
+    "FeatureServer Editing and Relationships" \
   `# Honua.Protocols.GeoServices.Tests assembly: two classes use the` \
   `# Honua.Protocols.GeoServices.Tests.Source.* namespace root instead of the` \
   `# Honua.Server.Tests.Features.Protocols.GeoServices.* root every filter used.` \
