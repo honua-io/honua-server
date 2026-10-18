@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.TestKit.Attributes;
 using System.Text;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin;
@@ -19,7 +20,7 @@ public sealed class LocalConsoleSessionEndpointTests
 {
     private const string Key = "local-bridge-secret-longer-than-thirty-two-bytes";
 
-    [Theory]
+    [UnitTheory]
     [InlineData(false, "Development", Key, false, 404)]
     [InlineData(true, "Production", Key, false, 404)]
     [InlineData(true, "Development", "wrong-key", false, 401)]
@@ -33,7 +34,7 @@ public sealed class LocalConsoleSessionEndpointTests
         Assert.Equal("no-store", context.Response.Headers.CacheControl);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ExchangeIssuesValidatedFixedTenantHumanWithBoundedLifetime()
     {
         var (context, configuration, tokens) = Setup(true, Key);
@@ -46,7 +47,7 @@ public sealed class LocalConsoleSessionEndpointTests
         Assert.InRange(result.Value.ExpiresIn, 1, 600);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ClientCannotSupplyTenant()
     {
         var (context, configuration, tokens) = Setup(true, Key);

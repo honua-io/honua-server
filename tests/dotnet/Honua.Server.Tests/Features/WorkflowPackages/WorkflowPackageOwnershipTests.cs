@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.TestKit.Attributes;
 using FluentAssertions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
@@ -14,7 +15,7 @@ namespace Honua.Server.Tests.Features.WorkflowPackages;
 
 public sealed class WorkflowPackageOwnershipTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task Store_PreservesFirstOwnerIncludingLegacyUnknown_AndCopiesVersion(bool legacy)
@@ -38,7 +39,7 @@ public sealed class WorkflowPackageOwnershipTests
         version.Ownership.Should().Be(owner);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Service_StampsCanonicalActor_AndCannotLaunderMetadataIntoOwnership()
     {
         var store = new InMemoryWorkflowPackageStore();
@@ -64,7 +65,7 @@ public sealed class WorkflowPackageOwnershipTests
         updated.Ownership.Should().Be(saved.Ownership);
     }
 
-    [Fact]
+    [UnitTest]
     public void MissingTenantResolverOrUnstableActorCannotCreateTrustedOwnership()
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "owner")], "Bearer"));
