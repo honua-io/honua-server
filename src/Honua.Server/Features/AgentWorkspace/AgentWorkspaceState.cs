@@ -136,6 +136,7 @@ internal static class AgentWorkspaceState
         {
             "publish-layer" => IsIdentifier(task.Id) && task.PackageKey is null && task.ContentHash is null,
             "studio-composition" => Guid.TryParse(task.Id, out _) && task.PackageKey is { Length: > 0 and <= 256 } && !task.PackageKey.Any(char.IsControl) && task.ContentHash is null,
+            "dataset-import" => IsIdentifier(task.Id) && task.Revision > 0 && task.PackageKey is null && DatasetImportTaskState.Hash(task.ContentHash),
             "local-process-workspace" => task.Id is { Length: 32 } && task.Id.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') &&
                 task.Revision > 0 && task.PackageKey is null && task.ContentHash is { Length: 64 } &&
                 task.ContentHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f'),

@@ -46,6 +46,13 @@ internal static class AgentWorkspaceResourceAuthorization
         if (task is null) return true;
         if (!AgentWorkspaceState.IsValidTaskReference(task)) return false;
         if (task.Kind == "publish-layer") return true; // Workspace membership protects workspace-owned forms.
+        if (task.Kind == "dataset-import")
+        {
+            if (workspace is null) return false;
+            return await context.RequestServices.GetRequiredService<Honua.Core.Features.Import.Abstractions.IDatasetImportTaskProvider>()
+                .AuthorizeAsync(context.User, workspace.WorkspaceId, task.Id, task.Revision, task.ContentHash!, false, context.RequestAborted)
+                .ConfigureAwait(false) is not null;
+        }
         if (task.Kind == "local-process-workspace")
             return await LocalProcessWorkspaceAuthorization.CanReadTaskAsync(context, workspace, task, requireGeneration).ConfigureAwait(false);
         if (task.Kind == "shared-style")
