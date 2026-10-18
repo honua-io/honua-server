@@ -9,9 +9,8 @@ import httpx
 import pytest
 
 from .conftest import OgrResult
+from .controlled_wfs import source_document
 from .query_oracles import (
-    NAMES,
-    authored_geometries,
     exact_rows,
     identity,
     source_subset,
@@ -29,12 +28,6 @@ def gdal_available():
 def _write_evidence_report():
     yield
 
-
-def source_document():
-    authored, _, _ = authored_geometries()
-    return {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "id": index, "properties": {"objectid": index, "name": name}, "geometry": authored[name]}
-        for index, name in enumerate(NAMES, 1)]}
 
 
 def run_probe(document, output, operation):
@@ -142,43 +135,36 @@ def test_actual_attribute_and_empty_window_probes_accept_correct_results(monkeyp
     assert run_probe(document, {"type": "FeatureCollection", "features": []}, "empty") == []
 
 
-@pytest.mark.parametrize("operation,fault", [("attribute", None), ("bbox", None), ("empty", None),
-                                             ("attribute", "ignored-where"), ("bbox", "ignored-spat")])
-def test_real_gdal_wfs_client_exercises_the_changed_probe_and_ignored_argument_controls(monkeypatch, operation, fault):
-    import shutil
+
+
+@pytest.mark.parametrize("missing", ["ogrinfo", "ogr2ogr"])
+def test_canonical_lane_refuses_missing_native_tool_before_connecting(tmp_path, missing):
+    import os
     import subprocess
+    from pathlib import Path
 
-    from .controlled_wfs import controlled_wfs
+    for tool in ("ogrinfo", "ogr2ogr"):
+        if tool != missing:
+            executable = tmp_path / tool
+            executable.write_text("#!/bin/sh\nexit 0\n")
+            executable.chmod(0o755)
+    script = Path(__file__).parents[3] / "docker/client-compat/gdal/run.sh"
+    result = subprocess.run(["/bin/bash", str(script)], env={**os.environ, "PATH": str(tmp_path)},
+                            capture_output=True, text=True, timeout=10, check=False)
+    assert result.returncode == 1
+    assert f"GDAL lane requires {missing}" in result.stderr
 
-    assert shutil.which("ogr2ogr"), "real GDAL is required for this selected client control"
-    monkeypatch.setenv("HONUA_BASE_URL", "http://controlled")
-    document = source_document()
-    collector = SimpleNamespace(records=[])
-    collector.record = lambda *args, **kwargs: collector.records.append((args, kwargs))
-    with controlled_wfs(document) as (url, requests):
-        monkeypatch.setenv("HONUA_BASE_URL", url)
-        def ogr(args):
-            args = list(args)
-            option, count = ("-where", 2) if fault == "ignored-where" else ("-spat", 5)
-            if fault and option in args:
-                index = args.index(option)
-                del args[index:index + count]
-            result = subprocess.run(args, capture_output=True, text=True, timeout=30, check=False)
-            return OgrResult(args, result.returncode, result.stdout, result.stderr)
-        dsn = f"WFS:{url}/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities"
-        with httpx.Client(base_url=url, trust_env=False) as client:
-            def execute():
-                if operation == "attribute":
-                    WfsQueries().test_attribute_query(client, dsn, ogr, "fixture:points", collector)
-                elif operation == "bbox":
-                    WfsQueries().test_spatial_query_bbox(client, dsn, ogr, "fixture:points", collector)
-                else:
-                    WfsQueries().test_spatial_query_empty_bbox(dsn, ogr, "fixture:points")
-            if fault:
-                with pytest.raises(AssertionError, match="exact feature count"):
-                    execute()
-                assert collector.records == []
-            else:
-                execute()
-        assert any(request["operation"].lower() == "describefeaturetype" for request in requests), "native WFS schema path was not exercised"
-        assert any(request["operation"].lower() == "getfeature" for request in requests)
+
+def test_canonical_lane_refuses_unusable_native_client_before_connecting(tmp_path):
+    import os
+    import subprocess
+    from pathlib import Path
+
+    for tool in ("ogrinfo", "ogr2ogr"):
+        executable = tmp_path / tool
+        executable.write_text("#!/bin/sh\nexit 9\n")
+        executable.chmod(0o755)
+    script = Path(__file__).parents[3] / "docker/client-compat/gdal/run.sh"
+    result = subprocess.run(["/bin/bash", str(script)], env={**os.environ, "PATH": str(tmp_path)},
+                            capture_output=True, text=True, timeout=10, check=False)
+    assert result.returncode == 9

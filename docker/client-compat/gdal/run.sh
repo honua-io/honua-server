@@ -8,6 +8,13 @@ set -euo pipefail
 : "${HONUA_GDAL_SERVICE_ID:=test_service}"
 : "${HONUA_GDAL_COLLECTION_ID:=0}"
 
+# Native GDAL is required in this canonical lane. Keep these checks outside
+# the evidence-producing pytest command's intentional `|| true` handling.
+for tool in ogrinfo ogr2ogr; do
+    command -v "$tool" >/dev/null 2>&1 || { echo "GDAL lane requires $tool" >&2; exit 1; }
+done
+ogrinfo --version
+
 cd /workspace
 
 # Wait for honua to come up — the compose healthcheck handles ordering, but a

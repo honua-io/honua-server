@@ -11,7 +11,17 @@ from xml.sax.saxutils import escape
 
 from shapely.geometry import box, shape
 
+from .query_oracles import NAMES, authored_geometries
+
 GML = "http://www.opengis.net/gml/3.2"
+
+
+def source_document():
+    authored, _, _ = authored_geometries()
+    return {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "id": index, "properties": {"objectid": index, "name": name}, "geometry": authored[name]}
+        for index, name in enumerate(NAMES, 1)]}
+
 
 
 @contextmanager
