@@ -11,7 +11,19 @@ internal static class LocalProcessWorkspaceEndpoints
 {
     internal static void MapLocalProcesses(this IEndpointRouteBuilder agent)
     {
-        var group = agent.MapGroup("/workspaces/{workspaceId}/processes/local");
+        var group = agent.MapGroup("/workspaces/{workspaceId}/processes/local").RequireAuthorization();
+        group.AddEndpointFilter(async (invocation, next) =>
+        {
+            try
+            {
+                return await next(invocation).ConfigureAwait(false);
+            }
+            catch (LocalProcessWorkspaceException exception)
+            {
+                return Results.Json(new AgentWorkspaceError(exception.Message), AgentWorkspaceJsonContext.Default.AgentWorkspaceError,
+                    statusCode: exception.StatusCode);
+            }
+        });
         group.MapGet("/project/identity", (HttpContext context, ILocalProcessWorkspaceGateway gateway) =>
             Execute(context, (access, token) => gateway.GetIdentityAsync(access, token), LocalProcessJsonContext.Default.LocalProcessProjectIdentity));
         group.MapPost("/project/bind", (HttpContext context, ILocalProcessWorkspaceGateway gateway, LocalProcessBindRequest request) =>
