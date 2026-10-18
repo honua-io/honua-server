@@ -29,6 +29,19 @@ def _write_evidence_report():
     yield
 
 
+def canonical_lane_script():
+    """Exercise the checkout source, or its actual installed container entrypoint."""
+    import shutil
+    from pathlib import Path
+
+    checkout = Path(__file__).parents[3] / "docker/client-compat/gdal/run.sh"
+    if checkout.is_file():
+        return checkout
+    installed = shutil.which("run-gdal-lane")
+    assert installed, "canonical GDAL entrypoint is unavailable"
+    return Path(installed)
+
+
 
 def run_probe(document, output, operation):
     collector = SimpleNamespace(records=[])
@@ -141,14 +154,13 @@ def test_actual_attribute_and_empty_window_probes_accept_correct_results(monkeyp
 def test_canonical_lane_refuses_missing_native_tool_before_connecting(tmp_path, missing):
     import os
     import subprocess
-    from pathlib import Path
 
     for tool in ("ogrinfo", "ogr2ogr"):
         if tool != missing:
             executable = tmp_path / tool
             executable.write_text("#!/bin/sh\nexit 0\n")
             executable.chmod(0o755)
-    script = Path(__file__).parents[3] / "docker/client-compat/gdal/run.sh"
+    script = canonical_lane_script()
     result = subprocess.run(["/bin/bash", str(script)], env={**os.environ, "PATH": str(tmp_path)},
                             capture_output=True, text=True, timeout=10, check=False)
     assert result.returncode == 1
@@ -158,13 +170,12 @@ def test_canonical_lane_refuses_missing_native_tool_before_connecting(tmp_path, 
 def test_canonical_lane_refuses_unusable_native_client_before_connecting(tmp_path):
     import os
     import subprocess
-    from pathlib import Path
 
     for tool in ("ogrinfo", "ogr2ogr"):
         executable = tmp_path / tool
         executable.write_text("#!/bin/sh\nexit 9\n")
         executable.chmod(0o755)
-    script = Path(__file__).parents[3] / "docker/client-compat/gdal/run.sh"
+    script = canonical_lane_script()
     result = subprocess.run(["/bin/bash", str(script)], env={**os.environ, "PATH": str(tmp_path)},
                             capture_output=True, text=True, timeout=10, check=False)
     assert result.returncode == 9
@@ -174,7 +185,6 @@ def test_canonical_lane_does_not_swallow_failed_assertion_controls(tmp_path):
     import os
     import shlex
     import subprocess
-    from pathlib import Path
 
     for tool in ("ogrinfo", "ogr2ogr"):
         executable = tmp_path / tool
@@ -184,7 +194,7 @@ def test_canonical_lane_does_not_swallow_failed_assertion_controls(tmp_path):
     executable.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\nexit 17\n')
     executable.chmod(0o755)
     calls = tmp_path / "calls"
-    script = (Path(__file__).parents[3] / "docker/client-compat/gdal/run.sh").read_text()
+    script = canonical_lane_script().read_text()
     assert script.count("cd /workspace") == 1
     result = subprocess.run(["/bin/bash"], input=script.replace("cd /workspace", f"cd {shlex.quote(str(tmp_path))}"),
                             env={**os.environ, "PATH": str(tmp_path), "CALLS": str(calls)},
