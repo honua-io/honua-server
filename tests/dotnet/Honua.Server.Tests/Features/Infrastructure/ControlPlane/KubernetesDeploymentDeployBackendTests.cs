@@ -147,7 +147,8 @@ public sealed class KubernetesDeploymentDeployBackendTests
             ["kubernetes.public_url"] = "https://maps.example.test:8080",
             ["telemetry.healthz.url"] = "https://maps.example.test:8080/healthz/ready",
             ["telemetry.golden_query.url"] = "https://maps.example.test:8080/ogc/features/collections/test/items",
-            ["kubernetes.dns_record_name"] = "maps.example.test", ["kubernetes.dns_zone_id"] = "ZPUBLIC",
+            ["kubernetes.dns_record_name"] = "maps.example.test",
+            ["kubernetes.dns_zone_id"] = "ZPUBLIC",
             ["kubernetes.load_balancer_arn"] = "arn:aws:elasticloadbalancing:us-west-2:123456789012:loadbalancer/net/honua/123"
         };
         operation = operation with { Deploy = operation.Deploy with { Parameters = parameters } };
@@ -170,8 +171,12 @@ public sealed class KubernetesDeploymentDeployBackendTests
         var spec = registeredSpec ?? Operation().Deploy!;
         targets.GetAsync(spec.TargetId, Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
         {
-            TargetId = spec.TargetId, TargetKind = spec.TargetKind, Backend = spec.Backend, Environment = spec.Environment,
-            TargetName = spec.TargetName, Parameters = spec.Parameters,
+            TargetId = spec.TargetId,
+            TargetKind = spec.TargetKind,
+            Backend = spec.Backend,
+            Environment = spec.Environment,
+            TargetName = spec.TargetName,
+            Parameters = spec.Parameters,
         });
         var rollbackProbe = Substitute.For<IRollbackDataPlaneProbe>();
         rollbackProbe.ProbeReadinessAsync(Arg.Any<RollbackReadinessProbeRequest>(), Arg.Any<CancellationToken>()).Returns(new RollbackReadinessProbeResult { Proven = true });
@@ -183,23 +188,41 @@ public sealed class KubernetesDeploymentDeployBackendTests
 
     private static WorkflowOperationRecord Operation() => new()
     {
-        OperationId = "operation-1", Kind = WorkflowOperationKind.Deploy, Status = WorkflowOperationStatus.Submitted,
-        CreatedAt = DateTimeOffset.UnixEpoch, UpdatedAt = DateTimeOffset.UnixEpoch,
+        OperationId = "operation-1",
+        Kind = WorkflowOperationKind.Deploy,
+        Status = WorkflowOperationStatus.Submitted,
+        CreatedAt = DateTimeOffset.UnixEpoch,
+        UpdatedAt = DateTimeOffset.UnixEpoch,
         Deploy = new()
         {
-            TargetId = "eks-test", TargetKind = DeployTargetKind.Kubernetes, Backend = KubernetesDeploymentDeployBackend.AdapterBackendName,
-            Environment = "isolated", TargetName = "api", CurrentRevision = Baseline, DesiredRevision = Candidate,
+            TargetId = "eks-test",
+            TargetKind = DeployTargetKind.Kubernetes,
+            Backend = KubernetesDeploymentDeployBackend.AdapterBackendName,
+            Environment = "isolated",
+            TargetName = "api",
+            CurrentRevision = Baseline,
+            DesiredRevision = Candidate,
             Parameters = new Dictionary<string, string>
             {
                 ["kubernetes.cluster_arn"] = "arn:aws:eks:us-west-2:123456789012:cluster/test",
-                ["kubernetes.api_server"] = "https://cluster.example", ["kubernetes.ca_sha256"] = new string('c', 64),
+                ["kubernetes.api_server"] = "https://cluster.example",
+                ["kubernetes.ca_sha256"] = new string('c', 64),
                 ["telemetry.healthz.url"] = "https://native.example:8080/healthz/ready",
                 ["telemetry.golden_query.url"] = "https://native.example:8080/ogc/features/collections/test/items",
                 ["telemetry.golden_query.expected_contains"] = "retained-dataset",
-                ["kubernetes.public_url"] = "https://native.example:8080", ["kubernetes.service_port"] = "8080", ["kubernetes.target_port"] = "8080", ["kubernetes.service_name"] = "api", ["kubernetes.service_uid"] = "service-uid",
-                ["kubernetes.route_kind"] = "LoadBalancerService", ["kubernetes.route_name"] = "api", ["kubernetes.route_uid"] = "service-uid",
-                ["kubernetes.cluster_uid"] = "cluster-uid", ["kubernetes.namespace"] = "honua",
-                ["kubernetes.deployment_name"] = "api", ["kubernetes.deployment_uid"] = "deployment-uid", ["kubernetes.container_name"] = "honua",
+                ["kubernetes.public_url"] = "https://native.example:8080",
+                ["kubernetes.service_port"] = "8080",
+                ["kubernetes.target_port"] = "8080",
+                ["kubernetes.service_name"] = "api",
+                ["kubernetes.service_uid"] = "service-uid",
+                ["kubernetes.route_kind"] = "LoadBalancerService",
+                ["kubernetes.route_name"] = "api",
+                ["kubernetes.route_uid"] = "service-uid",
+                ["kubernetes.cluster_uid"] = "cluster-uid",
+                ["kubernetes.namespace"] = "honua",
+                ["kubernetes.deployment_name"] = "api",
+                ["kubernetes.deployment_uid"] = "deployment-uid",
+                ["kubernetes.container_name"] = "honua",
             },
         },
     };
@@ -214,21 +237,21 @@ public sealed class KubernetesDeploymentDeployBackendTests
             request.Headers.Authorization!.Parameter.Should().Be("host-token");
             Paths.Add(request.RequestUri!.AbsolutePath);
             var path = request.RequestUri!.AbsolutePath;
-            if (path.EndsWith("/services/api", StringComparison.Ordinal)) return Json($$"""
-                {"metadata":{"uid":"service-uid"},"spec":{"selector":{"app":"honua"},"type":"LoadBalancer","ports":[{"port":{{(wrongPort ? 9999 : 8080)}},"targetPort":8080,"protocol":"TCP"}]},
+            if (path.EndsWith("/services/api", StringComparison.Ordinal)) return Json($$$$"""
+                {"metadata":{"uid":"service-uid"},"spec":{"selector":{"app":"honua"},"type":"LoadBalancer","ports":[{"port":{{{{(wrongPort ? 9999 : 8080)}}}},"targetPort":8080,"protocol":"TCP"}]},
                  "status":{"loadBalancer":{"ingress":[{"hostname":"native.example"}]}}}
                 """);
             if (path.EndsWith("/replicasets", StringComparison.Ordinal)) return Json("""
                 {"items":[{"metadata":{"uid":"replicaset-uid","ownerReferences":[{"uid":"deployment-uid","controller":true}]}}]}
                 """);
-            if (path.EndsWith("/pods", StringComparison.Ordinal)) return Json($$"""
+            if (path.EndsWith("/pods", StringComparison.Ordinal)) return Json($$$"""
                 {"items":[{"metadata":{"uid":"pod-uid","ownerReferences":[{"uid":"replicaset-uid","controller":true}]},
-                  "status":{"phase":"Running","podIP":"10.0.0.8","containerStatuses":[{"name":"honua","ready":true,"imageID":"{{(wrongRuntimeDigest ? Baseline : image)}}"}]}}]}
+                  "status":{"phase":"Running","podIP":"10.0.0.8","containerStatuses":[{"name":"honua","ready":true,"imageID":"{{{(wrongRuntimeDigest ? Baseline : image)}}}"}]}}]}
                 """);
-            if (path.EndsWith("/endpointslices", StringComparison.Ordinal)) return Json(missingEndpoints ? "{\"items\":[]}" : $$"""
+            if (path.EndsWith("/endpointslices", StringComparison.Ordinal)) return Json(missingEndpoints ? "{\"items\":[]}" : $$$"""
                 {"items":[{"metadata":{"ownerReferences":[{"uid":"service-uid","controller":true}]},"addressType":"IPv4",
-                  "ports":[{"port":{{(wrongEndpointPort ? 9999 : 8080)}},"protocol":"{{(wrongEndpointProtocol ? "UDP" : "TCP")}}"}],
-                  "endpoints":[{"addresses":["{{(wrongEndpointAddress ? "10.0.0.99" : "10.0.0.8")}}"],"conditions":{"ready":true},"targetRef":{"kind":"Pod","uid":"pod-uid"}}]}]}
+                  "ports":[{"port":{{{(wrongEndpointPort ? 9999 : 8080)}}},"protocol":"{{{(wrongEndpointProtocol ? "UDP" : "TCP")}}}"}],
+                  "endpoints":[{"addresses":["{{{(wrongEndpointAddress ? "10.0.0.99" : "10.0.0.8")}}}"],"conditions":{"ready":true},"targetRef":{"kind":"Pod","uid":"pod-uid"}}]}]}
                 """);
             if (request.Method == HttpMethod.Patch)
             {
@@ -245,9 +268,9 @@ public sealed class KubernetesDeploymentDeployBackendTests
                 }
             }
             var annotations = sameCommand ? $"\"honua.io/deploy-operation\":\"operation-1\",\"honua.io/deploy-baseline\":\"{Baseline}\",\"honua.io/deploy-desired\":\"{Candidate}\",\"honua.io/deploy-phase\":\"{phase}\"" : "";
-            var json = $$"""
-                {"metadata":{"uid":"{{uid}}","resourceVersion":"17","generation":3,"annotations":{ {{annotations}} }},
-                 "spec":{"replicas":1,"template":{"spec":{"containers":[{"name":"honua","image":"{{image}}","ports":[{"containerPort":8080}]}]}},"selector":{"matchLabels":{"app":"honua"}}},
+            var json = $$$$"""
+                {"metadata":{"uid":"{{{{uid}}}}","resourceVersion":"17","generation":3,"annotations":{ {{{{annotations}}}} }},
+                 "spec":{"replicas":1,"template":{"spec":{"containers":[{"name":"honua","image":"{{{{image}}}}","ports":[{"containerPort":8080}]}]}},"selector":{"matchLabels":{"app":"honua"}}},
                  "status":{"observedGeneration":3,"replicas":1,"availableReplicas":1,"updatedReplicas":1}}
                 """;
             return Json(json);
