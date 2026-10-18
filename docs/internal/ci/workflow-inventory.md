@@ -1,11 +1,11 @@
 # CI Workflow Inventory
 
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
-> repository (102 files). Other Honua repositories keep their own inventories;
+> repository (109 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
-> Last updated: 2026-10-12.
+> Last updated: 2026-10-17.
 >
 > To re-derive the file/name/trigger columns after adding or removing a
 > workflow:
@@ -92,7 +92,7 @@ the changed paths on stdin.
 
 | Job | Still runs | Skipped |
 |---|---|---|
-| `PR Gate / Build and tests` | The UTF-8 tracked-file guard (#3320); the terminal-error receipt, client-certification roster, review-first admission and base-image inventory checks; the admission receipt; the classifier's own fixtures; and the Markdown command policy. | Disk cleanup, .NET setup, managed producer planning, compilation, artifact publication and boot/migration smoke. |
+| `PR Gate / Build and tests` | The UTF-8 tracked-file guard (#3320); the terminal-error receipt, client-certification roster, review-first admission and base-image inventory checks; the admission receipt; the classifier's own fixtures; the Markdown command policy; installation-reference validation; and a public-image Docker proof only when artifact versions or executable installation procedures/harness change. | Disk cleanup, .NET setup, managed producer planning, compilation, managed artifact publication and source-built boot/migration smoke. |
 | `PR Gate / Tests and runtime proofs` | Checkout and the producer's explicit docs-only skip output. | .NET setup, artifact consumption, fallback builds, Fast tests, both architecture suites, MCP/governance checks, execution proofs, PDAL build, serving-image fixtures and proof uploads. |
 | `PR Gate / Format` | Checkout and classification. | .NET setup, restore, `dotnet format`. |
 | `PR Gate / Affected shards (select)` | Classification. The job publishes `skip=true` with `reason=docs_only`, so the aggregate reports `skipped`. | Selector validation and shard selection. |
@@ -103,6 +103,10 @@ added raw HTTP shell examples. Review-first enforcement is unchanged, because an
 fails at `Await exact-head review` before the classifier runs. Each docs-only
 job records `docs_only=true` as a step output and the summary line
 `PR Gate: docs-only diff, build and tests skipped (<reason>)`.
+
+The installation artifact manifest, `docs/llms.txt`, and the derived OKF domain
+graph qualify for the docs-only path. The runtime-reference scan still applies:
+adding a compiled consumer of any of these files restores runtime validation.
 
 ## Merge and landing
 
@@ -321,6 +325,7 @@ which is why both the run count and exact observed span are recorded.
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
 | `docs-quickstart-nightly.yml` | Docs Quickstart Validation | daily `schedule` (10:30 UTC), `workflow_dispatch` | Advisory, non-required execution of the primary documented Docker Compose quickstart. Validation failures fail the workflow as an early-warning signal, and bounded validation evidence is uploaded for 14 days. |
+| `docs-install-gate.yml` | Docs Public Install | `workflow_dispatch` | Replays the public installation guide using an anonymous image pull, published clients, publish/query assertions and restart readback, without compiling the server. PRs run this same proof selectively inside the required PR Gate. |
 | `validated-examples-nightly.yml` | Validated examples (advisory) | daily `schedule` (10:37 UTC), `workflow_dispatch` | Executes the STAC operations, mobile/offline, and local geoprocessing shipped examples against isolated, locally built candidate stacks. Verifies the checked-in example inventory first and retains per-scenario logs for 14 days. Advisory in wave 1; the manifest records scheduled coverage without claiming an unobserved pass. |
 | `gp-buffer-canary.yml` | GP Candidate Canary | six-hour `schedule` (`:17`), `workflow_dispatch`, path-filtered `pull_request` | Verifies live frozen-candidate digest, numerical buffer and 4,096-polygon dissolve oracles, and seven receipt-complete scheduled intervals; retains hashed evidence archives. PR runs execute harness regressions and an explicitly non-qualifying published-image rehearsal. |
 | `gp-qualification-harness-checks.yml` | GP Qualification Harness Checks | path-filtered `pull_request`, `workflow_dispatch` | Checks Bash syntax and Python failure-isolation regressions. An explicit dispatch can build the matching canonical worker into a runner-local registry and rehearse one actual staged-store outage, natural worker heartbeat recovery, or terminal-CAS result-package recovery; its receipt is qualification:false and does not qualify a release. |

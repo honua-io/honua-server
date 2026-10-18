@@ -116,6 +116,45 @@ public sealed class InMemorySavedMapOperationLogRepositoryTests
         Assert.Equal(1, duplicate.HeadCursor.Value);
     }
 
+    [UnitTheory]
+    [InlineData("""{"quote\"":1}""", "quote\"")]
+    [InlineData("""{"slash\\":1}""", "slash\\")]
+    [InlineData("""{"line\n\t\u0000":1}""", "line\n\t\0")]
+    [InlineData("""{"café🌍":1}""", "café🌍")]
+    [InlineData("""{"<>&":1}""", "<>&")]
+    [Operation(TestOperations.Query)]
+    public void CanonicalPayload_EscapedPropertyName_RoundTripsWithoutChangingIdentity(string json, string propertyName)
+    {
+        using var original = JsonDocument.Parse(json);
+
+        var canonical = SavedMapOperationIdempotency.CanonicalPayload(original.RootElement);
+
+        using var parsed = JsonDocument.Parse(canonical);
+        Assert.Equal(1, parsed.RootElement.GetProperty(propertyName).GetInt32());
+        Assert.Single(parsed.RootElement.EnumerateObject());
+        Assert.Equal(canonical, SavedMapOperationIdempotency.CanonicalPayload(parsed.RootElement));
+    }
+
+    [UnitTheory]
+    [InlineData("""{"z":[{"é":1,"a":2}],"a":0}""", """{"a":0,"z":[{"a":2,"\u00e9":1}]}""", true)]
+    [InlineData("""{"quote\"":1}""", """{"quote\\":1}""", false)]
+    [InlineData("""{"a":[1,2]}""", """{"a":[2,1]}""", false)]
+    [InlineData("""{"a":1}""", """{"a":1.0}""", false)]
+    [Operation(TestOperations.Append)]
+    public async Task AppendAsync_CanonicalPayload_PreservesEscapingAndEqualityRules(string originalJson, string retryJson, bool equivalent)
+    {
+        var repository = CreateRepository();
+        using var original = JsonDocument.Parse(originalJson);
+        using var retry = JsonDocument.Parse(retryJson);
+        await repository.AppendAsync(CreateRequest("op-1", SavedMapOperationCursor.Empty, payload: original.RootElement.Clone()));
+
+        var result = await repository.AppendAsync(CreateRequest("op-1", SavedMapOperationCursor.Empty, payload: retry.RootElement.Clone()));
+
+        Assert.Equal(equivalent ? SavedMapOperationAppendStatus.Accepted : SavedMapOperationAppendStatus.IdempotencyMismatch, result.Status);
+        Assert.Equal(equivalent, result.IsDuplicate);
+        Assert.Equal(1, result.HeadCursor.Value);
+    }
+
     [UnitTest]
     [Operation(TestOperations.Append)]
     public async Task AppendAsync_DuplicateIdempotencyKey_ReturnsOriginalOperationWithoutAdvancingHead()

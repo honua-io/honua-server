@@ -41,6 +41,12 @@ sql:
           extent = EXCLUDED.extent,
           metadata = EXCLUDED.metadata;
 
+  # Authored WMTS/WMS point style: a radius4 blue circle, no stroke. The
+  # independent canonical WMTS oracle checks these bytes at seeded coordinates.
+  - |
+      UPDATE honua.layers SET maplibre_style = '{"version":8,"sources":{},"layers":[{"id":"cert-points","type":"circle","source":"honua","paint":{"circle-radius":4,"circle-color":"#2D69A5","circle-opacity":1,"circle-stroke-width":0}}]}'::jsonb
+      WHERE layer_id = 2000;
+
   # Layer 2001 — LineString (line style)
   - |
       INSERT INTO honua.layers (

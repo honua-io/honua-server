@@ -263,6 +263,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Verify artifact staging controls
+        run: python3 -m unittest discover -s tests/python/unit -p test_client_interop_artifact_staging.py -v
+
       - name: Download all lane artifacts
         uses: actions/download-artifact@v8
         with:
@@ -279,8 +282,10 @@ jobs:
 
       - name: Stage current-run envelopes
         shell: bash
+        env:
+          EXPECTED_LANES: ${{ join(fromJSON(needs.prepare.outputs.lanes), ',') }}
         run: |
-          scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output
+          scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output "$EXPECTED_LANES"
           python3 scripts/client-compat/validate-envelope-source.py docker/client-compat/output "${{ github.sha }}"
 
       - name: Compare against baselines and refresh gap report

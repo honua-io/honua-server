@@ -284,9 +284,13 @@ internal static class StandardErrorResponseFormatter
     private static IResult FormatWmtsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
-        var exceptionCode = string.IsNullOrWhiteSpace(options.WmtsExceptionCode)
-            ? MapWfsCode(errorResponse)
-            : options.WmtsExceptionCode;
+        // Middleware and resource-policy refusals retain a typed auth code,
+        // just as WFS does; explicit protocol codes still take precedence.
+        var exceptionCode = !string.IsNullOrWhiteSpace(options.WmtsExceptionCode)
+            ? options.WmtsExceptionCode
+            : IsAuthenticationFailure(errorResponse)
+                ? AccessDeniedExceptionCode
+                : MapWfsCode(errorResponse);
         var locatorAttribute = string.IsNullOrWhiteSpace(options.WfsExceptionLocator)
             ? string.Empty
             : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
