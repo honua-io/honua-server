@@ -33,7 +33,11 @@ is a blocked observation.
 
 For ECS, the original worker task must remain running after the exact native
 child disappears. For Lambda+Batch, bind the provider job and attempt to its ECS
-task **before** cancellation. Independently require that same task to reach
+task **before** cancellation, and read the fresh job-specific native-started
+barrier through the independently mounted store observer. Batch RUNNING alone
+does not prove native entry. This path retains the existing single-container
+Batch backend; it does not require a diagnostic sidecar in each Batch job.
+Independently require that same task to reach
 STOPPED, with its container exit and attempt stop observations retained. Missing
 provider records are not evidence of cessation. After the Batch task stops, use
 a separately identified, still-running store observer task with the **same EFS
@@ -68,7 +72,8 @@ Mount a JSON policy read-only at
 ```
 
 The independent persistent-store observer uses `role: store-observer` and null
-`barrierRoot`/`scratchRoot`; its output root, prefix and store identities must
+`scratchRoot`; its read-only barrier mount supplies `barrierRoot` for native
+entry observations (or null for inventory only). Its output root, prefix and store identities must
 match. Both roles require the existing `.honua-gp-store.json` marker with local
 provider and shared-persistent storage. Missing roots, policy, attestation or
 matching job barrier fail closed. The worker must explicitly set the existing
@@ -80,10 +85,13 @@ The maintained producer sends a fresh 128-bit nonce and invokes:
 ```text
 python3 /app/gp_native_observer.py --job JOB --nonce NONCE --phase before
 python3 /app/gp_native_observer.py --job JOB --nonce NONCE --phase after --expected BASE64URL_BEFORE_PROCESS
+python3 /app/gp_native_observer.py --job JOB --nonce NONCE --phase started
 python3 /app/gp_native_observer.py --job JOB --nonce NONCE --phase store
 ```
 
-`before` requires a live, non-zombie direct child and records kernel boot ID,
+`started` reads the exact native-entry barrier and expressly does not assert a
+live PID; the Batch producer must independently observe its exact provider task
+RUNNING before cancelling. `before` requires a live, non-zombie direct child and records kernel boot ID,
 PID-namespace inode and worker/child start ticks. `after` requires the original
 worker identity and barrier bytes, and refuses any remaining child PID,
 including reuse. Filesystem inventories hash every regular job-scoped file;

@@ -52,8 +52,10 @@ def policy(path):
             "qualification-disabled")
     require(value["role"] in ("worker", "store-observer"), "policy-role")
     for key in ("barrierRoot", "scratchRoot", "outputRoot"):
-        if key != "outputRoot" and value["role"] == "store-observer":
+        if key == "scratchRoot" and value["role"] == "store-observer":
             require(value[key] is None, "store-observer-scope")
+            continue
+        if key == "barrierRoot" and value["role"] == "store-observer" and value[key] is None:
             continue
         root = Path(value[key])
         require(root.is_absolute() and str(root.resolve(strict=True)) == str(root), "policy-root")
@@ -141,7 +143,7 @@ def inventory(root, relative):
 def observe(config, job, nonce, phase, expected=None):
     require(isinstance(job, str) and TOKEN.fullmatch(job), "invalid-job")
     require(isinstance(nonce, str) and re.fullmatch(r"[0-9a-f]{32}", nonce), "invalid-nonce")
-    require(phase in ("before", "after", "store"), "invalid-phase")
+    require(phase in ("before", "after", "started", "store"), "invalid-phase")
     value, policy_digest = policy(config)
     marker, marker_digest = read_json(Path(value["outputRoot"]) / ".honua-gp-store.json")
     require(marker.get("Provider") == "local" and marker.get("PersistenceClass") == "shared-persistent"
@@ -154,10 +156,22 @@ def observe(config, job, nonce, phase, expected=None):
               "outputInventory": inventory(value["outputRoot"], value["keyPrefix"] + "/" + job)}
     if phase == "store":
         return result
-    require(value["role"] == "worker", "worker-policy-required")
+    require(value["barrierRoot"] is not None, "barrier-policy-required")
     ready, barrier_digest = read_json(Path(value["barrierRoot"]) / job / "native-process-started.ready.json")
     require(ready.get("operationId") == job and ready.get("barrier") == "native-process-started"
             and isinstance(ready.get("workerId"), str) and TOKEN.fullmatch(ready["workerId"]), "barrier-identity")
+    require(type(ready.get("workerProcessId")) is int and ready["workerProcessId"] > 0
+            and type(ready.get("childProcessId")) is int and ready["childProcessId"] > 0
+            and isinstance(ready.get("readyAt"), str), "barrier-process-identity")
+    result["barrier"] = {key: ready[key] for key in (
+        "operationId", "workerId", "workerProcessId", "childProcessId", "readyAt")}
+    result["barrier"]["sha256"] = barrier_digest
+    if phase == "started":
+        # This is independent filesystem evidence of native entry, NOT a claim
+        # that a PID is currently alive. Batch must also observe its exact task
+        # RUNNING before cancel and STOPPED afterwards through provider APIs.
+        return result
+    require(value["role"] == "worker", "worker-policy-required")
     worker, child = process(ready.get("workerProcessId")), process(ready.get("childProcessId"))
     require(worker is not None, "worker-not-observable")
     boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
@@ -192,7 +206,7 @@ def main():
     parser.add_argument("--policy", default="/var/run/honua/qualification/observer-policy.json")
     parser.add_argument("--job", required=True)
     parser.add_argument("--nonce", required=True)
-    parser.add_argument("--phase", choices=("before", "after", "store"), required=True)
+    parser.add_argument("--phase", choices=("before", "after", "started", "store"), required=True)
     parser.add_argument("--expected", help="base64url encoded retained before-process identity")
     args = parser.parse_args()
     try:

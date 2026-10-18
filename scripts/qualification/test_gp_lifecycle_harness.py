@@ -519,7 +519,8 @@ class NativeObserverTests(unittest.TestCase):
         (self.barriers / "job-1").mkdir()
         self.ready_path = self.barriers / "job-1/native-process-started.ready.json"
         self.ready = {"operationId": "job-1", "workerId": "worker-1", "barrier": "native-process-started",
-                      "workerProcessId": os.getpid(), "childProcessId": self.child.pid}
+                      "workerProcessId": os.getpid(), "childProcessId": self.child.pid,
+                      "readyAt": "2026-10-18T10:00:00Z"}
         self.ready_path.write_text(json.dumps(self.ready))
 
     def write_policy(self):
@@ -614,6 +615,19 @@ class NativeObserverTests(unittest.TestCase):
         self.policy.update(role="store-observer", barrierRoot=None, scratchRoot=None)
         self.write_policy()
         self.assertEqual("observed", self.observe("store")["status"])
+        with self.assertRaisesRegex(self.observer.Refused, "barrier-policy-required"):
+            self.observe()
+
+    def test_independent_shared_barrier_proves_entry_without_claiming_live_pid(self):
+        self.policy.update(role="store-observer", scratchRoot=None)
+        self.write_policy()
+        started = self.observe("started")
+        self.assertEqual(self.child.pid, started["barrier"]["childProcessId"])
+        self.assertNotIn("process", started)
+        self.stop_child()
+        # The record remains entry evidence even when the task/process stopped;
+        # the caller must independently observe the Batch task before cancel.
+        self.assertEqual(started["barrier"], self.observe("started")["barrier"])
         with self.assertRaisesRegex(self.observer.Refused, "worker-policy-required"):
             self.observe()
 
