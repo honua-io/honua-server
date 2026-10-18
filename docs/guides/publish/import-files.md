@@ -47,6 +47,26 @@ Run `GET /api/v1/admin/import/jobs/{jobId}`, substituting the `jobId` returned b
 
 Cancel with `POST /api/v1/admin/import/jobs/{jobId}/cancel`; list active jobs with `GET /api/v1/admin/import/jobs`.
 
+#### Ownership and retry safety
+
+Ask the agent: “Import this file, track the accepted job, and report the actual
+schema and table before publishing a layer. If acceptance is uncertain, stop and
+show me what is known before uploading again.”
+
+Accepted jobs retain the authenticated actor and tenant. Agents can inspect and
+cancel their own jobs in that tenant; a job ID or workspace header does not grant
+access to another actor's job. Human operators use the configured tenant boundary
+and platform-operator exemptions. Legacy jobs with unknown ownership are not
+silently assigned to the current tenant.
+
+Upload progress and cancellation are scoped to the accepting actor and tenant.
+The optional `UploadId` remains a caller correlation value, not an idempotency key
+or proof that an import job was accepted. Reusing it can start another import.
+An upload showing “File received” does not confirm job acceptance. If the response
+containing the accepted `jobId` is lost, do not automatically re-upload. Old upload
+progress without authenticated scope is unavailable through these routes after
+upgrade; this does not delete an accepted import job.
+
 #### Where background imports run
 
 The server that accepts the upload stages the file in its configured file storage. Where the import then runs depends on the deployment. The job status reports it as `runner`, together with the `instanceId` of the process running the import:
