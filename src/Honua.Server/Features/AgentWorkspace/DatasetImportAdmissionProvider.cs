@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
@@ -45,6 +46,7 @@ internal sealed class DatasetImportAdmissionProvider(IAgentWorkspaceStore store,
         if (document is null || services is null || !document.DatasetImportExecutionBindings.TryGetValue(taskId, out var binding) ||
             binding.TaskRevision != taskRevision || binding.TaskContentHash != taskContentHash ||
             binding.AuthorityRevision != authorityRevision || binding.AuthorityFingerprint != authorityFingerprint ||
+            binding.PolicyContextFingerprint != JobSecurityContextFingerprint.Compute(binding.ExecutorPolicyContext) ||
             binding.ExecutorActorId != task.OwnerActorId || binding.ExecutorActorId != CanonicalSecurityActor.Resolve(executor)?.ActorId ||
             (binding.InitiatingHumanActorId is not null && (document.OwnerId != binding.InitiatingHumanActorId || document.AgentActorId != binding.ExecutorActorId)) ||
             !document.Turns.TryGetValue(binding.OriginatingTurnId, out var turn) ||
@@ -59,7 +61,8 @@ internal sealed class DatasetImportAdmissionProvider(IAgentWorkspaceStore store,
         var prepared = new DatasetImportPreparedAdmission(taskId, taskRevision, taskContentHash,
             "dataset-import-" + Convert.ToHexStringLower(SHA256.HashData(identity)), binding.AuthorityRevision,
             binding.AuthorityFingerprint, binding.ExecutorActorId, binding.InitiatingHumanActorId, binding.OriginatingTurnId,
-            binding.OriginalTurnHash, binding.ExecutorAuthority, task.UploadAdmissionDeadline);
+            binding.OriginalTurnHash, binding.ExecutorPolicyContext with { AgentCredential = binding.ExecutorAuthority },
+            binding.PolicyContextFingerprint, binding.ExecutorAuthority, task.UploadAdmissionDeadline);
         var preparations = new Dictionary<string, DatasetImportPreparedAdmission>(document.DatasetImportPreparedAdmissions, StringComparer.Ordinal)
         { [taskId] = prepared };
         if (!await store.SaveAsync(document with { DatasetImportPreparedAdmissions = preparations }).ConfigureAwait(false))

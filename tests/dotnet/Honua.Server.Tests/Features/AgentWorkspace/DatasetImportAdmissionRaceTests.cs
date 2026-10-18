@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
@@ -54,8 +55,9 @@ public sealed class DatasetImportAdmissionRaceTests(RedisFixture redis)
         var snapshot = (await AgentCredentialAuthority.CaptureAsync(principal, services, default))!;
         var fingerprint = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(snapshot, AgentWorkspaceJsonContext.Default.AgentCredentialSnapshot)));
         var turnHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(turn, AgentWorkspaceJsonContext.Default.AgentWorkspaceTurn)));
+        var policy = new JobSecurityContext(actor, "tenant-1", [], "role") { OwnerActorId = actor, AgentCredential = snapshot };
         var binding = new DatasetImportExecutionBinding(task.TaskId, 1, task.ContentHash, 1, fingerprint, actor,
-            "human-1", turn.TurnId, turnHash, snapshot);
+            "human-1", turn.TurnId, turnHash, policy, JobSecurityContextFingerprint.Compute(policy), snapshot);
         var document = new AgentWorkspaceDocument
         {
             WorkspaceId = workspaceId, TargetId = target, OwnerId = "human-1", AgentActorId = actor,

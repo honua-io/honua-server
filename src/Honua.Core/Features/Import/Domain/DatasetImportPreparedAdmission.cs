@@ -16,9 +16,12 @@ namespace Honua.Core.Features.Import.Domain;
 /// <param name="InitiatingHumanActorId">Optional server-derived initiating human, distinct from executor.</param>
 /// <param name="OriginatingTurnId">Original retained turn.</param>
 /// <param name="OriginalTurnHash">Hash of the original turn independently of the newly created task.</param>
+/// <param name="ExecutorPolicyContext">Original trusted policy inputs with the sealed admission credential.</param>
+/// <param name="PolicyContextFingerprint">Immutable original policy-input fingerprint.</param>
 /// <param name="ExecutorAuthority">Server-only sealed credential snapshot; contains no bearer secret.</param>
 /// <param name="AcceptBefore">Original immutable admission deadline, never extended by renewal or replay.</param>
 public sealed record DatasetImportPreparedAdmission(
     string TaskId, long TaskRevision, string TaskContentHash, string OperationId,
     long AuthorityRevision, string AuthorityFingerprint, string ExecutorActorId, string? InitiatingHumanActorId,
-    string OriginatingTurnId, string OriginalTurnHash, AgentCredentialSnapshot ExecutorAuthority, DateTimeOffset AcceptBefore);
+    string OriginatingTurnId, string OriginalTurnHash, JobSecurityContext ExecutorPolicyContext, string PolicyContextFingerprint,
+    AgentCredentialSnapshot ExecutorAuthority, DateTimeOffset AcceptBefore);

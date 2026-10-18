@@ -18,6 +18,8 @@ internal sealed record DatasetImportExecutionBinding(
     string? InitiatingHumanActorId,
     string OriginatingTurnId,
     string OriginalTurnHash,
+    JobSecurityContext ExecutorPolicyContext,
+    string PolicyContextFingerprint,
     AgentCredentialSnapshot ExecutorAuthority);
 
 internal sealed record RenewDatasetImportAuthority(

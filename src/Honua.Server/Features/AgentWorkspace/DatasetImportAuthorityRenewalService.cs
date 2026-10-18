@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 
@@ -48,8 +49,15 @@ internal static class DatasetImportAuthorityRenewalService
             binding.OriginalTurnHash != Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(turn, AgentWorkspaceJsonContext.Default.AgentWorkspaceTurn))) ||
             (binding.InitiatingHumanActorId is not null && (document.OwnerId != binding.InitiatingHumanActorId || document.AgentActorId != actor)))
             return null;
-        var fresh = await AgentCredentialAuthority.CaptureAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false);
-        if (fresh is null || !DatasetImportExecutionAuthority.SameLineage(binding.ExecutorAuthority, fresh)) return null;
+        var policyCapture = context.RequestServices.GetService<Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture>();
+        if (policyCapture is null) return null;
+        var freshPolicy = await policyCapture.CaptureCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var fresh = freshPolicy.AgentCredential;
+        // Exact comparison remains fail-closed until the canonical refresh comparator
+        // handles token transport metadata while preserving original policy inputs.
+        if (fresh is null || !DatasetImportExecutionAuthority.SameLineage(binding.ExecutorAuthority, fresh) ||
+            binding.PolicyContextFingerprint != JobSecurityContextFingerprint.Compute(binding.ExecutorPolicyContext) ||
+            binding.PolicyContextFingerprint != JobSecurityContextFingerprint.Compute(freshPolicy)) return null;
         if (fresh.TokenExpiresAt <= binding.ExecutorAuthority.TokenExpiresAt)
             throw new AgentWorkspaceConflictException("Renewal requires a refreshed expiry under the same executor authority.");
         var fingerprint = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(fresh, AgentWorkspaceJsonContext.Default.AgentCredentialSnapshot)));

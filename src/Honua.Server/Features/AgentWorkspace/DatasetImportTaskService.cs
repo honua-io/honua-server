@@ -59,14 +59,19 @@ internal static class DatasetImportTaskService
                 .AuthorizeAsync(context.User, workspace.WorkspaceId, origin.TurnId, context.RequestAborted).ConfigureAwait(false);
             if (authorizedTurn is null || authorizedTurn.OwnerActorId != workspace.OwnerId ||
                 authorizedTurn.TargetId != workspace.TargetId || authorizedTurn.TenantId != workspace.TenantId) return Results.Forbid();
-            var authority = await AgentCredentialAuthority.CaptureAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false);
-            if (authority is null) return Results.Forbid();
+            var policyCapture = context.RequestServices.GetService<Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture>();
+            if (policyCapture is null) return Results.Forbid();
+            var policy = await policyCapture.CaptureCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var authority = policy.AgentCredential;
+            if (authority is null || policy.PrincipalId != actor || policy.OwnerActorId != actor || policy.TenantId != workspace.TenantId)
+                return Results.Forbid();
+            var policyHash = JobSecurityContextFingerprint.Compute(policy);
             var authorityHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(authority,
                 AgentWorkspaceJsonContext.Default.AgentCredentialSnapshot)));
             var turnHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(origin,
                 AgentWorkspaceJsonContext.Default.AgentWorkspaceTurn)));
             bindings[task.TaskId] = new(task.TaskId, task.Revision, task.ContentHash, 1, authorityHash, actor,
-                workspace.OwnerId == actor ? null : workspace.OwnerId, origin.TurnId, turnHash, authority);
+                workspace.OwnerId == actor ? null : workspace.OwnerId, origin.TurnId, turnHash, policy, policyHash, authority);
         }
         var next = AgentWorkspaceState.Update(workspace with { DatasetImportTasks = tasks, DatasetImportTaskIntents = intents,
             DatasetImportExecutionBindings = bindings },
