@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -40,10 +40,21 @@ async function exercise(mode) {
   });
   await new Promise((resolve) => peer.listen(0, '127.0.0.1', resolve));
   let child;
+  let completedOutput; let observedExit;
   const invoke = async (endpoint) => {
     if (mode === 'no-wire') return { resources: [{ uri: 'honua://control/0' }, { uri: 'honua://control/1' }] };
+    const launcher = new URL('clients/launcher/build/index.js', packageRoot).pathname;
+    let prefix = [launcher];
+    if (mode === 'nonzero-exit') {
+      const wrapper = join(temporary, 'nonzero-control.mjs');
+      await writeFile(wrapper, `import { spawnSync } from 'node:child_process';
+const value = spawnSync(process.execPath, process.argv.slice(2), { encoding: 'utf8', timeout: 5500 });
+process.stdout.write(value.stdout ?? '', () => process.stderr.write(value.stderr ?? '', () =>
+process.exit(value.status === 0 ? 7 : (value.status ?? 1))));`);
+      prefix = [wrapper, launcher];
+    }
     const result = await new Promise((resolve, reject) => {
-      child = spawn(process.execPath, [new URL('clients/launcher/build/index.js', packageRoot).pathname,
+      child = spawn(process.execPath, [...prefix,
         '--cli', endpoint, '--transport', 'http', '--method', 'resources/list', '--format', 'json'], {
         env: { PATH: process.env.PATH, MCP_AUTO_OPEN_ENABLED: 'false', MCP_STORAGE_DIR: temporary,
           MCP_INSPECTOR_SECRET_STORE: 'file', MCP_INSPECTOR_SECRET_FILE: join(temporary, 'secrets.json') },
@@ -56,6 +67,8 @@ async function exercise(mode) {
       child.on('error', (error) => { clearTimeout(timer); reject(error); });
       child.on('close', (code, signal) => {
         clearTimeout(timer);
+        observedExit = code;
+        try { completedOutput = JSON.parse(stdout); } catch { /* Missing output cannot establish the fault control. */ }
         if (code !== 0 || signal) reject(new Error('Public Inspector CLI refused or timed out.'));
         else { try { resolve(JSON.parse(stdout)); } catch (error) { reject(error); } }
       });
@@ -70,7 +83,7 @@ async function exercise(mode) {
     try {
       return { proof: await observeInspectorPagination({ endpoint: `http://127.0.0.1:${peer.address().port}/mcp`,
         invoke, inspectorVersion: installed.version, sourceSha: SOURCE }), calls };
-    } catch (error) { return { error, calls }; }
+    } catch (error) { return { error, calls, completedOutput, observedExit }; }
   } finally {
     child?.kill('SIGTERM');
     peer.closeAllConnections();
@@ -93,12 +106,17 @@ for (const mode of ['json', 'sse']) {
   });
 }
 
-for (const mode of ['repeat', 'http-error', 'redirect', 'wrong-id', 'single-page', 'duplicate-uri', 'false-merged-output', 'no-wire']) {
+for (const mode of ['repeat', 'http-error', 'redirect', 'wrong-id', 'single-page', 'duplicate-uri', 'false-merged-output', 'no-wire', 'nonzero-exit']) {
   test(`wire observer rejects ${mode} without manufacturing client proof`, async () => {
     const result = await exercise(mode);
     assert.equal(result.proof, undefined);
     assert.match(result.error?.message ?? '', /^Inspector pagination wire proof failed\.$/);
     assert.ok(!result.error.message.includes('PRIVATE_CONTROL_DIAGNOSTIC'));
+    if (mode === 'nonzero-exit') {
+      assert.equal(result.observedExit, 7);
+      assert.equal((result.completedOutput.result ?? result.completedOutput).resources.length, 3);
+      assert.deepEqual(result.calls.filter((call) => call.method === 'resources/list').map((call) => call.params?.cursor), [undefined, 'page-1', 'page-2']);
+    }
     if (mode !== 'no-wire') assert.ok(result.calls.some((call) => call.method === 'resources/list'), 'negative must reach the real installed client wire operation');
   });
 }
