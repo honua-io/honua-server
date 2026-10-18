@@ -70,6 +70,7 @@ public sealed class McpRequestCancellationIntegrationTests : IAsyncLifetime
         var table = '"' + schema.Replace("\"", "\"\"", StringComparison.Ordinal) + "\".features";
         var baseline = await ReadSnapshotAsync(observer, table);
         await using var transaction = await blocker.BeginTransactionAsync();
+        var blockerReleased = false;
         await using (var command = new NpgsqlCommand($"LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE", blocker, transaction))
         {
             await command.ExecuteNonQueryAsync();
@@ -124,6 +125,7 @@ public sealed class McpRequestCancellationIntegrationTests : IAsyncLifetime
             }
 
             await transaction.RollbackAsync();
+            blockerReleased = true;
             Assert.Equal(baseline, await ReadSnapshotAsync(observer, table));
 
             // Reuse the exact id after completion: cleanup must release authority,
@@ -142,7 +144,7 @@ public sealed class McpRequestCancellationIntegrationTests : IAsyncLifetime
         {
             // On a failed assertion release our own lock, then drain the still-open
             // request naturally. Client disposal is never the cancellation proof.
-            if (transaction.Connection is not null)
+            if (!blockerReleased && transaction.Connection is not null)
             {
                 await transaction.RollbackAsync();
             }
