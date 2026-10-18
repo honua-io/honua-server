@@ -24,6 +24,23 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 {
+    [IntegrationTest]
+    public async Task ExecutionJobStore_ExpiredAdmission_LeavesNoJobOrIndexesEvenWithFutureCreatedTime()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var job = CreateQueuedJob($"job-expired-admission-{Guid.NewGuid():N}") with
+        {
+            AcceptanceDeadline = DateTimeOffset.UtcNow.AddMinutes(-1),
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(1),
+        };
+
+        (await harness.JobStore.TryCreateAsync(job)).Should().BeFalse();
+
+        (await harness.JobStore.GetAsync(job.OperationId)).Should().BeNull();
+        (await harness.JobStore.ListActiveAsync()).Should().BeEmpty();
+        (await harness.JobStore.QueryAsync(new ExecutionJobQuery())).Items.Should().BeEmpty();
+    }
+
     [IntegrationTheory]
     [InlineData("controlplane:job:active")]
     [InlineData("controlplane:job:active:geoprocessing")]

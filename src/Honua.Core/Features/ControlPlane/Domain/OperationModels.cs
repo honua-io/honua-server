@@ -1272,6 +1272,13 @@ public sealed record ExecutionJobRecord
     public required DateTimeOffset CreatedAt { get; init; }
 
     /// <summary>
+    /// Optional deadline for first durable acceptance. Stores enforce this against
+    /// their authoritative clock in the same atomic operation that creates the job.
+    /// It does not expire or extend an already accepted job or its execution lease.
+    /// </summary>
+    public DateTimeOffset? AcceptanceDeadline { get; init; }
+
+    /// <summary>
     /// Time when the job record was most recently updated.
     /// </summary>
     public required DateTimeOffset UpdatedAt { get; init; }

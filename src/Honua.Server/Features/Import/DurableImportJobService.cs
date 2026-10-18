@@ -200,6 +200,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
         var actual = existing.Spec.Parameters.Where(static pair =>
             pair.Key.StartsWith("import.", StringComparison.Ordinal) && pair.Key != FileImportJobParameters.Runner).ToArray();
         if (existing.Spec.Kind != ExecutionJobKind.FileImport || existing.OperationId != request.Acceptance!.OperationId ||
+            existing.AcceptanceDeadline != request.Acceptance.AcceptBefore ||
             actual.Length != expected.Count || actual.Any(pair => !expected.TryGetValue(pair.Key, out var value) || value != pair.Value))
         {
             throw new ImportAcceptanceConflictException();
@@ -424,6 +425,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
         return new ExecutionJobRecord
         {
             OperationId = jobId,
+            AcceptanceDeadline = request.Acceptance?.AcceptBefore,
             Status = ExecutionJobStatus.Queued,
             CreatedAt = now,
             UpdatedAt = now,

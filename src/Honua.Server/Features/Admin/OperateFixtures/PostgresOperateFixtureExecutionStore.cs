@@ -71,13 +71,15 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
                 operation_id, fixture_profile, record_json, version, status, kind, backend, queue,
                 requested_by, correlation_id, trace_id, definition_id, resource_refs, environment,
                 server, release_id, change_set_id, alert_id, created_at, updated_at, completed_at)
-            VALUES (
+            SELECT
                 @operation_id, @fixture_profile, @record_json, @version, @status, @kind, @backend, @queue,
                 @requested_by, @correlation_id, @trace_id, @definition_id, @resource_refs, @environment,
-                @server, @release_id, @change_set_id, @alert_id, @created_at, @updated_at, @completed_at)
+                @server, @release_id, @change_set_id, @alert_id, @created_at, @updated_at, @completed_at
+            WHERE @acceptance_deadline IS NULL OR clock_timestamp() < @acceptance_deadline
             ON CONFLICT (operation_id) DO NOTHING
             """;
         AddJobParameters(command, versioned);
+        command.Parameters.Add(Parameter("acceptance_deadline", NpgsqlDbType.TimestampTz, job.AcceptanceDeadline?.UtcDateTime));
 
         var rows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         if (rows > 0)

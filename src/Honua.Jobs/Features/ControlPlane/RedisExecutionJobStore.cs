@@ -28,6 +28,12 @@ internal sealed partial class RedisExecutionJobStore(
     // Check key types before writing: Lua runtime errors do not roll back earlier writes.
     private const string CreateWithIndexesScript = """
         if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+        if ARGV[7] ~= '' then
+            local deadline = tonumber(ARGV[7])
+            local now = redis.call('TIME')
+            local nowMillis = tonumber(now[1]) * 1000 + math.floor(tonumber(now[2]) / 1000)
+            if not deadline or nowMillis >= deadline then return 0 end
+        end
         if ARGV[4] == '1' then
             for i = 2, 3 do
                 local kind = redis.call('TYPE', KEYS[i]).ok
@@ -128,7 +134,9 @@ internal sealed partial class RedisExecutionJobStore(
             [
                 payload, (long)retention.TotalMilliseconds, job.OperationId,
                 IsTerminal(job.Status) ? 0 : 1, job.CreatedAt.ToUnixTimeMilliseconds(),
-                (long)DefaultRetention.TotalMilliseconds
+                (long)DefaultRetention.TotalMilliseconds,
+                job.AcceptanceDeadline is { } deadline
+                    ? deadline.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) : string.Empty
             ]).ConfigureAwait(false) == 1;
 
         if (!created)

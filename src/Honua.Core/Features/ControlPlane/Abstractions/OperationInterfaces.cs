@@ -183,7 +183,12 @@ public interface IExecutionJobStore : IOperationStore
     /// <param name="job">Execution job record.</param>
     /// <param name="ttl">Optional retention period.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True when created; otherwise false if it already exists.</returns>
+    /// <returns>True when created; false if it already exists or its acceptance deadline has passed.</returns>
+    /// <remarks>
+    /// The optional <see cref="ExecutionJobRecord.AcceptanceDeadline"/> must be checked
+    /// using the store's clock atomically with creation. An expired admission cannot
+    /// create a record or indexes. Existing records remain available for read-only recovery.
+    /// </remarks>
     Task<bool> TryCreateAsync(
         ExecutionJobRecord job,
         TimeSpan? ttl = null,

@@ -158,6 +158,71 @@ public sealed class BoundImportAcceptanceTests(RedisFixture redis)
         harness.Queue.ReceivedCalls().Should().BeEmpty();
     }
 
+    [IntegrationTest]
+    public async Task DeadlinePassesInsideCreate_StoreRefusesJobAndDispatchAfterHostAdmission()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var real = Store(connection);
+        var delayed = Substitute.For<IExecutionJobStore>();
+        delayed.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => real.GetAsync(call.ArgAt<string>(0), call.ArgAt<CancellationToken>(1)));
+        delayed.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(call => real.ListActiveAsync(call.ArgAt<ExecutionJobKind?>(0), call.ArgAt<int?>(1), call.ArgAt<CancellationToken>(2)));
+        var enteredCreate = false;
+        delayed.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                enteredCreate = true;
+                var job = call.ArgAt<ExecutionJobRecord>(0);
+                job.AcceptanceDeadline.Should().NotBeNull();
+                var remaining = job.AcceptanceDeadline!.Value - DateTimeOffset.UtcNow;
+                if (remaining > TimeSpan.Zero) await Task.Delay(remaining);
+                await Task.Delay(50);
+                // Actual Redis Lua must enforce the deadline; a prior host check cannot.
+                return await real.TryCreateAsync(job, cancellationToken: call.ArgAt<CancellationToken>(2));
+            });
+        using var harness = new Harness(delayed);
+        var request = Request();
+        request = request with { Acceptance = request.Acceptance! with { AcceptBefore = DateTimeOffset.UtcNow.AddSeconds(2) } };
+
+        await FluentActions.Invoking(() => harness.Service.QueueImportAsync(request, 100))
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        enteredCreate.Should().BeTrue("the deadline must be crossed after the host admission check");
+        var id = request.Acceptance!.OperationId;
+        (await real.GetAsync(id)).Should().BeNull();
+        (await connection.GetDatabase().SetContainsAsync("controlplane:job:active", id)).Should().BeFalse();
+        (await connection.GetDatabase().SetContainsAsync("controlplane:job:active:fileimport", id)).Should().BeFalse();
+        (await connection.GetDatabase().SortedSetScoreAsync("controlplane:job:index:created:all", id)).Should().BeNull();
+        harness.Queue.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    public async Task AcceptedBeforeDeadline_ReplayAfterExpiryRecoversOriginalWithoutDispatch()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = Store(connection);
+        var request = Request();
+        request = request with { Acceptance = request.Acceptance! with { AcceptBefore = DateTimeOffset.UtcNow.AddSeconds(2) } };
+        var acceptance = request.Acceptance!;
+        var job = DurableImportJobService.BuildJobRecord(acceptance.OperationId, request, 100,
+            BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false), DateTimeOffset.UtcNow);
+        (await store.TryCreateAsync(job)).Should().BeTrue();
+        var remaining = acceptance.AcceptBefore - DateTimeOffset.UtcNow;
+        if (remaining > TimeSpan.Zero) await Task.Delay(remaining);
+        await Task.Delay(50);
+        await using var restarted = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var recoveredStore = Store(restarted);
+        using var recovered = new Harness(recoveredStore);
+
+        (await recovered.Service.QueueImportAsync(request, 100)).Should().Be(job.OperationId);
+
+        var original = (await recoveredStore.GetAsync(job.OperationId))!;
+        original.AcceptanceDeadline.Should().Be(acceptance.AcceptBefore);
+        original.Version.Should().Be(1);
+        recovered.Queue.ReceivedCalls().Should().BeEmpty();
+    }
+
     [UnitTest]
     public async Task BoundAcceptance_RequiresDurableRunnerAndCannotFallBackToInProcess()
     {
