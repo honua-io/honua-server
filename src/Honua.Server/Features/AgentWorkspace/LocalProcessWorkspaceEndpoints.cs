@@ -9,7 +9,7 @@ namespace Honua.Server.Features.AgentWorkspace;
 
 internal static class LocalProcessWorkspaceEndpoints
 {
-    internal static void MapLocalProcesses(this RouteGroupBuilder agent)
+    internal static void MapLocalProcesses(this IEndpointRouteBuilder agent)
     {
         var group = agent.MapGroup("/workspaces/{workspaceId}/processes/local");
         group.MapGet("/project/identity", (HttpContext context, ILocalProcessWorkspaceGateway gateway) =>

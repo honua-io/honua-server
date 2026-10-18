@@ -10,6 +10,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Security;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Styling;
 using Honua.Server.Features.WorkflowPackages;
 

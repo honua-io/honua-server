@@ -13,6 +13,11 @@ namespace Honua.Server.Features.Styling;
 internal sealed class SharedStyleEditor(IStyleCatalog catalog, StyleEditImpactService impacts,
     IHttpContextAccessor accessor, IServiceProvider services, ILogger<SharedStyleEditor> logger) : ISharedStyleEditor
 {
+    private static readonly Action<ILogger, int, Exception?> ProjectionRefreshFailed = LoggerMessage.Define<int>(
+        LogLevel.Warning, new EventId(1, nameof(ProjectionRefreshFailed)), "Shared style projection refresh failed for layer {LayerId}");
+    private static readonly Action<ILogger, Exception?> OutputCacheRefreshFailed = LoggerMessage.Define(
+        LogLevel.Warning, new EventId(2, nameof(OutputCacheRefreshFailed)), "Shared style output cache refresh failed");
+
     public async Task<OgcStyleUpdateResult> UpdateHumanAsync(string styleId, int expectedVersion, string expectedImpactHash,
         string document, bool drawingInfo, CancellationToken cancellationToken = default)
     {
@@ -102,7 +107,7 @@ internal sealed class SharedStyleEditor(IStyleCatalog catalog, StyleEditImpactSe
             {
                 // Canonical bytes are committed. A cache/projection failure cannot turn a
                 // successful edit into an apparent failure and encourage duplicate writes.
-                logger.LogWarning(exception, "Shared style projection refresh failed for layer {LayerId}", layerId);
+                ProjectionRefreshFailed(logger, layerId, exception);
             }
         }
         try
@@ -112,7 +117,7 @@ internal sealed class SharedStyleEditor(IStyleCatalog catalog, StyleEditImpactSe
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            logger.LogWarning(exception, "Shared style output cache refresh failed");
+            OutputCacheRefreshFailed(logger, exception);
         }
     }
 }
