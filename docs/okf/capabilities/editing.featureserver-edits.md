@@ -18,7 +18,7 @@ Create, update, and delete features through the Esri GeoServices FeatureServer w
 | Edition | Pro |
 | Surface maturity | 6 implemented |
 | Registry entries | 6 |
-| Proving tests | 168 |
+| Proving tests | 171 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

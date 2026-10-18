@@ -51,7 +51,7 @@ case "${lane}" in
   lifecycle)
     declared_scenarios=(topology output-store-attestation sync async cancel-claimed cancel-native-process-started \
       cancel-output-bytes-written-unpublished cancel-artifact-reference-published-terminal-cas-pending \
-      idempotency retry timeout-cooperative timeout-ignoring \
+      mcp-cancel-native-process-started idempotency retry timeout-cooperative timeout-ignoring \
       restart-worker-accepted restart-worker-running restart-worker-terminal restart-worker-results-read \
       restart-server-accepted restart-server-running restart-server-terminal restart-server-results-read \
       restart-redis-accepted restart-redis-running restart-redis-terminal restart-redis-results-read \
@@ -375,9 +375,10 @@ delete_capture() {
 }
 
 cancel_barrier_job() {
-  local target="$1" job cancel_url="$base_url" request_at
+  local target="$1" protocol="${2:-ogc}" job cancel_url="$base_url" request_at
+  local mcp_ack=null cancel_source first_semantics second_semantics response_one response_two
   local process_ready output_ready terminal_ready signal_observed result_code_after result_code_late
-  local child_pid child_alive worker_container
+  local child_pid="" child_alive worker_container="" original_child_pid="" original_worker_container="" child_probe
   request_at="$(now)"
   job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
 
@@ -388,6 +389,7 @@ cancel_barrier_job() {
     process_ready="$(barrier_record "$job" native-process-started)"
     child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
     worker_container="$(compose ps -q worker)"
+    original_child_pid="$child_pid"; original_worker_container="$worker_container"
     if [[ "$target" == native-process-started ]]; then
       [[ -n "$child_pid" && -n "$worker_container" ]] || {
         scenario_fail "native-process-started barrier did not report a child PID"
@@ -416,18 +418,40 @@ cancel_barrier_job() {
     cancel_url="$peer_url"
   fi
 
-  response_one="$(delete_capture "$cancel_url" "$job" first)"
-  response_two="$(delete_capture "$cancel_url" "$job" second)"
-  [[ "$response_one" =~ ^2[0-9][0-9]$ && "$response_two" == "$response_one" ]] || {
-    scenario_fail "repeat cancellation did not preserve HTTP idempotency semantics"
-    return 1
-  }
-  first_semantics="$(jq -c '{status,jobID,jobId}' "$receipt_root/.$scenario_name.first.cancel.json")"
-  second_semantics="$(jq -c '{status,jobID,jobId}' "$receipt_root/.$scenario_name.second.cancel.json")"
-  [[ "$first_semantics" == "$second_semantics" && "$first_semantics" != '{"status":null,"jobID":null,"jobId":null}' ]] || {
-    scenario_fail "repeat cancellation changed the OGC response semantics"
-    return 1
-  }
+  if [[ "$protocol" == mcp ]]; then
+    # The job was submitted through the first replica; the installed SDK cancels
+    # it through the peer. The acknowledgement is not the cessation oracle.
+    cancel_url="$peer_url"
+    HONUA_GP_MCP_API_KEY="$api_key" node "$repo_root/scripts/qualification/mcp/cancel-durable-job.mjs" \
+      "$cancel_url" "$job" > "$receipt_root/.$scenario_name.mcp-ack.json" || {
+      scenario_fail "installed MCP client did not acknowledge repeat cancellation"
+      return 1
+    }
+    mcp_ack="$(cat "$receipt_root/.$scenario_name.mcp-ack.json")"
+    jq -e --arg job "$job" '.schema == "honua.gp-mcp-cancellation-ack/v1" and .jobId == $job
+      and .tool == "honua_cancel_job" and .executionCessationProven == false
+      and .sdkVersion == "1.32.1" and .clientLockSha256 == "5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f"
+      and .clientSource == "372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4"
+      and (.adapterSha256 | test("^[0-9a-f]{64}$")) and (.responses | length == 2)
+      and all(.responses[]; .jobId == $job and .status == "cancellation_requested" and .cancellationRequested == true)' \
+      <<< "$mcp_ack" >/dev/null || { scenario_fail "invalid MCP cancellation acknowledgement binding"; return 1; }
+    cancel_source="installed MCP honua_cancel_job via $cancel_url"
+    response_one=""; response_two=""
+  else
+    response_one="$(delete_capture "$cancel_url" "$job" first)"
+    response_two="$(delete_capture "$cancel_url" "$job" second)"
+    [[ "$response_one" =~ ^2[0-9][0-9]$ && "$response_two" == "$response_one" ]] || {
+      scenario_fail "repeat cancellation did not preserve HTTP idempotency semantics"
+      return 1
+    }
+    first_semantics="$(jq -c '{status,jobID,jobId}' "$receipt_root/.$scenario_name.first.cancel.json")"
+    second_semantics="$(jq -c '{status,jobID,jobId}' "$receipt_root/.$scenario_name.second.cancel.json")"
+    [[ "$first_semantics" == "$second_semantics" && "$first_semantics" != '{"status":null,"jobID":null,"jobId":null}' ]] || {
+      scenario_fail "repeat cancellation changed the OGC response semantics"
+      return 1
+    }
+    cancel_source="OGC DELETE via $cancel_url"
+  fi
 
   terminal="$(wait_terminal "$job")" || return 1
   state="$(jq -r '.status' <<<"$terminal")"
@@ -462,18 +486,34 @@ cancel_barrier_job() {
       break
     fi
   done
-  child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
+  # Preserve the PID/container observed before cancellation even if a later
+  # barrier read is missing. Transport failure is not process-exit evidence.
+  child_pid="$original_child_pid"
+  worker_container="$original_worker_container"
+  if [[ -z "$child_pid" ]]; then
+    child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
+    worker_container="$(compose ps -q worker)"
+  fi
   child_alive=false
   if [[ -n "$child_pid" ]]; then
-    worker_container="$(compose ps -q worker)"
-    if docker exec "$worker_container" kill -0 "$child_pid" >/dev/null 2>&1; then
-      child_alive=true
-    fi
-    [[ "$child_alive" == false ]] || {
-      scenario_fail "native child process remained alive after cancellation"
+    [[ "$child_pid" =~ ^[1-9][0-9]*$ && -n "$worker_container" ]] || {
+      scenario_fail "native child identity is invalid after cancellation"; return 1;
+    }
+    [[ "$(docker inspect --type container --format '{{.State.Running}}' "$worker_container")" == true ]] || {
+      scenario_fail "original worker is not observable and running after cancellation"; return 1;
+    }
+    child_probe="$(docker exec "$worker_container" sh -c '
+      test -d /proc && test -r /proc/self/stat || exit 71
+      if test -d "/proc/$1"; then printf alive; else printf absent; fi
+    ' sh "$child_pid")" || {
+      scenario_fail "native child cessation probe failed after cancellation"; return 1;
+    }
+    [[ "$child_probe" == absent ]] || {
+      scenario_fail "native child process remained alive or its absence was not proved after cancellation"
       return 1
     }
   fi
+
   record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
   pending="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:pending "$job" || true)"
   claimed_score="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:claimed "$job" || true)"
@@ -484,16 +524,17 @@ cancel_barrier_job() {
   }
   set_scenario_evidence "$(jq -n \
     --arg request_at "$request_at" \
-    --arg cancel_source "OGC DELETE via $cancel_url" \
+    --arg cancel_source "$cancel_source" --argjson mcp_ack "$mcp_ack" \
     --arg response_one "$response_one" --arg response_two "$response_two" \
     --arg result_code_after "$result_code_after" --arg result_code_late "$result_code_late" \
     --argjson process "$process_ready" --argjson output "$output_ready" --argjson terminal "$terminal_ready" \
     --argjson signal "$signal_observed" \
-    --argjson child_alive "$child_alive" \
+    --argjson child_alive "$child_alive" --argjson observed_child_pid "${child_pid:-null}" \
+    --arg observed_worker "$worker_container" \
     --argjson record "$record" --arg pending "$pending" --arg claimed "$claimed_score" \
     --argjson objects_after "$after_objects" \
     --argjson transitions "$(jq -s '.' "$scenario_transition_file")" \
-    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,output:$output,terminal_fence:$terminal,artifact_references:($record.artifactReferences // []),timeout_source:null,cancellation_source:$cancel_source,cancellation_responses:{first_http:$response_one,second_http:$response_two},signal_observed_at:($signal.observedAt // null),child_process:{pid:($process.childProcessId // null),exit_observed:($child_alive|not)},terminal_history:$transitions,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},result_visibility:{after_terminal:$result_code_after,late:$result_code_late},object_inventory:{after_retention_cleanup:$objects_after}}')"
+    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,output:$output,terminal_fence:$terminal,artifact_references:($record.artifactReferences // []),timeout_source:null,cancellation_source:$cancel_source,cancellation_responses:{first_http:$response_one,second_http:$response_two,mcp_acknowledgement:$mcp_ack},signal_observed_at:($signal.observedAt // null),child_process:{pid:$observed_child_pid,worker_container:$observed_worker,exit_observed:($child_alive|not)},terminal_history:$transitions,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},result_visibility:{after_terminal:$result_code_after,late:$result_code_late},object_inventory:{after_retention_cleanup:$objects_after}}')"
   write_receipt "$scenario_name" pass "" "$job" "$state"
 }
 
@@ -868,6 +909,10 @@ run_cancel_barrier() {
   local target="$1"
   scenario_name="cancel-$target"
   cancel_barrier_job "$target"
+}
+
+run_mcp_cancel_barrier() {
+  cancel_barrier_job native-process-started mcp
 }
 
 run_idempotency() {
@@ -1373,6 +1418,7 @@ else
       run_scenario cancel-native-process-started run_cancel_barrier native-process-started || failures=$((failures + 1))
       run_scenario cancel-output-bytes-written-unpublished run_cancel_barrier output-bytes-written-unpublished || failures=$((failures + 1))
       run_scenario cancel-artifact-reference-published-terminal-cas-pending run_cancel_barrier artifact-reference-published-terminal-cas-pending || failures=$((failures + 1))
+      run_scenario mcp-cancel-native-process-started run_mcp_cancel_barrier || failures=$((failures + 1))
       unset HONUA_GP_QUALIFICATION_BARRIER_ROOT
       compose up -d --force-recreate worker >/dev/null || failures=$((failures + 1))
       run_scenario idempotency run_idempotency || failures=$((failures + 1))

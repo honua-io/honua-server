@@ -19,6 +19,79 @@ STREAK = ROOT / "scripts/qualification/gp-canary-streak.sh"
 
 
 class GpQualificationHarnessTests(unittest.TestCase):
+    def test_lifecycle_preserves_existing_scenarios_and_requires_new_mcp_case(self):
+        completed, receipts, summary = self.run_harness("lifecycle", HONUA_SERVER_IMAGE="unattested:latest")
+        self.assertNotEqual(0, completed.returncode)
+        self.assertEqual(31, summary["declared_scenario_count"])
+        self.assertIn("mcp-cancel-native-process-started", summary["declared_scenarios"])
+        self.assertEqual("fail", receipts["mcp-cancel-native-process-started"]["outcome"])
+        self.assertEqual([], summary["missing_scenarios"])
+        self.assertEqual([], summary["duplicate_receipts"])
+
+    def test_mcp_acknowledgement_cannot_replace_native_cessation_or_output_oracles(self):
+        source = HARNESS.read_text(encoding="utf-8")
+        function = re.search(r"^cancel_barrier_job\(\) \{\n.*?^\}", source, re.M | re.S).group(0)
+        for mode in ("positive", "invalid-ack", "child-alive", "terminal-success", "readable-result", "late-result", "orphan-output", "worker-missing", "probe-failure", "missing-late-barrier"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                script = function + r'''
+set -uo pipefail
+scenario_name=mcp-cancel-native-process-started
+receipt_root="$PWD"; repo_root="$PWD"; scenario_transition_file="$PWD/transitions"
+base_url=http://127.0.0.1:18080; peer_url=http://127.0.0.1:18081; api_key=control; native_payload='{}'
+printf '%s\n' '{"state":"dismissed"}' > "$scenario_transition_file"
+now() { echo timestamp; }
+submit_async() { echo job-1; }
+wait_barrier() { return 0; }
+release_barrier() { return 0; }
+barrier_record() {
+  if [[ "$MODE" == missing-late-barrier && -e first-alive ]]; then echo null
+  else echo '{"childProcessId":123}'; fi
+}
+compose() {
+  if [[ "$1" == ps ]]; then echo worker-container
+  elif [[ "$*" == *'GET '* ]]; then echo '{"attemptCount":1}'
+  fi
+}
+docker() {
+  if [[ "$1" == inspect ]]; then
+    [[ "$2 $3 $4 $5" == "--type container --format {{.State.Running}}" ]] || return 98
+    [[ "$MODE" != worker-missing ]] || return 1
+    echo true; return 0
+  fi
+  if [[ ! -e first-alive ]]; then touch first-alive; return 0; fi
+  [[ "$MODE" != probe-failure ]] || return 1
+  [[ "$2" == worker-container && "${@: -1}" == 123 ]] || return 97
+  if [[ "$MODE" == child-alive ]]; then echo alive; else echo absent; fi
+}
+node() {
+  [[ "$1" == */mcp/cancel-durable-job.mjs && "$2" == "$peer_url" && "$3" == job-1 && "$HONUA_GP_MCP_API_KEY" == control ]] || return 1
+  jq -n --arg mode "$MODE" '{schema:"honua.gp-mcp-cancellation-ack/v1",jobId:"job-1",tool:"honua_cancel_job",executionCessationProven:false,sdkVersion:"1.32.1",clientLockSha256:"5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f",clientSource:"372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4",adapterSha256:("a"*64),responses:[range(0;2)|{jobId:"job-1",status:"cancellation_requested",cancellationRequested:($mode!="invalid-ack")}]}'
+}
+wait_terminal() { if [[ "$MODE" == terminal-success ]]; then echo '{"status":"successful"}'; else echo '{"status":"dismissed"}'; fi; }
+result_status_code() {
+  if [[ "$MODE" == readable-result ]]; then echo 200
+  elif [[ "$MODE" == late-result && -e late ]]; then echo 200
+  else touch late; echo 410; fi
+}
+sleep() { return 0; }
+object_file_count() { if [[ "$MODE" == orphan-output ]]; then echo 1; else echo 0; fi; }
+scenario_fail() { echo "$1" > finding; return 1; }
+set_scenario_evidence() { echo "$1" > evidence.json; }
+write_receipt() { touch passed; }
+delete_capture() { echo 'OGC fallback is forbidden' >&2; return 99; }
+status=0
+cancel_barrier_job native-process-started mcp || status=$?
+if [[ "$MODE" == positive || "$MODE" == missing-late-barrier ]]; then
+  [[ "$status" == 0 && -e passed ]] || exit 61
+  jq -e '.child_process.exit_observed == true and .child_process.pid == 123 and .child_process.worker_container == "worker-container" and .object_inventory.after_retention_cleanup == 0 and .cancellation_responses.mcp_acknowledgement.executionCessationProven == false' evidence.json >/dev/null || exit 62
+else
+  [[ "$status" != 0 && ! -e passed && -s finding ]] || exit 63
+fi
+'''
+                completed = subprocess.run(["bash", "-c", script], cwd=directory,
+                                           env={**os.environ, "MODE": mode}, capture_output=True, text=True, check=False)
+                self.assertEqual(0, completed.returncode, completed.stderr)
+
     def test_failed_timeout_restoration_blocks_follow_up_but_allows_final_cleanup(self):
         source = HARNESS.read_text(encoding="utf-8")
         functions = "\n".join(

@@ -274,6 +274,8 @@ public class TenantSchemaRoutingMiddlewareTests
     [Endpoint("GET /schema")]
     public async Task FailedSchemaRouting_ConsumesRateLimitAndReturnsRetryAfter()
     {
+        var windowStart = new DateTimeOffset(2026, 10, 18, 6, 0, 0, TimeSpan.Zero);
+        var clock = new ControlledTimeProvider(windowStart.AddSeconds(40).AddMilliseconds(250));
         var tenantId = $"rate-{Guid.NewGuid():N}";
         var client = await CreateAppAsync(
             principals: new Dictionary<string, ClaimsPrincipal?>
@@ -282,14 +284,72 @@ public class TenantSchemaRoutingMiddlewareTests
             },
             defaultPrincipalKey: "default",
             routingEnabled: true,
-            rateLimitingEnabled: true);
+            rateLimitingEnabled: true,
+            timeProvider: clock);
 
         var first = await client.GetAsync("/schema");
         var second = await client.GetAsync("/schema");
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, first.StatusCode);
         Assert.Equal(HttpStatusCode.TooManyRequests, second.StatusCode);
-        Assert.True(second.Headers.Contains("Retry-After"));
+        AssertRateLimitHeaders(first, windowStart.AddMinutes(1));
+        AssertRateLimitHeaders(second, windowStart.AddMinutes(1));
+        Assert.Equal("20", Assert.Single(second.Headers.GetValues("Retry-After")));
+
+        clock.UtcNow = windowStart.AddMinutes(1).AddMilliseconds(-1);
+        var nearBoundary = await client.GetAsync("/schema");
+        Assert.Equal(HttpStatusCode.TooManyRequests, nearBoundary.StatusCode);
+        AssertRateLimitHeaders(nearBoundary, windowStart.AddMinutes(1));
+        Assert.Equal("1", Assert.Single(nearBoundary.Headers.GetValues("Retry-After")));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
+    public async Task FailedSchemaRouting_AcrossFixedWindowBoundary_AdmitsAndConsumesNewWindow()
+    {
+        var boundary = new DateTimeOffset(2026, 10, 18, 6, 1, 0, TimeSpan.Zero);
+        var clock = new ControlledTimeProvider(boundary.AddMilliseconds(-1));
+        var client = await CreateAppAsync(
+            principals: new Dictionary<string, ClaimsPrincipal?>
+            {
+                ["default"] = AuthenticatedPrincipal(("tid", $"rate-{Guid.NewGuid():N}")),
+            },
+            defaultPrincipalKey: "default",
+            routingEnabled: true,
+            rateLimitingEnabled: true,
+            timeProvider: clock);
+
+        var beforeBoundary = await client.GetAsync("/schema");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, beforeBoundary.StatusCode);
+        AssertRateLimitHeaders(beforeBoundary, boundary);
+        Assert.False(beforeBoundary.Headers.Contains("Retry-After"));
+
+        clock.UtcNow = boundary;
+        var atBoundary = await client.GetAsync("/schema");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, atBoundary.StatusCode);
+        AssertRateLimitHeaders(atBoundary, boundary.AddMinutes(1));
+        Assert.False(atBoundary.Headers.Contains("Retry-After"));
+
+        var repeated = await client.GetAsync("/schema");
+        Assert.Equal(HttpStatusCode.TooManyRequests, repeated.StatusCode);
+        AssertRateLimitHeaders(repeated, boundary.AddMinutes(1));
+        Assert.Equal("60", Assert.Single(repeated.Headers.GetValues("Retry-After")));
+    }
+
+    private static void AssertRateLimitHeaders(HttpResponseMessage response, DateTimeOffset reset)
+    {
+        Assert.Equal("1", Assert.Single(response.Headers.GetValues("X-RateLimit-Limit")));
+        Assert.Equal("0", Assert.Single(response.Headers.GetValues("X-RateLimit-Remaining")));
+        Assert.Equal(reset.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Assert.Single(response.Headers.GetValues("X-RateLimit-Reset")));
+    }
+
+    private sealed class ControlledTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => UtcNow;
     }
 
     private static ClaimsPrincipal AuthenticatedPrincipal((string Type, string Value) claim)
@@ -309,7 +369,8 @@ public class TenantSchemaRoutingMiddlewareTests
         string? defaultPrincipalKey = null,
         string? pinnedSchema = null,
         Dictionary<string, string?>? routingSettings = null,
-        bool rateLimitingEnabled = false)
+        bool rateLimitingEnabled = false,
+        TimeProvider? timeProvider = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -333,6 +394,10 @@ public class TenantSchemaRoutingMiddlewareTests
         builder.Services.AddHonuaTenantContext(config, _ => { });
         builder.Services.AddHonuaTenantSchemaRouting(config);
         builder.Services.AddRateLimiting(config);
+        if (timeProvider is not null)
+        {
+            builder.Services.AddSingleton(timeProvider);
+        }
 
         if (!routingEnabled)
         {

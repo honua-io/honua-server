@@ -58,3 +58,23 @@ unchanged rows, corruption refusal and a public-table decoy beside the authored
 requires the canonical client run against the exact attested Honua candidate and
 its retained complete cessation proof. Source and harness controls never replace
 that receipt.
+
+## Public Inspector CLI addressability
+
+The focused workflow also runs `inspector-addressability.test.mjs` through the
+actual installed Inspector 2.10.1 public launcher, using that same immutable
+dependency lock. A known tool must succeed against an authored HTTP peer and
+return its unique response before the refusal controls can establish useful
+client behavior. The ping control requires the exact unsupported-method error
+and no HTTP connection. The unknown-tool control requires real initialization
+and tool discovery, the exact local `tool_not_found` failure, and no outbound
+`tools/call`. Timeouts, killed processes and peer/network errors cannot satisfy
+these controls. Owned child processes, temporary storage and peer sockets are
+cleaned up independently.
+
+These observations preserve the canonical producer's explicit nonpass rows:
+local refusal is not a server error assertion, and initialize is not ping proof.
+They do not change client pins, the release denominator or capability scope, and
+do not qualify any Honua candidate. The public browser replay path is a separate
+addressability investigation; it cannot manufacture an initial ping history entry
+or change the replay method to satisfy a missing client operation.

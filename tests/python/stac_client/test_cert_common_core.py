@@ -49,6 +49,12 @@ from shared import canonical_fixture, cert_envelope
 from shared.cert_envelope import CertificationEvidenceCollector
 
 from . import cert_lane
+from .conftest import write_stac_api_validator_artifact
+from .validation_outcomes import (
+    classify_validator_result,
+    process_output_text,
+    validate_with_pystac as _validate_with_pystac,
+)
 
 
 pytestmark = [pytest.mark.integration, pytest.mark.stac]
@@ -159,24 +165,6 @@ def _coords(item: pystac.Item) -> tuple[float, float]:
     return float(lon), float(lat)
 
 
-def _validate_with_pystac(obj: pystac.STACObject) -> tuple[bool, str]:
-    """Validate a STAC object against the published schemas.
-
-    Returns ``(validated, note)``. A genuine schema violation propagates as
-    ``STACValidationError``; anything else (no network route to
-    ``schemas.stacspec.org`` from the lane container, for instance) degrades to
-    ``validated=False`` with an explanatory note instead of a false failure.
-    """
-    try:
-        obj.validate()
-        return True, "validated against the published STAC JSON Schemas"
-    except pystac.errors.STACValidationError:
-        raise
-    except Exception as error:  # noqa: BLE001 - schema fetch failures are environmental
-        return False, (
-            "pystac schema validation skipped - the published STAC schemas were "
-            f"unreachable from the lane ({type(error).__name__}: {str(error)[:160]})"
-        )
 
 
 # ===========================================================================
@@ -2321,22 +2309,6 @@ VALIDATOR_GEOMETRY = {
 VALIDATOR_CONFORMANCE_CLASSES = ("core", "collections", "features", "item-search", "filter")
 VALIDATOR_TIMEOUT_SECONDS = 240
 
-#: Substrings that mean the validator could not reach the published JSON
-#: Schemas rather than that the server is non-conformant. The lane container has
-#: no guaranteed egress to schemas.stacspec.org, so this must degrade to a
-#: recorded skip instead of a false certification failure.
-_SCHEMA_UNREACHABLE_MARKERS = (
-    "Max retries exceeded",
-    "Temporary failure in name resolution",
-    "Name or service not known",
-    "NewConnectionError",
-    "SSLError",
-    "Failed to resolve",
-    "unable to resolve",
-    "RemoteDisconnected",
-)
-
-
 @pytest.mark.cert("NB-STAC-VALID-01")
 def test_nb_valid_01_stac_api_validator(
     stac_api_url: str,
@@ -2345,9 +2317,9 @@ def test_nb_valid_01_stac_api_validator(
     """The external stac-utils validator agrees the declared classes are conformant.
 
     Findings are recorded as evidence rather than discarded: a validator run
-    that cannot reach the published schemas records ``skip`` with the reason,
-    and a genuine conformance finding records ``fail`` with the validator's own
-    output, so the envelope always says which of the two happened.
+    that fails remains ``fail`` with the validator's complete diagnostics.
+    Unstructured network text cannot override a real conformance failure.
+    The separate PySTAC object check distinguishes typed schema unavailability.
     """
     started = time.perf_counter()
 
@@ -2376,6 +2348,7 @@ def test_nb_valid_01_stac_api_validator(
     for conformance_class in VALIDATOR_CONFORMANCE_CLASSES:
         command.extend(["--conformance", conformance_class])
 
+    timed_out = False
     try:
         completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
             command,
@@ -2384,47 +2357,29 @@ def test_nb_valid_01_stac_api_validator(
             text=True,
             timeout=VALIDATOR_TIMEOUT_SECONDS,
         )
-        returncode = completed.returncode
-        output = f"{completed.stdout}\n{completed.stderr}"
     except subprocess.TimeoutExpired as expired:
-        returncode = 124
-        output = f"{expired.stdout or ''}\n{expired.stderr or ''}\nvalidator timed out"
+        timed_out = True
+        completed = subprocess.CompletedProcess(command, 124,
+            process_output_text(expired.stdout or expired.output),
+            process_output_text(expired.stderr) + "\nvalidator timed out")
 
-    unreachable = [marker for marker in _SCHEMA_UNREACHABLE_MARKERS if marker in output]
-    failed = (
-        returncode != 0
-        or "\nFailed.\n" in f"\n{output}\n"
-        or "Traceback (most recent call last):" in output
+    outcome = classify_validator_result(completed, timed_out=timed_out)
+    returncode = completed.returncode
+    output = f"{completed.stdout}\n{completed.stderr}"
+    findings = outcome.findings
+    artifact_path = write_stac_api_validator_artifact(
+        command=command, root_url=stac_api_url, collection_id=COLLECTION_ID,
+        geometry=VALIDATOR_GEOMETRY, conformance_classes=list(VALIDATOR_CONFORMANCE_CLASSES),
+        status=outcome.status, returncode=returncode,
+        stdout=process_output_text(completed.stdout), stderr=process_output_text(completed.stderr),
     )
-    findings = [
-        line.strip()
-        for line in output.splitlines()
-        if line.strip().startswith(("- ", "Error ", "Failed"))
-    ]
-
     tail = output.strip()[-600:].replace("\n", " | ")
 
-    if failed and unreachable:
-        note = (
-            "stac-api-validator could not reach the published STAC schemas from the lane "
-            f"({', '.join(sorted(set(unreachable)))}); conformance classes "
-            f"{', '.join(VALIDATOR_CONFORMANCE_CLASSES)} were not externally validated. "
-            f"Validator tail: {tail}"
-        )
-        cert_collector.record(
-            "NB-STAC-VALID-01",
-            "skip",
-            duration_ms=_elapsed_ms(started),
-            measured_count=len(findings),
-            notes=note,
-        )
-        pytest.skip(note)
-
-    if failed:
+    if outcome.status == "fail":
         note = (
             f"stac-api-validator reported {len(findings)} finding(s) against "
             f"{', '.join(VALIDATOR_CONFORMANCE_CLASSES)} (exit {returncode}). "
-            f"Findings: {' || '.join(findings[:12]) or tail}"
+            f"Findings: {' || '.join(findings[:12]) or tail}; full diagnostics: {artifact_path}"
         )
         cert_collector.record(
             "NB-STAC-VALID-01",

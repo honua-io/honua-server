@@ -21,8 +21,11 @@ ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:
 # including JSON content, rerun this inexpensive extraction but leave the
 # downstream restore input tree unchanged.
 FROM ${DOTNET_SDK_IMAGE} AS restore-inputs
+# Bind-mounted context. WORKDIR avoids `cd` (hadolint DL3003) without changing
+# the relative paths `find` and `cp --parents` write under /restore-inputs.
+WORKDIR /context
 RUN --mount=type=bind,target=/context \
-    mkdir -p /restore-inputs && cd /context && \
+    mkdir -p /restore-inputs && \
     find . -type d \( -name bin -o -name obj -o -name .git \) -prune -o \
       -type f \( -name '*.csproj' -o -name '*.fsproj' -o -name '*.vbproj' \
         -o -name '*.props' -o -name '*.targets' \
