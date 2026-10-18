@@ -164,6 +164,11 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
                     Arg.Any<ImportRequest>(),
                     Arg.Any<CancellationToken>());
                 _effects.Should().ContainSingle();
+                if (testCase.Surface == ImportSurface.RestUpload)
+                {
+                    _effects[0].Ownership.Should().NotBeNull();
+                    _effects[0].Ownership!.TenantId.Should().Be("public");
+                }
                 _effects[0].OverwriteExisting.Should().Be(
                     testCase.Surface == ImportSurface.McpInline,
                     "MCP's forced overwrite and REST's caller option cannot change authority");

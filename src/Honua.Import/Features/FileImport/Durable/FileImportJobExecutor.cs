@@ -61,6 +61,7 @@ internal sealed partial class FileImportJobExecutor(
         var existing = await progressStore.GetProgressAsync<ImportProgress>(jobId, cancellationToken).ConfigureAwait(false);
         var processing = (existing ?? CreateInitialProgress(jobId, request, fileSize)) with
         {
+            Ownership = request.Ownership,
             Status = ImportStatus.Processing,
             CompletedAt = null,
             ErrorMessage = null,
@@ -81,6 +82,7 @@ internal sealed partial class FileImportJobExecutor(
             CorrelationId = request.CorrelationId,
             AuditId = request.AuditId,
             ProposalId = request.ProposalId,
+            Ownership = request.Ownership,
             SourceKind = processing.SourceKind,
             SourceUrl = processing.SourceUrl,
             CloudFileId = processing.CloudFileId,
@@ -301,7 +303,8 @@ internal sealed partial class FileImportJobExecutor(
             operationInstanceId: request.OperationInstanceId,
             correlationId: request.CorrelationId,
             auditId: request.AuditId,
-            proposalId: request.ProposalId);
+            proposalId: request.ProposalId,
+            ownership: request.Ownership);
 
     /// <summary>Writes progress ticks in order without blocking the importer.</summary>
     private sealed class SerializedProgressWriter(IUniversalProgressStore store, ILogger logger, string jobId)

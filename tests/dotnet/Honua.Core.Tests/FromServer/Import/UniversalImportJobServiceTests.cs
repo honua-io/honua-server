@@ -30,6 +30,50 @@ public sealed class UniversalImportJobServiceTests
 {
     [UnitTest]
     [Operation(Operations.Import)]
+    public async Task ProviderProgress_CannotReplaceAcceptingOwnership()
+    {
+        var store = new InMemoryUniversalProgressStore();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var owner = new ImportOperationOwnership("accepting-actor", "tenant-a");
+        var importer = new FakeFileImportService(async (_, progress, token) =>
+        {
+            progress!.Report(ImportProgress.CreateInitial("provider-id", "roads", SupportedFileFormat.GeoJson,
+                ownership: new ImportOperationOwnership("provider-actor", "tenant-b")) with
+            {
+                Status = ImportStatus.Processing,
+                FeaturesProcessed = 17,
+            });
+            await release.Task.WaitAsync(token);
+            return ImportResult.CreateSuccess("roads", SupportedFileFormat.GeoJson, 17);
+        });
+        using var service = CreateService(importer, store);
+        using var stream = new MemoryStream([1]);
+        var id = await service.QueueImportAsync(new ImportRequest
+        {
+            FileStream = stream, FileName = "roads.geojson", TableName = "roads", Ownership = owner,
+        }, 1);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            ImportProgress? observed;
+            do
+            {
+                await Task.Delay(10, timeout.Token);
+                observed = await service.GetProgressAsync(id, timeout.Token);
+            } while (observed?.FeaturesProcessed != 17);
+            observed.JobId.Should().Be(id);
+            observed.Ownership.Should().Be(owner);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+
+        (await WaitForTerminalProgressAsync(service, id)).Ownership.Should().Be(owner);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
     public async Task QueueImportAsync_SuccessfulImport_RecordsCompletedProgressWithFeatureCount()
     {
         var progressStore = new InMemoryUniversalProgressStore();
@@ -41,11 +85,13 @@ public sealed class UniversalImportJobServiceTests
 
         using var stream = new MemoryStream([0x01]);
         var jobId = await jobService.QueueImportAsync(
-            new ImportRequest { FileStream = stream, FileName = "widgets.geojson", TableName = "widgets", TargetSrid = 4326 },
+            new ImportRequest { FileStream = stream, FileName = "widgets.geojson", TableName = "widgets", TargetSrid = 4326,
+                Ownership = new ImportOperationOwnership("accepting-actor", "tenant-a") },
             fileSize: 1);
 
         var progress = await WaitForTerminalProgressAsync(jobService, jobId);
 
+        progress.Ownership.Should().Be(new ImportOperationOwnership("accepting-actor", "tenant-a"));
         progress.Status.Should().Be(ImportStatus.Completed);
         progress.FeaturesProcessed.Should().Be(3);
         progress.PhysicalTableName.Should().Be("actual_widgets");

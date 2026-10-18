@@ -133,7 +133,8 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             operationInstanceId: request.OperationInstanceId,
             correlationId: request.CorrelationId,
             auditId: request.AuditId,
-            proposalId: request.ProposalId) with
+            proposalId: request.ProposalId,
+            ownership: request.Ownership) with
         {
             // honua-server#5916: this service is the in-process runner for long-lived hosts.
             Runner = ImportJobRunners.InProcess,
@@ -317,6 +318,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 CorrelationId = request.CorrelationId,
                 AuditId = request.AuditId,
                 ProposalId = request.ProposalId,
+                Ownership = request.Ownership,
                 Runner = ImportJobRunners.InProcess,
                 InstanceId = _instanceId,
             }));

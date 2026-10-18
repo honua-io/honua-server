@@ -616,7 +616,8 @@ internal static partial class ImportEndpoints
 
     private static async Task<bool> AuthorizeImportMutationAsync(HttpContext context, CancellationToken cancellationToken)
     {
-        if (await ImportAdminAuthorization.IsAuthorizedAsync(context, context.User, cancellationToken).ConfigureAwait(false))
+        if (await ImportAdminAuthorization.IsAuthorizedAsync(context, context.User, cancellationToken).ConfigureAwait(false) &&
+            ImportOperationAuthorization.Capture(context) is not null)
         {
             return true;
         }
@@ -698,6 +699,7 @@ internal static partial class ImportEndpoints
 
             var importRequest = new ImportRequest
             {
+                Ownership = ImportOperationAuthorization.Capture(context),
                 OperationInstanceId = ReadLineageHeader(context, "X-Honua-Operation-Instance-Id"),
                 CorrelationId = context.TraceIdentifier,
                 AuditId = ReadLineageHeader(context, "X-Honua-Audit-Id"),
@@ -1543,7 +1545,16 @@ internal static partial class ImportEndpoints
             CancellationToken cancellationToken = context.RequestAborted;
             var jobs = await jobService.GetActiveJobsAsync(cancellationToken);
 
-            var response = new ActiveImportJobsResponse { Jobs = jobs.ToArray() };
+            var visibleJobs = new List<ImportProgress>();
+            foreach (var job in jobs)
+            {
+                if (await ImportOperationAuthorization.CanAccessAsync(context, job.Ownership, cancellationToken).ConfigureAwait(false))
+                {
+                    visibleJobs.Add(job);
+                }
+            }
+
+            var response = new ActiveImportJobsResponse { Jobs = visibleJobs.ToArray() };
             IResult result = Results.Json(response, ImportJsonContext.Default.ActiveImportJobsResponse);
             await result.ExecuteAsync(context);
         }
@@ -1587,7 +1598,8 @@ internal static partial class ImportEndpoints
             CancellationToken cancellationToken = context.RequestAborted;
             var progress = await jobService.GetProgressAsync(jobId, cancellationToken);
 
-            if (progress == null)
+            if (progress == null ||
+                !await ImportOperationAuthorization.CanAccessAsync(context, progress.Ownership, cancellationToken).ConfigureAwait(false))
             {
                 await AdminResponseWriter.WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
                 return;
@@ -1639,6 +1651,14 @@ internal static partial class ImportEndpoints
         try
         {
             CancellationToken cancellationToken = context.RequestAborted;
+            var progress = await jobService.GetProgressAsync(jobId, cancellationToken);
+            if (progress == null ||
+                !await ImportOperationAuthorization.CanAccessAsync(context, progress.Ownership, cancellationToken).ConfigureAwait(false))
+            {
+                await AdminResponseWriter.WriteErrorAsync(context, "Import job not found", StatusCodes.Status404NotFound);
+                return;
+            }
+
             var cancelled = await jobService.CancelJobAsync(jobId, cancellationToken);
 
             if (!cancelled)

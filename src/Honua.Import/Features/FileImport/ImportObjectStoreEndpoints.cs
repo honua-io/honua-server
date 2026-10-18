@@ -119,7 +119,7 @@ internal static partial class ImportEndpoints
             return;
         }
 
-        var importRequest = admission.Request!;
+        var importRequest = admission.Request! with { Ownership = ImportOperationAuthorization.Capture(context) };
         try
         {
             if (admission.Background)

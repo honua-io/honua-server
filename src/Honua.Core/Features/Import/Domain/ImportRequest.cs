@@ -36,6 +36,9 @@ public enum ImportLoadMode
 /// </summary>
 public sealed record ImportRequest
 {
+    /// <summary>Ownership captured by the accepting server, never bound from import form fields.</summary>
+    public ImportOperationOwnership? Ownership { get; init; }
+
     /// <summary>Canonical governed operation instance that accepted this import.</summary>
     public string? OperationInstanceId { get; init; }
 

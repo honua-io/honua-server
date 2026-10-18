@@ -38,6 +38,7 @@ public sealed class FileImportJobExecutorCleanupTests
         }));
         await ExecuteAsync(new RecordingStorage(), importer, SixGiB, progressStore: progress);
         var terminal = progress.Last.Should().BeOfType<ImportProgress>().Subject;
+        terminal.Ownership.Should().Be(new ImportOperationOwnership("accepting-actor", "tenant-a"));
         terminal.Status.Should().Be(success ? ImportStatus.Completed : ImportStatus.Failed);
         terminal.PhysicalTableName.Should().Be(success ? "provider_actual_roads" : null);
         terminal.Schema.Should().Be(success ? "tenant_data" : null);
@@ -107,6 +108,7 @@ public sealed class FileImportJobExecutorCleanupTests
             FileName = "roads.gpkg",
             TableName = "roads",
             SourceKind = "object-store",
+            Ownership = new ImportOperationOwnership("accepting-actor", "tenant-a"),
         };
         var parameters = FileImportJobParameters.Build(request, fileSize);
         parameters[FileImportJobParameters.Runner] = "in-process";

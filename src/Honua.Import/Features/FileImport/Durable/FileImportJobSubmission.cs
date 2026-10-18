@@ -49,7 +49,8 @@ internal static class FileImportJobSubmission
             operationInstanceId: request.OperationInstanceId,
             correlationId: request.CorrelationId,
             auditId: request.AuditId,
-            proposalId: request.ProposalId) with
+            proposalId: request.ProposalId,
+            ownership: request.Ownership) with
         {
             Runner = runner,
             InstanceId = instanceId,

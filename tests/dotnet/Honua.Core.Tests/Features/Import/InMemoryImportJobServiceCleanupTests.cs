@@ -84,6 +84,7 @@ public sealed class InMemoryImportJobServiceCleanupTests
 
         var request = new ImportRequest
         {
+            Ownership = new ImportOperationOwnership("accepting-actor", "tenant-a"),
             LocalFilePath = tempFilePath,
             FileName = "local-file.geojson",
             TableName = "import_local",
@@ -96,7 +97,8 @@ public sealed class InMemoryImportJobServiceCleanupTests
         File.Exists(tempFilePath).Should().BeFalse();
         var progress = await jobService.GetProgressAsync(jobId);
         progress.Should().NotBeNull();
-        progress!.PhysicalTableName.Should().Be("actual_import_local");
+        progress!.Ownership.Should().Be(new ImportOperationOwnership("accepting-actor", "tenant-a"));
+        progress.PhysicalTableName.Should().Be("actual_import_local");
         progress.Schema.Should().Be("tenant_data");
     }
 

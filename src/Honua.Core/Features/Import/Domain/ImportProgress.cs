@@ -40,6 +40,9 @@ public enum ImportStatus
 /// <inheritdoc/>
 public sealed record ImportProgress : IOperationProgress, ICancellableOperationProgress
 {
+    /// <summary>Persisted accepting actor and tenant; null on legacy records with unknown ownership.</summary>
+    public ImportOperationOwnership? Ownership { get; init; }
+
     /// <summary>
     /// Unique identifier for this import job.
     /// </summary>
@@ -253,10 +256,12 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
         string? operationInstanceId = null,
         string? correlationId = null,
         string? auditId = null,
-        string? proposalId = null)
+        string? proposalId = null,
+        ImportOperationOwnership? ownership = null)
         => new()
         {
             JobId = jobId,
+            Ownership = ownership,
             OperationInstanceId = operationInstanceId,
             CorrelationId = correlationId,
             AuditId = auditId,

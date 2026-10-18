@@ -33,6 +33,8 @@ internal static class FileImportJobParameters
     public const string CorrelationId = "import.correlation_id";
     public const string AuditId = "import.audit_id";
     public const string ProposalId = "import.proposal_id";
+    public const string OwnerActorId = "import.owner_actor_id";
+    public const string TenantId = "import.tenant_id";
 
     /// <summary>Customer object URI (<c>s3://bucket/key</c>) read by the worker with the host identity.</summary>
     public const string ObjectStoreUri = "import.object_store_uri";
@@ -102,6 +104,8 @@ internal static class FileImportJobParameters
         AddIfPresent(parameters, CorrelationId, request.CorrelationId);
         AddIfPresent(parameters, AuditId, request.AuditId);
         AddIfPresent(parameters, ProposalId, request.ProposalId);
+        AddIfPresent(parameters, OwnerActorId, request.Ownership?.OwnerActorId);
+        AddIfPresent(parameters, TenantId, request.Ownership?.TenantId);
         return parameters;
     }
 
@@ -164,6 +168,7 @@ internal static class FileImportJobParameters
 
         request = new ImportRequest
         {
+            Ownership = Get(parameters, OwnerActorId) is { } owner ? new(owner, Get(parameters, TenantId)) : null,
             CloudFileId = objectStoreUri is null ? cloudFileId : null,
             ObjectStoreUri = objectStoreUri,
             ObjectStoreETag = objectStoreETag,
