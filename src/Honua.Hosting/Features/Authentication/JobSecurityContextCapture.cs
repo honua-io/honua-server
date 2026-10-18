@@ -266,6 +266,20 @@ internal static class JobSecurityContextCapture
         };
     }
 
+    /// <summary>Resolves trusted effective tenancy without capturing durable execution authority.</summary>
+    internal static string? ResolveTenantId(ClaimsPrincipal principal, ITenantContext? tenantContext = null)
+    {
+        // Detached polling retains the principal after HttpContext disposal. A trusted
+        // middleware binding preserves its effective tenant, including an explicitly
+        // unscoped request whose raw token still carries a tenant claim.
+        var hasRequestBinding = CanonicalSecurityActor.FindStampedValue(
+            principal, CanonicalSecurityActor.CanonicalActorClaim) is not null;
+        var detachedTenant = hasRequestBinding
+            ? CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.EffectiveTenantClaim)
+            : principal.FindFirstValue(TenantClaimType) ?? principal.FindFirstValue(AzureTenantClaimType);
+        return tenantContext is null ? detachedTenant : tenantContext.TenantId;
+    }
+
     private static bool SnapshotIndicatesStoredAgent(JobSecurityContext context) =>
         context.Claims.Any(static claim => claim.Type == "api_key_id") &&
         context.Claims.Any(static claim => claim.Type == "permission" && claim.Value == "agent:workspace");
@@ -280,7 +294,7 @@ internal static class JobSecurityContextCapture
     public static ClaimsPrincipal Restore(JobSecurityContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        if (SnapshotIndicatesStoredAgent(context))
+        if (context.AgentCredential is not null || SnapshotIndicatesStoredAgent(context))
         {
             throw new UnauthorizedAccessException("Legacy agent snapshots lack current credential authority.");
         }
@@ -381,7 +395,7 @@ internal static class JobSecurityContextCapture
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(options);
-        if (SnapshotIndicatesStoredAgent(context))
+        if (context.AgentCredential is not null || SnapshotIndicatesStoredAgent(context))
         {
             return new JobSecurityContextMembershipResult(StripRoleClaims(context, options),
                 JobSecurityContextMembershipStatus.ManagedUnresolved, HasRemovedRoles: true);

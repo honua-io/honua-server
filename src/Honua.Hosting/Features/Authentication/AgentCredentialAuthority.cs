@@ -171,7 +171,8 @@ internal static class AgentCredentialAuthority
     {
         if (snapshot.Kind == "api-key")
         {
-            if (!Guid.TryParse(snapshot.Id, out var id) || id == Guid.Empty) return null;
+            if (!Guid.TryParse(snapshot.Id, out var id) || id == Guid.Empty
+                || (snapshot.TokenExpiresAt != default && snapshot.TokenExpiresAt <= Now(services))) return null;
             var key = await services.GetRequiredService<IAdminApiKeyStore>().GetAsync(id, cancellationToken).ConfigureAwait(false);
             if (key is null || snapshot.CredentialVersion is null || snapshot.CredentialVersion != StoredApiKeyCredentialVersion.FromRecord(key) || key.RevokedAt is not null || key.ExpiresAt <= Now(services) || !Same(key.Permissions, snapshot.Permissions)) return null;
             var current = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(key);
@@ -208,6 +209,31 @@ internal static class AgentCredentialAuthority
         identity.AddClaim(binding);
         var principal = new ClaimsPrincipal(identity);
         return CanonicalSecurityActor.Resolve(principal)?.ActorId == snapshot.ActorId ? principal : null;
+    }
+
+    internal static async Task<DateTimeOffset?> ExecutionDeadlineAsync(
+        AgentCredentialSnapshot snapshot, IServiceProvider services, CancellationToken cancellationToken)
+    {
+        if (snapshot.Kind == "api-key")
+        {
+            if (!Guid.TryParse(snapshot.Id, out var id)) throw new UnauthorizedAccessException("Invalid job credential.");
+            var key = await services.GetRequiredService<IAdminApiKeyStore>().GetAsync(id, cancellationToken).ConfigureAwait(false);
+            if (key is null || snapshot.CredentialVersion != StoredApiKeyCredentialVersion.FromRecord(key)
+                || key.RevokedAt is not null || key.ExpiresAt <= Now(services) || !Same(key.Permissions, snapshot.Permissions))
+            {
+                throw new UnauthorizedAccessException("The job credential changed before execution.");
+            }
+            var capturedExpiry = snapshot.TokenExpiresAt == default ? (DateTimeOffset?)null : snapshot.TokenExpiresAt;
+            return capturedExpiry is null ? key.ExpiresAt
+                : key.ExpiresAt is null || capturedExpiry < key.ExpiresAt ? capturedExpiry : key.ExpiresAt;
+        }
+        var profiles = Profiles(services).Where(profile => profile.Id == snapshot.Id).ToArray();
+        if (snapshot.Kind != DelegatedKind || profiles.Length != 1 || !Valid(profiles[0], services)
+            || profiles[0].Generation != snapshot.Generation || snapshot.TokenExpiresAt <= Now(services))
+        {
+            throw new UnauthorizedAccessException("The delegated job credential changed before execution.");
+        }
+        return snapshot.TokenExpiresAt < profiles[0].ExpiresAt ? snapshot.TokenExpiresAt : profiles[0].ExpiresAt;
     }
 
     /// <summary>Rechecks any stored key or delegated workload; human schemes keep their own live policy.</summary>

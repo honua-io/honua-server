@@ -98,6 +98,8 @@ public static class AuthenticationExtensions
         IConfiguration configuration)
     {
         services.AddScoped<ApiKeyAuthenticationDependencies>();
+        services.AddHttpContextAccessor();
+        services.TryAddSingleton<Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture, AgentJobSecurityContextCapture>();
 
         // Live managed-user membership when OIDC is off. AddOidcAuthentication registers
         // its own transformation later and calls the same revalidation itself.
