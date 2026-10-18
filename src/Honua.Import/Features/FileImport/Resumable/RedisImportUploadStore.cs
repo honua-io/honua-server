@@ -267,7 +267,7 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
         }
     }
 
-    private static void ValidateScope(ImportUploadScope scope)
+    internal static void ValidateScope(ImportUploadScope scope)
     {
         ArgumentNullException.ThrowIfNull(scope);
         ValidateText(scope.ActorId, 512);

@@ -45,4 +45,6 @@ internal sealed record ImportUploadChunk(
 [JsonSerializable(typeof(ImportUploadSession))]
 [JsonSerializable(typeof(ImportUploadChunk))]
 [JsonSerializable(typeof(ImportUploadScope))]
+[JsonSerializable(typeof(ImportStorageReservation))]
+[JsonSerializable(typeof(ImportStorageAccount))]
 internal sealed partial class ImportUploadJsonContext : JsonSerializerContext;
