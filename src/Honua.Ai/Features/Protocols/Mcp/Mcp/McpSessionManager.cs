@@ -110,7 +110,7 @@ internal enum McpSessionTermination
 /// random value rendered as lowercase hex satisfies all three.
 /// </para>
 /// </remarks>
-internal sealed class McpSessionManager
+internal sealed partial class McpSessionManager
 {
     /// <summary>
     /// HTTP header carrying the MCP session id on initialize responses and on
@@ -733,8 +733,17 @@ internal sealed class McpSessionManager
         }
 
         session.Channel.Writer.TryComplete();
-        session.Lifetime.Cancel();
-        session.Lifetime.Dispose();
+        try
+        {
+            session.Lifetime.Cancel();
+        }
+        finally
+        {
+            // Linked provider callbacks can throw. Preserve that failure while
+            // still disposing the session-owned cancellation resources.
+            session.Lifetime.Dispose();
+        }
+
         return true;
     }
 

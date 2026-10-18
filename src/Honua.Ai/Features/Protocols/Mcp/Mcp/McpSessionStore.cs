@@ -42,7 +42,7 @@ internal sealed record McpSessionRecord(
 /// idle window lives in the record's expiry, and <c>DELETE /mcp</c> on any
 /// instance removes it for all of them.
 /// </summary>
-internal interface IMcpSessionStore
+internal interface IMcpSessionStore : IMcpRequestStore
 {
     /// <summary>Persists a freshly minted session with the idle TTL as its expiry.</summary>
     Task SaveAsync(McpSessionRecord record, TimeSpan idleTimeout, CancellationToken cancellationToken);
@@ -93,7 +93,7 @@ internal interface IMcpSessionStore
 /// TTL; every accepted request slides the TTL, so the key's expiry is the
 /// session's last-seen time plus the idle window.
 /// </summary>
-internal sealed class RedisMcpSessionStore(IConnectionMultiplexer redis) : IMcpSessionStore
+internal sealed partial class RedisMcpSessionStore(IConnectionMultiplexer redis) : IMcpSessionStore
 {
     /// <summary>Key prefix for MCP session records.</summary>
     internal const string KeyPrefix = "mcp:session:";

@@ -30,6 +30,25 @@ public sealed partial class McpSessionSharedStoreTests
         private readonly ConcurrentBag<Action<string>> _subscribers = [];
 
         private int _reads;
+        private McpMemoryRequestStore? _requests;
+
+        public Exception? RequestReadException { get; set; }
+
+        public Task<McpRequestState> UpdateRequestAsync(
+            string sessionId, string principalKey, string requestKey, string generation,
+            McpRequestOperation operation, CancellationToken cancellationToken)
+        {
+            ThrowIfFailing();
+            if (operation == McpRequestOperation.Read && RequestReadException is { } failure)
+            {
+                throw failure;
+            }
+
+            var requests = LazyInitializer.EnsureInitialized(ref _requests, () => new McpMemoryRequestStore(
+                (id, principal) => TryGetLive(id, out var record) && record.PrincipalKey == principal, time));
+            return requests.UpdateRequestAsync(sessionId, principalKey, requestKey, generation, operation, cancellationToken);
+        }
+
 
         public bool Fail { get; set; }
 

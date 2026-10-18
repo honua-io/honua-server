@@ -4,6 +4,42 @@ This document covers the cross-repo testing setup for Honua's MCP surface.
 
 In the public-interface proof ledger, MCP is a sanctioned cross-repo child surface. `honua-server` owns seed data, CI wiring, and release-proof plumbing; `honua-sdk-js` owns the deterministic certification scripts, artifact generation, and LLM smoke implementation behind child ticket `#484`.
 
+## Request cancellation boundary
+
+For stateful HTTP sessions, `notifications/cancelled` targets only an active
+request in the same authenticated session binding (actor, effective tenant and
+validated token authority) and with the same typed JSON-RPC request id. String
+and integer ids are distinct. Concurrent duplicate ids are refused. Unknown,
+completed and repeated cancellation notifications create no work.
+
+The session store owns an atomic generation for each active request. Completion
+compares and removes that generation before returning success. Redis makes this
+authority available across replicas; correctness does not depend on pub/sub
+wakeup delivery. Existing session keys remain unchanged. Request keys share the
+session key's Redis Cluster slot. A separate generation-owned principal quota
+reservation is acquired before registration and compensated on refusal/failure;
+uncertain failures refuse admission, and lost compensation expires at its
+original deadline. Active handlers poll without extending the session or request
+TTL every 200 ms. Each store operation has a two-second budget; loss of the
+store interrupts active work and refuses new bound work. Registrations expire
+at 30 minutes, with a matching maximum handler lifetime, and are bounded to 32
+per session, 128 per principal and 1,024 per instance. Existing shorter request
+abort/deadline and session-termination tokens remain linked to the handler.
+
+Sessionless and signed stateless sessions retain ordinary request execution and
+abort/deadline behavior. They do not gain cross-request cancellation authority.
+Transport request cancellation does not cancel an already detached durable GP
+job; `honua_cancel_job` and observed worker cessation remain separate proof.
+
+`McpRequestCancellationIntegrationTests` keeps a real loopback HTTP query open
+while an independent PostGIS transaction blocks its production feature read.
+It observes database blocking, sends a second cancellation POST, and requires
+a cancelled response, released provider locks and unchanged row readback while
+the blocking transaction remains owned by the test. Unit and Redis controls
+cover binding, generation reuse, quotas and missed broadcasts. These tests are
+server implementation evidence; candidate-bound canonical-client cancellation
+qualification remains tracked by [server #6299](https://github.com/honua-io/honua-server/issues/6299).
+
 ## Repo ownership split
 
 | Concern | Repo | Path |
