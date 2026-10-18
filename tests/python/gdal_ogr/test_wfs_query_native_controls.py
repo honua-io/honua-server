@@ -11,6 +11,9 @@ from .controlled_wfs import source_document
 from .test_wfs_query import TestWfsQuery as WfsQueries
 
 
+pytestmark = pytest.mark.gdal
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _write_evidence_report():
     """Controlled service observations never enter a live qualification report."""
