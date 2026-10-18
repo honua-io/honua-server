@@ -391,6 +391,26 @@ public sealed class DelegatedAgentCredentialTests
         AdminApiKeyPermission.CanManageApiKeys(principal).Should().Be(allowed);
     }
 
+    [Theory]
+    [InlineData("admin")]
+    [InlineData("admin:write")]
+    [InlineData("admin:approve")]
+    public async Task StoredWorkspaceAgent_CannotDecideProposalsEvenWithAdministrativeGrants(string grant)
+    {
+        var keys = new InMemoryAdminApiKeyStore();
+        var workload = await keys.CreateAsync("agent", [grant, "agent:workspace"], null, null, default);
+        var operatorKey = await keys.CreateAsync("operator", [grant], null, null, default);
+        var requirement = new AdminApproveRequirement();
+        var denied = new AuthorizationHandlerContext([requirement],
+            ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(workload.Record), null);
+        await new AdminApproveAuthorizationHandler().HandleAsync(denied);
+        denied.HasFailed.Should().BeTrue();
+        var allowed = new AuthorizationHandlerContext([requirement],
+            ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(operatorKey.Record), null);
+        await new AdminApproveAuthorizationHandler().HandleAsync(allowed);
+        allowed.HasSucceeded.Should().BeTrue();
+    }
+
     private static ClaimsPrincipal Token(string? mismatch = null) => new(new ClaimsIdentity([
         new Claim("scope", "agent:workspace"),
         new Claim("exp", (mismatch == "expired" ? DateTimeOffset.UtcNow.AddMinutes(-1) : DateTimeOffset.UtcNow.AddMinutes(10)).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)),

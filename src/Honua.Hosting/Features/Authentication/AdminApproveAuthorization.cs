@@ -18,9 +18,9 @@ internal sealed class AdminApproveAuthorizationHandler : AuthorizationHandler<Ad
         AuthorizationHandlerContext context,
         AdminApproveRequirement requirement)
     {
-        if (AgentCredentialAuthority.IsDelegated(context.User))
+        if (AgentCredentialAuthority.IsDelegated(context.User) || AgentCredentialAuthority.IsAgent(context.User))
         {
-            context.Fail(new AuthorizationFailureReason(this, "delegated_credentials_cannot_approve"));
+            context.Fail(new AuthorizationFailureReason(this, "agent_credentials_cannot_approve"));
             return Task.CompletedTask;
         }
         var isApiKey = context.User.Identities.Any(identity =>

@@ -320,7 +320,8 @@ snapshot and does not dispatch that legacy job context.
 An agent's `admin:write` capability does not permit minting, rotating or revoking
 independent credentials, editing certificate trust mappings, changing OAuth clients
 or scope mappings, or changing user/role authority. This applies to both delegated
-OIDC workloads and stored keys marked `agent:workspace`. Operational API keys without
+OIDC workloads and stored keys marked `agent:workspace`. Neither agent credential
+can approve or reject proposals, even those submitted by another actor. Operational API keys without
 full credential-management authority also cannot make these trust changes. Those
 mutation routes require credential-management authority in addition to their existing
 administrative policies. This prevents a workload from escaping expiry, revocation

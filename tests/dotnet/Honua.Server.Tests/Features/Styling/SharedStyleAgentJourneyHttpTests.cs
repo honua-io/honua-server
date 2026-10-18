@@ -240,7 +240,6 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
             var proposalStore = scope.ServiceProvider.GetRequiredService<IOperationProposalStore>();
             var instanceStore = scope.ServiceProvider.GetRequiredService<IOperationInstanceStore>();
             var waitingProposal = (await proposalStore.GetAsync(proposalId))!;
-            if (delegatedAgent)
             {
                 var other = waitingProposal with { ProposalId = "other-agent-" + Guid.NewGuid().ToString("N"), RequestedBy = "different-agent", Version = 0 };
                 (await proposalStore.TryCreateAsync(other)).Should().BeTrue();
