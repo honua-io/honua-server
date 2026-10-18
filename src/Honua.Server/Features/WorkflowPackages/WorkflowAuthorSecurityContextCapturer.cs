@@ -26,8 +26,11 @@ internal sealed class WorkflowAuthorSecurityContextCapturer(
     IOptions<RbacOptions>? rbacOptions = null,
     ITenantContext? tenantContext = null,
     IPrincipalMembershipSource? principalMembershipSource = null,
-    WorkflowPackageAuthorization? packageAuthorization = null)
+    WorkflowPackageAuthorization? packageAuthorization = null,
+    WorkflowPackageApprovedReplay? approvedReplay = null)
 {
+    internal WorkflowPackageApprovedReplay? ApprovedReplay => approvedReplay;
+
     /// <summary>Resolves resource access without letting missing policy widen a delegated agent's authority.</summary>
     public async Task<WorkflowPackageAccess?> ResolvePackageAccessAsync(
         ClaimsPrincipal? principal, CancellationToken cancellationToken, bool write = false, string? workspaceId = null, string? turnId = null)

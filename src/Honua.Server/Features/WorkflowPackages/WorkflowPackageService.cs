@@ -30,6 +30,10 @@ internal sealed class WorkflowPackageService(
     IMetadataReleaseService? metadataReleaseService = null,
     WorkflowAuthorSecurityContextCapturer? authorSecurityContextCapturer = null)
 {
+    internal WorkflowPackageService WithAuthorSecurity(WorkflowAuthorSecurityContextCapturer security)
+        => new(store, nodeRegistry, geoprocessingJobService, clock, logger, workflowDefinitionStore,
+            orchestrationEngine, metadataReleaseService, security);
+
     /// <summary>
     /// Default source environment recorded on the metadata release package emitted when a
     /// workflow version is published. Workflow packages are environment-agnostic at authoring
@@ -277,7 +281,10 @@ internal sealed class WorkflowPackageService(
         ArgumentNullException.ThrowIfNull(request);
 
         var packageVersion = await RequireVersionAsync(packageId, version, cancellationToken, principal).ConfigureAwait(false);
-        EnsureLegacyGovernanceAuthority(await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false));
+        EnsureLegacyGovernanceAuthority(await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false),
+            new() { Action = "publish", PackageId = packageId, Version = version, PackageHash = packageVersion.PackageHash,
+                PublicationId = request.PublicationId ?? "", Target = request.Target, ProcessId = request.ProcessId,
+                Schedule = request.Schedule, Enabled = request.Enabled });
         var eligibility = await ValidateGraphAsync(packageVersion.Graph, principal, request.Target, cancellationToken).ConfigureAwait(false);
         if (!eligibility.IsValid)
         {
@@ -521,7 +528,8 @@ internal sealed class WorkflowPackageService(
         var access = await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false);
         var existing = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
         if (existing is null || !await CanAccessPublicationAsync(access, existing, cancellationToken).ConfigureAwait(false)) return null;
-        EnsureLegacyGovernanceAuthority(access);
+        EnsureLegacyGovernanceAuthority(access, new() { Action = "delete", PackageId = existing.PackageId,
+            Version = existing.PackageVersion, PackageHash = existing.PackageHash, PublicationId = publicationId });
         await SyncScheduleDefinitionAsync(existing, remove: true, enabled: false, cancellationToken).ConfigureAwait(false);
         return await store.DeletePublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
     }
@@ -536,7 +544,8 @@ internal sealed class WorkflowPackageService(
         var access = await ResolveAccessAsync(principal, cancellationToken, write: true).ConfigureAwait(false);
         var existing = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
         if (existing is null || !await CanAccessPublicationAsync(access, existing, cancellationToken).ConfigureAwait(false)) return null;
-        EnsureLegacyGovernanceAuthority(access);
+        EnsureLegacyGovernanceAuthority(access, new() { Action = "set-status", PackageId = existing.PackageId,
+            Version = existing.PackageVersion, PackageHash = existing.PackageHash, PublicationId = publicationId, Status = status });
         await SyncScheduleDefinitionAsync(existing, remove: false,
             enabled: status == WorkflowPublicationStatus.Active, cancellationToken).ConfigureAwait(false);
         return await store.SetPublicationStatusAsync(publicationId, status, cancellationToken).ConfigureAwait(false);
@@ -551,9 +560,9 @@ internal sealed class WorkflowPackageService(
         return package is not null && version is not null && CanAccess(access, package.Ownership) && CanAccess(access, version.Ownership);
     }
 
-    private static void EnsureLegacyGovernanceAuthority(WorkflowPackageAccess? access)
+    private void EnsureLegacyGovernanceAuthority(WorkflowPackageAccess? access, WorkflowPackageGovernanceIntent intent)
     {
-        if (access?.WorkspaceAgent == true)
+        if (access?.WorkspaceAgent == true && authorSecurityContextCapturer?.ApprovedReplay?.Allows(access, intent) != true)
             throw new GeoprocessingApprovalRequiredException("agent-workspace.human-approval");
     }
 

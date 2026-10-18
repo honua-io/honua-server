@@ -225,6 +225,7 @@ internal static class McpServiceCollectionExtensions
         // GeoprocessingStoreUnavailableException if the host never composed
         // Studio persistence at all.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, WorkflowPackageTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, WorkflowPackageGovernanceTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateStudioDraftTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GetStudioDraftTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, UpdateStudioDraftTool>());

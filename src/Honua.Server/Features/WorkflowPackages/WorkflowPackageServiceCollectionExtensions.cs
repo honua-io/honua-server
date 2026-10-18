@@ -40,6 +40,7 @@ internal static class WorkflowPackageServiceCollectionExtensions
         services.AddHttpContextAccessor();
         services.TryAddScoped<WorkflowPackageAuthorization>();
         services.TryAddScoped<IWorkflowPackageAuthoring, WorkflowPackageAuthoring>();
+        services.TryAddScoped<IWorkflowPackageGovernance, WorkflowPackageGovernance>();
         services.TryAddScoped(sp => new WorkflowAuthorSecurityContextCapturer(
             sp.GetService<IOptions<RbacOptions>>(),
             sp.GetService<ITenantContext>(),

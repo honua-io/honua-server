@@ -36,6 +36,7 @@ internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorPr
         [
             ServicePublishOperation.BuildDescriptor(),
             StylePresetOperation.BuildDescriptor(),
+            WorkflowPackageGovernanceOperation.BuildDescriptor(),
             .. StudioDraftOperations.BuildDescriptors(),
             .. WorkflowRollbackOperations.BuildDescriptors(),
             BuildAdminServerStatusDescriptor(),

@@ -56,6 +56,7 @@ internal sealed class WorkflowPackageTool : IMcpTool
             case "list" when input.PackageId is null && input.Version is null && input.Name is null && input.Graph is null:
                 return McpToolHelpers.SuccessResult(new WorkflowPackageToolOutput
                 {
+                    Qualification = "drafts-not-validated-or-execution-verified",
                     Packages = (await authoring.ListAsync(principal, input.WorkspaceId, input.TurnId, cancellationToken).ConfigureAwait(false)).ToArray(),
                 }, WorkflowPackageToolJsonContext.Default.WorkflowPackageToolOutput);
             case "read" when !string.IsNullOrWhiteSpace(input.PackageId) && input.Version is > 0 && input.Name is null && input.Graph is null:
