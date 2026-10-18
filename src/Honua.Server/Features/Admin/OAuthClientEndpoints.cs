@@ -36,6 +36,7 @@ internal static partial class OAuthClientEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         clients.MapPost("/", HandleCreateClient)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Register OAuth Client")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
@@ -44,6 +45,7 @@ internal static partial class OAuthClientEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         clients.MapDelete("/{id:guid}", HandleDeleteClient)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Delete OAuth Client")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 
@@ -59,10 +61,12 @@ internal static partial class OAuthClientEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         scopes.MapPut("/", HandleDefineScope)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Define OAuth Scope")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
         scopes.MapDelete("/{scope}", HandleDeleteScope)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Delete OAuth Scope")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
     }

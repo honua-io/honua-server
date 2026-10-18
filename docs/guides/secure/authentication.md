@@ -316,3 +316,11 @@ durable job security snapshot. Scheduled workflow execution and deferred GP jobs
 remain unavailable for these credentials until their executors revalidate a canonical
 credential binding. Shared-style approval replay uses its own sealed credential
 snapshot and does not dispatch that legacy job context.
+
+A delegated profile's `admin:write` capability does not permit minting or rotating
+independent credentials, editing certificate trust mappings, changing OAuth clients
+or scope mappings, or changing user/role authority. Those mutation routes add the
+canonical non-delegated authority guard to their existing administrative policies.
+This prevents a workload from escaping profile expiry/revocation or approval denial
+through a second credential. Ordinary human administrative flows retain their
+existing authorization checks.

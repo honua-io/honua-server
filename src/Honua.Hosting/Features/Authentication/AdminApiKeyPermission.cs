@@ -142,7 +142,7 @@ internal static class AdminApiKeyPermission
     internal static bool CanManageApiKeys(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
-        if (principal.Identity?.IsAuthenticated != true)
+        if (principal.Identity?.IsAuthenticated != true || AgentCredentialAuthority.IsDelegated(principal))
         {
             return false;
         }

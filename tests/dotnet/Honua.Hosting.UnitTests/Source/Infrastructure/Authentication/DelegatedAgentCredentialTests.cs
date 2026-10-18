@@ -349,6 +349,29 @@ public sealed class DelegatedAgentCredentialTests
             .Should().Equal(AgentCredentialAuthority.DelegatedRole);
     }
 
+    [Fact]
+    public async Task DelegatedAdminWrite_CannotMintOrChangeIndependentCredentialAuthority()
+    {
+        using var fixture = new Fixture();
+        fixture.Profile.Permissions = ["agent:workspace", "admin:write"];
+        fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions = [
+                new() { Service = "agent", Layer = "*", Operation = "workspace" },
+                new() { Service = "admin", Layer = "*", Operation = "write" }] });
+        var principal = Token();
+        AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
+        await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
+        AdminApiKeyPermission.IsAuthorized(principal, "POST").Should().BeTrue();
+        AdminApiKeyPermission.CanManageApiKeys(principal).Should().BeFalse();
+        using var services = new ServiceCollection().AddLogging()
+            .AddAuthorization(CredentialAuthorityManagementAuthorization.Configure).BuildServiceProvider();
+        var authorization = services.GetRequiredService<IAuthorizationService>();
+        (await authorization.AuthorizeAsync(principal, null, CredentialAuthorityManagementAuthorization.PolicyName)).Succeeded.Should().BeFalse();
+        var human = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "admin")], "human"));
+        (await authorization.AuthorizeAsync(human, null, CredentialAuthorityManagementAuthorization.PolicyName)).Succeeded.Should().BeTrue();
+        AdminApiKeyPermission.CanManageApiKeys(human).Should().BeTrue();
+    }
+
     private static ClaimsPrincipal Token(string? mismatch = null) => new(new ClaimsIdentity([
         new Claim("scope", "agent:workspace"),
         new Claim("exp", (mismatch == "expired" ? DateTimeOffset.UtcNow.AddMinutes(-1) : DateTimeOffset.UtcNow.AddMinutes(10)).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)),

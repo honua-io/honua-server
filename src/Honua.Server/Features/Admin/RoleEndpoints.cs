@@ -59,6 +59,7 @@ internal static partial class RoleEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPost("/", HandleCreateRole)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Create Role")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
@@ -67,10 +68,12 @@ internal static partial class RoleEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPut("/{id:guid}", HandleUpdateRole)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Update Role")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
         group.MapDelete("/{id:guid}", HandleDeleteRole)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Delete Role")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 
@@ -79,6 +82,7 @@ internal static partial class RoleEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPut("/{id:guid}/permissions", HandleSetPermissions)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Set Role Permissions")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }

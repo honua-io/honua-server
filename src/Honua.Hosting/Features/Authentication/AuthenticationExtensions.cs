@@ -149,6 +149,7 @@ public static class AuthenticationExtensions
         // Add authorization policies
         _ = services.AddAuthorization(options =>
         {
+            CredentialAuthorityManagementAuthorization.Configure(options);
             options.AddPolicy(AdminPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(AdminPolicyAlias, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(AdminApprovePolicy, policy => ConfigureAdminApprovePolicy(policy, mtlsCapabilityEnabled));

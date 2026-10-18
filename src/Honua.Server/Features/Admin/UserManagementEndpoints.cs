@@ -73,10 +73,12 @@ internal static partial class UserManagementEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPut("/{id}/roles", HandleUpdateUserRoles)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Update User Roles")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
         group.MapDelete("/{id}", HandleDeleteUser)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Deprovision User")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 

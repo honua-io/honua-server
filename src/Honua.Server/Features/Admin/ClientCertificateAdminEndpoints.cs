@@ -62,6 +62,7 @@ internal static class ClientCertificateAdminEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPost("/profiles", HandleCreateProfile)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Create Client Certificate Trust Profile")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
@@ -70,10 +71,12 @@ internal static class ClientCertificateAdminEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPut("/profiles/{profileId}", HandleUpdateProfile)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Update Client Certificate Trust Profile")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
         group.MapDelete("/profiles/{profileId}", HandleDisableProfile)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Disable Client Certificate Trust Profile")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 
@@ -82,14 +85,17 @@ internal static class ClientCertificateAdminEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPost("/profiles/{profileId}/mappings", HandleCreateMapping)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Create Client Certificate Principal Mapping")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         group.MapPut("/profiles/{profileId}/mappings/{mappingId}", HandleUpdateMapping)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Update Client Certificate Principal Mapping")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
         group.MapDelete("/profiles/{profileId}/mappings/{mappingId}", HandleDisableMapping)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Disable Client Certificate Principal Mapping")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 
@@ -98,10 +104,12 @@ internal static class ClientCertificateAdminEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPost("/profiles/{profileId}/revocations", HandleAddRevocation)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Add Client Certificate Revocation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         group.MapDelete("/profiles/{profileId}/revocations/{revocationId}", HandleRemoveRevocation)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Remove Client Certificate Revocation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 

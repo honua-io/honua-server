@@ -35,14 +35,17 @@ internal static partial class AdminApiKeyEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPost("/", HandleCreateApiKey)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Create Admin API Key")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         group.MapPost("/{id:guid}/rotate", HandleRotateApiKey)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Rotate Admin API Key")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         group.MapPost("/{id:guid}/revoke", HandleRevokeApiKey)
+            .RequireAuthorization(CredentialAuthorityManagementAuthorization.PolicyName)
             .WithDisplayName("Revoke Admin API Key")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 

@@ -150,6 +150,40 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
                 if (delegatedAgent) client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", material);
                 else client.DefaultRequestHeaders.Add("X-API-Key", material);
             });
+            if (delegatedAgent)
+            {
+                // A workload's admin:write metadata capability must not escape
+                // its profile by issuing another credential or changing trust/RBAC.
+                var humanIssued = await Read(await human.PostAsJsonAsync("/api/v1/admin/api-keys", new
+                    { name = "human-credential-control", permissions = new[] { "admin:read" } }), HttpStatusCode.Created);
+                var controlKeyId = humanIssued.GetProperty("data").GetProperty("apiKey").GetProperty("id").GetGuid();
+                await using var credentialScope = fixture.Services.CreateAsyncScope();
+                var keys = credentialScope.ServiceProvider.GetRequiredService<IAdminApiKeyStore>();
+                var before = (await keys.GetAsync(controlKeyId, default))!;
+                using var mint = await agent.PostAsJsonAsync("/api/v1/admin/api-keys", new
+                    { name = "workload-escape", permissions = new[] { "admin" } });
+                mint.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                using var rotate = await agent.PostAsync($"/api/v1/admin/api-keys/{controlKeyId}/rotate", null);
+                rotate.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                using var revoke = await agent.PostAsync($"/api/v1/admin/api-keys/{controlKeyId}/revoke", null);
+                revoke.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                var after = (await keys.GetAsync(controlKeyId, default))!;
+                after.KeyHash.Should().Equal(before.KeyHash);
+                after.RevokedAt.Should().BeNull();
+                using var oauth = await agent.PostAsJsonAsync("/api/v1/admin/oauth-clients", new { });
+                oauth.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                using var scopes = await agent.PutAsJsonAsync("/api/v1/admin/oauth-scopes", new { });
+                scopes.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                using var trust = await agent.PostAsJsonAsync("/api/v1/admin/security/client-certificates/profiles", new { });
+                trust.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                using var mapping = await agent.PostAsJsonAsync("/api/v1/admin/security/client-certificates/profiles/profile/mappings", new { });
+                mapping.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                using var roles = await agent.PostAsJsonAsync("/api/v1/admin/roles", new { });
+                roles.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                using var membershipChange = await agent.PutAsJsonAsync("/api/v1/admin/users/subject/roles", new { });
+                membershipChange.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                (await keys.ListAsync(default)).Should().NotContain(key => key.Name == "workload-escape");
+            }
             using (var legacy = await agent.PutAsJsonAsync($"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style",
                 new { mapLibreStyle = new { version = 8, sources = new { }, layers = Array.Empty<object>() } }))
                 legacy.StatusCode.Should().Be(HttpStatusCode.Forbidden);
