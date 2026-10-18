@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from .conftest import EvidenceCollector, OgrResult
+from .query_oracles import exact_rows, identity, source_subset
 
 
 @pytest.mark.integration
@@ -52,7 +53,7 @@ class TestWfsQuery:
 
         server_data = server_response.json()
         server_features = server_data["features"]
-        assert len(server_features) >= 1, "Server-side WFS filter returned no features"
+        assert len(server_features) == 1, "Server-side WFS equality must return exactly one authored alpha"
         server_names = {f["properties"]["name"] for f in server_features}
         assert server_names == {"alpha"}, (
             f"Expected server-side WFS filter to return only 'alpha', got {server_names}"
@@ -68,34 +69,36 @@ class TestWfsQuery:
         result.assert_success("WFS attribute query failed")
 
         data = json.loads(result.stdout)
-        features = data["features"]
-        assert len(features) >= 1, "WFS attribute query returned no features"
-        names = {f["properties"]["name"] for f in features}
-        assert "alpha" in names, f"Expected 'alpha' in WFS results, got {names}"
+        expected = {identity(server_features[0], wfs_layer_name): {"name": "alpha"}}
+        exact_rows(data, expected, wfs_layer_name)
         evidence_collector.record(
             "test_attribute_query", "wfs", "attribute_query", "pass",
         )
 
     def test_spatial_query_bbox(
         self,
+        http_client: httpx.Client,
         wfs_dsn: str,
         ogr_run,
         wfs_layer_name: str,
         evidence_collector: EvidenceCollector,
     ):
         """ogr2ogr -spat filters WFS features by bounding box."""
-        # Broad bbox covering San Francisco test data area
+        baseline = http_client.get("/wfs", params={"SERVICE": "WFS", "REQUEST": "GetFeature", "VERSION": "2.0.0",
+            "TYPENAMES": wfs_layer_name, "OUTPUTFORMAT": "application/geo+json", "COUNT": 100})
+        assert baseline.status_code == 200, baseline.text
+        expected, bounds = source_subset(baseline.json(), wfs_layer_name)
         result: OgrResult = ogr_run(
             [
                 "ogr2ogr", "-f", "GeoJSON",
                 "/vsistdout/", wfs_dsn, wfs_layer_name,
-                "-spat", "-123.0", "37.0", "-122.0", "38.5",
+                "-spat", *map(str, bounds),
             ],
         )
         result.assert_success("WFS spatial bbox query failed")
 
         data = json.loads(result.stdout)
-        assert len(data["features"]) > 0, "WFS spatial query returned no features"
+        exact_rows(data, expected, wfs_layer_name, bounds=bounds)
         evidence_collector.record(
             "test_spatial_query_bbox", "wfs", "spatial_query", "pass",
         )
@@ -117,11 +120,5 @@ class TestWfsQuery:
         result.assert_success("WFS spatial query with empty bbox failed")
 
         data = json.loads(result.stdout)
-        matched_features = [
-            feature for feature in data["features"]
-            if feature.get("geometry") is not None
-        ]
-        assert matched_features == [], (
-            "Expected no spatially matched features for a distant bbox, "
-            f"got {len(matched_features)} geometry-bearing features"
-        )
+        assert data.get("type") == "FeatureCollection"
+        assert data["features"] == [], "Distant bbox must return no rows, including null geometries"
