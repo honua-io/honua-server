@@ -91,7 +91,8 @@ internal sealed class PublishServiceTool : IMcpTool
             PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
             TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
             SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
-            AuthorizationOutcome = authorizationOutcome,
+            AuthorizationOutcome = authorizationOutcome.AuthorizationOutcome,
+            RequiredApprovalPolicyRef = authorizationOutcome.RequiredApprovalPolicyRef,
             Roles = principal.FindAll(ClaimTypes.Role).Select(claim => claim.Value).ToArray(),
             ScopeGoverned = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog.IsScopeGoverned(principal),
             RecognizedScopes = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog

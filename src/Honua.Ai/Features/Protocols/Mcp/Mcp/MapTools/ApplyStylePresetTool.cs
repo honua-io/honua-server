@@ -100,7 +100,8 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             ResourceType = OperatorResourceType.Catalog,
             Operation = OperatorOperation.Publish,
         });
-        if (approval.IsRequired)
+        var workspaceAgent = principal.HasClaim("permission", "agent:workspace");
+        if (approval.IsRequired && !workspaceAgent)
         {
             throw new GeoprocessingApprovalRequiredException(
                 approval.PolicyRef ?? "operator.publish");
@@ -150,6 +151,7 @@ internal sealed class ApplyStylePresetTool : IMcpTool
         {
             PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
             AuthorizationOutcome = authorization.AuthorizationOutcome,
+            RequiredApprovalPolicyRef = workspaceAgent ? "agent-workspace.human-approval" : null,
             TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
             Tier = httpContext.RequestServices.GetService<ILicenseEntitlementService>()?
                 .GetSnapshot().Edition.ToString().ToLowerInvariant(),

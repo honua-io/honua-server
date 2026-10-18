@@ -257,26 +257,35 @@ public sealed class PublishResultToolTests
     [Endpoint("POST /mcp tools/call honua_publish_result")]
     public async Task PublishResult_WhenRequiresApproval_ReturnsApprovalLane()
     {
-        var invoker = new FakeInvoker((_, _) => new OperationHandle
+        OperationPolicyContext? captured = null;
+        var invoker = new FakeInvoker((_, context) =>
         {
-            OperationId = PublishResultTool.PublishOperationId,
-            OperationInstanceId = "op-pending",
-            CorrelationId = "corr-pending",
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
-            Status = OperationHandleStatus.RequiresApproval,
-            ProposalId = "proposal-pending",
-            AuditId = "audit-pending",
-            ApprovalLane = "operator-gate",
-            Reason = "Publishing requires operator approval on this tier."
+            captured = context;
+            return new OperationHandle
+            {
+                OperationId = PublishResultTool.PublishOperationId,
+                OperationInstanceId = "op-pending",
+                CorrelationId = "corr-pending",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Status = OperationHandleStatus.RequiresApproval,
+                ProposalId = "proposal-pending",
+                AuditId = "audit-pending",
+                ApprovalLane = "operator-gate",
+                Reason = "Publishing requires operator approval on this tier."
+            };
         });
 
         var jobService = JobServiceReturning(CompletedPackage(FeatureLayerArtifact()));
         var tool = CreateTool(jobService);
         var arguments = Arguments(new McpPublishResultArgument { SourceId = JobId });
 
-        var result = await tool.InvokeAsync(AuthenticatedContext(invoker), arguments, CancellationToken.None);
+        var http = AuthenticatedContext(invoker);
+        ((ClaimsIdentity)http.User.Identity!).AddClaims([
+            new Claim(ClaimTypes.Role, "admin"), new Claim("permission", "agent:workspace")]);
+        var result = await tool.InvokeAsync(http, arguments, CancellationToken.None);
 
+        captured!.RequiredApprovalPolicyRef.Should().Be("agent-workspace.human-approval");
         var content = result.StructuredContent!.Value;
         content.GetProperty("status").GetString().Should().Be("RequiresApproval");
         content.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();

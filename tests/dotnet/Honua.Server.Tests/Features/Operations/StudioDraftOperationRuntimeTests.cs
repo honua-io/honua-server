@@ -529,8 +529,12 @@ public sealed class StudioDraftOperationRuntimeTests
         pointers.CurrentVersionId.Should().Be(saved.VersionId);
     }
 
-    [UnitTest]
-    public async Task LicensingDisabled_AdminPublication_ExecutesBeforeTheProposalGuardrail()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task LicensingDisabled_AdminPublication_TrustedHumanApprovalRestrictionIsMonotone(bool workspaceAgent)
     {
         var store = new InMemoryStudioPackageStore();
         var lifecycle = BuildLifecycle(store);
@@ -562,7 +566,21 @@ public sealed class StudioDraftOperationRuntimeTests
                 CorrelationId = "corr-admin",
                 ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
                 PublishImmediately = true,
+                RequiredApprovalPolicyRef = workspaceAgent ? "agent-workspace.human-approval" : null,
             });
+
+        if (workspaceAgent)
+        {
+            published.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+            published.Operation.ProposalId.Should().NotBeNullOrWhiteSpace();
+            published.Operation.AuditId.Should().NotBeNullOrWhiteSpace();
+            bridge.Request.Should().NotBeNull();
+            bridge.Context!.RequiredApprovalPolicyRef.Should().Be("agent-workspace.human-approval");
+            bridge.Context.AuthorizationOutcome.Should().Be(StudioDraftMutationContext.AdminDirectPublicationOutcome,
+                "the canonical restriction must survive even an immediate-publication authorization outcome");
+            (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().BeNull();
+            return;
+        }
 
         published.Operation.Status.Should().Be(OperationHandleStatus.Completed);
         published.Operation.ProposalId.Should().BeNull();
