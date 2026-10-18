@@ -17,18 +17,43 @@ public class ExecutionQualificationBarrierTests : IDisposable
     private readonly string _root = Path.Join(Path.GetTempPath(), $"honua-barrier-{Guid.NewGuid():N}");
     private readonly string? _previousRoot = Environment.GetEnvironmentVariable(
         ExecutionQualificationBarrier.RootEnvironmentVariable);
+    private readonly string? _previousPauseAt = Environment.GetEnvironmentVariable(
+        ExecutionQualificationBarrier.PauseAtEnvironmentVariable);
 
     public ExecutionQualificationBarrierTests()
     {
         Directory.CreateDirectory(_root);
         Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.RootEnvironmentVariable, _root);
+        Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.PauseAtEnvironmentVariable, null);
     }
 
     public void Dispose()
     {
         Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.RootEnvironmentVariable, _previousRoot);
+        Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.PauseAtEnvironmentVariable, _previousPauseAt);
         Directory.Delete(_root, recursive: true);
         GC.SuppressFinalize(this);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task WaitAsync_SelectedNativeBarrier_SkipsEarlierPauseAndStillObservesCancellation()
+    {
+        Environment.SetEnvironmentVariable(
+            ExecutionQualificationBarrier.PauseAtEnvironmentVariable, "native-process-started");
+        using var scope = ExecutionQualificationBarrier.Begin("selected-op", "worker-9");
+        await ExecutionQualificationBarrier.WaitAsync("claimed", CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(Directory.Exists(Path.Join(_root, "selected-op")));
+
+        using var cancelled = new CancellationTokenSource();
+        var wait = ExecutionQualificationBarrier.WaitAsync(
+            "native-process-started", cancelled.Token, childProcessId: 4242);
+        Assert.False(wait.IsCompleted);
+        Assert.True(File.Exists(Path.Join(_root, "selected-op", "native-process-started.ready.json")));
+        await cancelled.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => wait);
+        Assert.True(File.Exists(Path.Join(_root, "selected-op", "native-process-started.signal-observed.json")));
     }
 
     [Trait("Tier", "Fast")]

@@ -1,6 +1,7 @@
 """Executable tests for the GP qualification receipt boundary."""
 
 import copy
+from datetime import datetime, timezone
 import importlib.util
 import json
 import math
@@ -8,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -488,6 +490,403 @@ class OutputStoreArtifactOracleTests(unittest.TestCase):
                 mutate(document)
                 with self.assertRaises(ValueError):
                     self.oracle.verify(document)
+
+
+class NativeObserverTests(unittest.TestCase):
+    """Real local processes/files prove observer contracts, never AWS qualification."""
+
+    def setUp(self):
+        import sys
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        root = Path(self.temporary.name)
+        self.barriers, self.scratch, self.outputs = (root / x for x in ("barriers", "scratch", "outputs"))
+        for directory in (self.barriers, self.scratch / "job-1", self.outputs):
+            directory.mkdir(parents=True)
+        self.policy_path = root / "observer-policy.json"
+        self.policy = {"schema": "honua.gp-observer-policy/v1", "enabled": True, "role": "worker",
+                       "barrierRoot": str(self.barriers), "scratchRoot": str(self.scratch),
+                       "outputRoot": str(self.outputs), "keyPrefix": "gp/outputs",
+                       "storeReference": "qualification", "configurationDigest": "a" * 64}
+        self.write_policy()
+        self.marker = self.outputs / ".honua-gp-store.json"
+        self.marker.write_text(json.dumps({"Provider": "local", "PersistenceClass": "shared-persistent",
+                                         "StoreReference": "qualification", "ConfigurationDigest": "a" * 64}))
+        spec = importlib.util.spec_from_file_location("native_observer", ROOT / "scripts/qualification/gp_native_observer.py")
+        self.observer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.observer)
+        self.child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                                      cwd=self.scratch / "job-1", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(self.stop_child)
+        (self.barriers / "job-1").mkdir()
+        self.ready_path = self.barriers / "job-1/native-process-started.ready.json"
+        self.ready = {"operationId": "job-1", "workerId": "worker-1", "barrier": "native-process-started",
+                      "workerProcessId": os.getpid(), "childProcessId": self.child.pid,
+                      "readyAt": datetime.now(timezone.utc).isoformat()}
+        self.ready_path.write_text(json.dumps(self.ready))
+        # OS-contract fixtures use a real Python child; native loader/main behavior
+        # is independently exercised by the compiled ELF controls below.
+        self.observer.NATIVE_EXECUTABLES = (str(Path(sys.executable).resolve()),)
+        self.entry_path = self.barriers / "job-1/native-process-started.entry.json"
+        self.entry = {"schema": "honua.gp-native-entry/v1", "boundary": "native-exec-entry-paused",
+                      "pid": self.child.pid, "parentPid": os.getpid(), "nonce": "c" * 32,
+                      "executable": str(Path(sys.executable).resolve())}
+        self.entry_path.write_text(json.dumps(self.entry))
+
+    def write_policy(self):
+        self.policy_path.write_text(json.dumps(self.policy))
+
+    def stop_child(self):
+        if self.child.poll() is None:
+            self.child.terminate()
+        self.child.wait(timeout=5)
+
+    def observe(self, phase="before", expected=None):
+        return self.observer.observe(self.policy_path, "job-1", "b" * 32, phase, expected)
+
+    def test_real_child_present_then_absent_with_original_worker_and_empty_effects(self):
+        before = self.observe()
+        self.assertEqual(self.child.pid, before["process"]["child"]["pid"])
+        self.assertGreater(before["process"]["child"]["startTicks"], 0)
+        self.stop_child()
+        after = self.observe("after", before["process"])
+        self.assertTrue(after["process"]["childAbsent"])
+        self.assertEqual(before["process"]["worker"], after["process"]["worker"])
+        self.assertEqual([], after["outputInventory"]["files"])
+        self.assertFalse(after["qualification"])
+
+    def test_managed_only_stale_wrong_executable_and_changed_entry_are_refused(self):
+        before = self.observe()
+        self.entry_path.unlink()
+        with self.assertRaises(OSError):
+            self.observe()
+        for field, invalid in (("nonce", "stale"), ("pid", self.child.pid + 1),
+                               ("executable", "/bin/false"), ("boundary", "managed-only")):
+            self.entry_path.write_text(json.dumps({**self.entry, field: invalid}))
+            with self.assertRaises(self.observer.Refused):
+                self.observe()
+        self.entry_path.write_text(json.dumps(self.entry))
+        self.stop_child()
+        self.entry_path.write_text(json.dumps({**self.entry, "nonce": "d" * 32}))
+        with self.assertRaisesRegex(self.observer.Refused, "worker-identity-changed"):
+            self.observe("after", before["process"])
+
+    def test_live_child_never_becomes_cessation(self):
+        before = self.observe()
+        with self.assertRaisesRegex(self.observer.Refused, "native-child-still-present"):
+            self.observe("after", before["process"])
+
+    def test_stale_worker_namespace_barrier_and_pid_are_refused(self):
+        before = self.observe()
+        self.stop_child()
+        for field, replacement in (("bootId", "wrong"), ("pidNamespace", -1), ("barrierSha256", "0" * 64),
+                                   ("workerId", "other"), ("worker", {"pid": os.getpid(), "startTicks": 1})):
+            with self.subTest(field=field):
+                identity = copy.deepcopy(before["process"])
+                identity[field] = replacement
+                with self.assertRaises(self.observer.Refused):
+                    self.observe("after", identity)
+        identity = copy.deepcopy(before["process"])
+        identity["child"]["pid"] += 10000
+        with self.assertRaisesRegex(self.observer.Refused, "child-identity-changed"):
+            self.observe("after", identity)
+
+    def test_wrong_job_or_parent_cannot_supply_native_identity(self):
+        for key, replacement in (("operationId", "job-2"), ("workerProcessId", 1), ("childProcessId", os.getpid())):
+            with self.subTest(key=key):
+                changed = {**self.ready, key: replacement}
+                self.ready_path.write_text(json.dumps(changed))
+                with self.assertRaises(self.observer.Refused):
+                    self.observe()
+
+    def test_physical_bytes_and_changes_are_observed_without_exposing_contents(self):
+        import hashlib
+        folder = self.outputs / "gp/outputs/job-1"
+        folder.mkdir(parents=True)
+        (folder / "result").write_bytes(b"first")
+        first = self.observe()["outputInventory"]
+        self.assertEqual(hashlib.sha256(b"first").hexdigest(), first["files"][0]["sha256"])
+        (folder / "result").write_bytes(b"changed")
+        second = self.observe()["outputInventory"]
+        self.assertNotEqual(first, second)
+        self.assertNotIn("changed", json.dumps(second))
+
+    def test_store_contract_identifiers_inventory_actual_dotted_and_long_prefixes(self):
+        import hashlib
+        for reference, prefix in (("gp.outputs", "gp/output.v1"),
+                                  ("s" * 160, "p" * 159),
+                                  ("gp.outputs", "gp//./output.v1/")):
+            with self.subTest(reference=reference, prefix=prefix):
+                self.policy.update(storeReference=reference, keyPrefix=prefix)
+                self.write_policy()
+                marker = json.loads(self.marker.read_text())
+                marker["StoreReference"] = reference
+                self.marker.write_text(json.dumps(marker))
+                folder = self.outputs / prefix / "job-1"
+                folder.mkdir(parents=True, exist_ok=True)
+                (folder / "result").write_bytes(b"actual stored output")
+                observation = self.observe()
+                self.assertEqual(reference, observation["store"]["reference"])
+                self.assertEqual([{"path": "result", "bytes": len(b"actual stored output"),
+                                   "sha256": hashlib.sha256(b"actual stored output").hexdigest()}],
+                                 observation["outputInventory"]["files"])
+
+    def test_store_contract_rejects_invalid_and_overlong_policy_identifiers(self):
+        for field, invalid, code in (
+                ("storeReference", ("s" * 161, "store/name", ".store", "", None), "policy-store-identity"),
+                ("keyPrefix", ("p" * 160, "gp/../output", "gp/a..b", "/gp/output", "gp\\output", "", None),
+                 "policy-prefix")):
+            original = self.policy[field]
+            for value in invalid:
+                with self.subTest(field=field, value=value):
+                    self.policy[field] = value
+                    self.write_policy()
+                    with self.assertRaisesRegex(self.observer.Refused, code):
+                        self.observe()
+            self.policy[field] = original
+        self.write_policy()
+
+    def test_dotted_prefix_still_refuses_symlink_path_component(self):
+        self.policy["keyPrefix"] = "gp/output.v1"
+        self.write_policy()
+        (self.outputs / "gp").mkdir()
+        (self.outputs / "gp/output.v1").symlink_to(self.scratch, target_is_directory=True)
+        with self.assertRaises(OSError):
+            self.observe()
+
+    def test_symlink_and_special_file_inventory_fail_closed(self):
+        folder = self.outputs / "gp/outputs/job-1"
+        folder.mkdir(parents=True)
+        link = folder / "secret-link"
+        link.symlink_to(self.policy_path)
+        with self.assertRaisesRegex(self.observer.Refused, "inventory-symlink"):
+            self.observe()
+        link.unlink()
+        os.mkfifo(folder / "pipe")
+        with self.assertRaisesRegex(self.observer.Refused, "inventory-special-file"):
+            self.observe()
+
+    def test_disabled_missing_and_wrong_store_are_refused(self):
+        self.policy["enabled"] = False
+        self.write_policy()
+        with self.assertRaisesRegex(self.observer.Refused, "qualification-disabled"):
+            self.observe()
+        self.policy["enabled"] = True
+        self.write_policy()
+        self.marker.write_text('{"Provider":"local","StoreReference":"wrong"}')
+        with self.assertRaisesRegex(self.observer.Refused, "store-attestation"):
+            self.observe()
+        self.marker.unlink()
+        with self.assertRaises(OSError):
+            self.observe()
+
+    def test_store_observer_has_only_read_only_output_scope(self):
+        self.policy.update(role="store-observer", barrierRoot=None, scratchRoot=None)
+        self.write_policy()
+        self.assertEqual("observed", self.observe("store")["status"])
+        with self.assertRaisesRegex(self.observer.Refused, "barrier-policy-required"):
+            self.observe()
+
+    def test_independent_shared_barrier_proves_entry_without_claiming_live_pid(self):
+        self.policy.update(role="store-observer", scratchRoot=None)
+        self.write_policy()
+        started = self.observe("started")
+        self.assertEqual(self.child.pid, started["barrier"]["childProcessId"])
+        self.assertNotIn("process", started)
+        self.stop_child()
+        # The record remains entry evidence even when the task/process stopped;
+        # the caller must independently observe the Batch task before cancel.
+        self.assertEqual(started["barrier"], self.observe("started")["barrier"])
+        with self.assertRaisesRegex(self.observer.Refused, "worker-policy-required"):
+            self.observe()
+
+    def test_path_traversal_and_unbounded_inventory_are_refused(self):
+        for job in ("..", "../job-1", "job/1", "job%2F1"):
+            with self.subTest(job=job), self.assertRaises(self.observer.Refused):
+                self.observer.observe(self.policy_path, job, "b" * 32, "before")
+        folder = self.outputs / "gp/outputs/job-1"
+        folder.mkdir(parents=True)
+        with (folder / "large").open("wb") as stream:
+            stream.truncate(self.observer.MAX_BYTES + 1)
+        with self.assertRaisesRegex(self.observer.Refused, "inventory-limit"):
+            self.observe()
+
+    def test_barrier_parent_symlink_is_refused(self):
+        original = self.barriers / "job-1"
+        moved = self.barriers / "retained"
+        original.rename(moved)
+        original.symlink_to(moved, target_is_directory=True)
+        with self.assertRaises(OSError):
+            self.observe()
+
+    def test_stale_and_future_barriers_cannot_prove_native_entry(self):
+        for ready_at in ("2000-01-01T00:00:00Z", "2999-01-01T00:00:00Z"):
+            with self.subTest(ready_at=ready_at):
+                self.ready_path.write_text(json.dumps({**self.ready, "readyAt": ready_at}))
+                with self.assertRaisesRegex(self.observer.Refused, "barrier-stale"):
+                    self.observe("started")
+
+    def test_empty_directories_count_toward_inventory_bounds(self):
+        folder = self.outputs / "gp/outputs/job-1"
+        folder.mkdir(parents=True)
+        self.observer.MAX_ENTRIES = 3
+        for i in range(4):
+            (folder / str(i)).mkdir()
+        with self.assertRaisesRegex(self.observer.Refused, "inventory-limit"):
+            self.observe()
+
+    def test_deep_directory_inventory_is_refused(self):
+        folder = self.outputs / "gp/outputs/job-1"
+        for _ in range(self.observer.MAX_DEPTH + 2):
+            folder /= "nested"
+        folder.mkdir(parents=True)
+        with self.assertRaisesRegex(self.observer.Refused, "inventory-depth"):
+            self.observe()
+
+
+@unittest.skipUnless(sys.platform == "linux", "ELF loader controls require Linux")
+class NativeEntryShimTests(unittest.TestCase):
+    """Real compiled fast-exit ELF; a sleeping shell is never native-entry evidence."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.temporary.name).resolve()
+        cls.library, cls.executable = cls.root / "entry.so", cls.root / "ogr2ogr"
+        fixture = cls.root / "fast.c"
+        fixture.write_text('#include <stdio.h>\nint main(int n,char **v){if(n!=2)return 2;FILE *f=fopen(v[1],"w");if(!f)return 3;fputs("main ran",f);return fclose(f);}\n')
+        for args in (("-fPIC", "-shared", str(ROOT / "docker/worker-gdal/native-entry.c"), "-o", str(cls.library)),
+                     (str(fixture), "-o", str(cls.executable))):
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", *args], check=True,
+                           stdout=subprocess.PIPE)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temporary.cleanup()
+
+    def start(self, **overrides):
+        directory = Path(tempfile.mkdtemp(dir=self.root))
+        self.record, self.release, self.effect = (directory / name for name in ("entry.json", "release", "effect"))
+        self.nonce = "b" * 32
+        environment = {**os.environ, "LD_PRELOAD": str(self.library),
+                       "HONUA_GP_NATIVE_ENTRY_RECORD": str(self.record),
+                       "HONUA_GP_NATIVE_ENTRY_RELEASE": str(self.release),
+                       "HONUA_GP_NATIVE_ENTRY_NONCE": self.nonce, **overrides}
+        environment = {key: value for key, value in environment.items() if value is not None}
+        child = subprocess.Popen([str(self.executable), str(self.effect)], env=environment,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        self.addCleanup(self.stop, child)
+        return child
+
+    @staticmethod
+    def stop(child):
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=5)
+        child.stderr.close()
+
+    def entry(self, child):
+        import time
+        deadline = time.monotonic() + 5
+        while not self.record.exists():
+            if child.poll() is not None or time.monotonic() >= deadline:
+                self.fail("actual ELF did not publish native entry")
+            time.sleep(0.01)
+        value = json.loads(self.record.read_text())
+        self.assertEqual(child.pid, value["pid"])
+        self.assertEqual(os.getpid(), value["parentPid"])
+        self.assertEqual(str(self.executable), value["executable"])
+        self.assertEqual(self.executable, Path(f"/proc/{child.pid}/exe").resolve(strict=True))
+        self.assertEqual("native-exec-entry-paused", value["boundary"])
+        return value
+
+    def publish_release(self, nonce=None):
+        temporary = self.release.with_suffix(".complete")
+        with temporary.open("x") as stream:
+            stream.write(nonce or self.nonce)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, self.release)
+        temporary.unlink()
+
+    def test_actual_exec_fast_main_and_effects_are_held_until_fresh_release(self):
+        import time
+        child = self.start()
+        self.assertEqual(self.nonce, self.entry(child)["nonce"])
+        time.sleep(0.15)
+        self.assertIsNone(child.poll())
+        self.assertFalse(self.effect.exists(), "actual main must not win a Process.Start/observer race")
+        self.publish_release()
+        self.assertEqual(0, child.wait(timeout=5))
+        self.assertEqual("main ran", self.effect.read_text())
+
+    def test_partial_temporary_nonce_is_not_observed_before_atomic_publication(self):
+        import time
+        child = self.start()
+        self.entry(child)
+        temporary = self.release.with_suffix(".pending")
+        with temporary.open("w") as stream:
+            stream.write(self.nonce[:4])
+            stream.flush()
+            os.fsync(stream.fileno())
+            time.sleep(0.15)
+            self.assertIsNone(child.poll())
+            self.assertFalse(self.effect.exists())
+            self.assertFalse(self.release.exists())
+            stream.write(self.nonce[4:])
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, self.release)  # atomic publication, no replacement
+        temporary.unlink()
+        self.assertEqual(0, child.wait(timeout=5))
+        self.assertEqual("main ran", self.effect.read_text())
+
+    def test_cancelled_entry_child_ceases_without_running_main(self):
+        child = self.start()
+        self.entry(child)
+        child.terminate()
+        child.wait(timeout=5)
+        self.assertFalse(Path(f"/proc/{child.pid}").exists())
+        self.assertFalse(self.effect.exists())
+
+    def test_stale_release_nonce_and_symlink_release_cannot_run_main(self):
+        for linked in (False, True):
+            with self.subTest(linked=linked):
+                child = self.start()
+                self.entry(child)
+                if linked:
+                    target = self.release.with_suffix(".target")
+                    target.write_text(self.nonce)
+                    self.release.symlink_to(target)
+                else:
+                    self.publish_release("c" * 32)
+                self.assertEqual(125, child.wait(timeout=5))
+                self.assertFalse(self.effect.exists())
+
+    def test_missing_or_malformed_handshake_cannot_run_main(self):
+        for nonce in ("", "not-a-nonce"):
+            child = self.start(HONUA_GP_NATIVE_ENTRY_NONCE=nonce)
+            self.assertEqual(125, child.wait(timeout=5))
+            self.assertFalse(self.effect.exists())
+
+    def test_partial_handshake_and_linked_parent_directory_are_refused(self):
+        child = self.start(HONUA_GP_NATIVE_ENTRY_NONCE=None)
+        self.assertEqual(125, child.wait(timeout=5))
+        self.assertFalse(self.effect.exists())
+        real, linked = self.root / "real-directory", self.root / "linked-directory"
+        real.mkdir()
+        linked.symlink_to(real, target_is_directory=True)
+        child = self.start(HONUA_GP_NATIVE_ENTRY_RECORD=str(linked / "entry.json"),
+                           HONUA_GP_NATIVE_ENTRY_RELEASE=str(linked / "release"))
+        self.assertEqual(125, child.wait(timeout=5))
+        self.assertFalse(self.effect.exists())
+
+    def test_loader_is_inert_without_any_qualification_handshake(self):
+        effect = self.root / "default-effect"
+        environment = {key: value for key, value in os.environ.items() if not key.startswith("HONUA_GP_NATIVE_ENTRY_")}
+        environment["LD_PRELOAD"] = str(self.library)
+        subprocess.run([str(self.executable), str(effect)], env=environment, check=True, timeout=5)
+        self.assertEqual("main ran", effect.read_text())
 
 
 if __name__ == "__main__":
