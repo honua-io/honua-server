@@ -20,7 +20,7 @@ internal sealed class StudioMapStyleSourceAuthorizer(IHttpContextAccessor access
         StudioCompositionBody body, CancellationToken cancellationToken)
         => StudioDraftStyleReferences.ResolveAsync(CreateCallerContext(principal), body, cancellationToken);
 
-    private HttpContext CreateCallerContext(ClaimsPrincipal principal)
+    private DefaultHttpContext CreateCallerContext(ClaimsPrincipal principal)
     {
         var context = accessor.HttpContext;
         if (context is null || principal.Identity?.IsAuthenticated != true)

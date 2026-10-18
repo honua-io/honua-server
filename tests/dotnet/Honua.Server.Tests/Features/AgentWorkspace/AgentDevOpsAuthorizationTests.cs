@@ -76,13 +76,18 @@ public sealed class AgentDevOpsAuthorizationTests
         var functionArn = "arn:aws:lambda:us-west-2:123456789012:function:honua";
         var target = new DeployTargetDefinition
         {
-            TargetId = "lambda-1", Environment = "dev", TargetKind = DeployTargetKind.AwsLambda,
-            Backend = "honua-gitops-aws-lambda", TargetName = functionArn,
+            TargetId = "lambda-1",
+            Environment = "dev",
+            TargetKind = DeployTargetKind.AwsLambda,
+            Backend = "honua-gitops-aws-lambda",
+            TargetName = functionArn,
             Parameters = new Dictionary<string, string>
             {
-                ["aws.lambda.alias_name"] = "live", ["lambda.function_arn"] = functionArn,
+                ["aws.lambda.alias_name"] = "live",
+                ["lambda.function_arn"] = functionArn,
                 ["aws.service_url"] = "https://user:secret@example.test",
-                ["credentials"] = "private-value", ["kubernetes.cluster_arn"] = "unrelated-runtime",
+                ["credentials"] = "private-value",
+                ["kubernetes.cluster_arn"] = "unrelated-runtime",
                 ["telemetry.healthz.headers.Authorization"] = "Bearer private-token",
             },
         };
