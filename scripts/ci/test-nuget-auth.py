@@ -3,6 +3,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -144,6 +145,22 @@ class CredentialTests(unittest.TestCase):
                     patch.object(proof, 'prove', side_effect=error), contextlib.redirect_stderr(stream):
                 self.assertEqual(proof.main(), 1)
             self.assertNotIn(TOKEN, stream.getvalue())
+
+    def test_restore_summary_retains_only_safe_failure_categories(self):
+        result = subprocess.CompletedProcess([], 1,
+                    'error NU1301 ' + proof.FEED + ' response 401 Password=' + TOKEN,
+                    'https://unrelated.invalid/' + TOKEN + ' error NU1101 response 403')
+        summary = proof.restore_summary(result, 'anonymous')
+        self.assertEqual(summary, {'schema': 'honua.nuget-auth-attempt/v1', 'attempt': 'anonymous',
+                         'exitCode': 1, 'governedFeedMentioned': True,
+                         'authorizationStatusCodes': ['401', '403'], 'nugetErrorCodes': ['NU1101', 'NU1301']})
+        serialized = json.dumps(summary)
+        self.assertNotIn(TOKEN, serialized)
+        self.assertNotIn('Password', serialized)
+        self.assertNotIn('https://', serialized)
+        success = proof.restore_summary(subprocess.CompletedProcess([], 0, '', ''), 'authenticated')
+        self.assertEqual(success['exitCode'], 0)
+        self.assertEqual(success['nugetErrorCodes'], [])
 
     def test_action_and_workflow_keep_real_proof_and_credential_contract(self):
         action = (ACTION / 'action.yml').read_text()

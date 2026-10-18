@@ -68,6 +68,15 @@ def restore(project: Path, config: Path, cache: Path, credential: str | None):
         raise ProofError("Bounded private-feed restore could not complete.") from None
 
 
+def restore_summary(execution, label: str) -> dict:
+    """Classify captured diagnostics without retaining their secret-bearing text."""
+    diagnostics = execution.stdout + execution.stderr
+    return {"schema": "honua.nuget-auth-attempt/v1", "attempt": label,
+            "exitCode": execution.returncode, "governedFeedMentioned": FEED in diagnostics,
+            "authorizationStatusCodes": sorted(set(re.findall(r"\b(?:401|403)\b", diagnostics))),
+            "nugetErrorCodes": sorted(set(re.findall(r"\bNU[0-9]{4}\b", diagnostics)))}
+
+
 def prove() -> dict:
     if not clean():
         raise ProofError("Authentication proof requires an unchanged tracked checkout.")
@@ -94,9 +103,10 @@ def prove() -> dict:
                                '</PropertyGroup><ItemGroup><PackageReference Include="' + PACKAGE + '" Version="' + version + '" />'
                                '</ItemGroup></Project>')
             execution = restore(project, config, cache, value)
+            summary = restore_summary(execution, label)
+            print(json.dumps(summary, sort_keys=True), flush=True)
             if label == "anonymous":
-                diagnostics = execution.stdout + execution.stderr
-                if execution.returncode == 0 or FEED not in diagnostics or not re.search(r"\b(?:401|403)\b", diagnostics):
+                if execution.returncode == 0 or not summary["governedFeedMentioned"] or not summary["authorizationStatusCodes"]:
                     raise ProofError("Anonymous cold restore did not establish the expected private-feed refusal.")
                 result["anonymousRestoreRefused"] = True
             else:
