@@ -42,7 +42,7 @@ public static class OperationScopeMapping
 
         operation = request.OperationId switch
         {
-            "service.publish" or "style.apply-preset" => OperatorOperation.Publish,
+            "service.publish" or "style.apply-preset" or "style.replace-shared" => OperatorOperation.Publish,
             "control-plane.deploy.rollback" or "control-plane.coordinated-release.rollback" => OperatorOperation.Rollback,
             "studio.draft.create" or "studio.draft.update" or "studio.draft.save-version" or
                 "studio.draft.delete" or "studio.draft.validate" or "studio.draft.preview-plan" or

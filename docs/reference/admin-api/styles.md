@@ -80,3 +80,35 @@ Named styles are also exposed through the standards-based OGC API Styles surface
 
 - [Style maps](../../guides/style/style-maps.md) — how MVT, MapServer, and WMS consume the canonical style document
 - [Import SLD styles](../../guides/style/import-sld-styles.md)
+
+### Conditional shared edits and reviewed restoration (preview)
+
+Shared catalog edits affect live references to that catalog style. A saved map that
+retains a shared style reference can therefore change appearance when the shared
+style changes; its immutable map version is not an immutable copy of the referenced
+style bytes. A map-local full-style snapshot detaches those references and retains
+its own appearance. The editor must disclose this choice explicitly.
+
+Read the stylesheet ETag and `/ogc/styles/{styleId}/impact` before editing. Conditional
+PUT requires the exact `If-Match: "style-vN"` and `X-Honua-Style-Impact` hash from the
+reviewed revision. Stale revisions or changed impact return 412 without overwriting.
+Impact returns only authorized associations; editing is unavailable when the entire
+affected scope cannot be authorized. Existing headerless human clients remain
+compatible, so conditional editing must be selected explicitly by new clients.
+
+Workspace agents read a frozen `shared-style` task with
+`honua_shared_style_get` and propose a complete replacement with
+`honua_shared_style_propose`. Actual current credentials, membership, tenant,
+revision, bytes, and affected resource authority are checked again on execution.
+The agent cannot approve its own proposal or bypass this through direct style PUT.
+Map-local draft composition remains a separate realtime edit.
+
+Canonical approved shared-style operations retain before and proposed bytes in the
+sealed server-side plan. To restore a retained prior appearance, attach a fresh task
+for the current style revision and submit `restoreFromProposalId` instead of an
+`intent` to `honua_shared_style_propose`. This creates a new human review proposal
+and advances the style revision on approval. It does not decrement a version or
+infer old appearance from a version number. Expired, missing, unverified, or no
+longer authorized receipts cannot restore automatically. The current style table
+alone is not a revision archive. Validation and source tests do not establish
+rendering or browser qualification.

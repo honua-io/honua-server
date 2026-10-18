@@ -48,6 +48,74 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("GET /ogc/styles/{styleId}/impact")]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task ConditionalSharedStyle_TwoRealHttpEditors_OnlyOneWinsAndStaleImpactCannotOverwrite()
+    {
+        using var human = _fixture.CreateAdminClient();
+        var styleId = await CreateStandaloneStyleAsync(human, MetadataV2GeometryType.Point);
+        var route = "/ogc/styles/" + Uri.EscapeDataString(styleId);
+        using var read = await human.GetAsync(route);
+        read.StatusCode.Should().Be(HttpStatusCode.OK);
+        var etag = read.Headers.ETag?.ToString();
+        etag.Should().NotBeNullOrEmpty();
+        using var impactResponse = await human.GetAsync(route + "/impact");
+        impactResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var impact = await impactResponse.Content.ReadFromJsonAsync<JsonElement>();
+        impact.GetProperty("etag").GetString().Should().Be(etag);
+        impact.GetProperty("canEdit").GetBoolean().Should().BeTrue();
+        impact.GetProperty("associations").GetArrayLength().Should().Be(0);
+        var hash = impact.GetProperty("impactHash").GetString()!;
+        var content = await read.Content.ReadAsStringAsync();
+        HttpRequestMessage Edit(string name, string expectedEtag, string expectedImpact)
+        {
+            var body = JsonNode.Parse(content)!;
+            body["name"] = name;
+            var request = new HttpRequestMessage(HttpMethod.Put, route + "?validate")
+            { Content = new StringContent(body.ToJsonString(), Encoding.UTF8, MapboxStyleMediaType) };
+            request.Headers.TryAddWithoutValidation("If-Match", expectedEtag);
+            request.Headers.TryAddWithoutValidation("X-Honua-Style-Impact", expectedImpact);
+            return request;
+        }
+        using var first = Edit("First editor", etag!, hash);
+        using var second = Edit("Second editor", etag!, hash);
+        var results = await Task.WhenAll(human.SendAsync(first), human.SendAsync(second));
+        try
+        {
+            results.Count(response => response.StatusCode == HttpStatusCode.NoContent).Should().Be(1);
+            results.Count(response => response.StatusCode == HttpStatusCode.PreconditionFailed).Should().Be(1);
+            using var fresh = await human.GetAsync(route + "/impact");
+            var updated = await fresh.Content.ReadFromJsonAsync<JsonElement>();
+            updated.GetProperty("styleVersion").GetInt32().Should().Be(impact.GetProperty("styleVersion").GetInt32() + 1);
+            using var wrongImpact = Edit("Unreviewed replacement", updated.GetProperty("etag").GetString()!, new string('0', 64));
+            using var rejected = await human.SendAsync(wrongImpact);
+            rejected.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+            using var after = await human.GetAsync(route + "/impact");
+            (await after.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("styleVersion").GetInt32()
+                .Should().Be(updated.GetProperty("styleVersion").GetInt32());
+        }
+        finally { foreach (var response in results) response.Dispose(); }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task WorkspaceAdminKey_CannotBypassDurableSharedStyleApprovalThroughDirectOgcPut()
+    {
+        using var human = _fixture.CreateAdminClient();
+        var styleId = await CreateStandaloneStyleAsync(human, MetadataV2GeometryType.Point);
+        using var issued = await human.PostAsJsonAsync("/api/v1/admin/api-keys", new
+        { name = "shared-style-agent", permissions = new[] { "admin", "agent:workspace" } });
+        issued.StatusCode.Should().Be(HttpStatusCode.Created);
+        var key = (await issued.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data").GetProperty("key").GetString()!;
+        using var agent = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", key));
+        using var body = new StringContent(BuildDefaultStyleJson(), Encoding.UTF8, MapboxStyleMediaType);
+        using var response = await agent.PutAsync("/ogc/styles/" + Uri.EscapeDataString(styleId), body);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/styles/conformance")]
     public async Task GetConformance_ListsThePhase1ConformanceClasses()

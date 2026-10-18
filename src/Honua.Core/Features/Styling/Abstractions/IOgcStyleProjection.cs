@@ -222,7 +222,10 @@ public enum OgcStyleUpdateStatus
     Invalid,
 
     /// <summary>The expected canonical version no longer matches.</summary>
-    PreconditionFailed
+    PreconditionFailed,
+
+    /// <summary>The complete affected scope is not writable by this caller.</summary>
+    Forbidden
 }
 
 /// <summary>

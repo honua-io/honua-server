@@ -716,7 +716,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             : new OgcStyleUpdateResult(expectedVersion.HasValue ? OgcStyleUpdateStatus.PreconditionFailed : OgcStyleUpdateStatus.NotFound, "The style is missing or changed; reload before saving.");
     }
 
-    private static bool UsesSameGeometryFamily(
+    internal static bool UsesSameGeometryFamily(
         MetadataV2GeometryType resourceGeometryType,
         MetadataV2GeometryType rendererGeometryType)
         => resourceGeometryType switch
@@ -804,7 +804,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         return updated;
     }
 
-    private static bool TryValidateDrawingInfoShape(JsonElement drawingInfo, out string error)
+    internal static bool TryValidateDrawingInfoShape(JsonElement drawingInfo, out string error)
     {
         if (drawingInfo.ValueKind != JsonValueKind.Object)
         {

@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Server.Features.Styling;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -49,13 +50,20 @@ internal static class AgentWorkspaceResourceAuthorization
             return await LocalProcessWorkspaceAuthorization.CanReadTaskAsync(context, workspace, task, requireGeneration).ConfigureAwait(false);
         if (task.Kind == "shared-style")
         {
-            var current = await context.RequestServices.GetRequiredService<IStyleEditImpactService>()
-                .GetAsync(task.Id, context.RequestAborted).ConfigureAwait(false);
-            var matches = current is not null && current.StyleId == task.Id && current.StyleVersion == task.Revision &&
-                current.ContentHash == task.ContentHash && current.ImpactHash == task.ImpactHash;
-            if (!matches && requireGeneration)
+            var catalog = context.RequestServices.GetService<IStyleCatalog>();
+            if (catalog is null) return false;
+            // Replay has a private original-agent context. Never resolve an ambient
+            // approver-bound impact service as authority for that context.
+            var impacts = new StyleEditImpactService(catalog,
+                context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>(),
+                new SharedStyleWorkspaceAuthorization.PrivateAccessor { HttpContext = context });
+            var current = await impacts.GetAsync(task.Id, context.RequestAborted).ConfigureAwait(false);
+            if (current is null || current.StyleId != task.Id) return false;
+            if (requireGeneration && (current.StyleVersion != task.Revision || current.ContentHash != task.ContentHash || current.ImpactHash != task.ImpactHash))
                 throw new AgentWorkspaceConflictException("The shared style or its visible impact changed. Review it before sending.");
-            return matches;
+            // A completed mutation must not invalidate its own status/receipt polling.
+            // Each shared-style mutation independently enforces the frozen exact pins.
+            return true;
         }
         if (task.Kind == "workflow-package")
         {

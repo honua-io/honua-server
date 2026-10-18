@@ -410,7 +410,7 @@ public static class OgcStylesEndpoints
     /// and ?validate for strict validation.
     /// </summary>
     private static async Task<IResult> GetStyleImpact(string styleId, HttpContext context,
-        IStyleEditImpactService impacts, CancellationToken cancellationToken)
+        [FromServices] IStyleEditImpactService impacts, CancellationToken cancellationToken)
     {
         var impact = await impacts.GetAsync(styleId, cancellationToken).ConfigureAwait(false);
         if (impact is null) return StandardErrorHelpers.CreateNotFound(context, "Style not found.");
@@ -469,10 +469,13 @@ public static class OgcStylesEndpoints
 
         var strict = IsStrictRequested(context);
 
+        var impactMatch = context.Request.Headers["X-Honua-Style-Impact"];
+        if (expectedVersion.HasValue && (impactMatch.Count != 1 || impactMatch[0] is not { Length: 64 } impactToken ||
+                !impactToken.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f')))
+            return StandardErrorHelpers.CreateBadRequest(context, "Conditional shared style editing requires the reviewed X-Honua-Style-Impact hash.");
         var result = expectedVersion is { } expected
-            ? isEsri
-                ? await projection.UpdateStyleFromDrawingInfoIfVersionAsync(styleId, body, expected, strict, cancellationToken).ConfigureAwait(false)
-                : await projection.UpdateStyleIfVersionAsync(styleId, body, expected, strict, cancellationToken).ConfigureAwait(false)
+            ? await context.RequestServices.GetRequiredService<ISharedStyleEditor>()
+                .UpdateHumanAsync(styleId, expected, impactMatch[0]!, body, isEsri, cancellationToken).ConfigureAwait(false)
             : isEsri
                 ? await projection.UpdateStyleFromDrawingInfoAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false)
                 : await projection.UpdateStyleAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false);
@@ -493,6 +496,8 @@ public static class OgcStylesEndpoints
                 }
 
                 return Results.NoContent();
+            case OgcStyleUpdateStatus.Forbidden:
+                return StandardErrorHelpers.CreateForbidden(context, "The complete shared style scope is not writable.");
             case OgcStyleUpdateStatus.PreconditionFailed:
                 return StandardErrorHelpers.CreatePreconditionFailed(context, "The style changed; reload and reconcile before saving.");
             case OgcStyleUpdateStatus.NotFound:

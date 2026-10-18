@@ -119,6 +119,71 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
         updated.StyleVersion.Should().Be(created!.StyleVersion + 1);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task ConditionalSnapshot_TwoIndependentScopes_SerializeAndRejectStaleRevision()
+    {
+        await using var firstScope = _fixture.Services.CreateAsyncScope();
+        await using var secondScope = _fixture.Services.CreateAsyncScope();
+        var first = firstScope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var second = secondScope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        first.Should().NotBeSameAs(second);
+        var id = "snapshot-race-" + Guid.NewGuid().ToString("N");
+        await first.CreateStyleAsync(id, BuildDefaultStyleJson());
+        var snapshot = await first.GetEditSnapshotAsync(id, null);
+        var locked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var revalidated = 0;
+        var winner = first.ApplyEditIfSnapshotAsync(snapshot, BuildDefaultStyleJson(), "{}", "first", async token =>
+        {
+            locked.SetResult();
+            await release.Task.WaitAsync(token);
+        });
+        await locked.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Task<Honua.Core.Features.Styling.Domain.StyleEditStoreSnapshot?> loser;
+        try
+        {
+            loser = second.ApplyEditIfSnapshotAsync(snapshot, BuildDefaultStyleJson(), "{}", "second", _ =>
+            { Interlocked.Increment(ref revalidated); return Task.CompletedTask; });
+            using var bounded = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+            // A separate legacy writer must also wait on the same canonical row lock.
+            var legacy = () => second.UpdateStyleAsync(id, BuildDefaultStyleJson(), cancellationToken: bounded.Token);
+            await legacy.Should().ThrowAsync<OperationCanceledException>();
+            loser.IsCompleted.Should().BeFalse();
+        }
+        finally { release.TrySetResult(); }
+        (await winner)!.CatalogStyle!.StyleVersion.Should().Be(snapshot.CatalogStyle!.StyleVersion + 1);
+        (await loser).Should().BeNull();
+        revalidated.Should().Be(0, "stale contenders cannot execute a revalidation or mutation callback");
+        (await first.GetStyleAsync(id))!.StyleVersion.Should().Be(snapshot.CatalogStyle.StyleVersion + 1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task ConditionalSnapshot_RevalidationFailureRollsBackBothLayerAndCatalog()
+    {
+        using var client = _fixture.CreateAdminClient();
+        await SeedTestLayerStyleAsync(client);
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var id = $"style-layer-{WebAppFixture.TestLayerId}";
+        var before = await catalog.GetEditSnapshotAsync(id, WebAppFixture.TestLayerId);
+        var mutate = () => catalog.ApplyEditIfSnapshotAsync(before, BuildDefaultStyleJson(), "{}", "revoked-agent",
+            _ => throw new InvalidOperationException("authority revoked after lock wait"));
+        await mutate.Should().ThrowAsync<InvalidOperationException>();
+        var after = await catalog.GetEditSnapshotAsync(id, WebAppFixture.TestLayerId);
+        after.CatalogStyle.Should().BeEquivalentTo(before.CatalogStyle);
+        after.LayerStyle.Should().BeEquivalentTo(before.LayerStyle);
+        after.Associations.Should().BeEquivalentTo(before.Associations);
+        // Either independently versioned mirror changing invalidates the coupled snapshot.
+        await catalog.UpdateStyleAsync(id, BuildDefaultStyleJson());
+        (await catalog.ApplyEditIfSnapshotAsync(before, BuildDefaultStyleJson(), "{}", "stale", _ => Task.CompletedTask)).Should().BeNull();
+        var layer = await catalog.GetEditSnapshotAsync(id, WebAppFixture.TestLayerId);
+        layer.LayerStyle.Should().BeEquivalentTo(before.LayerStyle);
+    }
+
     private static async Task SeedTestLayerStyleAsync(HttpClient adminClient)
     {
         var request = new LayerStyleUpdateRequest

@@ -995,6 +995,9 @@ builder.Services.AddScoped<Honua.Infrastructure.Services.IGeometryConverter,
 #endif
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 builder.Services.AddScoped<StyleEditImpactService>();
+builder.Services.AddScoped<SharedStyleEditor>();
+builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.ISharedStyleAgentEditor, SharedStyleAgentEditor>();
+builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.ISharedStyleEditor>(provider => provider.GetRequiredService<SharedStyleEditor>());
 builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.IStyleEditImpactService>(provider => provider.GetRequiredService<StyleEditImpactService>());
 builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.IOgcStyleProjection,
     Honua.Server.Features.Styling.OgcStyleProjection>();

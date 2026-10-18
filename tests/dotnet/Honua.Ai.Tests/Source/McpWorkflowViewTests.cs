@@ -150,6 +150,8 @@ public sealed class McpWorkflowViewTests
             "honua_query_features",
             "honua_get_style",
             "honua_apply_style_preset",
+            "honua_shared_style_get",
+            "honua_shared_style_propose",
             "honua_render_map",
             "honua_plan_analysis",
             "honua_validate_plan",
@@ -178,7 +180,7 @@ public sealed class McpWorkflowViewTests
             "honua_studio_propose_publication",
             "honua_supported_operation_kinds",
         ]);
-        view.Names.Should().HaveCount(37);
+        view.Names.Should().HaveCount(39);
 
         var stages = view.Meta.GetProperty("stages").EnumerateArray().ToArray();
         stages.Select(s => s.GetProperty("id").GetString()).Should().Equal(
@@ -676,7 +678,7 @@ public sealed class McpWorkflowViewTests
 
         after.Names.Should().NotContain("honua_op_import_geojson")
             .And.NotContain("honua_op_service_promote");
-        after.Names.Should().HaveCount(37);
+        after.Names.Should().HaveCount(39);
 
         // Removing the operation drops it again, still with no edit.
         var removed = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
@@ -709,7 +711,7 @@ public sealed class McpWorkflowViewTests
 
         var baseline = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, BuildCatalogEntries());
         names.Should().Equal(baseline.Members.Select(m => m.ToolName));
-        names.Should().HaveCount(37);
+        names.Should().HaveCount(39);
     }
 
     [UnitTest]
@@ -747,7 +749,7 @@ public sealed class McpWorkflowViewTests
 
         response!.Error.Should().BeNull();
         var tools = response.Result!.Value.GetProperty("tools");
-        tools.GetArrayLength().Should().Be(37);
+        tools.GetArrayLength().Should().Be(39);
         tools.EnumerateArray().Select(t => t.GetProperty("name").GetString())
             .Should().NotContain(name => name!.StartsWith("honua_op_import_", StringComparison.Ordinal));
     }

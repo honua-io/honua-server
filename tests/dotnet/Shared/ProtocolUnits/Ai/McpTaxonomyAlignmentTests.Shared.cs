@@ -92,6 +92,8 @@ public sealed partial class McpTaxonomyAlignmentTests
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.MapTools.SharedStyleGetTool(),
+            new Honua.Ai.Protocols.Mcp.MapTools.SharedStyleProposeTool(),
             new Honua.Ai.Protocols.Mcp.MapTools.GetStyleTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.GetStyleTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.ApplyStylePresetTool(

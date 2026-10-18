@@ -123,6 +123,8 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetServices<IOperationDescriptorProvider>(),
                 sp.GetRequiredService<TimeProvider>()));
 
+        services.TryAddDeferredOperationExecutor<SharedStyleEditExecutor>(SharedStyleEditOperation.OperationId);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, SharedStyleEditApprovalMapper>());
         services.TryAddDeferredOperationExecutor<StylePresetExecutor>(StylePresetOperation.OperationId);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, StylePresetApprovalMapper>());
 
