@@ -165,6 +165,22 @@ public sealed class DelegatedAgentCredentialTests
     }
 
     [Fact]
+    public async Task StoredAgent_TypedCaptureCannotSilentlyDropAdditionalReadSecurityRoles()
+    {
+        using var fixture = new Fixture();
+        var created = await fixture.Services.GetRequiredService<IAdminApiKeyStore>()
+            .CreateAsync("worker", ["agent:workspace", "admin:read"], null, null, default);
+        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
+        var snapshot = await AgentCredentialAuthority.CaptureAsync(principal, fixture.Services, default);
+        snapshot.Should().NotBeNull();
+        var current = await AgentCredentialAuthority.RevalidateAsync(snapshot!, fixture.Services, default);
+        current!.FindAll(ClaimTypes.Role).Select(c => c.Value).Should().BeEquivalentTo(principal.FindAll(ClaimTypes.Role).Select(c => c.Value));
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim(ClaimTypes.Role, "restricted-worker"));
+        (await AgentCredentialAuthority.CaptureAsync(principal, fixture.Services, default)).Should().BeNull();
+        (await AgentCredentialAuthority.IsCurrentAsync(principal, fixture.Services, default)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task StoredAgent_GenericDurableCaptureAndLegacyRestoreFailClosed()
     {
         using var fixture = new Fixture();

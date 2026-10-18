@@ -171,7 +171,7 @@ internal static class AgentCredentialAuthority
         if (!IsAgent(principal)) return null;
         var binding = TrustedProfile(principal);
         var snapshot = binding is null
-            ? new AgentCredentialSnapshot { Kind = "api-key", Id = principal.FindFirst("api_key_id")!.Value, CredentialVersion = StoredApiKeyCredentialVersion.GetStamped(principal), Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray() }
+            ? new AgentCredentialSnapshot { Kind = "api-key", Id = principal.FindFirst("api_key_id")!.Value, CredentialVersion = StoredApiKeyCredentialVersion.GetStamped(principal), MembershipRoles = KeyRoles(principal, services), Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray() }
             : new AgentCredentialSnapshot
             {
                 Kind = DelegatedKind,
@@ -195,7 +195,8 @@ internal static class AgentCredentialAuthority
             if (!Guid.TryParse(snapshot.Id, out var id) || id == Guid.Empty) return null;
             var key = await services.GetRequiredService<IAdminApiKeyStore>().GetAsync(id, cancellationToken).ConfigureAwait(false);
             if (key is null || snapshot.CredentialVersion is null || snapshot.CredentialVersion != StoredApiKeyCredentialVersion.FromRecord(key) || key.RevokedAt is not null || key.ExpiresAt <= Now(services) || !Same(key.Permissions, snapshot.Permissions)) return null;
-            return ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(key);
+            var current = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(key);
+            return Same(snapshot.MembershipRoles, KeyRoles(current, services)) ? current : null;
         }
         if (snapshot.Kind != DelegatedKind || snapshot.TokenExpiresAt <= Now(services)) return null;
         var matches = Profiles(services).Where(p => p.Id == snapshot.Id).ToArray();
@@ -242,11 +243,16 @@ internal static class AgentCredentialAuthority
             Kind = "api-key",
             Id = keyId.Value,
             CredentialVersion = StoredApiKeyCredentialVersion.GetStamped(principal),
+            MembershipRoles = KeyRoles(principal, services),
             Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray()
         };
         var current = await RevalidateAsync(snapshot, services, cancellationToken).ConfigureAwait(false);
         return current is not null && CanonicalSecurityActor.Resolve(current)?.ActorId == CanonicalSecurityActor.Resolve(principal)?.ActorId;
     }
+
+    private static string[] KeyRoles(ClaimsPrincipal principal, IServiceProvider services) =>
+        RbacRoleClaims.Enumerate(principal, services.GetService<IOptions<RbacOptions>>()?.Value ?? new(), services)
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
 
     internal static bool MatchesTenant(ClaimsPrincipal principal, string? tenant) => !IsDelegated(principal) ||
         TrustedProfile(principal) is { } profile && Value(profile, "tenant") == tenant;
