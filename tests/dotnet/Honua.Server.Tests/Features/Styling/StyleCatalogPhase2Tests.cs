@@ -184,6 +184,53 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
         layer.LayerStyle.Should().BeEquivalentTo(before.LayerStyle);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task MutationReceipt_CommittedResponseFailure_ReconcilesAcrossScopesWithoutAnotherWrite()
+    {
+        await using var firstScope = _fixture.Services.CreateAsyncScope();
+        await using var secondScope = _fixture.Services.CreateAsyncScope();
+        var first = firstScope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var second = secondScope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var id = "receipt-" + Guid.NewGuid().ToString("N");
+        var style = BuildDefaultStyleJson();
+        await first.CreateStyleAsync(id, style);
+        var snapshot = await first.GetEditSnapshotAsync(id, null);
+        using var parsed = JsonDocument.Parse(style);
+        var canonical = Honua.Core.Features.Collaboration.Operations.SavedMapOperationIdempotency.CanonicalPayload(parsed.RootElement);
+        var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical)));
+        var identity = new Honua.Core.Features.Styling.Domain.StyleMutationIdentity(
+            Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), new string('a', 64),
+            "agent:receipt-test", "public", "honua", "target", id, snapshot.CatalogStyle!.StyleVersion,
+            hash, new string('b', 64), hash);
+        var mutationCalls = 0;
+        async Task LoseResponseAfterActualCommit()
+        {
+            var result = await first.ApplyEditOnceAsync(snapshot, style, "{}", identity.ActorId, identity,
+                _ => { mutationCalls++; return Task.CompletedTask; }, _ => Task.CompletedTask);
+            result.Should().NotBeNull();
+            throw new IOException("lost response after SQL commit");
+        }
+        await ((Func<Task>)LoseResponseAfterActualCommit).Should().ThrowAsync<IOException>();
+        var stored = await second.GetMutationReceiptAsync(identity);
+        stored.Should().NotBeNull();
+        var authorityChecks = 0;
+        var retries = Enumerable.Range(0, 2).Select(_ => second.ApplyEditOnceAsync(snapshot, style, "{}", identity.ActorId, identity,
+            _ => throw new InvalidOperationException("a retry cannot mutate"),
+            _ => { Interlocked.Increment(ref authorityChecks); return Task.CompletedTask; }));
+        var outcomes = await Task.WhenAll(retries);
+        outcomes.Should().OnlyContain(outcome => outcome != null && outcome.UpdatedSnapshot == null && outcome.Receipt == stored);
+        mutationCalls.Should().Be(1);
+        authorityChecks.Should().Be(2);
+        (await second.GetStyleAsync(id))!.StyleVersion.Should().Be(snapshot.CatalogStyle.StyleVersion + 1);
+        var revoked = () => second.ApplyEditOnceAsync(snapshot, style, "{}", identity.ActorId, identity,
+            _ => Task.CompletedTask, _ => throw new UnauthorizedAccessException());
+        await revoked.Should().ThrowAsync<UnauthorizedAccessException>();
+        var conflict = () => second.GetMutationReceiptAsync(identity with { ActorId = "different-actor" });
+        await conflict.Should().ThrowAsync<InvalidOperationException>();
+    }
+
     private static async Task SeedTestLayerStyleAsync(HttpClient adminClient)
     {
         var request = new LayerStyleUpdateRequest

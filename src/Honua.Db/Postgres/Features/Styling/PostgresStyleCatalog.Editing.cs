@@ -29,6 +29,34 @@ internal sealed partial class PostgresStyleCatalog
         string mapLibreStyleJson, string drawingInfoJson, string? revisedBy,
         Func<CancellationToken, Task> revalidate, CancellationToken cancellationToken = default)
     {
+        var outcome = await ApplyEditCoreAsync(expected, mapLibreStyleJson, drawingInfoJson, revisedBy,
+            revalidate, null, null, cancellationToken).ConfigureAwait(false);
+        return outcome?.Snapshot;
+    }
+
+    public async Task<StyleMutationOutcome?> ApplyEditOnceAsync(StyleEditStoreSnapshot expected, string mapLibreStyleJson,
+        string drawingInfoJson, string? revisedBy, StyleMutationIdentity identity,
+        Func<CancellationToken, Task> revalidateMutation, Func<CancellationToken, Task> revalidateReceipt,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(revalidateMutation);
+        ArgumentNullException.ThrowIfNull(revalidateReceipt);
+        ValidateIdentity(identity);
+        using var candidateDocument = System.Text.Json.JsonDocument.Parse(mapLibreStyleJson);
+        var candidateCanonical = Honua.Core.Features.Collaboration.Operations.SavedMapOperationIdempotency.CanonicalPayload(candidateDocument.RootElement);
+        var candidateHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(candidateCanonical)));
+        if (!string.Equals(candidateHash, identity.CandidateHash, StringComparison.Ordinal))
+            throw new ArgumentException("Candidate bytes do not match the sealed mutation identity.", nameof(identity));
+        var outcome = await ApplyEditCoreAsync(expected, mapLibreStyleJson, drawingInfoJson, revisedBy,
+            revalidateMutation, identity, revalidateReceipt, cancellationToken).ConfigureAwait(false);
+        return outcome is null ? null : new(outcome.Value.Receipt!, outcome.Value.Snapshot);
+    }
+
+    private async Task<(StyleEditStoreSnapshot? Snapshot, StyleMutationReceipt? Receipt)?> ApplyEditCoreAsync(
+        StyleEditStoreSnapshot expected, string mapLibreStyleJson, string drawingInfoJson, string? revisedBy,
+        Func<CancellationToken, Task> revalidate, StyleMutationIdentity? identity,
+        Func<CancellationToken, Task>? revalidateReceipt, CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(expected);
         ArgumentNullException.ThrowIfNull(revalidate);
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -36,6 +64,17 @@ internal sealed partial class PostgresStyleCatalog
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(bounded.Token).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(bounded.Token).ConfigureAwait(false);
         await Infrastructure.StudioStyleDependencyBarrier.AcquireAsync(connection, transaction, _styleImpactBarrierKey, true, bounded.Token).ConfigureAwait(false);
+        if (identity is not null)
+        {
+            var receipt = await ReadMutationReceiptAsync(connection, transaction, identity, bounded.Token).ConfigureAwait(false);
+            if (receipt is not null)
+            {
+                await revalidateReceipt!(bounded.Token).ConfigureAwait(false);
+                return (null, receipt);
+            }
+            if (!string.Equals(identity.StyleId, expected.StyleId, StringComparison.Ordinal))
+                throw new InvalidOperationException("Style mutation identity does not match the canonical target.");
+        }
         var current = await ReadEditSnapshotAsync(connection, transaction, expected.StyleId,
             expected.LayerStyle?.LayerId, true, bounded.Token).ConfigureAwait(false);
         current = await ReadConsumersAsync(connection, transaction, current, expected.ReferenceIds, bounded.Token).ConfigureAwait(false);
@@ -100,8 +139,12 @@ internal sealed partial class PostgresStyleCatalog
         var updated = await ReadEditSnapshotAsync(connection, transaction, expected.StyleId,
             expected.LayerStyle?.LayerId, false, bounded.Token).ConfigureAwait(false);
         updated = await ReadConsumersAsync(connection, transaction, updated, expected.ReferenceIds, bounded.Token).ConfigureAwait(false);
+        StyleMutationReceipt? committedReceipt = null;
+        if (identity is not null)
+            committedReceipt = await InsertMutationReceiptAsync(connection, transaction, identity,
+                updated.LayerStyle?.StyleVersion ?? updated.CatalogStyle!.StyleVersion, bounded.Token).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(bounded.Token).ConfigureAwait(false);
-        return updated;
+        return (updated, committedReceipt);
     }
 
     private static bool SameSnapshot(StyleEditStoreSnapshot expected, StyleEditStoreSnapshot current)

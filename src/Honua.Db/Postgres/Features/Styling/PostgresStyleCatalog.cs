@@ -31,6 +31,7 @@ internal sealed partial class PostgresStyleCatalog : IStyleCatalog
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _stylesTable;
+    private readonly string _mutationReceiptsTable;
     private readonly string _styleImpactBarrierKey;
     private readonly string _studioItemsTable;
     private readonly string _studioVersionsTable;
@@ -49,6 +50,7 @@ internal sealed partial class PostgresStyleCatalog : IStyleCatalog
         _studioDraftsTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_package_drafts", schemaName);
         _studioDependenciesTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_content_version_dependencies", schemaName);
         _studioDraftDependenciesTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_draft_style_dependencies", schemaName);
+        _mutationReceiptsTable = Infrastructure.SchemaSearchPath.QualifyTable("style_mutation_receipts", schemaName);
         _stylesTable = Infrastructure.SchemaSearchPath.QualifyTable("styles", schemaName);
         _refsTable = Infrastructure.SchemaSearchPath.QualifyTable("layer_style_refs", schemaName);
         _layersTable = Infrastructure.SchemaSearchPath.QualifyTable("layers", schemaName);

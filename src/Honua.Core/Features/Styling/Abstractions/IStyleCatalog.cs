@@ -31,6 +31,17 @@ public interface IStyleCatalog
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Atomic shared style editing is unavailable.");
 
+    /// <summary>Looks up an exact immutable execution receipt; conflicting operation identity is rejected.</summary>
+    Task<StyleMutationReceipt?> GetMutationReceiptAsync(StyleMutationIdentity identity, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Style mutation receipts are unavailable.");
+
+    /// <summary>Commits bytes and receipt in one transaction, or reauthorizes and returns the identical prior receipt without writing.</summary>
+    Task<StyleMutationOutcome?> ApplyEditOnceAsync(StyleEditStoreSnapshot expected, string mapLibreStyleJson,
+        string drawingInfoJson, string? revisedBy, StyleMutationIdentity identity,
+        Func<CancellationToken, Task> revalidateMutation, Func<CancellationToken, Task> revalidateReceipt,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Atomic style mutation receipts are unavailable.");
+
     /// <summary>Updates only when the current canonical version equals the expected version; null means no matching row.</summary>
     Task<StyleCatalogRecord?> UpdateStyleIfVersionAsync(
         string styleId, string mapLibreStyleJson, int expectedVersion,
