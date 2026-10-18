@@ -33,6 +33,45 @@ public sealed class NativeEntryQualificationTests
     }
 
     [UnitTest]
+    public void ValidateLoaderEnvironment_PreservesExactImageLibraryPath()
+    {
+        var start = CleanStartInfo();
+        start.Environment["LD_LIBRARY_PATH"] = "/opt/pdal/lib";
+        var environment = start.Environment.ToArray();
+        NativeEntryQualification.ValidateLoaderEnvironment(start);
+        Assert.Equal(environment, start.Environment.ToArray());
+    }
+
+    [Theory]
+    [InlineData("LD_LIBRARY_PATH", "/tmp")]
+    [InlineData("LD_LIBRARY_PATH", "/opt/pdal/lib:/tmp")]
+    [InlineData("LD_LIBRARY_PATH", "/opt/pdal/lib:")]
+    [InlineData("LD_LIBRARY_PATH", "")]
+    [InlineData("LD_PRELOAD", "/app/libhonua_gp_entry.so")]
+    [InlineData("LD_AUDIT", "/tmp/override.so")]
+    [InlineData("GLIBC_TUNABLES", "glibc.malloc.check=1")]
+    [InlineData("HONUA_GP_NATIVE_ENTRY_NONCE", "caller-supplied")]
+    [Trait("Category", "Unit")]
+    public void ValidateLoaderEnvironment_RefusesOverrides(string name, string value)
+    {
+        var start = CleanStartInfo();
+        start.Environment["LD_LIBRARY_PATH"] = "/opt/pdal/lib";
+        start.Environment[name] = value;
+        Assert.Throws<InvalidOperationException>(() => NativeEntryQualification.ValidateLoaderEnvironment(start));
+    }
+
+    private static ProcessStartInfo CleanStartInfo()
+    {
+        var start = new ProcessStartInfo("ogr2ogr");
+        foreach (var name in start.Environment.Keys.Where(name => name.StartsWith("LD_", StringComparison.Ordinal) ||
+            name.StartsWith("HONUA_GP_NATIVE_ENTRY_", StringComparison.Ordinal) || name == "GLIBC_TUNABLES").ToArray())
+        {
+            start.Environment.Remove(name);
+        }
+        return start;
+    }
+
+    [UnitTest]
     public async Task RunProcessAsync_MissingHandshake_KillsAndReapsActualNativeChild()
     {
         if (!OperatingSystem.IsLinux())

@@ -19,6 +19,11 @@ def verify(image, source):
         raise RuntimeError("worker image source mismatch")
     if identity["Config"]["User"] != "1001:1001":
         raise RuntimeError("native image user changed")
+    loader_environment = [item for item in identity["Config"].get("Env", [])
+                          if item.split("=", 1)[0].startswith("LD_")
+                          or item.split("=", 1)[0] == "GLIBC_TUNABLES"]
+    if loader_environment != ["LD_LIBRARY_PATH=/opt/pdal/lib"]:
+        raise RuntimeError("image loader environment differs from the managed qualification floor")
     expected_executable = docker("run", "--rm", "--read-only", "--network", "none",
                                  "--entrypoint", "/usr/bin/readlink", image, "-f", "/usr/bin/ogr2ogr")
     if expected_executable not in ("/usr/bin/ogr2ogr", "/usr/local/bin/ogr2ogr"):

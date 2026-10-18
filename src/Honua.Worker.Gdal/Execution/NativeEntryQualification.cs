@@ -36,11 +36,7 @@ internal sealed class NativeEntryQualification
         {
             throw new InvalidOperationException("Native entry qualification requires the image's native ogr2ogr executable.");
         }
-        if (startInfo.Environment.Keys.Any(name => name.StartsWith("LD_", StringComparison.Ordinal) ||
-            name.StartsWith("HONUA_GP_NATIVE_ENTRY_", StringComparison.Ordinal) || name == "GLIBC_TUNABLES"))
-        {
-            throw new InvalidOperationException("Native entry qualification refuses inherited loader or handshake overrides.");
-        }
+        ValidateLoaderEnvironment(startInfo);
         var candidates = new[] { "/usr/bin/ogr2ogr", "/usr/local/bin/ogr2ogr" };
         var tool = candidates.FirstOrDefault(File.Exists)
             ?? throw new InvalidOperationException("The native entry executable is unavailable.");
@@ -107,6 +103,20 @@ internal sealed class NativeEntryQualification
         startInfo.Environment["HONUA_GP_NATIVE_ENTRY_RELEASE"] = release;
         startInfo.Environment["HONUA_GP_NATIVE_ENTRY_NONCE"] = nonce;
         return new NativeEntryQualification(record, release, nonce, executable);
+    }
+
+    internal static void ValidateLoaderEnvironment(ProcessStartInfo startInfo)
+    {
+        // This exact, immutable image directory is required by the PDAL image.
+        // Preserve its value; qualification preflight forbids mounts over /opt.
+        // Any extra search directory or other loader override is untrusted.
+        if (startInfo.Environment.Any(pair =>
+            (pair.Key.StartsWith("LD_", StringComparison.Ordinal) &&
+             (pair.Key != "LD_LIBRARY_PATH" || pair.Value != "/opt/pdal/lib")) ||
+            pair.Key.StartsWith("HONUA_GP_NATIVE_ENTRY_", StringComparison.Ordinal) || pair.Key == "GLIBC_TUNABLES"))
+        {
+            throw new InvalidOperationException("Native entry qualification refuses inherited loader or handshake overrides.");
+        }
     }
 
     internal async Task WaitAsync(Process process, CancellationToken cancellationToken)

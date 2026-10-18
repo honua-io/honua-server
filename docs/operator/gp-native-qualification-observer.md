@@ -115,6 +115,10 @@ reviewed worker code; no caller selects a loader path. Its constructor runs
 resolved-executable handshake, and waits for the worker's nonce-bound release.
 The worker validates that actual executable before publishing managed readiness.
 Any handshake, startup or IO failure kills and boundedly reaps the child.
+The child preserves the image's exact `LD_LIBRARY_PATH=/opt/pdal/lib`; other
+loader or inherited handshake overrides are refused. Qualification preflight
+protects `/opt` from mount overlays, and the image check verifies this loader
+environment against the managed launch policy.
 Production-default execution gets no shim environment. Earlier all-barrier
 qualification semantics are retained when the phase selector is unset.
 
