@@ -63,6 +63,8 @@ public sealed record AgentCredentialSnapshot
     public long Generation { get; init; }
     /// <summary>Exact issuer, audience, subject and tenant captured at proposal time.</summary>
     public string[] Binding { get; init; } = [];
+    /// <summary>Recognized OAuth scopes from validated token claims; replay remains scope-governed even when empty.</summary>
+    public string[] OAuthScopes { get; init; } = [];
     /// <summary>Canonical role-grant hashes captured at proposal time.</summary>
     public string[] RoleGrantFingerprints { get; init; } = [];
     /// <summary>Canonical managed roles captured at enrollment resolution.</summary>
@@ -78,7 +80,7 @@ public sealed record AgentCredentialSnapshot
 internal static class AgentCredentialAuthority
 {
     internal const string ValidationClaim = "honua:delegated_agent_validation";
-    private static readonly string[] ValidationClaimTypes = ["iss", "sub", "aud", "exp", "tenant_id", "tid", "scope", "scp", ClaimTypes.NameIdentifier];
+    private static readonly string[] ValidationClaimTypes = ["iss", "sub", "aud", "exp", "tenant_id", "tid", "scope", "scp", OperatorScopeCatalog.ScopeClaimUri, ClaimTypes.NameIdentifier];
     private const string GrantClaim = "honua:delegated_agent_acl";
     private const string DelegatedOnlyClaim = "honua:delegated_agent_only";
     private const string GenerationClaim = "honua:delegated_agent_generation";
@@ -143,6 +145,8 @@ internal static class AgentCredentialAuthority
             (Value(marker, "scope") ?? Value(marker, "scp") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(p.RequiredScope, StringComparer.Ordinal)).ToArray();
         if (profiles.Length != 1) return principal;
         var profile = profiles[0];
+        var oauthScopes = ValidatedOAuthScopes(marker);
+        ApplyOAuthScopes(identity, oauthScopes, profile.RequiredScope);
         if (CanonicalSecurityActor.Resolve(principal)?.SubjectId != profile.Subject) return principal;
         var authority = await ResolveAuthorityAsync(profile, services, default).ConfigureAwait(false);
         var permissions = authority.Permissions;
@@ -159,6 +163,7 @@ internal static class AgentCredentialAuthority
         binding.Properties["tenant"] = profile.Tenant;
         binding.Properties["tenant-claim"] = profile.TenantClaimType;
         binding.Properties["required-scope"] = profile.RequiredScope;
+        binding.Properties["oauth-scopes"] = string.Join(" ", oauthScopes);
         for (var i = 0; i < authority.Roles.Length; i++) binding.Properties["role-" + i.ToString(System.Globalization.CultureInfo.InvariantCulture)] = authority.Roles[i];
         AddGrantClaims(identity, authority.Grants);
         identity.AddClaim(CanonicalSecurityActor.CreateStampedClaim(GenerationClaim, AuthorityGeneration(profile.Generation, authority.Roles)));
@@ -178,6 +183,7 @@ internal static class AgentCredentialAuthority
                 Id = binding.Value,
                 Generation = long.TryParse(Value(binding, "generation"), out var generation) ? generation : 0,
                 Binding = [Value(binding, "issuer") ?? "", Value(binding, "audience") ?? "", Value(binding, "subject") ?? "", Value(binding, "tenant") ?? "", Value(binding, "tenant-claim") ?? "", Value(binding, "required-scope") ?? ""],
+                OAuthScopes = (Value(binding, "oauth-scopes") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries),
                 RoleGrantFingerprints = principal.FindAll(GrantClaim).Where(CanonicalSecurityActor.IsFrameworkOwnedClaim).Select(c => c.Value).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
                 MembershipRoles = binding.Properties.Where(p => p.Key.StartsWith("role-", StringComparison.Ordinal)).Select(p => p.Value ?? "").Order(StringComparer.Ordinal).ToArray(),
                 TokenExpiresAt = long.TryParse(Value(binding, "expiry"), out var expiry) ? DateTimeOffset.FromUnixTimeSeconds(expiry) : DateTimeOffset.MinValue,
@@ -203,6 +209,8 @@ internal static class AgentCredentialAuthority
         if (matches.Length != 1 || !Valid(matches[0], services) || matches[0].Generation != snapshot.Generation) return null;
         var profile = matches[0];
         if (!snapshot.Binding.SequenceEqual([profile.Issuer, profile.Audience, profile.Subject, profile.Tenant, profile.TenantClaimType, profile.RequiredScope])) return null;
+        var oauthScopes = RecognizedOAuthScopes(string.Join(" ", snapshot.OAuthScopes));
+        if (!Same(oauthScopes, snapshot.OAuthScopes)) return null;
         var authority = await ResolveAuthorityAsync(profile, services, cancellationToken).ConfigureAwait(false);
         var permissions = authority.Permissions;
         if (!Same(authority.Roles, snapshot.MembershipRoles) || !Same(authority.Grants.Select(GrantFingerprint).Distinct(StringComparer.Ordinal), snapshot.RoleGrantFingerprints)) return null;
@@ -210,6 +218,7 @@ internal static class AgentCredentialAuthority
         var identity = new ClaimsIdentity([new Claim("iss", profile.Issuer), new Claim("sub", profile.Subject), new Claim(profile.TenantClaimType, profile.Tenant), new Claim("aud", profile.Audience)], OidcAuthenticationExtensions.JwtBearerScheme);
         foreach (var permission in permissions) identity.AddClaim(CanonicalSecurityActor.CreateStampedClaim("permission", permission));
         ProjectRoles(identity, services);
+        ApplyOAuthScopes(identity, oauthScopes, profile.RequiredScope);
         var binding = CanonicalSecurityActor.CreateStampedClaim(ProfileClaim, profile.Id);
         binding.Properties["generation"] = profile.Generation.ToString(System.Globalization.CultureInfo.InvariantCulture);
         binding.Properties["issuer"] = profile.Issuer;
@@ -218,6 +227,7 @@ internal static class AgentCredentialAuthority
         binding.Properties["tenant"] = profile.Tenant;
         binding.Properties["tenant-claim"] = profile.TenantClaimType;
         binding.Properties["required-scope"] = profile.RequiredScope;
+        binding.Properties["oauth-scopes"] = string.Join(" ", oauthScopes);
         for (var i = 0; i < authority.Roles.Length; i++) binding.Properties["role-" + i.ToString(System.Globalization.CultureInfo.InvariantCulture)] = authority.Roles[i];
         identity.AddClaim(CanonicalSecurityActor.CreateStampedClaim(GenerationClaim, AuthorityGeneration(profile.Generation, authority.Roles)));
         AddGrantClaims(identity, authority.Grants);
@@ -248,6 +258,26 @@ internal static class AgentCredentialAuthority
         };
         var current = await RevalidateAsync(snapshot, services, cancellationToken).ConfigureAwait(false);
         return current is not null && CanonicalSecurityActor.Resolve(current)?.ActorId == CanonicalSecurityActor.Resolve(principal)?.ActorId;
+    }
+
+    private static string[] ValidatedOAuthScopes(Claim marker) => RecognizedOAuthScopes(string.Join(" ",
+        new[] { OperatorScopeCatalog.ScopeClaimType, OperatorScopeCatalog.ScpClaimType, OperatorScopeCatalog.ScopeClaimUri }
+            .Select(type => Value(marker, type) ?? "")));
+
+    private static string[] RecognizedOAuthScopes(string scopes) =>
+        OperatorScopeCatalog.CollectRecognizedScopes(new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(OperatorScopeCatalog.ScopeClaimType, scopes)])))
+            .Order(StringComparer.Ordinal).ToArray();
+
+    private static void ApplyOAuthScopes(ClaimsIdentity identity, string[] scopes, string requiredScope)
+    {
+        foreach (var claim in identity.Claims.Where(static claim =>
+            claim.Type is OperatorScopeCatalog.ScopeClaimType or OperatorScopeCatalog.ScpClaimType or
+                OperatorScopeCatalog.ScopeClaimUri or OperatorScopeCatalog.ScopeGovernedClaimType).ToArray()) identity.RemoveClaim(claim);
+        identity.AddClaim(new Claim(OperatorScopeCatalog.ScopeClaimType,
+            string.Join(" ", scopes.Append(requiredScope).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))));
+        identity.AddClaim(CanonicalSecurityActor.CreateStampedClaim(OperatorScopeCatalog.ScopeGovernedClaimType,
+            OperatorScopeCatalog.ScopeGovernedClaimValue));
     }
 
     private static string[] KeyRoles(ClaimsPrincipal principal, IServiceProvider services) =>

@@ -180,6 +180,34 @@ public sealed class DelegatedAgentCredentialTests
         (await AgentCredentialAuthority.IsCurrentAsync(principal, fixture.Services, default)).Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DelegatedReplay_PreservesValidatedOAuthNarrowing(bool canRead)
+    {
+        using var fixture = new Fixture();
+        var principal = Token();
+        var identity = (ClaimsIdentity)principal.Identity!;
+        identity.RemoveClaim(identity.FindFirst("scope")!);
+        identity.AddClaim(new Claim("scope", "agent:workspace" + (canRead ? " " + OperatorScopeCatalog.Read : "")));
+        AgentCredentialAuthority.MarkValidated(identity);
+        // A post-validation mapping may not expand the validated token's ceiling.
+        identity.AddClaim(new Claim("scp", OperatorScopeCatalog.Full));
+        await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
+        var snapshot = await AgentCredentialAuthority.CaptureAsync(principal, fixture.Services, default);
+        snapshot.Should().NotBeNull();
+        var replay = await AgentCredentialAuthority.RevalidateAsync(snapshot!, fixture.Services, default);
+        replay.Should().NotBeNull();
+        foreach (var candidate in new[] { principal, replay! })
+        {
+            var scopes = new OperatorScopeAuthorizer();
+            scopes.Evaluate(candidate, OperatorResourceType.Deployment, OperatorOperation.Read).IsAllowed.Should().Be(canRead);
+            var publish = scopes.Evaluate(candidate, OperatorResourceType.Deployment, OperatorOperation.Publish);
+            publish.IsScopeGoverned.Should().BeTrue();
+            publish.IsAllowed.Should().BeFalse();
+        }
+    }
+
     [Fact]
     public async Task StoredAgent_GenericDurableCaptureAndLegacyRestoreFailClosed()
     {

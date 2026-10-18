@@ -28,6 +28,7 @@ public sealed class DelegatedAgentJwtBearerTests
 {
     [Theory]
     [InlineData("valid", true)]
+    [InlineData("valid-read-scope", true)]
     [InlineData("wrong-issuer", false)]
     [InlineData("wrong-audience", false)]
     [InlineData("wrong-subject", false)]
@@ -93,7 +94,7 @@ public sealed class DelegatedAgentJwtBearerTests
         var token = new JwtSecurityToken(
             issuer: variant == "wrong-issuer" ? "https://evil.example" : "https://issuer.example",
             audience: variant == "wrong-audience" ? "other" : "honua",
-            claims: [new Claim("scope", variant.Contains("omitted-scope", StringComparison.Ordinal) ? "" : "agent:workspace"), new Claim("sub", variant == "wrong-subject" ? "other" : "subject"),
+            claims: [new Claim("scope", variant.Contains("omitted-scope", StringComparison.Ordinal) ? "" : variant == "valid-read-scope" ? "agent:workspace " + OperatorScopeCatalog.Read : "agent:workspace"), new Claim("sub", variant == "wrong-subject" ? "other" : "subject"),
                 new Claim("tenant_id", variant == "wrong-tenant" ? "other" : "tenant"),
                 new Claim("permission", "agent:workspace"), new Claim("api_key_id", Guid.NewGuid().ToString()),
                 new Claim("auth_type", "admin-api-key"), new Claim(ClaimTypes.Role, "admin"), new Claim("GROUPS", "admin")],
@@ -132,6 +133,18 @@ public sealed class DelegatedAgentJwtBearerTests
         }
         if (expectedAgent)
         {
+            var credential = await AgentCredentialAuthority.CaptureAsync(result.Principal!, provider, default);
+            credential.Should().NotBeNull();
+            var replay = await AgentCredentialAuthority.RevalidateAsync(credential!, provider, default);
+            replay.Should().NotBeNull();
+            var scopeAuthorizer = new Honua.Core.Features.Authorization.OperatorScopeAuthorizer();
+            foreach (var candidate in new[] { result.Principal!, replay! })
+            {
+                var read = scopeAuthorizer.Evaluate(candidate, OperatorResourceType.Deployment, OperatorOperation.Read);
+                read.IsScopeGoverned.Should().BeTrue();
+                read.IsAllowed.Should().Be(variant == "valid-read-scope");
+                scopeAuthorizer.Evaluate(candidate, OperatorResourceType.Deployment, OperatorOperation.Publish).IsAllowed.Should().BeFalse();
+            }
             result.Principal!.FindFirst("api_key_id").Should().BeNull();
             result.Principal.FindFirst("auth_type")!.Value.Should().NotBe("admin-api-key");
         }
