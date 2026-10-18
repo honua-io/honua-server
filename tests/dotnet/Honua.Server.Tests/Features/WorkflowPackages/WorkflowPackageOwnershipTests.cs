@@ -24,8 +24,12 @@ public sealed class WorkflowPackageOwnershipTests
         var owner = legacy ? null : new WorkflowPackageOwnership { OwnerActorId = "actor:first", TenantId = "tenant:first" };
         var package = new WorkflowPackage
         {
-            PackageId = "package", Name = "Package", Graph = new WorkflowGraph { Nodes = [] },
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow, Ownership = owner
+            PackageId = "package",
+            Name = "Package",
+            Graph = new WorkflowGraph { Nodes = [] },
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Ownership = owner
         };
         await store.SavePackageAsync(package);
         var saved = await store.SavePackageAsync(package with
@@ -53,7 +57,8 @@ public sealed class WorkflowPackageOwnershipTests
              new Claim(ClaimTypes.Name, "display-name")], "authenticated-test"));
         var request = new SaveWorkflowPackageRequest
         {
-            Name = "Test", Graph = new WorkflowGraph { Nodes = [] },
+            Name = "Test",
+            Graph = new WorkflowGraph { Nodes = [] },
             Metadata = new Dictionary<string, string> { ["ownerActorId"] = "forged", ["tenantId"] = "forged" }
         };
         var saved = await service.SavePackageAsync(request, principal, CancellationToken.None);

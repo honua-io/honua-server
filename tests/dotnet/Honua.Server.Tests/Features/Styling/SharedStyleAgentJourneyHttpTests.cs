@@ -86,10 +86,15 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
                     });
                     var roles = Substitute.For<IRoleStore>();
                     roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-                        .Returns(new EffectivePermissions { UserId = "shared-style-agent", Roles = ["worker"], Permissions = [
+                        .Returns(new EffectivePermissions
+                        {
+                            UserId = "shared-style-agent",
+                            Roles = ["worker"],
+                            Permissions = [
                             new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" },
                             new PermissionGrant { Service = "admin", Layer = "*", Operation = "write" },
-                            new PermissionGrant { Service = "*", Layer = "*", Operation = "*" }] });
+                            new PermissionGrant { Service = "*", Layer = "*", Operation = "*" }]
+                        });
                     services.RemoveAll<IRoleStore>();
                     services.AddSingleton(roles);
                 }
@@ -154,13 +159,13 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
                 // A workload's admin:write metadata capability must not escape
                 // its profile by issuing another credential or changing trust/RBAC.
                 var humanIssued = await Read(await human.PostAsJsonAsync("/api/v1/admin/api-keys", new
-                    { name = "human-credential-control", permissions = new[] { "admin:read" } }), HttpStatusCode.Created);
+                { name = "human-credential-control", permissions = new[] { "admin:read" } }), HttpStatusCode.Created);
                 var controlKeyId = humanIssued.GetProperty("data").GetProperty("apiKey").GetProperty("id").GetGuid();
                 await using var credentialScope = fixture.Services.CreateAsyncScope();
                 var keys = credentialScope.ServiceProvider.GetRequiredService<IAdminApiKeyStore>();
                 var before = (await keys.GetAsync(controlKeyId, default))!;
                 using var mint = await agent.PostAsJsonAsync("/api/v1/admin/api-keys", new
-                    { name = "workload-escape", permissions = new[] { "admin" } });
+                { name = "workload-escape", permissions = new[] { "admin" } });
                 mint.StatusCode.Should().Be(HttpStatusCode.Forbidden);
                 using var rotate = await agent.PostAsync($"/api/v1/admin/api-keys/{controlKeyId}/rotate", null);
                 rotate.StatusCode.Should().Be(HttpStatusCode.Forbidden);

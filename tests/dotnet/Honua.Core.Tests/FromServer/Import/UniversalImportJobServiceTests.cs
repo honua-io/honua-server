@@ -50,7 +50,10 @@ public sealed class UniversalImportJobServiceTests
         using var stream = new MemoryStream([1]);
         var id = await service.QueueImportAsync(new ImportRequest
         {
-            FileStream = stream, FileName = "roads.geojson", TableName = "roads", Ownership = owner,
+            FileStream = stream,
+            FileName = "roads.geojson",
+            TableName = "roads",
+            Ownership = owner,
         }, 1);
         try
         {
@@ -85,8 +88,14 @@ public sealed class UniversalImportJobServiceTests
 
         using var stream = new MemoryStream([0x01]);
         var jobId = await jobService.QueueImportAsync(
-            new ImportRequest { FileStream = stream, FileName = "widgets.geojson", TableName = "widgets", TargetSrid = 4326,
-                Ownership = new ImportOperationOwnership("accepting-actor", "tenant-a") },
+            new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "widgets.geojson",
+                TableName = "widgets",
+                TargetSrid = 4326,
+                Ownership = new ImportOperationOwnership("accepting-actor", "tenant-a")
+            },
             fileSize: 1);
 
         var progress = await WaitForTerminalProgressAsync(jobService, jobId);

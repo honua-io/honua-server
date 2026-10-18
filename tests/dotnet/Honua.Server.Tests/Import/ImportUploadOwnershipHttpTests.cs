@@ -50,9 +50,13 @@ public sealed class ImportUploadOwnershipHttpTests
             records[request.UploadId] = UploadProgress.CreateInitial(request.UploadId, request.FileName, request.SizeBytes ?? 0);
             return UploadResult.CreateSuccess(new CloudFile
             {
-                FileId = Guid.NewGuid().ToString("N"), FileName = request.FileName, StoragePath = "imports/test",
-                ContentType = request.ContentType, SizeBytes = request.SizeBytes ?? 0,
-                UploadedAt = DateTimeOffset.UtcNow, Provider = CloudStorageProvider.AwsS3,
+                FileId = Guid.NewGuid().ToString("N"),
+                FileName = request.FileName,
+                StoragePath = "imports/test",
+                ContentType = request.ContentType,
+                SizeBytes = request.SizeBytes ?? 0,
+                UploadedAt = DateTimeOffset.UtcNow,
+                Provider = CloudStorageProvider.AwsS3,
             });
         });
         storage.GetUploadProgressAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())

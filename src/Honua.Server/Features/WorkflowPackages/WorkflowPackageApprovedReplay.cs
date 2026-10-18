@@ -165,7 +165,9 @@ internal sealed class WorkflowPackageApprovedReplay
 
     private static AgentCredentialSnapshot Credential(WorkflowPackageApprovalPayload payload) => payload.Credential ?? new()
     {
-        Kind = "api-key", Id = payload.KeyId.ToString("D"), Permissions = payload.Permissions
+        Kind = "api-key",
+        Id = payload.KeyId.ToString("D"),
+        Permissions = payload.Permissions
     };
 
     public static string Fingerprint(WorkflowPublication publication) => Convert.ToHexString(SHA256.HashData(

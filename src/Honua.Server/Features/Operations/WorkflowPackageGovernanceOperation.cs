@@ -89,7 +89,8 @@ internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider service
             Intent = intent,
             AuthorSecurityContext = AgentCredentialAuthority.IsDelegated(principal)
                 ? new Honua.Core.Features.Authorization.Domain.JobSecurityContext(access.ActorId, access.TenantId,
-                    credential.Permissions.Select(permission => new Honua.Core.Features.Authorization.Domain.JobSecurityClaim("permission", permission)).ToArray()) { OwnerActorId = access.ActorId }
+                    credential.Permissions.Select(permission => new Honua.Core.Features.Authorization.Domain.JobSecurityClaim("permission", permission)).ToArray())
+                { OwnerActorId = access.ActorId }
                 : await services.GetRequiredService<WorkflowAuthorSecurityContextCapturer>().CaptureAsync(principal, cancellationToken).ConfigureAwait(false),
             KeyId = credential.Kind == "api-key" ? Guid.Parse(credential.Id) : Guid.Empty,
             Credential = credential,

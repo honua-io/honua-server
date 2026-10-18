@@ -126,20 +126,38 @@ public sealed class ImportOperationAuthorizationTests
     [InlineData(true)]
     public async Task ImportAccess_RejectsRetainedOidcPrincipalAfterManagedMembershipRemoval(bool removedRoleOnly)
     {
-        var profile = new OidcDelegatedAgentProfile { Id = "worker", Generation = 1, Enabled = true,
-            Issuer = "https://workload.example", Audience = "honua-workloads", Subject = "worker", Tenant = "public",
-            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1), Permissions = ["agent:workspace", "admin:read", "admin:write"] };
+        var profile = new OidcDelegatedAgentProfile
+        {
+            Id = "worker",
+            Generation = 1,
+            Enabled = true,
+            Issuer = "https://workload.example",
+            Audience = "honua-workloads",
+            Subject = "worker",
+            Tenant = "public",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+            Permissions = ["agent:workspace", "admin:read", "admin:write"]
+        };
         var options = Substitute.For<IOptionsMonitor<OidcAuthenticationOptions>>();
-        options.CurrentValue.Returns(new OidcAuthenticationOptions { Enabled = true, DelegatedAgents = [profile],
-            DelegatedAgentAudiences = [new() { Issuer = profile.Issuer, Audience = profile.Audience }] });
+        options.CurrentValue.Returns(new OidcAuthenticationOptions
+        {
+            Enabled = true,
+            DelegatedAgents = [profile],
+            DelegatedAgentAudiences = [new() { Issuer = profile.Issuer, Audience = profile.Audience }]
+        });
         var members = Substitute.For<IPrincipalMembershipSource>();
         members.ResolveMembershipAsync(profile.Subject, profile.Issuer, Arg.Any<CancellationToken>())
             .Returns(new PrincipalMembership(true, ["worker"]));
         var roles = Substitute.For<IRoleStore>();
         roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new EffectivePermissions { UserId = "worker", Roles = ["worker"], Permissions = [new() { Service = "agent", Layer = "*", Operation = "workspace" },
+            .Returns(new EffectivePermissions
+            {
+                UserId = "worker",
+                Roles = ["worker"],
+                Permissions = [new() { Service = "agent", Layer = "*", Operation = "workspace" },
                 new() { Service = "admin", Layer = "*", Operation = "read" },
-                new() { Service = "admin", Layer = "*", Operation = "write" }] });
+                new() { Service = "admin", Layer = "*", Operation = "write" }]
+            });
         var authorization = Substitute.For<IAuthorizationService>();
         authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>())
             .Returns(AuthorizationResult.Success());

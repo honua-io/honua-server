@@ -64,8 +64,11 @@ public sealed class AgentWorkspaceWorkflowTaskTests
         var context = new DefaultHttpContext { User = principal, RequestServices = services };
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = "workspace-1", TargetId = "target-1", TenantId = "tenant-1",
-            OwnerId = "human-owner", Members = ["human-owner", actor]
+            WorkspaceId = "workspace-1",
+            TargetId = "target-1",
+            TenantId = "tenant-1",
+            OwnerId = "human-owner",
+            Members = ["human-owner", actor]
         };
 
         (await AgentWorkspaceResourceAuthorization.CanReadTaskAsync(context, Reference)).Should().BeFalse();
@@ -81,7 +84,10 @@ public sealed class AgentWorkspaceWorkflowTaskTests
     {
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-owner", Members = ["human-owner"]
+            WorkspaceId = "workspace-1",
+            TargetId = "target-1",
+            OwnerId = "human-owner",
+            Members = ["human-owner"]
         };
         document = AgentWorkspaceState.Update(document, new("tab-1", 0, "target-1", [], Reference, "console"));
         document = AgentWorkspaceState.AddTurn(document, "human-owner", new("turn-1", "tab-1", 1, "Explain this process"));
@@ -133,7 +139,10 @@ public sealed class AgentWorkspaceWorkflowTaskTests
     {
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-owner", Members = ["human-owner", "agent"]
+            WorkspaceId = "workspace-1",
+            TargetId = "target-1",
+            OwnerId = "human-owner",
+            Members = ["human-owner", "agent"]
         };
         document = AgentWorkspaceState.Update(document, new("tab-1", 0, "target-1", [], null, "console"));
         document = AgentWorkspaceState.AddTurn(document, "agent", new("turn-1", "tab-1", 1, "Create a process"));
@@ -145,8 +154,13 @@ public sealed class AgentWorkspaceWorkflowTaskTests
 
     private static WorkflowPackageVersion Version(string owner) => new()
     {
-        PackageId = Reference.Id, Version = 2, SchemaVersion = "workflow-package.v1", PackageHash = Hash,
-        Graph = new() { Nodes = [] }, Validation = WorkflowPackageValidationResult.Success(Hash),
-        CreatedAt = DateTimeOffset.UtcNow, Ownership = new() { OwnerActorId = owner, TenantId = "tenant-1" }
+        PackageId = Reference.Id,
+        Version = 2,
+        SchemaVersion = "workflow-package.v1",
+        PackageHash = Hash,
+        Graph = new() { Nodes = [] },
+        Validation = WorkflowPackageValidationResult.Success(Hash),
+        CreatedAt = DateTimeOffset.UtcNow,
+        Ownership = new() { OwnerActorId = owner, TenantId = "tenant-1" }
     };
 }

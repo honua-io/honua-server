@@ -24,7 +24,11 @@ public sealed class AgentWorkspaceStoreTests(RedisFixture redis)
         var targetId = await first.GetTargetIdAsync();
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = workspaceId, TargetId = targetId, OwnerId = "human-1", Members = ["human-1", "agent-1"], TenantId = "tenant-1",
+            WorkspaceId = workspaceId,
+            TargetId = targetId,
+            OwnerId = "human-1",
+            Members = ["human-1", "agent-1"],
+            TenantId = "tenant-1",
         };
         document.Views["tab-1"] = [AgentWorkspaceState.Current(document, "tab-1")];
         try
@@ -69,8 +73,11 @@ public sealed class AgentWorkspaceStoreTests(RedisFixture redis)
             secondTarget.Should().NotBe(firstTarget);
             var document = new AgentWorkspaceDocument
             {
-                WorkspaceId = workspaceId, TargetId = firstTarget, OwnerId = "same-human",
-                Members = ["same-human"], TenantId = "same-tenant",
+                WorkspaceId = workspaceId,
+                TargetId = firstTarget,
+                OwnerId = "same-human",
+                Members = ["same-human"],
+                TenantId = "same-tenant",
             };
             (await first.CreateAsync(document)).Should().BeTrue();
             (await second.GetAsync(workspaceId)).Should().BeNull();

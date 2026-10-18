@@ -26,8 +26,11 @@ public sealed class StoredApiKeyCredentialVersionTests
         var services = new ServiceCollection().AddLogging();
         services.AddSingleton(new ApiKeyAuthenticationDependencies(Options.Create(new ApiKeyAuthenticationOptions
         {
-            AdminPassword = "bootstrap-only-test-password", EnvironmentName = "Test", IsTestMode = true,
-            DevAuthBypass = developmentBypass ? "true" : "false", DevAuthBypassAcknowledged = "true",
+            AdminPassword = "bootstrap-only-test-password",
+            EnvironmentName = "Test",
+            IsTestMode = true,
+            DevAuthBypass = developmentBypass ? "true" : "false",
+            DevAuthBypassAcknowledged = "true",
         })));
         services.AddAuthentication(AuthenticationExtensions.ApiKeyScheme)
             .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(AuthenticationExtensions.ApiKeyScheme, _ => { });
@@ -67,7 +70,8 @@ public sealed class StoredApiKeyCredentialVersionTests
         var used = (await store.GetAsync(created.Record.Id, default))!;
         StoredApiKeyCredentialVersion.FromRecord(used with
         {
-            UpdatedAt = used.UpdatedAt.AddDays(1), LastUsedAt = used.LastUsedAt?.AddDays(1),
+            UpdatedAt = used.UpdatedAt.AddDays(1),
+            LastUsedAt = used.LastUsedAt?.AddDays(1),
         }).Should().Be(originalVersion);
 
         var rotated = (await store.RotateAsync(created.Record.Id, default))!;

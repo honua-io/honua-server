@@ -38,10 +38,14 @@ public sealed class AgentWorkspaceTurnAuthorizerTests
             .AddSingleton(authorization).BuildServiceProvider();
         var http = new DefaultHttpContext { RequestServices = services, User = principal };
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-            { ["AgentWorkspace:ReleaseId"] = "release-1" }).Build();
+        { ["AgentWorkspace:ReleaseId"] = "release-1" }).Build();
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-1", Members = [actor], TenantId = "tenant-1",
+            WorkspaceId = "workspace-1",
+            TargetId = "target-1",
+            OwnerId = "human-1",
+            Members = [actor],
+            TenantId = "tenant-1",
         };
         document.Views["tab-1"] = [new("workspace-1", "target-1", "tab-1", 0, [new("layer", "7")], null, "tenant-1")];
         document = AgentWorkspaceState.AddTurn(document, "human-1", new("turn-1", "tab-1", 0, "Style this layer"));

@@ -112,7 +112,8 @@ public sealed class DelegatedAgentCredentialTests
             case "expired": fixture.Profile.ExpiresAt = DateTimeOffset.MinValue; break;
             case "subject": fixture.Profile.Subject = "other"; break;
             case "ceiling": fixture.Profile.Permissions = []; break;
-            case "role": fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            case "role":
+                fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
                     .Returns(new EffectivePermissions { UserId = "subject", Roles = [], Permissions = [] }); break;
         }
         (await AgentCredentialAuthority.RevalidateAsync(snapshot!, fixture.Services, default)).Should().BeNull();
@@ -126,10 +127,15 @@ public sealed class DelegatedAgentCredentialTests
         fixture.Membership.ResolveMembershipAsync("subject", "https://issuer.example", Arg.Any<CancellationToken>())
             .Returns(new PrincipalMembership(true, ["admin"]));
         fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new EffectivePermissions { UserId = "subject", Roles = ["admin"], Permissions = [
+            .Returns(new EffectivePermissions
+            {
+                UserId = "subject",
+                Roles = ["admin"],
+                Permissions = [
                 new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" },
                 new PermissionGrant { Service = "admin", Layer = "*", Operation = "read" },
-                new PermissionGrant { Service = "parcels", Layer = "0", Operation = "*" }] });
+                new PermissionGrant { Service = "parcels", Layer = "0", Operation = "*" }]
+            });
         var principal = Token();
         ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim(ClaimTypes.Role, "admin"));
         AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
@@ -164,9 +170,14 @@ public sealed class DelegatedAgentCredentialTests
         using var fixture = new Fixture();
         fixture.Profile.Permissions = ["agent:workspace", "read:*"];
         fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions = [
+            .Returns(new EffectivePermissions
+            {
+                UserId = "subject",
+                Roles = ["worker"],
+                Permissions = [
                 new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" },
-                new PermissionGrant { Service = "parcels", Layer = "0", Operation = "read" }] });
+                new PermissionGrant { Service = "parcels", Layer = "0", Operation = "read" }]
+            });
         var principal = Token();
         AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
         await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
@@ -178,9 +189,14 @@ public sealed class DelegatedAgentCredentialTests
         var snapshot = await AgentCredentialAuthority.CaptureAsync(principal, fixture.Services, default);
         snapshot.Should().NotBeNull();
         fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions = [
+            .Returns(new EffectivePermissions
+            {
+                UserId = "subject",
+                Roles = ["worker"],
+                Permissions = [
                 new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" },
-                new PermissionGrant { Service = "parcels", Layer = "0", Operation = "metadata" }] });
+                new PermissionGrant { Service = "parcels", Layer = "0", Operation = "metadata" }]
+            });
         (await AgentCredentialAuthority.RevalidateAsync(snapshot!, fixture.Services, default)).Should().BeNull();
     }
 
@@ -280,8 +296,11 @@ public sealed class DelegatedAgentCredentialTests
         var services = new ServiceCollection().AddLogging();
         services.AddSingleton(new ApiKeyAuthenticationDependencies(Options.Create(new ApiKeyAuthenticationOptions
         {
-            AdminPassword = "bootstrap-credential-consumer-test", EnvironmentName = "Test", IsTestMode = true,
-            DevAuthBypass = developmentBypass ? "true" : "false", DevAuthBypassAcknowledged = "true"
+            AdminPassword = "bootstrap-credential-consumer-test",
+            EnvironmentName = "Test",
+            IsTestMode = true,
+            DevAuthBypass = developmentBypass ? "true" : "false",
+            DevAuthBypassAcknowledged = "true"
         })));
         services.AddAuthentication(AuthenticationExtensions.ApiKeyScheme)
             .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(AuthenticationExtensions.ApiKeyScheme, _ => { });
@@ -355,9 +374,14 @@ public sealed class DelegatedAgentCredentialTests
         using var fixture = new Fixture();
         fixture.Profile.Permissions = ["agent:workspace", "admin:write"];
         fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions = [
+            .Returns(new EffectivePermissions
+            {
+                UserId = "subject",
+                Roles = ["worker"],
+                Permissions = [
                 new() { Service = "agent", Layer = "*", Operation = "workspace" },
-                new() { Service = "admin", Layer = "*", Operation = "write" }] });
+                new() { Service = "admin", Layer = "*", Operation = "write" }]
+            });
         var principal = Token();
         AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
         await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
@@ -423,8 +447,15 @@ public sealed class DelegatedAgentCredentialTests
     {
         internal OidcDelegatedAgentProfile Profile { get; } = new()
         {
-            Id = "worker", Generation = 1, Enabled = true, Issuer = "https://issuer.example", Audience = "honua",
-            Subject = "subject", Tenant = "tenant", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1), Permissions = ["agent:workspace"]
+            Id = "worker",
+            Generation = 1,
+            Enabled = true,
+            Issuer = "https://issuer.example",
+            Audience = "honua",
+            Subject = "subject",
+            Tenant = "tenant",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+            Permissions = ["agent:workspace"]
         };
         internal IPrincipalMembershipSource Membership { get; } = Substitute.For<IPrincipalMembershipSource>();
         internal IRoleStore Roles { get; } = Substitute.For<IRoleStore>();

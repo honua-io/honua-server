@@ -72,7 +72,9 @@ internal static class LocalConsoleSessionEndpoint
         ], DateTimeOffset.UtcNow.AddMinutes(10));
         return issued is null ? Results.StatusCode(503) : Results.Ok(new AdminOperatorBearerResponse
         {
-            AccessToken = issued.Token, TokenType = "Bearer", ExpiresAt = issued.ExpiresAt,
+            AccessToken = issued.Token,
+            TokenType = "Bearer",
+            ExpiresAt = issued.ExpiresAt,
             ExpiresIn = (long)Math.Max(0, (issued.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds)
         });
     }

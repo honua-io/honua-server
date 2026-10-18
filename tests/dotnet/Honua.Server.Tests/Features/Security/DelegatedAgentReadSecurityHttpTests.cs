@@ -42,9 +42,14 @@ public sealed class DelegatedAgentReadSecurityHttpTests
             .Returns(new PrincipalMembership(true, ["worker", "admin"]));
         var roles = Substitute.For<IRoleStore>();
         roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new EffectivePermissions { UserId = "reader", Roles = ["worker", "admin"], Permissions = [
+            .Returns(new EffectivePermissions
+            {
+                UserId = "reader",
+                Roles = ["worker", "admin"],
+                Permissions = [
                 new() { Service = "agent", Layer = "*", Operation = "workspace" },
-                new() { Service = "*", Layer = "*", Operation = "*" }] });
+                new() { Service = "*", Layer = "*", Operation = "*" }]
+            });
         var fixture = new WebAppFixture().ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
@@ -81,11 +86,18 @@ public sealed class DelegatedAgentReadSecurityHttpTests
             await using var scope = fixture.Services.CreateAsyncScope();
             await scope.ServiceProvider.GetRequiredService<IRlsPolicyStore>().CreatePolicyAsync(new()
             {
-                Role = "worker", Service = "*", Layer = "*", Attribute = "category", ClaimType = "category"
+                Role = "worker",
+                Service = "*",
+                Layer = "*",
+                Attribute = "category",
+                ClaimType = "category"
             });
             await scope.ServiceProvider.GetRequiredService<IFieldMaskPolicyStore>().CreatePolicyAsync(new()
             {
-                Role = "worker", Service = "*", Layer = "*", Attribute = "description"
+                Role = "worker",
+                Service = "*",
+                Layer = "*",
+                Attribute = "description"
             });
             using var client = fixture.CreateClient();
             var token = new JwtSecurityToken("https://workload.example", "honua-workloads",

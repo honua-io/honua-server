@@ -38,12 +38,25 @@ public sealed class WorkflowPackageCredentialStatusTests
     [InlineData(true)]
     public async Task Status_RejectsRetainedOidcPrincipalAfterManagedMembershipRemoval(bool removedRoleOnly)
     {
-        var profile = new OidcDelegatedAgentProfile { Id = "worker", Generation = 1, Enabled = true,
-            Issuer = "https://workload.example", Audience = "honua-workloads", Subject = "worker", Tenant = "public",
-            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1), Permissions = ["agent:workspace"] };
+        var profile = new OidcDelegatedAgentProfile
+        {
+            Id = "worker",
+            Generation = 1,
+            Enabled = true,
+            Issuer = "https://workload.example",
+            Audience = "honua-workloads",
+            Subject = "worker",
+            Tenant = "public",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+            Permissions = ["agent:workspace"]
+        };
         var options = Substitute.For<IOptionsMonitor<OidcAuthenticationOptions>>();
-        options.CurrentValue.Returns(new OidcAuthenticationOptions { Enabled = true, DelegatedAgents = [profile],
-            DelegatedAgentAudiences = [new() { Issuer = profile.Issuer, Audience = profile.Audience }] });
+        options.CurrentValue.Returns(new OidcAuthenticationOptions
+        {
+            Enabled = true,
+            DelegatedAgents = [profile],
+            DelegatedAgentAudiences = [new() { Issuer = profile.Issuer, Audience = profile.Audience }]
+        });
         var members = Substitute.For<IPrincipalMembershipSource>();
         members.ResolveMembershipAsync(profile.Subject, profile.Issuer, Arg.Any<CancellationToken>())
             .Returns(new PrincipalMembership(true, ["worker"]));

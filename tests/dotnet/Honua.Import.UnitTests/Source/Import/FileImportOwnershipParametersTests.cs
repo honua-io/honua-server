@@ -18,7 +18,10 @@ public sealed class FileImportOwnershipParametersTests
         var ownership = new ImportOperationOwnership("apikey:api-key:owner", tenant);
         var original = new ImportRequest
         {
-            CloudFileId = "shared-file", FileName = "roads.geojson", TableName = "roads", Ownership = ownership,
+            CloudFileId = "shared-file",
+            FileName = "roads.geojson",
+            TableName = "roads",
+            Ownership = ownership,
         };
         var parameters = FileImportJobParameters.Build(original, 123);
         FileImportJobParameters.TryParse(parameters, out var restored, out var size, out var error).Should().BeTrue();

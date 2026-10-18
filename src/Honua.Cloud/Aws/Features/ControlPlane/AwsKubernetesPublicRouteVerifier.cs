@@ -27,7 +27,8 @@ internal sealed class AwsKubernetesPublicRouteVerifier : IKubernetesPublicRouteV
     public AwsKubernetesPublicRouteVerifier(IOptions<KubernetesPublicDnsOptions> options) : this(
         () => new AmazonRoute53Client(), () => new AmazonSecurityTokenServiceClient(),
         region => new AmazonElasticLoadBalancingV2Client(RegionEndpoint.GetBySystemName(region)),
-        new KubernetesPublicDnsDelegation(options.Value).VerifyAsync) { }
+        new KubernetesPublicDnsDelegation(options.Value).VerifyAsync)
+    { }
 
     internal AwsKubernetesPublicRouteVerifier(Func<IAmazonRoute53> dns,
         Func<IAmazonSecurityTokenService> identity, Func<string, IAmazonElasticLoadBalancingV2> loadBalancer,

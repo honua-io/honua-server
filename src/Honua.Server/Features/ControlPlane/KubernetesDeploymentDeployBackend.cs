@@ -24,8 +24,12 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
     public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(new DeployBackendCapabilities
         {
-            SupportsRollback = true, SupportsProgressPolling = true, SupportsRevisionPinning = true,
-            RequiresOutOfBandMigrations = true, SupportsTrafficShifting = false, SupportsCancellation = false,
+            SupportsRollback = true,
+            SupportsProgressPolling = true,
+            SupportsRevisionPinning = true,
+            RequiresOutOfBandMigrations = true,
+            SupportsTrafficShifting = false,
+            SupportsCancellation = false,
         });
 
     public async Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default)
@@ -53,8 +57,10 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
             reasons.Add("Native Deployment rolling updates do not implement weighted traffic canaries.");
         return new DeployPlan
         {
-            IsReadyToSubmit = reasons.Count == 0 && !spec.RequiresApproval, RequiresApproval = spec.RequiresApproval,
-            RequiresOutOfBandMigrations = true, BlockingReasons = reasons,
+            IsReadyToSubmit = reasons.Count == 0 && !spec.RequiresApproval,
+            RequiresApproval = spec.RequiresApproval,
+            RequiresOutOfBandMigrations = true,
+            BlockingReasons = reasons,
         };
     }
 
@@ -71,8 +77,12 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
     public async Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
     {
         await MutateAsync(operation, rollback: true, cancellationToken).ConfigureAwait(false);
-        return new() { Status = WorkflowOperationStatus.RollbackRequested, ProviderOperationId = ProviderId(RequiredSpec(operation)),
-            Message = "The recorded immutable baseline was restored to the Deployment template; convergence remains pending." };
+        return new()
+        {
+            Status = WorkflowOperationStatus.RollbackRequested,
+            ProviderOperationId = ProviderId(RequiredSpec(operation)),
+            Message = "The recorded immutable baseline was restored to the Deployment template; convergence remains pending."
+        };
     }
 
     public async Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
@@ -105,8 +115,11 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
             {
                 var query = await forwardHealthProbe.ProbeGoldenQueryAsync(new DeployGoldenQueryRequest
                 {
-                    Url = expectation.Url, ExpectedBodyContains = expectation.ExpectedContains, ExpectedSha256 = expectation.ExpectedSha256,
-                    ForbiddenBodyContains = expectation.ForbiddenContains, ExpectedStatusCode = expectation.ExpectedStatusCode,
+                    Url = expectation.Url,
+                    ExpectedBodyContains = expectation.ExpectedContains,
+                    ExpectedSha256 = expectation.ExpectedSha256,
+                    ForbiddenBodyContains = expectation.ForbiddenContains,
+                    ExpectedStatusCode = expectation.ExpectedStatusCode,
                     TimeoutSeconds = expectation.TimeoutSeconds,
                 }, cancellationToken).ConfigureAwait(false);
                 converged = query.Validated && query.Matched;
@@ -118,8 +131,12 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
             var functional = await RollbackDataPlaneCompletion.ProbeFunctionalQueryAsync(dataPlaneProbe, spec.Parameters, cancellationToken).ConfigureAwait(false);
             var decision = RollbackDataPlaneCompletion.Evaluate(new RollbackDataPlaneEvidence
             {
-                RoutingConverged = true, PriorRevisionIdentityProven = true, ServingRevision = snapshot.Image,
-                HealthyEndpointCount = readiness == true ? replicas : 0, RegisteredEndpointCount = replicas, FunctionalQuery = functional,
+                RoutingConverged = true,
+                PriorRevisionIdentityProven = true,
+                ServingRevision = snapshot.Image,
+                HealthyEndpointCount = readiness == true ? replicas : 0,
+                RegisteredEndpointCount = replicas,
+                FunctionalQuery = functional,
                 RollbackStartedAt = RollbackDataPlaneCompletion.ReadObservationStartedAt(spec.Parameters),
                 Window = RollbackDataPlaneCompletion.ReadObservationWindow(spec.Parameters),
             }, DateTimeOffset.UtcNow);
@@ -132,7 +149,8 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
         return new()
         {
             Status = converged ? WorkflowOperationStatus.Succeeded : (rollback ? WorkflowOperationStatus.RollbackRequested : WorkflowOperationStatus.Reconciling),
-            ProviderOperationId = ProviderId(spec), ObservedRevision = snapshot.Image,
+            ProviderOperationId = ProviderId(spec),
+            ObservedRevision = snapshot.Image,
             RollbackRecommended = !rollback && failed,
             Message = converged ? "Native Deployment replicas and immutable runtime image converged." : "Native Deployment convergence remains pending.",
         };

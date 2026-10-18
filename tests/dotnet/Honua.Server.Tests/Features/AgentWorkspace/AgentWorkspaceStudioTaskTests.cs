@@ -24,9 +24,15 @@ public sealed class AgentWorkspaceStudioTaskTests
         var reference = new AgentTaskReference(id.ToString("D"), 3, "studio-composition", "map-1");
         var draft = new StudioPackageDraft
         {
-            DraftId = id, ItemId = Guid.NewGuid(), PackageKey = "map-1", Generation = 3,
-            OwnerId = "owner-1", TenantId = "tenant-1", Family = StudioPackageFamily.Map,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            DraftId = id,
+            ItemId = Guid.NewGuid(),
+            PackageKey = "map-1",
+            Generation = 3,
+            OwnerId = "owner-1",
+            TenantId = "tenant-1",
+            Family = StudioPackageFamily.Map,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Envelope = new() { Family = StudioPackageFamily.Map, SchemaVersion = "1" },
         };
         var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
@@ -56,7 +62,10 @@ public sealed class AgentWorkspaceStudioTaskTests
     {
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "owner-1", Members = ["owner-1"],
+            WorkspaceId = "workspace-1",
+            TargetId = "target-1",
+            OwnerId = "owner-1",
+            Members = ["owner-1"],
         };
         var first = new AgentTaskReference(Guid.NewGuid().ToString("D"), 3, "studio-composition", "map-1");
         document = AgentWorkspaceState.Update(document, new("tab-1", 0, "target-1", [], first, "studio"));

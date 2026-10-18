@@ -27,7 +27,10 @@ public sealed class BoundKubernetesConnectionTests
             var options = Substitute.For<IOptionsMonitor<KubernetesExecutionOptions>>();
             options.CurrentValue.Returns(new KubernetesExecutionOptions
             {
-                InClusterAutoDetect = false, ApiServerUrl = "https://host-cluster.invalid", CaBundlePath = path, BearerToken = "never-sent",
+                InClusterAutoDetect = false,
+                ApiServerUrl = "https://host-cluster.invalid",
+                CaBundlePath = path,
+                BearerToken = "never-sent",
             });
             var factory = new BoundKubernetesConnectionFactory(options);
             var target = new Dictionary<string, string>

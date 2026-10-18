@@ -207,13 +207,21 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         if (backend == KubernetesDeploymentDeployBackend.AdapterBackendName)
         {
             var baseline = CreateOperation("honua-aws-ecs-alb", scenario);
-            return baseline with { Deploy = new()
+            return baseline with
             {
-                TargetId = "native-matrix", TargetKind = DeployTargetKind.Kubernetes, Backend = backend,
-                Environment = "production", TargetName = "honua", ArtifactReference = NativeCandidate,
-                DesiredRevision = NativeCandidate, CurrentRevision = scenario == "missing-prior" ? null : NativePrior,
-                Parameters = NativeParameters()
-            } };
+                Deploy = new()
+                {
+                    TargetId = "native-matrix",
+                    TargetKind = DeployTargetKind.Kubernetes,
+                    Backend = backend,
+                    Environment = "production",
+                    TargetName = "honua",
+                    ArtifactReference = NativeCandidate,
+                    DesiredRevision = NativeCandidate,
+                    CurrentRevision = scenario == "missing-prior" ? null : NativePrior,
+                    Parameters = NativeParameters()
+                }
+            };
         }
         var kind = backend switch
         {
@@ -319,22 +327,39 @@ public sealed class DeployBackendRollbackTruthfulnessTests
     private static readonly string NativeCandidate = "registry.example/honua@sha256:" + new string('b', 64);
     private static Dictionary<string, string> NativeParameters() => new()
     {
-        ["honua.runtime_kind"] = "aws-eks", ["kubernetes.cluster_arn"] = "arn:aws:eks:us-west-2:123456789012:cluster/matrix",
-        ["kubernetes.api_server"] = "https://cluster.example", ["kubernetes.ca_sha256"] = new string('a', 64),
-        ["kubernetes.cluster_uid"] = "cluster", ["kubernetes.namespace"] = "honua", ["kubernetes.deployment_name"] = "honua",
-        ["kubernetes.deployment_uid"] = "deployment", ["kubernetes.container_name"] = "honua",
-        ["kubernetes.service_name"] = "honua", ["kubernetes.service_uid"] = "service",
-        ["kubernetes.service_port"] = "443", ["kubernetes.target_port"] = "8080",
-        ["kubernetes.route_kind"] = "LoadBalancerService", ["kubernetes.route_name"] = "honua", ["kubernetes.route_uid"] = "service",
-        ["kubernetes.public_url"] = "https://probe.example", ["telemetry.healthz.url"] = "https://probe.example/healthz",
-        ["telemetry.golden_query.url"] = "https://probe.example/golden", ["telemetry.golden_query.expected_contains"] = "marker:revision-prior"
+        ["honua.runtime_kind"] = "aws-eks",
+        ["kubernetes.cluster_arn"] = "arn:aws:eks:us-west-2:123456789012:cluster/matrix",
+        ["kubernetes.api_server"] = "https://cluster.example",
+        ["kubernetes.ca_sha256"] = new string('a', 64),
+        ["kubernetes.cluster_uid"] = "cluster",
+        ["kubernetes.namespace"] = "honua",
+        ["kubernetes.deployment_name"] = "honua",
+        ["kubernetes.deployment_uid"] = "deployment",
+        ["kubernetes.container_name"] = "honua",
+        ["kubernetes.service_name"] = "honua",
+        ["kubernetes.service_uid"] = "service",
+        ["kubernetes.service_port"] = "443",
+        ["kubernetes.target_port"] = "8080",
+        ["kubernetes.route_kind"] = "LoadBalancerService",
+        ["kubernetes.route_name"] = "honua",
+        ["kubernetes.route_uid"] = "service",
+        ["kubernetes.public_url"] = "https://probe.example",
+        ["telemetry.healthz.url"] = "https://probe.example/healthz",
+        ["telemetry.golden_query.url"] = "https://probe.example/golden",
+        ["telemetry.golden_query.expected_contains"] = "marker:revision-prior"
     };
 
     private sealed class NativeMatrixTargets : IDeployTargetRegistry
     {
         private static DeployTargetDefinition Target() => new()
-        { TargetId = "native-matrix", TargetKind = DeployTargetKind.Kubernetes, Backend = KubernetesDeploymentDeployBackend.AdapterBackendName,
-            Environment = "production", TargetName = "honua", Parameters = NativeParameters() };
+        {
+            TargetId = "native-matrix",
+            TargetKind = DeployTargetKind.Kubernetes,
+            Backend = KubernetesDeploymentDeployBackend.AdapterBackendName,
+            Environment = "production",
+            TargetName = "honua",
+            Parameters = NativeParameters()
+        };
         public Task<IReadOnlyList<DeployTargetDefinition>> ListAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<DeployTargetDefinition>>([Target()]);
         public Task<DeployTargetDefinition?> GetAsync(string targetId, CancellationToken cancellationToken = default)
@@ -370,20 +395,39 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             else if (path.EndsWith("/replicasets", StringComparison.Ordinal)) body = new
             { items = new[] { new { metadata = new { uid = "replicaset", ownerReferences = new[] { new { uid = "deployment", controller = true } } } } } };
             else if (path.EndsWith("/pods", StringComparison.Ordinal)) body = new
-            { items = new[] { new { metadata = new { uid = "pod", ownerReferences = new[] { new { uid = "replicaset", controller = true } } },
-                status = new { phase = "Running", podIP = "10.0.0.2", containerStatuses = new[] { new { name = "honua", ready = true, imageID = image } } } } } };
+            {
+                items = new[] { new { metadata = new { uid = "pod", ownerReferences = new[] { new { uid = "replicaset", controller = true } } },
+                status = new { phase = "Running", podIP = "10.0.0.2", containerStatuses = new[] { new { name = "honua", ready = true, imageID = image } } } } }
+            };
             else if (path.EndsWith("/endpointslices", StringComparison.Ordinal)) body = new
-            { items = world.Scenario == "ambiguous-evidence" ? Array.Empty<object>() : [new
+            {
+                items = world.Scenario == "ambiguous-evidence" ? Array.Empty<object>() : [new
                 { metadata = new { ownerReferences = new[] { new { uid = "service", controller = true } } }, addressType = "IPv4",
                     ports = new[] { new { port = 8080, protocol = "TCP" } }, endpoints = new[] { new { addresses = new[] { "10.0.0.2" },
-                        conditions = new { ready = true }, targetRef = new { kind = "Pod", uid = "pod" } } } }] };
+                        conditions = new { ready = true }, targetRef = new { kind = "Pod", uid = "pod" } } } }]
+            };
             else body = new
             {
-                metadata = new { uid = "deployment", resourceVersion = "17", generation = 2,
-                    annotations = new Dictionary<string, string> { ["honua.io/deploy-operation"] = operation.OperationId,
-                        ["honua.io/deploy-baseline"] = NativePrior, ["honua.io/deploy-desired"] = NativeCandidate, ["honua.io/deploy-phase"] = "rollback" } },
-                spec = new { replicas = 1, selector = new { matchLabels = new { app = "honua" } }, template = new
-                    { spec = new { containers = new[] { new { name = "honua", image, ports = new[] { new { containerPort = 8080 } } } } } } },
+                metadata = new
+                {
+                    uid = "deployment",
+                    resourceVersion = "17",
+                    generation = 2,
+                    annotations = new Dictionary<string, string>
+                    {
+                        ["honua.io/deploy-operation"] = operation.OperationId,
+                        ["honua.io/deploy-baseline"] = NativePrior,
+                        ["honua.io/deploy-desired"] = NativeCandidate,
+                        ["honua.io/deploy-phase"] = "rollback"
+                    }
+                },
+                spec = new
+                {
+                    replicas = 1,
+                    selector = new { matchLabels = new { app = "honua" } },
+                    template = new
+                    { spec = new { containers = new[] { new { name = "honua", image, ports = new[] { new { containerPort = 8080 } } } } } }
+                },
                 status = new { observedGeneration = 2, updatedReplicas = 1, availableReplicas = 1, replicas = 1, unavailableReplicas = 0 }
             };
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(body)) });

@@ -172,12 +172,18 @@ internal static class AgentCredentialAuthority
         var binding = TrustedProfile(principal);
         var snapshot = binding is null
             ? new AgentCredentialSnapshot { Kind = "api-key", Id = principal.FindFirst("api_key_id")!.Value, CredentialVersion = StoredApiKeyCredentialVersion.GetStamped(principal), Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray() }
-            : new AgentCredentialSnapshot { Kind = DelegatedKind, Id = binding.Value, Generation = long.TryParse(Value(binding, "generation"), out var generation) ? generation : 0,
+            : new AgentCredentialSnapshot
+            {
+                Kind = DelegatedKind,
+                Id = binding.Value,
+                Generation = long.TryParse(Value(binding, "generation"), out var generation) ? generation : 0,
                 Binding = [Value(binding, "issuer") ?? "", Value(binding, "audience") ?? "", Value(binding, "subject") ?? "", Value(binding, "tenant") ?? "", Value(binding, "tenant-claim") ?? "", Value(binding, "required-scope") ?? ""],
                 RoleGrantFingerprints = principal.FindAll(GrantClaim).Where(CanonicalSecurityActor.IsFrameworkOwnedClaim).Select(c => c.Value).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
                 MembershipRoles = binding.Properties.Where(p => p.Key.StartsWith("role-", StringComparison.Ordinal)).Select(p => p.Value ?? "").Order(StringComparer.Ordinal).ToArray(),
                 TokenExpiresAt = long.TryParse(Value(binding, "expiry"), out var expiry) ? DateTimeOffset.FromUnixTimeSeconds(expiry) : DateTimeOffset.MinValue,
-                ActorId = CanonicalSecurityActor.Resolve(principal)?.ActorId, Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray() };
+                ActorId = CanonicalSecurityActor.Resolve(principal)?.ActorId,
+                Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray()
+            };
         var current = await RevalidateAsync(snapshot, services, cancellationToken).ConfigureAwait(false);
         return current is not null && CanonicalSecurityActor.Resolve(current)?.ActorId == CanonicalSecurityActor.Resolve(principal)?.ActorId ? snapshot : null;
     }
@@ -231,8 +237,13 @@ internal static class AgentCredentialAuthority
             return await CaptureAsync(principal, services, cancellationToken).ConfigureAwait(false) is not null;
         }
         if (principal.FindFirst("api_key_id") is not { } keyId) return true;
-        var snapshot = new AgentCredentialSnapshot { Kind = "api-key", Id = keyId.Value, CredentialVersion = StoredApiKeyCredentialVersion.GetStamped(principal),
-            Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray() };
+        var snapshot = new AgentCredentialSnapshot
+        {
+            Kind = "api-key",
+            Id = keyId.Value,
+            CredentialVersion = StoredApiKeyCredentialVersion.GetStamped(principal),
+            Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray()
+        };
         var current = await RevalidateAsync(snapshot, services, cancellationToken).ConfigureAwait(false);
         return current is not null && CanonicalSecurityActor.Resolve(current)?.ActorId == CanonicalSecurityActor.Resolve(principal)?.ActorId;
     }
@@ -245,11 +256,15 @@ internal static class AgentCredentialAuthority
         if (!IsAgent(principal) || !IsDelegated(principal)) return false;
         var grants = principal.FindAll(GrantClaim).Where(CanonicalSecurityActor.IsFrameworkOwnedClaim).Select(claim => new PermissionGrant
         {
-            Service = Value(claim, "service") ?? "", Layer = Value(claim, "layer") ?? "", Operation = Value(claim, "operation") ?? ""
+            Service = Value(claim, "service") ?? "",
+            Layer = Value(claim, "layer") ?? "",
+            Operation = Value(claim, "operation") ?? ""
         }).ToArray();
         return PermissionResolver.AuthorizeSnapshot(new EffectivePermissions
         {
-            UserId = principal.FindFirst("sub")?.Value ?? "", Roles = SourceRoles(principal), Permissions = grants
+            UserId = principal.FindFirst("sub")?.Value ?? "",
+            Roles = SourceRoles(principal),
+            Permissions = grants
         }, service, layer, operation).IsAllowed;
     }
 

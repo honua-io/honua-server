@@ -138,9 +138,13 @@ public sealed class StudioAiWorkspaceCertificationTests
         var authorizer = Substitute.For<IAgentWorkspaceTurnAuthorizer>();
         authorizer.AuthorizeAsync(principal, "workspace", "turn", Arg.Any<CancellationToken>())
             .Returns(new AgentWorkspaceTurnAuthorization("workspace", "turn", "target", "tenant", "release"));
-        var certification = new StudioAiTranscriptCertification {
-            CandidateId="target",EndpointIdentity="target",ReleaseId=field=="release"?"other":"release",
-            ActionId=field=="action"?"other":"turn",RunNonce="turn"
+        var certification = new StudioAiTranscriptCertification
+        {
+            CandidateId = "target",
+            EndpointIdentity = "target",
+            ReleaseId = field == "release" ? "other" : "release",
+            ActionId = field == "action" ? "other" : "turn",
+            RunNonce = "turn"
         };
         Assert.False(await StudioAiWorkspaceCertification.AuthorizeAsync(authorizer, principal,
             "workspace", "turn", "tenant", certification, CancellationToken.None));
@@ -149,13 +153,13 @@ public sealed class StudioAiWorkspaceCertificationTests
     [UnitTest]
     public void HumanAdminWithNativeHeadersCannotKeepUnboundOverrides()
     {
-        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role,"admin")],"operator-bearer"));
-        var http = new DefaultHttpContext { User=principal };
-        var authorization=Substitute.For<IStudioAuthorizationService>(); authorization.IsAdmin(principal).Returns(true);
-        Assert.True(StudioAiProxyEndpoints.AllowsCallerOverrides(http,authorization));
-        http.Request.Headers["X-Honua-Workspace"]="workspace";
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "admin")], "operator-bearer"));
+        var http = new DefaultHttpContext { User = principal };
+        var authorization = Substitute.For<IStudioAuthorizationService>(); authorization.IsAdmin(principal).Returns(true);
+        Assert.True(StudioAiProxyEndpoints.AllowsCallerOverrides(http, authorization));
+        http.Request.Headers["X-Honua-Workspace"] = "workspace";
         Assert.True(StudioAiProxyEndpoints.RequiresWorkspaceBinding(http));
-        Assert.False(StudioAiProxyEndpoints.AllowsCallerOverrides(http,authorization));
+        Assert.False(StudioAiProxyEndpoints.AllowsCallerOverrides(http, authorization));
     }
 
     private static Task<bool> AuthorizeAsync(IAgentWorkspaceTurnAuthorizer? authorizer, StudioAiTranscriptCertification certification)
@@ -171,6 +175,10 @@ public sealed class StudioAiWorkspaceCertificationTests
 
     private static StudioAiTranscriptCertification Certification() => new()
     {
-        CandidateId = "target", EndpointIdentity = "target", ReleaseId = "release", ActionId = "turn", RunNonce = "turn"
+        CandidateId = "target",
+        EndpointIdentity = "target",
+        ReleaseId = "release",
+        ActionId = "turn",
+        RunNonce = "turn"
     };
 }

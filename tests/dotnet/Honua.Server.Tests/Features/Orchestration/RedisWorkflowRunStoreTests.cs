@@ -23,8 +23,12 @@ public sealed class RedisWorkflowRunStoreTests(RedisFixture redis)
         var scope = Guid.NewGuid().ToString("N");
         var run = new WorkflowRun
         {
-            RunId = $"wf-{scope}", WorkflowId = $"definition-{scope}", Status = WorkflowRunStatus.Pending,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow, StepStates = []
+            RunId = $"wf-{scope}",
+            WorkflowId = $"definition-{scope}",
+            Status = WorkflowRunStatus.Pending,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            StepStates = []
         };
         var command = new WorkflowRunCommand(run.RunId, "immutable-input-hash");
         var writers = Enumerable.Range(0, 8).Select(_ => new RedisWorkflowRunStore(connection));

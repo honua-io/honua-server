@@ -52,8 +52,10 @@ public sealed class DelegatedAgentJwtBearerTests
         var key = new RsaSecurityKey(rsa) { KeyId = "trusted" };
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Oidc:Enabled"] = "true", ["Oidc:Generic:Enabled"] = "true",
-            ["Oidc:Generic:Authority"] = "https://issuer.example", ["Oidc:Generic:ClientId"] = "honua",
+            ["Oidc:Enabled"] = "true",
+            ["Oidc:Generic:Enabled"] = "true",
+            ["Oidc:Generic:Authority"] = "https://issuer.example",
+            ["Oidc:Generic:ClientId"] = "honua",
             ["Oidc:TokenValidation:EnableTokenReplayProtection"] = "false"
         }).Build();
         var services = new ServiceCollection().AddLogging().AddMemoryCache();

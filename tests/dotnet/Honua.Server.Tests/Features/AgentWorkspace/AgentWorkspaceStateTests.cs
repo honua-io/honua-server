@@ -13,7 +13,10 @@ public sealed class AgentWorkspaceStateTests
     {
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = "workspace-1", TargetId = "target-1", TenantId = "tenant-1", OwnerId = "human-1",
+            WorkspaceId = "workspace-1",
+            TargetId = "target-1",
+            TenantId = "tenant-1",
+            OwnerId = "human-1",
             Members = ["human-1", "agent-1"],
         };
         document.Views["tab-1"] = [AgentWorkspaceState.Current(document, "tab-1")];
