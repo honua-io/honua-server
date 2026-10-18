@@ -69,6 +69,8 @@ internal static class AdminAuthEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithMetadata(new RateLimitAttribute(5)); // 5 requests per minute for token exchange
 
+        group.MapLocalConsoleSessionEndpoint();
+
         _ = group.MapPost("/bearer", HandleIssueOperatorBearer)
             .WithDisplayName("Issue Console Operator Bearer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
