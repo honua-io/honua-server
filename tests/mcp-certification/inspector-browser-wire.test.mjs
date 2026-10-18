@@ -20,8 +20,10 @@ async function exercise(mode) {
     if (message.method === 'tools/call') {
       reached = true; original = response;
       reply = () => {
-        const frame = { jsonrpc: '2.0', id: 7, error: { code: -32800, data: { code: 'cancelled' } } };
+        const frame = { jsonrpc: '2.0', id: 7, error: { code: -32800, message: 'Request cancelled', data: { code: 'cancelled' } } };
         if (mode === 'wrong-terminal') frame.error.data.code = 'other';
+        if (mode === 'missing-error-message') delete frame.error.message;
+        if (mode === 'nonstring-error-message') frame.error.message = 7;
         if (mode === 'result-present') frame.result = {};
         let body = Buffer.from(mode === 'duplicate' ? `data: ${JSON.stringify(frame)}\n\ndata: ${JSON.stringify(frame)}\n\n`
           : mode === 'gzip-sse' ? `data: ${JSON.stringify(frame)}\n\n` : JSON.stringify(frame));
@@ -62,7 +64,7 @@ async function exercise(mode) {
   }
 }
 
-for (const mode of ['json', 'gzip-sse', 'no-initialization', 'initialization-session', 'wrong-terminal', 'result-present', 'duplicate', 'no-notification',
+for (const mode of ['json', 'gzip-sse', 'no-initialization', 'initialization-session', 'wrong-terminal', 'missing-error-message', 'nonstring-error-message', 'result-present', 'duplicate', 'no-notification',
   'wrong-id-type', 'wrong-session', 'local-abort', 'dropped']) {
   test(`independent cancellation observer ${mode}`, { timeout: 5_000 }, () => exercise(mode));
 }

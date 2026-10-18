@@ -154,6 +154,7 @@ export async function cancellationWireObserver(endpoint, { dropCancellation = fa
         && call.responses.length === 1, 'open original and exactly one terminal');
       const response = call.responses[0];
       require(response.jsonrpc === '2.0' && response.error?.code === -32800
+        && typeof response.error.message === 'string'
         && response.error?.data?.code === 'cancelled' && !Object.hasOwn(response, 'result'), 'typed server cancellation');
       return { ...call, session: undefined, sessionSha256: hash(call.session), protocolVersion: initialization.protocolVersion };
     },
