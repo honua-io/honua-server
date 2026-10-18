@@ -83,4 +83,9 @@
     <EmbeddedResource Include="../../LICENSE" LogicalName="Toolchain/LICENSE" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="../../scripts/gp/workspace.py;../../scripts/gp/workspace_scope.py;../../scripts/gp/workspace_service.py;../../scripts/gp/Dockerfile.workspace;../../scripts/gp/README.md;../../scripts/gp/qualify_workspace.py;../../scripts/gp/qualify_installed_workspace.py;../../scripts/gp/assemble_workspace_image.py;../../scripts/gp/default-workspace-wheels.json"
+                      LogicalName="Workspace/%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

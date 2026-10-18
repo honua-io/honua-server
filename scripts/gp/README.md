@@ -4,15 +4,48 @@
 selected local GP project. It reuses `honua-gp-devkit test` and its production
 Python/.NET harnesses. It does not interpret a second workflow language.
 
-Start it with an existing project, a digest-pinned image and run storage outside
-the source directory:
+Install the normal released `Honua.Geoprocessing.Cli` tool, then start its bundled
+adapter with an existing project, a digest-pinned sandbox image and run storage
+outside editable source:
 
 ```bash
 export HONUA_GP_WORKSPACE_KEY="$(openssl rand -hex 32)"
-python3 scripts/gp/workspace_service.py \
+honua-gp-devkit workspace serve \
   --project /path/to/process --runs /path/to/local-run-receipts \
   --image sha256:IMAGE_ID --port 7194
 ```
+
+The launcher requires a POSIX Docker host (WSL on Windows) and Python 3. It extracts
+its versioned adapter into a protected directory outside the project and invokes
+Python without a shell. The service credential is inherited only through the
+operator environment, never a command argument. Terminal Ctrl-C reaches the
+service process group; SIGTERM is forwarded to the service for bounded cleanup.
+
+`honua-gp-devkit workspace bootstrap --output /empty/payload` exports the exact
+bundled scripts, image recipe, default wheel pins, qualification procedures and
+per-file SHA-256 provenance. The normal release pipeline uses that same procedure:
+
+```bash
+python3 /empty/payload/assemble_workspace_image.py \
+  --nupkg /release/Honua.Geoprocessing.Cli.VERSION.nupkg --nupkg-sha256 RELEASE_SHA256 \
+  --sdk-archive /release/dotnet-sdk-VERSION-linux-x64.tar.gz --sdk-sha512 OFFICIAL_SHA512 \
+  --sdk-version VERSION --python-image python@sha256:RELEASE_BASE_DIGEST \
+  --root /new/assembly-directory
+```
+
+Run assembly under the shared build wrapper on a shared development host. The
+procedure verifies the published package and complete SDK archive, installs the
+exact checked tool package from a private feed and extracts its bootstrap. It
+acquires default NuGet packages from the official flat-container endpoint, verifies
+each raw SHA-512 against the installed template lock before extraction, and restores
+only from that verified private feed. It acquires exact hash-pinned default wheels. It
+copies no host package configuration or credentials into the context. Image
+build and all editable-code restore/build/fixture runs have no network. The
+procedure records exact package/SDK/wheel/NuGet/resource provenance and the local
+immutable image id, then qualifies actual installed serve/bootstrap and failed,
+corrected, immutable, cancelled Python/.NET fixtures. It marks evidence qualified
+only after all checks pass. It never publishes an image; the normal release/GHCR
+pipeline publishes and records the immutable registry digest after qualification.
 
 Configure the canonical Honua server with `LocalProcesses:WorkspaceUrl` and
 `HONUA_GP_WORKSPACE_KEY` (the URL environment variable is
@@ -80,8 +113,7 @@ Open the configured project in the IDE for breakpoint debugging. Its normal
 GP devkit launch recipes remain authoritative. Editing sources for a corrected
 rerun creates a new snapshot and cannot alter the retained failed run.
 
-The current adapter is still a source development entry point. Public evaluation
-requires the installed devkit launcher and a normally released digest-pinned
+Public evaluation requires the normally released installed devkit and a digest-pinned
 sandbox image with exact devkit, SDK and locked dependency provenance. A locally
 built image is qualification evidence, not a published release. SIGINT/SIGTERM
 shutdown signals existing runner cancellation and waits a bounded time for cleanup.

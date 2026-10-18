@@ -18,6 +18,27 @@ namespace Honua.Geoprocessing.Cli.Tests;
 [Trait("Tier", "Fast")]
 public sealed class GpCustomProjectTests
 {
+    [Fact]
+    public void FailureDiagnostics_PreservesCompilerErrorsAlongsideWorkloadWarning()
+    {
+        var diagnostic = GpCustomProjectTester.FailureDiagnostics(
+            "SummaryTool.cs(12,3): error CS1002: ; expected",
+            "An issue was encountered verifying workloads.", 1600);
+
+        diagnostic.Should().Contain("error CS1002").And.Contain("verifying workloads");
+    }
+
+    [Fact]
+    public void FailureDiagnostics_BoundsBothStreamsWithoutDroppingEitherTail()
+    {
+        var diagnostic = GpCustomProjectTester.FailureDiagnostics(
+            new string('a', 5000) + "compiler-tail", new string('b', 5000) + "warning-tail", 1600);
+
+        diagnostic.Length.Should().BeLessThanOrEqualTo(1600);
+        diagnostic.Should().Contain("compiler-tail").And.Contain("warning-tail");
+        GpCustomProjectTester.FailureDiagnostics("only output", " ", 1600).Should().Be("only output");
+    }
+
     public static bool PythonAvailable()
     {
         var path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;

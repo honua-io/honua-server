@@ -2,7 +2,7 @@
 # The build needs no network. The selected base must already contain Python 3.11+.
 ARG PYTHON_IMAGE=python@sha256:8fb4cfa1a2616d7b8e0c2175cc6ad68f5729c34ea8488c0b360d2934b7be9024
 FROM ${PYTHON_IMAGE}
-# Supply only the .NET executable + host/packs/sdk/shared/templates from a reviewed SDK installation.
+# Supply the COMPLETE reviewed SDK archive, including workload manifests and metadata.
 COPY dotnet/ /opt/dotnet/
 # Supply a normal dotnet-published Honua.Geoprocessing.Cli payload, including its bundled harnesses.
 COPY devkit/ /opt/honua-devkit/

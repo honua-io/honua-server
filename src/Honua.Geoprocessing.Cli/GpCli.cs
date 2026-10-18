@@ -61,6 +61,7 @@ public static class GpCli
                 "plan" => await RunPlan(rest).ConfigureAwait(false),
                 "new" => await RunNew(rest).ConfigureAwait(false),
                 "init" => RunInit(rest),
+                "workspace" => await GpWorkspaceCommand.RunAsync(rest).ConfigureAwait(false),
                 "publish" => await RunPublish(rest).ConfigureAwait(false),
                 "release" => GpReleaseCommand.Run(rest, Console.Out, Console.Error),
                 "-h" or "--help" or "help" => PrintUsageAndOk(),
@@ -1461,6 +1462,8 @@ public static class GpCli
         Console.WriteLine("  honua gp run  <processId> [--input <file>] [--param k=v ...] [--out <file>] [--glass-box] [--real-worker]");
         Console.WriteLine("  honua gp test [<fixtureId>] [--root <dir>] [--update]");
         Console.WriteLine("  honua gp test --project <dir> [--update] [--harness-root <checkout>]   (custom-code project)");
+        Console.WriteLine("  honua gp workspace serve --project <dir> --runs <dir> --image sha256:<digest>");
+        Console.WriteLine("  honua gp workspace bootstrap --output <empty-dir>");
         Console.WriteLine("  honua gp init --language python|dotnet --name <process> [--output <dir>] [--harness-root <checkout>]");
         Console.WriteLine("  honua gp new <id> [--kind geometry|gdal] [--output <dir>]");
         Console.WriteLine("  honua gp publish <id> [--server <url>] [--api-key <key>] [--message <m>] [--dry-run] [--publish]");

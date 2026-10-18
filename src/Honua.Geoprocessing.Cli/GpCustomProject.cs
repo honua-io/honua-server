@@ -587,14 +587,14 @@ public static class GpCustomProjectTester
 
         if (exit != 0 || receiptPath is null)
         {
-            var detail = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+            var detail = FailureDiagnostics(stdout, stderr, 1200);
             return new GpCustomProjectTestResult
             {
                 Passed = false,
                 ReceiptPath = receiptPath,
                 Status = status,
                 Lines = [],
-                Error = $"harness exited {exit}{(status is null ? "" : $" ({status})")}{(receiptPath is null ? "" : $"; receipt: {receiptPath}")}: {Tail(detail, 600)}",
+                Error = $"harness exited {exit}{(status is null ? "" : $" ({status})")}{(receiptPath is null ? "" : $"; receipt: {receiptPath}")}: {detail}",
             };
         }
 
@@ -906,7 +906,7 @@ public static class GpCustomProjectTester
             root, environment, cancellationToken).ConfigureAwait(false);
         if (buildExit != 0)
         {
-            return new Command(null, [$"dotnet build {manifest.Build} failed: {Tail(string.IsNullOrWhiteSpace(buildErr) ? buildOut : buildErr, 800)}"], environment);
+            return new Command(null, [$"dotnet build {manifest.Build} failed: {FailureDiagnostics(buildOut, buildErr, 1600)}"], environment);
         }
 
         var harnessDll = Path.Join(root, manifest.HarnessDll!);
@@ -920,7 +920,7 @@ public static class GpCustomProjectTester
             root, environment, cancellationToken).ConfigureAwait(false);
         if (harnessExit != 0)
         {
-            return new Command(null, [$"the local harness build failed: {Tail(string.IsNullOrWhiteSpace(harnessErr) ? harnessOut : harnessErr, 800)}"], environment);
+            return new Command(null, [$"the local harness build failed: {FailureDiagnostics(harnessOut, harnessErr, 1600)}"], environment);
         }
 
         if (!File.Exists(harnessDll))
@@ -987,9 +987,32 @@ public static class GpCustomProjectTester
         return null;
     }
 
+    internal static string FailureDiagnostics(string stdout, string stderr, int maximumLength)
+    {
+        var output = stdout.Trim();
+        var error = stderr.Trim();
+        if (string.IsNullOrEmpty(output))
+        {
+            return Tail(error, maximumLength);
+        }
+
+        if (string.IsNullOrEmpty(error))
+        {
+            return Tail(output, maximumLength);
+        }
+
+        // A warning on stderr must not hide compiler errors written to stdout.
+        const string separator = "\nstderr: ";
+        const string prefix = "stdout: ";
+        var available = maximumLength - prefix.Length - separator.Length;
+        var outputBudget = available / 2;
+        var errorBudget = available - outputBudget;
+        return prefix + Tail(output, outputBudget) + separator + Tail(error, errorBudget);
+    }
+
     private static string Tail(string text, int length)
     {
         var trimmed = text.Trim();
-        return trimmed.Length <= length ? trimmed : "…" + trimmed[^length..];
+        return trimmed.Length <= length ? trimmed : "…" + trimmed[^(length - 1)..];
     }
 }
