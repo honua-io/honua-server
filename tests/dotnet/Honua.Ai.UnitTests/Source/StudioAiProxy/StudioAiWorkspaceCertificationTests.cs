@@ -15,6 +15,8 @@ using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Honua.Core.Features.Studio;
+using Honua.Core.Features.Studio.Abstractions;
+using Honua.Server.Features.Studio.Ai;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
@@ -40,7 +42,7 @@ public sealed class StudioAiWorkspaceCertificationTests
         Assert.False(await AuthorizeAsync(authorizer, Certification()));
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("candidate")]
     [InlineData("endpoint")]
     [InlineData("release")]
@@ -117,6 +119,43 @@ public sealed class StudioAiWorkspaceCertificationTests
         var disabled = new AuthorizationHandlerContext([new StudioLifecycleRequirement(), new StudioAiProxyRequirement()], agent, http);
         await handler.HandleAsync(disabled);
         Assert.True(disabled.HasFailed);
+    }
+
+    [UnitTheory]
+    [InlineData("action")]
+    [InlineData("release")]
+    public async Task WorkspaceKeyStampedAdminStillRequiresExactTurnAndHasNoModelOverrides(string field)
+    {
+        // Faithfully represents the current issued admin:write + agent:workspace key role stamping.
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([
+            new Claim(ClaimTypes.Role, "admin"), new Claim("permission", "admin:write"),
+            new Claim("permission", "agent:workspace")], "ApiKey"));
+        var http = new DefaultHttpContext { User = principal };
+        var authorization = Substitute.For<IStudioAuthorizationService>();
+        authorization.IsAdmin(principal).Returns(true);
+        Assert.True(StudioAiProxyEndpoints.RequiresWorkspaceBinding(http));
+        Assert.False(StudioAiProxyEndpoints.AllowsCallerOverrides(http, authorization));
+        var authorizer = Substitute.For<IAgentWorkspaceTurnAuthorizer>();
+        authorizer.AuthorizeAsync(principal, "workspace", "turn", Arg.Any<CancellationToken>())
+            .Returns(new AgentWorkspaceTurnAuthorization("workspace", "turn", "target", "tenant", "release"));
+        var certification = new StudioAiTranscriptCertification {
+            CandidateId="target",EndpointIdentity="target",ReleaseId=field=="release"?"other":"release",
+            ActionId=field=="action"?"other":"turn",RunNonce="turn"
+        };
+        Assert.False(await StudioAiWorkspaceCertification.AuthorizeAsync(authorizer, principal,
+            "workspace", "turn", "tenant", certification, CancellationToken.None));
+    }
+
+    [UnitTest]
+    public void HumanAdminWithNativeHeadersCannotKeepUnboundOverrides()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role,"admin")],"operator-bearer"));
+        var http = new DefaultHttpContext { User=principal };
+        var authorization=Substitute.For<IStudioAuthorizationService>(); authorization.IsAdmin(principal).Returns(true);
+        Assert.True(StudioAiProxyEndpoints.AllowsCallerOverrides(http,authorization));
+        http.Request.Headers["X-Honua-Workspace"]="workspace";
+        Assert.True(StudioAiProxyEndpoints.RequiresWorkspaceBinding(http));
+        Assert.False(StudioAiProxyEndpoints.AllowsCallerOverrides(http,authorization));
     }
 
     private static Task<bool> AuthorizeAsync(IAgentWorkspaceTurnAuthorizer? authorizer, StudioAiTranscriptCertification certification)
