@@ -67,6 +67,28 @@ public sealed class BoundKubernetesConnectionTests
         finally { File.Delete(tokenA); File.Delete(tokenB); }
     }
 
+    [UnitTest]
+    public async Task MissingCredentialFileAndMalformedHeaderNeverExposeCredentialOrLocator()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "honua-private-credential-" + Guid.NewGuid().ToString("N"));
+        var handler = new CaptureHandler();
+        using var connection = new BoundKubernetesConnection(new HttpClient(handler, false), new Uri("https://cluster.example"), path, null);
+        var missing = () => connection.SendAsync(HttpMethod.Get, "/api", null, CancellationToken.None);
+        var failure = await missing.Should().ThrowAsync<InvalidOperationException>();
+        failure.Which.ToString().Should().NotContain(path);
+        const string token = "private-header-value\r\nInjected: private-secret";
+        try
+        {
+            await File.WriteAllTextAsync(path, token);
+            var malformed = () => connection.SendAsync(HttpMethod.Get, "/api", null, CancellationToken.None);
+            failure = await malformed.Should().ThrowAsync<InvalidOperationException>();
+            failure.Which.ToString().Should().NotContain(path).And.NotContain("private-header-value").And.NotContain("private-secret");
+            failure.Which.InnerException.Should().BeNull();
+            handler.Requests.Should().BeEmpty();
+        }
+        finally { File.Delete(path); }
+    }
+
     private sealed class CaptureHandler : HttpMessageHandler
     {
         public List<(string Uri, string? Token)> Requests { get; } = [];

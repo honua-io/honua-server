@@ -115,6 +115,9 @@ public sealed class KubernetesDeploymentDeployBackendTests
                      new DeploymentHandler(Candidate, sameCommand: true, missingEndpoints: true),
                      new DeploymentHandler(Candidate, sameCommand: true, wrongPort: true),
                      new DeploymentHandler(Candidate, sameCommand: true, wrongRuntimeDigest: true),
+                     new DeploymentHandler(Candidate, sameCommand: true, wrongEndpointPort: true),
+                     new DeploymentHandler(Candidate, sameCommand: true, wrongEndpointProtocol: true),
+                     new DeploymentHandler(Candidate, sameCommand: true, wrongEndpointAddress: true),
                  })
             (await Backend(provider).ObserveAsync(Operation())).Status.Should().Be(WorkflowOperationStatus.Reconciling);
         (await Backend(new DeploymentHandler(Candidate, sameCommand: true), functionalHealthy: false).ObserveAsync(Operation()))
@@ -176,7 +179,8 @@ public sealed class KubernetesDeploymentDeployBackendTests
         },
     };
 
-    private sealed class DeploymentHandler(string image, bool sameCommand = false, string uid = "deployment-uid", string phase = "forward", bool missingEndpoints = false, bool wrongPort = false, bool wrongRuntimeDigest = false) : HttpMessageHandler
+    private sealed class DeploymentHandler(string image, bool sameCommand = false, string uid = "deployment-uid", string phase = "forward", bool missingEndpoints = false, bool wrongPort = false, bool wrongRuntimeDigest = false, bool wrongEndpointPort = false, bool wrongEndpointProtocol = false,
+        bool wrongEndpointAddress = false) : HttpMessageHandler
     {
         public List<string> Paths { get; } = [];
         public string? Patch { get; private set; }
@@ -194,11 +198,12 @@ public sealed class KubernetesDeploymentDeployBackendTests
                 """);
             if (path.EndsWith("/pods", StringComparison.Ordinal)) return Json($$"""
                 {"items":[{"metadata":{"uid":"pod-uid","ownerReferences":[{"uid":"replicaset-uid","controller":true}]},
-                  "status":{"phase":"Running","containerStatuses":[{"name":"honua","ready":true,"imageID":"{{(wrongRuntimeDigest ? Baseline : image)}}"}]}}]}
+                  "status":{"phase":"Running","podIP":"10.0.0.8","containerStatuses":[{"name":"honua","ready":true,"imageID":"{{(wrongRuntimeDigest ? Baseline : image)}}"}]}}]}
                 """);
-            if (path.EndsWith("/endpointslices", StringComparison.Ordinal)) return Json(missingEndpoints ? "{\"items\":[]}" : """
-                {"items":[{"metadata":{"ownerReferences":[{"uid":"service-uid","controller":true}]},
-                  "endpoints":[{"conditions":{"ready":true},"targetRef":{"kind":"Pod","uid":"pod-uid"}}]}]}
+            if (path.EndsWith("/endpointslices", StringComparison.Ordinal)) return Json(missingEndpoints ? "{\"items\":[]}" : $$"""
+                {"items":[{"metadata":{"ownerReferences":[{"uid":"service-uid","controller":true}]},"addressType":"IPv4",
+                  "ports":[{"port":{{(wrongEndpointPort ? 9999 : 8080)}},"protocol":"{{(wrongEndpointProtocol ? "UDP" : "TCP")}}"}],
+                  "endpoints":[{"addresses":["{{(wrongEndpointAddress ? "10.0.0.99" : "10.0.0.8")}}"],"conditions":{"ready":true},"targetRef":{"kind":"Pod","uid":"pod-uid"}}]}]}
                 """);
             if (request.Method == HttpMethod.Patch)
             {

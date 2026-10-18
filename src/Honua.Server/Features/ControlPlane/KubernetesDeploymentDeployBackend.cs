@@ -221,9 +221,13 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
             servicePorts[0].TryGetProperty("protocol", out var protocol) && protocol.GetString() != "TCP") return false;
         var container = deployment.GetProperty("spec").GetProperty("template").GetProperty("spec").GetProperty("containers").EnumerateArray()
             .Single(c => c.GetProperty("name").GetString() == Required(spec, "kubernetes.container_name"));
-        if (!container.TryGetProperty("ports", out var declaredPorts) || !declaredPorts.EnumerateArray().Any(port =>
-                targetPort.ValueKind == JsonValueKind.Number ? port.GetProperty("containerPort").GetInt32() == targetPort.GetInt32() :
-                port.TryGetProperty("name", out var name) && name.GetString() == targetPort.GetString())) return false;
+        if (!container.TryGetProperty("ports", out var declaredPorts)) return false;
+        var targetPorts = declaredPorts.EnumerateArray().Where(port =>
+            targetPort.ValueKind == JsonValueKind.Number ? port.GetProperty("containerPort").GetInt32() == targetPort.GetInt32() :
+            port.TryGetProperty("name", out var name) && name.GetString() == targetPort.GetString()).ToArray();
+        if (targetPorts.Length != 1 || targetPorts[0].TryGetProperty("protocol", out var targetProtocol) && targetProtocol.GetString() != "TCP") return false;
+        var resolvedTargetPort = targetPorts[0].GetProperty("containerPort").GetInt32();
+        var servicePortName = servicePorts[0].TryGetProperty("name", out var selectedName) ? selectedName.GetString() : null;
         if (!await VerifyRouteAsync(connection, spec, service.RootElement, servicePorts[0].GetProperty("port").GetInt32(), cancellationToken).ConfigureAwait(false)) return false;
         using var setsResponse = await connection.SendAsync(HttpMethod.Get, $"/apis/apps/v1/namespaces/{ns}/replicasets?labelSelector={query}", null, cancellationToken).ConfigureAwait(false);
         using var sets = JsonDocument.Parse(await setsResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
@@ -242,7 +246,18 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
                 container.TryGetProperty("imageID", out var imageId) && imageId.GetString() is { } image &&
                 (image == expected || image.EndsWith("@" + digest, StringComparison.Ordinal) || image == "docker-pullable://" + expected || image == "containerd://" + digest || image == "docker://" + digest || image == digest)));
         if (!podsValid) return false;
-        var podUids = active.Select(pod => pod.GetProperty("metadata").GetProperty("uid").GetString()).ToHashSet(StringComparer.Ordinal);
+        var podAddresses = new Dictionary<string, HashSet<System.Net.IPAddress>>(StringComparer.Ordinal);
+        foreach (var pod in active)
+        {
+            var addresses = new HashSet<System.Net.IPAddress>();
+            var podStatus = pod.GetProperty("status");
+            if (podStatus.TryGetProperty("podIPs", out var ips))
+                foreach (var ip in ips.EnumerateArray())
+                    if (System.Net.IPAddress.TryParse(ip.GetProperty("ip").GetString(), out var parsed)) addresses.Add(parsed);
+            if (podStatus.TryGetProperty("podIP", out var primary) && System.Net.IPAddress.TryParse(primary.GetString(), out var primaryIp)) addresses.Add(primaryIp);
+            if (addresses.Count == 0) return false;
+            podAddresses.Add(pod.GetProperty("metadata").GetProperty("uid").GetString()!, addresses);
+        }
         var endpointSelector = Uri.EscapeDataString("kubernetes.io/service-name=" + Required(spec, "kubernetes.service_name"));
         using var endpointsResponse = await connection.SendAsync(HttpMethod.Get,
             $"/apis/discovery.k8s.io/v1/namespaces/{ns}/endpointslices?labelSelector={endpointSelector}", null, cancellationToken).ConfigureAwait(false);
@@ -250,12 +265,21 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
         var serving = new HashSet<string>(StringComparer.Ordinal);
         foreach (var slice in slices.RootElement.GetProperty("items").EnumerateArray())
         {
-            if (!OwnedBy(slice, Required(spec, "kubernetes.service_uid"))) return false;
+            if (!OwnedBy(slice, Required(spec, "kubernetes.service_uid")) || !slice.TryGetProperty("ports", out var ports) ||
+                !slice.TryGetProperty("addressType", out var type) || type.GetString() is not ("IPv4" or "IPv6")) return false;
+            var addressFamily = type.GetString() == "IPv4" ? System.Net.Sockets.AddressFamily.InterNetwork : System.Net.Sockets.AddressFamily.InterNetworkV6;
+            var selectedPorts = ports.EnumerateArray().Where(port =>
+                (port.TryGetProperty("name", out var name) ? name.ValueKind == JsonValueKind.Null ? null : name.GetString() : null) == servicePortName).ToArray();
+            if (selectedPorts.Length != 1 || !selectedPorts[0].TryGetProperty("port", out var actualPort) ||
+                actualPort.ValueKind != JsonValueKind.Number || actualPort.GetInt32() != resolvedTargetPort ||
+                !selectedPorts[0].TryGetProperty("protocol", out var actualProtocol) || actualProtocol.GetString() != "TCP") return false;
             foreach (var endpoint in slice.GetProperty("endpoints").EnumerateArray())
             {
                 if (!endpoint.TryGetProperty("conditions", out var health) || !health.TryGetProperty("ready", out var ready) || ready.ValueKind != JsonValueKind.True) continue;
                 if (!endpoint.TryGetProperty("targetRef", out var target) || target.GetProperty("kind").GetString() != "Pod" ||
-                    target.GetProperty("uid").GetString() is not { } uid || !podUids.Contains(uid)) return false;
+                    target.GetProperty("uid").GetString() is not { } uid || !podAddresses.TryGetValue(uid, out var expectedAddresses) ||
+                    !endpoint.TryGetProperty("addresses", out var addresses) || addresses.GetArrayLength() == 0 ||
+                    addresses.EnumerateArray().Any(address => !System.Net.IPAddress.TryParse(address.GetString(), out var parsed) || parsed.AddressFamily != addressFamily || !expectedAddresses.Contains(parsed))) return false;
                 serving.Add(uid);
             }
         }
@@ -299,8 +323,8 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
                 ? probe.AbsolutePath != routePath
                 : probe.AbsolutePath != routePath && !probe.AbsolutePath.StartsWith(routePath.TrimEnd('/') + "/", StringComparison.Ordinal))) return false;
         var ns = Uri.EscapeDataString(Required(spec, "kubernetes.namespace"));
-        var name = Uri.EscapeDataString(Required(spec, "kubernetes.route_name"));
-        using var response = await connection.SendAsync(HttpMethod.Get, $"/apis/networking.k8s.io/v1/namespaces/{ns}/ingresses/{name}", null, cancellationToken).ConfigureAwait(false);
+        var ingressName = Uri.EscapeDataString(Required(spec, "kubernetes.route_name"));
+        using var response = await connection.SendAsync(HttpMethod.Get, $"/apis/networking.k8s.io/v1/namespaces/{ns}/ingresses/{ingressName}", null, cancellationToken).ConfigureAwait(false);
         using var ingress = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
         if (ingress.RootElement.GetProperty("metadata").GetProperty("uid").GetString() != Required(spec, "kubernetes.route_uid")) return false;
         var body = ingress.RootElement.GetProperty("spec");
@@ -314,7 +338,7 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
         return backends.Count == 1 && backends[0].TryGetProperty("service", out var target) &&
             target.GetProperty("name").GetString() == Required(spec, "kubernetes.service_name") &&
             target.TryGetProperty("port", out var port) && (port.TryGetProperty("number", out var number) && number.GetInt32() == servicePort ||
-                port.TryGetProperty("name", out var name) && name.GetString() == Required(spec, "kubernetes.service_port"));
+                port.TryGetProperty("name", out var portName) && portName.GetString() == Required(spec, "kubernetes.service_port"));
     }
 
     private static bool PortMatches(JsonElement port, string expected) => port.ValueKind == JsonValueKind.Number

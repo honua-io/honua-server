@@ -20,6 +20,13 @@ internal sealed class BoundKubernetesConnectionFactory(IOptionsMonitor<Kubernete
 {
     public async Task<BoundKubernetesConnection> OpenAsync(IReadOnlyDictionary<string, string> target, CancellationToken cancellationToken)
     {
+        try { return await OpenCoreAsync(target, cancellationToken).ConfigureAwait(false); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or CryptographicException or FormatException)
+        { throw new InvalidOperationException("The host Kubernetes connection configuration is unavailable or invalid."); }
+    }
+
+    private async Task<BoundKubernetesConnection> OpenCoreAsync(IReadOnlyDictionary<string, string> target, CancellationToken cancellationToken)
+    {
         // Snapshot once. Neither credentials nor destinations are accepted from a deploy request.
         var current = options.CurrentValue;
         var inCluster = current.InClusterAutoDetect && File.Exists("/var/run/secrets/kubernetes.io/serviceaccount/token") &&
@@ -82,10 +89,17 @@ internal sealed class BoundKubernetesConnection(HttpClient client, Uri endpoint,
     public async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, byte[]? patch, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(method, KubernetesApiRequestFactory.CombineApiServerUri(endpoint, path));
-        var token = literalToken ?? (string.IsNullOrWhiteSpace(tokenPath) ? null :
-            (await File.ReadAllTextAsync(tokenPath, cancellationToken).ConfigureAwait(false)).Trim());
-        if (string.IsNullOrWhiteSpace(token)) throw new InvalidOperationException("The host Kubernetes credential is unavailable.");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        try
+        {
+            var token = literalToken ?? (string.IsNullOrWhiteSpace(tokenPath) ? null :
+                (await File.ReadAllTextAsync(tokenPath, cancellationToken).ConfigureAwait(false)).Trim());
+            if (string.IsNullOrWhiteSpace(token) || token.Length > 32768 || token.Any(c =>
+                    !char.IsAsciiLetterOrDigit(c) && c is not ('-' or '.' or '_' or '~' or '+' or '/' or '=')))
+                throw new InvalidOperationException("The host Kubernetes credential is unavailable or invalid.");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or FormatException)
+        { throw new InvalidOperationException("The host Kubernetes credential is unavailable or invalid."); }
         if (patch is not null)
         {
             request.Content = new ByteArrayContent(patch);
