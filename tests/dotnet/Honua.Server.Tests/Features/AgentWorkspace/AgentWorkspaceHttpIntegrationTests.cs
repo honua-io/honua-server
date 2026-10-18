@@ -99,7 +99,9 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             var context = await Read(await human.PutAsJsonAsync(root + "/context", new { viewId = "tab-a", expectedRevision = 0, targetId, selectedResources = Array.Empty<object>(), task = (object?)null }), HttpStatusCode.OK);
             var draft = await Read(await human.PostAsJsonAsync(root + "/drafts", new
             {
-                kind = "publish-layer", viewId = "tab-a", contextRevision = context.GetProperty("revision").GetInt64(),
+                kind = "publish-layer",
+                viewId = "tab-a",
+                contextRevision = context.GetProperty("revision").GetInt64(),
                 fields = new { connectionId = Guid.NewGuid().ToString(), schema = "public", table = "isolated_fixture", serviceName = "http-review", layerName = "initial" },
             }), HttpStatusCode.OK);
             string draftPath = root + "/drafts/" + draft.GetProperty("id").GetString();
@@ -121,8 +123,11 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             currentDraft.GetProperty("fields").GetProperty("layerName").GetString().Should().Be("later-navigation");
             (await human.PutAsJsonAsync(root + "/context", new
             {
-                viewId = "tab-a", expectedRevision = capturedRevision + 1, targetId,
-                selectedResources = new[] { new { kind = "layer", id = "2147483647", serviceId = "missing-service" } }, task = (object?)null,
+                viewId = "tab-a",
+                expectedRevision = capturedRevision + 1,
+                targetId,
+                selectedResources = new[] { new { kind = "layer", id = "2147483647", serviceId = "missing-service" } },
+                task = (object?)null,
             })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
             var message = new { messageId = "message-one", turnId = "turn-one", content = "This is conversation, not verified execution." };
@@ -140,7 +145,9 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             agent.DefaultRequestHeaders.Add("X-Honua-Turn", "turn-one");
             var initialized = await agent.PostAsJsonAsync("/mcp", new
             {
-                jsonrpc = "2.0", id = 1, method = "initialize",
+                jsonrpc = "2.0",
+                id = 1,
+                method = "initialize",
                 @params = new { protocolVersion = "2025-03-26", capabilities = new { }, clientInfo = new { name = "workspace-publish-test", version = "1" } },
             });
             initialized.EnsureSuccessStatusCode();
@@ -149,11 +156,20 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             {
                 Content = JsonContent.Create(new
                 {
-                    jsonrpc = "2.0", id = 2, method = "tools/call",
-                    @params = new { name = "honua_publish_service", arguments = new
+                    jsonrpc = "2.0",
+                    id = 2,
+                    method = "tools/call",
+                    @params = new
                     {
-                        connectionId = Guid.NewGuid().ToString(), schema = "public", table = "isolated_fixture", layerName = "Generic review",
-                    } },
+                        name = "honua_publish_service",
+                        arguments = new
+                        {
+                            connectionId = Guid.NewGuid().ToString(),
+                            schema = "public",
+                            table = "isolated_fixture",
+                            layerName = "Generic review",
+                        }
+                    },
                 }),
             };
             publishRequest.Headers.Add("Mcp-Session-Id", mcpSession);

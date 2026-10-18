@@ -50,8 +50,10 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
         var evaluator = CreateEvaluator(false, false, true);
         var result = evaluator.Evaluate(principal, new OperatorAuthorizationRequest
         {
-            ResourceType = OperatorResourceType.Catalog, Operation = operation,
-            IsDestructive = destructive, RequiresExplicitApproval = explicitApproval,
+            ResourceType = OperatorResourceType.Catalog,
+            Operation = operation,
+            IsDestructive = destructive,
+            RequiresExplicitApproval = explicitApproval,
         });
         result.IsRequired.Should().BeTrue();
         result.PolicyRef.Should().Be("agent-workspace.human-approval");

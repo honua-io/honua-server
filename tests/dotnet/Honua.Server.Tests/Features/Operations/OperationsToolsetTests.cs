@@ -1975,7 +1975,9 @@ public sealed class OperationsToolsetTests
         var dispatcher = BuildDispatcher(BuildExecutor(publishing), new AllowAllPolicyDecisionPoint(), bridge);
         var context = new OperationPolicyContext
         {
-            PrincipalId = "agent-1", TenantId = "tenant-1", IdempotencyKey = "workspace-command-1",
+            PrincipalId = "agent-1",
+            TenantId = "tenant-1",
+            IdempotencyKey = "workspace-command-1",
             IdempotencyRequestHash = "frozen-publish-request",
             RequiredApprovalPolicyRef = "operator:publish-required",
         };

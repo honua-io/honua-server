@@ -141,7 +141,8 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         using var admin = _fixture.CreateAdminClient();
         using var issued = await admin.PostAsJsonAsync("/api/v1/admin/api-keys", new
         {
-            name = "workspace-studio-review", permissions = new[] { "admin:read", "admin:write", "read:*", "agent:workspace" },
+            name = "workspace-studio-review",
+            permissions = new[] { "admin:read", "admin:write", "read:*", "agent:workspace" },
         });
         issued.StatusCode.Should().Be(HttpStatusCode.Created);
         using var keyBody = JsonDocument.Parse(await issued.Content.ReadAsStringAsync());
@@ -178,7 +179,9 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         (await lifecycle.GetPointersAsync(restItem))!.PublishedVersionId.Should().BeNull();
         using var rollback = await agent.PostAsJsonAsync($"/api/v1/studio/content-items/{restItem:D}/rollback-requests", new
         {
-            targetVersionId = versionId, pointer = "published", reason = "Review a published pointer restoration",
+            targetVersionId = versionId,
+            pointer = "published",
+            reason = "Review a published pointer restoration",
         });
         rollback.StatusCode.Should().Be(HttpStatusCode.Accepted);
         using var rollbackBody = JsonDocument.Parse(await rollback.Content.ReadAsStringAsync());

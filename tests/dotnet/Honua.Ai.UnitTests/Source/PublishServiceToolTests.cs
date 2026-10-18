@@ -74,10 +74,13 @@ public sealed class PublishServiceToolTests
             return new OperationHandle
             {
                 OperationId = PublishServiceTool.PublishOperationId,
-                OperationInstanceId = "op-workspace", CorrelationId = "corr-workspace",
-                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+                OperationInstanceId = "op-workspace",
+                CorrelationId = "corr-workspace",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
                 Status = OperationHandleStatus.RequiresApproval,
-                ProposalId = "durable-proposal", AuditId = "durable-audit",
+                ProposalId = "durable-proposal",
+                AuditId = "durable-audit",
                 ApprovalLane = "control-plane",
             };
         });
@@ -86,7 +89,10 @@ public sealed class PublishServiceToolTests
             new Claim(ClaimTypes.Role, "admin"), new Claim("permission", "agent:workspace")]);
         var result = await CreateTool().InvokeAsync(http, Arguments(new McpPublishServiceArgument
         {
-            ConnectionId = "conn-1", Schema = "public", Table = "parcels", LayerName = "Parcels",
+            ConnectionId = "conn-1",
+            Schema = "public",
+            Table = "parcels",
+            LayerName = "Parcels",
         }), CancellationToken.None);
         captured!.RequiredApprovalPolicyRef.Should().Be("agent-workspace.human-approval");
         result.StructuredContent!.Value.GetProperty("proposalId").GetString().Should().Be("durable-proposal");

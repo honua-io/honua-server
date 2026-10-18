@@ -385,7 +385,9 @@ public sealed class McpStyleToolTests
             Arg.Any<OperationPolicyContext>(), Arg.Any<PolicyDecision>(), Arg.Any<CancellationToken>())
             .Returns(new OperationApprovalBridgeResult
             {
-                IsDurable = true, ProposalId = "workspace-style-proposal", AuditId = "workspace-style-audit",
+                IsDurable = true,
+                ProposalId = "workspace-style-proposal",
+                AuditId = "workspace-style-audit",
             });
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
             $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
