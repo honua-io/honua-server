@@ -44,8 +44,13 @@ internal sealed class WorkflowPackageApprovedReplay
            JsonSerializer.Serialize(intent, WorkflowPackageGovernanceJsonContext.Default.WorkflowPackageGovernanceIntent) ==
            JsonSerializer.Serialize(Payload.Intent, WorkflowPackageGovernanceJsonContext.Default.WorkflowPackageGovernanceIntent);
 
-    private static async Task RevalidateMembershipAsync(IServiceProvider services, JobSecurityContext snapshot, CancellationToken cancellationToken)
+    private static async Task RevalidateMembershipAsync(IServiceProvider services, JobSecurityContext snapshot, CancellationToken cancellationToken, AgentCredentialSnapshot? credential = null)
     {
+        if (credential is { Kind: "oidc-delegated-agent" })
+        {
+            if (await AgentCredentialAuthority.RevalidateAsync(credential, services, cancellationToken).ConfigureAwait(false) is null) Deny();
+            return;
+        }
         var membership = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(snapshot,
             services.GetService<IPrincipalMembershipSource>(), services.GetService<IOptions<RbacOptions>>()?.Value ?? new(),
             cancellationToken).ConfigureAwait(false);
@@ -55,11 +60,8 @@ internal sealed class WorkflowPackageApprovedReplay
 
     internal async Task RevalidateKeyAndMembershipAsync(CancellationToken cancellationToken)
     {
-        var record = await _services.GetRequiredService<IAdminApiKeyStore>().GetAsync(Payload.KeyId, cancellationToken).ConfigureAwait(false);
-        var now = _services.GetRequiredService<TimeProvider>().GetUtcNow();
-        if (record is null || record.RevokedAt is not null || record.ExpiresAt <= now ||
-            !record.Permissions.Order(StringComparer.Ordinal).SequenceEqual(Payload.Permissions.Order(StringComparer.Ordinal))) Deny();
-        await RevalidateMembershipAsync(_services, Payload.AuthorSecurityContext, cancellationToken).ConfigureAwait(false);
+        if (await AgentCredentialAuthority.RevalidateAsync(Credential(Payload), _services, cancellationToken).ConfigureAwait(false) is null) Deny();
+        await RevalidateMembershipAsync(_services, Payload.AuthorSecurityContext, cancellationToken, Payload.Credential).ConfigureAwait(false);
         // Reuse the full current turn authorizer after the serialization wait, including
         // frozen resources/tasks and native local-process snapshot checks. The private
         // accessor carries the revalidated actual key, never the approving human.
@@ -101,26 +103,30 @@ internal sealed class WorkflowPackageApprovedReplay
         if (payload.ActorId != proposal.RequestedBy || payload.TenantId != context.TenantId ||
             payload.TenantId != services.GetRequiredService<ITenantContext>().TenantId ||
             payload.SchemaName != context.SchemaName || payload.SchemaName != services.GetService<Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext>()?.CurrentSchema) Deny();
-        var record = await services.GetRequiredService<IAdminApiKeyStore>().GetAsync(payload.KeyId, cancellationToken).ConfigureAwait(false);
-        var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
-        if (record is null || record.RevokedAt is not null || record.ExpiresAt <= now ||
-            !record.Permissions.Order(StringComparer.Ordinal).SequenceEqual(payload.Permissions.Order(StringComparer.Ordinal))) Deny();
-        // This shared factory is the same grant-to-role/canonical-actor mapping as live authentication.
-        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(record!.Id, record.Name, record.Permissions);
-        if (CanonicalSecurityActor.Resolve(principal)?.ActorId != payload.ActorId ||
-            !principal.HasClaim("permission", "agent:workspace")) Deny();
+        var credential = Credential(payload);
+        if (!credential.Permissions.Order(StringComparer.Ordinal).SequenceEqual(payload.Permissions.Order(StringComparer.Ordinal))) Deny();
+        var principal = await AgentCredentialAuthority.RevalidateAsync(credential, services, cancellationToken).ConfigureAwait(false);
+        if (principal is null || CanonicalSecurityActor.Resolve(principal)?.ActorId != payload.ActorId ||
+            !AgentCredentialAuthority.IsAgent(principal)) Deny();
+        if (AgentCredentialAuthority.IsDelegated(principal) && payload.Intent.Action == "publish" &&
+            payload.Intent.Target == WorkflowPublicationTarget.Schedule) Deny();
         var snapshot = payload.AuthorSecurityContext;
         if (snapshot.OwnerActorId != payload.ActorId || snapshot.TenantId != payload.TenantId ||
             !snapshot.Claims.Where(claim => claim.Type == "permission").Select(claim => claim.Value)
                 .Order(StringComparer.Ordinal).SequenceEqual(payload.Permissions.Order(StringComparer.Ordinal))) Deny();
-        await RevalidateMembershipAsync(services, snapshot, cancellationToken).ConfigureAwait(false);
-        // Carry original claims/RLS inputs into actuation, never newly expanded memberships.
-        var restored = JobSecurityContextCapture.Restore(snapshot);
-        var pinnedIdentity = new ClaimsIdentity(restored.Claims, AuthenticationExtensions.ApiKeyScheme,
-            ClaimTypes.Name, restored.Identity is ClaimsIdentity restoredIdentity ? restoredIdentity.RoleClaimType : ClaimTypes.Role);
-        CanonicalSecurityActor.StampAuthorityClaims(pinnedIdentity);
-        var pinnedPrincipal = new ClaimsPrincipal(pinnedIdentity);
-        if (CanonicalSecurityActor.Resolve(pinnedPrincipal)?.ActorId != payload.ActorId) Deny();
+        await RevalidateMembershipAsync(services, snapshot, cancellationToken, payload.Credential).ConfigureAwait(false);
+        // A delegated principal is reconstructed exclusively from current authority;
+        // the minimal legacy context is evidence and never a source of trusted claims.
+        var pinnedPrincipal = principal!;
+        if (!AgentCredentialAuthority.IsDelegated(principal!))
+        {
+            var restored = JobSecurityContextCapture.Restore(snapshot);
+            var pinnedIdentity = new ClaimsIdentity(restored.Claims, AuthenticationExtensions.ApiKeyScheme,
+                ClaimTypes.Name, restored.Identity is ClaimsIdentity restoredIdentity ? restoredIdentity.RoleClaimType : ClaimTypes.Role);
+            CanonicalSecurityActor.StampAuthorityClaims(pinnedIdentity);
+            pinnedPrincipal = new ClaimsPrincipal(pinnedIdentity);
+            if (CanonicalSecurityActor.Resolve(pinnedPrincipal)?.ActorId != payload.ActorId) Deny();
+        }
         var privateContext = new DefaultHttpContext { User = principal, RequestServices = services };
         privateContext.Request.Method = HttpMethods.Post;
         privateContext.Request.Headers["X-Honua-Workspace"] = payload.WorkspaceId;
@@ -156,6 +162,11 @@ internal sealed class WorkflowPackageApprovedReplay
                  publication.PackageVersion != payload.Intent.Version || publication.PackageHash != payload.Intent.PackageHash ||
                  Fingerprint(publication) != payload.PublicationFingerprint) Deny();
     }
+
+    private static AgentCredentialSnapshot Credential(WorkflowPackageApprovalPayload payload) => payload.Credential ?? new()
+    {
+        Kind = "api-key", Id = payload.KeyId.ToString("D"), Permissions = payload.Permissions
+    };
 
     public static string Fingerprint(WorkflowPublication publication) => Convert.ToHexString(SHA256.HashData(
         JsonSerializer.SerializeToUtf8Bytes(publication, WorkflowPackageGovernanceJsonContext.Default.WorkflowPublication)));

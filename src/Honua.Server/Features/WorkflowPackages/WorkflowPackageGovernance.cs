@@ -63,6 +63,7 @@ internal sealed record WorkflowPackageApprovalPayload
     public required WorkflowPackageGovernanceIntent Intent { get; init; }
     public required Honua.Core.Features.Authorization.Domain.JobSecurityContext AuthorSecurityContext { get; init; }
     public required Guid KeyId { get; init; }
+    public AgentCredentialSnapshot? Credential { get; init; }
     public required string ActorId { get; init; }
     public required string[] Permissions { get; init; }
     public required string TenantId { get; init; }

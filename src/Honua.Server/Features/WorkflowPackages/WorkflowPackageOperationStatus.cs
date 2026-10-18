@@ -9,6 +9,7 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Infrastructure.Security;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.AgentWorkspace;
 using Honua.Server.Features.Operations;
 
@@ -21,8 +22,9 @@ internal static class WorkflowPackageOperationStatus
         string operationInstanceId, CancellationToken cancellationToken)
     {
         var actor = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
-        if (actor is null || !context.User.HasClaim("permission", "agent:workspace")) return null;
         var services = context.RequestServices;
+        if (actor is null || !AgentCredentialAuthority.IsAgent(context.User) ||
+            !await AgentCredentialAuthority.IsCurrentAsync(context.User, services, cancellationToken).ConfigureAwait(false)) return null;
         var handle = await services.GetRequiredService<IOperationInstanceStore>()
             .GetAsync(operationInstanceId, cancellationToken).ConfigureAwait(false);
         if (handle?.OperationId != WorkflowPackageGovernanceOperation.OperationId ||

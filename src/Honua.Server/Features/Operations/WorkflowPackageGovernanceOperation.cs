@@ -63,12 +63,8 @@ internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider service
             .ResolveAsync(principal, cancellationToken, workspace, turn, true).ConfigureAwait(false);
         if (!access.WorkspaceAgent || string.IsNullOrWhiteSpace(access.DelegatedOwnerActorId) ||
             access.ActorId != context.PrincipalId || access.TenantId != context.TenantId) Deny();
-        if (!Guid.TryParse(principal.FindFirst("api_key_id")?.Value, out var keyId)) Deny();
-        var record = await services.GetRequiredService<IAdminApiKeyStore>().GetAsync(keyId, cancellationToken).ConfigureAwait(false);
-        var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
-        if (record is null || record.RevokedAt is not null || record.ExpiresAt <= now ||
-            !record.Permissions.Order(StringComparer.Ordinal).SequenceEqual(
-                principal.FindAll("permission").Select(claim => claim.Value).Order(StringComparer.Ordinal))) Deny();
+        var credential = await AgentCredentialAuthority.CaptureAsync(principal, services, cancellationToken).ConfigureAwait(false)
+            ?? throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         var binding = await services.GetRequiredService<IAgentWorkspaceTurnAuthorizer>()
             .AuthorizeAsync(principal, workspace, turn, cancellationToken).ConfigureAwait(false);
         if (binding is null || binding.OwnerActorId != access.DelegatedOwnerActorId || binding.TenantId != access.TenantId) Deny();
@@ -83,15 +79,22 @@ internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider service
         if (intent.Action != "publish" && (intent.Target != default || intent.ProcessId is not null ||
             intent.Schedule is not null || !intent.Enabled) || intent.Action != "set-status" && intent.Status != default)
             throw new GeoprocessingValidationException("Only fields used by the requested workflow transition may be supplied.");
+        // A bearer token cannot silently become a long-lived scheduler credential.
+        if (AgentCredentialAuthority.IsDelegated(principal) && intent.Action == "publish" &&
+            intent.Target == WorkflowPublicationTarget.Schedule) Deny();
         var publication = await services.GetRequiredService<IWorkflowPackageStore>()
             .GetPublicationAsync(intent.PublicationId, cancellationToken).ConfigureAwait(false);
         var payload = new WorkflowPackageApprovalPayload
         {
             Intent = intent,
-            AuthorSecurityContext = await services.GetRequiredService<WorkflowAuthorSecurityContextCapturer>().CaptureAsync(principal, cancellationToken).ConfigureAwait(false),
-            KeyId = keyId,
+            AuthorSecurityContext = AgentCredentialAuthority.IsDelegated(principal)
+                ? new Honua.Core.Features.Authorization.Domain.JobSecurityContext(access.ActorId, access.TenantId,
+                    credential.Permissions.Select(permission => new Honua.Core.Features.Authorization.Domain.JobSecurityClaim("permission", permission)).ToArray()) { OwnerActorId = access.ActorId }
+                : await services.GetRequiredService<WorkflowAuthorSecurityContextCapturer>().CaptureAsync(principal, cancellationToken).ConfigureAwait(false),
+            KeyId = credential.Kind == "api-key" ? Guid.Parse(credential.Id) : Guid.Empty,
+            Credential = credential,
             ActorId = access.ActorId,
-            Permissions = record!.Permissions.ToArray(),
+            Permissions = credential.Permissions,
             TenantId = access.TenantId!,
             SchemaName = context.SchemaName,
             WorkspaceId = workspace,

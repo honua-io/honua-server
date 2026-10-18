@@ -60,6 +60,8 @@ internal sealed class WorkflowAuthorSecurityContextCapturer(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
+        if (AgentCredentialAuthority.IsDelegated(principal))
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         if (approvedReplay is not null)
         {
             if (CanonicalSecurityActor.Resolve(principal)?.ActorId != approvedReplay.Payload.ActorId)

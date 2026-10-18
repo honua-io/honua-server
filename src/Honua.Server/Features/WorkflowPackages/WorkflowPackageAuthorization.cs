@@ -32,12 +32,15 @@ internal sealed class WorkflowPackageAuthorization(
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         // A same-actor copy cannot remove the delegated-agent marker or add grants.
         if (context is not null) principal = context.User;
+        if (context is null || !await AgentCredentialAuthority.IsCurrentAsync(principal,
+                context.RequestServices, cancellationToken).ConfigureAwait(false))
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         if (context is null || !await OperationAdminAuthorization.IsAuthorizedAsync(context, principal,
                 write ? OperationSideEffectClass.MutatesMetadata : OperationSideEffectClass.ReadOnly,
                 cancellationToken).ConfigureAwait(false))
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
-        var agent = principal.HasClaim("permission", "agent:workspace");
-        if (agent && (principal.FindFirst("api_key_id") is null || !actor.IsDurablyRevalidatable ||
+        var agent = AgentCredentialAuthority.IsAgent(principal);
+        if (agent && (!actor.IsDurablyRevalidatable ||
                       string.IsNullOrWhiteSpace(tenantContext.TenantId)))
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
 
