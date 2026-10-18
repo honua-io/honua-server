@@ -39,6 +39,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private static readonly TimeSpan _backupCommandTimeout = TimeSpan.FromHours(1);
     private static readonly IComparer<string> _migrationScriptNameComparer = new MigrationScriptNameComparer();
 
+    private readonly bool _logToConsole;
     private readonly MigrationSafetyOptions _safetyOptions;
     private readonly IDatabaseMigrationBackupHookRecorder? _backupHookRecorder;
     private readonly string? _contractApprovalToken;
@@ -53,8 +54,10 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         PostgresCoreSchemaMigrationManifest migrations,
         IOptions<MigrationSafetyOptions>? safetyOptions = null,
         IConfiguration? configuration = null,
-        IDatabaseMigrationBackupHookRecorder? backupHookRecorder = null)
+        IDatabaseMigrationBackupHookRecorder? backupHookRecorder = null,
+        bool logToConsole = true)
     {
+        _logToConsole = logToConsole;
         _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
         _migrations = migrations ?? throw new ArgumentNullException(nameof(migrations));
         _safetyOptions = safetyOptions?.Value ?? new MigrationSafetyOptions();
@@ -108,7 +111,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 _metadataSchemaVariable,
                 includeRasterProviderMigrations,
                 _includeConfiguredSchemaAdoption,
-                _migrations.ConfiguredSchemaAdoptionMigration);
+                _migrations.ConfiguredSchemaAdoptionMigration,
+                _logToConsole);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             VerifyReaderCompatibility(upgrader, migrationsAssembly, usesCanonicalMigrationRoots);
             if (connection is not null)
@@ -298,7 +302,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 _metadataSchemaVariable,
                 includeRasterProviderMigrations,
                 _includeConfiguredSchemaAdoption,
-                _migrations.ConfiguredSchemaAdoptionMigration);
+                _migrations.ConfiguredSchemaAdoptionMigration,
+                _logToConsole);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             VerifyReaderCompatibility(upgrader, migrationsAssembly, usesCanonicalMigrationRoots);
             if (usesCanonicalMigrationRoots)
@@ -400,14 +405,23 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         string metadataSchemaVariable,
         bool includeRasterProviderMigrations,
         bool includeConfiguredSchemaAdoption,
-        string configuredSchemaAdoptionMigration)
+        string configuredSchemaAdoptionMigration,
+        bool logToConsole = true)
     {
         var builder = DeployChanges.To
             .PostgresqlDatabase(connectionString)
             .JournalToPostgresqlTable("public", "schema_versions")
             .WithVariable("HonuaSchema", metadataSchemaVariable)
-            .WithTransaction()
-            .LogToConsole();
+            .WithTransaction();
+        if (logToConsole)
+        {
+            builder.LogToConsole();
+        }
+        else
+        {
+            // Automation consumes a structured receipt, never raw SQL/provider exception text.
+            builder.LogToNowhere();
+        }
 
         // Production has two canonical numbered roots: provider schema and server schema.
         // Synthetic migration assemblies used by the safety-gate tests remain intentionally

@@ -89,6 +89,51 @@ namespace Honua.Db.Postgres;
 /// </summary>
 internal static class ServiceCollectionExtensions
 {
+    /// <summary>Registers the canonical guarded migration path without serving or background services.</summary>
+    internal static IServiceCollection AddPostgreSqlMigrationServices(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        PostgresCoreSchemaMigrationManifest coreSchemaMigrations,
+        bool logToConsole = true)
+    {
+        ArgumentNullException.ThrowIfNull(coreSchemaMigrations);
+        // Register the read-only journal/physical-schema guard and migration runner. Both
+        // canonical numbered roots flow through this runner and its public.schema_versions
+        // journal; the guard rejects divergence instead of repairing it from a store path.
+        services.AddSingleton(coreSchemaMigrations);
+        services.AddSingleton(serviceProvider =>
+            new Features.Infrastructure.Migrations.PostgresCoreSchemaGuard(
+                serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
+                configuration));
+        services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
+            serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
+
+        // Register migration runner for schema upgrades
+        services.AddSingleton<IDatabaseMigrationRunner>(provider => new PostgresDatabaseMigrationRunner(
+            provider.GetRequiredService<IDatabaseSchemaGuard>(),
+            provider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
+            provider.GetRequiredService<IOptions<MigrationSafetyOptions>>(),
+            configuration,
+            provider.GetService<IDatabaseMigrationBackupHookRecorder>(),
+            logToConsole));
+
+        // Expand/contract migration-safety gate (#2462, ADR-0060 principle #3a): the runner rejects
+        // pending contract-phase migrations that lack the compatibility-review marker. Enforce
+        // defaults TRUE; set Database:MigrationSafety:Enforce=false to override. The same options carry
+        // the journal-scoped contract-apply policy and the optional pre-migration backup hook for safe
+        // single-node upgrades (#2565): ContractApplyPolicy defaults to Gate (#2812 — annotated contract
+        // scripts on an existing database require a one-shot HONUA_APPROVE_CONTRACT_MIGRATIONS nonce so
+        // they are never applied unattended while older nodes serve), and BackupCommand is
+        // configuration-source only (never writable via API/DB — RCE guard).
+        services.AddOptions<Honua.Core.Configuration.MigrationSafetyOptions>()
+            .Bind(configuration.GetSection(Honua.Core.Configuration.MigrationSafetyOptions.SectionName));
+
+        // Register database compatibility checker for PostGIS preflight validation
+        services.AddSingleton<IDatabaseCompatibilityChecker, PostgresDatabaseCompatibilityChecker>();
+
+        return services;
+    }
+
     /// <summary>
     /// Add PostgreSQL services including feature store and health checking
     /// </summary>
@@ -531,33 +576,7 @@ internal static class ServiceCollectionExtensions
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
 
-        // Register the read-only journal/physical-schema guard and migration runner. Both
-        // canonical numbered roots flow through this runner and its public.schema_versions
-        // journal; the guard rejects divergence instead of repairing it from a store path.
-        services.AddSingleton(coreSchemaMigrations);
-        services.AddSingleton(serviceProvider =>
-            new Features.Infrastructure.Migrations.PostgresCoreSchemaGuard(
-                serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
-                configuration));
-        services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
-            serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
-
-        // Register migration runner for schema upgrades
-        services.AddSingleton<IDatabaseMigrationRunner, PostgresDatabaseMigrationRunner>();
-
-        // Expand/contract migration-safety gate (#2462, ADR-0060 principle #3a): the runner rejects
-        // pending contract-phase migrations that lack the compatibility-review marker. Enforce
-        // defaults TRUE; set Database:MigrationSafety:Enforce=false to override. The same options carry
-        // the journal-scoped contract-apply policy and the optional pre-migration backup hook for safe
-        // single-node upgrades (#2565): ContractApplyPolicy defaults to Gate (#2812 — annotated contract
-        // scripts on an existing database require a one-shot HONUA_APPROVE_CONTRACT_MIGRATIONS nonce so
-        // they are never applied unattended while older nodes serve), and BackupCommand is
-        // configuration-source only (never writable via API/DB — RCE guard).
-        services.AddOptions<Honua.Core.Configuration.MigrationSafetyOptions>()
-            .Bind(configuration.GetSection(Honua.Core.Configuration.MigrationSafetyOptions.SectionName));
-
-        // Register database compatibility checker for PostGIS preflight validation
-        services.AddSingleton<IDatabaseCompatibilityChecker, PostgresDatabaseCompatibilityChecker>();
+        services.AddPostgreSqlMigrationServices(configuration, coreSchemaMigrations);
 
         // Register topology validator for geometry operations
         services.AddScoped<IGeometryTopologyValidator, PostgresGeometryTopologyValidator>();
