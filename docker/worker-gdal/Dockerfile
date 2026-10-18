@@ -259,6 +259,9 @@ RUN groupadd --gid 1001 --system honua \
 
 WORKDIR /app
 COPY --from=build --chown=1001:1001 /app .
+# Qualification-only read-only OS/store observer. It refuses execution without
+# an explicit mounted policy; it is invoked by governed ECS Exec, never the job.
+COPY --chown=1001:1001 scripts/qualification/gp_native_observer.py /app/gp_native_observer.py
 
 # Guard: the custom worker steps (e.g. the Euclidean allocation step, #2255) must
 # be published alongside the worker assemblies so the executors can invoke them.

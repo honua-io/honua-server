@@ -490,5 +490,144 @@ class OutputStoreArtifactOracleTests(unittest.TestCase):
                     self.oracle.verify(document)
 
 
+class NativeObserverTests(unittest.TestCase):
+    """Real local processes/files prove observer contracts, never AWS qualification."""
+
+    def setUp(self):
+        import sys
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        root = Path(self.temporary.name)
+        self.barriers, self.scratch, self.outputs = (root / x for x in ("barriers", "scratch", "outputs"))
+        for directory in (self.barriers, self.scratch / "job-1", self.outputs):
+            directory.mkdir(parents=True)
+        self.policy_path = root / "observer-policy.json"
+        self.policy = {"schema": "honua.gp-observer-policy/v1", "enabled": True, "role": "worker",
+                       "barrierRoot": str(self.barriers), "scratchRoot": str(self.scratch),
+                       "outputRoot": str(self.outputs), "keyPrefix": "gp/outputs",
+                       "storeReference": "qualification", "configurationDigest": "a" * 64}
+        self.write_policy()
+        self.marker = self.outputs / ".honua-gp-store.json"
+        self.marker.write_text(json.dumps({"Provider": "local", "PersistenceClass": "shared-persistent",
+                                         "StoreReference": "qualification", "ConfigurationDigest": "a" * 64}))
+        spec = importlib.util.spec_from_file_location("native_observer", ROOT / "scripts/qualification/gp_native_observer.py")
+        self.observer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.observer)
+        self.child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                                      cwd=self.scratch / "job-1", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(self.stop_child)
+        (self.barriers / "job-1").mkdir()
+        self.ready_path = self.barriers / "job-1/native-process-started.ready.json"
+        self.ready = {"operationId": "job-1", "workerId": "worker-1", "barrier": "native-process-started",
+                      "workerProcessId": os.getpid(), "childProcessId": self.child.pid}
+        self.ready_path.write_text(json.dumps(self.ready))
+
+    def write_policy(self):
+        self.policy_path.write_text(json.dumps(self.policy))
+
+    def stop_child(self):
+        if self.child.poll() is None:
+            self.child.terminate()
+        self.child.wait(timeout=5)
+
+    def observe(self, phase="before", expected=None):
+        return self.observer.observe(self.policy_path, "job-1", "b" * 32, phase, expected)
+
+    def test_real_child_present_then_absent_with_original_worker_and_empty_effects(self):
+        before = self.observe()
+        self.assertEqual(self.child.pid, before["process"]["child"]["pid"])
+        self.assertGreater(before["process"]["child"]["startTicks"], 0)
+        self.stop_child()
+        after = self.observe("after", before["process"])
+        self.assertTrue(after["process"]["childAbsent"])
+        self.assertEqual(before["process"]["worker"], after["process"]["worker"])
+        self.assertEqual([], after["outputInventory"]["files"])
+        self.assertFalse(after["qualification"])
+
+    def test_live_child_never_becomes_cessation(self):
+        before = self.observe()
+        with self.assertRaisesRegex(self.observer.Refused, "native-child-still-present"):
+            self.observe("after", before["process"])
+
+    def test_stale_worker_namespace_barrier_and_pid_are_refused(self):
+        before = self.observe()
+        self.stop_child()
+        for field, replacement in (("bootId", "wrong"), ("pidNamespace", -1), ("barrierSha256", "0" * 64),
+                                   ("workerId", "other"), ("worker", {"pid": os.getpid(), "startTicks": 1})):
+            with self.subTest(field=field):
+                identity = copy.deepcopy(before["process"])
+                identity[field] = replacement
+                with self.assertRaises(self.observer.Refused):
+                    self.observe("after", identity)
+        identity = copy.deepcopy(before["process"])
+        identity["child"]["pid"] += 10000
+        with self.assertRaisesRegex(self.observer.Refused, "child-identity-changed"):
+            self.observe("after", identity)
+
+    def test_wrong_job_or_parent_cannot_supply_native_identity(self):
+        for key, replacement in (("operationId", "job-2"), ("workerProcessId", 1), ("childProcessId", os.getpid())):
+            with self.subTest(key=key):
+                changed = {**self.ready, key: replacement}
+                self.ready_path.write_text(json.dumps(changed))
+                with self.assertRaises(self.observer.Refused):
+                    self.observe()
+
+    def test_physical_bytes_and_changes_are_observed_without_exposing_contents(self):
+        import hashlib
+        folder = self.outputs / "gp/outputs/job-1"
+        folder.mkdir(parents=True)
+        (folder / "result").write_bytes(b"first")
+        first = self.observe()["outputInventory"]
+        self.assertEqual(hashlib.sha256(b"first").hexdigest(), first["files"][0]["sha256"])
+        (folder / "result").write_bytes(b"changed")
+        second = self.observe()["outputInventory"]
+        self.assertNotEqual(first, second)
+        self.assertNotIn("changed", json.dumps(second))
+
+    def test_symlink_and_special_file_inventory_fail_closed(self):
+        folder = self.outputs / "gp/outputs/job-1"
+        folder.mkdir(parents=True)
+        link = folder / "secret-link"
+        link.symlink_to(self.policy_path)
+        with self.assertRaisesRegex(self.observer.Refused, "inventory-symlink"):
+            self.observe()
+        link.unlink()
+        os.mkfifo(folder / "pipe")
+        with self.assertRaisesRegex(self.observer.Refused, "inventory-special-file"):
+            self.observe()
+
+    def test_disabled_missing_and_wrong_store_are_refused(self):
+        self.policy["enabled"] = False
+        self.write_policy()
+        with self.assertRaisesRegex(self.observer.Refused, "qualification-disabled"):
+            self.observe()
+        self.policy["enabled"] = True
+        self.write_policy()
+        self.marker.write_text('{"Provider":"local","StoreReference":"wrong"}')
+        with self.assertRaisesRegex(self.observer.Refused, "store-attestation"):
+            self.observe()
+        self.marker.unlink()
+        with self.assertRaises(OSError):
+            self.observe()
+
+    def test_store_observer_has_only_read_only_output_scope(self):
+        self.policy.update(role="store-observer", barrierRoot=None, scratchRoot=None)
+        self.write_policy()
+        self.assertEqual("observed", self.observe("store")["status"])
+        with self.assertRaisesRegex(self.observer.Refused, "worker-policy-required"):
+            self.observe()
+
+    def test_path_traversal_and_unbounded_inventory_are_refused(self):
+        for job in ("..", "../job-1", "job/1", "job%2F1"):
+            with self.subTest(job=job), self.assertRaises(self.observer.Refused):
+                self.observer.observe(self.policy_path, job, "b" * 32, "before")
+        folder = self.outputs / "gp/outputs/job-1"
+        folder.mkdir(parents=True)
+        with (folder / "large").open("wb") as stream:
+            stream.truncate(self.observer.MAX_BYTES + 1)
+        with self.assertRaisesRegex(self.observer.Refused, "inventory-limit"):
+            self.observe()
+
+
 if __name__ == "__main__":
     unittest.main()
