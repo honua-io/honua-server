@@ -1,0 +1,79 @@
+name: Installed Inspector Pagination Controls
+
+# These scripted-peer controls never constitute candidate qualification.
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'tests/mcp-certification/inspector-pagination*'
+      - '.github/workflows/mcp-inspector-pagination.yml'
+  push:
+    branches: [trunk]
+    paths:
+      - 'tests/mcp-certification/inspector-pagination*'
+      - '.github/workflows/mcp-inspector-pagination.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  controls:
+    name: Installed public Inspector pagination controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Fetch the canonical producer dependency lock
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/geospatial-mcp
+          ref: 372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4
+          path: .mcp-client
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.19.0'
+      - name: Install exact published Inspector bytes
+        working-directory: .mcp-client/certification
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4
+          echo '5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f  package-lock.json' | sha256sum -c -
+          npm ci --ignore-scripts
+          test "$(node -p "require('./node_modules/@modelcontextprotocol/inspector/package.json').version")" = 2.10.1
+          ln -s "${GITHUB_WORKSPACE}/.mcp-client/certification/node_modules" "${GITHUB_WORKSPACE}/tests/mcp-certification/node_modules"
+      - name: Exercise public installed-client wire paths and negative controls
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          mkdir -p artifacts/inspector-pagination-controls
+          node --test tests/mcp-certification/inspector-pagination.test.mjs | tee artifacts/inspector-pagination-controls/controls.tap
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          text = Path('artifacts/inspector-pagination-controls/controls.tap').read_text()
+          counts = {key: int(value) for key, value in re.findall(r'^# (tests|pass|fail|skipped|cancelled) (\d+)$', text, re.M)}
+          assert counts.get('tests', 0) >= 17, counts
+          assert counts.get('pass') == counts['tests'], counts
+          assert all(counts.get(key) == 0 for key in ('fail', 'skipped', 'cancelled')), counts
+          lock = json.loads(Path('.mcp-client/certification/package-lock.json').read_text())
+          package = lock['packages']['node_modules/@modelcontextprotocol/inspector']
+          Path('artifacts/inspector-pagination-controls/source-and-counts.json').write_text(json.dumps({
+              'schema': 'honua.inspector-pagination-controls/v1', 'candidateQualified': False,
+              'serverSource': os.environ['EXPECTED_SOURCE'], 'canonicalClientSource': '372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4',
+              'inspectorVersion': package['version'], 'inspectorIntegrity': package['integrity'],
+              'governedVersionQualified': False, 'counts': counts}, indent=2) + '\n')
+          PY
+      - name: Retain controls separately from candidate receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: inspector-pagination-controls-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/inspector-pagination-controls/
+          if-no-files-found: error
+          retention-days: 30
