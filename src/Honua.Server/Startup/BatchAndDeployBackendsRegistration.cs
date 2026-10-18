@@ -64,6 +64,8 @@ internal static class BatchAndDeployBackendsRegistration
         // resolution below — keep the existing K8s/AWS/Azure ordering.
         services.AddSingleton<KubernetesGitOpsDeployBackend>();
         services.AddSingleton<KubernetesArgoRolloutsDeployBackend>();
+        services.AddSingleton<IBoundKubernetesConnectionFactory, BoundKubernetesConnectionFactory>();
+        services.AddSingleton<KubernetesDeploymentDeployBackend>();
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<AwsEcsGitOpsDeployBackend>();
         services.AddSingleton<AwsEcsAlbDeployBackend>();
@@ -80,6 +82,7 @@ internal static class BatchAndDeployBackendsRegistration
 #endif
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesGitOpsDeployBackend>());
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesArgoRolloutsDeployBackend>());
+        services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesDeploymentDeployBackend>());
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsGitOpsDeployBackend>());
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsAlbDeployBackend>());
