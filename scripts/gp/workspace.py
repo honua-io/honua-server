@@ -24,7 +24,7 @@ import uuid
 
 MAX_FILES = 10000
 MAX_BYTES = 128 * 1024 * 1024
-EXCLUDED = {".git", ".honua", "bin", "obj", "node_modules", ".venv", "__pycache__"}
+EXCLUDED = {".git", "bin", "obj", "node_modules", ".venv", "__pycache__"}
 
 
 def sanitized(text: str) -> str:
@@ -59,6 +59,11 @@ def snapshot(project: Path, destination: Path) -> dict:
     for directory, directories, names in os.walk(project, followlinks=False):
         directories[:] = sorted(name for name in directories if name not in EXCLUDED)
         root = Path(directory)
+        if root.relative_to(project).parts == (".honua",):
+            # Installed devkit projects carry their canonical harness here. Retain
+            # it in the immutable snapshot, but never retain prior run output.
+            directories[:] = [name for name in directories if name == "toolchain"]
+            names = []
         for name in directories + sorted(names):
             source = root / name
             if source.is_symlink():
@@ -82,6 +87,7 @@ def snapshot(project: Path, destination: Path) -> dict:
 
 
 def command(image: str, source: Path, output: Path, name: str) -> list[str]:
+    if os.getuid() == 0: raise ValueError("Run the local workspace bridge as a non-root user.")
     if not re.fullmatch(r"(?:[a-zA-Z0-9./:_-]+@)?sha256:[a-f0-9]{64}", image):
         raise ValueError("Select an immutable Docker image digest, never a mutable tag.")
     return ["docker", "run", "--pull", "never", "--name", name, "--rm", "--read-only", "--network", "none",
@@ -108,6 +114,9 @@ def inside_container() -> int:
         restored = subprocess.run([sys.executable, "-m", "pip", "install", "--no-index", "--find-links", "/opt/wheelhouse", "--target", "/work/dependencies", "-r", str(lock)], check=False, timeout=120)
         if restored.returncode: return restored.returncode
         os.environ["PYTHONPATH"] = "/work/dependencies"
+    # Vulnerability feeds are not a restore source and cannot be contacted offline.
+    os.environ["NuGetAudit"] = "false"
+    os.environ["NUGET_CERT_REVOCATION_MODE"] = "offline"
     # Dependency restoration and builds are executed by the SAME installed devkit
     # used at the terminal. Network is denied at the container boundary throughout.
     completed = subprocess.run(["honua-gp-devkit", "test", "--project", str(project)], check=False, timeout=280)
@@ -121,6 +130,42 @@ def inside_container() -> int:
                     raise ValueError("Sandbox output contains a symlink.")
         shutil.copytree(runs, "/out/runs", dirs_exist_ok=True)
     return completed.returncode
+
+
+def collect_artifacts(output: Path) -> list[dict]:
+    """Expose only declared successful harness artifacts, never work/input files."""
+    receipts = []
+    total = 0
+    count = 0
+    for root, directories, names in os.walk(output, followlinks=False):
+        for name in directories + names:
+            if (Path(root) / name).is_symlink(): raise ValueError("Refusing linked sandbox output.")
+        for name in names:
+            count += 1
+            if count > MAX_FILES: raise ValueError("Output file budget exceeded.")
+            path = Path(root) / name
+            data = read_regular(path, MAX_BYTES - total)
+            total += len(data)
+            if name == "receipt.json": receipts.append(path)
+    artifacts = []
+    seen = set()
+    for path in receipts:
+        receipt = json.loads(read_regular(path, 4 * 1024 * 1024))
+        if receipt.get("schemaVersion") != "1.0" or receipt.get("executionMode") != "local" or receipt.get("status") != "succeeded": continue
+        for item in receipt.get("artifacts", []):
+            relative = Path(item["path"])
+            if relative.is_absolute() or ".." in relative.parts or not relative.parts or relative.parts[0] != "artifacts":
+                raise ValueError("Invalid declared artifact path.")
+            artifact = path.parent / relative
+            data = read_regular(artifact, MAX_BYTES)
+            digest = hashlib.sha256(data).hexdigest()
+            if len(data) != item["sizeBytes"] or digest != item["sha256"]:
+                raise ValueError("Declared artifact bytes do not match the canonical harness receipt.")
+            key = artifact.relative_to(output).as_posix()
+            if key in seen: raise ValueError("Duplicate declared artifact.")
+            seen.add(key)
+            artifacts.append({"path": key, "bytes": len(data), "sha256": digest})
+    return artifacts
 
 
 def run(project: Path, image: str, runs: Path, timeout: float, cancelled: threading.Event | None = None, run_id: str | None = None) -> dict:
@@ -185,20 +230,7 @@ def run(project: Path, image: str, runs: Path, timeout: float, cancelled: thread
     for item in manifest["files"]:
         if hashlib.sha256(read_regular(source / item["path"], item["bytes"])).hexdigest() != item["sha256"]:
             raise ValueError("Immutable snapshot changed during execution.")
-    artifacts = []
-    artifact_bytes = 0
-    for root, directories, names in os.walk(output, followlinks=False):
-        for name_part in directories + names:
-            if (Path(root) / name_part).is_symlink():
-                raise ValueError("Refusing linked sandbox output.")
-        for file in names:
-            path = Path(root) / file
-            data = read_regular(path, MAX_BYTES - artifact_bytes)
-            size = len(data)
-            artifact_bytes += size
-            if artifact_bytes > MAX_BYTES:
-                raise ValueError("Output budget exceeded.")
-            artifacts.append({"path": path.relative_to(output).as_posix(), "bytes": size, "sha256": hashlib.sha256(data).hexdigest()})
+    artifacts = collect_artifacts(output)
     with log.open("rb") as stream:
         stream.seek(max(0, log.stat().st_size - 32768))
         diagnostics = sanitized(stream.read().decode("utf-8", errors="replace"))

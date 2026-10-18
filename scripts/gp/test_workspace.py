@@ -4,8 +4,9 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from workspace import command, read_regular, sanitized, snapshot
+from workspace import collect_artifacts, command, read_regular, sanitized, snapshot
 from workspace_service import Workspace
 
 IMAGE = "sha256:" + "a" * 64
@@ -19,6 +20,19 @@ class WorkspaceTests(unittest.TestCase):
         (project / "tool.py").write_text("def execute(context):\n    raise ValueError('broken')\n")
         (project / "input.json").write_text('{"features":[]}')
         return project
+
+    def test_installed_toolchain_is_snapshotted_without_prior_runs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); project = self.project(root)
+            toolchain = project / ".honua/toolchain/harness.py"
+            toolchain.parent.mkdir(parents=True)
+            toolchain.write_text("canonical harness")
+            previous = project / ".honua/test-runs/old/receipt.json"
+            previous.parent.mkdir(parents=True)
+            previous.write_text("old output")
+            snapshot(project, root / "snapshot")
+            self.assertEqual((root / "snapshot/.honua/toolchain/harness.py").read_text(), "canonical harness")
+            self.assertFalse((root / "snapshot/.honua/test-runs").exists())
 
     def test_corrected_source_retains_distinct_snapshot_bytes(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -44,6 +58,10 @@ class WorkspaceTests(unittest.TestCase):
             workspace = Workspace(project, IMAGE, root / "runs")
             for path in ["../secret.py", "/tmp/secret.py", "escape.py", ".git/config", "token.env"]:
                 with self.assertRaises(ValueError): workspace.source(path)
+
+    def test_bridge_refuses_to_run_user_code_as_root(self):
+        with patch("workspace.os.getuid", return_value=0):
+            with self.assertRaises(ValueError): command(IMAGE, Path("/snapshot"), Path("/output"), "run")
 
     def test_all_dependency_build_and_run_work_stays_inside_denied_network_sandbox(self):
         argv = command(IMAGE, Path("/snapshot"), Path("/output"), "run")
@@ -78,6 +96,20 @@ class WorkspaceTests(unittest.TestCase):
             os.mkfifo(output / "fifo.json")
             workspace.jobs["c" * 32] = {"status":"succeeded", "artifacts":[{"path":"fifo.json", "bytes":0, "sha256":hashlib.sha256(b"").hexdigest()}]}
             with self.assertRaises(ValueError): workspace.artifact("c" * 32, "fifo.json")
+
+    def test_only_declared_harness_artifacts_are_exposed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); output = root / "runs" / "one"
+            (output / "artifacts").mkdir(parents=True)
+            (output / "work").mkdir()
+            data = b'{"type":"FeatureCollection","features":[]}'
+            (output / "artifacts/result.geojson").write_bytes(data)
+            (output / "work/input.json").write_text("not an output artifact")
+            item = {"path":"artifacts/result.geojson", "sizeBytes":len(data), "sha256":hashlib.sha256(data).hexdigest()}
+            (output / "receipt.json").write_text(json.dumps({"schemaVersion":"1.0","executionMode":"local","status":"succeeded","artifacts":[item]}))
+            self.assertEqual(collect_artifacts(root), [{"path":"runs/one/artifacts/result.geojson","bytes":len(data),"sha256":item["sha256"]}])
+            (output / "artifacts/result.geojson").write_bytes(b"changed")
+            with self.assertRaises(ValueError): collect_artifacts(root)
 
     def test_actual_read_bytes_are_bounded(self):
         with tempfile.TemporaryDirectory() as temporary:

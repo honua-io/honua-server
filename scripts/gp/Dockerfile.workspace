@@ -10,7 +10,7 @@ COPY devkit/ /opt/honua-devkit/
 COPY nuget/ /opt/nuget/
 COPY wheelhouse/ /opt/wheelhouse/
 ENV PATH="/opt/dotnet:/opt/honua-devkit:${PATH}" \
-    DOTNET_ROOT=/opt/dotnet NUGET_PACKAGES=/opt/nuget \
+    DOTNET_ROOT=/opt/dotnet NUGET_PACKAGES=/opt/nuget DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
 RUN printf '#!/bin/sh\nexec /opt/dotnet/dotnet /opt/honua-devkit/honua-gp.dll "$@"\n' > /opt/honua-devkit/honua-gp-devkit \
     && chmod 755 /opt/honua-devkit/honua-gp-devkit
