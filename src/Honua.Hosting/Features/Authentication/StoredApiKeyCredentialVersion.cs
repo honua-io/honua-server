@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Honua.Infrastructure.Security;
@@ -14,6 +15,7 @@ namespace Honua.Infrastructure.Authentication;
 internal static class StoredApiKeyCredentialVersion
 {
     internal const string ClaimType = "honua:api_key_credential_version";
+    private static readonly SearchValues<char> HexCharacters = SearchValues.Create("0123456789abcdef");
 
     /// <summary>One-way version fingerprint; never includes key material or the stored verifier itself.</summary>
     internal static string FromRecord(AdminApiKeyRecord record)
@@ -34,7 +36,7 @@ internal static class StoredApiKeyCredentialVersion
         var claims = principal.FindAll(ClaimType).ToArray();
         return claims.Length == 1 && CanonicalSecurityActor.IsFrameworkOwnedClaim(claims[0])
             && claims[0].Value.Length == 71 && claims[0].Value.StartsWith("sha256:", StringComparison.Ordinal)
-            && claims[0].Value.AsSpan(7).IndexOfAnyExcept("0123456789abcdef") < 0
+            && claims[0].Value.AsSpan(7).IndexOfAnyExcept(HexCharacters) < 0
                 ? claims[0].Value : null;
     }
 }
