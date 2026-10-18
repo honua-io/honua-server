@@ -252,7 +252,10 @@ internal static class AgentWorkspaceEndpoints
             : null;
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = $"workspace-{Guid.NewGuid():N}", TargetId = targetId, TenantId = Tenant(context), OwnerId = owner,
+            WorkspaceId = $"workspace-{Guid.NewGuid():N}",
+            TargetId = targetId,
+            TenantId = Tenant(context),
+            OwnerId = owner,
             Members = string.IsNullOrWhiteSpace(linkedAgent) ? [owner] : [owner, linkedAgent],
         };
         var snapshot = AgentWorkspaceState.Current(document, request.ViewId);
@@ -465,7 +468,8 @@ internal static class AgentWorkspaceEndpoints
             return await OperationsEndpoints.HandleSubmitOperationWithApproval(context, ServicePublishOperation.OperationId,
                 new OperationInvokeRequest
                 {
-                    ConnectionId = fields.GetValueOrDefault("connectionId"), ServiceName = fields.GetValueOrDefault("serviceName"),
+                    ConnectionId = fields.GetValueOrDefault("connectionId"),
+                    ServiceName = fields.GetValueOrDefault("serviceName"),
                     Parameters = fields.Where(pair => pair.Key is not ("connectionId" or "serviceName"))
                         .ToDictionary(pair => pair.Key, pair => (string?)pair.Value, StringComparer.Ordinal),
                 }, context.RequestServices.GetRequiredService<IOperationCatalog>(),

@@ -133,8 +133,14 @@ public sealed class AgentDevOpsAuthorizationTests
         })
         {
             fixture.Registry.GetAsync("cloud-1", Arg.Any<CancellationToken>()).Returns(Task.FromResult<DeployTargetDefinition?>(new()
-            { TargetId = "cloud-1", Environment = "dev", TargetKind = kind, Backend = backend, TargetName = "cell",
-                Parameters = new Dictionary<string, string> { ["honua.runtime_kind"] = kind == DeployTargetKind.Kubernetes ? "aws-eks" : "aws-lambda" } }));
+            {
+                TargetId = "cloud-1",
+                Environment = "dev",
+                TargetKind = kind,
+                Backend = backend,
+                TargetName = "cell",
+                Parameters = new Dictionary<string, string> { ["honua.runtime_kind"] = kind == DeployTargetKind.Kubernetes ? "aws-eks" : "aws-lambda" }
+            }));
             var operation = Operation("cloud-1", "tenant-a");
             var read = new AgentDevOpsAuthorizationRequest("server-1", "cloud-1", "dev", "get_devops_operation_status", Args(new { operationId = "op-1" }));
             fixture.Operations.GetAsync("op-1", Arg.Any<CancellationToken>()).Returns(Task.FromResult<WorkflowOperationRecord?>(operation));
@@ -155,8 +161,12 @@ public sealed class AgentDevOpsAuthorizationTests
         => JsonSerializer.SerializeToElement(value).EnumerateObject().ToDictionary(property => property.Name, property => property.Value);
     private static WorkflowOperationRecord Operation(string target, string tenant) => new()
     {
-        OperationId = "op-1", Kind = WorkflowOperationKind.Deploy, Status = WorkflowOperationStatus.Planned,
-        CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow, Audit = new() { TenantId = tenant },
+        OperationId = "op-1",
+        Kind = WorkflowOperationKind.Deploy,
+        Status = WorkflowOperationStatus.Planned,
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
+        Audit = new() { TenantId = tenant },
         Deploy = new() { TargetId = target, TargetKind = DeployTargetKind.AwsEcs, Backend = "honua-aws-ecs-alb", Environment = "dev", TargetName = "cell", DesiredRevision = "candidate" },
     };
 
@@ -177,9 +187,13 @@ public sealed class AgentDevOpsAuthorizationTests
             .AddSingleton(new OperatorApprovalGate(evaluator, Substitute.For<IOperatorApprovalEvaluator>(), NullLogger<OperatorApprovalGate>.Instance))
             .AddSingleton<IOptions<TenantContextOptions>>(Options.Create(new TenantContextOptions
             { Enabled = true, TenantClaimTypes = ["tenant_id"], MultiTenantAdminRoles = ["platform-admin"] })).BuildServiceProvider();
-        var context = new DefaultHttpContext { RequestServices = services, User = new ClaimsPrincipal(new ClaimsIdentity([
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity([
             new(ClaimTypes.NameIdentifier, "operator-a"), new(ClaimTypes.Role, "platform-admin"), new("tenant_id", "tenant-a"), new("permission", "admin:write"),
-        ], "test")) };
+        ], "test"))
+        };
         return new(context, workspace, registry, operations, evaluator, services);
     }
     private sealed record Fixture(DefaultHttpContext Context, IAgentWorkspaceStore Workspace, IDeployTargetRegistry Registry,

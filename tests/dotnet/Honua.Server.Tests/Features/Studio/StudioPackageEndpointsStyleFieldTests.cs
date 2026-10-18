@@ -64,11 +64,13 @@ public sealed partial class StudioPackageEndpointsTests
                 var rejected = typed
                     ? await PutAsync($"{route}/style", new UpdateStudioDraftStyleRequest
                     {
-                        Generation = draft.Generation, MapSpec = proposed.RootElement.GetProperty("mapSpec").Clone()
+                        Generation = draft.Generation,
+                        MapSpec = proposed.RootElement.GetProperty("mapSpec").Clone()
                     }, StudioApiJsonContext.Default.UpdateStudioDraftStyleRequest)
                     : await PutAsync(route, new UpdateStudioPackageDraftRequest
                     {
-                        PackageKey = draft.PackageKey, Generation = draft.Generation,
+                        PackageKey = draft.PackageKey,
+                        Generation = draft.Generation,
                         Envelope = draft.Envelope with { Body = proposed.RootElement.Clone() }
                     }, StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest);
                 rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"appearance={appearanceKind}, typed={typed}");
@@ -90,7 +92,8 @@ public sealed partial class StudioPackageEndpointsTests
         using var validDocument = JsonDocument.Parse(validStyle.ToJsonString());
         var savedResponse = await PutAsync($"{route}/style", new UpdateStudioDraftStyleRequest
         {
-            Generation = draft.Generation, MapSpec = validDocument.RootElement.Clone()
+            Generation = draft.Generation,
+            MapSpec = validDocument.RootElement.Clone()
         }, StudioApiJsonContext.Default.UpdateStudioDraftStyleRequest);
         savedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var saved = await ReadAsync<StudioPackageDraft>(savedResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
@@ -101,7 +104,8 @@ public sealed partial class StudioPackageEndpointsTests
 
         static JsonObject BuildLabel(JsonObject primary, string field) => new()
         {
-            ["id"] = "places-label", ["type"] = "symbol",
+            ["id"] = "places-label",
+            ["type"] = "symbol",
             ["source"] = primary["source"]!.DeepClone(),
             ["metadata"] = primary["metadata"]!.DeepClone(),
             ["layout"] = new JsonObject { ["text-field"] = new JsonArray("to-string", new JsonArray("get", field)), ["text-size"] = 14 },

@@ -8,6 +8,7 @@ using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Honua.Server.Features.Studio.Models;
 using Microsoft.AspNetCore.Mvc;
 

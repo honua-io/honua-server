@@ -45,20 +45,32 @@ public sealed partial class StudioPackageEndpointsTests
         var catalog = new JsonObject
         {
             ["version"] = 8,
-            ["sources"] = new JsonObject { ["catalog"] = new JsonObject
-                { ["type"] = "geojson", ["data"] = new JsonObject { ["type"] = "FeatureCollection", ["features"] = new JsonArray() } } },
-            ["layers"] = new JsonArray(new JsonObject { ["id"] = "catalog-render", ["type"] = type, ["source"] = "catalog",
-                ["paint"] = new JsonObject { [$"{type}-color"] = "green" } })
+            ["sources"] = new JsonObject
+            {
+                ["catalog"] = new JsonObject
+                { ["type"] = "geojson", ["data"] = new JsonObject { ["type"] = "FeatureCollection", ["features"] = new JsonArray() } }
+            },
+            ["layers"] = new JsonArray(new JsonObject
+            {
+                ["id"] = "catalog-render",
+                ["type"] = type,
+                ["source"] = "catalog",
+                ["paint"] = new JsonObject { [$"{type}-color"] = "green" }
+            })
         };
         catalog["sources"]!["unrelated"] = catalog["sources"]!["catalog"]!.DeepClone();
         catalog["layers"]!.AsArray().Add(new JsonObject
         {
-            ["id"] = "catalog-label", ["type"] = "symbol", ["source"] = "catalog",
+            ["id"] = "catalog-label",
+            ["type"] = "symbol",
+            ["source"] = "catalog",
             ["layout"] = new JsonObject { ["text-field"] = "Place", ["text-size"] = 14 }
         });
         catalog["layers"]!.AsArray().Add(new JsonObject
         {
-            ["id"] = "unrelated-label", ["type"] = "symbol", ["source"] = "unrelated",
+            ["id"] = "unrelated-label",
+            ["type"] = "symbol",
+            ["source"] = "unrelated",
             ["layout"] = new JsonObject { ["text-field"] = "Wrong source" }
         });
         using var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles")
@@ -71,7 +83,9 @@ public sealed partial class StudioPackageEndpointsTests
 
         body["mapSpec"]!["layers"]!.AsArray().Add(new JsonObject
         {
-            ["id"] = "manual-label", ["type"] = "symbol", ["source"] = target["source"]!.DeepClone(),
+            ["id"] = "manual-label",
+            ["type"] = "symbol",
+            ["source"] = target["source"]!.DeepClone(),
             ["metadata"] = new JsonObject { ["honua:compositionLayerId"] = "places" },
             ["layout"] = new JsonObject { ["text-field"] = "Map-local label" }
         });
@@ -83,7 +97,9 @@ public sealed partial class StudioPackageEndpointsTests
             ["styleId"] = styleId,
             ["layerBindings"] = new JsonArray(new JsonObject
             {
-                ["styleLayerId"] = "catalog-render", ["targetLayerId"] = "places", ["layerType"] = type
+                ["styleLayerId"] = "catalog-render",
+                ["targetLayerId"] = "places",
+                ["layerType"] = type
             })
         });
         // Existing explicit subsets stay explicit until the user reapplies the
@@ -97,7 +113,8 @@ public sealed partial class StudioPackageEndpointsTests
         using var styledBody = JsonDocument.Parse(body.ToJsonString());
         var savedResponse = await PutAsync(route, new UpdateStudioPackageDraftRequest
         {
-            PackageKey = draft.PackageKey, Generation = draft.Generation,
+            PackageKey = draft.PackageKey,
+            Generation = draft.Generation,
             Envelope = draft.Envelope with { Body = styledBody.RootElement.Clone() }
         }, StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest);
         savedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -149,7 +166,8 @@ public sealed partial class StudioPackageEndpointsTests
         // map document is byte-for-byte identical to the unhydrated base.
         var snapshotResponse = await PutAsync($"{route}/style", new UpdateStudioDraftStyleRequest
         {
-            Generation = saved.Generation, MapSpec = saved.Envelope.Body.Value.GetProperty("mapSpec").Clone()
+            Generation = saved.Generation,
+            MapSpec = saved.Envelope.Body.Value.GetProperty("mapSpec").Clone()
         }, StudioApiJsonContext.Default.UpdateStudioDraftStyleRequest);
         snapshotResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var snapshot = await ReadAsync<StudioPackageDraft>(snapshotResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
@@ -181,7 +199,8 @@ public sealed partial class StudioPackageEndpointsTests
             using var document = JsonDocument.Parse(candidate.ToJsonString());
             var response = await PutAsync(route, new UpdateStudioPackageDraftRequest
             {
-                PackageKey = current.PackageKey, Generation = current.Generation,
+                PackageKey = current.PackageKey,
+                Generation = current.Generation,
                 Envelope = current.Envelope with { Body = document.RootElement.Clone() }
             }, StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest);
             response.StatusCode.Should().Be(HttpStatusCode.OK);

@@ -166,7 +166,9 @@ internal static partial class StudioDraftStyleReferences
             if (type == "fill" && renders.OfType<JsonObject>().Any(layer => layer["id"]?.GetValue<string>() == $"{owner.Id}__outline"))
                 bindings.Add(new JsonObject
                 {
-                    ["styleLayerId"] = catalogId, ["targetLayerId"] = $"{owner.Id}__outline", ["layerType"] = type,
+                    ["styleLayerId"] = catalogId,
+                    ["targetLayerId"] = $"{owner.Id}__outline",
+                    ["layerType"] = type,
                     ["properties"] = new JsonArray("filter", "minzoom", "maxzoom", "visibility")
                 });
             var primary = compatible[0];
@@ -186,7 +188,9 @@ internal static partial class StudioDraftStyleReferences
                     Fail("A generated shared label conflicts with an existing render layer.");
                 var label = new JsonObject
                 {
-                    ["id"] = targetId, ["type"] = "symbol", ["source"] = target["source"]!.DeepClone(),
+                    ["id"] = targetId,
+                    ["type"] = "symbol",
+                    ["source"] = target["source"]!.DeepClone(),
                     ["metadata"] = new JsonObject
                     {
                         ["honua:compositionLayerId"] = owner.Id,
@@ -200,7 +204,9 @@ internal static partial class StudioDraftStyleReferences
                 InsertOwnedLabel(renders, owner.Id, label);
                 bindings.Add(new JsonObject
                 {
-                    ["styleLayerId"] = symbolId, ["targetLayerId"] = targetId, ["layerType"] = "symbol"
+                    ["styleLayerId"] = symbolId,
+                    ["targetLayerId"] = targetId,
+                    ["layerType"] = "symbol"
                 });
             }
         }
