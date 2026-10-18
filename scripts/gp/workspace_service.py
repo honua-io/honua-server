@@ -17,6 +17,7 @@ from urllib.parse import unquote, urlsplit
 
 from workspace import EXCLUDED, MAX_BYTES, command, read_regular, run, sanitized, snapshot
 
+SOURCE_EXCLUDED = EXCLUDED | {".honua"}
 EDITABLE = {".py", ".cs", ".csproj", ".json", ".yaml", ".yml", ".lock", ".toml"}
 MAX_SOURCE_BYTES = 256 * 1024
 
@@ -34,7 +35,7 @@ class Workspace:
 
     def source(self, relative: str) -> Path:
         relative_path = Path(relative)
-        if relative_path.is_absolute() or any(part in {"..", "."} | EXCLUDED for part in relative_path.parts):
+        if relative_path.is_absolute() or any(part in {"..", "."} | SOURCE_EXCLUDED for part in relative_path.parts):
             raise ValueError("Invalid source path.")
         if relative_path.suffix not in EDITABLE: raise ValueError("Unsupported source file type.")
         target = self.project / relative_path
@@ -50,7 +51,7 @@ class Workspace:
         total = 0
         with self.lock:
             for root, directories, names in os.walk(self.project, followlinks=False):
-                directories[:] = [name for name in directories if name not in EXCLUDED and not (Path(root) / name).is_symlink()]
+                directories[:] = [name for name in directories if name not in SOURCE_EXCLUDED and not (Path(root) / name).is_symlink()]
                 for name in sorted(names):
                     candidate = Path(root) / name
                     if candidate.suffix not in EDITABLE or candidate.is_symlink(): continue
