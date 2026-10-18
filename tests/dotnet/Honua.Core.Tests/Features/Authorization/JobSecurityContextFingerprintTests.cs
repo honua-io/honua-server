@@ -50,6 +50,18 @@ public sealed class JobSecurityContextFingerprintTests
         Assert.Throws<UnauthorizedAccessException>(() => JobSecurityContextFingerprint.Compute(Context([new("claim", new string('a', 16385))])));
     }
 
+    [Fact]
+    public void RenewalLineage_IgnoresOnlyIssuanceMetadataAndNeverReplacesOriginalPolicyInputs()
+    {
+        var original = Context([new("department", "planning"), new("exp", "100"), new("jti", "old")]);
+        var fresh = Context([new("department", "planning"), new("exp", "200"), new("jti", "new"), new("iat", "101")]);
+        Assert.Equal(JobSecurityContextFingerprint.ComputeRenewalLineage(original), JobSecurityContextFingerprint.ComputeRenewalLineage(fresh));
+        Assert.NotEqual(JobSecurityContextFingerprint.Compute(original), JobSecurityContextFingerprint.Compute(fresh));
+        Assert.NotEqual(JobSecurityContextFingerprint.ComputeRenewalLineage(original), JobSecurityContextFingerprint.ComputeRenewalLineage(
+            fresh with { Claims = [new("department", "administration"), new("exp", "200")] }));
+        Assert.Contains(new JobSecurityClaim("exp", "100"), original.Claims);
+    }
+
     private static JobSecurityContext Context(IReadOnlyList<JobSecurityClaim> claims)
         => new("actor", "tenant", claims, ClaimTypes.Role)
         {

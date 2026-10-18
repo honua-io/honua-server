@@ -17,7 +17,25 @@ public static class JobSecurityContextFingerprint
     /// <summary>Hashes bounded owner, tenant, claim and role-alias inputs using versioned scalar encodings.</summary>
     /// <param name="context">The trusted original policy context.</param>
     /// <returns>A lowercase SHA-256 policy-context fingerprint.</returns>
-    public static string Compute(JobSecurityContext context)
+    public static string Compute(JobSecurityContext context) => ComputeCore(context, 1);
+
+    /// <summary>
+    /// Compares refresh lineage while excluding only canonical per-issuance transport metadata.
+    /// Original policy inputs remain immutable, including any expiry claim used by an RLS policy.
+    /// </summary>
+    /// <param name="context">A freshly host-captured or original trusted policy context.</param>
+    /// <returns>A distinct versioned fingerprint for renewal comparison only.</returns>
+    /// <remarks>This never replaces the original policy fingerprint or authorizes execution.</remarks>
+    public static string ComputeRenewalLineage(JobSecurityContext context)
+    {
+        _ = Compute(context); // Validate every original input, including excluded transport claims.
+        return ComputeCore(context with
+        {
+            Claims = context.Claims.Where(claim => !CredentialIssuanceClaimTypes.Contains(claim.Type)).ToArray()
+        }, 2);
+    }
+
+    private static string ComputeCore(JobSecurityContext context, byte version)
     {
         ArgumentNullException.ThrowIfNull(context);
         if (context.Claims is null || context.AgentPolicyRoleClaimTypes is null
@@ -30,7 +48,7 @@ public static class JobSecurityContextFingerprint
         using var stream = new MemoryStream();
         using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
         {
-            writer.Write((byte)1);
+            writer.Write(version);
             Write(writer, context.PrincipalId, 2048);
             Write(writer, context.TenantId, 512);
             Write(writer, context.RoleClaimType, 512);

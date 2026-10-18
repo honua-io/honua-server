@@ -23,15 +23,6 @@ internal static class CanonicalSecurityActor
     internal const string AuthenticationSchemeClaim = "honua:auth_scheme";
     internal const string FrameworkOwnedClaimProperty = "honua:framework_owned";
 
-    // Per-issuance token metadata: lifetime, token id, authentication instant, hash
-    // bindings, and provider-specific per-token identifiers (Entra ID uti/aio/rh). None
-    // of these grants authority, and every one changes when a client refreshes a token.
-    private static readonly HashSet<string> IssuanceClaimTypes = new(StringComparer.Ordinal)
-    {
-        "exp", "iat", "nbf", "jti", "auth_time", ClaimTypes.AuthenticationInstant,
-        "at_hash", "c_hash", "nonce", "uti", "aio", "rh",
-    };
-
     // Claim types the server's OWN authentication handlers mint and shared authorization
     // then reads as authoritative: the admin permission grammar, the credential-kind
     // discriminator, the API-key identity used for audit/partitioning, the rate-limit
@@ -170,7 +161,7 @@ internal static class CanonicalSecurityActor
     {
         ArgumentNullException.ThrowIfNull(principal);
         var claims = principal.Claims
-            .Where(static claim => !IsRequestBindingProjection(claim) && !IssuanceClaimTypes.Contains(claim.Type))
+            .Where(static claim => !IsRequestBindingProjection(claim) && !CredentialIssuanceClaimTypes.Contains(claim.Type))
             .Select(static claim => (claim.Type, claim.Value, claim.Issuer))
             .Order();
         var canonical = new System.Text.StringBuilder();
