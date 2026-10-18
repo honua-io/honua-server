@@ -161,7 +161,7 @@ internal static class AgentCredentialAuthority
         binding.Properties["required-scope"] = profile.RequiredScope;
         for (var i = 0; i < authority.Roles.Length; i++) binding.Properties["role-" + i.ToString(System.Globalization.CultureInfo.InvariantCulture)] = authority.Roles[i];
         AddGrantClaims(identity, authority.Grants);
-        identity.AddClaim(CanonicalSecurityActor.CreateStampedClaim(GenerationClaim, profile.Generation.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        identity.AddClaim(CanonicalSecurityActor.CreateStampedClaim(GenerationClaim, AuthorityGeneration(profile.Generation, authority.Roles)));
         identity.AddClaim(binding);
         return principal;
     }
@@ -212,7 +212,7 @@ internal static class AgentCredentialAuthority
         binding.Properties["tenant-claim"] = profile.TenantClaimType;
         binding.Properties["required-scope"] = profile.RequiredScope;
         for (var i = 0; i < authority.Roles.Length; i++) binding.Properties["role-" + i.ToString(System.Globalization.CultureInfo.InvariantCulture)] = authority.Roles[i];
-        identity.AddClaim(CanonicalSecurityActor.CreateStampedClaim(GenerationClaim, profile.Generation.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        identity.AddClaim(CanonicalSecurityActor.CreateStampedClaim(GenerationClaim, AuthorityGeneration(profile.Generation, authority.Roles)));
         AddGrantClaims(identity, authority.Grants);
         binding.Properties["expiry"] = snapshot.TokenExpiresAt.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
         identity.AddClaim(binding);
@@ -256,6 +256,15 @@ internal static class AgentCredentialAuthority
     internal static string[] SourceRoles(ClaimsPrincipal principal) => TrustedProfile(principal)?.Properties
         .Where(p => p.Key.StartsWith("role-", StringComparison.Ordinal)).Select(p => p.Value ?? "").ToArray() ?? [];
 
+    private static string AuthorityGeneration(long generation, IEnumerable<string> roles)
+    {
+        var canonical = new StringBuilder();
+        foreach (var role in roles.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+            canonical.Append(role.Length).Append(':').Append(role);
+        return generation.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" +
+            Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
     private static string GrantFingerprint(PermissionGrant grant) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
         $"{grant.Service.Length}:{grant.Service}{grant.Layer.Length}:{grant.Layer}{grant.Operation.Length}:{grant.Operation}")));
 
@@ -275,8 +284,9 @@ internal static class AgentCredentialAuthority
     private static string? Value(Claim claim, string key) => claim.Properties.TryGetValue(key, out var value) ? value : null;
     private static void ProjectRoles(ClaimsIdentity identity, IServiceProvider services)
     {
-        foreach (var claim in identity.Claims.Where(c => c.Type == identity.RoleClaimType || c.Type == ClaimTypes.Role ||
-            c.Type == services.GetService<IOptions<RbacOptions>>()?.Value.EffectiveRoleClaimType ||
+        foreach (var claim in identity.Claims.Where(c => string.Equals(c.Type, identity.RoleClaimType, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(c.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(c.Type, services.GetService<IOptions<RbacOptions>>()?.Value.EffectiveRoleClaimType, StringComparison.OrdinalIgnoreCase) ||
             c.Type is "role" or "roles" || c.Type.Contains("role", StringComparison.OrdinalIgnoreCase)).ToArray()) identity.RemoveClaim(claim);
         foreach (var marker in identity.FindAll(DelegatedOnlyClaim).Concat(identity.FindAll(GenerationClaim)).Concat(identity.FindAll(GrantClaim)).ToArray()) identity.RemoveClaim(marker);
         identity.AddClaim(CanonicalSecurityActor.CreateStampedClaim(DelegatedOnlyClaim, "1"));

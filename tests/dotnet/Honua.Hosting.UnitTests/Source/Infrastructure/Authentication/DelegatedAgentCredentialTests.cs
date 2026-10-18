@@ -12,6 +12,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -311,6 +312,43 @@ public sealed class DelegatedAgentCredentialTests
         (await AgentCredentialAuthority.CaptureAsync(principal, fixture.Services, default)).Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task FrozenAuthorityFingerprint_TracksManagedRoleSetEvenWhenGrantsStayIdentical()
+    {
+        using var fixture = new Fixture();
+        var original = Token();
+        AgentCredentialAuthority.MarkValidated((ClaimsIdentity)original.Identity!);
+        await AgentCredentialAuthority.BindOidcAsync(original, fixture.Services);
+        var fingerprint = CanonicalSecurityActor.ResolveAuthorityFingerprint(original);
+        fixture.Membership.ResolveMembershipAsync("subject", "https://issuer.example", Arg.Any<CancellationToken>())
+            .Returns(new PrincipalMembership(true, ["worker", "restricted"]));
+        var changed = Token();
+        AgentCredentialAuthority.MarkValidated((ClaimsIdentity)changed.Identity!);
+        await AgentCredentialAuthority.BindOidcAsync(changed, fixture.Services);
+        changed.FindAll("permission").Select(claim => claim.Value).Should().Equal(original.FindAll("permission").Select(claim => claim.Value));
+        CanonicalSecurityActor.ResolveAuthorityFingerprint(changed).Should().NotBe(fingerprint);
+        fixture.Membership.ResolveMembershipAsync("subject", "https://issuer.example", Arg.Any<CancellationToken>())
+            .Returns(new PrincipalMembership(true, ["restricted", "worker"]));
+        var reordered = Token();
+        AgentCredentialAuthority.MarkValidated((ClaimsIdentity)reordered.Identity!);
+        await AgentCredentialAuthority.BindOidcAsync(reordered, fixture.Services);
+        CanonicalSecurityActor.ResolveAuthorityFingerprint(reordered).Should().Be(CanonicalSecurityActor.ResolveAuthorityFingerprint(changed));
+    }
+
+    [Fact]
+    public async Task DelegatedQuarantine_RemovesCaseVariantConfiguredRoleClaims()
+    {
+        using var fixture = new Fixture("groups");
+        var principal = Token();
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("GROUPS", "admin"));
+        AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
+        await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
+        AgentCredentialAuthority.IsAgent(principal).Should().BeTrue();
+        principal.FindAll("groups").Should().BeEmpty();
+        RbacRoleClaims.Enumerate(principal, new RbacOptions { RoleClaimType = "groups" }, true)
+            .Should().Equal(AgentCredentialAuthority.DelegatedRole);
+    }
+
     private static ClaimsPrincipal Token(string? mismatch = null) => new(new ClaimsIdentity([
         new Claim("scope", "agent:workspace"),
         new Claim("exp", (mismatch == "expired" ? DateTimeOffset.UtcNow.AddMinutes(-1) : DateTimeOffset.UtcNow.AddMinutes(10)).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)),
@@ -329,7 +367,7 @@ public sealed class DelegatedAgentCredentialTests
         internal IPrincipalMembershipSource Membership { get; } = Substitute.For<IPrincipalMembershipSource>();
         internal IRoleStore Roles { get; } = Substitute.For<IRoleStore>();
         internal ServiceProvider Services { get; }
-        internal Fixture()
+        internal Fixture(string roleClaimType = "roles")
         {
             var options = Substitute.For<IOptionsMonitor<OidcAuthenticationOptions>>();
             options.CurrentValue.Returns(new OidcAuthenticationOptions { Enabled = true, DelegatedAgents = [Profile], DelegatedAgentAudiences = [new() { Issuer = "https://issuer.example", Audience = "honua" }] });
@@ -337,7 +375,7 @@ public sealed class DelegatedAgentCredentialTests
                 .Returns(new PrincipalMembership(true, ["worker"]));
             Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
                 .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions = [new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" }] });
-            Services = new ServiceCollection().AddSingleton(options).AddSingleton(Membership).AddSingleton(Roles).AddSingleton<IAdminApiKeyStore>(new InMemoryAdminApiKeyStore()).BuildServiceProvider();
+            Services = new ServiceCollection().AddSingleton(options).AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions { RoleClaimType = roleClaimType })).AddSingleton(Membership).AddSingleton(Roles).AddSingleton<IAdminApiKeyStore>(new InMemoryAdminApiKeyStore()).BuildServiceProvider();
         }
         public void Dispose() => Services.Dispose();
     }

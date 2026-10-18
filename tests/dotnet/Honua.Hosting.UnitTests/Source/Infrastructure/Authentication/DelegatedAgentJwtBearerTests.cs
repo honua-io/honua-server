@@ -54,6 +54,7 @@ public sealed class DelegatedAgentJwtBearerTests
         var services = new ServiceCollection().AddLogging().AddMemoryCache();
         services.AddSingleton<IConfiguration>(config);
         services.AddOidcAuthentication(config);
+        services.Configure<RbacOptions>(options => options.RoleClaimType = "groups");
         services.Configure<OidcAuthenticationOptions>(options =>
         {
             options.DelegatedAgentAudiences = [new() { Issuer = "https://issuer.example", Audience = "honua" }];
@@ -86,7 +87,7 @@ public sealed class DelegatedAgentJwtBearerTests
             claims: [new Claim("scope", variant.Contains("omitted-scope", StringComparison.Ordinal) ? "" : "agent:workspace"), new Claim("sub", variant == "wrong-subject" ? "other" : "subject"),
                 new Claim("tenant_id", variant == "wrong-tenant" ? "other" : "tenant"),
                 new Claim("permission", "agent:workspace"), new Claim("api_key_id", Guid.NewGuid().ToString()),
-                new Claim("auth_type", "admin-api-key"), new Claim(ClaimTypes.Role, "admin")],
+                new Claim("auth_type", "admin-api-key"), new Claim(ClaimTypes.Role, "admin"), new Claim("GROUPS", "admin")],
             notBefore: DateTime.UtcNow.AddMinutes(-10),
             expires: variant == "expired" ? DateTime.UtcNow.AddMinutes(-1) : DateTime.UtcNow.AddMinutes(5),
             signingCredentials: new SigningCredentials(variant == "forged-signature" ? new RsaSecurityKey(otherRsa) : key, SecurityAlgorithms.RsaSha256));
@@ -101,6 +102,7 @@ public sealed class DelegatedAgentJwtBearerTests
         if (result.Succeeded)
         {
             result.Principal!.IsInRole("admin").Should().BeFalse();
+            RbacRoleClaims.IsAdmin(result.Principal, new RbacOptions { RoleClaimType = "groups" }, true).Should().BeFalse();
             AdminApiKeyPermission.IsAuthorized(result.Principal, "POST").Should().BeFalse();
             var approval = new AuthorizationHandlerContext([new AdminApproveRequirement()], result.Principal, "another-agent-proposal");
             await new AdminApproveAuthorizationHandler().HandleAsync(approval);
