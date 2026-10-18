@@ -168,3 +168,27 @@ def test_canonical_lane_refuses_unusable_native_client_before_connecting(tmp_pat
     result = subprocess.run(["/bin/bash", str(script)], env={**os.environ, "PATH": str(tmp_path)},
                             capture_output=True, text=True, timeout=10, check=False)
     assert result.returncode == 9
+
+
+def test_canonical_lane_does_not_swallow_failed_assertion_controls(tmp_path):
+    import os
+    import shlex
+    import subprocess
+    from pathlib import Path
+
+    for tool in ("ogrinfo", "ogr2ogr"):
+        executable = tmp_path / tool
+        executable.write_text("#!/bin/sh\nexit 0\n")
+        executable.chmod(0o755)
+    executable = tmp_path / "pytest"
+    executable.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\nexit 17\n')
+    executable.chmod(0o755)
+    calls = tmp_path / "calls"
+    script = (Path(__file__).parents[3] / "docker/client-compat/gdal/run.sh").read_text()
+    assert script.count("cd /workspace") == 1
+    result = subprocess.run(["/bin/bash"], input=script.replace("cd /workspace", f"cd {shlex.quote(str(tmp_path))}"),
+                            env={**os.environ, "PATH": str(tmp_path), "CALLS": str(calls)},
+                            capture_output=True, text=True, timeout=10, check=False)
+    assert result.returncode == 17
+    assert calls.read_text().splitlines() == [
+        'tests/python/gdal_ogr/test_query_assertion_controls.py tests/python/gdal_ogr/test_wfs_query_native_controls.py --tb=short -v --override-ini=addopts=']

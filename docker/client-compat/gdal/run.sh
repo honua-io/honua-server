@@ -17,6 +17,12 @@ ogrinfo --version
 
 cd /workspace
 
+# Assertion controls are infrastructure checks, not candidate observations.
+# Fail immediately if these fail; preserve the live evidence handling below.
+pytest tests/python/gdal_ogr/test_query_assertion_controls.py \
+    tests/python/gdal_ogr/test_wfs_query_native_controls.py \
+    --tb=short -v --override-ini="addopts="
+
 # Wait for honua to come up — the compose healthcheck handles ordering, but a
 # few belt-and-braces retries cover slow first-boots.
 for attempt in 1 2 3 4 5 6 7 8; do
@@ -41,6 +47,8 @@ export HONUA_GDAL_RESULTS_PATH=/output/gdal-ogr-results.json
 # (honua-server#4420; this lane previously had neither check, unlike the
 # geopandas and duckdb lanes).
 pytest tests/python/gdal_ogr \
+    --ignore=tests/python/gdal_ogr/test_query_assertion_controls.py \
+    --ignore=tests/python/gdal_ogr/test_wfs_query_native_controls.py \
     --tb=short \
     -v \
     --override-ini="addopts=" \
