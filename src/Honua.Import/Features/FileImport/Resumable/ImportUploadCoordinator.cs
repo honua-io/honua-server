@@ -34,7 +34,9 @@ internal sealed class ImportUploadCoordinator(
     public async Task<ImportUploadSession> CreateAsync(ClaimsPrincipal principal, ImportUploadTaskReference reference,
         CancellationToken cancellationToken = default)
     {
-        var task = await AuthorizeAsync(principal, reference, requireWrite: true, cancellationToken).ConfigureAwait(false);
+        // Recover the original receipt before applying new-admission policy. An
+        // imported destination may now exist while its receipt remains readable.
+        var task = await AuthorizeAsync(principal, reference, requireWrite: false, cancellationToken).ConfigureAwait(false);
         var expected = SessionFor(task);
         var existing = await store.GetAsync(expected.Id, expected.Scope, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
@@ -84,7 +86,7 @@ internal sealed class ImportUploadCoordinator(
     public async Task<ImportUploadSession> VerifyAndSealAsync(ClaimsPrincipal principal, ImportUploadTaskReference reference,
         long expectedVersion, CancellationToken cancellationToken = default)
     {
-        var task = await AuthorizeAsync(principal, reference, requireWrite: true, cancellationToken).ConfigureAwait(false);
+        var task = await AuthorizeAsync(principal, reference, requireWrite: false, cancellationToken).ConfigureAwait(false);
         var current = await RequireSessionAsync(task, cancellationToken).ConfigureAwait(false);
         if (current.State == ImportUploadState.Sealed)
         {
@@ -97,6 +99,7 @@ internal sealed class ImportUploadCoordinator(
             throw new InvalidOperationException("The upload version changed before verification.");
         }
 
+        await ReauthorizeAsync(principal, reference, current, cancellationToken).ConfigureAwait(false);
         var verifier = new ImportUploadContentVerifier(store, storage);
         var verified = await verifier.VerifyAsync(current, task.Source.ExpectedSha256!,
             token => ReauthorizeAsync(principal, reference, current, token), cancellationToken).ConfigureAwait(false);
@@ -110,7 +113,7 @@ internal sealed class ImportUploadCoordinator(
     public async Task<ImportUploadSession> CancelAsync(ClaimsPrincipal principal, ImportUploadTaskReference reference,
         long expectedVersion, CancellationToken cancellationToken = default)
     {
-        var task = await AuthorizeAsync(principal, reference, requireWrite: true, cancellationToken).ConfigureAwait(false);
+        var task = await AuthorizeAsync(principal, reference, requireWrite: false, cancellationToken).ConfigureAwait(false);
         var current = await RequireSessionAsync(task, cancellationToken).ConfigureAwait(false);
         if (current.State == ImportUploadState.Cancelled)
         {

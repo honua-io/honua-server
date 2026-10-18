@@ -185,6 +185,79 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
         input.Position.Should().Be(0);
     }
 
+    [IntegrationTest]
+    public async Task SealedReceipt_WriteAdmissionDenied_RecoveryDoesNotMutateOrReopenUpload()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        using var fixture = new Fixture(connection);
+        var session = await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference);
+        await using var input = new MemoryStream(Fixture.Bytes, writable: false);
+        var complete = await fixture.Coordinator.AppendAsync(fixture.Actor, fixture.Reference,
+            session.Version, 0, input, Fixture.Digest);
+        var sealedSession = await fixture.Coordinator.VerifyAndSealAsync(fixture.Actor, fixture.Reference, complete.Version);
+        var expiry = await connection.GetDatabase().KeyExpireTimeAsync(RedisImportUploadStore.Key(session.Id));
+        fixture.WriteAllowed = false; // For example, successful import now occupies the destination.
+
+        (await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference)).Should().Be(sealedSession);
+        (await fixture.Coordinator.VerifyAndSealAsync(fixture.Actor, fixture.Reference, complete.Version)).Should().Be(sealedSession);
+        (await fixture.Coordinator.GetAsync(fixture.Actor, fixture.Reference)).Should().Be(sealedSession);
+        (await connection.GetDatabase().KeyExpireTimeAsync(RedisImportUploadStore.Key(session.Id))).Should().Be(expiry);
+        (await fixture.Storage.ListFilesAsync()).Should().ContainSingle();
+
+        fixture.Allowed = false;
+        await FluentActions.Invoking(() => fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference))
+            .Should().ThrowAsync<UnauthorizedAccessException>();
+        await FluentActions.Invoking(() => fixture.Coordinator.VerifyAndSealAsync(fixture.Actor, fixture.Reference, complete.Version))
+            .Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
+    [IntegrationTest]
+    public async Task CancelledReceipt_WriteAdmissionDenied_RecoveryPreservesOriginalCancellation()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        using var fixture = new Fixture(connection);
+        var session = await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference);
+        var cancelled = await fixture.Coordinator.CancelAsync(fixture.Actor, fixture.Reference, session.Version);
+        fixture.WriteAllowed = false;
+
+        (await fixture.Coordinator.CancelAsync(fixture.Actor, fixture.Reference, session.Version)).Should().Be(cancelled);
+        (await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference)).Should().Be(cancelled);
+        (await fixture.Store.GetAsync(session.Id, session.Scope)).Should().Be(cancelled);
+        fixture.Allowed = false;
+        await FluentActions.Invoking(() => fixture.Coordinator.CancelAsync(fixture.Actor, fixture.Reference, session.Version))
+            .Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
+    [IntegrationTest]
+    public async Task ReadOnlyAuthority_CannotAdmitAppendSealOrCancelAnUpload()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        using var fixture = new Fixture(connection);
+        fixture.WriteAllowed = false;
+        await FluentActions.Invoking(() => fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference))
+            .Should().ThrowAsync<UnauthorizedAccessException>();
+        (await fixture.Coordinator.GetAsync(fixture.Actor, fixture.Reference)).Should().BeNull();
+        fixture.WriteAllowed = true;
+        var session = await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference);
+        fixture.WriteAllowed = false;
+        await using var rejected = new MemoryStream(Fixture.Bytes, writable: false);
+        await FluentActions.Invoking(() => fixture.Coordinator.AppendAsync(fixture.Actor, fixture.Reference,
+            session.Version, 0, rejected, Fixture.Digest)).Should().ThrowAsync<UnauthorizedAccessException>();
+        rejected.Position.Should().Be(0);
+        await FluentActions.Invoking(() => fixture.Coordinator.CancelAsync(fixture.Actor, fixture.Reference, session.Version))
+            .Should().ThrowAsync<UnauthorizedAccessException>();
+        fixture.WriteAllowed = true;
+        await using var input = new MemoryStream(Fixture.Bytes, writable: false);
+        var complete = await fixture.Coordinator.AppendAsync(fixture.Actor, fixture.Reference,
+            session.Version, 0, input, Fixture.Digest);
+        fixture.WriteAllowed = false;
+
+        await FluentActions.Invoking(() => fixture.Coordinator.VerifyAndSealAsync(fixture.Actor, fixture.Reference, complete.Version))
+            .Should().ThrowAsync<UnauthorizedAccessException>();
+        (await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference)).Should().Be(complete);
+        (await fixture.Store.GetAsync(session.Id, session.Scope)).Should().Be(complete);
+    }
+
     private sealed class Fixture : IDisposable
     {
         public static byte[] Bytes { get; } = "small actual GIS input"u8.ToArray();
@@ -193,6 +266,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
         public ClaimsPrincipal Actor { get; } = new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "owner")], "test"));
         public IDatasetImportTaskProvider Tasks { get; } = Substitute.For<IDatasetImportTaskProvider>();
         public bool Allowed { get; set; } = true;
+        public bool WriteAllowed { get; set; } = true;
         public int AuthorizationCalls { get; private set; }
         public int MaximumAuthorizedCalls { get; set; } = int.MaxValue;
         public DatasetImportTask Task { get; set; } = new(Guid.NewGuid().ToString("N"), 1, new string('a', 64),
@@ -215,6 +289,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
                     AuthorizationCalls++;
                     var principal = call.ArgAt<ClaimsPrincipal>(0);
                     return System.Threading.Tasks.Task.FromResult<DatasetImportTask?>(Allowed && AuthorizationCalls <= MaximumAuthorizedCalls &&
+                        (!call.ArgAt<bool>(5) || WriteAllowed) &&
                         principal.FindFirst(ClaimTypes.NameIdentifier)?.Value == Task.OwnerActorId &&
                         call.ArgAt<string>(1) == Task.WorkspaceId && call.ArgAt<string>(2) == Task.TaskId &&
                         call.ArgAt<long>(3) == Task.Revision && call.ArgAt<string>(4) == Task.ContentHash ? Task : null);
