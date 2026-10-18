@@ -147,8 +147,14 @@ and ordinary logs contain no secret value.
 > and Studio tools under my current identity. Tell me which parts of our intended
 > workflow this deployment can run.
 
-Follow [Connect AI agents](../guides/connect/ai-agents-mcp.md). The server does
-not need an existing published layer to connect or configure its first service.
+Follow [Connect AI agents](../guides/connect/ai-agents-mcp.md). In the unified
+connector preview, attach this deployment through the existing agent registration;
+do not add a separate public connection for each private adapter. Check the
+[preview requirements](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/local-agent-workspace-preview.md)
+before relying on shared Console context or native chat. The published local
+quickstart alone does not qualify those capabilities. A direct server connection
+remains available for its advertised tools. The server does not need an existing
+published layer to connect or configure its first service.
 Discover capabilities and the tools' current input/output schemas. Use supported
 MCP or SDK surfaces for the work below; when a wrapper is missing, use the
 documented generated client or deployment tool, not an invented command.
