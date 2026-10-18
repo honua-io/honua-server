@@ -34,6 +34,8 @@ public interface ILocalProcessWorkspaceGateway
     Task<LocalProcessRun> RunAsync(LocalProcessWorkspaceAccess access, LocalProcessRunRequest request, CancellationToken cancellationToken);
     /// <summary>Read the canonical local run receipt under current ownership and workspace authorization.</summary>
     Task<LocalProcessRun> GetRunAsync(LocalProcessWorkspaceAccess access, string runId, CancellationToken cancellationToken);
+    /// <summary>Discover at most 32 recent runs under the current project and workspace grant.</summary>
+    Task<LocalProcessRunList> ListRunsAsync(LocalProcessWorkspaceAccess access, CancellationToken cancellationToken);
     /// <summary>Resolve a durable command before retrying a submission whose response was lost.</summary>
     Task<LocalProcessRun> GetCommandAsync(LocalProcessWorkspaceAccess access, string commandId, CancellationToken cancellationToken);
     /// <summary>Request cancellation of an authorized local run, preserving terminal outcomes.</summary>

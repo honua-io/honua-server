@@ -25,7 +25,7 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
 {
     private const string Identifier = """{"type":"string","pattern":"^[A-Za-z0-9_-]{1,128}$"}""";
     private const string Fields = """{"type":"object","properties":{"connectionId":{"type":"string","maxLength":256},"schema":{"type":"string","maxLength":256},"table":{"type":"string","maxLength":256},"serviceName":{"type":"string","maxLength":256},"layerName":{"type":"string","maxLength":256}},"additionalProperties":false}""";
-    private const string TaskSchema = """{"type":["object","null"],"properties":{"id":{"type":"string"},"revision":{"type":"integer","minimum":0},"kind":{"type":"string","enum":["publish-layer","studio-composition","workflow-package"]},"packageKey":{"type":"string","minLength":1,"maxLength":256},"contentHash":{"type":"string","pattern":"^[0-9a-f]{64}$"}},"required":["id","revision"],"additionalProperties":false}""";
+    private const string TaskSchema = """{"type":["object","null"],"properties":{"id":{"type":"string"},"revision":{"type":"integer","minimum":0},"kind":{"type":"string","enum":["publish-layer","studio-composition","workflow-package","local-process-workspace"]},"packageKey":{"type":"string","minLength":1,"maxLength":256},"contentHash":{"type":"string","pattern":"^[0-9a-f]{64}$"}},"required":["id","revision"],"additionalProperties":false}""";
     private static string Property(string name, string schema) => $"\"{name}\":{schema}";
     private static readonly string Workspace = Property("workspaceId", Identifier);
     private static readonly string View = Property("viewId", Identifier);
@@ -124,7 +124,7 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
             return Error("Version conflict. Read the latest workspace or reconcile the existing command; do not overwrite newer edits.");
         }
         catch (Exception exception) when (exception is ArgumentException or JsonException or KeyNotFoundException or
-            AgentWorkspaceNotFoundException or AgentWorkspaceUnavailableException or StackExchange.Redis.RedisException)
+            AgentWorkspaceNotFoundException or AgentWorkspaceUnavailableException or LocalProcessWorkspaceException or StackExchange.Redis.RedisException)
         {
             return Error("Workspace request unavailable or unauthorized. Reconcile existing commands before retrying mutations.");
         }

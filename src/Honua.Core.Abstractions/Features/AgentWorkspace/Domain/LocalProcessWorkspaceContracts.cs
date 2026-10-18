@@ -49,7 +49,7 @@ public sealed record LocalProcessIdeHandoff(string Kind, string Workspace);
 /// <param name="Files">Bounded editable regular files.</param>
 /// <param name="IdeHandoff">Human-only IDE location; absent for delegated requests.</param>
 public sealed record LocalProcessProject(string ProjectId, long Revision, string SourceDigest, string Image,
-    LocalProcessProjectBinding Binding, IReadOnlyList<LocalProcessSourceFile> Files, LocalProcessIdeHandoff? IdeHandoff);
+    LocalProcessProjectBinding Binding, IReadOnlyList<LocalProcessSourceFile> Files, LocalProcessIdeHandoff? IdeHandoff = null);
 
 /// <summary>Conditional source replacement; the file digest is supplied separately as If-Match.</summary>
 /// <param name="ProjectId">Observed project identity.</param>
@@ -112,7 +112,7 @@ public sealed record LocalProcessRun
     /// <summary>Actual process exit code when available.</summary>
     public int? ExitCode { get; init; }
     /// <summary>Observed execution duration when available.</summary>
-    public double? ElapsedSeconds { get; init; }
+    public long? ElapsedMs { get; init; }
     /// <summary>True when cancellation was accepted but may not yet be terminal.</summary>
     public bool? CancellationRequested { get; init; }
     /// <summary>Verified successful output references.</summary>
@@ -123,3 +123,7 @@ public sealed record LocalProcessRun
 /// <param name="Reference">Canonical declared artifact identity.</param>
 /// <param name="Content">Actual bytes; consumers must not treat a local artifact as an imported layer.</param>
 public sealed record LocalProcessArtifact(LocalProcessArtifactReference Reference, byte[] Content);
+
+/// <summary>Bounded newest-first execution discovery under the current project and workspace grant.</summary>
+/// <param name="Runs">At most 32 authoritative local run receipts.</param>
+public sealed record LocalProcessRunList(IReadOnlyList<LocalProcessRun> Runs);
