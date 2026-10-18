@@ -3,7 +3,11 @@
 """Controlled WMTS assertion refusals; never emit deployment receipts."""
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import io
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -12,7 +16,7 @@ from xml.etree import ElementTree
 import pytest
 import requests
 from PIL import Image, ImageDraw
-from shared.cert_auth import AuthMode
+from shared.cert_auth import AuthCredentials, AuthMode
 
 from . import test_wmts
 from .wmts_oracles import (
@@ -165,3 +169,23 @@ def test_protected_request_refuses_admin_substitution():
         buildTileResource=lambda **kwargs: "http://fixture/api/v1/admin/services")
     with pytest.raises(AssertionError, match="escaped protected"):
         test_wmts._protected_tile_request(prototype, {}, "rest")
+
+
+@pytest.mark.parametrize("expired", (False, True))
+def test_bearer_is_signed_and_has_a_valid_lifetime_before_expiry(expired):
+    now = 2_000_000_000
+    credentials = AuthCredentials("fixture-key", "https://fixture.example", "fixture", "fixture-signing-key")
+    with patch("shared.cert_auth.time.time", return_value=now):
+        token = credentials.bearer(expired=expired)
+    header, body, signature = token.split(".")
+    decode = lambda value: base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+    assert json.loads(decode(header)) == {"alg": "HS256", "typ": "JWT"}
+    assert hmac.compare_digest(decode(signature), hmac.new(
+        credentials.oidc_signing_key.encode(), (header + "." + body).encode(), hashlib.sha256).digest())
+    claims = json.loads(decode(body))
+    assert claims["iss"] == credentials.oidc_issuer and claims["aud"] == credentials.oidc_audience
+    assert claims["iat"] <= claims["nbf"] < claims["exp"]
+    if expired:
+        assert claims["exp"] < now - 300  # Beyond the server's tolerated clock skew.
+    else:
+        assert claims["nbf"] <= now < claims["exp"]
