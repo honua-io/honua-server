@@ -25,10 +25,12 @@ require_command jq
 # shellcheck source=scripts/ci/lib/python-resolve.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/python-resolve.sh"
 PYTHON_BIN="$(honua_resolve_python || true)"
-if [[ -n "${PYTHON_BIN}" ]]; then
+if [[ -n "${PYTHON_BIN}" ]] && ! "${PYTHON_BIN}" -c \
+    'import yaml; assert yaml.__version__.split(".")[0] == "6"' >/dev/null 2>&1; then
   # The generated-output controls execute the canonical OKF graph reader.
   # Bootstrap here so direct/local, batch CI and PR callers share the same
-  # declared dependency and resolved interpreter.
+  # declared dependency and resolved interpreter. Reuse a supported installed
+  # reader so valid offline/distro-managed Python environments need no pip write.
   "${PYTHON_BIN}" -m pip install -r "${SCRIPT_DIR}/okf-requirements.txt"
 fi
 
