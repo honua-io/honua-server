@@ -17,9 +17,9 @@ async function port() {
 }
 
 export async function openInspectorPublicUi({ inspectorEntry, chromium, endpoint, headers = {},
-  toolLabel = 'honua_query_features' }) {
+  toolLabel = 'honua_query_features', onControlFailure }) {
   const directory = await mkdtemp(join(tmpdir(), 'honua-inspector-ui-'));
-  let child; let browser; let closed = false; let exit;
+  let child; let browser; let page; let closed = false; let exit;
   let stage = 'configuration';
   const close = async () => {
     if (closed) return;
@@ -69,7 +69,7 @@ export async function openInspectorPublicUi({ inspectorEntry, chromium, endpoint
     }, 15_000);
     stage = 'browser';
     browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
+    page = await browser.newPage();
     page.setDefaultTimeout(8_000);
     await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: 10_000 });
     stage = 'public connection switch';
@@ -106,6 +106,9 @@ export async function openInspectorPublicUi({ inspectorEntry, chromium, endpoint
       close,
     };
   } catch {
+    // Used only by authored controls with dummy credentials. Candidate adapters
+    // do not request page diagnostics, which could expose operator input.
+    if (onControlFailure && page) await onControlFailure(stage, page).catch(() => {});
     await close();
     throw new Error(`public Inspector UI launch or interaction failed at ${stage}`);
   }

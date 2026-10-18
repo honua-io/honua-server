@@ -7,7 +7,7 @@ import { createServer } from 'node:http';
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { chromium } from './browser/node_modules/@playwright/test/index.mjs';
 import { inspectorBrowserCancellation } from './inspector-browser-cancellation.mjs';
 import { openInspectorPublicUi } from './inspector-public-ui.mjs';
@@ -94,7 +94,12 @@ for (const dropCancellation of [false, true]) {
       const operation = inspectorBrowserCancellation({ endpoint: `http://127.0.0.1:${peer.address().port}/mcp`,
         inspectorVersion: installed.version, sourceSha: fixture.sourceSha, fixture, observer, dropCancellation,
         openUi: (endpoint) => openInspectorPublicUi({ endpoint, chromium,
-          inspectorEntry: new URL('clients/launcher/build/index.js', root).pathname, headers: { 'X-API-Key': 'control-only' } }),
+          inspectorEntry: new URL('clients/launcher/build/index.js', root).pathname, headers: { 'X-API-Key': 'control-only' },
+          onControlFailure: async (stage, page) => {
+            const snapshot = await page.locator('body').ariaSnapshot();
+            await writeFile(`artifacts/inspector-browser-controls/ui-${dropCancellation ? 'drop' : 'positive'}.txt`,
+              `${stage}\n${snapshot.slice(0, 32_000)}`);
+          } }),
         verifyRecovery: async (actualResult) => { assert.deepEqual(actualResult, queryResult()); assert.deepEqual(recoveryResult, queryResult()); },
       });
       if (dropCancellation) {
