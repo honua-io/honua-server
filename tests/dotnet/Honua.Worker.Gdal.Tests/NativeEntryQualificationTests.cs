@@ -5,6 +5,7 @@ using System.Diagnostics;
 using Honua.Core.Features.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
+using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -37,9 +38,17 @@ public sealed class NativeEntryQualificationTests
     {
         var start = CleanStartInfo();
         start.Environment["LD_LIBRARY_PATH"] = "/opt/pdal/lib";
+        start.Environment["LD_PRELOAD"] = "libtcmalloc_minimal.so.4";
         var environment = start.Environment.ToArray();
-        NativeEntryQualification.ValidateLoaderEnvironment(start);
+        Assert.Equal("/app/libhonua_gp_entry.so:libtcmalloc_minimal.so.4",
+            NativeEntryQualification.ValidateLoaderEnvironment(start));
         Assert.Equal(environment, start.Environment.ToArray());
+    }
+
+    [UnitTest]
+    public void ValidateLoaderEnvironment_WithoutImageOverrides_UsesOnlyFixedShim()
+    {
+        Assert.Equal("/app/libhonua_gp_entry.so", NativeEntryQualification.ValidateLoaderEnvironment(CleanStartInfo()));
     }
 
     [UnitTheory]
@@ -48,6 +57,7 @@ public sealed class NativeEntryQualificationTests
     [InlineData("LD_LIBRARY_PATH", "/opt/pdal/lib:")]
     [InlineData("LD_LIBRARY_PATH", "")]
     [InlineData("LD_PRELOAD", "/app/libhonua_gp_entry.so")]
+    [InlineData("LD_PRELOAD", "libtcmalloc_minimal.so.4:/tmp/override.so")]
     [InlineData("LD_AUDIT", "/tmp/override.so")]
     [InlineData("GLIBC_TUNABLES", "glibc.malloc.check=1")]
     [InlineData("HONUA_GP_NATIVE_ENTRY_NONCE", "caller-supplied")]
@@ -56,7 +66,10 @@ public sealed class NativeEntryQualificationTests
         var start = CleanStartInfo();
         start.Environment["LD_LIBRARY_PATH"] = "/opt/pdal/lib";
         start.Environment[name] = value;
-        Assert.Throws<InvalidOperationException>(() => NativeEntryQualification.ValidateLoaderEnvironment(start));
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            NativeEntryQualification.ValidateLoaderEnvironment(start);
+        });
     }
 
     private static ProcessStartInfo CleanStartInfo()
@@ -81,8 +94,15 @@ public sealed class NativeEntryQualificationTests
         Directory.CreateDirectory(directory);
         try
         {
-            using var child = new Process { StartInfo = new ProcessStartInfo("/bin/sleep", "60")
-                { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false } };
+            using var child = new Process
+            {
+                StartInfo = new ProcessStartInfo("/bin/sleep", "60")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false
+                }
+            };
             var handshake = new NativeEntryQualification(Path.Join(directory, "missing.json"),
                 Path.Join(directory, "release"), new string('b', 32), "/usr/bin/sleep", TimeSpan.FromMilliseconds(100));
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
@@ -109,8 +129,15 @@ public sealed class NativeEntryQualificationTests
         {
             var record = Path.Join(directory, "entry.json");
             await File.WriteAllTextAsync(record, "{}");
-            using var child = new Process { StartInfo = new ProcessStartInfo("/bin/sleep", "60")
-                { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false } };
+            using var child = new Process
+            {
+                StartInfo = new ProcessStartInfo("/bin/sleep", "60")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false
+                }
+            };
             var handshake = new NativeEntryQualification(record, Path.Join(directory, "release"),
                 new string('b', 32), "/usr/bin/sleep");
             await Assert.ThrowsAsync<KeyNotFoundException>(() =>

@@ -133,6 +133,24 @@ jobs:
           provenance: false
           sbom: false
 
+      - name: Prove managed native entry cleanup and loader floor
+        run: |
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+            --configuration Release \
+            --filter 'FullyQualifiedName~NativeEntryQualificationTests' \
+            --logger 'trx;LogFileName=native-entry-managed.trx' \
+            --results-directory tests/TestResults
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('tests/TestResults/native-entry-managed.trx').getroot()
+          cases = root.findall('.//{*}UnitTestResult')
+          passed = sum(case.get('outcome') == 'Passed' for case in cases)
+          nonpassing = len(cases) - passed
+          print(f'Managed native entry: {passed} passed, {nonpassing} non-passing')
+          if passed < 15 or nonpassing:
+              raise SystemExit('Native entry cleanup/loader/release controls missing, failed, or skipped')
+          PY
+
       - name: Prove actual image native entry hold and cancellation
         run: >-
           python3 scripts/qualification/verify_native_entry_image.py

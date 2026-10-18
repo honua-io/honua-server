@@ -36,7 +36,7 @@ internal sealed class NativeEntryQualification
         {
             throw new InvalidOperationException("Native entry qualification requires the image's native ogr2ogr executable.");
         }
-        ValidateLoaderEnvironment(startInfo);
+        var preload = ValidateLoaderEnvironment(startInfo);
         var candidates = new[] { "/usr/bin/ogr2ogr", "/usr/local/bin/ogr2ogr" };
         var tool = candidates.FirstOrDefault(File.Exists)
             ?? throw new InvalidOperationException("The native entry executable is unavailable.");
@@ -98,25 +98,31 @@ internal sealed class NativeEntryQualification
         var nonce = Guid.NewGuid().ToString("N");
         // The parent environment is untouched. No configuration, job or caller selects a loader path.
         startInfo.FileName = executable;
-        startInfo.Environment["LD_PRELOAD"] = LibraryPath;
+        startInfo.Environment["LD_PRELOAD"] = preload;
         startInfo.Environment["HONUA_GP_NATIVE_ENTRY_RECORD"] = record;
         startInfo.Environment["HONUA_GP_NATIVE_ENTRY_RELEASE"] = release;
         startInfo.Environment["HONUA_GP_NATIVE_ENTRY_NONCE"] = nonce;
         return new NativeEntryQualification(record, release, nonce, executable);
     }
 
-    internal static void ValidateLoaderEnvironment(ProcessStartInfo startInfo)
+    internal static string ValidateLoaderEnvironment(ProcessStartInfo startInfo)
     {
         // This exact, immutable image directory is required by the PDAL image.
         // Preserve its value; qualification preflight forbids mounts over /opt.
-        // Any extra search directory or other loader override is untrusted.
+        // The pinned GDAL base also preloads its allocator from protected image
+        // roots. Preserve that exact value alongside our fixed shim; never admit
+        // another preload or an extra search directory.
         if (startInfo.Environment.Any(pair =>
             (pair.Key.StartsWith("LD_", StringComparison.Ordinal) &&
-             (pair.Key != "LD_LIBRARY_PATH" || pair.Value != "/opt/pdal/lib")) ||
+             !(pair.Key == "LD_LIBRARY_PATH" && pair.Value == "/opt/pdal/lib") &&
+             !(pair.Key == "LD_PRELOAD" && pair.Value == "libtcmalloc_minimal.so.4")) ||
             pair.Key.StartsWith("HONUA_GP_NATIVE_ENTRY_", StringComparison.Ordinal) || pair.Key == "GLIBC_TUNABLES"))
         {
             throw new InvalidOperationException("Native entry qualification refuses inherited loader or handshake overrides.");
         }
+        return startInfo.Environment.ContainsKey("LD_PRELOAD")
+            ? $"{LibraryPath}:libtcmalloc_minimal.so.4"
+            : LibraryPath;
     }
 
     internal async Task WaitAsync(Process process, CancellationToken cancellationToken)

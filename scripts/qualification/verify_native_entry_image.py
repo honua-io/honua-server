@@ -22,7 +22,7 @@ def verify(image, source):
     loader_environment = [item for item in identity["Config"].get("Env", [])
                           if item.split("=", 1)[0].startswith("LD_")
                           or item.split("=", 1)[0] == "GLIBC_TUNABLES"]
-    if loader_environment != ["LD_LIBRARY_PATH=/opt/pdal/lib"]:
+    if sorted(loader_environment) != ["LD_LIBRARY_PATH=/opt/pdal/lib", "LD_PRELOAD=libtcmalloc_minimal.so.4"]:
         raise RuntimeError("image loader environment differs from the managed qualification floor")
     expected_executable = docker("run", "--rm", "--read-only", "--network", "none",
                                  "--entrypoint", "/usr/bin/readlink", image, "-f", "/usr/bin/ogr2ogr")
@@ -38,7 +38,7 @@ def verify(image, source):
             try:
                 docker("run", "--detach", "--name", name, "--read-only", "--network", "none",
                        "--mount", f"type=bind,source={root},target={mount}",
-                       "--env", "LD_PRELOAD=/app/libhonua_gp_entry.so",
+                       "--env", "LD_PRELOAD=/app/libhonua_gp_entry.so:libtcmalloc_minimal.so.4",
                        "--env", f"HONUA_GP_NATIVE_ENTRY_RECORD={mount}/entry.json",
                        "--env", f"HONUA_GP_NATIVE_ENTRY_RELEASE={mount}/release",
                        "--env", f"HONUA_GP_NATIVE_ENTRY_NONCE={nonce}",
@@ -61,7 +61,9 @@ def verify(image, source):
                 if docker("inspect", "--format", "{{.State.Running}}", name) != "true" or "GDAL" in docker("logs", name):
                     raise RuntimeError("fast native main ran before release")
                 if cancel:
-                    docker("kill", "--signal", "TERM", name)
+                    # Process.Kill uses SIGKILL. Match that production cancellation
+                    # here; a pre-main container PID1 need not handle SIGTERM.
+                    docker("kill", "--signal", "KILL", name)
                     exit_code = int(docker("wait", name))
                     if exit_code == 0 or "GDAL" in docker("logs", name):
                         raise RuntimeError("cancelled native entry reached main")
