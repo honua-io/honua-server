@@ -1227,7 +1227,29 @@ The shard is split on the existing `MvtTile | Replica` filter boundary into
 Neither budget was raised. The two filters exclude each other, so a name that
 contains both substrings matches neither child and must be assigned explicitly.
 Coverage currently finds no such class. The replica-store and replication
-classes stay on `FeatureServer Endpoints Query Services and Replication`.
+classes stay on `FeatureServer Query Services and Replication` after the
+FeatureServer capacity partition below.
+
+### FeatureServer editing and query capacity partition (#6332)
+
+Run `39099807022` at `94f7d6b3` exhausted the combined FeatureServer shard's
+37-minute test cap while it was still producing output. The completed prior
+`fc8139b5` TRX contains 430 passing cases in 30.6 minutes, with low headroom.
+Its dirty-source flag remains recorded in
+`featureserver-shard-capacity-20261018.json`; it is sizing evidence only.
+
+`FeatureServer Editing and Relationships` owns the whole ApplyEdits, mutation,
+relationship, feature-lock, edit-capability and edit-owner class families. The
+complementary `FeatureServer Query Services and Replication` owns every other
+class selected by the unchanged legacy parent. The historical interval unions
+are 12.51 and 15.65 minutes (59 and 371 cases). Fresh child execution remains
+required; these estimates do not qualify the changed source or a candidate.
+
+Both children retain the original project, source/test triggers, tier exclusions,
+parallelism, 37-minute test cap and 47-minute job cap. The canonical parent
+partition and `test-featureserver-capacity-partition.py` reject missing,
+duplicated or foreign tests, changed class ownership, reduced routing and changed
+budgets. The maintained CI router runs these controls on every relevant gate.
 
 ## 2026-10-07: capacity exhaustion during the server drain
 

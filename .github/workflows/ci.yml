@@ -1479,7 +1479,8 @@ jobs:
           case "${SERVER_SHARD}" in
             'Admin & Infrastructure'| \
             'Migration'| \
-            'FeatureServer Endpoints Query Services and Replication'| \
+            'FeatureServer Editing and Relationships'| \
+            'FeatureServer Query Services and Replication'| \
             'OGC API Tiles Coverages and Processes'| \
             'GeoServices GPServer and NAServer'| \
             'Caching File Storage Styling and Infrastructure'| \
