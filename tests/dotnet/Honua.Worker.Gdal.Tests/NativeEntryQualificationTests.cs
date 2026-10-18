@@ -42,7 +42,7 @@ public sealed class NativeEntryQualificationTests
         Assert.Equal(environment, start.Environment.ToArray());
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("LD_LIBRARY_PATH", "/tmp")]
     [InlineData("LD_LIBRARY_PATH", "/opt/pdal/lib:/tmp")]
     [InlineData("LD_LIBRARY_PATH", "/opt/pdal/lib:")]
@@ -51,7 +51,6 @@ public sealed class NativeEntryQualificationTests
     [InlineData("LD_AUDIT", "/tmp/override.so")]
     [InlineData("GLIBC_TUNABLES", "glibc.malloc.check=1")]
     [InlineData("HONUA_GP_NATIVE_ENTRY_NONCE", "caller-supplied")]
-    [Trait("Category", "Unit")]
     public void ValidateLoaderEnvironment_RefusesOverrides(string name, string value)
     {
         var start = CleanStartInfo();
