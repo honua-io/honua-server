@@ -36,12 +36,22 @@ public sealed class FileImportJobExecutorCleanupTests
             Schema = "tenant_data",
             Format = SupportedFileFormat.GeoPackage,
         }));
-        await ExecuteAsync(new RecordingStorage(), importer, SixGiB, progressStore: progress);
+        var execution = await ExecuteAsync(new RecordingStorage(), importer, SixGiB, progressStore: progress);
         var terminal = progress.Last.Should().BeOfType<ImportProgress>().Subject;
         terminal.Ownership.Should().Be(new ImportOperationOwnership("accepting-actor", "tenant-a"));
         terminal.Status.Should().Be(success ? ImportStatus.Completed : ImportStatus.Failed);
         terminal.PhysicalTableName.Should().Be(success ? "provider_actual_roads" : null);
         terminal.Schema.Should().Be(success ? "tenant_data" : null);
+        execution.FileImportOutput?.PhysicalTableName.Should().Be(success ? "provider_actual_roads" : null);
+        execution.FileImportOutput?.Schema.Should().Be(success ? "tenant_data" : null);
+        if (success)
+        {
+            execution.FileImportOutput.Should().NotBeNull();
+        }
+        else
+        {
+            execution.FileImportOutput.Should().BeNull();
+        }
     }
 
     [UnitTest]

@@ -25,6 +25,43 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Collection("ControlPlaneTransitionTelemetry")]
 public sealed class JobExecutionServiceTests
 {
+    [UnitTheory]
+    [InlineData(ExecutionJobKind.FileImport, false, true)]
+    [InlineData(ExecutionJobKind.FileImport, true, false)]
+    [InlineData(ExecutionJobKind.Geoprocessing, false, false)]
+    public async Task ProcessJob_FileImportOutput_UsesTheSameTerminalFenceAsSuccess(
+        ExecutionJobKind kind, bool cancelBeforeFinalization, bool expectOutput)
+    {
+        var durable = CreateProvisioningJob();
+        durable = durable with { Spec = durable.Spec with { Kind = kind } };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        var receipt = new FileImportOutputReceipt
+        {
+            PhysicalTableName = "actual_table", Schema = "tenant_schema", FeatureCount = 17,
+        };
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(kind);
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (cancelBeforeFinalization)
+                {
+                    durable = durable with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+                }
+                return JobExecutionResult.Succeeded() with { FileImportOutput = receipt };
+            });
+        using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
+            new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, durable.OperationId, durable.ClaimedBy!);
+
+        Assert.Equal(cancelBeforeFinalization ? ExecutionJobStatus.Cancelled : ExecutionJobStatus.Succeeded, durable.Status);
+        Assert.Equal(expectOutput ? receipt : null, durable.FileImportOutput);
+    }
+
     [UnitTest]
     public async Task ProcessJob_OrdinaryCompletionAfterEarlierCommittedEffect_HonoursCancellationAndReturnsOnlyReceipt()
     {

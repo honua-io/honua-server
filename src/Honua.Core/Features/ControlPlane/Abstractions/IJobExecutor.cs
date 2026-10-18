@@ -88,6 +88,9 @@ public sealed record JobExecutionResult
     /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
+    /// <summary>Actual file-import output to persist atomically with successful job finalization.</summary>
+    public FileImportOutputReceipt? FileImportOutput { get; init; }
+
     /// <summary>
     /// Whether successful execution completed by committing sink effects. A later
     /// operator cancellation cannot undo this completion. Finalization also requires

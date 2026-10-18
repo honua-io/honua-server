@@ -1306,6 +1306,9 @@ public sealed record ExecutionJobRecord
     /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 
+    /// <summary>Actual file-import output retained for the lifetime of this successful job record.</summary>
+    public FileImportOutputReceipt? FileImportOutput { get; init; }
+
     /// <summary>
     /// Request metadata captured when the job was created.
     /// </summary>

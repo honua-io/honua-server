@@ -309,6 +309,23 @@ public sealed class ImportEndpointDurableRunnerIntegrationTests : IAsyncLifetime
         progress.PhysicalTableName.Should().Be(physical, "status must identify the committed provider table for publication recovery");
         progress.Schema.Should().Be(schema);
 
+        // Read through a fresh Redis store instance after removing the shorter-lived
+        // progress projection. The accepted job must retain the provider output itself.
+        var reopenedStore = new RedisExecutionJobStore(_multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
+        var durable = (await reopenedStore.GetAsync(jobId))!;
+        durable.FileImportOutput.Should().NotBeNull();
+        durable.FileImportOutput!.PhysicalTableName.Should().Be(physical);
+        durable.FileImportOutput.Schema.Should().Be(schema);
+        durable.FileImportOutput.FeatureCount.Should().Be(FeatureCount);
+        await _fixture.GetService<IUniversalProgressStore>().DeleteProgressAsync(jobId);
+        var recovered = (await service.GetProgressAsync(jobId))!;
+        recovered.Status.Should().Be(ImportStatus.Completed);
+        recovered.PhysicalTableName.Should().Be(physical);
+        recovered.Schema.Should().Be(schema);
+        recovered.FeaturesProcessed.Should().Be(FeatureCount);
+        (await reopenedStore.GetAsync(jobId))!.Version.Should().Be(durable.Version,
+            "recovering output is read-only and must never redispatch the import");
+
         await using var count = new NpgsqlCommand($"SELECT count(*) FROM \"{schema}\".\"{physical}\"", connection);
         Convert.ToInt64(await count.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture)
             .Should().Be(FeatureCount);

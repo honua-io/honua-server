@@ -1034,6 +1034,8 @@ internal sealed partial class JobExecutionService(
             Warnings = hasCommittedCancellation
                 ? [.. result.Warnings, CommittedCancellationWarning]
                 : result.Warnings,
+            FileImportOutput = effectiveStatus == ExecutionJobStatus.Succeeded && job.Spec.Kind == ExecutionJobKind.FileImport
+                ? result.FileImportOutput : null,
             PercentComplete = effectiveStatus == ExecutionJobStatus.Succeeded ? 100 : job.PercentComplete,
             CurrentPhase = effectiveStatus switch
             {
@@ -1088,6 +1090,7 @@ internal sealed partial class JobExecutionService(
                 _ => job.ArtifactReferences
             },
             CommittedEffectReferences = reason == "license expired" ? [] : job.CommittedEffectReferences,
+            FileImportOutput = null,
             PercentComplete = reason is "license expired" or DrainDeadlineFailureMessage ? null : job.PercentComplete,
             CurrentPhase = terminalStatus == ExecutionJobStatus.Cancelled
                 ? job.CommittedEffectReferences.Count > 0 ? "Cancelled after committed effects" : "Cancelled"

@@ -26,8 +26,8 @@ namespace Honua.Server.Features.Import;
 /// <item>Lambda host without a runner: refused (the endpoint answers the typed 503 first).</item>
 /// </list>
 /// Reads use the import job document, falling back to the original durable spec if the document
-/// is missing. Terminal execution records project their outcome without inferring lost output
-/// table details or dispatching another job.
+/// is missing. Terminal execution records restore their persisted output receipt when available,
+/// without inferring table details or dispatching another job.
 /// </summary>
 internal sealed partial class DurableImportJobService : IImportJobService, IDisposable
 {
@@ -398,9 +398,20 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
 
         return job.Status switch
         {
-            // A successful execution record proves completion, but cannot recover the actual
-            // physical table/schema or feature count from a lost output receipt. Clients must
-            // refuse publication until those details are independently recovered.
+            ExecutionJobStatus.Succeeded when job.FileImportOutput is { FeatureCount: >= 0 } output
+                && !string.IsNullOrWhiteSpace(output.PhysicalTableName) && !string.IsNullOrWhiteSpace(output.Schema) => progress with
+            {
+                Status = ImportStatus.Completed,
+                CompletedAt = job.CompletedAt ?? job.UpdatedAt,
+                PhysicalTableName = output.PhysicalTableName,
+                Schema = output.Schema,
+                FeaturesProcessed = output.FeatureCount,
+                DetectedSrid = output.DetectedSrid,
+                Warnings = job.Warnings,
+                CurrentPhase = "Import completed",
+            },
+            // Older jobs and importers without an actual output identity remain explicit:
+            // the requested table is not proof of the physical output.
             ExecutionJobStatus.Succeeded => progress with
             {
                 Status = ImportStatus.Completed,

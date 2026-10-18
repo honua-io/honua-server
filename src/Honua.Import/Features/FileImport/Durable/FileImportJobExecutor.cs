@@ -240,7 +240,19 @@ internal sealed partial class FileImportJobExecutor(
         await WriteTerminalAsync(jobId, processing, ImportStatus.Completed, result, result.ErrorMessage).ConfigureAwait(false);
         await context.ReportProgressAsync(100, "Import completed", CancellationToken.None).ConfigureAwait(false);
         Log.ImportCompleted(logger, jobId, request.TableName, result.FeatureCount);
-        return JobExecutionResult.Succeeded(result.Warnings);
+        return JobExecutionResult.Succeeded(result.Warnings) with
+        {
+            FileImportOutput = !string.IsNullOrWhiteSpace(result.PhysicalTableName)
+                && !string.IsNullOrWhiteSpace(result.Schema) && result.FeatureCount >= 0
+                ? new FileImportOutputReceipt
+                {
+                    PhysicalTableName = result.PhysicalTableName,
+                    Schema = result.Schema,
+                    FeatureCount = result.FeatureCount,
+                    DetectedSrid = result.DetectedSrid,
+                }
+                : null,
+        };
     }
 
     /// <summary>

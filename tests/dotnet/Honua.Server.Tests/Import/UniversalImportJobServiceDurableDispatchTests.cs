@@ -415,6 +415,41 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
     }
 
     [UnitTest]
+    public async Task GetProgressAsync_ExpiredProjection_RecoversActualOutputFromDurableReceipt()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new InMemoryProgressStore();
+        var queue = Substitute.For<IJobQueue>();
+        var decision = BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false);
+        var request = StagedRequest() with { Ownership = new ImportOperationOwnership("original-actor", "tenant-a") };
+        var record = DurableImportJobService.BuildJobRecord("completed-import", request, 2048, decision, DateTimeOffset.UtcNow) with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CompletedAt = DateTimeOffset.UtcNow,
+            FileImportOutput = new FileImportOutputReceipt
+            {
+                PhysicalTableName = "provider_actual_42", Schema = "tenant_data", FeatureCount = 17, DetectedSrid = 4326,
+            },
+        };
+        await jobStore.TryCreateAsync(record);
+        using var service = CreateService(decision,
+            new ProgressReadingImportJobService(progressStore), jobStore, progressStore, [], queue);
+
+        var recovered = await service.GetProgressAsync(record.OperationId);
+
+        recovered!.Status.Should().Be(ImportStatus.Completed);
+        recovered.PhysicalTableName.Should().Be("provider_actual_42");
+        recovered.Schema.Should().Be("tenant_data");
+        recovered.FeaturesProcessed.Should().Be(17);
+        recovered.DetectedSrid.Should().Be(4326);
+        recovered.Ownership.Should().Be(request.Ownership);
+        recovered.TableName.Should().Be(request.TableName);
+        recovered.CurrentPhase.Should().Be("Import completed");
+        await queue.DidNotReceiveWithAnyArgs().EnqueueAsync(default!, default, default);
+        (await progressStore.GetProgressAsync<ImportProgress>(record.OperationId)).Should().BeNull();
+    }
+
+    [UnitTest]
     public void FileImportJobParameters_RoundTripTheStagedRequest()
     {
         var request = StagedRequest();
