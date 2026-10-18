@@ -121,7 +121,7 @@ class WorkerPublicationTests(unittest.TestCase):
         events = workflow.get("on", workflow.get(True))
         self.assertIs(False, events["workflow_dispatch"]["inputs"]["publish_nightly"]["default"])
         policy = json.loads((ROOT / ".github/native-image-impact.json").read_text(encoding="utf-8"))
-        self.assertEqual(set(events["pull_request"]["paths"]), set(policy["legacy"]["worker_patterns"]))
+        self.assertEqual(events["pull_request"]["paths"], policy["legacy"]["worker_patterns"])
         for path in ("scripts/ci/worker_publication.py", "scripts/ci/test_worker_publication.py",
                      "scripts/qualification/gp_native_observer.py"):
             self.assertIn(path, policy["worker_native_patterns"])

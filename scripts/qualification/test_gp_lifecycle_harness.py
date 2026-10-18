@@ -602,7 +602,7 @@ class NativeObserverTests(unittest.TestCase):
                 (folder / "result").write_bytes(b"actual stored output")
                 observation = self.observe()
                 self.assertEqual(reference, observation["store"]["reference"])
-                self.assertEqual([{"path": "result", "bytes": 19,
+                self.assertEqual([{"path": "result", "bytes": len(b"actual stored output"),
                                    "sha256": hashlib.sha256(b"actual stored output").hexdigest()}],
                                  observation["outputInventory"]["files"])
 

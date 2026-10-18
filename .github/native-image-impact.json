@@ -100,12 +100,12 @@
     ],
     "worker_workflow": ".github/workflows/worker-gdal-image.yml",
     "worker_patterns": [
-      "scripts/qualification/gp_native_observer.py",
       "docker/worker-gdal/**",
       "src/Honua.Worker.Gdal/**",
       ".dockerignore",
       "scripts/docker/restore-dotnet-with-github-packages.sh",
       "scripts/ci/verify-serving-image-boundary.py",
+      "scripts/qualification/gp_native_observer.py",
       "tests/dotnet/Honua.Worker.Gdal.Tests/ProductionWorkerContainerHandoffTests.cs",
       "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/NativeWorkerPublicApiTests.cs",
       "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
