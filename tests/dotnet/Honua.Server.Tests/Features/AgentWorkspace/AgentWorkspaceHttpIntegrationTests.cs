@@ -8,6 +8,10 @@ using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Server.Features.Operations;
+using StackExchange.Redis;
 using Honua.Server.Features.AgentWorkspace;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -45,6 +49,7 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
     [Endpoint("GET /api/v1/agent/workspaces/{workspaceId}/commands/{commandId}")]
     public async Task HumanAndSeparateAgentShareFrozenContext_WhileForeignCredentialsAndReplaysAreBounded()
     {
+        var sourceTable = $"workspace_source_{Guid.NewGuid():N}";
         var fixture = new WebAppFixture().UseKestrel().ConfigureWebHost(builder =>
         {
             builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
@@ -62,6 +67,9 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
         await fixture.InitializeAsync();
         try
         {
+            var sourceConnection = await fixture.GetTestSecureConnectionIdAsync();
+            sourceConnection.Should().NotBeNull("the actual publish validation needs a registered source connection");
+            await fixture.Postgres.ExecuteDdlUnderLockAsync($"CREATE TABLE public.{sourceTable} (id SERIAL PRIMARY KEY, name TEXT NOT NULL, geom geometry(Point,4326) NOT NULL); INSERT INTO public.{sourceTable} (name, geom) VALUES ('Original source', ST_SetSRID(ST_Point(1,1),4326));");
             using var bootstrap = fixture.CreateAdminClient();
             var agentKey = await IssueKey(bootstrap, "workspace-agent", ["admin:read", "admin:write", "read:*", "agent:workspace"]);
             var foreignKey = await IssueKey(bootstrap, "foreign-agent", ["admin:read", "admin:write", "read:*", "agent:workspace"]);
@@ -103,7 +111,7 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
                 kind = "publish-layer",
                 viewId = "tab-a",
                 contextRevision = context.GetProperty("revision").GetInt64(),
-                fields = new { connectionId = Guid.NewGuid().ToString(), schema = "public", table = "isolated_fixture", serviceName = "http-review", layerName = "initial" },
+                fields = new { connectionId = sourceConnection!.Value.ToString(), schema = "public", table = sourceTable, serviceName = "http-review", layerName = "initial" },
             }), HttpStatusCode.OK);
             string draftPath = root + "/drafts/" + draft.GetProperty("id").GetString();
             var edited = await Read(await agent.PatchAsJsonAsync(draftPath, new { viewId = "tab-a", expectedRevision = 0, changes = new { layerName = "reviewed" } }), HttpStatusCode.OK);
@@ -165,10 +173,10 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
                         name = "honua_publish_service",
                         arguments = new
                         {
-                            connectionId = Guid.NewGuid().ToString(),
+                            connectionId = sourceConnection!.Value.ToString(),
                             schema = "public",
-                            table = "isolated_fixture",
-                            layerName = "Generic review",
+                            table = sourceTable,
+                            layerName = "Generic_review",
                         }
                     },
                 }),
@@ -187,6 +195,13 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
 
             // The gate creates a durable canonical proposal; no source table or publish executor runs.
             var submit = new { commandId = "command-one", expectedRevision = edited.GetProperty("revision").GetInt64() + 1, viewId = "tab-a" };
+            // The retained old turn cannot silently adopt the human's revision2 edit.
+            (await agent.PostAsJsonAsync(draftPath + "/submit", submit)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+            var reviewContext = await Read(await human.GetAsync(root + "?viewId=tab-a"), HttpStatusCode.OK);
+            await Read(await human.PostAsJsonAsync(root + "/turns", new { turnId = "turn-review", viewId = "tab-a",
+                contextRevision = reviewContext.GetProperty("revision").GetInt64(), prompt = "Publish this newly reviewed revision" }), HttpStatusCode.OK);
+            agent.DefaultRequestHeaders.Remove("X-Honua-Turn");
+            agent.DefaultRequestHeaders.Add("X-Honua-Turn", "turn-review");
             var first = await Read(await agent.PostAsJsonAsync(draftPath + "/submit", submit), HttpStatusCode.OK);
             string instanceId = first.GetProperty("data").GetProperty("operationInstanceId").GetString()!;
             string proposalId = first.GetProperty("data").GetProperty("proposalId").GetString()!;
@@ -218,7 +233,8 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             }
             var persisted = await fixture.Services.GetRequiredService<IAgentWorkspaceStore>()
                 .GetAsync(created.GetProperty("workspaceId").GetString()!);
-            persisted!.Commands.Values.Where(command => command.DraftId == currentDraft.GetProperty("id").GetString())
+            persisted!.Commands["command-one"].OriginatingTurnId.Should().Be("turn-review");
+            persisted.Commands.Values.Where(command => command.DraftId == currentDraft.GetProperty("id").GetString())
                 .Select(command => command.OperationInstanceId).Distinct().Should().ContainSingle();
             (await human.PostAsJsonAsync(draftPath + "/submit",
                 new { commandId = "different-actor-command", submit.expectedRevision, viewId = "tab-a" }))
@@ -263,6 +279,16 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
                 freshInstances.Add(recovered.GetProperty("data").GetProperty("operationInstanceId").GetString()!);
             }
             freshInstances.Distinct().Should().ContainSingle().Which.Should().NotBe(instanceId);
+            var laterHuman = await Read(await human.PatchAsJsonAsync(draftPath,
+                new { viewId = "tab-a", expectedRevision = retryRevision, changes = new { layerName = "later-human-edit" } }), HttpStatusCode.OK);
+            var laterRevision = laterHuman.GetProperty("revision").GetInt64();
+            (await agent.PatchAsJsonAsync(draftPath, new { viewId = "tab-a", expectedRevision = laterRevision,
+                changes = new { layerName = "must-not-adopt" } })).StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await agent.PostAsJsonAsync(draftPath + "/submit", new { commandId = "must-not-adopt", expectedRevision = laterRevision,
+                viewId = "tab-a" })).StatusCode.Should().Be(HttpStatusCode.Conflict);
+            // A known command and a same-revision alias observe the original receipt only.
+            var knownAfterEdit = await Read(await agent.PostAsJsonAsync(draftPath + "/submit", submit), HttpStatusCode.OK);
+            knownAfterEdit.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(instanceId);
             var originalAfterEdit = await Read(await agent.PostAsJsonAsync(draftPath + "/submit",
                 new { commandId = "old-revision-recovery", submit.expectedRevision, viewId = "tab-a" }), HttpStatusCode.OK);
             originalAfterEdit.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(instanceId);
@@ -274,7 +300,113 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
         }
         finally
         {
+            await fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{sourceTable}");
             await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("POST /api/v1/agent/workspaces/{workspaceId}/drafts/{draftId}/submit")]
+    [Endpoint("GET /api/v1/agent/workspaces/{workspaceId}/commands/{commandId}")]
+    public async Task JournalCommitBeforeDispatchRecoversOriginalFieldsAndTurnWithoutConsumingUnauthorizedRevision()
+    {
+        var deployment = $"journal-crash-{Guid.NewGuid():N}";
+        var sourceTable = $"workspace_source_{Guid.NewGuid():N}";
+        var fixture = new WebAppFixture().UseKestrel().ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
+            builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.UseSetting("AgentWorkspace:DeploymentId", deployment);
+            builder.UseSetting("AgentWorkspace:ReleaseId", "isolated-journal-crash-test");
+            builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+            builder.UseSetting("Authentication:OperatorBearer:SigningKey", "journal-crash-test-signing-key-at-least-32-bytes");
+            builder.ConfigureServices(services => services.AddSingleton<IAgentWorkspaceStore>(sp =>
+                new InterruptAfterJournalStore(new AgentWorkspaceStore(sp.GetRequiredService<IConnectionMultiplexer>(), deployment))));
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            var sourceConnection = await fixture.GetTestSecureConnectionIdAsync();
+            sourceConnection.Should().NotBeNull("the actual publish validation needs a registered source connection");
+            await fixture.Postgres.ExecuteDdlUnderLockAsync($"CREATE TABLE public.{sourceTable} (id SERIAL PRIMARY KEY, name TEXT NOT NULL, geom geometry(Point,4326) NOT NULL); INSERT INTO public.{sourceTable} (name, geom) VALUES ('Original source', ST_SetSRID(ST_Point(1,1),4326));");
+            using var bootstrap = fixture.CreateAdminClient();
+            var agentKey = await IssueKey(bootstrap, "journal-agent", ["admin:read", "admin:write", "read:*", "agent:workspace"]);
+            var observerKey = await IssueKey(bootstrap, "journal-observer", ["admin:read", "agent:workspace"]);
+            fixture.Services.GetRequiredService<IConfiguration>()["AgentWorkspace:LocalAgentPrincipalId"] = $"apikey:api-key:{agentKey.Id}";
+            var bearer = fixture.Services.GetRequiredService<OperatorBearerTokenService>().Issue(
+                [new() { Type = ClaimTypes.NameIdentifier, Value = "journal-human" }, new() { Type = ClaimTypes.Role, Value = "admin" },
+                 new() { Type = "tenant_id", Value = "public" }], DateTimeOffset.UtcNow.AddMinutes(5));
+            bearer.Should().NotBeNull();
+            using var human = fixture.CreateClient(c => c.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearer!.Token));
+            using var agent = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", agentKey.Material));
+            using var observer = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", observerKey.Material));
+            var created = await Read(await human.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "tab-a" }), HttpStatusCode.OK);
+            var workspaceId = created.GetProperty("workspaceId").GetString()!;
+            var root = $"/api/v1/agent/workspaces/{workspaceId}";
+            var draft = await Read(await human.PostAsJsonAsync(root + "/drafts", new { kind = "publish-layer", viewId = "tab-a", contextRevision = 0,
+                fields = new { connectionId = sourceConnection!.Value.ToString(), schema = "public", table = sourceTable, serviceName = "journal-recovery", layerName = "original-frozen" } }), HttpStatusCode.OK);
+            var draftId = draft.GetProperty("id").GetString()!;
+            var draftPath = root + "/drafts/" + draftId;
+            var current = await Read(await human.GetAsync(root + "?viewId=tab-a"), HttpStatusCode.OK);
+            await Read(await human.PostAsJsonAsync(root + "/turns", new { turnId = "turn-crash", viewId = "tab-a",
+                contextRevision = current.GetProperty("revision").GetInt64(), prompt = "Publish this exact original draft" }), HttpStatusCode.OK);
+            var store = fixture.Services.GetRequiredService<IAgentWorkspaceStore>();
+            var document = (await store.GetAsync(workspaceId))!;
+            (await store.SaveAsync(document with { Members = [.. document.Members, $"apikey:api-key:{observerKey.Id}"] })).Should().BeTrue();
+            var observerRequest = new { commandId = "observer-must-not-consume", expectedRevision = 0, viewId = "tab-a" };
+            (await observer.PostAsJsonAsync(draftPath + "/submit", observerRequest)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await store.GetAsync(workspaceId))!.Commands.Should().BeEmpty();
+            agent.DefaultRequestHeaders.Add("X-Honua-Workspace", workspaceId);
+            agent.DefaultRequestHeaders.Add("X-Honua-Turn", "turn-crash");
+            var submit = new { commandId = "command-crash", expectedRevision = 0, viewId = "tab-a" };
+            // The decorator throws only AFTER the actual Redis CAS persisted the command.
+            (await agent.PostAsJsonAsync(draftPath + "/submit", submit)).StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            var journal = (await store.GetAsync(workspaceId))!.Commands["command-crash"];
+            journal.OriginatingTurnId.Should().Be("turn-crash");
+            var operations = fixture.Services.GetRequiredService<IOperationInstanceStore>();
+            (await operations.GetAsync(journal.OperationInstanceId)).Should().BeNull();
+            (await agent.GetAsync(root + "/commands/command-crash")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await operations.GetAsync(journal.OperationInstanceId)).Should().BeNull();
+            await Read(await human.PatchAsJsonAsync(draftPath, new { viewId = "tab-a", expectedRevision = 0,
+                changes = new { layerName = "later-human-edit" } }), HttpStatusCode.OK);
+            var recovered = await Read(await agent.PostAsJsonAsync(draftPath + "/submit", submit), HttpStatusCode.OK);
+            recovered.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(journal.OperationInstanceId);
+            var proposalId = recovered.GetProperty("data").GetProperty("proposalId").GetString()!;
+            var proposal = await fixture.Services.GetRequiredService<IOperationProposalStore>().GetAsync(proposalId);
+            proposal.Should().NotBeNull();
+            var payload = JsonSerializer.Deserialize(proposal!.Plan.ExecutionPayload!, ServicePublishApprovalJsonContext.Default.ServicePublishApprovalPayload)!;
+            payload.LayerName.Should().Be("original-frozen");
+            var after = (await store.GetAsync(workspaceId))!;
+            after.Commands.Should().ContainSingle();
+            after.Commands["command-crash"].Should().BeEquivalentTo(journal);
+            after.Drafts[draftId].Fields["layerName"].Should().Be("later-human-edit");
+            var repeated = await Read(await agent.PostAsJsonAsync(draftPath + "/submit", submit), HttpStatusCode.OK);
+            repeated.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(journal.OperationInstanceId);
+        }
+        finally
+        {
+            await fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{sourceTable}");
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private sealed class InterruptAfterJournalStore(IAgentWorkspaceStore inner) : IAgentWorkspaceStore
+    {
+        private int _interrupt = 1;
+        public bool IsAvailable => inner.IsAvailable;
+        public Task<string> GetTargetIdAsync() => inner.GetTargetIdAsync();
+        public Task<AgentWorkspaceDocument?> GetAsync(string id) => inner.GetAsync(id);
+        public Task<bool> CreateAsync(AgentWorkspaceDocument document) => inner.CreateAsync(document);
+        public async Task<bool> SaveAsync(AgentWorkspaceDocument document)
+        {
+            var saved = await inner.SaveAsync(document);
+            if (saved && document.Commands.ContainsKey("command-crash") && Interlocked.Exchange(ref _interrupt, 0) == 1)
+                throw new AgentWorkspaceUnavailableException();
+            return saved;
         }
     }
 

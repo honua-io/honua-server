@@ -418,7 +418,8 @@ internal static class AgentWorkspaceEndpoints
         if (document.Drafts.Count >= 128) throw new ArgumentException("Workspace draft limit reached.");
         var draft = new AgentWorkspaceDraft($"draft-{Guid.NewGuid():N}", 0, request.Kind,
             AgentWorkspaceState.ValidateFields(request.Fields), []);
-        document.Drafts.Add(draft.Id, draft);
+        document = document with { Drafts = new(document.Drafts, StringComparer.Ordinal) { [draft.Id] = draft } };
+        document = AgentWorkspaceDraftLineages.RecordCreated(context, document, draft);
         var next = SelectDraft(document, request.ViewId, draft);
         await Save(store, next).ConfigureAwait(false);
         return Results.Ok(draft);
@@ -444,20 +445,28 @@ internal static class AgentWorkspaceEndpoints
     {
         var document = await Read(context, store).ConfigureAwait(false);
         var draft = ReadDraft(context, document);
+        var lineage = AgentWorkspaceDraftLineages.RequireEditable(context, document, draft, request.ViewId, request.ExpectedRevision);
         var next = AgentWorkspaceState.PatchDraft(document, draft.Id, request);
+        next = AgentWorkspaceDraftLineages.Record(next, lineage is null ? null : lineage with { Revision = next.Drafts[draft.Id].Revision });
         await Save(store, next).ConfigureAwait(false);
         return Results.Ok(next.Drafts[draft.Id]);
     }
 
     internal static async Task<IResult> SubmitDraft(HttpContext context, IAgentWorkspaceStore store, SubmitAgentDraft request)
     {
+        if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
+            return Results.Forbid();
         var document = await Read(context, store).ConfigureAwait(false);
         if (!AgentWorkspaceState.IsIdentifier(request.CommandId) || !AgentWorkspaceState.IsIdentifier(request.ViewId)) throw new ArgumentException("Command and view ids are required.");
         var draft = ReadDraft(context, document);
         var actor = Actor(context);
-        if (document.Commands.TryGetValue(request.CommandId, out var command))
+        _ = AgentWorkspaceCapturedContext.ReadBoundTurn(context, document);
+        var newRecord = !document.Commands.TryGetValue(request.CommandId, out var command);
+        var newIntent = false;
+        AgentWorkspaceDraftLineage? lineage = null;
+        if (!newRecord)
         {
-            if (command.ActorId != actor || command.DraftId != draft.Id || command.DraftRevision != request.ExpectedRevision)
+            if (command!.ActorId != actor || command.DraftId != draft.Id || command.DraftRevision != request.ExpectedRevision)
                 throw new AgentWorkspaceConflictException("Command id is bound to different input or executor.");
         }
         else
@@ -470,46 +479,90 @@ internal static class AgentWorkspaceEndpoints
                 var original = priorCommands[0];
                 if (priorCommands.Any(value => value.ActorId != actor || value.OperationInstanceId != original.OperationInstanceId))
                     throw new AgentWorkspaceConflictException("This draft revision has already been submitted. Inspect its original command receipt.");
-                // An alias preserves the original actor, frozen input, retry deadline and
-                // operation identity. Another tab cannot consume the same revision twice.
                 command = original with { CommandId = request.CommandId };
             }
             else
             {
                 if (draft.Revision != request.ExpectedRevision) throw new AgentWorkspaceConflictException("The shared draft changed.");
+                lineage = AgentWorkspaceDraftLineages.RequireEditable(context, document, draft, request.ViewId, request.ExpectedRevision);
                 var key = "workspace:" + Convert.ToHexStringLower(SHA256.HashData(
                     Encoding.UTF8.GetBytes($"{document.WorkspaceId}:{request.CommandId}")));
                 command = new(request.CommandId, actor, draft.Id, draft.Revision, key,
                     OperationEnvelopeFactory.DeriveIdempotentInstanceId(ServicePublishOperation.OperationId,
                         OperationsEndpoints.ScopeIdempotencyKey(key, document.TenantId, actor), document.TenantId),
-                    new(draft.Fields, StringComparer.Ordinal), DateTimeOffset.UtcNow.AddDays(1));
+                    new(draft.Fields, StringComparer.Ordinal), DateTimeOffset.UtcNow.AddDays(1), lineage?.TurnId);
+                newIntent = true;
             }
-            document.Commands.Add(command.CommandId, command);
-            // Persist the input and execution identity BEFORE dispatch. A lost response
-            // is reconciled against the same canonical operation, never a fresh mutation.
-            await Save(store, document).ConfigureAwait(false);
         }
-        if (DateTimeOffset.UtcNow >= command.RetryBefore)
+        var originalCommand = command!;
+        // Existing accepted operations are observed without another dispatch. A journal
+        // committed before dispatch is explicitly recoverable with its original identity.
+        if (!newIntent && await context.RequestServices.GetRequiredService<IOperationInstanceStore>()
+                .GetAsync(originalCommand.OperationInstanceId, context.RequestAborted).ConfigureAwait(false) is not null)
+        {
+            if (newRecord) await SaveCommand(store, document, originalCommand, lineage).ConfigureAwait(false);
+            return await ReadCommandReceipt(context, store, document.WorkspaceId, originalCommand.CommandId).ConfigureAwait(false);
+        }
+        if (DateTimeOffset.UtcNow >= originalCommand.RetryBefore)
             throw new AgentWorkspaceConflictException("The retry window expired. Inspect the recorded command receipt; do not resubmit the mutation.");
-        var previousKey = context.Request.Headers["Idempotency-Key"];
-        context.Request.Headers["Idempotency-Key"] = command.IdempotencyKey;
-        try
+        var dispatch = await AuthorizeCommandDispatch(context, document, originalCommand).ConfigureAwait(false);
+        if (dispatch is null) return Results.Forbid();
+        // Current actual publish authorization precedes consuming a draft revision.
+        // Canonical dispatch independently rechecks authorization and human approval.
+        if (newRecord) await SaveCommand(store, document, originalCommand, lineage).ConfigureAwait(false);
+        if (DateTimeOffset.UtcNow >= originalCommand.RetryBefore ||
+            !await AgentCredentialAuthority.IsCurrentAsync(dispatch.User, dispatch.RequestServices, dispatch.RequestAborted).ConfigureAwait(false))
+            return Results.Forbid();
+        dispatch.Request.Headers["Idempotency-Key"] = originalCommand.IdempotencyKey;
+        var fields = originalCommand.Fields;
+        return await OperationsEndpoints.HandleSubmitOperationWithApproval(dispatch, ServicePublishOperation.OperationId,
+            new OperationInvokeRequest
+            {
+                ConnectionId = fields.GetValueOrDefault("connectionId"),
+                ServiceName = fields.GetValueOrDefault("serviceName"),
+                Parameters = fields.Where(pair => pair.Key is not ("connectionId" or "serviceName"))
+                    .ToDictionary(pair => pair.Key, pair => (string?)pair.Value, StringComparer.Ordinal),
+            }, dispatch.RequestServices.GetRequiredService<IOperationCatalog>(),
+            dispatch.RequestServices.GetRequiredService<IOperationInvoker>(), durableOperatorApproval: true, dispatch.RequestAborted).ConfigureAwait(false);
+    }
+
+    private static Task SaveCommand(IAgentWorkspaceStore store, AgentWorkspaceDocument document,
+        AgentWorkspaceCommand command, AgentWorkspaceDraftLineage? lineage)
+        => Save(store, AgentWorkspaceDraftLineages.Record(document with
+        { Commands = new(document.Commands, StringComparer.Ordinal) { [command.CommandId] = command } }, lineage));
+
+    private static async Task<HttpContext?> AuthorizeCommandDispatch(HttpContext transport, AgentWorkspaceDocument workspace, AgentWorkspaceCommand command)
+    {
+        var context = new DefaultHttpContext { User = transport.User, RequestServices = transport.RequestServices, RequestAborted = transport.RequestAborted };
+        context.Request.Method = "POST";
+        context.Request.Path = $"/api/v1/agent/workspaces/{workspace.WorkspaceId}/drafts/{command.DraftId}/submit";
+        foreach (var header in transport.Request.Headers) context.Request.Headers[header.Key] = header.Value;
+        context.Request.Headers.Remove("X-Honua-Workspace");
+        context.Request.Headers.Remove("X-Honua-Turn");
+        if (command.OriginatingTurnId is { } turnId)
         {
-            var fields = command.Fields;
-            return await OperationsEndpoints.HandleSubmitOperationWithApproval(context, ServicePublishOperation.OperationId,
-                new OperationInvokeRequest
-                {
-                    ConnectionId = fields.GetValueOrDefault("connectionId"),
-                    ServiceName = fields.GetValueOrDefault("serviceName"),
-                    Parameters = fields.Where(pair => pair.Key is not ("connectionId" or "serviceName"))
-                        .ToDictionary(pair => pair.Key, pair => (string?)pair.Value, StringComparer.Ordinal),
-                }, context.RequestServices.GetRequiredService<IOperationCatalog>(),
-                context.RequestServices.GetRequiredService<IOperationInvoker>(), durableOperatorApproval: true, context.RequestAborted).ConfigureAwait(false);
+            var authorizer = context.RequestServices.GetService<IAgentWorkspaceTurnAuthorizer>();
+            var binding = authorizer is null ? null : await authorizer.AuthorizeAsync(context.User, workspace.WorkspaceId, turnId, context.RequestAborted).ConfigureAwait(false);
+            if (binding is null || binding.WorkspaceId != workspace.WorkspaceId || binding.TurnId != turnId ||
+                binding.TargetId != workspace.TargetId || binding.TenantId != workspace.TenantId || binding.OwnerActorId != workspace.OwnerId) return null;
+            context.Request.Headers["X-Honua-Workspace"] = workspace.WorkspaceId;
+            context.Request.Headers["X-Honua-Turn"] = turnId;
+            context.Items[typeof(Honua.Core.Features.AgentWorkspace.Domain.AgentWorkspaceTurnAuthorization)] = binding;
         }
-        finally
-        {
-            context.Request.Headers["Idempotency-Key"] = previousKey;
-        }
+        if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false) ||
+            !await OperationAdminAuthorization.IsAuthorizedAsync(context, context.User,
+                ServicePublishOperation.BuildDescriptor().Policy.SideEffectClass, context.RequestAborted).ConfigureAwait(false)) return null;
+        return context;
+    }
+
+    private static Task<IResult> ReadCommandReceipt(HttpContext transport, IAgentWorkspaceStore store, string workspaceId, string commandId)
+    {
+        var context = new DefaultHttpContext { User = transport.User, RequestServices = transport.RequestServices, RequestAborted = transport.RequestAborted };
+        context.Request.Method = "GET";
+        context.Request.Path = $"/api/v1/agent/workspaces/{workspaceId}/commands/{commandId}";
+        context.Request.RouteValues["workspaceId"] = workspaceId;
+        context.Request.RouteValues["commandId"] = commandId;
+        return GetCommand(context, store);
     }
 
     internal static async Task<IResult> GetOperation(HttpContext context, IAgentWorkspaceStore store)

@@ -22,7 +22,7 @@ internal sealed record AgentWorkspaceDraft(
     string Id, long Revision, string Kind, Dictionary<string, string> Fields, string[] Validation);
 internal sealed record AgentWorkspaceCommand(
     string CommandId, string ActorId, string DraftId, long DraftRevision, string IdempotencyKey,
-    string OperationInstanceId, Dictionary<string, string> Fields, DateTimeOffset RetryBefore);
+    string OperationInstanceId, Dictionary<string, string> Fields, DateTimeOffset RetryBefore, string? OriginatingTurnId = null);
 internal sealed record AgentWorkflowAuthoringCommand(
     string CommandId, string ActorId, string WorkspaceId, string TurnId, string RequestFingerprint,
     string PackageId, int ExpectedVersion, string PackageHash, string OwnerActorId, string TenantId,
@@ -38,6 +38,7 @@ internal sealed record AgentWorkspaceDocument
     public long Version { get; init; }
     public Dictionary<string, AgentWorkspaceContext[]> Views { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, AgentWorkspaceDraft> Drafts { get; init; } = new(StringComparer.Ordinal);
+    public Dictionary<string, AgentWorkspaceDraftLineage> DraftLineages { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, AgentWorkspaceTurn> Turns { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, AgentWorkspaceCommand> Commands { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, AgentWorkflowAuthoringCommand> WorkflowAuthoringCommands { get; init; } = new(StringComparer.Ordinal);
