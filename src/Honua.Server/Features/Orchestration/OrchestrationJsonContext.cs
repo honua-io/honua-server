@@ -11,6 +11,7 @@ namespace Honua.Server.Features.Orchestration;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(WorkflowDefinition))]
 [JsonSerializable(typeof(WorkflowRun))]
+[JsonSerializable(typeof(WorkflowRunCommand))]
 [JsonSerializable(typeof(WorkflowStepState))]
 internal sealed partial class OrchestrationJsonContext : JsonSerializerContext
 {

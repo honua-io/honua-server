@@ -4,6 +4,8 @@
 using Honua.Core.Features.Licensing.Abstractions;
 using System.Diagnostics;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -210,7 +212,10 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         WorkflowTriggerKind triggerKind,
         ClaimsPrincipal principal,
         IReadOnlyDictionary<string, string>? metadata = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? idempotencyKey = null,
+        string? inputSnapshotHash = null,
+        bool reconcileOnly = false)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(principal);
@@ -279,7 +284,51 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         }
 
         var now = _clock.GetUtcNow();
-        var runId = $"wf-{Guid.NewGuid():N}";
+        const string snapshotMetadataKey = "honua.workflow.idempotency.snapshot_hash";
+        string runId;
+        string? commandScope = null;
+        string? requestHash = null;
+        if (idempotencyKey is not null)
+        {
+            if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 256 ||
+                string.IsNullOrWhiteSpace(inputSnapshotHash) || string.IsNullOrWhiteSpace(runSecurityContext.PrincipalId))
+            {
+                throw new ArgumentException("Idempotent workflow submission requires a bounded key, immutable input hash and authenticated principal.");
+            }
+            var identity = new[] { runSecurityContext.PrincipalId, runSecurityContext.TenantId ?? string.Empty, idempotencyKey };
+            var identityBytes = Encoding.UTF8.GetBytes(string.Join("|", identity.Select(value => $"{value.Length}:{value}")));
+            commandScope = Convert.ToHexStringLower(SHA256.HashData(identityBytes));
+            runId = $"wf-{commandScope}";
+            requestHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
+                $"{definition.WorkflowId.Length}:{definition.WorkflowId}|{inputSnapshotHash.Length}:{inputSnapshotHash}")));
+            var accepted = await _runStore.GetCommandAsync(commandScope, cancellationToken).ConfigureAwait(false);
+            if (accepted is not null) return await ResolveAcceptedCommandAsync(accepted).ConfigureAwait(false);
+            if (reconcileOnly) throw new InvalidOperationException("The workflow command has no retained run; acceptance must be reconciled before a new command is created.");
+        }
+        else
+        {
+            if (reconcileOnly) throw new ArgumentException("Reconciliation requires an existing command identity.");
+            runId = $"wf-{Guid.NewGuid():N}";
+        }
+        async Task<WorkflowRun> ResolveAcceptedCommandAsync(WorkflowRunCommand accepted)
+        {
+            if (!string.Equals(accepted.RequestHash, requestHash, StringComparison.Ordinal) ||
+                !string.Equals(accepted.RunId, runId, StringComparison.Ordinal))
+                throw new InvalidOperationException("The workflow command identity is already bound to a different definition or input snapshot.");
+            var previous = await _runStore.GetAsync(accepted.RunId, cancellationToken).ConfigureAwait(false);
+            if (previous is null)
+                throw new InvalidOperationException("The workflow command was accepted but its run details expired or are unavailable; it cannot be executed again.");
+            EnsureSameSubmission(previous);
+            return previous;
+        }
+        void EnsureSameSubmission(WorkflowRun previous)
+        {
+            if (!string.Equals(previous.WorkflowId, definition.WorkflowId, StringComparison.Ordinal) ||
+                !string.Equals(previous.Metadata.GetValueOrDefault(snapshotMetadataKey), inputSnapshotHash, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("The workflow command identity is already bound to a different definition or input snapshot.");
+            }
+        }
         var stepStates = expanded.Steps
             .Select(step => new WorkflowStepState
             {
@@ -316,9 +365,21 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             }
         };
 
-        var created = await _runStore.TryCreateAsync(run, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (idempotencyKey is not null)
+        {
+            run = run with { Metadata = new Dictionary<string, string>(run.Metadata, StringComparer.Ordinal) { [snapshotMetadataKey] = inputSnapshotHash! } };
+        }
+        var created = commandScope is not null
+            ? await _runStore.TryCreateIdempotentAsync(run, commandScope, new WorkflowRunCommand(runId, requestHash!), cancellationToken).ConfigureAwait(false)
+            : await _runStore.TryCreateAsync(run, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!created)
         {
+            if (commandScope is not null)
+            {
+                var accepted = await _runStore.GetCommandAsync(commandScope, cancellationToken).ConfigureAwait(false);
+                if (accepted is not null) return await ResolveAcceptedCommandAsync(accepted).ConfigureAwait(false);
+                throw new InvalidOperationException("Workflow acceptance is uncertain; reconcile the existing command before resubmitting.");
+            }
             throw new InvalidOperationException($"Failed to persist workflow run '{runId}'.");
         }
 

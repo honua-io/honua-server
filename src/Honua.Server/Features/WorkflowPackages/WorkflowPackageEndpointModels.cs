@@ -32,6 +32,7 @@ internal sealed record SetWorkflowPublicationStatusRequest
 internal sealed record RunWorkflowPublicationRequest
 {
     public string? IdempotencyKey { get; init; }
+    public bool ReconcileOnly { get; init; }
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
 }
 

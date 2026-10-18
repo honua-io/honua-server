@@ -12,6 +12,13 @@ namespace Honua.Core.Features.Orchestration.Abstractions;
 /// </summary>
 public interface IWorkflowRunStore : IOperationStore
 {
+    /// <summary>Reads the durable command tombstone even after the referenced run expires.</summary>
+    Task<WorkflowRunCommand?> GetCommandAsync(string commandScope, CancellationToken cancellationToken = default);
+
+    /// <summary>Atomically creates a run and its durable command reference; neither may exist beforehand.</summary>
+    Task<bool> TryCreateIdempotentAsync(WorkflowRun run, string commandScope, WorkflowRunCommand command,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Attempts to atomically create a workflow run.
     /// </summary>

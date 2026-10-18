@@ -51,6 +51,17 @@ public sealed class WorkflowPackageServiceValidationTests
     }
 
     [Fact]
+    public void IsDirectSubmitOnlyValidation_WorkflowOnlyManualGraph_UsesOrchestration()
+    {
+        WorkflowPackageService.IsDirectSubmitOnlyValidation(WorkflowOnlyFailure,
+                WorkflowPublicationTarget.Job, orchestrationAvailable: true, manualGraph: true)
+            .Should().BeTrue();
+        WorkflowPackageService.IsDirectSubmitOnlyValidation(WorkflowOnlyFailure,
+                WorkflowPublicationTarget.Job, orchestrationAvailable: false, manualGraph: true)
+            .Should().BeFalse();
+    }
+
+    [Fact]
     public void IsDirectSubmitOnlyValidation_WorkflowOnlyPackageValidation_SuppressesFailure()
     {
         WorkflowPackageService.IsDirectSubmitOnlyValidation(

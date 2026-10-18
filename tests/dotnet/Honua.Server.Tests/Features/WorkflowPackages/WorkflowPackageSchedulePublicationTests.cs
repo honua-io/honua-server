@@ -392,6 +392,53 @@ public sealed class WorkflowPackageSchedulePublicationTests
         Assert.Equal("0101", version.Graph.Nodes[0].Parameters["wkb"]);
     }
 
+    [UnitTest]
+    public async Task ManualMultiNodeJob_UsesCanonicalJobsAndNeverArmsASchedule()
+    {
+        var packages = new InMemoryWorkflowPackageStore();
+        var definitions = new FakeWorkflowDefinitionStore();
+        var runs = new FakeWorkflowRunStore();
+        var jobs = new FakeWorkflowJobExecutor();
+        var progress = new FakeProgressStore();
+        var engine = new Honua.Server.Features.Orchestration.WorkflowOrchestrationEngine(
+            runs, definitions, jobs, progress, TimeProvider.System,
+            NullLogger<Honua.Server.Features.Orchestration.WorkflowOrchestrationEngine>.Instance);
+        var service = new WorkflowPackageService(packages, new EchoNodeRegistry(), new AllowingJobService(),
+            TimeProvider.System, NullLogger<WorkflowPackageService>.Instance, definitions, engine);
+        var first = EchoGraph().Nodes[0];
+        var graph = new WorkflowGraph
+        {
+            Nodes = [first, first with { NodeId = "second" }],
+            Edges = [new WorkflowEdge { SourceNodeId = first.NodeId, TargetNodeId = "second", Kind = WorkflowEdgeKind.Control }]
+        };
+        var saved = await service.SavePackageAsync(new SaveWorkflowPackageRequest { Name = "Manual DAG", Graph = graph }, Author(), CancellationToken.None);
+        var version = await service.CreateVersionAsync(saved.PackageId, Author(), CancellationToken.None);
+        var publication = await service.PublishVersionAsync(saved.PackageId, version.Version,
+            new PublishWorkflowPackageRequest { Target = WorkflowPublicationTarget.Job }, Author(), CancellationToken.None);
+        var result = await service.RunPublicationAsync(publication.PublicationId,
+            new RunWorkflowPublicationRequest(), Author(), CancellationToken.None);
+        Assert.NotNull(result.WorkflowRunId);
+        Assert.Null(result.JobId);
+        Assert.Empty(await definitions.ListScheduledAsync());
+        var definition = Assert.Single(await definitions.ListAsync());
+        Assert.Null(definition.Trigger);
+        Assert.Equal(2, jobs.ExecutionAuthorizationChecked.Count);
+        Assert.All(jobs.ExecutionAuthorizationPrincipals, principal => Assert.Equal("author", principal.Identity!.Name));
+        Assert.Equal(graph.Nodes.Select(node => node.NodeId), definition.Steps.Select(step => step.StepId));
+        Assert.All(definition.Steps, step => Assert.Single(step.Plan.Steps));
+        await engine.ReconcileWorkflowRunAsync(result.WorkflowRunId!);
+        Assert.Single(jobs.Submitted);
+        var run = await runs.GetAsync(result.WorkflowRunId!);
+        var firstState = run!.StepStates.Single(step => step.StepId == first.NodeId);
+        jobs.Complete(firstState.JobId!, []);
+        await engine.ReconcileWorkflowRunAsync(result.WorkflowRunId!);
+        Assert.Equal(2, jobs.Submitted.Count);
+        await engine.CancelRunAsync(result.WorkflowRunId!);
+        await engine.ReconcileWorkflowRunAsync(result.WorkflowRunId!);
+        Assert.Equal(WorkflowRunStatus.Cancelled, (await runs.GetAsync(result.WorkflowRunId!))!.Status);
+        Assert.Empty(await definitions.ListScheduledAsync());
+    }
+
     private static async Task<WorkflowPackageVersion> PublishableVersionAsync(Harness harness)
         => await PublishableVersionAsync(harness.Service, harness.Packages);
 
