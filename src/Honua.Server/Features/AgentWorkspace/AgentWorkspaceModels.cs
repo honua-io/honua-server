@@ -44,6 +44,8 @@ internal sealed record AgentWorkspaceDocument
     public Dictionary<string, AgentWorkspaceTurn> Turns { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, AgentWorkspaceCommand> Commands { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, AgentWorkflowAuthoringCommand> WorkflowAuthoringCommands { get; init; } = new(StringComparer.Ordinal);
+    public Dictionary<string, DatasetImportAuthorityRenewal> DatasetImportAuthorityRenewals { get; init; } = new(StringComparer.Ordinal);
+    public Dictionary<string, DatasetImportPreparedAdmission> DatasetImportPreparedAdmissions { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, DatasetImportExecutionBinding> DatasetImportExecutionBindings { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, DatasetImportTask[]> DatasetImportTasks { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, DatasetImportTaskIntent> DatasetImportTaskIntents { get; init; } = new(StringComparer.Ordinal);
