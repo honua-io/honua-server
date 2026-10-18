@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Infrastructure.Authentication;

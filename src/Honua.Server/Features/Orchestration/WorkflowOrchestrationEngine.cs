@@ -212,10 +212,10 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         WorkflowTriggerKind triggerKind,
         ClaimsPrincipal principal,
         IReadOnlyDictionary<string, string>? metadata = null,
-        CancellationToken cancellationToken = default,
         string? idempotencyKey = null,
         string? inputSnapshotHash = null,
-        bool reconcileOnly = false)
+        bool reconcileOnly = false,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(principal);

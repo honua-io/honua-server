@@ -425,7 +425,7 @@ internal static class AgentWorkspaceEndpoints
                     Parameters = fields.Where(pair => pair.Key is not ("connectionId" or "serviceName"))
                         .ToDictionary(pair => pair.Key, pair => (string?)pair.Value, StringComparer.Ordinal),
                 }, context.RequestServices.GetRequiredService<IOperationCatalog>(),
-                context.RequestServices.GetRequiredService<IOperationInvoker>(), context.RequestAborted, durableOperatorApproval: true).ConfigureAwait(false);
+                context.RequestServices.GetRequiredService<IOperationInvoker>(), durableOperatorApproval: true, context.RequestAborted).ConfigureAwait(false);
         }
         finally
         {

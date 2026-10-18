@@ -670,10 +670,10 @@ internal sealed class WorkflowPackageService(
                 await workflowDefinitionStore!.SetAsync(definition, cancellationToken).ConfigureAwait(false);
             }
             var run = await orchestrationEngine
-                .CreateRunAsync(definition, WorkflowTriggerKind.Manual, principal, provenance, cancellationToken,
+                .CreateRunAsync(definition, WorkflowTriggerKind.Manual, principal, provenance,
                     idempotencyKey: manualGraph ? request.IdempotencyKey : null,
                     inputSnapshotHash: manualGraph ? version.PackageHash : null,
-                    reconcileOnly: manualGraph && request.ReconcileOnly)
+                    reconcileOnly: manualGraph && request.ReconcileOnly, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             WorkflowPackageLog.PackagePublicationRunStarted(
