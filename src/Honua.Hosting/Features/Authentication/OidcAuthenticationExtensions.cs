@@ -5,6 +5,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Security;
@@ -695,6 +696,11 @@ public static partial class OidcAuthenticationExtensions
                 },
                 OnTokenValidated = async context =>
                 {
+                    if (HasDuplicatePayloadProperties(context.SecurityToken))
+                    {
+                        context.Fail("JWT payload contains ambiguous duplicate properties.");
+                        return;
+                    }
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
                     OidcAuthenticationLog.JwtTokenValidated(logger);
 
@@ -973,6 +979,26 @@ public static partial class OidcAuthenticationExtensions
         }
 
         return resolved;
+    }
+
+    // Inspect validated wire bytes before claim materialization can collapse duplicate keys.
+    private static bool HasDuplicatePayloadProperties(SecurityToken token)
+    {
+        var encodedPayload = token switch
+        {
+            JsonWebToken jwt => jwt.EncodedPayload,
+            JwtSecurityToken jwt => jwt.RawPayload,
+            _ => null
+        };
+        if (string.IsNullOrEmpty(encodedPayload)) return true;
+        using var payload = JsonDocument.Parse(Base64UrlEncoder.DecodeBytes(encodedPayload));
+        if (payload.RootElement.ValueKind != JsonValueKind.Object) return true;
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var property in payload.RootElement.EnumerateObject())
+        {
+            if (!names.Add(property.Name)) return true;
+        }
+        return false;
     }
 
     private static string? TryGetTokenReplayKey(SecurityToken token)

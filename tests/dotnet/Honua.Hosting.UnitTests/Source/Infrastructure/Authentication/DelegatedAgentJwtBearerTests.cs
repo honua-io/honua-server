@@ -4,6 +4,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -35,6 +36,10 @@ public sealed class DelegatedAgentJwtBearerTests
     [InlineData("duplicate-subject", false)]
     [InlineData("duplicate-tenant", false)]
     [InlineData("duplicate-alternate-tenant", false)]
+    [InlineData("wire-duplicate-sub", false)]
+    [InlineData("wire-duplicate-aud", false)]
+    [InlineData("wire-duplicate-tenant_id", false)]
+    [InlineData("wire-duplicate-iss", false)]
     [InlineData("expired", false)]
     [InlineData("forged-signature", false)]
     [InlineData("removed-profile-omitted-scope-admin", false)]
@@ -96,7 +101,20 @@ public sealed class DelegatedAgentJwtBearerTests
         if (variant == "duplicate-tenant") token.Payload["tenant_id"] = new[] { "tenant", "tenant" };
         if (variant == "duplicate-alternate-tenant") token.Payload["tid"] = new[] { "tenant", "tenant" };
         var context = new DefaultHttpContext { RequestServices = provider };
-        context.Request.Headers.Authorization = "Bearer " + new JwtSecurityTokenHandler().WriteToken(token);
+        var encoded = new JwtSecurityTokenHandler().WriteToken(token);
+        if (variant.StartsWith("wire-duplicate-", StringComparison.Ordinal))
+        {
+            var claim = variant["wire-duplicate-".Length..];
+            var parts = encoded.Split('.');
+            // Keep the valid property last: a parser's last-value-wins behavior must
+            // not turn an ambiguous, correctly signed credential into authority.
+            var payload = Base64UrlEncoder.Decode(parts[1]);
+            payload = "{\"" + claim + "\":\"other\"," + payload[1..];
+            var signingInput = parts[0] + "." + Base64UrlEncoder.Encode(payload);
+            encoded = signingInput + "." + Base64UrlEncoder.Encode(rsa.SignData(
+                Encoding.ASCII.GetBytes(signingInput), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1));
+        }
+        context.Request.Headers.Authorization = "Bearer " + encoded;
         var result = await context.AuthenticateAsync(OidcAuthenticationExtensions.JwtBearerScheme);
         (result.Succeeded && AgentCredentialAuthority.IsAgent(result.Principal!)).Should().Be(expectedAgent);
         if (result.Succeeded)
