@@ -1965,6 +1965,50 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public async Task SubmitAsync_OperatorApprovalRestrictionCreatesOneRecoverableProposal()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        var bridge = Substitute.For<IOperationApprovalBridge>();
+        bridge.CreateProposalAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
+            Arg.Any<OperationPolicyContext>(), Arg.Any<PolicyDecision>(), Arg.Any<CancellationToken>())
+            .Returns(new OperationApprovalBridgeResult { IsDurable = true, ProposalId = "proposal-operator", AuditId = "audit-operator" });
+        var dispatcher = BuildDispatcher(BuildExecutor(publishing), new AllowAllPolicyDecisionPoint(), bridge);
+        var context = new OperationPolicyContext
+        {
+            PrincipalId = "agent-1",
+            TenantId = "tenant-1",
+            IdempotencyKey = "workspace-command-1",
+            IdempotencyRequestHash = "frozen-publish-request",
+            RequiredApprovalPolicyRef = "operator:publish-required",
+        };
+        var first = await dispatcher.SubmitAsync(BuildRequest(), context);
+        var retry = await dispatcher.SubmitAsync(BuildRequest(), context);
+        first.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        first.ProposalId.Should().Be("proposal-operator");
+        first.ApprovalLane.Should().Be("control-plane");
+        retry.OperationInstanceId.Should().Be(first.OperationInstanceId);
+        retry.ProposalId.Should().Be(first.ProposalId);
+        await bridge.Received(1).CreateProposalAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
+            Arg.Any<OperationPolicyContext>(), Arg.Is<PolicyDecision>(decision => decision.Kind == PolicyDecisionKind.RequireApproval),
+            Arg.Any<CancellationToken>());
+        await publishing.DidNotReceive().PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_OperatorApprovalCannotTurnDenialIntoApprovableRequest()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        var bridge = Substitute.For<IOperationApprovalBridge>();
+        var dispatcher = BuildDispatcher(BuildExecutor(publishing), new DenyAllPolicyDecisionPoint(), bridge);
+        var handle = await dispatcher.SubmitAsync(BuildRequest(), new OperationPolicyContext { RequiredApprovalPolicyRef = "operator:publish-required" });
+        handle.Status.Should().Be(OperationHandleStatus.Denied);
+        handle.ProposalId.Should().BeNull();
+        await bridge.DidNotReceive().CreateProposalAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
+            Arg.Any<OperationPolicyContext>(), Arg.Any<PolicyDecision>(), Arg.Any<CancellationToken>());
+        await publishing.DidNotReceive().PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task SubmitAsync_With_DryRunFirst_Policy_ShortCircuits_Executor_And_Returns_DryRunRequired_Handle()
     {
         var publishing = Substitute.For<ILayerPublishingService>();
@@ -1977,7 +2021,10 @@ public sealed class OperationsToolsetTests
                 Reason = "preview required before commit"
             }));
 
-        var handle = await dispatcher.SubmitAsync(BuildRequest(), new OperationPolicyContext(), CancellationToken.None);
+        var handle = await dispatcher.SubmitAsync(BuildRequest(), new OperationPolicyContext
+        {
+            RequiredApprovalPolicyRef = "agent-workspace.human-approval",
+        }, CancellationToken.None);
 
         // Guardrail seam: DryRunFirst never reaches the executor — no side effect.
         await publishing.DidNotReceive().PublishLayerAsync(

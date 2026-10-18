@@ -115,6 +115,13 @@ internal sealed class ProposalStatusResource : IMcpResource
             }
         }
 
+        if (isProposer && proposal.OperationId == "style.replace-shared" && proposal.Status == OperationProposalStatus.Executing &&
+            httpContext.RequestServices.GetService<IOperationGateway>() is { } receiptGateway)
+        {
+            proposal = await receiptGateway.ReconcileCommittedReceiptAsync(proposal.ProposalId, principal, cancellationToken).ConfigureAwait(false)
+                ?? proposal;
+        }
+
         var operation = proposal.Audit.OperationInstanceId is { Length: > 0 } operationInstanceId
             ? await (httpContext.RequestServices.GetService<IOperationInstanceStore>()
                 ?? throw new InvalidOperationException("The canonical operation instance store is unavailable."))

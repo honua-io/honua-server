@@ -297,7 +297,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         // Transitions AwaitingApproval → Executing via a CAS write: only one concurrent
         // caller wins this write; all others re-read a non-AwaitingApproval status and
         // throw, preventing double-execution of non-idempotent operations (BH4-031).
-        proposal = await ClaimForExecutionAsync(proposal, cancellationToken).ConfigureAwait(false);
+        proposal = await ClaimForExecutionAsync(proposal, approvedBy, cancellationToken).ConfigureAwait(false);
 
         var request = RebuildRequest(proposal);
         string? executionOperationId = null;
@@ -401,9 +401,8 @@ internal sealed partial class OperationGateway : IOperationGateway
             ResolvedBy = approvedBy,
             ResolvedAt = now,
             ExecutionOperationId = executionOperationId,
-            Plan = failureMessage == null
-                ? proposal.Plan
-                : proposal.Plan with { BlockingReasons = [.. proposal.Plan.BlockingReasons, failureMessage] }
+            // Execution outcomes must never mutate the already sealed approval plan.
+            ResolutionReason = failureMessage
         };
 
         await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, cancellationToken).ConfigureAwait(false);
@@ -891,11 +890,17 @@ internal sealed partial class OperationGateway : IOperationGateway
     /// </summary>
     private async Task<OperationProposal> ClaimForExecutionAsync(
         OperationProposal proposal,
+        string approvedBy,
         CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            var claiming = proposal with { Status = OperationProposalStatus.Executing };
+            var claiming = proposal with
+            {
+                Status = OperationProposalStatus.Executing,
+                ApprovedByAtClaim = approvedBy,
+                ApprovedAtClaim = DateTimeOffset.UtcNow,
+            };
             if (await _proposalStore.TrySetAsync(claiming, cancellationToken: cancellationToken)
                     .ConfigureAwait(false))
             {

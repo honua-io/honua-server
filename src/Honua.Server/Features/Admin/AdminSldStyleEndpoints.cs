@@ -62,6 +62,10 @@ internal static class AdminSldStyleEndpoints
         [FromServices] ILogger<SldImportLogCategory> logger,
         CancellationToken cancellationToken)
     {
+        if (context.User.HasClaim("permission", "agent:workspace"))
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status403Forbidden,
+                "Workspace agent shared style changes require a canonical human-approved shared-style proposal.");
+
         if (layerId < 0)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(

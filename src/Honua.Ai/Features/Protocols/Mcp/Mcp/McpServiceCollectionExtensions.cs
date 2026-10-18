@@ -409,6 +409,8 @@ internal static class McpServiceCollectionExtensions
             // IMetadataV2StyleGraphSync / IOgcStyleProjection per request and
             // return a structured store-unavailable result if a host wired the
             // metadata graph without the style catalog).
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.SharedStyleGetTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.SharedStyleProposeTool>());
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.GetStyleTool>());
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.ApplyStylePresetTool>());
         }

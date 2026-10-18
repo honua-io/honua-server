@@ -283,6 +283,12 @@ public sealed record OperationProposal
     /// </summary>
     public string? ExecutionOperationId { get; init; }
 
+    /// <summary>Distinct authenticated human approver durably recorded before any execution side effect.</summary>
+    public string? ApprovedByAtClaim { get; init; }
+
+    /// <summary>Time of the successful approval claim CAS; retained for receipt recovery after a process crash.</summary>
+    public DateTimeOffset? ApprovedAtClaim { get; init; }
+
     /// <summary>
     /// Principal that resolved (approved or rejected) the proposal.
     /// </summary>

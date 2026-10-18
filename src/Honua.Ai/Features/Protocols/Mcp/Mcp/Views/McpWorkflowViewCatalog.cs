@@ -160,6 +160,8 @@ internal static class McpWorkflowViewCatalog
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_get_style"),
+                    McpWorkflowViewMemberRule.Exact("honua_shared_style_get"),
+                    McpWorkflowViewMemberRule.Exact("honua_shared_style_propose"),
                     McpWorkflowViewMemberRule.Exact("honua_apply_style_preset"),
                     McpWorkflowViewMemberRule.Exact("honua_render_map"),
                 ],
@@ -299,6 +301,8 @@ internal static class McpWorkflowViewCatalog
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_get_style"),
+                    McpWorkflowViewMemberRule.Exact("honua_shared_style_get"),
+                    McpWorkflowViewMemberRule.Exact("honua_shared_style_propose"),
                     McpWorkflowViewMemberRule.Exact("honua_apply_style_preset"),
                     McpWorkflowViewMemberRule.Exact("honua_render_map"),
                 ],

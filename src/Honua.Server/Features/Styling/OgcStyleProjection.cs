@@ -164,22 +164,21 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         var (resource, storageLayerId, _) = await ResolveStyledResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
         if (resource is null || !storageLayerId.HasValue)
         {
-            // Phase 2: the styleId may identify a standalone catalog style rather than a
-            // Phase 1 collection-keyed style. Serve it from the independent catalog.
-            return await GetCatalogStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
+            var bound = await ResolveMirroredLayerStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
+            if (bound is null) return await GetCatalogStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
+            (resource, storageLayerId) = (bound.Value.Resource, bound.Value.StorageLayerId);
         }
 
         var stored = await _styleCatalog.GetLayerStyleAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
         if (stored is not null && !string.IsNullOrWhiteSpace(stored.MapLibreStyleJson))
         {
-            return await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, stored.MapLibreStyleJson, encoding, cancellationToken)
+            return await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, stored.MapLibreStyleJson, encoding, stored.StyleVersion, cancellationToken)
                 .ConfigureAwait(false);
         }
 
-        var catalogStylesheet = await GetCatalogStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
-        return catalogStylesheet is null && includeLayerDefault && PublishesLayerDefault(resource)
+        return includeLayerDefault && PublishesLayerDefault(resource)
             ? ProjectLayerDefaultStylesheet(resource, storageLayerId.Value, encoding)
-            : catalogStylesheet;
+            : null;
     }
 
     /// <inheritdoc />
@@ -214,7 +213,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 .ConfigureAwait(false);
             return stored is null || string.IsNullOrWhiteSpace(stored.MapLibreStyleJson)
                 ? null
-                : await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, stored.MapLibreStyleJson, encoding, cancellationToken)
+                : await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, stored.MapLibreStyleJson, encoding, stored.StyleVersion, cancellationToken)
                     .ConfigureAwait(false);
         }
 
@@ -228,38 +227,27 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             : null;
     }
 
-    private async Task<OgcStylesheet?> ProjectLayerStylesheetAsync(
+    private static Task<OgcStylesheet?> ProjectLayerStylesheetAsync(
         MetadataV2Resource resource,
         int storageLayerId,
         string mapLibreJson,
         OgcStyleEncoding encoding,
+        int styleVersion,
         CancellationToken cancellationToken)
     {
         if (encoding == OgcStyleEncoding.MapboxStyle)
         {
-            return new OgcStylesheet(mapLibreJson, OgcStyleMediaTypes.MapboxStyle, OgcStyleEncoding.MapboxStyle);
+            return Task.FromResult<OgcStylesheet?>(new OgcStylesheet(mapLibreJson, OgcStyleMediaTypes.MapboxStyle, OgcStyleEncoding.MapboxStyle, styleVersion));
         }
 
         if (encoding == OgcStyleEncoding.EsriDrawingInfo)
         {
-            // Esri renderer is a server-side projection of the canonical MapLibre style (ADR-0002): the style
-            // service back-generates drawingInfo from the stored MapLibre. The console never converts.
-            var drawingInfo = await _styleService
-                .GetDrawingInfoAsync(resource, storageLayerId, cancellationToken)
-                .ConfigureAwait(false);
-            if (drawingInfo is not { ValueKind: not (JsonValueKind.Null or JsonValueKind.Undefined) })
-            {
-                return null;
-            }
-
-            return new OgcStylesheet(
-                drawingInfo.Value.GetRawText(),
-                OgcStyleMediaTypes.EsriDrawingInfo,
-                OgcStyleEncoding.EsriDrawingInfo);
+            var drawingInfo = MapLibreToGeoServicesConverter.Convert(mapLibreJson, StyleLayerDescriptor.FromResource(resource, storageLayerId));
+            return Task.FromResult<OgcStylesheet?>(new OgcStylesheet(drawingInfo, OgcStyleMediaTypes.EsriDrawingInfo, OgcStyleEncoding.EsriDrawingInfo, styleVersion));
         }
 
         var sld = DeriveSld(mapLibreJson, resource, storageLayerId, encoding);
-        return sld;
+        return Task.FromResult<OgcStylesheet?>(sld with { StyleVersion = styleVersion });
     }
 
     /// <summary>
@@ -281,7 +269,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     {
         var layer = StyleLayerDescriptor.FromResource(resource, storageLayerId);
         var mapLibreJson = StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
-        return encoding switch
+        return (encoding switch
         {
             OgcStyleEncoding.MapboxStyle => new OgcStylesheet(
                 mapLibreJson,
@@ -292,7 +280,8 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 OgcStyleMediaTypes.EsriDrawingInfo,
                 OgcStyleEncoding.EsriDrawingInfo),
             _ => DeriveSld(mapLibreJson, resource, storageLayerId, encoding),
-        };
+        }) with
+        { StyleVersion = 0 };
     }
 
     private async Task<OgcStylesheet?> GetCatalogStylesheetAsync(
@@ -313,7 +302,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
         if (encoding == OgcStyleEncoding.MapboxStyle)
         {
-            return new OgcStylesheet(style.MapLibreStyleJson, OgcStyleMediaTypes.MapboxStyle, OgcStyleEncoding.MapboxStyle);
+            return new OgcStylesheet(style.MapLibreStyleJson, OgcStyleMediaTypes.MapboxStyle, OgcStyleEncoding.MapboxStyle, style.StyleVersion);
         }
 
         if (encoding == OgcStyleEncoding.EsriDrawingInfo)
@@ -327,10 +316,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStylesheet(
                 drawingInfoJson,
                 OgcStyleMediaTypes.EsriDrawingInfo,
-                OgcStyleEncoding.EsriDrawingInfo);
+                OgcStyleEncoding.EsriDrawingInfo, style.StyleVersion);
         }
 
-        return DeriveSldFromMapLibre(style.MapLibreStyleJson, style.StyleId, encoding);
+        return DeriveSldFromMapLibre(style.MapLibreStyleJson, style.StyleId, encoding) with { StyleVersion = style.StyleVersion };
     }
 
     /// <inheritdoc />
@@ -403,11 +392,20 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     }
 
     /// <inheritdoc />
-    public async Task<OgcStyleUpdateResult> UpdateStyleAsync(
-        string styleId,
-        string mapLibreStyleJson,
-        bool strict,
-        CancellationToken cancellationToken = default)
+    public Task<OgcStyleUpdateResult> UpdateStyleAsync(
+        string styleId, string mapLibreStyleJson, bool strict, CancellationToken cancellationToken = default)
+        => UpdateStyleCoreAsync(styleId, mapLibreStyleJson, strict, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<OgcStyleUpdateResult> UpdateStyleIfVersionAsync(
+        string styleId, string mapLibreStyleJson, int expectedVersion, bool strict, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedVersion);
+        return UpdateStyleCoreAsync(styleId, mapLibreStyleJson, strict, expectedVersion, cancellationToken);
+    }
+
+    private async Task<OgcStyleUpdateResult> UpdateStyleCoreAsync(
+        string styleId, string mapLibreStyleJson, bool strict, int? expectedVersion, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
         ArgumentNullException.ThrowIfNull(mapLibreStyleJson);
@@ -420,7 +418,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             var bound = await ResolveMirroredLayerStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
             if (bound is null)
             {
-                return await UpdateCatalogStyleAsync(styleId, mapLibreStyleJson, strict, cancellationToken).ConfigureAwait(false);
+                return await UpdateCatalogStyleAsync(styleId, mapLibreStyleJson, strict, expectedVersion, cancellationToken).ConfigureAwait(false);
             }
 
             (resource, storageLayerId) = (bound.Value.Resource, bound.Value.StorageLayerId);
@@ -437,24 +435,34 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, $"MapLibre style is not valid JSON: {ex.Message}");
         }
 
-        var result = await _styleService
-            .UpdateStyleAsync(resource, storageLayerId.Value, parsed, drawingInfo: null, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        var result = expectedVersion is { } expected
+            ? await _styleService.UpdateStyleIfVersionAsync(resource, storageLayerId.Value, parsed, null, expected, cancellationToken: cancellationToken).ConfigureAwait(false)
+            : await _styleService.UpdateStyleAsync(resource, storageLayerId.Value, parsed, drawingInfo: null, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return result.Status switch
         {
-            LayerStyleUpdateStatus.Updated => new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null),
+            LayerStyleUpdateStatus.Updated => new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, StyleVersion: result.Style?.StyleVersion),
+            LayerStyleUpdateStatus.PreconditionFailed => new OgcStyleUpdateResult(OgcStyleUpdateStatus.PreconditionFailed, "The style changed; reload before saving."),
             LayerStyleUpdateStatus.NotFound => new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found."),
             _ => new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, result.ErrorMessage ?? "MapLibre style is invalid.")
         };
     }
 
     /// <inheritdoc />
-    public async Task<OgcStyleUpdateResult> UpdateStyleFromDrawingInfoAsync(
-        string styleId,
-        string drawingInfoJson,
-        bool strict,
-        CancellationToken cancellationToken = default)
+    public Task<OgcStyleUpdateResult> UpdateStyleFromDrawingInfoAsync(
+        string styleId, string drawingInfoJson, bool strict, CancellationToken cancellationToken = default)
+        => UpdateStyleFromDrawingInfoCoreAsync(styleId, drawingInfoJson, strict, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<OgcStyleUpdateResult> UpdateStyleFromDrawingInfoIfVersionAsync(
+        string styleId, string drawingInfoJson, int expectedVersion, bool strict, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedVersion);
+        return UpdateStyleFromDrawingInfoCoreAsync(styleId, drawingInfoJson, strict, expectedVersion, cancellationToken);
+    }
+
+    private async Task<OgcStyleUpdateResult> UpdateStyleFromDrawingInfoCoreAsync(
+        string styleId, string drawingInfoJson, bool strict, int? expectedVersion, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
         ArgumentNullException.ThrowIfNull(drawingInfoJson);
@@ -485,7 +493,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             var bound = await ResolveMirroredLayerStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
             if (bound is null)
             {
-                return await UpdateCatalogStyleFromDrawingInfoAsync(styleId, drawingInfo, strict, cancellationToken).ConfigureAwait(false);
+                return await UpdateCatalogStyleFromDrawingInfoAsync(styleId, drawingInfo, strict, expectedVersion, cancellationToken).ConfigureAwait(false);
             }
 
             (resource, storageLayerId) = (bound.Value.Resource, bound.Value.StorageLayerId);
@@ -523,13 +531,14 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, $"Converted MapLibre style is not valid JSON: {ex.Message}", warnings);
         }
 
-        var result = await _styleService
-            .UpdateStyleAsync(resource, storageLayerId.Value, mapLibre, drawingInfo: null, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        var result = expectedVersion is { } expected
+            ? await _styleService.UpdateStyleIfVersionAsync(resource, storageLayerId.Value, mapLibre, null, expected, cancellationToken: cancellationToken).ConfigureAwait(false)
+            : await _styleService.UpdateStyleAsync(resource, storageLayerId.Value, mapLibre, drawingInfo: null, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return result.Status switch
         {
-            LayerStyleUpdateStatus.Updated => new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, warnings),
+            LayerStyleUpdateStatus.Updated => new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, warnings, result.Style?.StyleVersion),
+            LayerStyleUpdateStatus.PreconditionFailed => new OgcStyleUpdateResult(OgcStyleUpdateStatus.PreconditionFailed, "The style changed; reload before saving."),
             LayerStyleUpdateStatus.NotFound => new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found."),
             _ => new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, result.ErrorMessage ?? "drawingInfo is invalid.", warnings)
         };
@@ -587,6 +596,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         string styleId,
         string mapLibreStyleJson,
         bool strict,
+        int? expectedVersion,
         CancellationToken cancellationToken)
     {
         if (_independentStyleCatalog is null)
@@ -605,10 +615,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, error);
         }
 
-        var updated = await PersistCatalogStyleAsync(existing, mapLibreStyleJson, cancellationToken).ConfigureAwait(false);
-        return updated
-            ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null)
-            : new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+        var updated = await PersistCatalogStyleAsync(existing, mapLibreStyleJson, expectedVersion, cancellationToken).ConfigureAwait(false);
+        return updated is not null
+            ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, StyleVersion: updated.StyleVersion)
+            : new OgcStyleUpdateResult(expectedVersion.HasValue ? OgcStyleUpdateStatus.PreconditionFailed : OgcStyleUpdateStatus.NotFound, "The style is missing or changed; reload before saving.");
     }
 
     // Phase 2 write path: update a standalone catalog style from an Esri drawingInfo
@@ -619,6 +629,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         string styleId,
         JsonElement drawingInfo,
         bool strict,
+        int? expectedVersion,
         CancellationToken cancellationToken)
     {
         if (_independentStyleCatalog is null)
@@ -700,13 +711,13 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 warnings);
         }
 
-        var updated = await PersistCatalogStyleAsync(existing, conversion.MapLibreStyleJson, cancellationToken).ConfigureAwait(false);
-        return updated
-            ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, warnings)
-            : new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
+        var updated = await PersistCatalogStyleAsync(existing, conversion.MapLibreStyleJson, expectedVersion, cancellationToken).ConfigureAwait(false);
+        return updated is not null
+            ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, warnings, updated.StyleVersion)
+            : new OgcStyleUpdateResult(expectedVersion.HasValue ? OgcStyleUpdateStatus.PreconditionFailed : OgcStyleUpdateStatus.NotFound, "The style is missing or changed; reload before saving.");
     }
 
-    private static bool UsesSameGeometryFamily(
+    internal static bool UsesSameGeometryFamily(
         MetadataV2GeometryType resourceGeometryType,
         MetadataV2GeometryType rendererGeometryType)
         => resourceGeometryType switch
@@ -725,27 +736,22 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     // drawingInfo column is rewritten in the same statement from the document being
     // stored, so it can never outlive the canonical style it mirrors. Reads still derive
     // the Esri encoding from the canonical style rather than trusting that cache.
-    private async Task<bool> PersistCatalogStyleAsync(
+    private async Task<StyleCatalogRecord?> PersistCatalogStyleAsync(
         StyleCatalogRecord existing,
         string mapLibreStyleJson,
+        int? expectedVersion,
         CancellationToken cancellationToken)
     {
         var descriptor = StandaloneStyleDescriptor.FromMapLibre(existing.StyleId, mapLibreStyleJson);
         var drawingInfoJson = MapLibreToGeoServicesConverter.Convert(mapLibreStyleJson, descriptor);
-        var updated = await _independentStyleCatalog!
-            .UpdateStyleAsync(
-                existing.StyleId,
-                mapLibreStyleJson,
-                existing.Title,
-                existing.Description,
-                drawingInfoJson,
-                revisedBy: null,
-                changeSummary: null,
-                cancellationToken)
-            .ConfigureAwait(false);
+        var updated = expectedVersion is { } expected
+            ? await _independentStyleCatalog!.UpdateStyleIfVersionAsync(existing.StyleId, mapLibreStyleJson, expected,
+                existing.Title, existing.Description, drawingInfoJson, cancellationToken: cancellationToken).ConfigureAwait(false)
+            : await _independentStyleCatalog!.UpdateStyleAsync(existing.StyleId, mapLibreStyleJson,
+                existing.Title, existing.Description, drawingInfoJson, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (updated is null)
         {
-            return false;
+            return null;
         }
 
         if (_styleGraphSync is not null)
@@ -796,10 +802,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             }
         }
 
-        return true;
+        return updated;
     }
 
-    private static bool TryValidateDrawingInfoShape(JsonElement drawingInfo, out string error)
+    internal static bool TryValidateDrawingInfoShape(JsonElement drawingInfo, out string error)
     {
         if (drawingInfo.ValueKind != JsonValueKind.Object)
         {

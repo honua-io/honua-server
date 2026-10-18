@@ -30,6 +30,10 @@ public interface IOperationInvoker
         OperationRequest request,
         OperationPolicyContext context,
         CancellationToken cancellationToken = default);
+    /// <summary>Adopts a previously committed, freshly authorized receipt without calling an actuator. Unsupported operations return null.</summary>
+    Task<OperationHandle?> ReconcileCommittedReceiptAsync(OperationRequest request, OperationPolicyContext context,
+        CancellationToken cancellationToken = default) => Task.FromResult<OperationHandle?>(null);
+
 }
 
 /// <summary>

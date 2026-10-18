@@ -35,6 +35,13 @@ internal sealed class CachingLayerStyleCatalog : ILayerStyleCatalog
         _schemaContext = schemaContext;
     }
 
+    public async Task InvalidateStyleCacheAsync(int layerId, CancellationToken cancellationToken = default)
+    {
+        await _innerCatalog.InvalidateStyleCacheAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(GetStyleKey(layerId), cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(GetStyleExistsKey(layerId), cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<LayerStyleDefinition?> GetLayerStyleAsync(
         int layerId,
         CancellationToken cancellationToken = default)
@@ -79,6 +86,28 @@ internal sealed class CachingLayerStyleCatalog : ILayerStyleCatalog
         }
 
         return style;
+    }
+
+    public async Task<LayerStyleDefinition?> SetMapLibreStyleIfVersionAsync(
+        int layerId, string mapLibreStyleJson, int expectedVersion,
+        string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
+    {
+        var updated = await _innerCatalog.SetMapLibreStyleIfVersionAsync(layerId, mapLibreStyleJson, expectedVersion,
+            revisedBy, changeSummary, cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(GetStyleKey(layerId), CancellationToken.None).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(GetStyleExistsKey(layerId), CancellationToken.None).ConfigureAwait(false);
+        return updated;
+    }
+
+    public async Task<LayerStyleDefinition?> SetStyleIfVersionAsync(
+        int layerId, string mapLibreStyleJson, string drawingInfoJson, int expectedVersion,
+        string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
+    {
+        var updated = await _innerCatalog.SetStyleIfVersionAsync(layerId, mapLibreStyleJson, drawingInfoJson, expectedVersion,
+            revisedBy, changeSummary, cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(GetStyleKey(layerId), CancellationToken.None).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(GetStyleExistsKey(layerId), CancellationToken.None).ConfigureAwait(false);
+        return updated;
     }
 
     public async Task<LayerStyleDefinition?> SetMapLibreStyleAsync(

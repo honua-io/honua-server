@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.Styling.Abstractions;
 using System.Text.Json.Serialization;
 using Honua.Protocols.Ogc.Api.Styles.Models;
 using Honua.Protocols.Ogc.Common;
@@ -14,6 +15,7 @@ namespace Honua.Protocols.Ogc.Api.Styles;
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(LandingPage))]
+[JsonSerializable(typeof(StyleEditImpact))]
 [JsonSerializable(typeof(ConformanceDeclaration))]
 [JsonSerializable(typeof(Link))]
 [JsonSerializable(typeof(ImmutableArray<Link>))]

@@ -16,6 +16,40 @@ namespace Honua.Core.Features.Styling.Abstractions;
 /// </summary>
 public interface IStyleCatalog
 {
+    /// <summary>Reads canonical style, optional mirror layer, and associations from one consistent store snapshot.</summary>
+    Task<StyleEditStoreSnapshot> GetEditSnapshotAsync(string styleId, int? canonicalLayerId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Coherent style editing snapshots are unavailable.");
+
+    /// <summary>Reads style bytes and all actual live-reference aliases and indexed Studio consumers coherently.</summary>
+    Task<StyleEditStoreSnapshot> GetEditSnapshotForReferencesAsync(string styleId, int? canonicalLayerId,
+        IReadOnlyList<string> referenceIds, CancellationToken cancellationToken = default)
+        => GetEditSnapshotAsync(styleId, canonicalLayerId, cancellationToken);
+
+    /// <summary>Locks and compares the complete reviewed snapshot, reauthorizes after waiting, and atomically updates canonical bytes and any layer mirror.</summary>
+    Task<StyleEditStoreSnapshot?> ApplyEditIfSnapshotAsync(StyleEditStoreSnapshot expected, string mapLibreStyleJson,
+        string drawingInfoJson, string? revisedBy, Func<CancellationToken, Task> revalidate,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Atomic shared style editing is unavailable.");
+
+    /// <summary>Looks up an exact immutable execution receipt; conflicting operation identity is rejected.</summary>
+    Task<StyleMutationReceipt?> GetMutationReceiptAsync(StyleMutationIdentity identity, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Style mutation receipts are unavailable.");
+
+    /// <summary>Commits bytes and receipt in one transaction, or reauthorizes and returns the identical prior receipt without writing.</summary>
+    Task<StyleMutationOutcome?> ApplyEditOnceAsync(StyleEditStoreSnapshot expected, string mapLibreStyleJson,
+        string drawingInfoJson, string? revisedBy, StyleMutationIdentity identity,
+        Func<CancellationToken, Task> revalidateMutation, Func<CancellationToken, Task> revalidateReceipt,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Atomic style mutation receipts are unavailable.");
+
+    /// <summary>Updates only when the current canonical version equals the expected version; null means no matching row.</summary>
+    Task<StyleCatalogRecord?> UpdateStyleIfVersionAsync(
+        string styleId, string mapLibreStyleJson, int expectedVersion,
+        string? title = null, string? description = null, string? drawingInfoJson = null,
+        string? revisedBy = null, string? changeSummary = null,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Conditional style updates are unavailable.");
+
     /// <summary>
     /// Gets a single catalog style by its stable identifier.
     /// </summary>

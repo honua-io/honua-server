@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Styling;
 using Honua.TestKit;
@@ -33,6 +34,35 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    public async Task MutationReceipt_ResultHashUsesAuthoritativeJsonbNumbers()
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var id = "receipt-numeric-" + Guid.NewGuid().ToString("N");
+        var initial = BuildDefaultStyleJson();
+        await catalog.CreateStyleAsync(id, initial);
+        var snapshot = await catalog.GetEditSnapshotAsync(id, null);
+        const string candidate = """{"version":8,"sources":{},"layers":[],"metadata":{"number":1e2}}""";
+        static string Hash(string json)
+        {
+            using var document = JsonDocument.Parse(json);
+            var canonical = Honua.Core.Features.Collaboration.Operations.SavedMapOperationIdempotency.CanonicalPayload(document.RootElement);
+            return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical)));
+        }
+        var identity = new Honua.Core.Features.Styling.Domain.StyleMutationIdentity(
+            Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), new string('a', 64),
+            "agent:numeric-test", "public", "honua", "target", id, snapshot.CatalogStyle!.StyleVersion,
+            Hash(snapshot.CatalogStyle.MapLibreStyleJson), new string('b', 64), Hash(candidate), Hash(snapshot.CatalogStyle.MapLibreStyleJson));
+        var result = await catalog.ApplyEditOnceAsync(snapshot, candidate, "{}", identity.ActorId, identity,
+            _ => Task.CompletedTask, _ => Task.CompletedTask);
+        var stored = (await catalog.GetStyleAsync(id))!;
+        result!.Receipt.ResultContentHash.Should().Be(Hash(stored.MapLibreStyleJson));
+        result.Receipt.ResultContentHash.Should().NotBe(identity.CandidateHash, "JSONB normalizes exponent spelling");
+        (await catalog.GetMutationReceiptAsync(identity)).Should().Be(result.Receipt);
+    }
 
     [IntegrationTest]
     [Operation(Operations.Update)]
@@ -117,6 +147,176 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
         updated.Should().NotBeNull();
         updated!.Title.Should().Be("Updated");
         updated.StyleVersion.Should().Be(created!.StyleVersion + 1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task ConditionalSnapshot_TwoIndependentScopes_SerializeAndRejectStaleRevision()
+    {
+        await using var firstScope = _fixture.Services.CreateAsyncScope();
+        await using var secondScope = _fixture.Services.CreateAsyncScope();
+        var first = firstScope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var second = secondScope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        first.Should().NotBeSameAs(second);
+        var id = "snapshot-race-" + Guid.NewGuid().ToString("N");
+        await first.CreateStyleAsync(id, BuildDefaultStyleJson());
+        var snapshot = await first.GetEditSnapshotAsync(id, null);
+        var locked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var revalidated = 0;
+        var winner = first.ApplyEditIfSnapshotAsync(snapshot, BuildDefaultStyleJson(), "{}", "first", async token =>
+        {
+            locked.SetResult();
+            await release.Task.WaitAsync(token);
+        });
+        await locked.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Task<Honua.Core.Features.Styling.Domain.StyleEditStoreSnapshot?> loser;
+        try
+        {
+            loser = second.ApplyEditIfSnapshotAsync(snapshot, BuildDefaultStyleJson(), "{}", "second", _ =>
+            { Interlocked.Increment(ref revalidated); return Task.CompletedTask; });
+            using var bounded = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+            // A separate legacy writer must also wait on the same canonical row lock.
+            var legacy = () => second.UpdateStyleAsync(id, BuildDefaultStyleJson(), cancellationToken: bounded.Token);
+            await legacy.Should().ThrowAsync<OperationCanceledException>();
+            loser.IsCompleted.Should().BeFalse();
+        }
+        finally { release.TrySetResult(); }
+        (await winner)!.CatalogStyle!.StyleVersion.Should().Be(snapshot.CatalogStyle!.StyleVersion + 1);
+        (await loser).Should().BeNull();
+        revalidated.Should().Be(0, "stale contenders cannot execute a revalidation or mutation callback");
+        (await first.GetStyleAsync(id))!.StyleVersion.Should().Be(snapshot.CatalogStyle.StyleVersion + 1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task ConditionalSnapshot_RevalidationFailureRollsBackBothLayerAndCatalog()
+    {
+        using var client = _fixture.CreateAdminClient();
+        await SeedTestLayerStyleAsync(client);
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var id = $"style-layer-{WebAppFixture.TestLayerId}";
+        var before = await catalog.GetEditSnapshotAsync(id, WebAppFixture.TestLayerId);
+        var mutate = () => catalog.ApplyEditIfSnapshotAsync(before, BuildDefaultStyleJson(), "{}", "revoked-agent",
+            _ => throw new InvalidOperationException("authority revoked after lock wait"));
+        await mutate.Should().ThrowAsync<InvalidOperationException>();
+        var after = await catalog.GetEditSnapshotAsync(id, WebAppFixture.TestLayerId);
+        after.CatalogStyle.Should().BeEquivalentTo(before.CatalogStyle);
+        after.LayerStyle.Should().BeEquivalentTo(before.LayerStyle);
+        after.Associations.Should().BeEquivalentTo(before.Associations);
+        // Either independently versioned mirror changing invalidates the coupled snapshot.
+        await catalog.UpdateStyleAsync(id, BuildDefaultStyleJson());
+        (await catalog.ApplyEditIfSnapshotAsync(before, BuildDefaultStyleJson(), "{}", "stale", _ => Task.CompletedTask)).Should().BeNull();
+        var layer = await catalog.GetEditSnapshotAsync(id, WebAppFixture.TestLayerId);
+        layer.LayerStyle.Should().BeEquivalentTo(before.LayerStyle);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task MutationReceipt_CommittedResponseFailure_ReconcilesAcrossScopesWithoutAnotherWrite()
+    {
+        await using var firstScope = _fixture.Services.CreateAsyncScope();
+        await using var secondScope = _fixture.Services.CreateAsyncScope();
+        var first = firstScope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var second = secondScope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var id = "receipt-" + Guid.NewGuid().ToString("N");
+        var style = BuildDefaultStyleJson();
+        await first.CreateStyleAsync(id, style);
+        var snapshot = await first.GetEditSnapshotAsync(id, null);
+        using var parsed = JsonDocument.Parse(style);
+        var canonical = Honua.Core.Features.Collaboration.Operations.SavedMapOperationIdempotency.CanonicalPayload(parsed.RootElement);
+        var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical)));
+        var identity = new Honua.Core.Features.Styling.Domain.StyleMutationIdentity(
+            Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), new string('a', 64),
+            "agent:receipt-test", "public", "honua", "target", id, snapshot.CatalogStyle!.StyleVersion,
+            hash, new string('b', 64), hash, hash);
+        foreach (var malformed in new[]
+        {
+            identity with { ExpectedVersion = identity.ExpectedVersion + 1 },
+            identity with { ActorId = "misattributed" },
+            identity with { SchemaName = "another_schema" },
+            identity with { ExpectedStoredContentHash = new string('c', 64) },
+        })
+        {
+            var attempt = () => first.ApplyEditOnceAsync(snapshot, style, "{}", identity.ActorId, malformed,
+                _ => throw new InvalidOperationException("identity must fail before callback"), _ => Task.CompletedTask);
+            await attempt.Should().ThrowAsync<ArgumentException>();
+            (await first.GetMutationReceiptAsync(malformed)).Should().BeNull();
+            (await first.GetStyleAsync(id))!.StyleVersion.Should().Be(snapshot.CatalogStyle.StyleVersion);
+        }
+        var mutationCalls = 0;
+        async Task LoseResponseAfterActualCommit()
+        {
+            var result = await first.ApplyEditOnceAsync(snapshot, style, "{}", identity.ActorId, identity,
+                _ => { mutationCalls++; return Task.CompletedTask; }, _ => Task.CompletedTask);
+            result.Should().NotBeNull();
+            throw new IOException("lost response after SQL commit");
+        }
+        await ((Func<Task>)LoseResponseAfterActualCommit).Should().ThrowAsync<IOException>();
+        var stored = await second.GetMutationReceiptAsync(identity);
+        stored.Should().NotBeNull();
+        var authorityChecks = 0;
+        var retries = Enumerable.Range(0, 2).Select(_ => second.ApplyEditOnceAsync(snapshot, style, "{}", identity.ActorId, identity,
+            _ => throw new InvalidOperationException("a retry cannot mutate"),
+            _ => { Interlocked.Increment(ref authorityChecks); return Task.CompletedTask; }));
+        var outcomes = await Task.WhenAll(retries);
+        outcomes.Should().OnlyContain(outcome => outcome != null && outcome.UpdatedSnapshot == null && outcome.Receipt == stored);
+        mutationCalls.Should().Be(1);
+        authorityChecks.Should().Be(2);
+        (await second.GetStyleAsync(id))!.StyleVersion.Should().Be(snapshot.CatalogStyle.StyleVersion + 1);
+        var revoked = () => second.ApplyEditOnceAsync(snapshot, style, "{}", identity.ActorId, identity,
+            _ => Task.CompletedTask, _ => throw new UnauthorizedAccessException());
+        await revoked.Should().ThrowAsync<UnauthorizedAccessException>();
+        var conflict = () => second.GetMutationReceiptAsync(identity with { ActorId = "different-actor" });
+        await conflict.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("GET /ogc/styles/{styleId}/impact")]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    public async Task MutationReceipt_FirstEditFromDefaultLayer_BindsAbsentStoredBytesAndReplays()
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var provider = scope.ServiceProvider.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>();
+        await using (var connection = await provider.OpenNpgsqlConnectionAsync())
+        {
+            await using var command = new Npgsql.NpgsqlCommand("UPDATE honua.layers SET maplibre_style = NULL, style_version = 0 WHERE layer_id = @id", connection);
+            command.Parameters.AddWithValue("id", WebAppFixture.TestLayerId);
+            (await command.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var id = $"style-layer-{WebAppFixture.TestLayerId}";
+        var expected = await catalog.GetEditSnapshotAsync(id, WebAppFixture.TestLayerId);
+        expected.LayerStyle!.MapLibreStyleJson.Should().BeNull();
+        using var human = _fixture.CreateAdminClient();
+        using var response = await human.GetAsync($"/ogc/styles/{id}/impact");
+        response.EnsureSuccessStatusCode();
+        using var impact = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var style = BuildDefaultStyleJson();
+        static string Hash(string json)
+        {
+            using var parsed = JsonDocument.Parse(json);
+            return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+                Honua.Core.Features.Collaboration.Operations.SavedMapOperationIdempotency.CanonicalPayload(parsed.RootElement))));
+        }
+        var identity = new Honua.Core.Features.Styling.Domain.StyleMutationIdentity(Guid.NewGuid().ToString("N"),
+            Guid.NewGuid().ToString("N"), new string('a', 64), "agent:first-edit", "public", "honua", "target", id,
+            expected.LayerStyle.StyleVersion, impact.RootElement.GetProperty("contentHash").GetString()!,
+            impact.RootElement.GetProperty("impactHash").GetString()!, Hash(style), Hash("null"));
+        var applied = await catalog.ApplyEditOnceAsync(expected, style, "{}", identity.ActorId, identity,
+            _ => Task.CompletedTask, _ => Task.CompletedTask);
+        applied.Should().NotBeNull();
+        applied!.Receipt.ResultVersion.Should().Be(1);
+        var replay = await catalog.ApplyEditOnceAsync(expected, style, "{}", identity.ActorId, identity,
+            _ => throw new InvalidOperationException("cannot rewrite first edit"), _ => Task.CompletedTask);
+        replay!.UpdatedSnapshot.Should().BeNull();
+        replay.Receipt.Should().Be(applied.Receipt);
+        (await catalog.GetEditSnapshotAsync(id, WebAppFixture.TestLayerId)).LayerStyle!.StyleVersion.Should().Be(1);
     }
 
     private static async Task SeedTestLayerStyleAsync(HttpClient adminClient)

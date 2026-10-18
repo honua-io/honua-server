@@ -1,0 +1,17 @@
+# Assemble this image from reviewed toolchain artifacts BEFORE selecting any editable project.
+# The build needs no network. The selected base must already contain Python 3.11+.
+ARG PYTHON_IMAGE=python@sha256:8fb4cfa1a2616d7b8e0c2175cc6ad68f5729c34ea8488c0b360d2934b7be9024
+FROM ${PYTHON_IMAGE}
+# Supply only the .NET executable + host/packs/sdk/shared/templates from a reviewed SDK installation.
+COPY dotnet/ /opt/dotnet/
+# Supply a normal dotnet-published Honua.Geoprocessing.Cli payload, including its bundled harnesses.
+COPY devkit/ /opt/honua-devkit/
+# Offline dependency artifacts are trusted build inputs; no project source runs while acquiring them.
+COPY nuget/ /opt/nuget/
+COPY wheelhouse/ /opt/wheelhouse/
+ENV PATH="/opt/dotnet:/opt/honua-devkit:${PATH}" \
+    DOTNET_ROOT=/opt/dotnet NUGET_PACKAGES=/opt/nuget DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+RUN printf '#!/bin/sh\nexec /opt/dotnet/dotnet /opt/honua-devkit/honua-gp.dll "$@"\n' > /opt/honua-devkit/honua-gp-devkit \
+    && chmod 755 /opt/honua-devkit/honua-gp-devkit
+ENTRYPOINT ["honua-gp-devkit"]

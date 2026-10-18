@@ -131,6 +131,8 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // human-facing HTTP adapters only.
             ("honua_render_map", "render_map", "results"),
             ("honua_get_style", "get_style", "results"),
+            ("honua_shared_style_get", "shared_style_get", "results"),
+            ("honua_shared_style_propose", "shared_style_propose", "execution"),
             ("honua_apply_style_preset", "apply_style_preset", "execution"),
             ("honua_resolve_entity", "resolve_entity", "results"),
             ("honua_list_capabilities", "list_capabilities", "results"),

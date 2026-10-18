@@ -13,7 +13,7 @@ namespace Honua.Server.Features.Operations;
 /// The scoped DI container owns the selected actuator and its disposal.
 /// </summary>
 internal sealed class DeferredOperationExecutor(string operationId, Func<IOperationExecutor> resolve)
-    : IOperationExecutor, IOperationRequestPreparer, IOperationDryRunExecutor
+    : IOperationExecutor, IOperationRequestPreparer, IOperationDryRunExecutor, IOperationCommittedReceiptReader
 {
     private readonly Lazy<IOperationExecutor> _executor = new(() =>
     {
@@ -47,6 +47,12 @@ internal sealed class DeferredOperationExecutor(string operationId, Func<IOperat
     public Task<OperationHandle> SubmitAsync(
         OperationRequest request, OperationPolicyContext context, CancellationToken cancellationToken = default)
         => _executor.Value.SubmitAsync(request, context, cancellationToken);
+
+    public Task<OperationHandle?> ReadCommittedReceiptAsync(OperationRequest request, OperationPolicyContext context,
+        CancellationToken cancellationToken = default)
+        => _executor.Value is IOperationCommittedReceiptReader reader
+            ? reader.ReadCommittedReceiptAsync(request, context, cancellationToken)
+            : Task.FromResult<OperationHandle?>(null);
 
     public Task<OperationStatus> GetStatusAsync(
         OperationHandle handle, CancellationToken cancellationToken = default)

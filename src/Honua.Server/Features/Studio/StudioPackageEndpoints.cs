@@ -854,6 +854,15 @@ internal static class StudioPackageEndpoints
             .ToArray(),
     };
 
+    // Publication and rollback move content pointers. Draft composition uses the ordinary
+    // context above and remains subject to its existing realtime editing policy.
+    private static StudioDraftMutationContext BuildGovernanceMutationContext(HttpContext context, string? actorId)
+        => BuildMutationContext(context, actorId) with
+        {
+            RequiredApprovalPolicyRef = context.User.HasClaim("permission", "agent:workspace")
+                ? "agent-workspace.human-approval" : null,
+        };
+
     private static void SetOperationHeaders(HttpContext context, OperationHandle operation)
     {
         context.Response.Headers["X-Honua-Operation-Instance-Id"] = operation.OperationInstanceId;
@@ -1690,7 +1699,7 @@ internal static class StudioPackageEndpoints
                 request.Intent,
                 request.WarningAcknowledgement,
                 actor,
-                BuildMutationContext(context, actor),
+                BuildGovernanceMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
             SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
@@ -1918,7 +1927,7 @@ internal static class StudioPackageEndpoints
                 request.Target,
                 actor,
                 request.Reason,
-                BuildMutationContext(context, actor),
+                BuildGovernanceMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
             SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)

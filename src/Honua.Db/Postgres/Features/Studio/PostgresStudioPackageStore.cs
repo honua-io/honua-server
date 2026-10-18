@@ -16,7 +16,7 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Studio;
 
-internal sealed class PostgresStudioPackageStore : IStudioPackageStore
+internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
 {
     private const int MinListLimit = 1;
     private const int DefaultListLimit = 25;
@@ -24,6 +24,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _itemsTable;
+    private readonly string _styleImpactBarrierKey;
     private readonly string _draftsTable;
     private readonly string _versionsTable;
     private readonly string _checkpointVersionsTable;
@@ -35,6 +36,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         _connectionProvider = connectionProvider;
+        _styleImpactBarrierKey = StudioStyleDependencyBarrier.Key(schemaName);
         _itemsTable = SchemaSearchPath.QualifyTable("studio_content_items", schemaName);
         _draftsTable = SchemaSearchPath.QualifyTable("studio_package_drafts", schemaName);
         _versionsTable = SchemaSearchPath.QualifyTable("studio_content_versions", schemaName);
@@ -59,6 +61,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        await StudioStyleDependencyBarrier.AcquireAsync(connection, transaction, _styleImpactBarrierKey, false, cancellationToken).ConfigureAwait(false);
         try
         {
             await UpsertItemAsync(
@@ -174,6 +177,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await lease.Connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        await StudioStyleDependencyBarrier.AcquireAsync(lease.Connection, transaction, _styleImpactBarrierKey, false, cancellationToken).ConfigureAwait(false);
         var committed = false;
         try
         {
@@ -263,6 +267,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        await StudioStyleDependencyBarrier.AcquireAsync(connection, transaction, _styleImpactBarrierKey, false, cancellationToken).ConfigureAwait(false);
         try
         {
             var deleteDraftSql = $"DELETE FROM {_draftsTable} WHERE draft_id = @draft_id RETURNING item_id";
@@ -357,6 +362,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        await StudioStyleDependencyBarrier.AcquireAsync(connection, transaction, _styleImpactBarrierKey, false, cancellationToken).ConfigureAwait(false);
         var committed = false;
         try
         {
@@ -895,6 +901,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        await StudioStyleDependencyBarrier.AcquireAsync(connection, transaction, _styleImpactBarrierKey, false, cancellationToken).ConfigureAwait(false);
         try
         {
             if (!await VersionExistsAsync(connection, transaction, request.ItemId, request.VersionId, cancellationToken).ConfigureAwait(false))
@@ -1108,6 +1115,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        await StudioStyleDependencyBarrier.AcquireAsync(connection, transaction, _styleImpactBarrierKey, false, cancellationToken).ConfigureAwait(false);
         try
         {
             if (!await VersionExistsAsync(connection, transaction, itemId, targetVersionId, cancellationToken).ConfigureAwait(false))
@@ -1419,6 +1427,9 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             """;
         foreach (var dependency in dependencies)
         {
+            // Reserved kinds are derived transactionally from canonical envelope bytes.
+            if (dependency.Kind is "server-style-coverage" or "server-live-style" or "server-map-key"
+                or "server-item-reference" or "server-version-reference") continue;
             await using var command = new NpgsqlCommand(sql, connection, transaction);
             command.Parameters.AddWithValue("@version_id", versionId);
             command.Parameters.AddWithValue("@item_id", itemId);

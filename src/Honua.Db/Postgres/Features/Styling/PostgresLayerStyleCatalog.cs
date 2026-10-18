@@ -57,12 +57,26 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
     }
 
     /// <inheritdoc />
-    public async Task<LayerStyleDefinition?> SetMapLibreStyleAsync(
-        int layerId,
-        string mapLibreStyleJson,
-        string? revisedBy = null,
-        string? changeSummary = null,
-        CancellationToken cancellationToken = default)
+    public Task<LayerStyleDefinition?> SetMapLibreStyleAsync(
+        int layerId, string mapLibreStyleJson,
+
+        string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
+        => SetMapLibreStyleCoreAsync(layerId, mapLibreStyleJson, null, revisedBy, changeSummary, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<LayerStyleDefinition?> SetMapLibreStyleIfVersionAsync(
+        int layerId, string mapLibreStyleJson, int expectedVersion,
+
+        string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedVersion);
+        return SetMapLibreStyleCoreAsync(layerId, mapLibreStyleJson, expectedVersion, revisedBy, changeSummary, cancellationToken);
+    }
+
+    private async Task<LayerStyleDefinition?> SetMapLibreStyleCoreAsync(
+        int layerId, string mapLibreStyleJson, int? expectedVersion,
+
+        string? revisedBy, string? changeSummary, CancellationToken cancellationToken)
     {
         string sql = $"""
             UPDATE {_layersTable}
@@ -72,12 +86,13 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
                 style_revised_at = NOW(),
                 style_revised_by = @revisedBy,
                 style_change_summary = @changeSummary
-            WHERE layer_id = @layerId
+            WHERE layer_id = @layerId AND (@expectedVersion IS NULL OR COALESCE(style_version, 0) = @expectedVersion)
             RETURNING {SelectColumns}
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(new NpgsqlParameter("@expectedVersion", NpgsqlDbType.Integer) { Value = (object?)expectedVersion ?? DBNull.Value });
         _ = command.Parameters.AddWithValue("@layerId", layerId);
         _ = command.Parameters.Add(new NpgsqlParameter("@mapLibreStyle", NpgsqlDbType.Jsonb)
         {
@@ -96,13 +111,26 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
     }
 
     /// <inheritdoc />
-    public async Task<LayerStyleDefinition?> SetStyleAsync(
-        int layerId,
-        string mapLibreStyleJson,
-        string drawingInfoJson,
-        string? revisedBy = null,
-        string? changeSummary = null,
-        CancellationToken cancellationToken = default)
+    public Task<LayerStyleDefinition?> SetStyleAsync(
+        int layerId, string mapLibreStyleJson, string drawingInfoJson,
+
+        string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
+        => SetStyleCoreAsync(layerId, mapLibreStyleJson, drawingInfoJson, null, revisedBy, changeSummary, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<LayerStyleDefinition?> SetStyleIfVersionAsync(
+        int layerId, string mapLibreStyleJson, string drawingInfoJson, int expectedVersion,
+
+        string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedVersion);
+        return SetStyleCoreAsync(layerId, mapLibreStyleJson, drawingInfoJson, expectedVersion, revisedBy, changeSummary, cancellationToken);
+    }
+
+    private async Task<LayerStyleDefinition?> SetStyleCoreAsync(
+        int layerId, string mapLibreStyleJson, string drawingInfoJson, int? expectedVersion,
+
+        string? revisedBy, string? changeSummary, CancellationToken cancellationToken)
     {
         string sql = $"""
             UPDATE {_layersTable}
@@ -112,12 +140,13 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
                 style_revised_at = NOW(),
                 style_revised_by = @revisedBy,
                 style_change_summary = @changeSummary
-            WHERE layer_id = @layerId
+            WHERE layer_id = @layerId AND (@expectedVersion IS NULL OR COALESCE(style_version, 0) = @expectedVersion)
             RETURNING {SelectColumns}
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(new NpgsqlParameter("@expectedVersion", NpgsqlDbType.Integer) { Value = (object?)expectedVersion ?? DBNull.Value });
         _ = command.Parameters.AddWithValue("@layerId", layerId);
         _ = command.Parameters.Add(new NpgsqlParameter("@mapLibreStyle", NpgsqlDbType.Jsonb)
         {

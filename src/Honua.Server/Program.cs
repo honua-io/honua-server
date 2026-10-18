@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using Honua.Server.Features.AgentWorkspace;
 using System.Reflection;
 using Microsoft.AspNetCore.DataProtection;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
@@ -993,6 +994,11 @@ builder.Services.AddScoped<Honua.Infrastructure.Services.IGeometryConverter,
     Honua.Infrastructure.Services.GeometryConverter>();
 #endif
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
+builder.Services.AddScoped<StyleEditImpactService>();
+builder.Services.AddScoped<SharedStyleEditor>();
+builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.ISharedStyleAgentEditor, SharedStyleAgentEditor>();
+builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.ISharedStyleEditor>(provider => provider.GetRequiredService<SharedStyleEditor>());
+builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.IStyleEditImpactService>(provider => provider.GetRequiredService<StyleEditImpactService>());
 builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.IOgcStyleProjection,
     Honua.Server.Features.Styling.OgcStyleProjection>();
 builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.IGeoServicesStyleConverter,
@@ -1038,6 +1044,7 @@ Honua.Server.Features.Geoprocessing.ProcessRelease.GpProcessReleasePersistenceRe
     builder.Services, builder.Configuration);
 builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
+builder.Services.AddAgentWorkspace();
 builder.Services.AddAdminAccessOperations();
 // #2483 (ADR-0056 Increment 4): publish validated operations-toolset descriptors as
 // first-class MCP tools. The audited Admin projection publishes by default (#3363;
@@ -1740,6 +1747,7 @@ app.UseHonuaTenantSchemaRouting();
 // resolution. A no-op for tenants not present in the catalog, so the default pipeline is
 // unchanged until tenants are provisioned through the admin surface.
 app.UseHonuaTenantStatusEnforcement();
+app.UseMiddleware<Honua.Server.Features.AgentWorkspace.AgentWorkspaceTurnMiddleware>();
 
 // Reject invalid Esri portal tokens only after the shared rate limiter has metered the
 // request, so repeated bad credentials cannot bypass the configured source-IP bucket.
@@ -1802,6 +1810,7 @@ app.MapPrometheusEndpoint(endpoint =>
 
 // Configure admin auth bootstrap endpoint (anonymous - must precede admin group)
 app.MapAdminAuthEndpoints();
+app.MapAgentWorkspace();
 app.MapMobileAuthEndpoints();
 
 // Configure admin endpoints

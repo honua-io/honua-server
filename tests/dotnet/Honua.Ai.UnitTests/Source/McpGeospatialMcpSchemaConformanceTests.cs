@@ -190,6 +190,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         new(StringComparer.Ordinal)
         {
             "honua_publish_service",
+            "honua_shared_style_get",
+            "honua_shared_style_propose",
             // honua_describe_layer / honua_list_jobs are Honua capability-breadth
             // extensions (#2813) with no 1:1 geospatial-mcp standard tool schema:
             // the standard models layer schema via CapabilityCatalog reads and does

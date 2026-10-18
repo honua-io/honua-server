@@ -76,6 +76,48 @@ public sealed class OperationDispatcher : IOperationInvoker
     }
 
     /// <inheritdoc />
+    public async Task<OperationHandle?> ReconcileCommittedReceiptAsync(OperationRequest request,
+        OperationPolicyContext context, CancellationToken cancellationToken = default)
+    {
+        // Deliberately a single proven synchronous adapter, not a generic replay switch.
+        if (request.OperationId != "style.replace-shared" || request.DryRun ||
+            string.IsNullOrWhiteSpace(context.OperationInstanceId) || string.IsNullOrWhiteSpace(context.ApprovedProposalId) ||
+            string.IsNullOrWhiteSpace(context.ApprovedPlanHash) || _approvalReplayVerifier is null ||
+            OperationScopeMapping.ExceedsScopeAuthority(request, context) ||
+            !_executors.TryGetValue(request.OperationId, out var executor) || executor is not IOperationCommittedReceiptReader reader ||
+            !await _approvalReplayVerifier.VerifyCommittedReceiptAsync(context.ApprovedProposalId, context.OperationInstanceId,
+                context.ApprovedPlanHash, cancellationToken).ConfigureAwait(false)) return null;
+        // No canonical writes, including audit/acceptance, until the SQL proof exists and authority is fresh.
+        var receipt = await reader.ReadCommittedReceiptAsync(request, context, cancellationToken).ConfigureAwait(false);
+        if (receipt is null) return null;
+        if (receipt.Status != OperationHandleStatus.Completed || receipt.OperationId != request.OperationId ||
+            receipt.OperationInstanceId != context.OperationInstanceId)
+            throw new InvalidOperationException("The committed receipt substituted canonical operation identity.");
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var current = await _instanceStore.GetAsync(context.OperationInstanceId, cancellationToken).ConfigureAwait(false);
+            if (current is null || current.OperationId != request.OperationId || current.TenantId != context.TenantId ||
+                string.IsNullOrWhiteSpace(current.AuditId)) return null;
+            if (current.Status == OperationHandleStatus.Completed) return current;
+            if (IsTerminal(current.Status) && current.Status is not (OperationHandleStatus.Failed or OperationHandleStatus.Indeterminate)) return null;
+            var completed = current with
+            {
+                Status = OperationHandleStatus.Completed,
+                Result = receipt.Result,
+                UpdatedAt = _clock.GetUtcNow(),
+                Reason = null,
+                AuthorizationOutcome = "approved-receipt-reconciled"
+            };
+            var auditId = await WriteAuditAsync(completed, context with { AuditId = current.AuditId },
+                "operation.receipt-reconciliation-attempt", AuditOutcome.Success, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(auditId)) return null;
+            if (await _instanceStore.TrySetAsync(completed, current.Version, cancellationToken).ConfigureAwait(false))
+                return await _instanceStore.GetAsync(current.OperationInstanceId, cancellationToken).ConfigureAwait(false);
+        }
+        throw new InvalidOperationException("The canonical receipt raced another operation transition; retry status.");
+    }
+
+    /// <inheritdoc />
     public async Task<OperationHandle> SubmitAsync(
         OperationRequest request,
         OperationPolicyContext context,
@@ -195,6 +237,9 @@ public sealed class OperationDispatcher : IOperationInvoker
                 };
             }
 
+            // Approved retries cannot regress completed, failed, denied or cancelled operations.
+            if (IsTerminal(existing.Status)) return existing;
+
             acceptanceAuditId = existing.AuditId;
             envelope = existing with
             {
@@ -310,6 +355,16 @@ public sealed class OperationDispatcher : IOperationInvoker
                     .EvaluateAsync(descriptor, request, invocationContext, cancellationToken)
                     .ConfigureAwait(false)
                 : PolicyDecision.Allowed;
+            if (decision.Kind == PolicyDecisionKind.Allow && string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)
+                && !string.IsNullOrWhiteSpace(invocationContext.RequiredApprovalPolicyRef))
+            {
+                decision = new PolicyDecision
+                {
+                    Kind = PolicyDecisionKind.RequireApproval,
+                    ApprovalLane = "control-plane",
+                    Reason = invocationContext.RequiredApprovalPolicyRef,
+                };
+            }
             envelope = envelope with
             {
                 OperationId = descriptor.OperationId,
@@ -582,6 +637,8 @@ public sealed class OperationDispatcher : IOperationInvoker
         };
         try
         {
+            if (failed.OperationId == "style.replace-shared")
+                return await PersistAsync(failed, cancellationToken).ConfigureAwait(false);
             await _instanceStore.SetAsync(failed, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -639,6 +696,19 @@ public sealed class OperationDispatcher : IOperationInvoker
         CancellationToken cancellationToken)
     {
         envelope = MarkInstanceDurability(envelope);
+        if (envelope.OperationId == "style.replace-shared")
+        {
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                var current = await _instanceStore.GetAsync(envelope.OperationInstanceId, cancellationToken).ConfigureAwait(false);
+                if (current is null) throw new InvalidOperationException("The canonical style operation disappeared.");
+                if (IsTerminal(current.Status)) return current;
+                if (await _instanceStore.TrySetAsync(envelope, current.Version, cancellationToken).ConfigureAwait(false))
+                    return await _instanceStore.GetAsync(envelope.OperationInstanceId, cancellationToken).ConfigureAwait(false)
+                        ?? throw new InvalidOperationException("The persisted style operation disappeared.");
+            }
+            throw new InvalidOperationException("The canonical style operation raced another terminal transition.");
+        }
         await _instanceStore.SetAsync(envelope, cancellationToken).ConfigureAwait(false);
         return await _instanceStore.GetAsync(envelope.OperationInstanceId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The persisted operation instance could not be reloaded.");

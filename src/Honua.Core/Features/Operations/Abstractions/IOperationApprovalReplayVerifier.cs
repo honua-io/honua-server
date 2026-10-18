@@ -17,4 +17,8 @@ public interface IOperationApprovalReplayVerifier
         string operationInstanceId,
         string planHash,
         CancellationToken cancellationToken = default);
+    /// <summary>Verifies original approval for read-only adoption of an exact committed receipt.
+    /// Implementations without this narrowly scoped capability refuse by default.</summary>
+    Task<bool> VerifyCommittedReceiptAsync(string proposalId, string operationInstanceId, string planHash,
+        CancellationToken cancellationToken = default) => Task.FromResult(false);
 }

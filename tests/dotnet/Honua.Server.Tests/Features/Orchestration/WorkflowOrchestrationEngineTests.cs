@@ -24,6 +24,67 @@ public sealed class WorkflowOrchestrationEngineTests
         new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "tester") }, "TestAuth"));
 
     [Fact]
+    public async Task CreateRun_CommandIdentity_ReconcilesAndRejectsDifferentInputs()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), null, WorkflowStepFailurePolicy.Fail);
+        var first = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator,
+            idempotencyKey: "command-1", inputSnapshotHash: "snapshot-a");
+        var replay = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator,
+            idempotencyKey: "command-1", inputSnapshotHash: "snapshot-a");
+        Assert.Equal(first.RunId, replay.RunId);
+        Assert.Empty(harness.JobService.Submitted);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Engine.CreateRunAsync(
+            definition, WorkflowTriggerKind.Manual, Operator, idempotencyKey: "command-1", inputSnapshotHash: "snapshot-b"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Engine.CreateRunAsync(
+            definition with { WorkflowId = "different" }, WorkflowTriggerKind.Manual, Operator,
+            idempotencyKey: "command-1", inputSnapshotHash: "snapshot-a"));
+    }
+
+    [Fact]
+    public async Task CreateRun_ReconcileOnlyMissingRun_RefusesWithoutCreatingAnotherRun()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), null, WorkflowStepFailurePolicy.Fail);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Engine.CreateRunAsync(
+            definition, WorkflowTriggerKind.Manual, Operator, idempotencyKey: "expired-command",
+            inputSnapshotHash: "snapshot-a", reconcileOnly: true));
+        Assert.Empty(await harness.RunStore.ListActiveAsync());
+        Assert.Empty(harness.JobService.Submitted);
+    }
+
+    [Fact]
+    public async Task CreateRun_ExpiredRunRetainsCommandTombstone_RefusesReexecution()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), null, WorkflowStepFailurePolicy.Fail);
+        var first = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator,
+            idempotencyKey: "command-expiring", inputSnapshotHash: "snapshot-a");
+        harness.RunStore.ExpireRun(first.RunId);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Engine.CreateRunAsync(
+            definition, WorkflowTriggerKind.Manual, Operator, idempotencyKey: "command-expiring", inputSnapshotHash: "snapshot-a"));
+        Assert.Empty(await harness.RunStore.ListActiveAsync());
+        Assert.Empty(harness.JobService.Submitted);
+    }
+
+    [Theory]
+    [InlineData("another-principal", null)]
+    [InlineData("tester", "tenant-b")]
+    public async Task CreateRun_CommandIdentity_IsBoundToPrincipalAndTenant(string name, string? tenant)
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), null, WorkflowStepFailurePolicy.Fail);
+        var first = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator,
+            idempotencyKey: "command-1", inputSnapshotHash: "snapshot-a");
+        var claims = new List<Claim> { new(ClaimTypes.Name, name) };
+        if (tenant is not null) claims.Add(new Claim("tenant_id", tenant));
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+        var isolated = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, principal,
+            idempotencyKey: "command-1", inputSnapshotHash: "snapshot-a");
+        Assert.NotEqual(first.RunId, isolated.RunId);
+    }
+
+    [Fact]
     [Trait("Tier", "Fast")]
     public async Task ReconcileWorkflowRun_ObservesChildInPersistedTenant_ReachesTerminalSuccess()
     {

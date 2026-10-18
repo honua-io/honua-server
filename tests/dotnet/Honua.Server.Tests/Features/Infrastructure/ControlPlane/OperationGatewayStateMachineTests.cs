@@ -114,8 +114,8 @@ public sealed class OperationGatewayStateMachineTests
             "not stay in non-terminal Submitted status (BH6-033)");
         result.ExecutionOperationId.Should().BeNull("no operation was performed");
 
-        // The failure message should be persisted in BlockingReasons
-        result.Plan.BlockingReasons.Should().ContainMatch("*No executor*",
+        // Failure evidence is outside the immutable sealed approval plan.
+        result.ResolutionReason.Should().Match("*No executor*",
             "the failure reason must be recorded so operators understand why the proposal failed");
     }
 
@@ -249,7 +249,7 @@ public sealed class OperationGatewayStateMachineTests
         var result = await sut.ApplyApprovedProposalAsync("p-tampered", "admin");
 
         result!.Status.Should().Be(OperationProposalStatus.Failed);
-        result.Plan.BlockingReasons.Should().ContainMatch("*proof did not match*");
+        result.ResolutionReason.Should().Match("*proof did not match*");
         executor.ExecuteCount.Should().Be(0);
     }
 

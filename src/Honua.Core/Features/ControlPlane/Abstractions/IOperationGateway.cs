@@ -229,6 +229,10 @@ public sealed record OperationGatewayResult
 /// </summary>
 public interface IOperationGateway
 {
+    /// <summary>Reconciles an exact committed receipt for its authenticated requester; never executes an operation.</summary>
+    Task<OperationProposal?> ReconcileCommittedReceiptAsync(string proposalId, System.Security.Claims.ClaimsPrincipal requester,
+        CancellationToken cancellationToken = default) => Task.FromResult<OperationProposal?>(null);
+
     /// <summary>
     /// Routes the supplied operation request through the guardrail ladder.
     /// </summary>

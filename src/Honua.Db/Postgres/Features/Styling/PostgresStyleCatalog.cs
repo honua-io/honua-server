@@ -14,7 +14,7 @@ namespace Honua.Db.Postgres.Features.Styling;
 /// (ADR-0048, Phase 2). Backed by <c>honua.styles</c> and the ordered
 /// <c>honua.layer_style_refs</c> association table (migration 042).
 /// </summary>
-internal sealed class PostgresStyleCatalog : IStyleCatalog
+internal sealed partial class PostgresStyleCatalog : IStyleCatalog
 {
     private const string SelectColumns = """
         style_id,
@@ -31,12 +31,28 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _stylesTable;
+    private readonly string _resolvedSchemaName;
+    private readonly string _mutationReceiptsTable;
+    private readonly string _styleImpactBarrierKey;
+    private readonly string _studioItemsTable;
+    private readonly string _studioVersionsTable;
+    private readonly string _studioDraftsTable;
+    private readonly string _studioDependenciesTable;
+    private readonly string _studioDraftDependenciesTable;
     private readonly string _refsTable;
     private readonly string _layersTable;
 
     public PostgresStyleCatalog(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _resolvedSchemaName = string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName;
+        _styleImpactBarrierKey = Infrastructure.StudioStyleDependencyBarrier.Key(schemaName);
+        _studioItemsTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_content_items", schemaName);
+        _studioVersionsTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_content_versions", schemaName);
+        _studioDraftsTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_package_drafts", schemaName);
+        _studioDependenciesTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_content_version_dependencies", schemaName);
+        _studioDraftDependenciesTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_draft_style_dependencies", schemaName);
+        _mutationReceiptsTable = Infrastructure.SchemaSearchPath.QualifyTable("style_mutation_receipts", schemaName);
         _stylesTable = Infrastructure.SchemaSearchPath.QualifyTable("styles", schemaName);
         _refsTable = Infrastructure.SchemaSearchPath.QualifyTable("layer_style_refs", schemaName);
         _layersTable = Infrastructure.SchemaSearchPath.QualifyTable("layers", schemaName);
@@ -228,15 +244,26 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
     }
 
     /// <inheritdoc />
-    public async Task<StyleCatalogRecord?> UpdateStyleAsync(
-        string styleId,
-        string mapLibreStyleJson,
-        string? title = null,
-        string? description = null,
-        string? drawingInfoJson = null,
-        string? revisedBy = null,
-        string? changeSummary = null,
-        CancellationToken cancellationToken = default)
+    public Task<StyleCatalogRecord?> UpdateStyleAsync(
+        string styleId, string mapLibreStyleJson,
+        string? title = null, string? description = null, string? drawingInfoJson = null,
+        string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
+        => UpdateStyleCoreAsync(styleId, mapLibreStyleJson, null, title, description, drawingInfoJson, revisedBy, changeSummary, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<StyleCatalogRecord?> UpdateStyleIfVersionAsync(
+        string styleId, string mapLibreStyleJson, int expectedVersion,
+        string? title = null, string? description = null, string? drawingInfoJson = null,
+        string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedVersion);
+        return UpdateStyleCoreAsync(styleId, mapLibreStyleJson, expectedVersion, title, description, drawingInfoJson, revisedBy, changeSummary, cancellationToken);
+    }
+
+    private async Task<StyleCatalogRecord?> UpdateStyleCoreAsync(
+        string styleId, string mapLibreStyleJson, int? expectedVersion,
+        string? title, string? description, string? drawingInfoJson,
+        string? revisedBy, string? changeSummary, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
         ArgumentException.ThrowIfNullOrWhiteSpace(mapLibreStyleJson);
@@ -251,12 +278,13 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
                 updated_at = NOW(),
                 revised_by = @revisedBy,
                 change_summary = @changeSummary
-            WHERE style_id = @styleId
+            WHERE style_id = @styleId AND (@expectedVersion IS NULL OR style_version = @expectedVersion)
             RETURNING {SelectColumns}
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(new NpgsqlParameter("@expectedVersion", NpgsqlDbType.Integer) { Value = (object?)expectedVersion ?? DBNull.Value });
         _ = command.Parameters.AddWithValue("@styleId", styleId);
         AddNullableText(command, "@title", title);
         AddNullableText(command, "@description", description);
@@ -356,6 +384,19 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 return false;
             }
+        }
+
+        // Also serialize target-style scope changes against reviewed shared-style edits.
+        // Explicit locking covers ON CONFLICT updates, which need not recheck the FK.
+        await using (var styleLock = new NpgsqlCommand($"SELECT style_id FROM {_stylesTable} WHERE style_id = @styleId OR style_id IN (SELECT style_id FROM {_refsTable} WHERE layer_id = @layerId) ORDER BY style_id FOR KEY SHARE", connection, transaction))
+        {
+            styleLock.Parameters.AddWithValue("styleId", styleId);
+            styleLock.Parameters.AddWithValue("layerId", layerId);
+            var targetExists = false;
+            await using var lockedStyles = await styleLock.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await lockedStyles.ReadAsync(cancellationToken).ConfigureAwait(false))
+                targetExists |= lockedStyles.GetString(0) == styleId;
+            if (!targetExists) return false;
         }
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);

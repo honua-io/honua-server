@@ -5,7 +5,9 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.WorkflowPackages;
@@ -24,6 +26,12 @@ internal sealed class WorkflowAuthorSecurityContextCapturer(
     ITenantContext? tenantContext = null,
     IPrincipalMembershipSource? principalMembershipSource = null)
 {
+    /// <summary>Captures immutable package ownership from the authenticated actor and trusted tenant context.</summary>
+    public WorkflowPackageOwnership? CaptureOwnership(ClaimsPrincipal principal)
+        => CanonicalSecurityActor.Resolve(principal) is { IsDurablyRevalidatable: true } actor && tenantContext is not null
+            ? new WorkflowPackageOwnership { OwnerActorId = actor.ActorId, TenantId = tenantContext.TenantId }
+            : null;
+
     /// <summary>
     /// Captures the author security snapshot from <paramref name="principal"/>. When the live
     /// membership source positively owns the principal's roles the snapshot is stamped with the

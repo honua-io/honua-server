@@ -79,6 +79,8 @@ internal static class JsonContextRegistration
         Honua.Ai.StudioAiProxy.StudioAiProxyJsonContext.Default,
         Honua.Server.Features.Studio.Ai.StudioAiProxyEndpointsJsonContext.Default,
         Honua.Server.Features.Operations.OperationsJsonContext.Default,
+        Honua.Server.Features.AgentWorkspace.AgentWorkspaceJsonContext.Default,
+        Honua.Server.Features.AgentWorkspace.LocalProcessJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
         Honua.Server.Features.Admin.EmbedGovernance.Models.EmbedGovernanceJsonContext.Default,
         Honua.Server.Features.Admin.Models.OAuthClientJsonContext.Default,

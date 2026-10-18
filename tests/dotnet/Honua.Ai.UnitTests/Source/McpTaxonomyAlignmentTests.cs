@@ -91,6 +91,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         // per ADR-0028 (AI operational data editing is not supported).
         "honua_render_map",
         "honua_get_style",
+        "honua_shared_style_get",
+        "honua_shared_style_propose",
         "honua_apply_style_preset",
         "honua_resolve_entity",
         "honua_list_capabilities",
@@ -430,6 +432,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_create_map_package"] = (Destructive: false, Idempotent: false),
             ["honua_create_app_package"] = (Destructive: false, Idempotent: false),
             ["honua_apply_style_preset"] = (Destructive: false, Idempotent: true),
+            ["honua_shared_style_propose"] = (Destructive: true, Idempotent: true),
             // Studio draft lifecycle + composition tools (honua-server#3002).
             // No honua_studio_publish/honua_studio_rollback tool exists — only
             // honua_studio_propose_publication, which records intent (REQ-003).

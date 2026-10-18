@@ -98,6 +98,10 @@ internal static class AdminLayerStyleEndpoints
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
+        if (context.User.HasClaim("permission", "agent:workspace"))
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status403Forbidden,
+                "Workspace agent shared style changes require a canonical human-approved shared-style proposal.");
+
         // Advisory deprecation signaling for the layerId-keyed admin alias.
         StyleDeprecationHeaders.Apply(context, "/ogc/styles");
 

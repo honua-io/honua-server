@@ -36,6 +36,29 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
         return new ClaimsPrincipal(identity);
     }
 
+    [Theory]
+    [InlineData(OperatorOperation.Publish, false, false)]
+    [InlineData(OperatorOperation.Promote, false, false)]
+    [InlineData(OperatorOperation.Read, true, false)]
+    [InlineData(OperatorOperation.Read, false, true)]
+    public void Evaluate_WorkspaceAgentAdmin_CannotExemptGovernanceMutation(
+        OperatorOperation operation, bool destructive, bool explicitApproval)
+    {
+        var principal = CreatePrincipal();
+        ((ClaimsIdentity)principal.Identity!).AddClaims([
+            new Claim(ClaimTypes.Role, "admin"), new Claim("permission", "agent:workspace")]);
+        var evaluator = CreateEvaluator(false, false, true);
+        var result = evaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Catalog,
+            Operation = operation,
+            IsDestructive = destructive,
+            RequiresExplicitApproval = explicitApproval,
+        });
+        result.IsRequired.Should().BeTrue();
+        result.PolicyRef.Should().Be("agent-workspace.human-approval");
+    }
+
     [UnitTest]
     public void Evaluate_PublishOperation_RequiresApprovalWhenEnabled()
     {

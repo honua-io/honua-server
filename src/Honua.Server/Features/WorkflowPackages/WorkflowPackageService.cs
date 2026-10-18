@@ -85,6 +85,9 @@ internal sealed class WorkflowPackageService(
         var package = new WorkflowPackage
         {
             PackageId = packageId,
+            Ownership = existing is not null
+                ? existing.Ownership
+                : authorSecurityContextCapturer?.CaptureOwnership(principal),
             Name = request.Name.Trim(),
             Description = Normalize(request.Description),
             Namespace = Normalize(request.Namespace),
@@ -583,7 +586,12 @@ internal sealed class WorkflowPackageService(
             OperatorOperation.Execute,
             cancellationToken).ConfigureAwait(false);
 
-        if (publication.Target == WorkflowPublicationTarget.Schedule && orchestrationEngine != null)
+        var manualGraph = publication.Target == WorkflowPublicationTarget.Job && version.Graph.Nodes.Count > 1;
+        if (manualGraph && (orchestrationEngine is null || workflowDefinitionStore is null))
+        {
+            throw new WorkflowPublicationDependencyUnavailableException();
+        }
+        if ((publication.Target == WorkflowPublicationTarget.Schedule || manualGraph) && orchestrationEngine != null)
         {
             var runSchedule = publication.Schedule ?? version.Graph.Schedule ?? new WorkflowSchedule { CronExpression = "0 0 * * *" };
             var definition = await CompileWorkflowDefinitionAsync(
@@ -596,8 +604,22 @@ internal sealed class WorkflowPackageService(
                 runSchedule,
                 runSchedule.Enabled,
                 cancellationToken).ConfigureAwait(false);
+            if (manualGraph)
+            {
+                // Manual DAGs reuse the durable workflow engine without ever arming a cron trigger.
+                // The immutable package/publication identity keeps definition lookups stable across runs.
+                definition = definition with
+                {
+                    Trigger = null,
+                    Metadata = BuildProvenance(version, definition.WorkflowId, WorkflowPublicationTarget.Job, processId: null)
+                };
+                await workflowDefinitionStore!.SetAsync(definition, cancellationToken).ConfigureAwait(false);
+            }
             var run = await orchestrationEngine
-                .CreateRunAsync(definition, WorkflowTriggerKind.Manual, principal, provenance, cancellationToken)
+                .CreateRunAsync(definition, WorkflowTriggerKind.Manual, principal, provenance,
+                    idempotencyKey: manualGraph ? request.IdempotencyKey : null,
+                    inputSnapshotHash: manualGraph ? version.PackageHash : null,
+                    reconcileOnly: manualGraph && request.ReconcileOnly, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             WorkflowPackageLog.PackagePublicationRunStarted(
@@ -690,7 +712,7 @@ internal sealed class WorkflowPackageService(
         var failures = structural.Failures.ToList();
         var warnings = structural.Warnings.ToList();
 
-        ValidateTargetEligibility(graph, definitions, target, failures);
+        ValidateTargetEligibility(graph, definitions, target, failures, orchestrationEngine is not null && workflowDefinitionStore is not null);
 
         if (failures.Count == 0)
         {
@@ -710,7 +732,8 @@ internal sealed class WorkflowPackageService(
                     .Where(violation => !IsDirectSubmitOnlyValidation(
                         violation,
                         target,
-                        orchestrationEngine is not null))
+                        orchestrationEngine is not null,
+                        manualGraph: target == WorkflowPublicationTarget.Job && graph.Nodes.Count > 1))
                     .Select(violation => new WorkflowPackageValidationFailure
                     {
                         Code = violation.Code,
@@ -753,34 +776,35 @@ internal sealed class WorkflowPackageService(
     internal static bool IsDirectSubmitOnlyValidation(
         GeoprocessingValidationFailure violation,
         WorkflowPublicationTarget? target,
-        bool orchestrationAvailable)
+        bool orchestrationAvailable,
+        bool manualGraph = false)
         => violation.Code is "MULTI_STEP_NOT_EXECUTABLE" or "GEOPROCESS_STEP_NOT_FIRST"
             or "NO_EXECUTABLE_STEP"
             || violation.Code == "WORKFLOW_ONLY_PROCESS"
             && (target is null
-                || target == WorkflowPublicationTarget.Schedule && orchestrationAvailable);
+                || (target == WorkflowPublicationTarget.Schedule || target == WorkflowPublicationTarget.Job && manualGraph) && orchestrationAvailable);
 
     private static void ValidateTargetEligibility(
         WorkflowGraph graph,
         IReadOnlyDictionary<string, WorkflowNodeDefinition> definitions,
         WorkflowPublicationTarget? target,
-        List<WorkflowPackageValidationFailure> failures)
+        List<WorkflowPackageValidationFailure> failures,
+        bool orchestrationAvailable)
     {
         if (target is null)
         {
             return;
         }
 
-        // Job and process-endpoint publications compile to a single dispatched geoprocessing
-        // job, which cannot resolve cross-step artifact bindings. Graphs that wire data between
-        // nodes must publish to a Schedule target so the orchestration engine can chain outputs.
-        if (target is WorkflowPublicationTarget.Job or WorkflowPublicationTarget.ProcessEndpoint
-            && WorkflowPackageGraphCompiler.HasCrossNodeDataBindings(graph))
+        // Manual multi-node jobs use the existing durable orchestration engine. A process
+        // endpoint remains a single dispatched job and cannot resolve cross-node bindings.
+        if ((target == WorkflowPublicationTarget.ProcessEndpoint || target == WorkflowPublicationTarget.Job && !orchestrationAvailable)
+            && (WorkflowPackageGraphCompiler.HasCrossNodeDataBindings(graph) || graph.Nodes.Count > 1))
         {
             failures.Add(new WorkflowPackageValidationFailure
             {
                 Code = "UNSUPPORTED_DATA_BINDING_TARGET",
-                Message = $"Publication target '{target}' cannot resolve cross-node data bindings; publish data-wired workflows to a Schedule target.",
+                Message = $"Publication target '{target}' requires the durable orchestration engine for multi-node graphs and cross-node bindings.",
                 FieldPath = "graph.edges"
             });
         }
@@ -794,7 +818,8 @@ internal sealed class WorkflowPackageService(
 
             var supported = target switch
             {
-                WorkflowPublicationTarget.Job => definition.CapabilityFlags.SupportsJob,
+                WorkflowPublicationTarget.Job => definition.CapabilityFlags.SupportsJob
+                    || graph.Nodes.Count > 1 && orchestrationAvailable && definition.CapabilityFlags.SupportsSchedule,
                 WorkflowPublicationTarget.Schedule => definition.CapabilityFlags.SupportsSchedule,
                 WorkflowPublicationTarget.ProcessEndpoint => definition.CapabilityFlags.SupportsProcessEndpoint,
                 _ => false
