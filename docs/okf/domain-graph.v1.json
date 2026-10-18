@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:8d4c7651f03ccd3ff5ca83ebef7a7bce64c2f0c30bfa5bc830bbd59117f50755",
+  "bundleDigest": "sha256:c303b57d1d67b92178456838eab421b7ec88556414873d0c5871833f7974b367",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -7427,6 +7427,15 @@
         "description": "Operate the per-process release binding: publish locks, activate a release under an expected binding version, roll back, and read what each job executed."
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/operator/geoprocessing-process-releases.md"
+    },
+    {
+      "id": "operator/gp-native-qualification-observer",
+      "path": "operator/gp-native-qualification-observer.md",
+      "documentDigest": "sha256:6221a306743d16289bb6b63c8c8a8d1bbc463b816b32a3f2b0e6245ab5e7f7dc",
+      "metadata": {
+        "type": "reference"
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/operator/gp-native-qualification-observer.md"
     },
     {
       "id": "ops/aot-image-attestations",
