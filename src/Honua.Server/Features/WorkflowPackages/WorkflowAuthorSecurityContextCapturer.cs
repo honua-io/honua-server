@@ -60,7 +60,7 @@ internal sealed class WorkflowAuthorSecurityContextCapturer(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
-        if (AgentCredentialAuthority.IsDelegated(principal))
+        if (AgentCredentialAuthority.IsAgent(principal) || AgentCredentialAuthority.IsDelegated(principal))
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         if (approvedReplay is not null)
         {

@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -31,16 +32,19 @@ namespace Honua.Server.Tests.Features.WorkflowPackages;
 public sealed class WorkflowPackageApprovedReplayTests
 {
     [UnitTest]
-    public async Task ValidSealedReplay_UsesOriginalAgentAndHumanOwner_WithoutChangingAmbientApprover()
+    public async Task ValidSealedReplay_PreservesNonDurableDeletion_ButRefusesAgentDurableCapture()
     {
         var fixture = await Fixture.Create();
         var ambient = new HttpContextAccessor { HttpContext = fixture.Approver };
         var replay = await WorkflowPackageApprovedReplay.VerifyAsync(fixture.Services, fixture.Request, fixture.Context, CancellationToken.None);
         ambient.HttpContext.Should().BeSameAs(fixture.Approver);
         replay.Principal.HasClaim("permission", "agent:workspace").Should().BeTrue();
-        replay.Principal.HasClaim("rls-group", "original-narrow-group").Should().BeTrue();
-        (await new WorkflowAuthorSecurityContextCapturer(approvedReplay: replay).CaptureAsync(replay.Principal, CancellationToken.None))
-            .Should().BeSameAs(replay.Payload.AuthorSecurityContext);
+        // Raw stored policy claims are not a source of authenticated authority.
+        // Durable work stays refused until its credential-aware RLS bridge is available.
+        replay.Principal.HasClaim("rls-group", "original-narrow-group").Should().BeFalse();
+        var durableCapture = () => new WorkflowAuthorSecurityContextCapturer(approvedReplay: replay)
+            .CaptureAsync(replay.Principal, CancellationToken.None);
+        await durableCapture.Should().ThrowAsync<GeoprocessingAuthorizationException>();
         replay.Principal.IsInRole("admin").Should().BeTrue("the agent role cannot exempt the key from this proof");
         var deleted = await replay.CreateService(fixture.Services).DeletePublicationAsync("publication", replay.Principal, CancellationToken.None);
         deleted.Should().NotBeNull();
@@ -119,19 +123,24 @@ public sealed class WorkflowPackageApprovedReplayTests
     [UnitTheory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task MembershipChangedAfterProofVerification_IsRejectedAgainInsideMutationLock(bool active)
+    public async Task StoredCredentialChangedAfterVerification_IsRejectedInsideMutationLock(bool rotate)
     {
         var fixture = await Fixture.Create();
-        var membership = Substitute.For<IPrincipalMembershipSource>();
-        membership.ResolveMembershipAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new PrincipalMembership(true, ["admin"]));
-        var services = fixture.Rebuild(fixture.Keys, membership);
-        var replay = await WorkflowPackageApprovedReplay.VerifyAsync(services, fixture.Request, fixture.Context, CancellationToken.None);
-        membership.ResolveMembershipAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new PrincipalMembership(active, active ? ["admin", "expanded-data-role"] : []));
+        var replay = await WorkflowPackageApprovedReplay.VerifyAsync(fixture.Services, fixture.Request, fixture.Context, CancellationToken.None);
+        if (rotate) await fixture.Keys.RotateAsync(fixture.KeyId, CancellationToken.None);
+        else await fixture.Keys.RevokeAsync(fixture.KeyId, CancellationToken.None);
         var invoke = () => replay.RevalidateKeyAndMembershipAsync(CancellationToken.None);
         await invoke.Should().ThrowAsync<GeoprocessingAuthorizationException>();
         (await fixture.Packages.GetPublicationAsync("publication")).Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public async Task OrdinaryHuman_DurableCaptureRemainsAvailable()
+    {
+        var human = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "human"), new Claim(ClaimTypes.Role, "admin")], "Human"));
+        var context = await new WorkflowAuthorSecurityContextCapturer().CaptureAsync(human, CancellationToken.None);
+        context.Claims.Should().Contain(claim => claim.Type == ClaimTypes.Role && claim.Value == "admin");
     }
 
     private sealed record Fixture
@@ -175,7 +184,7 @@ public sealed class WorkflowPackageApprovedReplayTests
         {
             var keys = new InMemoryAdminApiKeyStore();
             var created = await keys.CreateAsync("original-agent", ["admin", "agent:workspace"], null, "human", CancellationToken.None);
-            var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record.Id, created.Record.Name, created.Record.Permissions);
+            var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
             ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("rls-group", "original-narrow-group"));
             var actor = CanonicalSecurityActor.Resolve(principal)!.ActorId;
             var owner = "human:owner";
@@ -216,9 +225,14 @@ public sealed class WorkflowPackageApprovedReplayTests
             var workspaces = Substitute.For<IAgentWorkspaceStore>();
             workspaces.GetTargetIdAsync().Returns("target");
             workspaces.GetAsync("workspace").Returns(document);
+            using var captureServices = new ServiceCollection().AddSingleton<IAdminApiKeyStore>(keys).BuildServiceProvider();
+            var credential = await AgentCredentialAuthority.CaptureAsync(principal, captureServices, CancellationToken.None);
+            credential.Should().NotBeNull();
             var payload = new WorkflowPackageApprovalPayload
             {
-                AuthorSecurityContext = JobSecurityContextCapture.Capture(principal, new RbacOptions(), Tenant()),
+                Credential = credential,
+                AuthorSecurityContext = new JobSecurityContext(actor, "public",
+                    created.Record.Permissions.Select(permission => new JobSecurityClaim("permission", permission)).ToArray()) { OwnerActorId = actor },
                 Intent = new() { Action = "delete", PackageId = "package", Version = 1, PackageHash = hash, PublicationId = "publication" },
                 KeyId = created.Record.Id,
                 ActorId = actor,
