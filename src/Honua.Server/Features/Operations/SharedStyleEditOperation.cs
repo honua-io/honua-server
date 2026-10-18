@@ -104,6 +104,14 @@ internal sealed class SharedStyleEditExecutor(IServiceProvider services) : IOper
         };
     }
 
+    public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
+        => Task.FromResult(new OperationStatus
+        {
+            OperationInstanceId = handle.OperationInstanceId, OperationId = handle.OperationId,
+            CorrelationId = handle.CorrelationId, Status = handle.Status,
+            CreatedAt = handle.CreatedAt, UpdatedAt = handle.UpdatedAt, Result = handle.Result, Reason = handle.Reason,
+        });
+
     private static string Required(OperationRequest request, string name) => request.Parameters.TryGetValue(name, out var value) &&
         !string.IsNullOrWhiteSpace(value) ? value : throw new GeoprocessingValidationException($"'{name}' is required.");
 }
