@@ -21,9 +21,15 @@ internal sealed class DatasetImportTaskProvider(IAgentWorkspaceStore store, IHtt
         string taskId, long revision, string contentHash, bool requireWrite, CancellationToken cancellationToken = default)
         => AuthorizeCoreAsync(principal, workspaceId, taskId, revision, contentHash, requireWrite, false, cancellationToken);
 
-    public Task<DatasetImportTask?> ReadAsync(ClaimsPrincipal principal, string workspaceId,
+    public async Task<DatasetImportTask?> ReadAsync(ClaimsPrincipal principal, string workspaceId,
         string taskId, long revision, string contentHash, CancellationToken cancellationToken = default)
-        => AuthorizeCoreAsync(principal, workspaceId, taskId, revision, contentHash, false, true, cancellationToken);
+    {
+        var task = await AuthorizeCoreAsync(principal, workspaceId, taskId, revision, contentHash, false, true, cancellationToken).ConfigureAwait(false);
+        if (task is not null) return task;
+        var contributors = accessor.HttpContext?.RequestServices.GetService<IDatasetImportContributorAuthorizer>();
+        return contributors is null ? null : (await contributors.AuthorizeAsync(principal, workspaceId, taskId,
+            revision, contentHash, false, cancellationToken).ConfigureAwait(false))?.Task;
+    }
 
     private async Task<DatasetImportTask?> AuthorizeCoreAsync(ClaimsPrincipal principal, string workspaceId,
         string taskId, long revision, string contentHash, bool requireWrite, bool allowLinkedContext, CancellationToken cancellationToken)
