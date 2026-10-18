@@ -205,8 +205,8 @@ internal static class MigrationOnlyHost
 
 internal sealed record MigrationRunReceipt
 {
-    public string SchemaVersion => "honua.migration-run/v1";
-    public string Provider => "postgres";
+    public string SchemaVersion { get; } = "honua.migration-run/v1";
+    public string Provider { get; } = "postgres";
     public required string Outcome { get; init; }
     public string? RunId { get; init; }
     public DateTimeOffset? StartedAt { get; init; }
