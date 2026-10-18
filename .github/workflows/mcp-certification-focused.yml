@@ -30,6 +30,80 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  inspector-browser-controls:
+    name: Public Inspector UI cancellation controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/geospatial-mcp
+          ref: 372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4
+          path: .mcp-client
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.19.0'
+      - name: Install authenticated Inspector and existing locked browser toolchain
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --prefix .mcp-client/certification
+          test "$(node -p "require('./.mcp-client/certification/node_modules/@modelcontextprotocol/inspector/package.json').version")" = 2.10.1
+          npm ci --ignore-scripts --prefix tests/mcp-certification/browser
+          tests/mcp-certification/browser/node_modules/.bin/playwright install --with-deps chromium
+          ln -s "${GITHUB_WORKSPACE}/.mcp-client/certification/node_modules" tests/mcp-certification/node_modules
+      - name: Execute public UI and independent cessation controls
+        env:
+          EXPECTED_SERVER_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+          HONUA_MCP_OBSERVER_PGHOST: 127.0.0.1
+          HONUA_MCP_OBSERVER_PGPORT: '5432'
+          HONUA_MCP_OBSERVER_PGUSER: honua
+          HONUA_MCP_OBSERVER_PGPASSWORD: honua
+          HONUA_MCP_OBSERVER_PGSERVER_APP_NAME: honua-inspector-control
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SERVER_SOURCE}"
+          mkdir -p artifacts/inspector-browser-controls
+          node --test tests/mcp-certification/inspector-browser-wire.test.mjs | tee artifacts/inspector-browser-controls/wire.tap
+          node --test tests/mcp-certification/inspector-browser-cancellation.integration.mjs | tee artifacts/inspector-browser-controls/browser-postgres.tap
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, re, subprocess
+          evidence = {'schema': 'honua.inspector-browser-controls/v1', 'candidateQualified': False,
+                      'serverSource': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+                      'canonicalClientSource': '372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4',
+                      'inspectorVersion': '2.10.1', 'playwrightVersion': '1.59.1', 'controls': {}}
+          for name, floor in [('wire', 10), ('browser-postgres', 2)]:
+              text = Path(f'artifacts/inspector-browser-controls/{name}.tap').read_text()
+              counts = {key: int(value) for key, value in re.findall(r'^# (tests|pass|fail|skipped|cancelled) (\d+)$', text, re.M)}
+              assert counts.get('tests', 0) >= floor and counts.get('pass') == counts['tests'], (name, counts)
+              assert all(counts.get(key) == 0 for key in ('fail', 'skipped', 'cancelled')), (name, counts)
+              evidence['controls'][name] = counts
+          Path('artifacts/inspector-browser-controls/source-and-counts.json').write_text(json.dumps(evidence, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: inspector-browser-controls-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/inspector-browser-controls/
+          if-no-files-found: error
+          retention-days: 30
+
   request-cancellation-controls:
     name: Installed SDK cancellation harness controls
     runs-on: ubuntu-latest
