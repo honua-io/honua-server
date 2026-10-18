@@ -7,10 +7,11 @@ COPY dotnet/ /opt/dotnet/
 # Supply a normal dotnet-published Honua.Geoprocessing.Cli payload, including its bundled harnesses.
 COPY devkit/ /opt/honua-devkit/
 # Offline dependency artifacts are trusted build inputs; no project source runs while acquiring them.
+# RestoreSources also covers nested bundled harness configs that name public feeds.
 COPY nuget/ /opt/nuget/
 COPY wheelhouse/ /opt/wheelhouse/
 ENV PATH="/opt/dotnet:/opt/honua-devkit:${PATH}" \
-    DOTNET_ROOT=/opt/dotnet NUGET_PACKAGES=/opt/nuget DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+    DOTNET_ROOT=/opt/dotnet NUGET_PACKAGES=/opt/nuget RestoreSources=/opt/nuget DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
 RUN printf '#!/bin/sh\nexec /opt/dotnet/dotnet /opt/honua-devkit/honua-gp.dll "$@"\n' > /opt/honua-devkit/honua-gp-devkit \
     && chmod 755 /opt/honua-devkit/honua-gp-devkit
