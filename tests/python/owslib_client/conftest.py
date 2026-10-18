@@ -261,8 +261,9 @@ def wmts_collector(lane_runtime: LaneRuntime, owslib_version: str) -> Certificat
 class AdminProbe:
     """Result of resolving the admin control-plane authentication scheme.
 
-    The data protocols in the client-compat fixture are anonymous, so
-    CERT-AUTH-01/02 are substantiated against the admin control plane. Honua
+    The legacy core probes for anonymous data fixtures use this separate admin
+    control plane. WMTS AUTH probes instead exercise protected GetTile requests
+    and never use this result to substantiate tile authorization. Honua
     authenticates it with an API key (``X-API-Key: $HONUA_ADMIN_PASSWORD``), not
     HTTP Basic and not a bearer login flow -- see
     ``src/Honua.Hosting/Features/Authentication/ApiKeyAuthenticationHandler.cs``.

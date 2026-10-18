@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:72984568653c1e5660e641f725ab0d52b36c0e9d366096c15a5821e9de04f4d6",
+  "bundleDigest": "sha256:2b0af72cf27ec501e0e04717e5b43426ef9075aabac1d49847d4a806446a9a4b",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1912,7 +1912,7 @@
     {
       "id": "get-started/linux-packages",
       "path": "get-started/linux-packages.md",
-      "documentDigest": "sha256:f0c4906c1dce5ac97142646093a33da3d5748593760e3d5a55bb8e261e3a7ef5",
+      "documentDigest": "sha256:982f91f3f0f591c3a5b2e1e1ed2593184d7150ba973d7ea1fbc711d0e67bde24",
       "metadata": {
         "type": "guide",
         "title": "Linux: install published packages",
@@ -1924,7 +1924,7 @@
     {
       "id": "get-started/quickstart",
       "path": "get-started/quickstart.md",
-      "documentDigest": "sha256:ae964fb46350e60019b0ae2098fa2589fe46fdc666f50715e6f29bf36229007c",
+      "documentDigest": "sha256:4d967dfb2b136e1fe8592ca2ebd989ec75925293d5f25393f8e0030b2ded082e",
       "metadata": {
         "type": "guide",
         "title": "Quickstart: install, publish, and query",
@@ -1948,7 +1948,7 @@
     {
       "id": "get-started/windows-packages",
       "path": "get-started/windows-packages.md",
-      "documentDigest": "sha256:1bf1f1fef333113eee4e14f3476f7e3ec55cbe63c7e108c12fd669fba811130c",
+      "documentDigest": "sha256:b063167912374e39fbb9a4022b3a62dc1ddc4b11ee09fce89dd59f70370ce5bf",
       "metadata": {
         "type": "guide",
         "title": "Install on Windows from published packages",
