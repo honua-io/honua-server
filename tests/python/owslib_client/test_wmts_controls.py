@@ -15,6 +15,7 @@ from xml.etree import ElementTree
 
 import pytest
 import requests
+from owslib.wmts import WebMapTileService
 from PIL import Image, ImageDraw
 from shared.cert_auth import AuthCredentials, AuthMode
 
@@ -164,11 +165,57 @@ def test_actual_denied_probe_cannot_use_success_or_admin_route(allowed_instead):
             assert record.records[0][0] == ("CERT-AUTH-01", "pass")
 
 
+def actual_client(*, template="http://fixture/protected/WMTS/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png"):
+    """Parse real OWSLib metadata, including its read-only encoding selector."""
+    xml = f'''<Capabilities xmlns="http://www.opengis.net/wmts/1.0"
+      xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.0.0">
+      <ows:OperationsMetadata><ows:Operation name="GetTile"><ows:DCP><ows:HTTP>
+        <ows:Get xlink:href="http://fixture/protected/WMTS"><ows:Constraint name="GetEncoding">
+          <ows:AllowedValues><ows:Value>KVP</ows:Value><ows:Value>RESTful</ows:Value></ows:AllowedValues>
+        </ows:Constraint></ows:Get>
+      </ows:HTTP></ows:DCP></ows:Operation></ows:OperationsMetadata>
+      <Contents><Layer><ows:Identifier>2010</ows:Identifier><ows:Title>Fixture</ows:Title>
+        <Style isDefault="true"><ows:Identifier>default</ows:Identifier></Style><Format>image/png</Format>
+        <TileMatrixSetLink><TileMatrixSet>WebMercatorQuad</TileMatrixSet></TileMatrixSetLink>
+        <ResourceURL format="image/png" resourceType="tile" template="{template}"/>
+      </Layer></Contents></Capabilities>'''
+    return WebMapTileService("http://fixture/protected/WMTS", xml=xml, headers={"X-API-Key": "valid-fixture-key"})
+
+
+@pytest.mark.parametrize("encoding", ("kvp", "rest"))
+def test_real_owslib_gettile_selects_encoding_without_mutating_prototype(encoding):
+    prototype = actual_client()
+    headers = {"X-API-Key": "different-fixture-key"}
+    client, arguments, url = test_wmts._protected_tile_request(prototype, headers, encoding)
+    assert prototype.restonly is False
+    assert prototype.headers == {"X-API-Key": "valid-fixture-key"}
+    assert prototype.getOperationByName("GetTile").methods[0]["constraints"][0].values == ["KVP", "RESTful"]
+    assert client.restonly is (encoding == "rest")
+    response = SimpleNamespace(info=lambda: {"Content-Type": "image/png"})
+    with patch("owslib.wmts.openURL", return_value=response) as wire:
+        assert client.gettile(base_url=client.url, **arguments) is response
+    assert wire.call_args.kwargs["headers"] == headers
+    if encoding == "rest":
+        assert wire.call_args.args == (url,)
+        assert url.endswith("/WebMercatorQuad/5/12/5.png")
+    else:
+        assert wire.call_args.args[0] == client.url
+        assert "REQUEST=GetTile" in wire.call_args.args[1]
+
+
 def test_protected_request_refuses_admin_substitution():
-    prototype = SimpleNamespace(url="http://fixture/protected/WMTS",
-        buildTileResource=lambda **kwargs: "http://fixture/api/v1/admin/services")
+    prototype = actual_client(template="http://fixture/api/v1/admin/services")
     with pytest.raises(AssertionError, match="escaped protected"):
         test_wmts._protected_tile_request(prototype, {}, "rest")
+
+
+@pytest.mark.parametrize("encoding", ("kvp", "rest"))
+def test_unadvertised_encoding_cannot_be_synthesized(encoding):
+    prototype = actual_client()
+    constraint = prototype.getOperationByName("GetTile").methods[0]["constraints"][0]
+    constraint.values = ["KVP" if encoding == "rest" else "RESTful"]
+    with pytest.raises(AssertionError, match="did not advertise"):
+        test_wmts._protected_tile_request(prototype, {}, encoding)
 
 
 @pytest.mark.parametrize("expired", (False, True))

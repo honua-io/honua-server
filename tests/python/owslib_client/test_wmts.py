@@ -157,10 +157,29 @@ def protected_wmts(lane_config: LaneConfig) -> WebMapTileService:
 
 def _protected_tile_request(prototype: WebMapTileService, headers: dict[str, str], encoding: str):
     """Exercise WebMapTileService.gettile itself for both advertised encodings."""
+    assert encoding in ("rest", "kvp")
     client = copy.copy(prototype)
     client.headers = dict(headers)
-    client.restonly = encoding == "rest"
-    assert encoding in ("rest", "kvp")
+    # OWSLib derives its read-only restonly property from OperationsMetadata and
+    # prefers KVP when both encodings are offered. Narrow a private copy to the
+    # requested advertised encoding; never replace the real gettile method.
+    operation = copy.deepcopy(prototype.getOperationByName("GetTile"))
+    selected = "restful" if encoding == "rest" else "kvp"
+    methods = []
+    for method in operation.methods:
+        if method.get("type", "").lower() != "get":
+            continue
+        supported = False
+        for constraint in method.get("constraints") or []:
+            if constraint.name.lower() == "getencoding":
+                constraint.values = [value for value in constraint.values if value.lower() == selected]
+                supported = supported or bool(constraint.values)
+        if supported:
+            methods.append(method)
+    assert methods, f"Protected WMTS did not advertise {encoding} GetTile"
+    operation.methods = methods
+    client.operations = [operation if item.name == "GetTile" else item for item in prototype.operations]
+    assert client.restonly is (encoding == "rest")
     layer = os.getenv("HONUA_CERT_RASTER_LAYER_ID", "2010")
     row, column = fixture_tile("WebMercatorQuad", 5)
     arguments = {"layer": layer, "style": "default", "format": "image/png",
