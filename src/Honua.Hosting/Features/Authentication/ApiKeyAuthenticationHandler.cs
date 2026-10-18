@@ -140,7 +140,8 @@ internal sealed class ApiKeyAuthenticationHandler(
                             "admin-api-key",
                             storedKey.Record.Id,
                             storedKey.Record.Name,
-                            storedKey.Record.Permissions),
+                            storedKey.Record.Permissions,
+                            StoredApiKeyCredentialVersion.FromRecord(storedKey.Record)),
                         ApiKeyRejection.None);
                 }
             }
@@ -420,6 +421,20 @@ internal sealed class ApiKeyAuthenticationHandler(
     }
 
     /// <summary>
+    /// Reconstructs a principal with the exact revalidated credential version. Deferred
+    /// callers must compare the sealed version against this record before reconstruction.
+    /// </summary>
+    internal static ClaimsPrincipal CreateStoredKeyPrincipal(AdminApiKeyRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        var principal = CreateStoredKeyPrincipal(record.Id, record.Name, record.Permissions);
+        var identity = (ClaimsIdentity)principal.Identity!;
+        CanonicalSecurityActor.StampFrameworkClaim(identity, StoredApiKeyCredentialVersion.ClaimType,
+            StoredApiKeyCredentialVersion.FromRecord(record));
+        return principal;
+    }
+
+    /// <summary>
     /// Creates a successful authentication result with admin claims
     /// </summary>
     private static AuthenticateResult CreateSuccessfulAuthenticationResult(
@@ -427,7 +442,8 @@ internal sealed class ApiKeyAuthenticationHandler(
         string authenticationType,
         Guid? apiKeyId = null,
         string? apiKeyName = null,
-        IReadOnlyList<string>? permissions = null)
+        IReadOnlyList<string>? permissions = null,
+        string? credentialVersion = null)
     {
         // A key whose grants describe a layer-scoped write credential (#1637) is
         // authenticated as a NON-admin principal: it never receives the admin role
@@ -538,6 +554,10 @@ internal sealed class ApiKeyAuthenticationHandler(
         // password / dev-bypass branches), so mark them framework-owned: shared claim
         // sanitization keeps stamped copies and drops any that arrived in a token.
         CanonicalSecurityActor.StampAuthorityClaims(identity);
+        if (apiKeyId.HasValue && credentialVersion is not null)
+        {
+            CanonicalSecurityActor.StampFrameworkClaim(identity, StoredApiKeyCredentialVersion.ClaimType, credentialVersion);
+        }
 
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, schemeName);

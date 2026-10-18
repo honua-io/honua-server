@@ -25,7 +25,7 @@ public sealed class StoredKeyPrincipalTests
             AuthenticationExtensions.ApiKeyScheme,
             new ApiKeyAuthenticationDependencies(Options.Create(new ApiKeyAuthenticationOptions()), adminApiKeyStore: store),
             NullLogger.Instance, CancellationToken.None);
-        var replay = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record.Id, created.Record.Name, created.Record.Permissions);
+        var replay = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
         replay.Claims.Select(claim => (claim.Type, claim.Value, claim.Issuer))
             .Should().Equal(live.Success!.Principal!.Claims.Select(claim => (claim.Type, claim.Value, claim.Issuer)));
         replay.Identity!.AuthenticationType.Should().Be(live.Success.Principal.Identity!.AuthenticationType);

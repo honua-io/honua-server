@@ -41,7 +41,7 @@ internal static class CanonicalSecurityActor
     private static readonly HashSet<string> FrameworkAuthorityClaimTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "permission", "auth_type", "api_key_id", "api_key_name", "plan", "honua_plan",
-        "portal_token_binding",
+        "portal_token_binding", StoredApiKeyCredentialVersion.ClaimType,
     };
 
     /// <summary>
