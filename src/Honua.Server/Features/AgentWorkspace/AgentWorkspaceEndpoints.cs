@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.AgentWorkspace.Abstractions;
@@ -341,7 +342,6 @@ internal static class AgentWorkspaceEndpoints
                 next.Turns[request.TurnId] = turn with { LocalProcessSnapshot = snapshot };
             }
             await Save(store, next).ConfigureAwait(false);
-            next = next with { Version = next.Version + 1 };
         }
         return await TurnResponse(context, store, next, next.Turns[request.TurnId]).ConfigureAwait(false);
     }
@@ -356,6 +356,7 @@ internal static class AgentWorkspaceEndpoints
 
     private static async Task<IResult> TurnResponse(HttpContext context, IAgentWorkspaceStore store, AgentWorkspaceDocument document, AgentWorkspaceTurn turn)
     {
+        var retainedTurnBytes = JsonSerializer.SerializeToUtf8Bytes(turn, AgentWorkspaceJsonContext.Default.AgentWorkspaceTurn);
         var projected = await Project(context, turn.Context, document).ConfigureAwait(false);
         if (projected.SelectedResources.Length != turn.Context.SelectedResources.Length || projected.Task != turn.Context.Task) return Results.Forbid();
         if (!await LocalProcessWorkspaceAuthorization.CanReadTurnAsync(context, document, turn).ConfigureAwait(false)) return Results.Forbid();
@@ -369,9 +370,10 @@ internal static class AgentWorkspaceEndpoints
         // snapshot after membership, deployment, or its retained turn changed meanwhile.
         var latest = await store.GetAsync(document.WorkspaceId).ConfigureAwait(false);
         var target = await store.GetTargetIdAsync().ConfigureAwait(false);
-        if (latest is null || latest.Version != document.Version || latest.OwnerId != document.OwnerId ||
+        if (latest is null || latest.OwnerId != document.OwnerId ||
             latest.AgentActorId != document.AgentActorId || latest.TenantId != document.TenantId || target != document.TargetId ||
-            !AgentWorkspaceState.CanRead(latest, Actor(context), Tenant(context), target) || !latest.Turns.ContainsKey(turn.TurnId))
+            !AgentWorkspaceState.CanRead(latest, Actor(context), Tenant(context), target) || !latest.Turns.TryGetValue(turn.TurnId, out var retainedTurn) ||
+            !retainedTurnBytes.AsSpan().SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(retainedTurn, AgentWorkspaceJsonContext.Default.AgentWorkspaceTurn)))
             return Results.NotFound();
         if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
             return Results.Forbid();

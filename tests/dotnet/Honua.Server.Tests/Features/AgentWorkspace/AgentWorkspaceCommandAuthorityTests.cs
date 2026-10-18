@@ -131,6 +131,7 @@ public sealed class AgentWorkspaceCommandAuthorityTests
     [InlineData("membership")]
     [InlineData("turn")]
     [InlineData("deployment-target")]
+    [InlineData("unrelated-navigation")]
     public async Task TurnResponseRechecksRetainedAuthorityAfterAssemblingMessages(string change)
     {
         var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "human-1")], "Bearer");
@@ -159,9 +160,11 @@ public sealed class AgentWorkspaceCommandAuthorityTests
         pending.IsCompleted.Should().BeFalse();
         if (change == "membership") document = document with { Members = [] };
         else if (change == "turn") document = document with { Version = document.Version + 1, Turns = [] };
-        else workspace.GetTargetIdAsync().Returns("target-2");
+        else if (change == "deployment-target") workspace.GetTargetIdAsync().Returns("target-2");
+        else document = document with { Version = document.Version + 1,
+            Views = new() { ["other-view"] = [captured with { ViewId = "other-view", Revision = 7 }] } };
         finalRead.SetResult(document);
-        ((IStatusCodeHttpResult)await pending).StatusCode.Should().Be(404);
+        ((IStatusCodeHttpResult)await pending).StatusCode.Should().Be(change == "unrelated-navigation" ? 200 : 404);
         await workspace.DidNotReceive().SaveAsync(Arg.Any<AgentWorkspaceDocument>());
     }
 

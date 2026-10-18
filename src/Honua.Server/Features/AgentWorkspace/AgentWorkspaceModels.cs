@@ -82,6 +82,7 @@ internal sealed record AgentWorkspaceError(string Message);
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(AgentWorkspaceDocument))]
+[JsonSerializable(typeof(AgentWorkspaceTurn))]
 [JsonSerializable(typeof(DatasetImportTask))]
 [JsonSerializable(typeof(CreateDatasetImportTask))]
 [JsonSerializable(typeof(string[]))]
