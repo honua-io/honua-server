@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.ControlPlane.Domain;
+using Microsoft.AspNetCore.DataProtection;
 using FluentAssertions;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -508,6 +510,76 @@ public sealed class DelegatedAgentCredentialTests
         new Claim("aud", mismatch == "audience" ? "other" : "honua"),
         new Claim("tenant_id", mismatch == "tenant" ? "other" : "tenant")], OidcAuthenticationExtensions.JwtBearerScheme));
 
+    [Theory]
+    [InlineData("unchanged")]
+    [InlineData("membership")]
+    [InlineData("role-grant")]
+    [InlineData("profile-generation")]
+    [InlineData("profile-disabled")]
+    [InlineData("profile-expired")]
+    [InlineData("ceiling")]
+    public async Task VerifiedLeaseLineage_SeparatesTokenExpiryFromLiveAuthority(string change)
+    {
+        var clock = new LeaseClock();
+        using var fixture = new Fixture(clock: clock);
+        var principal = Token();
+        AgentCredentialAuthority.MarkValidated((ClaimsIdentity)principal.Identity!);
+        await AgentCredentialAuthority.BindOidcAsync(principal, fixture.Services);
+        var tenant = Substitute.For<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>();
+        tenant.TenantId.Returns("tenant");
+        var context = await AgentJobSecurityBridge.CaptureAsync(principal, new RbacOptions(), fixture.Services, tenant, default);
+        var job = new ExecutionJobRecord
+        {
+            OperationId = "lease-job", Status = ExecutionJobStatus.Queued, CreatedAt = clock.GetUtcNow(), UpdatedAt = clock.GetUtcNow(),
+            Spec = new() { TargetKind = BatchComputeTargetKind.LocalProcess, Backend = "local", Kind = ExecutionJobKind.Geoprocessing, WorkloadName = "analysis" },
+            Audit = new() { RequestedBy = context.OwnerActorId, TenantId = context.TenantId, SubmitterSecurityContext = context }
+        };
+        var protector = new JobExecutionLeaseProtector(new EphemeralDataProtectionProvider(), clock);
+        var lease = protector.ProtectValidatedBinding(job, new()
+        {
+            Kind = job.Spec.Kind, Resources = [], ProviderBinding = "closed-constant-plan",
+            Operations = [new() { ResourceType = OperatorResourceType.Process, ResourceId = "constant", Operation = OperatorOperation.Execute }]
+        }, new() { IsAllowed = true, DecisionId = "benign-canonical-policy", MaximumExpiresAt = clock.GetUtcNow().AddMinutes(30) }, null, clock.GetUtcNow().AddMinutes(30));
+        var accepted = job with { Audit = job.Audit with { SubmitterSecurityContext = context with { ExecutionLease = lease } } };
+        clock.UtcNow = clock.GetUtcNow().AddMinutes(11);
+        // Ordinary authentication/replay remains expired. Only a verified job-bound lease
+        // can take the separate lineage path, without changing the original token snapshot.
+        (await AgentCredentialAuthority.RevalidateAsync(context.AgentCredential!, fixture.Services, default)).Should().BeNull();
+        var proof = protector.UnprotectAndMatchAuthoritativeJob(accepted);
+        switch (change)
+        {
+            case "membership":
+                fixture.Membership.ResolveMembershipAsync("subject", "https://issuer.example", Arg.Any<CancellationToken>())
+                    .Returns(new PrincipalMembership(false, []));
+                break;
+            case "role-grant":
+                fixture.Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+                    .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions = [] });
+                break;
+            case "profile-generation": fixture.Profile.Generation++; break;
+            case "profile-disabled": fixture.Profile.Enabled = false; break;
+            case "profile-expired": fixture.Profile.ExpiresAt = clock.GetUtcNow(); break;
+            case "ceiling": fixture.Profile.Permissions = []; break;
+        }
+        var current = await AgentCredentialAuthority.RevalidateLeaseLineageAsync(protector, proof, accepted, fixture.Services, default);
+        (current is not null).Should().Be(change == "unchanged");
+        var unverifiedCopy = proof with { };
+        var forged = () => AgentCredentialAuthority.RevalidateLeaseLineageAsync(protector, unverifiedCopy, accepted, fixture.Services, default);
+        await forged.Should().ThrowAsync<UnauthorizedAccessException>();
+        context.AgentCredential!.TokenExpiresAt.Should().BeBefore(clock.GetUtcNow());
+        // Lineage is not yet a usable execution credential: scope fencing is a separate adapter.
+        if (current is not null)
+        {
+            (await AgentCredentialAuthority.IsCurrentAsync(current, fixture.Services, default)).Should().BeFalse();
+        }
+    }
+
+    private sealed class LeaseClock : TimeProvider
+    {
+        internal DateTimeOffset UtcNow { get; set; } = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => UtcNow;
+    }
+
     private sealed class Fixture : IDisposable
     {
         internal OidcDelegatedAgentProfile Profile { get; } = new()
@@ -525,7 +597,7 @@ public sealed class DelegatedAgentCredentialTests
         internal IPrincipalMembershipSource Membership { get; } = Substitute.For<IPrincipalMembershipSource>();
         internal IRoleStore Roles { get; } = Substitute.For<IRoleStore>();
         internal ServiceProvider Services { get; }
-        internal Fixture(string roleClaimType = "roles")
+        internal Fixture(string roleClaimType = "roles", TimeProvider? clock = null)
         {
             var options = Substitute.For<IOptionsMonitor<OidcAuthenticationOptions>>();
             options.CurrentValue.Returns(new OidcAuthenticationOptions { Enabled = true, DelegatedAgents = [Profile], DelegatedAgentAudiences = [new() { Issuer = "https://issuer.example", Audience = "honua" }] });
@@ -533,7 +605,7 @@ public sealed class DelegatedAgentCredentialTests
                 .Returns(new PrincipalMembership(true, ["worker"]));
             Roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
                 .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions = [new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" }] });
-            Services = new ServiceCollection().AddSingleton(options).AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions { RoleClaimType = roleClaimType })).AddSingleton(Membership).AddSingleton(Roles).AddSingleton<IAdminApiKeyStore>(new InMemoryAdminApiKeyStore()).BuildServiceProvider();
+            Services = new ServiceCollection().AddSingleton(clock ?? TimeProvider.System).AddSingleton(options).AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions { RoleClaimType = roleClaimType })).AddSingleton(Membership).AddSingleton(Roles).AddSingleton<IAdminApiKeyStore>(new InMemoryAdminApiKeyStore()).BuildServiceProvider();
         }
         public void Dispose() => Services.Dispose();
     }

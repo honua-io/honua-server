@@ -76,6 +76,9 @@ public sealed record JobSecurityContext(
     /// </summary>
     public AgentCredentialSnapshot? AgentCredential { get; init; }
 
+    /// <summary>Distinct server-issued job-specific authority; never mutates the captured credential snapshot.</summary>
+    public JobExecutionLease? ExecutionLease { get; init; }
+
     /// <summary>Recognized role aliases used only for policy lookup; values always come from current roles.</summary>
     public string[] AgentPolicyRoleClaimTypes { get; init; } = [];
 

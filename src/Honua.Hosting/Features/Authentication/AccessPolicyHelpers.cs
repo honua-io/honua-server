@@ -317,6 +317,15 @@ internal static class AccessPolicyHelpers
         IDictionary<object, object?>? requestCache = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
+        if (JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal))
+        {
+            if (!JobExecutionLeaseTransientAuthority.AllowsResource(principal, resource.Metadata.Id, operation)
+                || !await JobExecutionLeaseTransientAuthority.IsCurrentAsync(principal, cancellationToken).ConfigureAwait(false))
+            {
+                return AccessDecision.Forbidden("The job execution lease does not authorize this resource operation.");
+            }
+            principal = JobExecutionLeaseTransientAuthority.GetAuthorizationPrincipal(principal);
+        }
 
         // Tenant scope gates before grant evaluation (#1580): a per-operation grant
         // must never authorize access to another tenant's resource.
@@ -402,6 +411,10 @@ internal static class AccessPolicyHelpers
     internal static AccessDecision? EvaluateScopedKeyAccess(
         ClaimsPrincipal principal, string? serviceName, string? layerName, AuthorizationOperation operation)
     {
+        if (JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal))
+        {
+            return AccessDecision.Forbidden("The job execution lease does not authorize this resource operation.");
+        }
         if (!LayerScopedWriteKey.IsScopeGovernedPrincipal(principal))
         {
             return null;

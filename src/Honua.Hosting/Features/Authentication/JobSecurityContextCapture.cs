@@ -294,7 +294,7 @@ internal static class JobSecurityContextCapture
     public static ClaimsPrincipal Restore(JobSecurityContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        if (context.AgentCredential is not null || SnapshotIndicatesStoredAgent(context))
+        if (context.ExecutionLease is not null || context.AgentCredential is not null || SnapshotIndicatesStoredAgent(context))
         {
             throw new UnauthorizedAccessException("Legacy agent snapshots lack current credential authority.");
         }
@@ -395,7 +395,7 @@ internal static class JobSecurityContextCapture
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(options);
-        if (context.AgentCredential is not null || SnapshotIndicatesStoredAgent(context))
+        if (context.ExecutionLease is not null || context.AgentCredential is not null || SnapshotIndicatesStoredAgent(context))
         {
             return new JobSecurityContextMembershipResult(StripRoleClaims(context, options),
                 JobSecurityContextMembershipStatus.ManagedUnresolved, HasRemovedRoles: true);

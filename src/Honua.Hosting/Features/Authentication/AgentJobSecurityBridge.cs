@@ -82,6 +82,19 @@ internal static class AgentJobSecurityBridge
     internal static async Task<JobSecurityContext> RevalidateAsync(
         JobSecurityContext context, IServiceProvider services, CancellationToken cancellationToken)
     {
+        if (context.ExecutionLease is not null)
+        {
+            var principal = context.CurrentAgentPrincipal
+                ?? Honua.Core.Features.Authorization.JobSecurityScope.Current?.Submitter?.CurrentAgentPrincipal;
+            if (principal is null || !JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal)
+                || !await JobExecutionLeaseTransientAuthority.IsCurrentAsync(principal, cancellationToken).ConfigureAwait(false)
+                || Honua.Core.Features.Authorization.JobSecurityScope.Current?.Submitter is not { } scoped
+                || JobExecutionLeaseIntentFingerprint.ComputeContext(scoped) != JobExecutionLeaseIntentFingerprint.ComputeContext(context))
+            {
+                throw new UnauthorizedAccessException("The lease requires current authority inside its actual job execution scope.");
+            }
+            return context with { CurrentAgentPrincipal = principal, CredentialExpiresAt = context.ExecutionLease.ExpiresAt };
+        }
         var credential = context.AgentCredential
             ?? throw new UnauthorizedAccessException("The job has no typed agent credential binding.");
         var current = await AgentCredentialAuthority.RevalidateAsync(credential, services, cancellationToken).ConfigureAwait(false)

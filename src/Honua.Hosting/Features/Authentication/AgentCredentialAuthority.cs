@@ -87,7 +87,7 @@ internal static class AgentCredentialAuthority
         identity.AddClaim(marker);
     }
 
-    internal static bool IsAgent(ClaimsPrincipal principal) => principal.Identity?.IsAuthenticated == true &&
+    internal static bool IsAgent(ClaimsPrincipal principal) => JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal) || principal.Identity?.IsAuthenticated == true &&
         !ApiKeyAuthenticationHandler.IsTrustedNonStoredOperator(principal) &&
         principal.HasClaim("permission", "agent:workspace") &&
         (principal.HasClaim(c => c.Type == "api_key_id") || TrustedProfile(principal) is not null);
@@ -146,7 +146,7 @@ internal static class AgentCredentialAuthority
 
     internal static async Task<AgentCredentialSnapshot?> CaptureAsync(ClaimsPrincipal principal, IServiceProvider services, CancellationToken cancellationToken)
     {
-        if (!IsAgent(principal)) return null;
+        if (!IsAgent(principal) || JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal)) return null;
         var binding = TrustedProfile(principal);
         var snapshot = binding is null
             ? new AgentCredentialSnapshot { Kind = "api-key", Id = principal.FindFirst("api_key_id")!.Value, CredentialVersion = StoredApiKeyCredentialVersion.GetStamped(principal), MembershipRoles = KeyRoles(principal, services), Permissions = principal.FindAll("permission").Select(c => c.Value).ToArray() }
@@ -167,18 +167,37 @@ internal static class AgentCredentialAuthority
         return current is not null && CanonicalSecurityActor.Resolve(current)?.ActorId == CanonicalSecurityActor.Resolve(principal)?.ActorId ? snapshot : null;
     }
 
-    internal static async Task<ClaimsPrincipal?> RevalidateAsync(AgentCredentialSnapshot snapshot, IServiceProvider services, CancellationToken cancellationToken)
+    internal static Task<ClaimsPrincipal?> RevalidateAsync(AgentCredentialSnapshot snapshot, IServiceProvider services, CancellationToken cancellationToken)
+        => RevalidateCoreAsync(snapshot, services, permitOriginTokenExpiry: false, cancellationToken);
+
+    // This path only removes the originating JWT's transport expiry from the lifetime
+    // calculation. Key expiry, profile expiry, generation, grants and membership remain live.
+    // It cannot be called with a constructed or externally deserialized lease binding.
+    internal static Task<ClaimsPrincipal?> RevalidateLeaseLineageAsync(
+        JobExecutionLeaseProtector protector, SealedJobExecutionLeaseBinding binding,
+        Honua.Core.Features.ControlPlane.Domain.ExecutionJobRecord authoritativeJob,
+        IServiceProvider services, CancellationToken cancellationToken)
+    {
+        protector.RequireVerifiedCurrentBinding(binding, authoritativeJob);
+        var snapshot = authoritativeJob.Audit.SubmitterSecurityContext?.AgentCredential
+            ?? throw new UnauthorizedAccessException("The leased job has no original credential lineage.");
+        return RevalidateCoreAsync(snapshot, services, permitOriginTokenExpiry: true, cancellationToken);
+    }
+
+    private static async Task<ClaimsPrincipal?> RevalidateCoreAsync(
+        AgentCredentialSnapshot snapshot, IServiceProvider services, bool permitOriginTokenExpiry,
+        CancellationToken cancellationToken)
     {
         if (snapshot.Kind == "api-key")
         {
             if (!Guid.TryParse(snapshot.Id, out var id) || id == Guid.Empty
-                || (snapshot.TokenExpiresAt != default && snapshot.TokenExpiresAt <= Now(services))) return null;
+                || (!permitOriginTokenExpiry && snapshot.TokenExpiresAt != default && snapshot.TokenExpiresAt <= Now(services))) return null;
             var key = await services.GetRequiredService<IAdminApiKeyStore>().GetAsync(id, cancellationToken).ConfigureAwait(false);
             if (key is null || snapshot.CredentialVersion is null || snapshot.CredentialVersion != StoredApiKeyCredentialVersion.FromRecord(key) || key.RevokedAt is not null || key.ExpiresAt <= Now(services) || !Same(key.Permissions, snapshot.Permissions)) return null;
             var current = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(key);
             return Same(snapshot.MembershipRoles, KeyRoles(current, services)) ? current : null;
         }
-        if (snapshot.Kind != DelegatedKind || snapshot.TokenExpiresAt <= Now(services)) return null;
+        if (snapshot.Kind != DelegatedKind || (!permitOriginTokenExpiry && snapshot.TokenExpiresAt <= Now(services))) return null;
         var matches = Profiles(services).Where(p => p.Id == snapshot.Id).ToArray();
         if (matches.Length != 1 || !Valid(matches[0], services) || matches[0].Generation != snapshot.Generation) return null;
         var profile = matches[0];
@@ -236,10 +255,33 @@ internal static class AgentCredentialAuthority
         return snapshot.TokenExpiresAt < profiles[0].ExpiresAt ? snapshot.TokenExpiresAt : profiles[0].ExpiresAt;
     }
 
+    // Issuance calls this only after strict fresh request validation. Unlike the JWT
+    // transport lifetime, these source authority expiries remain hard lease ceilings.
+    internal static async Task<DateTimeOffset?> LeaseSourceDeadlineAsync(
+        AgentCredentialSnapshot snapshot, IServiceProvider services, CancellationToken cancellationToken)
+    {
+        if (await RevalidateAsync(snapshot, services, cancellationToken).ConfigureAwait(false) is null)
+            throw new UnauthorizedAccessException("The executor changed during lease issuance.");
+        if (snapshot.Kind == "api-key")
+        {
+            var key = await services.GetRequiredService<IAdminApiKeyStore>().GetAsync(Guid.Parse(snapshot.Id), cancellationToken).ConfigureAwait(false);
+            if (key is null || snapshot.CredentialVersion != StoredApiKeyCredentialVersion.FromRecord(key) || key.RevokedAt is not null
+                || !Same(key.Permissions, snapshot.Permissions))
+            {
+                throw new UnauthorizedAccessException("The executor changed during lease issuance.");
+            }
+            return key.ExpiresAt;
+        }
+        var profile = Profiles(services).SingleOrDefault(candidate => candidate.Id == snapshot.Id);
+        return profile?.ExpiresAt ?? throw new UnauthorizedAccessException("The executor profile is unavailable.");
+    }
+
     /// <summary>Rechecks any stored key or delegated workload; human schemes keep their own live policy.</summary>
     internal static async Task<bool> IsCurrentAsync(ClaimsPrincipal principal, IServiceProvider services, CancellationToken cancellationToken)
     {
         if (principal.Identity?.IsAuthenticated != true) return false;
+        if (JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal))
+            return await JobExecutionLeaseTransientAuthority.IsCurrentAsync(principal, cancellationToken).ConfigureAwait(false);
         if (ApiKeyAuthenticationHandler.IsTrustedNonStoredOperator(principal)) return true;
         if (IsDelegated(principal))
         {

@@ -27,6 +27,15 @@ internal sealed class OperatorAuthorizationEvaluator(
 {
     public async Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, OperatorAuthorizationRequest request, CancellationToken cancellationToken = default)
     {
+        if (JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal))
+        {
+            if (!JobExecutionLeaseTransientAuthority.AllowsOperator(principal, request)
+                || !await JobExecutionLeaseTransientAuthority.IsCurrentAsync(principal, cancellationToken).ConfigureAwait(false))
+            {
+                return AccessDecision.Forbidden("The job execution lease does not authorize this operator operation.");
+            }
+            principal = JobExecutionLeaseTransientAuthority.GetAuthorizationPrincipal(principal);
+        }
         if (request is
             {
                 ResourceType: OperatorResourceType.Workspace,

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Core.Features.Authorization;
 
@@ -56,7 +57,36 @@ public static class JobSecurityScope
     public static IDisposable Begin(JobSecurityContext? submitter)
     {
         var previous = Ambient.Value;
-        Ambient.Value = new JobSecurityScopeState(submitter);
+        // A nested row/field policy scope can retain an already established actual-job
+        // identity, but cannot create one from a caller-supplied context or lease ID.
+        Ambient.Value = new JobSecurityScopeState(submitter)
+        {
+            JobId = previous?.JobId,
+            IntentFingerprint = previous?.IntentFingerprint
+        };
+        return new ScopeReleaser(previous);
+    }
+
+    /// <summary>Begins an execution scope bound to the actual job whose live authority was validated.</summary>
+    /// <param name="job">Actual dispatched job; a lease also rechecks its authoritative stored identity.</param>
+    /// <param name="submitter">Validated context with exactly the original persisted policy/credential inputs.</param>
+    /// <returns>A disposable restoring the previous scope.</returns>
+    public static IDisposable BeginExecution(ExecutionJobRecord job, JobSecurityContext submitter)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        ArgumentNullException.ThrowIfNull(submitter);
+        var original = job.Audit.SubmitterSecurityContext ?? throw new UnauthorizedAccessException("The job has no original security context.");
+        if (original.ExecutionLease != submitter.ExecutionLease
+            || JobExecutionLeaseIntentFingerprint.ComputeContext(original) != JobExecutionLeaseIntentFingerprint.ComputeContext(submitter))
+        {
+            throw new UnauthorizedAccessException("The execution context does not match the original job.");
+        }
+        var previous = Ambient.Value;
+        Ambient.Value = new JobSecurityScopeState(submitter)
+        {
+            JobId = job.OperationId,
+            IntentFingerprint = JobExecutionLeaseIntentFingerprint.Compute(job)
+        };
         return new ScopeReleaser(previous);
     }
 
@@ -85,4 +115,11 @@ public static class JobSecurityScope
 /// carries none. A <see langword="null"/> submitter inside an active scope means the read cannot
 /// be constrained to the caller and must therefore be refused.
 /// </param>
-public sealed record JobSecurityScopeState(JobSecurityContext? Submitter);
+public sealed record JobSecurityScopeState(JobSecurityContext? Submitter)
+{
+    /// <summary>Actual dispatched job identity, absent from legacy context-only scopes.</summary>
+    public string? JobId { get; init; }
+
+    /// <summary>Complete original immutable intent binding of the actual dispatched job.</summary>
+    public string? IntentFingerprint { get; init; }
+}
