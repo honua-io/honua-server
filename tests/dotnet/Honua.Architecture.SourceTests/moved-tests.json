@@ -4,15 +4,6 @@
   "currentAssembly": "Honua.Architecture.SourceTests",
   "files": [
     {
-      "original": "tests/dotnet/Honua.Architecture.Tests/GettingStartedArtifactPinTests.cs",
-      "current": "tests/dotnet/Honua.Architecture.SourceTests/GettingStartedArtifactPinTests.cs",
-      "namespace": "Honua.Architecture.Tests",
-      "classes": [
-        "GettingStartedArtifactPinTests"
-      ],
-      "testAttributes": 1
-    },
-    {
       "original": "tests/dotnet/Honua.Architecture.Tests/HandParsedConfigurationSectionTests.cs",
       "current": "tests/dotnet/Honua.Architecture.SourceTests/HandParsedConfigurationSectionTests.cs",
       "namespace": "Honua.Architecture.Tests",

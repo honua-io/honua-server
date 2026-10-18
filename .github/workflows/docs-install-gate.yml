@@ -1,0 +1,34 @@
+name: Docs Public Install
+
+# PRs select this same proof inside the required PR Gate. This entry point is
+# for manually rechecking published artifacts without a source build.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-public-install-manual
+  cancel-in-progress: false
+
+jobs:
+  public-install:
+    name: Public Docker install, publish, query and restart
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Replay the published quickstart without registry credentials
+        run: python3 scripts/docs-validation/validate_public_install.py
+      - name: Upload bounded installation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-public-install
+          path: artifacts/docs-validation/public-install/receipt.json
+          if-no-files-found: warn
+          retention-days: 14
