@@ -1373,3 +1373,34 @@ partition. These one-run timing observations size the change; they are not a
 p90 estimate or fresh post-split proof. Two actual executions per child and
 full exact-source validation remain required before delivery. Candidate
 qualification is separate.
+
+
+## WMS class/complement capacity cut (2026-10-18, #6318)
+
+The original `OGC Classic Maps` run at `3e4222e5923e4663345fa802c6ac616d9639f27f`
+[reached its 1,200-second inner budget](https://github.com/honua-io/honua-server/actions/runs/39082856649/job/117548299539)
+while still producing output. Artifact `12121440421` contains the console log and timing JSON,
+with 1,201 seconds elapsed and four seconds of idle time at exit, but no TRX.
+The 108 passed console records are partial execution, not a completed suite.
+The deliberately throwing exception-mapping provider near the end is not itself an assertion failure.
+
+The matrix now partitions that entire legacy WMS namespace into:
+
+- `OGC Classic Maps Core`: the measured `OgcClassicWmsTests` class family.
+- `OGC Classic Maps Supporting`: the exact complement, retaining temporal, bounds, CRS,
+  hidden-field, capabilities, exception-mapping, authorization, legend, Mapsui and rendered-raster cases.
+
+Both children keep the original assembly, all source triggers, default parallelism and 20-minute
+inner / 30-minute job budgets. The maintained runner still applies the original non-Slow/non-Fast
+Tier filters. No runtime assertion, fixture lifetime or discovery exemption changes.
+`shard_partitions` retains the legacy parent filter; normal router validation checks every discovered
+method appears once across the children and rejects lost, duplicate, foreign, swapped, trigger,
+budget, project and parallelism mutations.
+
+The canonical shard roster grows from 121 to 122. Release consumers load `.github/ci-shards.json`
+from the authenticated exact source revision using their existing dynamic `shardInventory` contract;
+this does not rewrite a historical 121-shard audit or certify any new source automatically.
+The console timing suggests roughly eleven minutes were spent in the largest class, but incomplete
+logs cannot predict either child's final wall time. Actual complete child TRX and timing receipts
+remain necessary; the split alone does not establish qualification or close a capacity incident.
+The retained source/timing description is `wms-shard-capacity-20261018.json` beside this document.

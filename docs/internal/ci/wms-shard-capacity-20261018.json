@@ -1,0 +1,46 @@
+{
+  "schema": "honua.shard-capacity-cut/v1",
+  "issue": "https://github.com/honua-io/honua-server/issues/6318",
+  "originalSource": "3e4222e5923e4663345fa802c6ac616d9639f27f",
+  "runId": 39082856649,
+  "jobId": 117548299539,
+  "artifactId": 12121440421,
+  "status": "incomplete-capacity-timeout",
+  "durationSeconds": 1201,
+  "budgetSeconds": 1200,
+  "idleSecondsAtExit": 4,
+  "observedPassLogRecords": 108,
+  "observedHostStartupRecords": 111,
+  "trxPresent": false,
+  "qualification": "not-evaluated",
+  "originalShard": {
+    "name": "OGC Classic Maps",
+    "shard_name": "OGC Classic Maps",
+    "dispatch_rank": 16.6,
+    "artifact_suffix": "ogc-classic-maps",
+    "log_name": "server-tests-ogc-classic-maps",
+    "timeout_minutes": 30,
+    "test_timeout_minutes": 20,
+    "max_cpu_count": "",
+    "upload_operator_eval_report": false,
+    "upload_odata_evidence": false,
+    "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
+    "_comment": "ADR-0037 finer-sharding: narrowed to the Wms namespace; Wmts was carved into OGC Classic WMTS. Wcs20 paths moved to the WFS shard (which now owns Wcs20 coverage). The GeoServices MapServer and StaticMap source paths also select this shard because RenderedRasterBaselineTests validates their shared rendered-map pipeline.",
+    "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)",
+    "paths": [
+      "src/Honua.Core/Features/Metadata/Domain/V2/",
+      "src/Honua.Core/Features/Validation/",
+      "src/Honua.Protocols.GeoServices/MapServer/",
+      "src/Honua.Protocols.OgcClassic/Wms/",
+      "src/Honua.Server/Features/StaticMap/",
+      "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/MetadataV2LifecycleRoutingTests.cs",
+      "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/"
+    ]
+  },
+  "children": [
+    "OGC Classic Maps Core",
+    "OGC Classic Maps Supporting"
+  ],
+  "measuredClassPrefix": "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests",
+  "note": "The largest class occupied approximately 11 minutes of the incomplete 20-minute console log. These observations motivate a bounded partition; they do not establish complete counts or predicted passing runtimes. Both complete child runs and actual TRX remain required."
+}

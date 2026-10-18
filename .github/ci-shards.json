@@ -66,7 +66,8 @@
       "shards": [
         "FeatureServer Endpoints Query Services and Replication",
         "OGC API Features",
-        "OGC Classic Maps",
+        "OGC Classic Maps Core",
+        "OGC Classic Maps Supporting",
         "OData Core",
         "MCP and Sessions",
         "MCP and Sessions",
@@ -80,7 +81,8 @@
       "shards": [
         "FeatureServer Endpoints Query Services and Replication",
         "OGC API Features",
-        "OGC Classic Maps",
+        "OGC Classic Maps Core",
+        "OGC Classic Maps Supporting",
         "OData Core",
         "MCP and Sessions",
         "MCP and Sessions",
@@ -94,7 +96,8 @@
       "shards": [
         "FeatureServer Endpoints Query Services and Replication",
         "OGC API Features",
-        "OGC Classic Maps",
+        "OGC Classic Maps Core",
+        "OGC Classic Maps Supporting",
         "OData Core",
         "MCP and Sessions",
         "MCP and Sessions",
@@ -378,6 +381,14 @@
       "children": [
         "Scene",
         "Scene I3S Resources"
+      ]
+    },
+    {
+      "name": "OGC Classic Maps",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)",
+      "children": [
+        "OGC Classic Maps Core",
+        "OGC Classic Maps Supporting"
       ]
     }
   ],
@@ -1216,19 +1227,43 @@
       ]
     },
     {
-      "name": "OGC Classic Maps",
-      "shard_name": "OGC Classic Maps",
+      "name": "OGC Classic Maps Core",
+      "shard_name": "OGC Classic Maps Core",
       "dispatch_rank": 16.6,
-      "artifact_suffix": "ogc-classic-maps",
-      "log_name": "server-tests-ogc-classic-maps",
+      "artifact_suffix": "ogc-classic-maps-core",
+      "log_name": "server-tests-ogc-classic-maps-core",
       "timeout_minutes": 30,
       "test_timeout_minutes": 20,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
-      "_comment": "ADR-0037 finer-sharding: narrowed to the Wms namespace; Wmts was carved into OGC Classic WMTS. Wcs20 paths moved to the WFS shard (which now owns Wcs20 coverage). The GeoServices MapServer and StaticMap source paths also select this shard because RenderedRasterBaselineTests validates their shared rendered-map pipeline.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)",
+      "_comment": "Capacity split #6318: exact class/complement partition of the original Wms namespace. Runs the measured OgcClassicWmsTests class family. Original source triggers, test assembly, Tier exclusions, parallelism and 20m/30m budgets remain unchanged.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests",
+      "paths": [
+        "src/Honua.Core/Features/Metadata/Domain/V2/",
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Protocols.GeoServices/MapServer/",
+        "src/Honua.Protocols.OgcClassic/Wms/",
+        "src/Honua.Server/Features/StaticMap/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/MetadataV2LifecycleRoutingTests.cs",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/"
+      ]
+    },
+    {
+      "name": "OGC Classic Maps Supporting",
+      "shard_name": "OGC Classic Maps Supporting",
+      "dispatch_rank": 16.5,
+      "artifact_suffix": "ogc-classic-maps-supporting",
+      "log_name": "server-tests-ogc-classic-maps-supporting",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
+      "_comment": "Capacity split #6318: exact class/complement partition of the original Wms namespace. Retains every other Wms class, including rendered-raster, hidden-field, authorization, capabilities, exception-mapping, temporal, CRS and Mapsui coverage. Original source triggers, test assembly, Tier exclusions, parallelism and 20m/30m budgets remain unchanged.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests",
       "paths": [
         "src/Honua.Core/Features/Metadata/Domain/V2/",
         "src/Honua.Core/Features/Validation/",

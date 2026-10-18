@@ -28,3 +28,25 @@ def test_index_results_includes_lane_extensions() -> None:
 
     assert set(indexed) == {"CERT-CONN-01", "NB-OWS-WFS-100-01"}
     assert indexed["NB-OWS-WFS-100-01"]["status"] == "fail"
+
+
+def test_exact_client_registry_stays_joined_to_documented_and_baselined_extensions():
+    import fnmatch
+    import json
+    import re
+
+    root = SCRIPT.parents[2]
+    registry = json.loads((root / "docs/gis/data/client-certification-matrix.v1.json").read_text())
+    declared = {row["id"] for row in registry["testCases"]}
+    markdown = (root / "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md").read_text()
+    documented = set(re.findall(r"^\| ((?:CERT|JS|EL|DSK|CLI|BI|NB)-[A-Z0-9-]*\d) \|", markdown, re.M))
+    assert declared == documented
+    lane = next(row for row in registry["lanes"] if row["id"] == "js")
+    automated = {case_id for case_id in declared if any(fnmatch.fnmatchcase(case_id, pattern) for pattern in lane["automated"])}
+    evidence = set()
+    for path in (root / "tests/baselines/client-compat").rglob("*.cert.json"):
+        envelope = json.loads(path.read_text())
+        if envelope.get("client_lane") == "js":
+            evidence.update(diff_baselines.index_results(envelope))
+    assert automated <= evidence
+    assert "JS-EXT-OL-WFS-GETFEATURE-01" in automated

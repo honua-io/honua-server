@@ -82,11 +82,11 @@
     },
     {
       "test_case_id": "CERT-QFLT-01",
-      "status": "pass",
-      "duration_ms": 4,
+      "status": "skip",
+      "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "GetFeature for 'honua:test_layer' returned 5043 bytes",
+      "notes": "Reviewed false-positive correction (#6304): the historical unfiltered GetFeature read did not execute core filtering. Required filtering remains unproved; observed skip in the 549043d immutable-image rehearsal.",
       "evidence_ref": ""
     },
     {
@@ -227,11 +227,21 @@
   ],
   "summary": {
     "total": 24,
-    "passed": 5,
+    "passed": 4,
     "failed": 0,
-    "skipped": 6,
+    "skipped": 7,
     "not_applicable": 13
   },
   "cite_results": null,
-  "extensions": []
+  "extensions": [
+    {
+      "test_case_id": "JS-EXT-OL-WFS-GETFEATURE-01",
+      "status": "pass",
+      "duration_ms": 103,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Observed pass in 549043d rehearsal against image sha256:ea016718c8cad41cb995bd10429f92c40d6736e3bc9e413fa07e332ad24bc5d3: Unfiltered GetFeature for 'honua:test_layer' returned parseable features; does not prove core query filtering; added as a reviewed baseline correction, not a claim that this extension ran in the original historical run.",
+      "evidence_ref": ""
+    }
+  ]
 }

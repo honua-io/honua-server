@@ -180,6 +180,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 | JS-EXT-OL-ITEMS-01 | Feature items list and count | OGC Features | pass/fail+count |
 | JS-EXT-OL-GEOJSON-01 | ol/format/GeoJSON feature parsing | OGC Features | pass/fail |
 | JS-EXT-OL-GEOJSON-02 | ol/format/GeoJSON single-item parsing | OGC Features | pass/fail |
+| JS-EXT-OL-WFS-GETFEATURE-01 | OpenLayers WFS parses populated unfiltered GetFeature; no core query-filtering credit | WFS | pass/fail |
 | JS-EXT-TILES-DISC-01 | OGC Tiles landing page | MVT | pass/fail |
 | JS-EXT-TILES-DISC-02 | Collection tilesets listing | MVT | pass/fail |
 | JS-EXT-TILES-SCHM-01 | Tileset metadata introspection | MVT | pass/fail |

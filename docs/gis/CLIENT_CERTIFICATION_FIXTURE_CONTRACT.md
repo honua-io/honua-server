@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:6f82a1613c65566c424181fc29a4b31495bdee43073deec970e103e5943f9631` |
+| `fixtureRevision` | `sha256:ca13ba7967bf49268fd8da4a4536c7323015c9d3f7d45a9ddae2dbbba355ba09` |
 | `serverConfigRevision` | `sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
@@ -47,7 +47,7 @@ $ LC_ALL=C sha256sum docker/client-compat/seed/publish-attachments.py \
     tests/seed/browser-compat.yaml tests/seed/client-compat-auth-wave1.yaml \
     tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum
-6f82a1613c65566c424181fc29a4b31495bdee43073deec970e103e5943f9631  -
+ca13ba7967bf49268fd8da4a4536c7323015c9d3f7d45a9ddae2dbbba355ba09  -
 $ LC_ALL=C sha256sum tests/config/client-compat-server-v1.json | sha256sum
 d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a  -
 ```
@@ -226,8 +226,9 @@ rendering and style `CERT-RNDR-01`, `CERT-RNDR-02`, `CERT-RNDR-SYM-01`, `CERT-RN
 `CERT-PRTL-TOKN-02`, `CERT-PRTL-AUTH-01`, `CERT-PRTL-OAUTH-01`, `CERT-PRTL-OAUTH-02`,
 `CERT-PRTL-COMM-01`, `CERT-PRTL-COMM-02`.
 
-**Lane extensions (23).** JavaScript: `JS-EXT-01`, `JS-EXT-02`, `JS-EXT-OL-COLL-01`,
+**Lane extensions (24).** JavaScript: `JS-EXT-01`, `JS-EXT-02`, `JS-EXT-OL-COLL-01`,
 `JS-EXT-OL-ITEMTYPE-01`, `JS-EXT-OL-ITEMS-01`, `JS-EXT-OL-GEOJSON-01`, `JS-EXT-OL-GEOJSON-02`,
+`JS-EXT-OL-WFS-GETFEATURE-01` (unfiltered parsing only; no core filtering credit),
 `JS-EXT-TILES-DISC-01`, `JS-EXT-TILES-DISC-02`, `JS-EXT-TILES-SCHM-01`, `JS-EXT-OGC-MAPS-01`.
 Cesium: `JS-CES-IMG-01`, `JS-CES-TILE-01`. Esri Leaflet: `EL-EXT-01`, `EL-EXT-02`, `EL-EXT-03`,
 `EL-EXT-04`. Desktop: `DSK-EXT-01`, `DSK-EXT-02`. CLI: `CLI-EXT-01`, `CLI-EXT-02`. BI:
