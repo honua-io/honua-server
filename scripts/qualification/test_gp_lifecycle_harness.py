@@ -31,7 +31,7 @@ class GpQualificationHarnessTests(unittest.TestCase):
     def test_mcp_acknowledgement_cannot_replace_native_cessation_or_output_oracles(self):
         source = HARNESS.read_text(encoding="utf-8")
         function = re.search(r"^cancel_barrier_job\(\) \{\n.*?^\}", source, re.M | re.S).group(0)
-        for mode in ("positive", "invalid-ack", "child-alive", "terminal-success", "readable-result", "late-result", "orphan-output"):
+        for mode in ("positive", "invalid-ack", "child-alive", "terminal-success", "readable-result", "late-result", "orphan-output", "worker-missing", "probe-failure", "missing-late-barrier"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 script = function + r'''
 set -uo pipefail
@@ -43,15 +43,25 @@ now() { echo timestamp; }
 submit_async() { echo job-1; }
 wait_barrier() { return 0; }
 release_barrier() { return 0; }
-barrier_record() { echo '{"childProcessId":123}'; }
+barrier_record() {
+  if [[ "$MODE" == missing-late-barrier && -e first-alive ]]; then echo null
+  else echo '{"childProcessId":123}'; fi
+}
 compose() {
   if [[ "$1" == ps ]]; then echo worker-container
   elif [[ "$*" == *'GET '* ]]; then echo '{"attemptCount":1}'
   fi
 }
 docker() {
+  if [[ "$1" == inspect ]]; then
+    [[ "$2 $3 $4 $5" == "--type container --format {{.State.Running}}" ]] || return 98
+    [[ "$MODE" != worker-missing ]] || return 1
+    echo true; return 0
+  fi
   if [[ ! -e first-alive ]]; then touch first-alive; return 0; fi
-  [[ "$MODE" == child-alive ]]
+  [[ "$MODE" != probe-failure ]] || return 1
+  [[ "$2" == worker-container && "${@: -1}" == 123 ]] || return 97
+  if [[ "$MODE" == child-alive ]]; then echo alive; else echo absent; fi
 }
 node() {
   [[ "$1" == */mcp/cancel-durable-job.mjs && "$2" == "$peer_url" && "$3" == job-1 && "$HONUA_GP_MCP_API_KEY" == control ]] || return 1
@@ -71,9 +81,9 @@ write_receipt() { touch passed; }
 delete_capture() { echo 'OGC fallback is forbidden' >&2; return 99; }
 status=0
 cancel_barrier_job native-process-started mcp || status=$?
-if [[ "$MODE" == positive ]]; then
+if [[ "$MODE" == positive || "$MODE" == missing-late-barrier ]]; then
   [[ "$status" == 0 && -e passed ]] || exit 61
-  jq -e '.child_process.exit_observed == true and .object_inventory.after_retention_cleanup == 0 and .cancellation_responses.mcp_acknowledgement.executionCessationProven == false' evidence.json >/dev/null || exit 62
+  jq -e '.child_process.exit_observed == true and .child_process.pid == 123 and .child_process.worker_container == "worker-container" and .object_inventory.after_retention_cleanup == 0 and .cancellation_responses.mcp_acknowledgement.executionCessationProven == false' evidence.json >/dev/null || exit 62
 else
   [[ "$status" != 0 && ! -e passed && -s finding ]] || exit 63
 fi

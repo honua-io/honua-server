@@ -378,7 +378,7 @@ cancel_barrier_job() {
   local target="$1" protocol="${2:-ogc}" job cancel_url="$base_url" request_at
   local mcp_ack=null cancel_source first_semantics second_semantics response_one response_two
   local process_ready output_ready terminal_ready signal_observed result_code_after result_code_late
-  local child_pid child_alive worker_container
+  local child_pid="" child_alive worker_container="" original_child_pid="" original_worker_container="" child_probe
   request_at="$(now)"
   job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
 
@@ -389,6 +389,7 @@ cancel_barrier_job() {
     process_ready="$(barrier_record "$job" native-process-started)"
     child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
     worker_container="$(compose ps -q worker)"
+    original_child_pid="$child_pid"; original_worker_container="$worker_container"
     if [[ "$target" == native-process-started ]]; then
       [[ -n "$child_pid" && -n "$worker_container" ]] || {
         scenario_fail "native-process-started barrier did not report a child PID"
@@ -485,18 +486,34 @@ cancel_barrier_job() {
       break
     fi
   done
-  child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
+  # Preserve the PID/container observed before cancellation even if a later
+  # barrier read is missing. Transport failure is not process-exit evidence.
+  child_pid="$original_child_pid"
+  worker_container="$original_worker_container"
+  if [[ -z "$child_pid" ]]; then
+    child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
+    worker_container="$(compose ps -q worker)"
+  fi
   child_alive=false
   if [[ -n "$child_pid" ]]; then
-    worker_container="$(compose ps -q worker)"
-    if docker exec "$worker_container" kill -0 "$child_pid" >/dev/null 2>&1; then
-      child_alive=true
-    fi
-    [[ "$child_alive" == false ]] || {
-      scenario_fail "native child process remained alive after cancellation"
+    [[ "$child_pid" =~ ^[1-9][0-9]*$ && -n "$worker_container" ]] || {
+      scenario_fail "native child identity is invalid after cancellation"; return 1;
+    }
+    [[ "$(docker inspect --type container --format '{{.State.Running}}' "$worker_container")" == true ]] || {
+      scenario_fail "original worker is not observable and running after cancellation"; return 1;
+    }
+    child_probe="$(docker exec "$worker_container" sh -c '
+      test -d /proc && test -r /proc/self/stat || exit 71
+      if test -d "/proc/$1"; then printf alive; else printf absent; fi
+    ' sh "$child_pid")" || {
+      scenario_fail "native child cessation probe failed after cancellation"; return 1;
+    }
+    [[ "$child_probe" == absent ]] || {
+      scenario_fail "native child process remained alive or its absence was not proved after cancellation"
       return 1
     }
   fi
+
   record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
   pending="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:pending "$job" || true)"
   claimed_score="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:claimed "$job" || true)"
@@ -512,11 +529,12 @@ cancel_barrier_job() {
     --arg result_code_after "$result_code_after" --arg result_code_late "$result_code_late" \
     --argjson process "$process_ready" --argjson output "$output_ready" --argjson terminal "$terminal_ready" \
     --argjson signal "$signal_observed" \
-    --argjson child_alive "$child_alive" \
+    --argjson child_alive "$child_alive" --argjson observed_child_pid "${child_pid:-null}" \
+    --arg observed_worker "$worker_container" \
     --argjson record "$record" --arg pending "$pending" --arg claimed "$claimed_score" \
     --argjson objects_after "$after_objects" \
     --argjson transitions "$(jq -s '.' "$scenario_transition_file")" \
-    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,output:$output,terminal_fence:$terminal,artifact_references:($record.artifactReferences // []),timeout_source:null,cancellation_source:$cancel_source,cancellation_responses:{first_http:$response_one,second_http:$response_two,mcp_acknowledgement:$mcp_ack},signal_observed_at:($signal.observedAt // null),child_process:{pid:($process.childProcessId // null),exit_observed:($child_alive|not)},terminal_history:$transitions,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},result_visibility:{after_terminal:$result_code_after,late:$result_code_late},object_inventory:{after_retention_cleanup:$objects_after}}')"
+    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,output:$output,terminal_fence:$terminal,artifact_references:($record.artifactReferences // []),timeout_source:null,cancellation_source:$cancel_source,cancellation_responses:{first_http:$response_one,second_http:$response_two,mcp_acknowledgement:$mcp_ack},signal_observed_at:($signal.observedAt // null),child_process:{pid:$observed_child_pid,worker_container:$observed_worker,exit_observed:($child_alive|not)},terminal_history:$transitions,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},result_visibility:{after_terminal:$result_code_after,late:$result_code_late},object_inventory:{after_retention_cleanup:$objects_after}}')"
   write_receipt "$scenario_name" pass "" "$job" "$state"
 }
 
