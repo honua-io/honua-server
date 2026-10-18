@@ -5,12 +5,13 @@ namespace Honua.Import.FileImport.Resumable;
 
 /// <summary>
 /// Materializes a sealed transfer into private, seekable worker scratch. The caller
-/// owns the returned stream and must dispose it after import. This is not durable
-/// job admission: shared source retention and aggregate tenant quotas are separate.
+/// owns the returned lease and must dispose it after import. This is not durable
+/// job admission: shared source retention remains separate from scratch accounting.
 /// </summary>
-internal sealed class ImportUploadScratch(RedisImportUploadStore store, ImportUploadChunkStorage storage)
+internal sealed class ImportUploadScratch(RedisImportUploadStore store, ImportUploadChunkStorage storage,
+    ImportScratchStorage? scratch = null)
 {
-    public async Task<FileStream> OpenAsync(ImportUploadSession session, string scratchDirectory,
+    public async Task<ImportScratchLease> OpenAsync(ImportUploadSession session, string scratchDirectory,
         long maximumScratchBytes, Func<CancellationToken, Task> reauthorize,
         CancellationToken cancellationToken = default)
     {
@@ -38,18 +39,10 @@ internal sealed class ImportUploadScratch(RedisImportUploadStore store, ImportUp
             throw new InvalidDataException("The sealed upload source is unavailable.");
         }
 
-        Directory.CreateDirectory(scratchDirectory);
-        // One open handle survives verification through import; no path reopen can
-        // substitute a different source. The OS preallocation is requested before
-        // reading chunks, but is not a portable aggregate quota guarantee.
-        var file = new FileStream(Path.Join(scratchDirectory, $"honua-upload-{Guid.NewGuid():N}.tmp"), new FileStreamOptions
-        {
-            Mode = FileMode.CreateNew,
-            Access = FileAccess.ReadWrite,
-            Share = FileShare.None,
-            Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose,
-            PreallocationSize = session.TotalBytes
-        });
+        if (scratch is null)
+            throw new InvalidOperationException("Aggregate import scratch storage accounting is required.");
+        var lease = await scratch.AllocateAsync(session, scratchDirectory, maximumScratchBytes, cancellationToken).ConfigureAwait(false);
+        var file = lease.Content;
         try
         {
             var verifier = new ImportUploadContentVerifier(store, storage);
@@ -64,11 +57,11 @@ internal sealed class ImportUploadScratch(RedisImportUploadStore store, ImportUp
 
             cancellationToken.ThrowIfCancellationRequested();
             file.Position = 0;
-            return file;
+            return lease;
         }
         catch
         {
-            await file.DisposeAsync().ConfigureAwait(false);
+            await lease.DisposeAsync().ConfigureAwait(false);
             throw;
         }
     }

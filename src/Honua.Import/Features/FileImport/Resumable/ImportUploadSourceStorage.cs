@@ -13,7 +13,8 @@ namespace Honua.Import.FileImport.Resumable;
 /// session's admission window. The coordinator must reauthorize and bind exactly one
 /// candidate before durable job acceptance. No upload or job capability is advertised here.
 /// </summary>
-internal sealed class ImportUploadSourceStorage(RedisImportUploadStore store, ICloudFileStorage storage, IImportStorageBudget budget)
+internal sealed class ImportUploadSourceStorage(RedisImportUploadStore store, ICloudFileStorage storage, IImportStorageBudget budget,
+    ImportScratchStorage? scratchStorage = null)
 {
     // This is bounded source retention, not a promise of indefinite queue/retry life.
     // Source-aware queue deadlines and scratch quotas remain admission prerequisites.
@@ -27,8 +28,8 @@ internal sealed class ImportUploadSourceStorage(RedisImportUploadStore store, IC
             throw new InvalidOperationException("The upload already has a retained source. Read its original receipt.");
         }
 
-        var scratch = new ImportUploadScratch(store, new ImportUploadChunkStorage(storage));
-        await using var content = await scratch.OpenAsync(session, scratchDirectory, maximumScratchBytes,
+        var scratch = new ImportUploadScratch(store, new ImportUploadChunkStorage(storage), scratchStorage);
+        await using var lease = await scratch.OpenAsync(session, scratchDirectory, maximumScratchBytes,
             reauthorize, cancellationToken).ConfigureAwait(false);
         await reauthorize(cancellationToken).ConfigureAwait(false);
         var key = $"imports/resumable/{session.Id}/source-{Guid.NewGuid():N}";
@@ -38,7 +39,7 @@ internal sealed class ImportUploadSourceStorage(RedisImportUploadStore store, IC
         var minimumRetention = DateTimeOffset.UtcNow + SourceRetention;
         var result = await storage.UploadAsync(new FileUploadRequest
         {
-            Content = content,
+            Content = lease.Content,
             FileName = session.FileName,
             ContentType = "application/octet-stream",
             SizeBytes = session.TotalBytes,

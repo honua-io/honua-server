@@ -136,7 +136,8 @@ internal sealed class RedisImportStorageBudget : IImportStorageBudget
             throw new ArgumentException("The reservation must identify its upload's server-owned object.", nameof(reservation));
         var leaf = reservation.FileId[("imports/resumable/".Length + reservation.UploadId.Length + 1)..];
         var identity = leaf.EndsWith(".part", StringComparison.Ordinal) ? leaf[..^5]
-            : leaf.StartsWith("source-", StringComparison.Ordinal) ? leaf[7..] : string.Empty;
+            : leaf.StartsWith("source-", StringComparison.Ordinal) ? leaf[7..]
+            : leaf.StartsWith("scratch-", StringComparison.Ordinal) ? leaf[8..] : string.Empty;
         _ = RedisImportUploadStore.Key(identity);
     }
 

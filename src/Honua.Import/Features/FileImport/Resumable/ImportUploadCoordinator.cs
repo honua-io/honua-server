@@ -15,10 +15,11 @@ namespace Honua.Import.FileImport.Resumable;
 /// finalization and HTTP/SDK registration are separate prerequisites before advertising it.
 /// </summary>
 internal sealed class ImportUploadCoordinator(
-    ImportUploadTaskAuthority authority, RedisImportUploadStore store, ICloudFileStorage files, IImportStorageBudget budget)
+    ImportUploadTaskAuthority authority, RedisImportUploadStore store, ICloudFileStorage files, IImportStorageBudget budget,
+    ImportScratchStorage? scratchStorage = null)
 {
     private readonly ImportUploadChunkStorage _storage = new(files, budget);
-    private readonly ImportUploadSourceStorage _sources = new(store, files, budget);
+    private readonly ImportUploadSourceStorage _sources = new(store, files, budget, scratchStorage);
 
     public async Task<ImportUploadSession?> GetAsync(ClaimsPrincipal principal, ImportUploadTaskReference reference,
         CancellationToken cancellationToken = default)

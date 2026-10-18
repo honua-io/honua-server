@@ -161,6 +161,7 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
         (await store.TrySealAsync(session, Digest)).Should().BeTrue();
         session = (await store.GetAsync(session.Id, session.Scope))!;
         var observed = Substitute.For<ICloudFileStorage>();
+        var scratchBudget = Budget(connection, disk.Root + ":scratch", Bytes.Length);
         observed.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(call => disk.Storage.GetMetadataAsync(call.ArgAt<string>(0), call.ArgAt<CancellationToken>(1)));
         observed.DownloadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -169,10 +170,12 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
             .Returns(async call =>
             {
                 ((long)await connection.GetDatabase().HashGetAsync(budget.Key, "bytes")).Should().Be(2 * Bytes.Length);
+                ((long)await connection.GetDatabase().HashGetAsync(scratchBudget.Key, "bytes")).Should().Be(Bytes.Length);
                 return await disk.Storage.UploadAsync(call.ArgAt<FileUploadRequest>(0), call.ArgAt<CancellationToken>(1));
             });
         var scratch = Path.Join(disk.Root, "scratch");
-        var publish = () => new ImportUploadSourceStorage(store, observed, budget)
+        var publish = () => new ImportUploadSourceStorage(store, observed, budget,
+            new ImportScratchStorage(scratch, scratchBudget))
             .StageAsync(session, scratch, session.TotalBytes, _ => Task.CompletedTask);
 
         if (sourceFits)
@@ -191,6 +194,7 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
             .Should().Be(Bytes.Length * (sourceFits ? 2 : 1));
         (await disk.Storage.ListFilesAsync()).Count.Should().Be(sourceFits ? 2 : 1);
         Directory.GetFiles(scratch).Should().BeEmpty();
+        ((long)await connection.GetDatabase().HashGetAsync(scratchBudget.Key, "bytes")).Should().Be(0);
     }
 
     private static readonly byte[] Bytes = Enumerable.Range(0, 65536).Select(index => (byte)(index % 251)).ToArray();
