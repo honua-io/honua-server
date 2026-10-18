@@ -60,6 +60,8 @@ public sealed class DelegatedAgentJwtBearerTests
         }).Build();
         var services = new ServiceCollection().AddLogging().AddMemoryCache();
         services.AddSingleton<IConfiguration>(config);
+        // Production binds DI options separately in AuthenticationOptionsRegistration.
+        services.Configure<OidcAuthenticationOptions>(config.GetSection(OidcAuthenticationOptions.SectionName));
         services.AddOidcAuthentication(config);
         services.Configure<RbacOptions>(options => options.RoleClaimType = "groups");
         services.Configure<OidcAuthenticationOptions>(options =>
