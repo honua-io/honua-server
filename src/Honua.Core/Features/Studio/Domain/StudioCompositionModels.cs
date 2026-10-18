@@ -26,6 +26,29 @@ public sealed record StudioCompositionBody
     [JsonPropertyName("layers")]
     public IReadOnlyList<StudioCompositionLayer> Layers { get; init; } = Array.Empty<StudioCompositionLayer>();
 
+    /// <summary>
+    /// Portable map-package style references, including map-local layer overrides.
+    /// Null leaves the stored block untouched; an empty list explicitly clears it.
+    /// Entries remain JSON so catalog metadata unknown to this projection survives edits.
+    /// </summary>
+    [JsonPropertyName("styleRefs")]
+    public IReadOnlyList<JsonElement>? StyleRefs { get; init; }
+
+    /// <summary>
+    /// Canonical portable MapLibre document. Full visual style edits preserve its
+    /// authorized source and asset bindings while updating this draft's appearance.
+    /// </summary>
+    [JsonPropertyName("mapSpec")]
+    public JsonElement? MapSpec { get; init; }
+
+    /// <summary>
+    /// Portable source bindings used when a saved map is published or loaded by the SDK.
+    /// Source-aware edits synchronize these with the authorized map document.
+    /// Null preserves the stored block during unrelated composition edits.
+    /// </summary>
+    [JsonPropertyName("sourceBindings")]
+    public IReadOnlyList<JsonElement>? SourceBindings { get; init; }
+
     /// <summary>Initial/current map view.</summary>
     [JsonPropertyName("view")]
     public StudioCompositionView? View { get; init; }
@@ -72,7 +95,7 @@ public sealed record StudioCompositionBody
     /// <summary>
     /// Canonical map-package source binding identifiers projected from the stored
     /// <c>sourceBindings</c> block. This validation-only projection is not serialized;
-    /// <c>StudioCompositionBodyEditor</c> preserves the original block verbatim.
+    /// source-aware edits refresh it alongside <see cref="SourceBindings"/>.
     /// </summary>
     [JsonIgnore]
     public IReadOnlySet<string> SourceBindingIds { get; init; } = new HashSet<string>(StringComparer.Ordinal);

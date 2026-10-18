@@ -400,6 +400,10 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
                     ? "The composition body is invalid."
                     : $"{diagnostic.Code} at {diagnostic.Path}: {diagnostic.Message}");
             }
+            var prepared = await PrepareMapStyleUpdateAsync(httpContext, principal,
+                StudioCompositionBodyEditor.ReadBody(existing.Envelope),
+                StudioCompositionBodyEditor.ReadBody(envelope), cancellationToken).ConfigureAwait(false);
+            envelope = StudioCompositionBodyEditor.WriteBody(envelope, prepared);
         }
         var updated = await ApplyUpdateAsync(
             httpContext,

@@ -996,6 +996,10 @@ builder.Services.AddScoped<Honua.Infrastructure.Services.IGeometryConverter,
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.IOgcStyleProjection,
     Honua.Server.Features.Styling.OgcStyleProjection>();
+builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.IMapStyleValidator,
+    Honua.Server.Features.Styling.MapStyleValidator>();
+builder.Services.AddScoped<Honua.Core.Features.Studio.Abstractions.IStudioMapStyleSourceAuthorizer,
+    Honua.Server.Features.Studio.StudioMapStyleSourceAuthorizer>();
 builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.IGeoServicesStyleConverter,
     Honua.Server.Features.Styling.GeoServicesStyleConverter>();
 builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.ISldStyleConverter,

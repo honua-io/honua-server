@@ -79,8 +79,8 @@ public sealed partial class StudioPackageValidator
 
         if (TryGetMapMember(body, "mapSpec", path, required: false, diagnostics, out var mapSpec))
         {
-            // Structural MapLibre validity is delegated to the style-spec validator on the
-            // client; the server only requires the style document to be an object.
+            // Package schema validation requires an object. Style mutations additionally
+            // run the shared source authorization and full style validation preparation.
             MapObject(mapSpec, $"{path}/mapSpec", "mapSpec", diagnostics);
         }
 

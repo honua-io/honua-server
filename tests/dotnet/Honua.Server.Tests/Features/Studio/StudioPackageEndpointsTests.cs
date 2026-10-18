@@ -31,7 +31,7 @@ namespace Honua.Server.Tests.Features.Studio;
 [Collection("Database")]
 [Protocol(TestProtocols.Studio)]
 [Operation(Operations.StudioLifecycle)]
-public sealed class StudioPackageEndpointsTests : IAsyncLifetime
+public sealed partial class StudioPackageEndpointsTests : IAsyncLifetime
 {
     private readonly CapturingAuditLog _auditLog = new();
     private readonly WebAppFixture _fixture;

@@ -206,7 +206,7 @@ internal static class McpPromptCatalog
                 + "2. Verify access with honua_list_layers, honua_describe_layer and honua_query_features.\n"
                 + "3. Call honua_get_style and honua_apply_style_preset, then honua_render_map to confirm the result.\n"
                 + "4. Call honua_studio_create_draft, edit it with honua_studio_update_draft, and compose it with "
-                + "honua_studio_add_layer, honua_studio_set_layer_style, honua_studio_set_layer_visibility, "
+                + "honua_studio_add_layer, honua_studio_set_layer_style, honua_studio_set_map_style, honua_studio_set_layer_visibility, "
                 + "honua_studio_set_view, honua_studio_add_widget, honua_studio_add_control, and "
                 + "honua_studio_bind_interaction. Read it back with honua_studio_get_draft, and check it with "
                 + "honua_studio_validate_draft and honua_studio_preview_draft.\n"

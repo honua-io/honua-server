@@ -304,6 +304,23 @@ internal sealed class McpStudioSetLayerStyleArgument
     /// <summary>Style reference (catalog styleId or inline style key). Omit/null clears the binding.</summary>
     [JsonPropertyName("styleRef")]
     public string? StyleRef { get; set; }
+
+    /// <summary>Map-local layer overrides; mutually exclusive with a non-null catalog binding.</summary>
+    [JsonPropertyName("styleBody")]
+    public JsonElement? StyleBody { get; set; }
+}
+
+/// <summary>Arguments for full map-local appearance editing under the canonical draft generation.</summary>
+internal sealed class McpStudioSetMapStyleArgument
+{
+    [JsonPropertyName("draftId")]
+    public Guid? DraftId { get; set; }
+
+    [JsonPropertyName("generation")]
+    public long? Generation { get; set; }
+
+    [JsonPropertyName("mapSpec")]
+    public JsonElement MapSpec { get; set; }
 }
 
 // -----------------------------------------------------------------------

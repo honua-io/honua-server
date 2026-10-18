@@ -20,7 +20,7 @@ namespace Honua.Core.Features.Studio.Services;
 /// checking and validation stay owned by the lifecycle service (no lifecycle
 /// logic is duplicated here).
 /// </summary>
-public static class StudioCompositionBodyEditor
+public static partial class StudioCompositionBodyEditor
 {
     /// <summary>Package families whose composition body the editor understands.</summary>
     public static readonly IReadOnlyCollection<StudioPackageFamily> CompositionEligibleFamilies =
@@ -128,8 +128,8 @@ public static class StudioCompositionBodyEditor
     /// <remarks>
     /// <para>
     /// <see cref="StudioCompositionBody"/> is a PROJECTION of the stored document — it models
-    /// <c>layers</c>, <c>view</c>, <c>widgets</c>, <c>interactions</c> and <c>layout</c> and nothing
-    /// else — but a canonical map package
+    /// <c>layers</c>, <c>view</c>, <c>widgets</c>, <c>interactions</c>, <c>layout</c> and optional
+    /// portable styling blocks — but a canonical map package
     /// also carries <c>mapPackageId</c>, <c>format</c>, <c>status</c>, <c>createdAt</c>,
     /// <c>sourceBindings</c> and <c>initialView</c> (all part of the canonical
     /// <c>MapPackage</c> the draft factory emits).
@@ -334,7 +334,7 @@ public static class StudioCompositionBodyEditor
                 + $"'{orphanedControl.SourceId}'. Remove or rebind the control first.");
         }
 
-        return updated;
+        return RemoveComposedLayerAppearance(updated, layerId, removedLayer.SourceId);
     }
 
     /// <summary>Sets (or clears) a layer's bound <see cref="StudioCompositionLayer.StyleRef"/>.</summary>
@@ -740,6 +740,11 @@ public sealed class StudioCompositionFamilyException : Exception
 /// <summary>Raised when a draft's composition body cannot be parsed.</summary>
 public sealed class StudioCompositionBodyException : Exception
 {
+    public StudioCompositionBodyException(string message)
+        : base(message)
+    {
+    }
+
     public StudioCompositionBodyException(string message, Exception innerException)
         : base(message, innerException)
     {

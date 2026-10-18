@@ -28,7 +28,7 @@ namespace Honua.Server.Features.Studio;
 /// <summary>
 /// Minimal API endpoints for the Studio package lifecycle.
 /// </summary>
-internal static class StudioPackageEndpoints
+internal static partial class StudioPackageEndpoints
 {
     private const string ProblemType = "https://honua.io/problems/studio";
 
@@ -82,6 +82,14 @@ internal static class StudioPackageEndpoints
         group.MapDelete("/package-drafts/{draftId:guid}", HandleDeleteDraft)
             .WithDisplayName("Delete Studio Package Draft")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
+
+        group.MapPut("/package-drafts/{draftId:guid}/style", HandleUpdateDraftStyle)
+            .WithDisplayName("Update Studio Map Style")
+            .WithSummary("Updates this draft's appearance while preserving authorized sources and assets.");
+
+        group.MapPost("/package-drafts/{draftId:guid}/style/initialize", HandleInitializeDraftStyle)
+            .WithDisplayName("Initialize Studio Map Style")
+            .WithSummary("Initializes a style from the draft's authorized published layers.");
 
         group.MapPost("/package-drafts/{draftId:guid}/validate", HandleValidateDraft)
             .WithDisplayName("Validate Studio Package Draft")
@@ -734,6 +742,18 @@ internal static class StudioPackageEndpoints
             }
 
             var ownerId = request.OwnerId;
+            var envelope = request.Envelope;
+            if (StudioCompositionBodyEditor.CompositionEligibleFamilies.Contains(existing.Family)
+                && existing.Family == envelope.Family)
+            {
+                var before = StudioCompositionBodyEditor.ReadBody(existing.Envelope);
+                var after = StudioCompositionBodyEditor.ReadBody(envelope);
+                if (before.MapSpec is not null || after.MapSpec is not null)
+                {
+                    after = await PrepareDraftMapStyleAsync(context, before, after).ConfigureAwait(false);
+                    envelope = StudioCompositionBodyEditor.WriteBody(envelope, after);
+                }
+            }
 
             var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.UpdateAsync(
@@ -743,7 +763,7 @@ internal static class StudioPackageEndpoints
                     PackageKey = request.PackageKey,
                     WorkspaceId = request.WorkspaceId,
                     OwnerId = ownerId,
-                    Envelope = request.Envelope,
+                    Envelope = envelope,
                     Generation = request.Generation,
                     ActorId = actor,
                 },
@@ -766,6 +786,17 @@ internal static class StudioPackageEndpoints
         catch (CapabilityUnavailableException ex)
         {
             return CapabilityUnavailable(context, ex);
+        }
+        catch (StudioCompositionBodyException ex)
+        {
+            return BadRequest(context, ex.Message);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return await DenyAsync(authorization, context, StudioAuthorizationOperation.UpdateDraft,
+                "studio-package-draft", draftId.ToString("D"),
+                "One or more map sources are unavailable to this session.",
+                "studio_source_access_denied").ConfigureAwait(false);
         }
         catch (ArgumentException ex)
         {

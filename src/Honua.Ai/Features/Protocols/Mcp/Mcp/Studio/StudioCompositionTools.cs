@@ -202,7 +202,10 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
         Description =
             "Set (or, when styleRef is omitted/null, clear) a layer's bound style reference in a map/app/dashboard-family Studio draft's "
             + "composition, with optimistic-generation checking. Fails with not_found if no layer with that id exists. "
-            + "This binds a style reference on the composed layer; it does not validate the reference against a style catalog.",
+            + "For visual or conversational map-local editing, supply styleBody instead of styleRef: a dictionary of "
+            + "MapLibre layer overrides keyed by this layer id (and optionally its __outline companion). "
+            + "This updates the same draft's inline style, never the reusable catalog style. "
+            + "Binding a catalog styleRef does not validate the reference against a style catalog.",
         InputSchema = StudioMcpSchemas.SetLayerStyleArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Re-pointing a style binding is non-destructive; re-applying the same
@@ -237,7 +240,11 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
             lifecycleService,
             draftId,
             generation,
-            body => StudioCompositionBodyEditor.SetLayerStyleRef(body, argument.LayerId!, argument.StyleRef),
+            body => argument.StyleBody is { ValueKind: not JsonValueKind.Null } styleBody
+                ? argument.StyleRef is null
+                    ? StudioCompositionBodyEditor.SetInlineLayerStyle(body, argument.LayerId!, styleBody)
+                    : throw new StudioCompositionBodyException("Choose styleBody for a local edit or styleRef for a binding, not both.")
+                : StudioCompositionBodyEditor.SetLayerStyleRef(body, argument.LayerId!, argument.StyleRef),
             cancellationToken).ConfigureAwait(false);
 
         return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
