@@ -297,7 +297,7 @@ def check_wps_and_h3_tests_select_both_owners(config: dict[str, Any]) -> None:
         f"tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/{name}.cs"
         for name in ("ProviderRoutedTileAndH3EndpointTests", "FeatureServerH3EntitlementTests")
     ]
-    expected = {"WFS", "FeatureServer Endpoints Query Services and Replication"}
+    expected = {"WFS", "FeatureServer Editing and Relationships", "FeatureServer Query Services and Replication"}
 
     def check(candidate: dict[str, Any], path: Path) -> None:
         for h3 in h3_paths:
