@@ -8,6 +8,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.AgentWorkspace;
@@ -29,7 +30,7 @@ public sealed class AgentDevOpsAuthorizationTests
         using var fixture = Create();
         var request = new AgentDevOpsAuthorizationRequest("server-1", "ecs-1", "dev", null);
         var result = await AgentWorkspaceEndpoints.AuthorizeDevOps(fixture.Context, fixture.Workspace, request);
-        ((IValueHttpResult)result).Value.Should().Be(new AgentDevOpsAuthorizationResponse("server-1", "ecs-1", "dev", "aws-ecs", "honua-aws-ecs-alb"));
+        ((IValueHttpResult)result).Value.Should().Be(new AgentDevOpsAuthorizationResponse("server-1", "ecs-1", "dev", "aws-ecs", "honua-aws-ecs-alb", "tenant-a"));
         await fixture.Operator.Received().EvaluateAsync(fixture.Context.User,
             Arg.Is<OperatorAuthorizationRequest>(value => value.ResourceId == "ecs-1" && value.Operation == OperatorOperation.Read),
             Arg.Any<CancellationToken>());
@@ -38,6 +39,34 @@ public sealed class AgentDevOpsAuthorizationTests
         fixture.Operator.EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new Honua.Core.Features.Security.Domain.AccessDecision(false, false, "revoked")));
         Status(await AgentWorkspaceEndpoints.AuthorizeDevOps(fixture.Context, fixture.Workspace, request)).Should().Be(403);
+    }
+
+    [UnitTest]
+    public async Task AuthorizationReceiptPreservesValidatedTenantAndExplicitUnboundIdentity()
+    {
+        foreach (var (enabled, bound, expectedTenant) in new (bool, bool, string?)[]
+        {
+            (true, true, "tenant-a"),
+            (true, false, null),
+            (false, true, null),
+        })
+        {
+            using var fixture = Create(requestTenant: "tenant-b");
+            fixture.Services.GetRequiredService<IOptions<TenantContextOptions>>().Value.Enabled = enabled;
+            fixture.Context.Request.Headers["X-Tenant-ID"] = "tenant-b";
+            if (!bound)
+            {
+                var identity = (ClaimsIdentity)fixture.Context.User.Identity!;
+                identity.RemoveClaim(identity.FindFirst("tenant_id")!);
+            }
+            var request = new AgentDevOpsAuthorizationRequest("server-1", "ecs-1", "dev", "install_handoff", Args(new { }));
+            var result = await AgentWorkspaceEndpoints.AuthorizeDevOps(fixture.Context, fixture.Workspace, request);
+            var receipt = ((IValueHttpResult)result).Value.Should().BeOfType<AgentDevOpsAuthorizationResponse>().Subject;
+            receipt.TenantId.Should().Be(expectedTenant);
+            using var json = JsonDocument.Parse(JsonSerializer.Serialize(receipt, AgentWorkspaceJsonContext.Default.AgentDevOpsAuthorizationResponse));
+            json.RootElement.TryGetProperty("tenantId", out var tenant).Should().BeTrue("explicit null is different from an old receipt without tenant binding");
+            tenant.GetString().Should().Be(expectedTenant);
+        }
     }
 
     [UnitTest]
@@ -103,7 +132,7 @@ public sealed class AgentDevOpsAuthorizationTests
             fixture.Registry.GetAsync("cloud-1", Arg.Any<CancellationToken>()).Returns(Task.FromResult<DeployTargetDefinition?>(target));
             var read = new AgentDevOpsAuthorizationRequest("server-1", "cloud-1", "dev", null);
             var result = await AgentWorkspaceEndpoints.AuthorizeDevOps(fixture.Context, fixture.Workspace, read);
-            ((IValueHttpResult)result).Value.Should().Be(new AgentDevOpsAuthorizationResponse("server-1", "cloud-1", "dev", runtime, backend));
+            ((IValueHttpResult)result).Value.Should().Be(new AgentDevOpsAuthorizationResponse("server-1", "cloud-1", "dev", runtime, backend, "tenant-a"));
             var provision = read with { CanonicalTool = "provision_infrastructure", Arguments = Args(new { stack = runtime, variablesJson = "{\"environment\":\"dev\"}" }) };
             Status(await AgentWorkspaceEndpoints.AuthorizeDevOps(fixture.Context, fixture.Workspace, provision)).Should().Be(200);
             Status(await AgentWorkspaceEndpoints.AuthorizeDevOps(fixture.Context, fixture.Workspace,
@@ -170,7 +199,7 @@ public sealed class AgentDevOpsAuthorizationTests
         Deploy = new() { TargetId = target, TargetKind = DeployTargetKind.AwsEcs, Backend = "honua-aws-ecs-alb", Environment = "dev", TargetName = "cell", DesiredRevision = "candidate" },
     };
 
-    private static Fixture Create()
+    private static Fixture Create(string? requestTenant = null)
     {
         var workspace = Substitute.For<IAgentWorkspaceStore>();
         workspace.GetTargetIdAsync().Returns(Task.FromResult("server-1"));
@@ -183,7 +212,10 @@ public sealed class AgentDevOpsAuthorizationTests
             .Returns(Task.FromResult(new Honua.Core.Features.Security.Domain.AccessDecision(true, false, null)));
         var authorization = Substitute.For<IAuthorizationService>();
         authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), Arg.Any<string>()).Returns(Task.FromResult(AuthorizationResult.Success()));
+        var tenantContext = Substitute.For<ITenantContext>();
+        tenantContext.TenantId.Returns(requestTenant);
         var services = new ServiceCollection().AddSingleton(authorization).AddSingleton(registry).AddSingleton(operations)
+            .AddSingleton(tenantContext)
             .AddSingleton(new OperatorApprovalGate(evaluator, Substitute.For<IOperatorApprovalEvaluator>(), NullLogger<OperatorApprovalGate>.Instance))
             .AddSingleton<IOptions<TenantContextOptions>>(Options.Create(new TenantContextOptions
             { Enabled = true, TenantClaimTypes = ["tenant_id"], MultiTenantAdminRoles = ["platform-admin"] })).BuildServiceProvider();

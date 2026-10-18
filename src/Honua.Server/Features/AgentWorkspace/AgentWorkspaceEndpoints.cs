@@ -138,6 +138,10 @@ internal static class AgentWorkspaceEndpoints
             ResourceId = target.TargetId,
         }, context.RequestAborted).ConfigureAwait(false);
         if (!permission.IsAllowed || !DevOpsArgumentsMatchEnvironment(request)) return Results.Forbid();
+        // Use the same validated identity binding as operation recovery. Request tenant
+        // overrides cannot retarget a platform deployment or its installation receipt.
+        var tenantOptions = context.RequestServices.GetService<Microsoft.Extensions.Options.IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>>()?.Value;
+        var tenant = PlatformDeployAuthority.ResolveTenantId(context.User, tenantOptions);
         if (request.CanonicalTool is "get_gitops_proposal" or "get_devops_operation_status")
         {
             var operationId = request.Arguments?.FirstOrDefault(pair =>
@@ -147,13 +151,11 @@ internal static class AgentWorkspaceEndpoints
             var operations = context.RequestServices.GetService<IWorkflowOperationStore>();
             if (operations is null) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
             var operation = await operations.GetAsync(operationKey, context.RequestAborted).ConfigureAwait(false);
-            var tenantOptions = context.RequestServices.GetService<Microsoft.Extensions.Options.IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>>()?.Value;
-            var tenant = PlatformDeployAuthority.ResolveTenantId(context.User, tenantOptions);
             if (operation?.Deploy is not { } deploy || deploy.TargetId != target.TargetId ||
                 deploy.Environment != target.Environment || deploy.TargetKind != target.TargetKind ||
                 deploy.Backend != target.Backend || operation.Audit.TenantId != tenant) return Results.Forbid();
         }
-        return Results.Ok(new AgentDevOpsAuthorizationResponse(request.TargetId, target.TargetId, target.Environment, runtimeKind, target.Backend));
+        return Results.Ok(new AgentDevOpsAuthorizationResponse(request.TargetId, target.TargetId, target.Environment, runtimeKind, target.Backend, tenant));
     }
 
     private static bool DevOpsArgumentsMatchEnvironment(AgentDevOpsAuthorizationRequest request)
