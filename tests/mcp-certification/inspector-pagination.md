@@ -13,7 +13,10 @@ and the Inspector's final resource list matching the entire observed chain.
 A single-page result is not a cursor-traversal proof. Captured resource URIs and
 session IDs are hashed in retained proof. Error text is fixed and contains no
 upstream body. Requests/pages, bytes and observation time are bounded; all owned
-connections close on every exit.
+connections close on every exit. Compressed bytes and headers reach the client
+unchanged. The observer independently decodes gzip, deflate and Brotli captures
+with a 4 MiB decoded page limit and 16 MiB decoded total limit; unknown, corrupt
+or oversized encodings cannot produce proof.
 
 The controls run the installed public CLI from the canonical producer's
 immutable dependency lock at `372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4`.

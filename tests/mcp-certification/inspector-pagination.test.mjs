@@ -6,6 +6,7 @@ import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { gzipSync, deflateSync, brotliCompressSync } from 'node:zlib';
 import { observeInspectorPagination } from './inspector-pagination.mjs';
 
 const packageRoot = new URL('./node_modules/@modelcontextprotocol/inspector/', import.meta.url);
@@ -33,10 +34,16 @@ async function exercise(mode) {
       result = { resources: [{ uri: `honua://control/${mode === 'duplicate-uri' ? 0 : index}`, name: `resource-${index}` }],
         ...(index < 2 && mode !== 'single-page' ? { nextCursor: mode === 'repeat' ? 'page-1' : `page-${index + 1}` } : {}) };
     } else result = {};
+    if (mode === 'oversize-gzip' && body.method === 'resources/list') result.resources[0].name = 'x'.repeat(4 * 1024 * 1024);
     const wire = JSON.stringify({ jsonrpc: '2.0', id: mode === 'wrong-id' && body.method === 'resources/list' ? 'unrelated' : body.id, result });
-    const sse = mode === 'sse' && body.method === 'resources/list';
-    response.writeHead(200, { 'Content-Type': sse ? 'text/event-stream' : 'application/json', 'Mcp-Session-Id': 'inspector-control-session' });
-    response.end(sse ? `event: message\ndata: ${wire}\n\n` : wire);
+    const sse = ['sse', 'gzip-sse'].includes(mode) && body.method === 'resources/list';
+    let bytes = Buffer.from(sse ? `event: message\ndata: ${wire}\n\n` : wire);
+    const encoding = mode.startsWith('gzip-') || ['invalid-gzip', 'oversize-gzip'].includes(mode) ? 'gzip'
+      : mode === 'deflate-json' ? 'deflate' : mode === 'br-json' ? 'br' : undefined;
+    if (encoding && !(mode === 'invalid-gzip' && body.method === 'resources/list')) bytes = { gzip: gzipSync, deflate: deflateSync, br: brotliCompressSync }[encoding](bytes);
+    response.writeHead(200, { 'Content-Type': sse ? 'text/event-stream' : 'application/json',
+      'Mcp-Session-Id': 'inspector-control-session', ...(encoding ? { 'Content-Encoding': encoding } : {}) });
+    response.end(bytes);
   });
   await new Promise((resolve) => peer.listen(0, '127.0.0.1', resolve));
   let child;
@@ -92,7 +99,7 @@ process.exit(value.status === 0 ? 7 : (value.status ?? 1))));`);
   }
 }
 
-for (const mode of ['json', 'sse']) {
+for (const mode of ['json', 'sse', 'gzip-json', 'gzip-sse', 'deflate-json', 'br-json']) {
   test(`installed public Inspector traverses actual three-page ${mode} chain`, async () => {
     const result = await exercise(mode);
     assert.equal(result.error, undefined, result.error?.message);
@@ -106,12 +113,16 @@ for (const mode of ['json', 'sse']) {
   });
 }
 
-for (const mode of ['repeat', 'http-error', 'redirect', 'wrong-id', 'single-page', 'duplicate-uri', 'false-merged-output', 'no-wire', 'nonzero-exit']) {
+for (const mode of ['repeat', 'http-error', 'redirect', 'wrong-id', 'single-page', 'duplicate-uri', 'false-merged-output', 'no-wire', 'nonzero-exit', 'invalid-gzip', 'oversize-gzip']) {
   test(`wire observer rejects ${mode} without manufacturing client proof`, async () => {
     const result = await exercise(mode);
     assert.equal(result.proof, undefined);
     assert.match(result.error?.message ?? '', /^Inspector pagination wire proof failed\.$/);
     assert.ok(!result.error.message.includes('PRIVATE_CONTROL_DIAGNOSTIC'));
+    if (mode === 'oversize-gzip') {
+      assert.equal(result.observedExit, 0, 'CLI must accept the highly compressed oversized response before observer rejects it');
+      assert.equal((result.completedOutput.result ?? result.completedOutput).resources.length, 3);
+    }
     if (mode === 'nonzero-exit') {
       assert.equal(result.observedExit, 7);
       assert.equal((result.completedOutput.result ?? result.completedOutput).resources.length, 3);

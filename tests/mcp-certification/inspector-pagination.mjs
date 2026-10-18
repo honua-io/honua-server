@@ -3,11 +3,21 @@
 import { createServer, request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { createHash } from 'node:crypto';
+import { gunzipSync, inflateSync, brotliDecompressSync } from 'node:zlib';
 
 export const INSPECTOR_PAGINATION_CONTRACT = 'honua.inspector-pagination-observer/v1';
 const LIMIT = 4 * 1024 * 1024;
 const sha256 = (value) => 'sha256:' + createHash('sha256').update(value).digest('hex');
 const fail = () => { throw new Error('Inspector pagination wire proof failed.'); };
+
+function decodedBody(page) {
+  const encoding = page.contentEncoding.trim().toLowerCase();
+  if (!encoding || encoding === 'identity') return page.bytes;
+  const decode = encoding === 'gzip' ? gunzipSync : encoding === 'deflate' ? inflateSync
+    : encoding === 'br' ? brotliDecompressSync : undefined;
+  if (!decode) fail();
+  return decode(page.bytes, { maxOutputLength: LIMIT });
+}
 
 function responseFor(bytes, contentType, id) {
   let frames;
@@ -29,13 +39,16 @@ function prove(pages, output, inspectorVersion, sourceSha) {
   const uris = [];
   const ids = new Set();
   let expected;
+  let decodedBytes = 0;
   const session = pages[0].session;
   for (const [position, page] of pages.entries()) {
     if (!page.complete || page.failed || page.status !== 200 || page.session !== session
       || !['string', 'number'].includes(typeof page.id) || ids.has(`${typeof page.id}:${page.id}`)
       || page.cursor !== expected) fail();
     ids.add(`${typeof page.id}:${page.id}`);
-    const result = responseFor(page.bytes, page.contentType, page.id);
+    const bytes = decodedBody(page);
+    if (bytes.length > LIMIT || (decodedBytes += bytes.length) > 4 * LIMIT) fail();
+    const result = responseFor(bytes, page.contentType, page.id);
     if (!Array.isArray(result.resources) || result.resources.length === 0) fail();
     for (const resource of result.resources) {
       if (!resource || typeof resource.uri !== 'string' || !resource.uri || uris.includes(resource.uri)) fail();
@@ -85,7 +98,7 @@ export async function observeInspectorPagination({ endpoint, invoke, inspectorVe
       const message = incoming.method === 'POST' ? JSON.parse(body) : undefined;
       const page = message?.method === 'resources/list' ? {
         id: message.id, cursor: message.params?.cursor, session: incoming.headers['mcp-session-id'],
-        complete: false, failed: false, contentType: '', bytes: Buffer.alloc(0),
+        complete: false, failed: false, contentType: '', contentEncoding: '', bytes: Buffer.alloc(0),
       } : undefined;
       if (page) { pages.push(page); if (pages.length > 100) fail(); }
       const headers = { ...incoming.headers, host: target.host };
@@ -94,7 +107,10 @@ export async function observeInspectorPagination({ endpoint, invoke, inspectorVe
         method: incoming.method, headers, timeout: 25_000,
       }, (response) => {
         if (response.statusCode >= 300 && response.statusCode < 400) { invalid = true; response.destroy(); outgoing.writeHead(502).end(); return; }
-        if (page) { page.status = response.statusCode; page.contentType = response.headers['content-type'] ?? ''; }
+        if (page) {
+          page.status = response.statusCode; page.contentType = response.headers['content-type'] ?? '';
+          page.contentEncoding = response.headers['content-encoding'] ?? '';
+        }
         outgoing.writeHead(response.statusCode, response.headers);
         let size = 0; const bytes = [];
         response.on('data', (chunk) => {
