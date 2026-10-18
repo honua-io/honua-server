@@ -229,6 +229,18 @@ class FailClosedTests(unittest.TestCase):
         verdict = self.assert_blocked("cell-skipped", [("a.cert.json", raw)])
         self.assertEqual("skip", verdict["result"])
 
+    def test_unfiltered_wfs_extension_cannot_replace_required_filtering(self):
+        filtering = requirement(surface="wfs", operation="filter", test_ids=["CERT-QFLT-01"])
+        retrieval = requirement(surface="wfs", operation="unfiltered", test_ids=["JS-EXT-OL-WFS-GETFEATURE-01"])
+        raw = envelope(protocol="wfs", results=[{
+            **envelope()["results"][0], "test_case_id": "CERT-QFLT-01", "status": "skip"}], extensions=[{
+            **envelope()["results"][0], "test_case_id": "JS-EXT-OL-WFS-GETFEATURE-01", "status": "pass"}])
+        verdicts = module.verify_release(requirements_document(filtering, retrieval), [("wfs.cert.json", raw)], candidate())
+        by_operation = {row["operation"]: row for row in verdicts}
+        self.assertEqual("pass", by_operation["unfiltered"]["result"])
+        self.assertNotEqual("pass", by_operation["filter"]["result"])
+        self.assertIn("cell-skipped", blocker_codes(by_operation["filter"]))
+
     def test_a_failed_cell_fails(self):
         raw = envelope(results=[{**envelope()["results"][0], "status": "fail"}])
         verdict = self.assert_blocked("cell-failed", [("a.cert.json", raw)])
