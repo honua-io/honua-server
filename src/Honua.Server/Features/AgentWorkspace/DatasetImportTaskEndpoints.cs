@@ -32,8 +32,10 @@ internal static class DatasetImportTaskEndpoints
         return await DatasetImportTaskService.CreateAsync(workspaceId, context, store, parsed.Request!).ConfigureAwait(false);
     }
 
-    internal static async Task<IResult> ReadAuthorityAsync(HttpContext context, ReadDatasetImportAuthority request)
+    internal static async Task<IResult> ReadAuthorityAsync(HttpContext context, ReadDatasetImportAuthority? request)
     {
+        if (request is null || !DatasetImportTaskState.ValidAuthorityScope(request.WorkspaceId, request.TaskId, request.Revision, request.ContentHash))
+            return Results.BadRequest(new AgentWorkspaceError("A valid immutable import task authority binding is required."));
         var reader = context.RequestServices.GetService<IDatasetImportAuthorityDescriptorReader>();
         if (reader is null) return Results.NotFound();
         var descriptor = await reader.ReadAsync(context.User, request.WorkspaceId, request.TaskId, request.Revision,
@@ -48,8 +50,11 @@ internal static class DatasetImportTaskEndpoints
         return await RenewAuthorityAsync(context, store, new(workspaceId, taskId, revision, parsed.Request!)).ConfigureAwait(false);
     }
 
-    internal static async Task<IResult> RenewAuthorityAsync(HttpContext context, IAgentWorkspaceStore store, RenewDatasetImportAuthorityCall call)
+    internal static async Task<IResult> RenewAuthorityAsync(HttpContext context, IAgentWorkspaceStore store, RenewDatasetImportAuthorityCall? call)
     {
+        if (call is null || call.Request is not { } request || !DatasetImportTaskState.ValidRenewal(request) ||
+            !DatasetImportTaskState.ValidAuthorityScope(call.WorkspaceId, call.TaskId, call.Revision, request.TaskContentHash))
+            return Results.BadRequest(new AgentWorkspaceError("A valid immutable import authority renewal request is required."));
         var reader = context.RequestServices.GetService<IDatasetImportAuthorityDescriptorReader>();
         if (reader is null || await reader.ReadAsync(context.User, call.WorkspaceId, call.TaskId, call.Revision,
                 call.Request.TaskContentHash, context.RequestAborted).ConfigureAwait(false) is null) return Results.NotFound();

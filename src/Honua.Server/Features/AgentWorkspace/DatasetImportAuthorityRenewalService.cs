@@ -13,9 +13,10 @@ namespace Honua.Server.Features.AgentWorkspace;
 internal static class DatasetImportAuthorityRenewalService
 {
     internal static async Task<DatasetImportAuthorityRenewal?> RenewAsync(HttpContext context, IAgentWorkspaceStore store,
-        string workspaceId, string taskId, long taskRevision, RenewDatasetImportAuthority request)
+        string workspaceId, string taskId, long taskRevision, RenewDatasetImportAuthority? request)
     {
-        if (!AgentWorkspaceState.IsIdentifier(request.RenewalId) || request.ExpectedAuthorityRevision < 1)
+        if (request is null || !DatasetImportTaskState.ValidRenewal(request) ||
+            !DatasetImportTaskState.ValidAuthorityScope(workspaceId, taskId, taskRevision, request.TaskContentHash))
             throw new ArgumentException("A valid immutable renewal identity and authority revision are required.");
         var tasks = context.RequestServices.GetRequiredService<IDatasetImportTaskProvider>();
         if (await tasks.AuthorizeAsync(context.User, workspaceId, taskId, taskRevision, request.TaskContentHash,

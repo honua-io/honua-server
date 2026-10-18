@@ -15,6 +15,13 @@ internal static class DatasetImportTaskState
     internal static string IntentKey(string actorId, string intentId)
         => Digest(JsonSerializer.Serialize(new[] { actorId, intentId }, AgentWorkspaceJsonContext.Default.StringArray));
 
+    internal static bool ValidAuthorityScope(string? workspaceId, string? taskId, long revision, string? contentHash)
+        => AgentWorkspaceState.IsIdentifier(workspaceId) && AgentWorkspaceState.IsIdentifier(taskId) && revision > 0 && Hash(contentHash);
+
+    internal static bool ValidRenewal(RenewDatasetImportAuthority? request)
+        => request is not null && AgentWorkspaceState.IsIdentifier(request.RenewalId) &&
+            request.ExpectedAuthorityRevision > 0 && Hash(request.TaskContentHash);
+
     internal static string RenewalKey(string taskId, long revision, string contentHash, string renewalId)
         => Digest(JsonSerializer.Serialize(new[] { taskId, revision.ToString(System.Globalization.CultureInfo.InvariantCulture), contentHash, renewalId },
             AgentWorkspaceJsonContext.Default.StringArray));

@@ -240,6 +240,24 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             renewalEndpoint.Metadata.GetMetadata<IAcceptsMetadata>()!.RequestType.Should().Be(typeof(RenewDatasetImportAuthority));
             // This nonexpiring key has no refreshed expiry; neither adapter may invent one.
             (await agent.PostAsJsonAsync(renewalPath, renewal)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+            foreach (var malformed in new[]
+            {
+                "null", "{}", "{\"renewalId\":null,\"expectedAuthorityRevision\":1,\"taskContentHash\":\"" + binding.TaskContentHash + "\"}",
+                "{\"renewalId\":\"renewal-invalid\",\"expectedAuthorityRevision\":1,\"taskContentHash\":null}",
+                "{\"renewalId\":\"renewal-invalid\",\"expectedAuthorityRevision\":0,\"taskContentHash\":\"" + binding.TaskContentHash + "\"}",
+            })
+            {
+                using var malformedBody = new StringContent(malformed, Encoding.UTF8, "application/json");
+                (await agent.PostAsync(renewalPath, malformedBody)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            }
+            var nullRenewalEnvelope = await Json(await agent.PostAsJsonAsync("/mcp", new
+            {
+                jsonrpc = "2.0", id = 6, method = "tools/call",
+                @params = new { name = "honua_workspace_renew_dataset_import_authority", arguments = new
+                    { workspaceId = executionId, taskId = executionTaskId, revision = 1, request = (object?)null } },
+            }));
+            (nullRenewalEnvelope.TryGetProperty("error", out _) ||
+                nullRenewalEnvelope.GetProperty("result").GetProperty("isError").GetBoolean()).Should().BeTrue();
             var rejectedRenewal = await Json(await agent.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0", id = 5, method = "tools/call",
