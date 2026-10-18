@@ -19,6 +19,9 @@ from .conftest import (
 )
 
 
+from .validation_outcomes import classify_validator_result, process_output_text
+
+
 VALIDATOR_GEOMETRY = {
     "type": "Polygon",
     "coordinates": [
@@ -54,24 +57,6 @@ VALIDATOR_TIMEOUT_SECONDS = 90
 VALIDATOR_TIMEOUT_EXIT_CODE = 124
 
 
-def _process_output_text(value: str | bytes | None) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return value
-
-
-def _validator_reported_failure(result: subprocess.CompletedProcess[str]) -> bool:
-    output = f"\n{result.stdout}\n{result.stderr}\n"
-    return (
-        result.returncode != 0
-        or "\nFailed.\n" in output
-        or "\nError " in output
-        or "Traceback (most recent call last):" in output
-    )
-
-
 @pytest.mark.integration
 @pytest.mark.stac
 def test_stac_api_validator_conformance(
@@ -105,19 +90,19 @@ def test_stac_api_validator_conformance(
             text=True,
             timeout=VALIDATOR_TIMEOUT_SECONDS,
         )
-        status = "fail" if _validator_reported_failure(result) else "pass"
+        status = classify_validator_result(result).status
         returncode = result.returncode
         stdout = result.stdout
         stderr = result.stderr
     except subprocess.TimeoutExpired as exc:
         status = "fail"
         returncode = VALIDATOR_TIMEOUT_EXIT_CODE
-        stdout = _process_output_text(exc.stdout or exc.output)
+        stdout = process_output_text(exc.stdout or exc.output)
         timeout_message = (
             f"stac-api-validator timed out after {VALIDATOR_TIMEOUT_SECONDS} seconds"
         )
         stderr = "\n".join(
-            part for part in [_process_output_text(exc.stderr), timeout_message] if part
+            part for part in [process_output_text(exc.stderr), timeout_message] if part
         )
 
     artifact_path = write_stac_api_validator_artifact(
