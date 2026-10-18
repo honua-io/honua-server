@@ -759,7 +759,7 @@ internal static class McpEndpointExtensions
             lease = admission.Lease;
             if (admission.State != McpRequestState.Active)
             {
-                return ErrorResponse(request.Id, McpErrorMapper.InvalidRequest(
+                return ErrorResponse(request.Id.Value, McpErrorMapper.InvalidRequest(
                     admission.State == McpRequestState.Duplicate
                         ? "A request with this id is already active in this session."
                         : "The session cannot admit another active request."));
@@ -768,7 +768,7 @@ internal static class McpEndpointExtensions
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested
             && ex is (StackExchange.Redis.RedisException or TimeoutException or OperationCanceledException or JsonException or ObjectDisposedException))
         {
-            return ErrorResponse(request.Id, McpErrorMapper.RequestRegistryUnavailable());
+            return ErrorResponse(request.Id.Value, McpErrorMapper.RequestRegistryUnavailable());
         }
 
         await using (lease)
@@ -778,7 +778,7 @@ internal static class McpEndpointExtensions
                 var response = await surface.DispatchAsync(context, request, lease?.Token ?? cancellationToken).ConfigureAwait(false);
                 if (lease is not null && !await lease.CompleteAsync().ConfigureAwait(false))
                 {
-                    return ErrorResponse(request.Id, McpErrorMapper.RequestCancelled());
+                    return ErrorResponse(request.Id.Value, McpErrorMapper.RequestCancelled());
                 }
 
                 return response;
@@ -786,7 +786,7 @@ internal static class McpEndpointExtensions
             catch (OperationCanceledException) when (lease is not null && lease.Token.IsCancellationRequested
                 && !cancellationToken.IsCancellationRequested)
             {
-                return ErrorResponse(request.Id, McpErrorMapper.RequestCancelled());
+                return ErrorResponse(request.Id.Value, McpErrorMapper.RequestCancelled());
             }
         }
     }

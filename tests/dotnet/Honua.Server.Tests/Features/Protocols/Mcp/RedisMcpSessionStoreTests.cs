@@ -45,7 +45,7 @@ public sealed class RedisMcpSessionStoreTests(RedisFixture redis)
                 (i % 2 == 0 ? a : b).UpdateRequestAsync(sessions[i % sessions.Length], principal, "r" + i,
                     generation, McpRequestOperation.Register, CancellationToken.None)));
             Assert.Equal(McpRequestBounds.PerPrincipal, states.Count(state => state == McpRequestState.Active));
-            Assert.Single(states.Where(state => state == McpRequestState.Capacity));
+            Assert.Single(states, state => state == McpRequestState.Capacity);
             var database = connectionA.GetDatabase();
             Assert.Equal(McpRequestBounds.PerPrincipal,
                 await database.SortedSetLengthAsync(RedisMcpSessionStore.PrincipalRequestKey(principal)));
