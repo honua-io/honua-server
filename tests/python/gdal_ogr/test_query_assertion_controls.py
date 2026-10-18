@@ -15,6 +15,7 @@ from .query_oracles import (
     identity,
     source_subset,
 )
+from .test_wfs_export import TestWfsExport as WfsExports
 from .test_wfs_query import TestWfsQuery as WfsQueries
 
 
@@ -150,6 +151,44 @@ def test_canonical_point_probe_rejects_unexpected_extra_ordinate(monkeypatch):
     output["features"][0]["geometry"]["coordinates"].append(1)
     with pytest.raises(AssertionError, match="geometry structure or coordinates"):
         run_probe(document, output, "bbox")
+
+
+@pytest.mark.parametrize("fault", [None, "missing", "duplicate", "wrong-name", "wrong-id"])
+def test_actual_csv_export_probe_requires_exact_persisted_rows(monkeypatch, tmp_path, fault):
+    import csv
+
+    monkeypatch.setenv("HONUA_BASE_URL", "http://controlled")
+    document = source_document()
+    rows = [{"objectid": row["id"], "name": row["properties"]["name"]} for row in document["features"]]
+    if fault == "missing":
+        rows.pop()
+    elif fault == "duplicate":
+        rows[-1] = deepcopy(rows[0])
+    elif fault == "wrong-name":
+        rows[0]["name"] = "substituted"
+    elif fault == "wrong-id":
+        rows[0]["objectid"] = 999
+    collector = SimpleNamespace(records=[])
+    collector.record = lambda *args, **kwargs: collector.records.append((args, kwargs))
+    def ogr(args):
+        assert args[-2:] == ["-nln", "wfs_export"]
+        directory = tmp_path / "wfs_csv_out"
+        directory.mkdir()
+        with (directory / "wfs_export.csv").open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=["objectid", "name"])
+            writer.writeheader()
+            writer.writerows(rows)
+        return OgrResult(args, 0, "", "")
+    with httpx.Client(base_url="http://controlled", trust_env=False, transport=httpx.MockTransport(lambda request: httpx.Response(200, json=document))) as client:
+        def execute():
+            WfsExports().test_export_csv(client, "WFS:http://controlled/wfs", ogr, "fixture:points", tmp_path, collector)
+        if fault:
+            with pytest.raises(AssertionError):
+                execute()
+            assert collector.records == []
+        else:
+            execute()
+            assert len(collector.records) == 1
 
 
 @pytest.mark.parametrize("fault", ["outside", "changed-bounds", "small-coordinate-drift", "null", "empty", "duplicate", "null-only-empty-window"])

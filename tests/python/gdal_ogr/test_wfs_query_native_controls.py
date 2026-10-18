@@ -8,6 +8,7 @@ import pytest
 
 from .conftest import OgrResult
 from .controlled_wfs import source_document
+from .test_wfs_export import TestWfsExport as WfsExports
 from .test_wfs_query import TestWfsQuery as WfsQueries
 
 pytestmark = pytest.mark.gdal
@@ -19,9 +20,9 @@ def _write_evidence_report():
     yield
 
 
-@pytest.mark.parametrize("operation,fault", [("attribute", None), ("bbox", None), ("empty", None),
+@pytest.mark.parametrize("operation,fault", [("attribute", None), ("bbox", None), ("empty", None), ("csv", None),
                                              ("attribute", "ignored-where"), ("bbox", "ignored-spat")])
-def test_real_gdal_wfs_client_exercises_the_changed_probe_and_ignored_argument_controls(monkeypatch, operation, fault):
+def test_real_gdal_wfs_client_exercises_the_changed_probe_and_ignored_argument_controls(monkeypatch, tmp_path, operation, fault):
     import shutil
     import subprocess
 
@@ -49,6 +50,8 @@ def test_real_gdal_wfs_client_exercises_the_changed_probe_and_ignored_argument_c
                     WfsQueries().test_attribute_query(client, dsn, ogr, "fixture:points", collector)
                 elif operation == "bbox":
                     WfsQueries().test_spatial_query_bbox(client, dsn, ogr, "fixture:points", collector)
+                elif operation == "csv":
+                    WfsExports().test_export_csv(client, dsn, ogr, "fixture:points", tmp_path, collector)
                 else:
                     WfsQueries().test_spatial_query_empty_bbox(dsn, ogr, "fixture:points")
             if fault:
