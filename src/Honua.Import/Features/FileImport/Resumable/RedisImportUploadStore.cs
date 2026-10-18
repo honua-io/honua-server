@@ -207,7 +207,7 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
     private static string Serialize(ImportUploadSession value) =>
         JsonSerializer.Serialize(value, ImportUploadJsonContext.Default.ImportUploadSession);
 
-    private static void Validate(ImportUploadSession session)
+    internal static void Validate(ImportUploadSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
         _ = Key(session.Id);
@@ -252,7 +252,7 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
         ArgumentOutOfRangeException.ThrowIfLessThan(scope.TaskRevision, 1);
     }
 
-    private static void ValidateDigest(string value)
+    internal static void ValidateDigest(string value)
     {
         if (value is null || value.Length != 64 || value.Any(static character => !char.IsAsciiHexDigitLower(character)))
         {
