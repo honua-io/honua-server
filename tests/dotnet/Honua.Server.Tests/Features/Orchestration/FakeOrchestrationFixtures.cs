@@ -19,6 +19,23 @@ namespace Honua.Server.Tests.Features.Orchestration;
 /// </summary>
 internal sealed class FakeWorkflowRunStore : IWorkflowRunStore
 {
+    private readonly object _commandLock = new();
+    private readonly Dictionary<string, WorkflowRunCommand> _commands = new(StringComparer.Ordinal);
+    public Task<WorkflowRunCommand?> GetCommandAsync(string commandScope, CancellationToken cancellationToken = default)
+    {
+        lock (_commandLock) return Task.FromResult(_commands.GetValueOrDefault(commandScope));
+    }
+    public Task<bool> TryCreateIdempotentAsync(WorkflowRun run, string commandScope, WorkflowRunCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_commandLock)
+        {
+            if (_commands.ContainsKey(commandScope) || !_runs.TryAdd(run.RunId, run)) return Task.FromResult(false);
+            _commands.Add(commandScope, command);
+            return Task.FromResult(true);
+        }
+    }
+    public void ExpireRun(string runId) => _runs.TryRemove(runId, out _);
     private readonly ConcurrentDictionary<string, WorkflowRun> _runs = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _leases = new(StringComparer.Ordinal);
 

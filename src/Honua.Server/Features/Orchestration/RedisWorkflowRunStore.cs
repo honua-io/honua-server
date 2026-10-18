@@ -51,6 +51,22 @@ internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWor
         return _database.LockReleaseAsync(GetLeaseKey(operationId), ownerId);
     }
 
+    public async Task<WorkflowRunCommand?> GetCommandAsync(string commandScope, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var payload = await _database.StringGetAsync(GetCommandKey(commandScope)).ConfigureAwait(false);
+        return payload.IsNullOrEmpty ? null : JsonSerializer.Deserialize(payload.ToString(), OrchestrationJsonContext.Default.WorkflowRunCommand);
+    }
+
+    public Task<bool> TryCreateIdempotentAsync(WorkflowRun run, string commandScope, WorkflowRunCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return PersistAsync(run, DefaultRetention, createOnly: true, commandScope, command);
+    }
+
+    private static string GetCommandKey(string commandScope) => $"orchestration:run:command:{commandScope}";
+
     public async Task<bool> TryCreateAsync(
         WorkflowRun run,
         TimeSpan? ttl = null,
@@ -176,7 +192,8 @@ internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWor
             .ToArray();
     }
 
-    private async Task<bool> PersistAsync(WorkflowRun run, TimeSpan retention, bool createOnly)
+    private async Task<bool> PersistAsync(WorkflowRun run, TimeSpan retention, bool createOnly,
+        string? commandScope = null, WorkflowRunCommand? command = null)
     {
         var key = GetRunKey(run.RunId);
         var payload = JsonSerializer.Serialize(run, OrchestrationJsonContext.Default.WorkflowRun);
@@ -187,6 +204,17 @@ internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWor
             transaction.AddCondition(Condition.KeyNotExists(key));
         }
 
+        Task<bool>? commandTask = null;
+        if (commandScope is not null && command is not null)
+        {
+            var commandKey = GetCommandKey(commandScope);
+            transaction.AddCondition(Condition.KeyNotExists(commandKey));
+            // No TTL: a run's seven-day retention must never erase a prior acceptance and
+            // turn a lost-response retry into a second execution. Explicit command retention
+            // policy may archive these references, but ordinary run expiry cannot remove them.
+            commandTask = transaction.StringSetAsync(commandKey,
+                JsonSerializer.Serialize(command, OrchestrationJsonContext.Default.WorkflowRunCommand));
+        }
         var writeTask = transaction.StringSetAsync(key, payload, retention);
         var indexMemberId = (RedisValue)run.RunId;
         // Keep the run in the active reconcile set until every step is terminal — a run
@@ -211,6 +239,7 @@ internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWor
             return false;
         }
 
+        if (commandTask is not null) await commandTask.ConfigureAwait(false);
         await writeTask.ConfigureAwait(false);
         await activeIndexTask.ConfigureAwait(false);
         await workflowIndexTask.ConfigureAwait(false);
