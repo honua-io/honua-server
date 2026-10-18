@@ -62,6 +62,25 @@ public sealed class OgcStylesCaseAuthorizationTests
             .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
     }
 
+    [UnitTest]
+    public async Task AuthorizeStyleAsync_SyntheticNameCollision_AuthorizesNamedStoredResourceBeforeMirrorFallback()
+    {
+        var provider = new TestMetadataV2GraphBuilder()
+            .AddResource("public-mirror", "public-parcels", accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddStorageBinding("public-binding", "public-mirror", "public_parcels", storageLayerId: 42)
+            .AddResource("private-named", "style-layer-42", accessPolicy: new AccessPolicy { AllowedRoles = ["gis-admin"] })
+            .AddStorageBinding("private-binding", "private-named", "private_parcels", storageLayerId: 99)
+            .AddService("maps", "maps", protocols: [ServiceProtocols.OgcApiMaps])
+            .AddPublication("public-publication", "maps", "public-mirror", serviceLocalId: "public-parcels")
+            .AddPublication("private-publication", "maps", "private-named", serviceLocalId: "private-parcels")
+            .BuildProvider();
+        // The stylesheet projection selects the named resource's storage99.
+        // Authorizing public storage42 would allow private99's actual bytes out.
+        var denied = await OgcStylesEndpoints.AuthorizeStyleAsync(CreateViewerContext(), "style-layer-42", provider, CancellationToken.None);
+        denied.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
     private static DefaultHttpContext CreateViewerContext()
     {
         var services = new ServiceCollection()

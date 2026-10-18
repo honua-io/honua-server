@@ -380,10 +380,11 @@ public static class OgcStylesEndpoints
         if (!synthetic && context.RequestServices.GetService<IStyleCatalog>() is { } catalog
             && await catalog.GetStyleAsync(styleId, cancellationToken).ConfigureAwait(false) is not null)
             return null;
-        var resource = synthetic
+        var named = snapshot.Graph.Resources.FirstOrDefault(resource =>
+            string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal));
+        var resource = synthetic && (named is null || !snapshot.ResolveStorageLayerId(named).HasValue)
             ? snapshot.Graph.Resources.FirstOrDefault(resource => snapshot.ResolveStorageLayerId(resource) == layerId)
-            : snapshot.Graph.Resources.FirstOrDefault(resource =>
-                string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal));
+            : named;
         if (resource is null)
         {
             // Standalone catalog styles have no layer policy and retain their existing
