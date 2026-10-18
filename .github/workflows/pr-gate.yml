@@ -365,6 +365,11 @@ jobs:
           # successful measurement, not a failed change.
           enable-build-cache: ${{ vars.PR_GATE_BUILD_CACHE == 'true' && 'true' || 'false' }}
 
+      - name: Prove ephemeral private-feed restore for authentication changes
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        timeout-minutes: 6
+        run: python3 scripts/ci/prove-nuget-auth.py
+
       # Warm the required boot proof while the managed graph compiles.
       - name: Pre-pull Testcontainers PostGIS image (background)
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'

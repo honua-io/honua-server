@@ -140,18 +140,15 @@ runs:
 
     - name: Configure GitHub Packages
       shell: bash
+      env:
+        HONUA_NUGET_USERNAME: ${{ github.actor }}
+        HONUA_NUGET_TOKEN: ${{ github.token }}
+        HONUA_SETUP_ACTION_PATH: ${{ github.action_path }}
       run: |
-        nuget_config=""
-        for candidate in NuGet.Config NuGet.config; do
-          if [[ -f "$candidate" ]] && grep -q 'github-honua' "$candidate"; then
-            nuget_config="$candidate"
-            break
-          fi
-        done
-        if [[ -n "$nuget_config" ]]; then
-          dotnet nuget update source github-honua \
-            --configfile "$nuget_config" \
-            --username "${{ github.actor }}" \
-            --password "${{ github.token }}" \
-            --store-password-in-clear-text
-        fi
+        set -euo pipefail
+        source "${HONUA_SETUP_ACTION_PATH}/../../../scripts/ci/lib/python-resolve.sh"
+        python_bin="$(honua_resolve_python)" || {
+          echo '::error::Python 3 is required for secret-safe NuGet environment setup.' >&2
+          exit 1
+        }
+        "${python_bin}" "${HONUA_SETUP_ACTION_PATH}/configure-nuget-auth.py"
