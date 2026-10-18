@@ -70,7 +70,7 @@ public sealed class KubernetesDeploymentDeployBackendTests
     {
         var handler = new DeploymentHandler(Baseline);
         var backend = Backend(handler);
-        foreach (var key in new[] { "kubernetes.api_server", "kubernetes.cluster_uid", "kubernetes.deployment_uid", "kubernetes.service_uid", "telemetry.healthz.url", "telemetry.golden_query.url", "telemetry.golden_query.expected_contains" })
+        foreach (var key in new[] { "kubernetes.api_server", "kubernetes.cluster_uid", "kubernetes.deployment_uid", "kubernetes.service_uid", "kubernetes.dns_record_name", "kubernetes.dns_zone_id", "kubernetes.load_balancer_arn", "telemetry.healthz.url", "telemetry.golden_query.url", "telemetry.golden_query.expected_contains" })
         {
             var operation = Operation();
             var parameters = new Dictionary<string, string>(operation.Deploy!.Parameters) { [key] = "attacker-controlled" };
@@ -136,13 +136,38 @@ public sealed class KubernetesDeploymentDeployBackendTests
         (await backend.PlanAsync(spec with { Parameters = parameters })).BlockingReasons.Should().NotBeEmpty();
     }
 
-    private static KubernetesDeploymentDeployBackend Backend(DeploymentHandler handler, bool functionalHealthy = true)
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CustomDomainRequiresCloudProofForTheActualObservedKubernetesLoadBalancer(bool proved)
+    {
+        var operation = Operation();
+        var parameters = new Dictionary<string, string>(operation.Deploy!.Parameters)
+        {
+            ["kubernetes.public_url"] = "https://maps.example.test:8080",
+            ["telemetry.healthz.url"] = "https://maps.example.test:8080/healthz/ready",
+            ["telemetry.golden_query.url"] = "https://maps.example.test:8080/ogc/features/collections/test/items",
+            ["kubernetes.dns_record_name"] = "maps.example.test", ["kubernetes.dns_zone_id"] = "ZPUBLIC",
+            ["kubernetes.load_balancer_arn"] = "arn:aws:elasticloadbalancing:us-west-2:123456789012:loadbalancer/net/honua/123"
+        };
+        operation = operation with { Deploy = operation.Deploy with { Parameters = parameters } };
+        var verifier = Substitute.For<IKubernetesPublicRouteVerifier>();
+        verifier.VerifyAsync(parameters, "native.example", Arg.Any<CancellationToken>()).Returns(proved);
+        var handler = new DeploymentHandler(Candidate, sameCommand: true);
+        var backend = Backend(handler, registeredSpec: operation.Deploy, routeVerifier: verifier);
+        (await backend.ObserveAsync(operation)).Status.Should().Be(proved ? WorkflowOperationStatus.Succeeded : WorkflowOperationStatus.Reconciling);
+        await verifier.Received(1).VerifyAsync(parameters, "native.example", Arg.Any<CancellationToken>());
+        (await Backend(new DeploymentHandler(Candidate, sameCommand: true), registeredSpec: operation.Deploy).ObserveAsync(operation))
+            .Status.Should().Be(WorkflowOperationStatus.Reconciling, "a healthy response is insufficient without exact DNS/LB proof");
+    }
+
+    private static KubernetesDeploymentDeployBackend Backend(DeploymentHandler handler, bool functionalHealthy = true, DeployOperationSpec? registeredSpec = null, IKubernetesPublicRouteVerifier? routeVerifier = null)
     {
         var factory = Substitute.For<IBoundKubernetesConnectionFactory>();
         factory.OpenAsync(Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<CancellationToken>())
             .Returns(_ => new BoundKubernetesConnection(new HttpClient(handler, disposeHandler: false), new Uri("https://cluster.example"), null, "host-token"));
         var targets = Substitute.For<IDeployTargetRegistry>();
-        var spec = Operation().Deploy!;
+        var spec = registeredSpec ?? Operation().Deploy!;
         targets.GetAsync(spec.TargetId, Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
         {
             TargetId = spec.TargetId, TargetKind = spec.TargetKind, Backend = spec.Backend, Environment = spec.Environment,
@@ -153,7 +178,7 @@ public sealed class KubernetesDeploymentDeployBackendTests
         var forwardProbe = Substitute.For<IDeployHealthProbe>();
         forwardProbe.ProbeGoldenQueryAsync(Arg.Any<DeployGoldenQueryRequest>(), Arg.Any<CancellationToken>())
             .Returns(new DeployGoldenQueryResult { Validated = true, Matched = functionalHealthy });
-        return new(factory, targets, rollbackProbe, forwardProbe);
+        return new(factory, targets, rollbackProbe, forwardProbe, routeVerifier);
     }
 
     private static WorkflowOperationRecord Operation() => new()

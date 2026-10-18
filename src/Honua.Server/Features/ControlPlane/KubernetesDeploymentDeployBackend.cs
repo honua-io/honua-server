@@ -10,7 +10,8 @@ namespace Honua.ControlPlane;
 
 /// <summary>Native Deployment rolling updates through the canonical Honua deploy reconciler.</summary>
 internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnectionFactory connections, IDeployTargetRegistry targets,
-    IRollbackDataPlaneProbe? dataPlaneProbe = null, IDeployHealthProbe? forwardHealthProbe = null) : IDeployBackend
+    IRollbackDataPlaneProbe? dataPlaneProbe = null, IDeployHealthProbe? forwardHealthProbe = null,
+    IKubernetesPublicRouteVerifier? publicRouteVerifier = null) : IDeployBackend
 {
     internal const string AdapterBackendName = "honua-kubernetes-deployment";
     private const string OperationAnnotation = "honua.io/deploy-operation";
@@ -196,7 +197,7 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
         return buffer.ToArray();
     }
 
-    private static async Task<bool> VerifyServingPodsAsync(BoundKubernetesConnection connection, DeployOperationSpec spec,
+    private async Task<bool> VerifyServingPodsAsync(BoundKubernetesConnection connection, DeployOperationSpec spec,
         JsonElement deployment, string expected, int replicas, CancellationToken cancellationToken)
     {
         var selector = deployment.GetProperty("spec").GetProperty("selector");
@@ -293,7 +294,7 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
             annotations.TryGetProperty(DesiredAnnotation, out var candidate) && candidate.GetString() == desired &&
             annotations.TryGetProperty(PhaseAnnotation, out var direction) && direction.GetString() == phase;
 
-    private static async Task<bool> VerifyRouteAsync(BoundKubernetesConnection connection, DeployOperationSpec spec,
+    private async Task<bool> VerifyRouteAsync(BoundKubernetesConnection connection, DeployOperationSpec spec,
         JsonElement service, int servicePort, CancellationToken cancellationToken)
     {
         if (!Uri.TryCreate(Required(spec, "kubernetes.public_url"), UriKind.Absolute, out var publicUrl) || publicUrl.Scheme != "https") return false;
@@ -307,13 +308,12 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
         }
         var kind = Required(spec, "kubernetes.route_kind");
         if (kind == "LoadBalancerService")
-            return Required(spec, "kubernetes.route_name") == Required(spec, "kubernetes.service_name") &&
-                Required(spec, "kubernetes.route_uid") == Required(spec, "kubernetes.service_uid") &&
-                service.GetProperty("spec").GetProperty("type").GetString() == "LoadBalancer" && publicUrl.Port == servicePort &&
-                service.TryGetProperty("status", out var status) && status.TryGetProperty("loadBalancer", out var loadBalancer) &&
-                loadBalancer.TryGetProperty("ingress", out var ingressAddresses) && ingressAddresses.EnumerateArray().Any(address =>
-                    address.TryGetProperty("hostname", out var hostname) && hostname.GetString() == publicUrl.IdnHost ||
-                    address.TryGetProperty("ip", out var ip) && ip.GetString() == publicUrl.IdnHost);
+        {
+            if (Required(spec, "kubernetes.route_name") != Required(spec, "kubernetes.service_name") ||
+                Required(spec, "kubernetes.route_uid") != Required(spec, "kubernetes.service_uid") ||
+                service.GetProperty("spec").GetProperty("type").GetString() != "LoadBalancer" || publicUrl.Port != servicePort) return false;
+            return await VerifyPublicBindingAsync(service, spec, publicUrl, requireCloudProof: false, cancellationToken).ConfigureAwait(false);
+        }
         if (kind != "Ingress" || Required(spec, "kubernetes.route_host") != publicUrl.IdnHost || publicUrl.Port != 443 ||
             !publicUrl.AbsolutePath.StartsWith(Required(spec, "kubernetes.route_path").TrimEnd('/') + "/", StringComparison.Ordinal) &&
             publicUrl.AbsolutePath.TrimEnd('/') != Required(spec, "kubernetes.route_path").TrimEnd('/')) return false;
@@ -335,10 +335,33 @@ internal sealed class KubernetesDeploymentDeployBackend(IBoundKubernetesConnecti
                     foreach (var path in http.GetProperty("paths").EnumerateArray())
                         if (path.GetProperty("path").GetString() == Required(spec, "kubernetes.route_path") &&
                             path.GetProperty("pathType").GetString() == Required(spec, "kubernetes.route_path_type")) backends.Add(path.GetProperty("backend"));
-        return backends.Count == 1 && backends[0].TryGetProperty("service", out var target) &&
+        var selectedBackend = backends.Count == 1 && backends[0].TryGetProperty("service", out var target) &&
             target.GetProperty("name").GetString() == Required(spec, "kubernetes.service_name") &&
             target.TryGetProperty("port", out var port) && (port.TryGetProperty("number", out var number) && number.GetInt32() == servicePort ||
                 port.TryGetProperty("name", out var portName) && portName.GetString() == Required(spec, "kubernetes.service_port"));
+        return selectedBackend && await VerifyPublicBindingAsync(ingress.RootElement, spec, publicUrl,
+            requireCloudProof: true, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> VerifyPublicBindingAsync(JsonElement resource, DeployOperationSpec spec, Uri publicUrl,
+        bool requireCloudProof, CancellationToken cancellationToken)
+    {
+        if (!resource.TryGetProperty("status", out var status) || !status.TryGetProperty("loadBalancer", out var lb) ||
+            !lb.TryGetProperty("ingress", out var addresses) || addresses.ValueKind != JsonValueKind.Array || addresses.GetArrayLength() == 0) return false;
+        var hasRegisteredDns = spec.Parameters.ContainsKey("kubernetes.dns_record_name");
+        // Every observed route must agree. One matching address among conflicting load
+        // balancers must not hide another possible serving target.
+        foreach (var address in addresses.EnumerateArray())
+        {
+            if (address.TryGetProperty("hostname", out var hostname) && hostname.GetString() is { Length: > 0 } observed)
+            {
+                if (!requireCloudProof && !hasRegisteredDns && string.Equals(observed.TrimEnd('.'), publicUrl.IdnHost, StringComparison.OrdinalIgnoreCase)) continue;
+                if (publicRouteVerifier is null || !await publicRouteVerifier.VerifyAsync(spec.Parameters, observed, cancellationToken).ConfigureAwait(false)) return false;
+            }
+            else if (!requireCloudProof && !hasRegisteredDns && address.TryGetProperty("ip", out var ip) && ip.GetString() == publicUrl.IdnHost) continue;
+            else return false;
+        }
+        return true;
     }
 
     private static bool PortMatches(JsonElement port, string expected) => port.ValueKind == JsonValueKind.Number

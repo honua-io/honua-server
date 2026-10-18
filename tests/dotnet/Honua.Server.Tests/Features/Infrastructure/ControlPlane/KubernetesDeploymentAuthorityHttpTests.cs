@@ -53,8 +53,11 @@ public sealed class KubernetesDeploymentAuthorityHttpTests
         try
         {
             await fixture.InitializeAsync();
+            fixture.Services.GetService<IArgoRolloutsClient>().Should().BeNull();
+            fixture.Services.GetService<KubernetesArgoRolloutsDeployBackend>().Should().BeNull();
+            fixture.Services.GetServices<IDeployBackend>().Should().NotContain(backend => backend.BackendName.Contains("argo", StringComparison.OrdinalIgnoreCase));
             using var client = fixture.CreateAdminClient();
-            foreach (var key in new[] { "kubernetes.api_server", "kubernetes.ca_sha256", "kubernetes.cluster_uid", "kubernetes.deployment_uid", "telemetry.healthz.url", "telemetry.golden_query.url", "telemetry.golden_query.expected_contains" })
+            foreach (var key in new[] { "kubernetes.api_server", "kubernetes.ca_sha256", "kubernetes.cluster_uid", "kubernetes.deployment_uid", "kubernetes.dns_record_name", "kubernetes.dns_zone_id", "kubernetes.load_balancer_arn", "telemetry.healthz.url", "telemetry.golden_query.url", "telemetry.golden_query.expected_contains" })
             {
                 using var response = await client.PostAsJsonAsync("/api/v1/admin/deploy/plan", new
                 {

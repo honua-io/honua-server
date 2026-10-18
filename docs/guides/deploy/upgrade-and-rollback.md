@@ -143,7 +143,7 @@ For canary/gated rollouts, Honua's control plane drives the deployment through a
 | `POST /api/v1/admin/deploy/operations/{operationId}/rollback` | Roll the operation back |
 | `POST /api/v1/admin/platform-release/converge` | Actuate the declared platform release across all serving targets in one call |
 
-Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), `honua-azure-container-apps-revision` (revision traffic split), `honua-gitops-azure-functions` (slot swap), plus GitOps passthrough variants. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository; the public [honua-iac](https://github.com/honua-io/honua-iac) modules are the reference.
+Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-deployment` (native Kubernetes Deployment rollout, no Argo/controller/CRD dependency), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), `honua-azure-container-apps-revision` (revision traffic split), `honua-gitops-azure-functions` (slot swap), plus GitOps passthrough variants. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository; the public [honua-iac](https://github.com/honua-io/honua-iac) modules are the reference.
 
 ### Converge the whole platform release in one call
 
@@ -238,7 +238,7 @@ A rollout does not auto-promote (cut over to the new revision) until its **promo
 
 | Gate (`deployment.promotion_gate`) | Default for | What must pass to promote | Telemetry backend required? |
 |---|---|---|---|
-| `telemetry` | all cloud backends (ECS/ALB, Lambda, ACA, Functions, Argo Rollouts) | The configured metrics gate (`telemetry.connection` + error-rate/latency thresholds) must clear after warmup. | Yes — a reachable Prometheus/CloudWatch connection. |
+| `telemetry` | all cloud backends (ECS/ALB, Lambda, ACA, Functions, native Kubernetes Deployment) | The configured metrics gate (`telemetry.connection` + error-rate/latency thresholds) must clear after warmup. | Yes — a reachable Prometheus/CloudWatch connection. |
 | `health` | `honua-yarp-rolling` (self-hosted rolling, on-prem/air-gapped) | The backend's own health gate. The rolling backend health-probes the new standby replica locally and cuts over once it is healthy. A metrics gate is optional; if `telemetry.connection` is also set its rollback signals and waits still apply. | No. |
 | `manual` | — (opt-in) | Nothing automatic. The rollout bakes and holds until an operator calls the promote endpoint. | No. |
 
@@ -329,3 +329,34 @@ Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: tru
 - [Back up and restore](backup-and-restore.md)
 - [Monitor Honua Server](monitoring.md)
 - [Deploy on AWS and Azure](cloud-deployments.md)
+
+### Native Kubernetes public-route proof
+
+The native `honua-kubernetes-deployment` backend uses the bound cluster's ordinary
+Deployment, ReplicaSet, Pod, Service and EndpointSlice APIs. Ingress is optional;
+LoadBalancer Service installation needs no nginx or Argo. The default backend
+registry does not register an Argo client or adapter. Historical Argo source is
+not a supported built-in installation path.
+
+For an owned HTTPS domain, register `kubernetes.load_balancer_arn`,
+`kubernetes.dns_zone_id` and `kubernetes.dns_record_name` from actual operator
+observation. The existing registered `kubernetes.*` authority prevents request
+overrides. Fresh read-only AWS checks bind the Service/Ingress observed hostname
+to that public active AWS load balancer and TLS listener, then require every
+serving Route53 A/AAAA alias for the public name to select that exact load
+balancer and canonical hosted zone. Conflicting targets, policy record sets,
+multivalue routing, private zones and unproved CNAME chains are refused.
+Read-only caller-account, load-balancer, listener, hosted-zone and record-list
+permissions must be explicitly granted to the host AWS role; no credential
+material is accepted in request parameters. The authenticated HTTPS readiness
+and retained-data query still run against the same registered public route.
+This source support does not establish a live EKS recovery qualification.
+
+Public-zone existence alone is not delegation proof. Configure trusted public
+recursive DNS resolver IPs under `ControlPlane:Kubernetes:PublicDns:Resolvers`
+(host configuration only). All configured resolvers must return the exact zone
+apex and complete Route53 delegation NS set, and the public hostname's closest
+SOA authority must be that zone. This also refuses an intervening delegated child
+zone. Missing resolvers, stale/undelegated zones and DNS failures leave route
+verification unavailable; no OS resolver or caller-selected resolver fallback is
+used. DNS checks use a pinned managed client over TCP with bounded timeouts.

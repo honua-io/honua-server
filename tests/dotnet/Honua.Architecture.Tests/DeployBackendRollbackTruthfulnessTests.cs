@@ -36,7 +36,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
 
     private static readonly string[] AutomaticBackends =
     [
-        "honua-kubernetes-argo-rollouts", "honua-aws-ecs-alb",
+        "honua-kubernetes-deployment", "honua-aws-ecs-alb",
         "honua-azure-container-apps-revision", "honua-gitops-aws-lambda",
         "honua-gitops-azure-functions", "honua-yarp-rolling"
     ];
@@ -64,6 +64,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             {
                 world.Configure(backend.BackendName, scenario);
                 var operation = CreateOperation(backend.BackendName, scenario);
+                world.NativeOperation = operation;
                 DeployObservation? rollbackRequest = null;
                 var transitions = new List<WorkflowOperationStatus>();
                 try
@@ -77,6 +78,12 @@ public sealed class DeployBackendRollbackTruthfulnessTests
                     // the retry below invokes the same registered backend after provider recovery.
                     transitions.Add(WorkflowOperationStatus.Reconciling);
                 }
+                catch (InvalidOperationException) when (backend.BackendName == KubernetesDeploymentDeployBackend.AdapterBackendName &&
+                    scenario is not ("exact-prior" or "transient-recovery"))
+                {
+                    // An incomplete/replaced immutable baseline must refuse actuation.
+                    transitions.Add(WorkflowOperationStatus.ManualInterventionRequired);
+                }
                 var observations = new List<DeployObservation>();
                 var current = operation with { Status = WorkflowOperationStatus.RollbackRequested };
 
@@ -89,7 +96,11 @@ public sealed class DeployBackendRollbackTruthfulnessTests
 
                 for (var attempt = 0; attempt < 3; attempt++)
                 {
-                    var observation = await backend.ObserveAsync(current);
+                    DeployObservation observation;
+                    try { observation = await backend.ObserveAsync(current); }
+                    catch (InvalidOperationException) when (backend.BackendName == KubernetesDeploymentDeployBackend.AdapterBackendName &&
+                        scenario is not ("exact-prior" or "transient-recovery"))
+                    { observation = new() { Status = WorkflowOperationStatus.ManualInterventionRequired, Message = "Native immutable receipt verification refused." }; }
                     observations.Add(observation);
                     transitions.Add(observation.Status);
                     if (observation.Status is WorkflowOperationStatus.RolledBack or
@@ -118,7 +129,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
                 if (scenario is "exact-prior" or "transient-recovery")
                 {
                     Assert.Equal(WorkflowOperationStatus.RolledBack, terminal.Status);
-                    Assert.Equal(Prior, terminal.ObservedRevision);
+                    Assert.Equal(backend.BackendName == KubernetesDeploymentDeployBackend.AdapterBackendName ? NativePrior : Prior, terminal.ObservedRevision);
                 }
                 else
                 {
@@ -151,7 +162,6 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         services.AddOptions();
         services.AddHttpClient();
         services.AddHonuaBatchAndDeployBackends();
-        services.RemoveAll<IArgoRolloutsClient>();
         services.RemoveAll<IAwsAlbClient>();
         services.RemoveAll<IAwsEcsClient>();
         services.RemoveAll<IAwsLambdaAliasClient>();
@@ -160,7 +170,12 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         services.RemoveAll<IContainerRuntimeClient>();
         services.RemoveAll<IProxyStateSwapper>();
         services.RemoveAll<ILocalReplicaHealthProbe>();
-        services.AddSingleton<IArgoRolloutsClient>(world);
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IArgoRolloutsClient) ||
+            descriptor.ServiceType == typeof(KubernetesArgoRolloutsDeployBackend));
+        services.RemoveAll<IBoundKubernetesConnectionFactory>();
+        services.RemoveAll<IDeployTargetRegistry>();
+        services.AddSingleton<IBoundKubernetesConnectionFactory>(new NativeMatrixTransport(world));
+        services.AddSingleton<IDeployTargetRegistry>(new NativeMatrixTargets());
         services.AddSingleton<IAwsAlbClient>(world);
         services.AddSingleton<IAwsEcsClient>(world);
         services.AddSingleton<IAwsLambdaAliasClient>(world);
@@ -189,6 +204,17 @@ public sealed class DeployBackendRollbackTruthfulnessTests
 
     private static WorkflowOperationRecord CreateOperation(string backend, string scenario)
     {
+        if (backend == KubernetesDeploymentDeployBackend.AdapterBackendName)
+        {
+            var baseline = CreateOperation("honua-aws-ecs-alb", scenario);
+            return baseline with { Deploy = new()
+            {
+                TargetId = "native-matrix", TargetKind = DeployTargetKind.Kubernetes, Backend = backend,
+                Environment = "production", TargetName = "honua", ArtifactReference = NativeCandidate,
+                DesiredRevision = NativeCandidate, CurrentRevision = scenario == "missing-prior" ? null : NativePrior,
+                Parameters = NativeParameters()
+            } };
+        }
         var kind = backend switch
         {
             "honua-aws-ecs-alb" => DeployTargetKind.AwsEcs,
@@ -289,11 +315,88 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         string? ProviderReportedRevision, string ProviderReportedState, WorkflowOperationStatus TerminalStatus,
         IReadOnlyList<WorkflowOperationStatus> TransitionSequence, string? ReasonCode);
 
+    private static readonly string NativePrior = "registry.example/honua@sha256:" + new string('a', 64);
+    private static readonly string NativeCandidate = "registry.example/honua@sha256:" + new string('b', 64);
+    private static Dictionary<string, string> NativeParameters() => new()
+    {
+        ["honua.runtime_kind"] = "aws-eks", ["kubernetes.cluster_arn"] = "arn:aws:eks:us-west-2:123456789012:cluster/matrix",
+        ["kubernetes.api_server"] = "https://cluster.example", ["kubernetes.ca_sha256"] = new string('a', 64),
+        ["kubernetes.cluster_uid"] = "cluster", ["kubernetes.namespace"] = "honua", ["kubernetes.deployment_name"] = "honua",
+        ["kubernetes.deployment_uid"] = "deployment", ["kubernetes.container_name"] = "honua",
+        ["kubernetes.service_name"] = "honua", ["kubernetes.service_uid"] = "service",
+        ["kubernetes.service_port"] = "443", ["kubernetes.target_port"] = "8080",
+        ["kubernetes.route_kind"] = "LoadBalancerService", ["kubernetes.route_name"] = "honua", ["kubernetes.route_uid"] = "service",
+        ["kubernetes.public_url"] = "https://probe.example", ["telemetry.healthz.url"] = "https://probe.example/healthz",
+        ["telemetry.golden_query.url"] = "https://probe.example/golden", ["telemetry.golden_query.expected_contains"] = "marker:revision-prior"
+    };
+
+    private sealed class NativeMatrixTargets : IDeployTargetRegistry
+    {
+        private static DeployTargetDefinition Target() => new()
+        { TargetId = "native-matrix", TargetKind = DeployTargetKind.Kubernetes, Backend = KubernetesDeploymentDeployBackend.AdapterBackendName,
+            Environment = "production", TargetName = "honua", Parameters = NativeParameters() };
+        public Task<IReadOnlyList<DeployTargetDefinition>> ListAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DeployTargetDefinition>>([Target()]);
+        public Task<DeployTargetDefinition?> GetAsync(string targetId, CancellationToken cancellationToken = default)
+            => Task.FromResult<DeployTargetDefinition?>(targetId == "native-matrix" ? Target() : null);
+    }
+
+    private sealed class NativeMatrixTransport(ProviderWorld world) : IBoundKubernetesConnectionFactory
+    {
+        public Task<BoundKubernetesConnection> OpenAsync(IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken = default)
+        {
+            if (world.Scenario == "transient-recovery") throw new HttpRequestException("Injected provider outage.");
+            return Task.FromResult(new BoundKubernetesConnection(new HttpClient(new NativeMatrixHandler(world)),
+                new Uri("https://cluster.example"), null, "matrix-token"));
+        }
+    }
+
+    private sealed class NativeMatrixHandler(ProviderWorld world) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var operation = world.NativeOperation!;
+            var image = world.Scenario is "exact-prior" or "ambiguous-evidence" ? NativePrior : NativeCandidate;
+            if (world.Scenario == "different-revision") image = "registry.example/honua@sha256:" + new string('c', 64);
+            object body;
+            var path = request.RequestUri!.AbsolutePath;
+            if (request.Method == HttpMethod.Patch) body = new { };
+            else if (path.EndsWith("/services/honua", StringComparison.Ordinal)) body = new
+            {
+                metadata = new { uid = "service" },
+                spec = new { type = "LoadBalancer", selector = new { app = "honua" }, ports = new[] { new { port = 443, targetPort = 8080, protocol = "TCP" } } },
+                status = new { loadBalancer = new { ingress = new[] { new { hostname = "probe.example" } } } }
+            };
+            else if (path.EndsWith("/replicasets", StringComparison.Ordinal)) body = new
+            { items = new[] { new { metadata = new { uid = "replicaset", ownerReferences = new[] { new { uid = "deployment", controller = true } } } } } };
+            else if (path.EndsWith("/pods", StringComparison.Ordinal)) body = new
+            { items = new[] { new { metadata = new { uid = "pod", ownerReferences = new[] { new { uid = "replicaset", controller = true } } },
+                status = new { phase = "Running", podIP = "10.0.0.2", containerStatuses = new[] { new { name = "honua", ready = true, imageID = image } } } } } };
+            else if (path.EndsWith("/endpointslices", StringComparison.Ordinal)) body = new
+            { items = world.Scenario == "ambiguous-evidence" ? Array.Empty<object>() : [new
+                { metadata = new { ownerReferences = new[] { new { uid = "service", controller = true } } }, addressType = "IPv4",
+                    ports = new[] { new { port = 8080, protocol = "TCP" } }, endpoints = new[] { new { addresses = new[] { "10.0.0.2" },
+                        conditions = new { ready = true }, targetRef = new { kind = "Pod", uid = "pod" } } } }] };
+            else body = new
+            {
+                metadata = new { uid = "deployment", resourceVersion = "17", generation = 2,
+                    annotations = new Dictionary<string, string> { ["honua.io/deploy-operation"] = operation.OperationId,
+                        ["honua.io/deploy-baseline"] = NativePrior, ["honua.io/deploy-desired"] = NativeCandidate, ["honua.io/deploy-phase"] = "rollback" } },
+                spec = new { replicas = 1, selector = new { matchLabels = new { app = "honua" } }, template = new
+                    { spec = new { containers = new[] { new { name = "honua", image, ports = new[] { new { containerPort = 8080 } } } } } } },
+                status = new { observedGeneration = 2, updatedReplicas = 1, availableReplicas = 1, replicas = 1, unavailableReplicas = 0 }
+            };
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(body)) });
+        }
+    }
+
     private sealed class ProviderWorld : IArgoRolloutsClient, IAwsAlbClient, IAwsEcsClient, IAwsLambdaAliasClient,
         IAzureContainerAppsRevisionClient, IAzureFunctionsSlotClient, IContainerRuntimeClient,
         IProxyStateSwapper, ILocalReplicaHealthProbe, IRollbackDataPlaneProbe
     {
         private string _scenario = "exact-prior";
+        public string Scenario => _scenario;
+        public WorkflowOperationRecord? NativeOperation { get; set; }
         private int _rollbackCalls;
         private ArgoRolloutState _argo = Argo(Candidate, false, "candidate-hash");
         private AwsAlbListenerRuleState _alb = Alb(0, 100);
@@ -312,6 +415,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         public string Describe(string backend)
             => backend switch
             {
+                "honua-kubernetes-deployment" => $"scenario={_scenario};uid=deployment;transport=bound-kubernetes-http",
                 "honua-kubernetes-argo-rollouts" => $"phase={_argo.Phase};aborted={_argo.IsAborted};currentHash={_argo.CurrentPodHash ?? "<missing>"};stableHash={_argo.StableRevisionHash ?? "<missing>"};image={_argo.PodTemplateImage ?? "<missing>"}",
                 "honua-aws-ecs-alb" => $"canaryTaskDefinition={_ecs.TaskDefinitionArn ?? "<missing>"};stableTaskDefinition={_stable.TaskDefinitionArn ?? "<missing>"};status={_ecs.Status ?? "<missing>"};running={_ecs.RunningCount};desired={_ecs.DesiredCount}",
                 "honua-azure-container-apps-revision" => string.Join(',', _containerApp.Traffic.Select(weight => $"{weight.RevisionName}:{weight.Weight}")),

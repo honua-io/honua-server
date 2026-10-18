@@ -57,7 +57,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0049](0049-single-auth-identity-token-foundation.md) | Single Auth/Identity/Token Foundation Shared by OIDC SSO and ArcGIS OAuth2 | Accepted | 2026-06 |
 | [0050](0050-routing-engine-choice-and-naserver-compat.md) | Routing Engine Choice and NAServer Compatibility | Accepted | 2026-06 |
 | [0051](0051-branch-versioning-storage-model.md) | Branch-Versioning Storage Model (Overlay/Moment Over the Live Base Table) | Accepted | 2026-06 |
-| [0052](0052-kubernetes-closed-loop-promotion-via-argo-rollouts.md) | Kubernetes Closed-Loop Promotion via Argo Rollouts | Accepted | 2026-06 |
+| [0052](0052-kubernetes-closed-loop-promotion-via-argo-rollouts.md) | Kubernetes Closed-Loop Promotion via Argo Rollouts | Superseded (native Deployment) | 2026-06 |
 | [0053](0053-oauth2-client-credentials-grant.md) | OAuth2 Client-Credentials Grant for Service-to-Service Named Clients | Accepted | 2026-06 |
 | [0054](0054-evidence-based-feature-catalog.md) | Evidence-Based Feature Catalog (Generated, Drift-Gated Capability Map) | Accepted | 2026-06 |
 | [0055](0055-optimistic-batch-merge-train.md) | Optimistic Batch Merge Train | Accepted | 2026-06 |

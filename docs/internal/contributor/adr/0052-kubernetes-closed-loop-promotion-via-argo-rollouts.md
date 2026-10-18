@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (`honua-io/honua-server#1554`, child of `#1537`).
+Superseded for built-in Kubernetes/EKS deployment by the native Deployment requirement in unified workspace epic #6297. Built-in startup, deployment, status and rollback must have zero Argo installation, API, CRD or controller dependency. The historical adapter below is not registered by default; use `honua-kubernetes-deployment`.
 
 ## Context
 

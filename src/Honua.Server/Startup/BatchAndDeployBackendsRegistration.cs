@@ -23,6 +23,8 @@ internal static class BatchAndDeployBackendsRegistration
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
         services.AddSingleton<IAwsAlbClient, AwsSdkAlbClient>();
+        services.AddOptions<KubernetesPublicDnsOptions>().BindConfiguration("ControlPlane:Kubernetes:PublicDns");
+        services.AddSingleton<IKubernetesPublicRouteVerifier, AwsKubernetesPublicRouteVerifier>();
         services.AddSingleton<IAwsEcsClient, AwsSdkEcsClient>();
 #endif
 #if !HONUA_EXCLUDE_AZURE
@@ -55,15 +57,13 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<IRollbackDataPlaneProbe, HttpRollbackDataPlaneProbe>();
         services.AddSingleton<IDeployTelemetrySignalEvaluator, DeployTelemetrySignalEvaluator>();
 
-        // Shared Kubernetes API request factory (in-cluster / out-of-cluster auth) consumed
-        // by both the Argo Rollouts deploy client and the Kubernetes Job batch client.
+        // Kubernetes Job transport is independent of the native Deployment adapter.
+        // Built-in deployment startup/discovery has no Argo service or controller dependency.
         services.AddSingleton<KubernetesApiRequestFactory>();
-        services.AddSingleton<IArgoRolloutsClient, ArgoRolloutsClient>();
 
         // Deploy backend concrete singletons. Order matters for the IEnumerable<IDeployBackend>
         // resolution below — keep the existing K8s/AWS/Azure ordering.
         services.AddSingleton<KubernetesGitOpsDeployBackend>();
-        services.AddSingleton<KubernetesArgoRolloutsDeployBackend>();
         services.AddSingleton<IBoundKubernetesConnectionFactory, BoundKubernetesConnectionFactory>();
         services.AddSingleton<KubernetesDeploymentDeployBackend>();
 #if !HONUA_EXCLUDE_AWS
@@ -81,7 +81,6 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<AzureFunctionsGitOpsDeployBackend>();
 #endif
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesGitOpsDeployBackend>());
-        services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesArgoRolloutsDeployBackend>());
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesDeploymentDeployBackend>());
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsGitOpsDeployBackend>());

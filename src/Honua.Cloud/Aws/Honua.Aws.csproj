@@ -30,6 +30,8 @@
   <ItemGroup>
     <!-- AWS SDK packages carved from Honua.Server.csproj. AWSSDK.LocationService
          is intentionally excluded — it lives in Honua.Geocoding. -->
+    <PackageReference Include="DnsClient" />
+    <PackageReference Include="AWSSDK.Route53" />
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="AWSSDK.SecurityToken" />
     <PackageReference Include="AWSSDK.Batch" />
