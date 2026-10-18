@@ -17,7 +17,7 @@ import threading
 import uuid
 from urllib.parse import unquote, urlsplit
 
-from workspace import EXCLUDED, MAX_BYTES, command, read_regular, run, sanitized, secret_path, snapshot
+from workspace import ArtifactReader, DEFAULT_LIMITS, EXCLUDED, MAX_BYTES, WorkspaceLimits, command, read_regular, run, sanitized, secret_path, snapshot
 
 SOURCE_EXCLUDED = EXCLUDED | {".honua"}
 EDITABLE = {".py", ".cs", ".csproj", ".json", ".yaml", ".yml", ".lock", ".toml", ".geojson", ".csv", ".wkt"}
@@ -25,12 +25,13 @@ MAX_SOURCE_BYTES = 256 * 1024
 
 
 class Workspace:
-    def __init__(self, project: Path, image: str, runs: Path):
+    def __init__(self, project: Path, image: str, runs: Path, limits: WorkspaceLimits = DEFAULT_LIMITS):
+        self.limits = limits
         self.project = project.resolve(strict=True)
         self.image = image
         self.runs = runs.resolve()
         if self.runs.is_relative_to(self.project): raise ValueError("Run storage must be outside the project.")
-        command(image, self.project, self.runs, "validate-image")
+        command(image, self.project, self.runs, "validate-image", limits)
         self.lock = threading.Lock()
         self.jobs: dict[str, dict] = {}
         self.cancellations: dict[str, threading.Event] = {}
@@ -88,13 +89,14 @@ class Workspace:
         stage = self.runs / "staging" / run_id
         with self.lock:
             if self.cancellations: raise ValueError("A sandbox run is active; cancel or wait before starting another.")
-            manifest = snapshot(self.project, stage)
+            accepted_limits = self.limits
+            manifest = snapshot(self.project, stage, accepted_limits)
             self.jobs[run_id] = {"runId": run_id, "status": "queued", "snapshotDigest": manifest["digest"]}
             cancel = threading.Event()
             self.cancellations[run_id] = cancel
         def execute() -> None:
             try:
-                receipt = run(stage, self.image, self.runs, 300, cancel, run_id)
+                receipt = run(stage, self.image, self.runs, 300, cancel, run_id, limits=accepted_limits)
                 with self.lock: self.jobs[run_id] = receipt
             except Exception as error:
                 with self.lock: self.jobs[run_id] = {"runId": run_id, "status": "failed", "snapshotDigest": manifest["digest"], "diagnostics": sanitized(str(error)), "artifacts": []}
@@ -123,16 +125,15 @@ class Workspace:
             event.set()
         return {**status, "cancellationRequested": True}
 
-    def artifact(self, run_id: str, relative: str) -> tuple[Path, dict]:
+    def artifact(self, run_id: str, relative: str, authorize=lambda: None, binding: dict | None = None) -> ArtifactReader:
         status = self.status(run_id)
         if status["status"] != "succeeded": raise ValueError("Failed or unfinished runs cannot expose successful artifacts.")
         item = next((item for item in status.get("artifacts", []) if item["path"] == relative), None)
         if item is None: raise FileNotFoundError("Artifact not found.")
-        root = self.runs / run_id / "output"
-        path = root / relative
-        if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()): raise ValueError("Invalid artifact path.")
-        if hashlib.sha256(read_regular(path, min(item["bytes"], MAX_BYTES))).hexdigest() != item["sha256"]: raise ValueError("Artifact content changed.")
-        return path, item
+        if not re.fullmatch(r"[a-f0-9]{32}", run_id): raise ValueError("Invalid immutable run identity.")
+        # Pin the complete path beneath retained run storage, including run/output
+        # components, before any hash or byte read. Never reopen the pathname.
+        return ArtifactReader(self.runs, item, self.limits, authorize, binding, f"{run_id}/output/{relative}")
 
 
 def create_server(workspace: Workspace, key: str, port: int, bind_address: str = "127.0.0.1", allowed_hosts: tuple[str, ...] = ()) -> ThreadingHTTPServer:
@@ -215,12 +216,17 @@ def create_server(workspace: Workspace, key: str, port: int, bind_address: str =
                 elif re.fullmatch("runs/[a-f0-9]{32}/cancel", path) and self.command == "POST": result = scoped.cancel(access, path.split("/")[1])
                 elif path.startswith("runs/") and "/artifacts/" in path and self.command == "GET":
                     run_id, relative = path[5:].split("/artifacts/", 1)
-                    artifact, item = scoped.artifact(access, run_id, relative)
-                    content = read_regular(artifact, min(item["bytes"], MAX_BYTES))
-                    if len(content) != item["bytes"] or hashlib.sha256(content).hexdigest() != item["sha256"]: raise ValueError("Artifact changed.")
-                    self.send_response(200); self.send_header("content-type", "application/octet-stream")
-                    self.send_header("content-length", str(item["bytes"])); self.send_header("cache-control", "no-store")
-                    self.end_headers(); self.wfile.write(content)
+                    with scoped.artifact(access, run_id, relative) as reader:
+                        self.send_response(200); self.send_header("content-type", "application/octet-stream")
+                        self.send_header("content-length", str(reader.item["bytes"])); self.send_header("cache-control", "no-store")
+                        self.send_header("etag", '"sha256-' + reader.item["sha256"] + '"')
+                        self.end_headers()
+                        try:
+                            for chunk in reader.chunks(): self.wfile.write(chunk)
+                        except (PermissionError, ValueError, OSError):
+                            # Headers may already be on the wire. Abort the body;
+                            # never append a JSON error or a second HTTP response.
+                            self.close_connection = True
                     return
                 else: self.reply(404, {"error": "Workspace route not found."}); return
                 self.reply(200, result)

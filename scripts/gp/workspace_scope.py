@@ -21,7 +21,7 @@ import time
 from typing import TYPE_CHECKING
 import uuid
 
-from workspace import MAX_BYTES, read_regular, run, sanitized, snapshot, source_manifest
+from workspace import ArtifactReader, DEFAULT_LIMITS, MAX_BYTES, read_regular, run, sanitized, snapshot, source_manifest
 if TYPE_CHECKING:
     from workspace_service import Workspace
 
@@ -132,12 +132,12 @@ class ScopedWorkspace:
         with self.lock:
             if self.project_file.exists():
                 self.project = read_json(self.project_file)
-                if self.project.get("locationDigest") != location or self.project.get("image") != workspace.image:
+                if self.project.get("locationDigest") != location or self.project.get("image") != workspace.image or self.project.get("limits", DEFAULT_LIMITS.record()) != workspace.limits.record():
                     raise ValueError("Retained project binding belongs to another project or runtime image.")
             else:
                 self.project = {"projectId": uuid.uuid4().hex, "locationDigest": location, "image": workspace.image,
                                 "revision": 1, "sourceDigest": None, "ownerActorId": None, "tenantId": None,
-                                "environmentId": None, "workspaces": []}
+                                "environmentId": None, "workspaces": [], "limits": workspace.limits.record()}
                 atomic_json(self.project_file, self.project)
     def _authorize(self, access: Access, bound: bool = True) -> None:
         self.project = read_json(self.project_file)
@@ -150,7 +150,7 @@ class ScopedWorkspace:
         if bound and access.workspace not in self.project["workspaces"]: raise PermissionError("Workspace project grant is absent or revoked.")
 
     def _refresh(self) -> dict:
-        manifest = source_manifest(self.workspace.project)
+        manifest = source_manifest(self.workspace.project, self.workspace.limits)
         if self.project["sourceDigest"] != manifest["digest"]:
             if self.project["sourceDigest"] is not None: self.project["revision"] += 1
             self.project["sourceDigest"] = manifest["digest"]
@@ -228,12 +228,12 @@ class ScopedWorkspace:
             snapshot_id = uuid.uuid4().hex
             directory = self.directory / "snapshots" / snapshot_id
             try:
-                manifest = snapshot(self.workspace.project, directory / "source")
+                manifest = snapshot(self.workspace.project, directory / "source", self.workspace.limits)
                 if manifest["digest"] != body["sourceDigest"]:
                     self._refresh()
                     raise FileExistsError("Project changed during snapshot capture; no run was submitted.")
                 receipt = {"projectId": self.project["projectId"], "snapshotId": snapshot_id,
-                           "snapshotDigest": manifest["digest"], "image": self.workspace.image, "revision": self.project["revision"]}
+                           "snapshotDigest": manifest["digest"], "image": self.workspace.image, "revision": self.project["revision"], "limits": self.workspace.limits.record()}
                 atomic_json(directory / "snapshot.json", receipt | {"scope": access.binding()})
                 return receipt
             except Exception:
@@ -244,13 +244,21 @@ class ScopedWorkspace:
         self._authorize(access)
         if record.get("scope") != access.binding(): raise PermissionError("Run or snapshot belongs to another workspace.")
 
-    def _snapshot(self, access: Access, snapshot_id: str, digest: str) -> tuple[dict, Path]:
+    def _snapshot(self, access: Access, snapshot_id: str, digest: str, legacy_artifact: bool = False) -> tuple[dict, Path]:
         if not ID.fullmatch(snapshot_id) or not DIGEST.fullmatch(digest): raise ValueError("Invalid immutable snapshot reference.")
         directory = self.directory / "snapshots" / snapshot_id
         record = read_json(directory / "snapshot.json")
         self._record_scope(access, record)
-        if record["snapshotDigest"] != digest or record["image"] != self.workspace.image: raise FileExistsError("Snapshot identity mismatch.")
-        if source_manifest(directory / "source")["digest"] != digest: raise FileExistsError("Retained snapshot bytes changed; no run was submitted.")
+        if record["snapshotDigest"] != digest or record["image"] != self.workspace.image or record.get("limits", DEFAULT_LIMITS.record()) != self.workspace.limits.record(): raise FileExistsError("Snapshot identity mismatch.")
+        manifest = source_manifest(directory / "source", self.workspace.limits)
+        matches = manifest["digest"] == digest
+        if legacy_artifact and "limits" not in record and self.workspace.limits == DEFAULT_LIMITS:
+            # Older successful runs retain their original file-only digest and
+            # implicit bounded profile. This compatibility is read-only; never
+            # submit an execution under an unbound legacy limits identity.
+            encoded = json.dumps(manifest["files"], sort_keys=True, separators=(",", ":")).encode()
+            matches = matches or hashlib.sha256(encoded).hexdigest() == digest
+        if not matches: raise FileExistsError("Retained snapshot bytes changed; no run was submitted.")
         return record, directory / "source"
 
     def get_snapshot(self, access: Access, snapshot_id: str) -> dict:
@@ -285,8 +293,11 @@ class ScopedWorkspace:
             if body.get("projectId") != self.project["projectId"]: raise FileNotFoundError("Project not found.")
             snapshot_id, digest, command_id = body.get("snapshotId"), body.get("snapshotDigest"), body.get("commandId")
             if not all(isinstance(value, str) for value in (snapshot_id, digest, command_id)) or not COMMAND.fullmatch(command_id): raise ValueError("An exact snapshot and bounded command identity are required.")
+            snapshot_record, _ = self._snapshot(access, snapshot_id, digest)
+            accepted_limits = self.workspace.limits
             request = {"projectId": body["projectId"], "snapshotId": snapshot_id, "snapshotDigest": digest,
-                       "image": self.workspace.image, "scope": access.binding(), "actorId": access.actor}
+                       "image": self.workspace.image, "scope": access.binding(), "actorId": access.actor,
+                       "acceptedRevision": snapshot_record["revision"], "limits": self.workspace.limits.record()}
             request_hash = hashlib.sha256(json.dumps(request, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
             command_key = hashlib.sha256(json.dumps([access.binding(), access.actor, command_id], sort_keys=True).encode()).hexdigest()
             command_file = self.directory / "commands" / f"{command_key}.json"
@@ -328,7 +339,7 @@ class ScopedWorkspace:
 
             def execute() -> None:
                 try:
-                    outcome = run(source, self.workspace.image, self.workspace.runs, 300, cancellation, run_id)
+                    outcome = run(source, self.workspace.image, self.workspace.runs, 300, cancellation, run_id, limits=accepted_limits)
                     if outcome.get("snapshotDigest") != digest: raise ValueError("Executed snapshot digest did not match the accepted request.")
                     result = record | {key: value for key, value in outcome.items() if key in {"status", "diagnostics", "artifacts", "exitCode", "elapsedMs"}}
                 except Exception as error:
@@ -396,10 +407,24 @@ class ScopedWorkspace:
             event.set()
             return observed | {"cancellationRequested": True}
 
-    def artifact(self, access: Access, run_id: str, relative: str) -> tuple[Path, dict]:
+    def artifact(self, access: Access, run_id: str, relative: str) -> ArtifactReader:
         with self.lock:
             self._job(access, run_id)
             observed = self.status(access, run_id)
             if observed["status"] != "succeeded": raise ValueError("Only successful local runs expose declared artifacts.")
+            accepted, _ = self._snapshot(access, observed["snapshotId"], observed["snapshotDigest"], legacy_artifact=True)
+            if accepted["projectId"] != observed["projectId"] or observed.get("acceptedRevision", accepted["revision"]) != accepted["revision"]:
+                raise PermissionError("Artifact snapshot version binding changed.")
+            pinned = {key: observed.get(key) for key in ("projectId", "acceptedRevision", "snapshotId", "snapshotDigest", "image", "limits", "artifacts")}
             self.workspace.jobs[run_id] = observed
-            return self.workspace.artifact(run_id, relative)
+        def authorize() -> None:
+            with self.lock:
+                current = self.status(access, run_id)
+                if current["status"] != "succeeded" or any(current.get(key) != value for key, value in pinned.items()):
+                    raise PermissionError("Immutable artifact job binding changed.")
+                snapshot_record = read_json(self.directory / "snapshots" / observed["snapshotId"] / "snapshot.json")
+                self._record_scope(access, snapshot_record)
+                if snapshot_record != accepted: raise PermissionError("Artifact snapshot receipt changed.")
+                if pinned["limits"] not in (None, self.workspace.limits.record()):
+                    raise PermissionError("Immutable artifact limits changed.")
+        return self.workspace.artifact(run_id, relative, authorize, pinned | {"runId": run_id, "path": relative, "acceptedRevision": accepted["revision"]})

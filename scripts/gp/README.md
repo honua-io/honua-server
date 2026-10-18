@@ -119,3 +119,25 @@ built image is qualification evidence, not a published release. SIGINT/SIGTERM
 shutdown signals existing runner cancellation and waits a bounded time for cleanup.
 
 The assembler verifies NuGet `packages.lock.json` content hashes before admitting downloads to the restore feed. For signed packages this uses the official `NuGet.Packaging.PackageArchiveReader` from the SHA512-verified complete .NET SDK: NuGet content hashes exclude signature context and are not raw archive hashes. The trusted reader is built outside user projects and only reads the quarantined archive. Exact raw SHA256/SHA512 values are recorded separately, and the restored cache must retain those exact bytes. No dependency archive is extracted or built before the content check. The assembler also requires its own bytes to match the selected installed devkit payload.
+
+### Immutable budgets and streamed artifacts
+
+The workspace snapshot v2 digest binds the file manifest and its immutable
+`WorkspaceLimits`. Source bytes, `fixtures/` bytes, combined snapshot bytes,
+output bytes, per-artifact bytes and `/work` scratch bytes have separate budgets.
+The default combined snapshot and output ceilings remain 128 MiB each; `/work`
+remains a 1 GiB tmpfs. Network denial, the read-only container root, non-root user,
+CPU/memory/process limits, and the per-file size limit remain enforced. A profile
+above those bounded defaults is refused before execution: a verified quota-backed
+disk scratch profile and an actual multi-GB run are still required. A free-space
+check is a preflight check, not a durable disk reservation or quota.
+
+The existing authenticated artifact GET opens every path component without
+following links. It verifies the declared size and SHA-256 using bounded chunks
+before sending headers, then streams the same open file descriptor. Current
+workspace grants, the accepted snapshot/revision, the run/artifact receipt and
+file identity are checked throughout transmission. A digest-derived ETag and the
+exact Content-Length describe the immutable artifact. The final chunk is withheld
+until the streamed digest is verified; a changed file or revoked grant aborts the
+body rather than producing a successful replacement. No byte-range, resumable
+upload, or durable upload-acceptance capability is implied by this reader.

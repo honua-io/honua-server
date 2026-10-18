@@ -112,7 +112,7 @@ class ScopedWorkspaceTests(unittest.TestCase):
         frozen = self.capture()
         entered, release = threading.Event(), threading.Event()
         calls = []
-        def execute(source, image, runs, timeout, cancellation, run_id):
+        def execute(source, image, runs, timeout, cancellation, run_id, **_options):
             calls.append((source / "tool.py").read_text())
             entered.set(); release.wait(5)
             return {"runId": run_id, "snapshotDigest": frozen["snapshotDigest"], "status": "succeeded", "artifacts": [], "elapsedMs": 1}
@@ -136,7 +136,7 @@ class ScopedWorkspaceTests(unittest.TestCase):
 
     def test_local_run_discovery_is_scoped_bounded_and_newest_first(self):
         frozen = self.capture()
-        def execute(source, image, runs, timeout, cancellation, run_id):
+        def execute(source, image, runs, timeout, cancellation, run_id, **_options):
             return {"runId": run_id, "snapshotDigest": frozen["snapshotDigest"], "status": "failed", "diagnostics": "diagnostic" * 1000, "artifacts": []}
         receipts = []
         with patch("workspace_scope.run", side_effect=execute):
