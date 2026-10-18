@@ -68,7 +68,7 @@ def exact_rows(document, expected, typename, *, bounds=None):
             assert not actual.is_empty and actual.is_valid, "invalid spatial query geometry"
             assert actual.intersects(box(*bounds)), "spatial query returned out-of-bounds geometry"
             expected_geometry = shape(expected[identifier]["geometry"])
-            assert actual.bounds == pytest.approx(expected_geometry.bounds, abs=1e-8), "spatial query changed coordinate bounds"
+            assert actual.bounds == pytest.approx(expected_geometry.bounds, abs=1e-8, rel=0), "spatial query changed coordinate bounds"
     assert observed == {key: value["name"] for key, value in expected.items()}, "unexpected exact feature identity/name set"
 
 

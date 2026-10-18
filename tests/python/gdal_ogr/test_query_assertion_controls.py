@@ -96,7 +96,7 @@ def test_actual_attribute_probe_rejects_nonsemantic_success(monkeypatch, fault):
         run_probe(document, output, "attribute")
 
 
-@pytest.mark.parametrize("fault", ["outside", "changed-bounds", "null", "empty", "duplicate", "null-only-empty-window"])
+@pytest.mark.parametrize("fault", ["outside", "changed-bounds", "small-coordinate-drift", "null", "empty", "duplicate", "null-only-empty-window"])
 def test_actual_spatial_probes_reject_wrong_rows_and_coordinates(monkeypatch, fault):
     monkeypatch.setenv("HONUA_BASE_URL", "http://controlled")
     document = source_document()
@@ -107,6 +107,8 @@ def test_actual_spatial_probes_reject_wrong_rows_and_coordinates(monkeypatch, fa
         output["features"][0]["geometry"]["coordinates"] = [0, 0]
     elif fault == "changed-bounds":
         output["features"][0]["geometry"]["coordinates"][0] += .001
+    elif fault == "small-coordinate-drift":
+        output["features"][0]["geometry"]["coordinates"][0] += .00001
     elif fault == "null":
         output["features"][0]["geometry"] = None
     elif fault == "empty":
