@@ -99,6 +99,20 @@ public sealed class LocalProcessWorkspaceContextTests
     }
 
     [UnitTest]
+    public async Task SourceTool_WorkspaceRemovedAfterAuthorizationReturnsControlledFailure()
+    {
+        using var fixture = new Fixture(agent: true);
+        fixture.AddTurn();
+        fixture.Store.GetAsync("workspace").Returns(fixture.Document, (AgentWorkspaceDocument?)null);
+        var tool = LocalProcessWorkspaceTool.All.Single(value => value.Name.EndsWith("_read_source", StringComparison.Ordinal));
+        using var args = JsonDocument.Parse("""{"workspaceId":"workspace","turnId":"turn","path":"process.py"}""");
+        var result = await tool.InvokeAsync(fixture.Context, args.RootElement, CancellationToken.None);
+        Assert.True(result.IsError);
+        await fixture.Gateway.DidNotReceive().ReadSnapshotSourceAsync(Arg.Any<LocalProcessWorkspaceAccess>(),
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public void TrustedAccess_RejectsForeignTenantAndNonownerHuman()
     {
         using var fixture = new Fixture();
