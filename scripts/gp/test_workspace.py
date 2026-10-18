@@ -1,10 +1,11 @@
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 
-from workspace import command, sanitized, snapshot
+from workspace import command, read_regular, sanitized, snapshot
 from workspace_service import Workspace
 
 IMAGE = "sha256:" + "a" * 64
@@ -62,6 +63,28 @@ class WorkspaceTests(unittest.TestCase):
         self.assertNotIn("token-value", result)
         self.assertNotIn("key-value", result)
         self.assertNotIn("user:pass", result)
+
+    def test_fifo_sources_and_artifacts_refused_without_host_read(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); project = self.project(root)
+            fifo = project / "fifo.py"
+            os.mkfifo(fifo)
+            with self.assertRaises(ValueError): read_regular(fifo, 1024)
+            with self.assertRaises(ValueError): snapshot(project, root / "snapshot")
+            workspace = Workspace(project, IMAGE, root / "runs")
+            with self.assertRaises(ValueError): workspace.project_files()
+            output = root / "runs" / ("c" * 32) / "output"
+            output.mkdir(parents=True)
+            os.mkfifo(output / "fifo.json")
+            workspace.jobs["c" * 32] = {"status":"succeeded", "artifacts":[{"path":"fifo.json", "bytes":0, "sha256":hashlib.sha256(b"").hexdigest()}]}
+            with self.assertRaises(ValueError): workspace.artifact("c" * 32, "fifo.json")
+
+    def test_actual_read_bytes_are_bounded(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "growing.py"
+            path.write_bytes(b"12345")
+            with self.assertRaises(ValueError): read_regular(path, 4)
+            self.assertEqual(read_regular(path, 5), b"12345")
 
     def test_failed_receipts_never_expose_success_artifacts(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -15,7 +15,7 @@ import threading
 import uuid
 from urllib.parse import unquote, urlsplit
 
-from workspace import EXCLUDED, command, run, sanitized, snapshot
+from workspace import EXCLUDED, MAX_BYTES, command, read_regular, run, sanitized, snapshot
 
 EDITABLE = {".py", ".cs", ".csproj", ".json", ".yaml", ".yml", ".lock", ".toml"}
 MAX_SOURCE_BYTES = 256 * 1024
@@ -55,8 +55,7 @@ class Workspace:
                     candidate = Path(root) / name
                     if candidate.suffix not in EDITABLE or candidate.is_symlink(): continue
                     path = self.source(candidate.relative_to(self.project).as_posix())
-                    if path.stat().st_size > MAX_SOURCE_BYTES: continue
-                    content = path.read_text()
+                    content = read_regular(path, MAX_SOURCE_BYTES).decode()
                     total += len(content.encode())
                     if total > 8 * 1024 * 1024: raise ValueError("Source editor size budget exceeded.")
                     files.append({"path": path.relative_to(self.project).as_posix(), "content": content,
@@ -69,7 +68,7 @@ class Workspace:
         with self.lock:
             path = self.source(relative)
             if not path.is_file(): raise ValueError("Only existing project sources may be edited.")
-            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            actual = hashlib.sha256(read_regular(path, MAX_SOURCE_BYTES)).hexdigest()
             if not hmac.compare_digest(actual.encode(), expected.encode()): raise FileExistsError("Source changed; reload before saving.")
             temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
             try:
@@ -127,7 +126,7 @@ class Workspace:
         root = self.runs / run_id / "output"
         path = root / relative
         if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()): raise ValueError("Invalid artifact path.")
-        if hashlib.sha256(path.read_bytes()).hexdigest() != item["sha256"]: raise ValueError("Artifact content changed.")
+        if hashlib.sha256(read_regular(path, min(item["bytes"], MAX_BYTES))).hexdigest() != item["sha256"]: raise ValueError("Artifact content changed.")
         return path, item
 
 
@@ -165,10 +164,12 @@ def serve(workspace: Workspace, key: str, port: int) -> None:
                 elif path.startswith("runs/") and "/artifacts/" in path and self.command == "GET":
                     run_id, relative = path[5:].split("/artifacts/", 1)
                     artifact, item = workspace.artifact(run_id, relative)
+                    data = read_regular(artifact, min(item["bytes"], MAX_BYTES))
+                    if len(data) != item["bytes"] or hashlib.sha256(data).hexdigest() != item["sha256"]: raise ValueError("Artifact changed.")
                     self.send_response(200); self.send_header("content-type", "application/octet-stream")
                     self.send_header("content-length", str(item["bytes"])); self.send_header("cache-control", "no-store")
                     self.end_headers()
-                    with artifact.open("rb") as stream: shutil.copyfileobj(stream, self.wfile)
+                    self.wfile.write(data)
                     return
                 else: self.reply(404, {"error": "Workspace route not found."}); return
                 self.reply(200, result)
