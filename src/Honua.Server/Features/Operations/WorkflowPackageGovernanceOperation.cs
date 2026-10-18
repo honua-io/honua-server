@@ -87,7 +87,7 @@ internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider service
         var payload = new WorkflowPackageApprovalPayload
         {
             Intent = intent,
-            AuthorSecurityContext = AgentCredentialAuthority.IsDelegated(principal)
+            AuthorSecurityContext = AgentCredentialAuthority.IsAgent(principal) || AgentCredentialAuthority.IsDelegated(principal)
                 ? new Honua.Core.Features.Authorization.Domain.JobSecurityContext(access.ActorId, access.TenantId,
                     credential.Permissions.Select(permission => new Honua.Core.Features.Authorization.Domain.JobSecurityClaim("permission", permission)).ToArray())
                 { OwnerActorId = access.ActorId }

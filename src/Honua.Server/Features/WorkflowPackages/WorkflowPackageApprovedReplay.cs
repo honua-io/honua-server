@@ -46,7 +46,7 @@ internal sealed class WorkflowPackageApprovedReplay
 
     private static async Task RevalidateMembershipAsync(IServiceProvider services, JobSecurityContext snapshot, CancellationToken cancellationToken, AgentCredentialSnapshot? credential = null)
     {
-        if (credential is { Kind: "oidc-delegated-agent" })
+        if (credential is not null)
         {
             if (await AgentCredentialAuthority.RevalidateAsync(credential, services, cancellationToken).ConfigureAwait(false) is null) Deny();
             return;
@@ -115,18 +115,9 @@ internal sealed class WorkflowPackageApprovedReplay
             !snapshot.Claims.Where(claim => claim.Type == "permission").Select(claim => claim.Value)
                 .Order(StringComparer.Ordinal).SequenceEqual(payload.Permissions.Order(StringComparer.Ordinal))) Deny();
         await RevalidateMembershipAsync(services, snapshot, cancellationToken, payload.Credential).ConfigureAwait(false);
-        // A delegated principal is reconstructed exclusively from current authority;
-        // the minimal legacy context is evidence and never a source of trusted claims.
+        // Reconstruct both credential kinds exclusively from current authority.
+        // The legacy context is evidence, never a source of trusted claims.
         var pinnedPrincipal = principal!;
-        if (!AgentCredentialAuthority.IsDelegated(principal!))
-        {
-            var restored = JobSecurityContextCapture.Restore(snapshot);
-            var pinnedIdentity = new ClaimsIdentity(restored.Claims, AuthenticationExtensions.ApiKeyScheme,
-                ClaimTypes.Name, restored.Identity is ClaimsIdentity restoredIdentity ? restoredIdentity.RoleClaimType : ClaimTypes.Role);
-            CanonicalSecurityActor.StampAuthorityClaims(pinnedIdentity);
-            pinnedPrincipal = new ClaimsPrincipal(pinnedIdentity);
-            if (CanonicalSecurityActor.Resolve(pinnedPrincipal)?.ActorId != payload.ActorId) Deny();
-        }
         var privateContext = new DefaultHttpContext { User = principal, RequestServices = services };
         privateContext.Request.Method = HttpMethods.Post;
         privateContext.Request.Headers["X-Honua-Workspace"] = payload.WorkspaceId;
