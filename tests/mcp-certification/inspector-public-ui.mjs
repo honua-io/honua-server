@@ -75,8 +75,7 @@ export async function openInspectorPublicUi({ inspectorEntry, chromium, endpoint
     stage = 'public connection switch';
     // --config supplies the single public server entry; --server is advisory
     // in the web launcher. Connect using the actual rendered switch.
-    const connect = page.getByLabel('Connect or disconnect "certification"', { exact: true });
-    await connect.waitFor({ state: 'visible' });
+    const connect = page.getByRole('switch', { name: /^Connect or disconnect/ });
     if (!(await connect.isChecked())) await connect.check();
     const tools = page.getByRole('tab', { name: /^Tools/ });
     if (await tools.count()) await tools.click();
@@ -105,10 +104,10 @@ export async function openInspectorPublicUi({ inspectorEntry, chromium, endpoint
       },
       close,
     };
-  } catch {
+  } catch (error) {
     // Used only by authored controls with dummy credentials. Candidate adapters
     // do not request page diagnostics, which could expose operator input.
-    if (onControlFailure && page) await onControlFailure(stage, page).catch(() => {});
+    if (onControlFailure && page) await onControlFailure(stage, page, error).catch(() => {});
     await close();
     throw new Error(`public Inspector UI launch or interaction failed at ${stage}`);
   }

@@ -95,10 +95,10 @@ for (const dropCancellation of [false, true]) {
         inspectorVersion: installed.version, sourceSha: fixture.sourceSha, fixture, observer, dropCancellation,
         openUi: (endpoint) => openInspectorPublicUi({ endpoint, chromium,
           inspectorEntry: new URL('clients/launcher/build/index.js', root).pathname, headers: { 'X-API-Key': 'control-only' },
-          onControlFailure: async (stage, page) => {
+          onControlFailure: async (stage, page, error) => {
             const snapshot = await page.locator('body').ariaSnapshot();
             await writeFile(`artifacts/inspector-browser-controls/ui-${dropCancellation ? 'drop' : 'positive'}.txt`,
-              `${stage}\n${snapshot.slice(0, 32_000)}`);
+              `${stage}\n${String(error).slice(0, 8_000)}\n${snapshot.slice(0, 32_000)}`);
           } }),
         verifyRecovery: async (actualResult) => { assert.deepEqual(actualResult, queryResult()); assert.deepEqual(recoveryResult, queryResult()); },
       });
