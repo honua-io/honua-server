@@ -116,6 +116,7 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
     [InlineData("wrong-type")]
     [InlineData("invalid-counter")]
     [InlineData("missing-counter")]
+    [InlineData("undercounted-counter")]
     [InlineData("expiring-ledger")]
     public async Task Reserve_CorruptOrExpiringAccounting_FailsWithoutAnyMutation(string corruption)
     {
@@ -130,6 +131,7 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
                 (await budget.TryReserveAsync(Reservation(40))).Should().BeTrue();
                 if (corruption == "invalid-counter") await database.HashSetAsync(budget.Key, "bytes", "NaN");
                 if (corruption == "missing-counter") await database.HashDeleteAsync(budget.Key, "count");
+                if (corruption == "undercounted-counter") await database.HashSetAsync(budget.Key, "bytes", 1);
                 if (corruption == "expiring-ledger") await database.KeyExpireAsync(budget.Key, TimeSpan.FromHours(1));
             }
             var before = await database.KeyDumpAsync(budget.Key);

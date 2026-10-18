@@ -42,9 +42,11 @@ internal sealed class RedisImportStorageBudget
           local value = 0
           if raw then value = tonumber(raw) end
           if not value or value < 0 or value ~= math.floor(value) or value > 1125899906842624 then return -2 end
+          if existing and value < amounts[i] then return -2 end
           if value > limits[i] - amounts[i] then exceeds = true end
           values[i] = value + amounts[i]
         end
+        if values[1] < values[2] or values[2] < values[3] then return -2 end
         if existing then return 1 end
         if exceeds then return 0 end
         redis.call('HSET', KEYS[1], ARGV[1], ARGV[2], 'limits', ARGV[10], fields[1], string.format('%.0f', values[1]),
