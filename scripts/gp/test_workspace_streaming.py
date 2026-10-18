@@ -4,6 +4,7 @@ import hashlib
 import http.client
 import json
 import os
+import socket
 from pathlib import Path
 import tempfile
 import threading
@@ -128,6 +129,38 @@ class StreamingWorkspaceTests(unittest.TestCase):
             self.assertEqual((total, digest.hexdigest()), (item["bytes"], item["sha256"]))
             connection.close()
         finally:
+            server.shutdown(); server.server_close(); thread.join(2)
+
+    def test_http_grant_revocation_truncates_body_without_appending_an_error_response(self):
+        _, item = self.seed(8 * 1024 * 1024)
+        key = "test-private-service-key-" + "x" * 32
+        server = create_server(self.workspace, key, 0)
+        original = server.get_request
+        def small_send_buffer():
+            connection, address = original()
+            connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+            return connection, address
+        server.get_request = small_send_buffer
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        connection = None
+        try:
+            headers = {"X-Honua-Workspace-Key": key, "X-Honua-Actor-Id": OWNER.actor,
+                "X-Honua-Workspace-Owner-Id": OWNER.owner, "X-Honua-Workspace-Id": OWNER.workspace,
+                "X-Honua-Environment-Id": OWNER.environment, "X-Honua-Tenant-Id": OWNER.tenant}
+            connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+            connection.request("GET", f"/runs/{self.run_id}/artifacts/{item['path']}", headers=headers)
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            prefix = response.read(65536)
+            self.assertEqual(prefix, b"a" * 65536)
+            self.scoped.revoke(OWNER, OWNER.workspace)
+            with self.assertRaises(http.client.IncompleteRead) as interrupted:
+                response.read()
+            received = prefix + interrupted.exception.partial
+            self.assertLess(len(received), item["bytes"])
+            self.assertEqual(received, b"a" * len(received))
+        finally:
+            if connection is not None: connection.close()
             server.shutdown(); server.server_close(); thread.join(2)
 
     def test_limits_are_immutable_and_independently_bound_into_the_snapshot(self):

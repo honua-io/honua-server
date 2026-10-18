@@ -152,15 +152,18 @@ def sanitized(text: str) -> str:
 
 
 def read_regular(path: Path, limit: int, root: Path | None = None) -> bytes:
-    """Never block on a FIFO or allocate from an untrusted stat size."""
+    """Bound small control/source reads without allocating the entire cap first."""
+    if type(limit) is not int or limit < 0: raise ValueError("Invalid regular-file byte limit.")
     descriptor = open_regular_beneath(root, path.relative_to(root).as_posix()) if root is not None else os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode) or os.fstat(descriptor).st_nlink != 1:
-            raise ValueError("Only regular files are accepted.")
-        with os.fdopen(descriptor, "rb", closefd=False) as stream:
-            data = stream.read(limit + 1)
-        if len(data) > limit: raise ValueError("File exceeds the byte budget.")
-        return data
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode): raise ValueError("Only regular files are accepted.")
+        data = bytearray()
+        while chunk := os.read(descriptor, min(65536, limit - len(data) + 1)):
+            data.extend(chunk)
+            if len(data) > limit: raise ValueError("File exceeds the byte budget.")
+        if _identity(os.fstat(descriptor)) != _identity(before): raise ValueError("Regular file changed while reading.")
+        return bytes(data)
     finally:
         os.close(descriptor)
 
