@@ -204,6 +204,20 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
             Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), new string('a', 64),
             "agent:receipt-test", "public", "honua", "target", id, snapshot.CatalogStyle!.StyleVersion,
             hash, new string('b', 64), hash);
+        foreach (var malformed in new[]
+        {
+            identity with { ExpectedVersion = identity.ExpectedVersion + 1 },
+            identity with { ActorId = "misattributed" },
+            identity with { SchemaName = "another_schema" },
+            identity with { ExpectedContentHash = new string('c', 64) },
+        })
+        {
+            var attempt = () => first.ApplyEditOnceAsync(snapshot, style, "{}", identity.ActorId, malformed,
+                _ => throw new InvalidOperationException("identity must fail before callback"), _ => Task.CompletedTask);
+            await attempt.Should().ThrowAsync<ArgumentException>();
+            (await first.GetMutationReceiptAsync(malformed)).Should().BeNull();
+            (await first.GetStyleAsync(id))!.StyleVersion.Should().Be(snapshot.CatalogStyle.StyleVersion);
+        }
         var mutationCalls = 0;
         async Task LoseResponseAfterActualCommit()
         {

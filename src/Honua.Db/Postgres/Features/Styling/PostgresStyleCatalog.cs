@@ -31,6 +31,7 @@ internal sealed partial class PostgresStyleCatalog : IStyleCatalog
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _stylesTable;
+    private readonly string _resolvedSchemaName;
     private readonly string _mutationReceiptsTable;
     private readonly string _styleImpactBarrierKey;
     private readonly string _studioItemsTable;
@@ -44,6 +45,7 @@ internal sealed partial class PostgresStyleCatalog : IStyleCatalog
     public PostgresStyleCatalog(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _resolvedSchemaName = string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName;
         _styleImpactBarrierKey = Infrastructure.StudioStyleDependencyBarrier.Key(schemaName);
         _studioItemsTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_content_items", schemaName);
         _studioVersionsTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_content_versions", schemaName);

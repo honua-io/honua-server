@@ -11,6 +11,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
@@ -34,6 +35,15 @@ internal sealed class SharedStyleApprovedReplay
     private readonly StyleEditImpactService _impacts;
     internal SharedStyleApprovalPayload Payload { get; }
     internal ResolvedStyleEdit Expected { get; }
+    internal StyleMutationReceipt? Receipt { get; private init; }
+    internal StyleMutationIdentity Identity => new(
+        _policy.OperationInstanceId ?? throw new InvalidOperationException("Missing canonical operation instance."),
+        _policy.ApprovedProposalId ?? throw new InvalidOperationException("Missing canonical proposal."),
+        _policy.ApprovedPlanHash ?? throw new InvalidOperationException("Missing sealed canonical plan."),
+        Payload.ActorId, Payload.TenantId, Payload.SchemaName ?? "honua", Payload.TargetId,
+        Payload.StoreSnapshot.StyleId, Payload.Impact.StyleVersion, Payload.Impact.ContentHash,
+        Payload.Impact.ImpactHash ?? throw new InvalidOperationException("Missing reviewed impact hash."),
+        StyleEditHashes.Content(Payload.Candidate.MapLibreJson));
 
     internal static async Task<SharedStyleApprovedReplay> VerifyAsync(IServiceProvider services, OperationRequest request,
         OperationPolicyContext context, CancellationToken cancellationToken)
@@ -62,9 +72,16 @@ internal sealed class SharedStyleApprovedReplay
         await RequireRestoreAsync(original, turn, payload, cancellationToken).ConfigureAwait(false);
         var current = await impacts.ResolveAsync(payload.Impact.StyleId, cancellationToken).ConfigureAwait(false);
         if (current is null || current.PrimaryResource?.Metadata.Id != payload.PrimaryResourceId) Deny();
-        SharedStyleAgentEditor.RequireTask(turn, current!);
         var impact = payload.Impact with { CanonicalLayerId = payload.StoreSnapshot.LayerStyle?.LayerId };
         var expected = new ResolvedStyleEdit(impact, payload.StoreSnapshot, current!.PrimaryResource, current.CanonicalStyleJson);
+        var replay = new SharedStyleApprovedReplay(payload, expected, services, request, context, original, impacts);
+        var receipt = await services.GetRequiredService<IStyleCatalog>().GetMutationReceiptAsync(replay.Identity, cancellationToken).ConfigureAwait(false);
+        if (receipt is not null)
+        {
+            if (!current.CompleteReadableScope || !current.Impact.ImpactComplete) Deny();
+            return new(payload, expected, services, request, context, original, impacts) { Receipt = receipt };
+        }
+        SharedStyleAgentEditor.RequireTask(turn, current!);
         SharedStyleEditor.RequireUnchanged(expected, current);
         // Updated validation policy cannot quietly reinterpret the approved bytes.
         var (candidate, error) = await SharedStyleCandidatePreparation.PrepareAsync(current, payload.Candidate.MapLibreJson,
@@ -86,6 +103,18 @@ internal sealed class SharedStyleApprovedReplay
         var current = await _impacts.ResolveAsync(Payload.Impact.StyleId, cancellationToken).ConfigureAwait(false);
         SharedStyleEditor.RequireUnchanged(Expected, current);
         if (current is not null) SharedStyleAgentEditor.RequireTask(turn, current);
+    }
+
+    internal async Task RevalidateReceiptAsync(CancellationToken cancellationToken)
+    {
+        _ = await RequireProposalAsync(_services, _request, _policy, cancellationToken).ConfigureAwait(false);
+        await RequireRolesAsync(_services, Payload.AuthorSecurityContext, cancellationToken).ConfigureAwait(false);
+        var turn = await SharedStyleWorkspaceAuthorization.AuthorizeAsync(_context, _context.User,
+            Payload.WorkspaceId, Payload.TurnId, cancellationToken).ConfigureAwait(false);
+        RequireBinding(Payload, turn);
+        var current = await _impacts.ResolveAsync(Payload.Impact.StyleId, cancellationToken).ConfigureAwait(false);
+        if (current is null || !current.CompleteReadableScope || !current.Impact.ImpactComplete ||
+            current.PrimaryResource?.Metadata.Id != Payload.PrimaryResourceId) Deny();
     }
 
     private static async Task RequireRestoreAsync(HttpContext context, SharedStyleTurnBinding turn,

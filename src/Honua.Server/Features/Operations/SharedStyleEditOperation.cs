@@ -89,18 +89,15 @@ internal sealed class SharedStyleEditExecutor(IServiceProvider services) : IOper
     {
         // Even an unexpected Allow decision cannot skip the canonical sealed approval proof.
         var replay = await SharedStyleApprovedReplay.VerifyAsync(services, request, context, cancellationToken).ConfigureAwait(false);
-        var outcome = await services.GetRequiredService<SharedStyleEditor>().ApplyReviewedAsync(replay.Expected,
-            replay.Payload.Candidate, replay.Payload.ActorId, replay.RevalidateAsync, cancellationToken).ConfigureAwait(false);
-        if (outcome.Status != OgcStyleUpdateStatus.Updated)
-            throw new GeoprocessingPreconditionFailedException("The reviewed shared style changed; submit a new proposal.");
+        var outcome = await services.GetRequiredService<SharedStyleEditor>().ApplyReviewedOnceAsync(replay, cancellationToken).ConfigureAwait(false);
         var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
         return new()
         {
             OperationId = OperationId, OperationInstanceId = context.OperationInstanceId ?? throw new InvalidOperationException("Missing canonical operation instance."),
             CorrelationId = context.CorrelationId ?? "", Status = OperationHandleStatus.Completed, CreatedAt = now, UpdatedAt = now,
             Result = new() { Summary = "Reviewed shared style replacement completed.", Details = new Dictionary<string, string>
-            { ["styleId"] = replay.Payload.Impact.StyleId, ["styleVersion"] = outcome.StyleVersion!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
-              ["contentHash"] = StyleEditHashes.Content(replay.Payload.Candidate.MapLibreJson) } },
+            { ["styleId"] = replay.Payload.Impact.StyleId, ["styleVersion"] = outcome.ResultVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+              ["contentHash"] = outcome.ResultContentHash } },
         };
     }
 

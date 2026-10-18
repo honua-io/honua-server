@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.OutputCaching;
 
@@ -60,6 +61,29 @@ internal sealed class SharedStyleEditor(IStyleCatalog catalog, StyleEditImpactSe
         var updated = await catalog.ApplyEditIfSnapshotAsync(expected.StoreSnapshot, candidate.MapLibreJson,
             candidate.DrawingInfoJson, actor, revalidate, cancellationToken).ConfigureAwait(false);
         if (updated is null) return new(OgcStyleUpdateStatus.PreconditionFailed, "The reviewed shared style changed; reload before saving.");
+        await RefreshAsync(updated).ConfigureAwait(false);
+        return new(OgcStyleUpdateStatus.Updated, null, StyleVersion: updated.LayerStyle?.StyleVersion ?? updated.CatalogStyle!.StyleVersion);
+    }
+
+    internal async Task<StyleMutationReceipt> ApplyReviewedOnceAsync(SharedStyleApprovedReplay replay, CancellationToken cancellationToken)
+    {
+        if (replay.Receipt is { } receipt)
+        {
+            await replay.RevalidateReceiptAsync(cancellationToken).ConfigureAwait(false);
+            return receipt;
+        }
+        var outcome = await catalog.ApplyEditOnceAsync(replay.Expected.StoreSnapshot,
+            replay.Payload.Candidate.MapLibreJson, replay.Payload.Candidate.DrawingInfoJson,
+            replay.Payload.ActorId, replay.Identity, replay.RevalidateAsync, replay.RevalidateReceiptAsync,
+            cancellationToken).ConfigureAwait(false);
+        if (outcome is null)
+            throw new Honua.Geoprocessing.GeoprocessingPreconditionFailedException("The reviewed shared style changed; submit a new proposal.");
+        if (outcome.UpdatedSnapshot is { } updated) await RefreshAsync(updated).ConfigureAwait(false);
+        return outcome.Receipt;
+    }
+
+    private async Task RefreshAsync(StyleEditStoreSnapshot updated)
+    {
         var affected = updated.Associations.Select(item => item.LayerId)
             .Concat(updated.LayerStyle is { } layer ? [layer.LayerId] : []).Distinct();
         foreach (var layerId in affected)
@@ -87,6 +111,5 @@ internal sealed class SharedStyleEditor(IStyleCatalog catalog, StyleEditImpactSe
         {
             logger.LogWarning(exception, "Shared style output cache refresh failed");
         }
-        return new(OgcStyleUpdateStatus.Updated, null, StyleVersion: updated.LayerStyle?.StyleVersion ?? updated.CatalogStyle!.StyleVersion);
     }
 }

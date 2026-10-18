@@ -51,6 +51,21 @@ public sealed class McpWorkflowViewTests
     // ------------------------------------------------------------------
 
     [UnitTest]
+    public async Task SharedStyleTools_LiveCatalogPublishesCanonicalNativeFamily()
+    {
+        var surface = new McpDataAccessSurface(
+            [new Honua.Ai.Protocols.Mcp.MapTools.SharedStyleGetTool(), new Honua.Ai.Protocols.Mcp.MapTools.SharedStyleProposeTool()],
+            [], NullLogger<McpDataAccessSurface>.Instance);
+        var listed = await ListToolsAsync(surface, McpWorkflowViewCatalog.ConfigureViewName);
+        foreach (var name in new[] { "honua_shared_style_get", "honua_shared_style_propose" })
+        {
+            var descriptor = listed.Tools.Single(tool => tool.GetProperty("name").GetString() == name);
+            descriptor.GetProperty("_meta").GetProperty("honua.studio").GetProperty("family")
+                .GetString().Should().Be("honua.workspace.canonical");
+        }
+    }
+
+    [UnitTest]
     public async Task SetupView_EligibleLifecycleOperationAddedAndRemoved_RefreshesMembership()
     {
         McpDataAccessSurface Surface(params IMcpToolSource[] sources) => new(
