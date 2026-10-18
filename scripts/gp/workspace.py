@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -31,6 +32,20 @@ def sanitized(text: str) -> str:
     text = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+|(?:api[_-]?key|password|token|secret)\s*[:=]\s*)[^\s,;]+", r"\1[redacted]", text)
     text = re.sub(r"https?://[^\s/@:]+:[^\s/@]+@", "https://[redacted]@", text)
     return text[-16384:]
+
+
+def read_regular(path: Path, limit: int) -> bytes:
+    """Never block on a FIFO or allocate from an untrusted stat size."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ValueError("Only regular files are accepted.")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            data = stream.read(limit + 1)
+        if len(data) > limit: raise ValueError("File exceeds the byte budget.")
+        return data
+    finally:
+        os.close(descriptor)
 
 
 def snapshot(project: Path, destination: Path) -> dict:
@@ -53,9 +68,8 @@ def snapshot(project: Path, destination: Path) -> dict:
             if not source.is_file():
                 raise ValueError("Snapshot refuses non-regular files.")
             relative = source.relative_to(project)
-            total += source.stat().st_size
-            if total > MAX_BYTES: raise ValueError("Source/input snapshot exceeds the size budget.")
-            data = source.read_bytes()
+            data = read_regular(source, MAX_BYTES - total)
+            total += len(data)
             if total > MAX_BYTES or len(files) >= MAX_FILES:
                 raise ValueError("Source/input snapshot exceeds the size budget.")
             target = destination / relative
@@ -101,6 +115,8 @@ def inside_container() -> int:
     if runs.exists():
         for root, directories, names in os.walk(runs, followlinks=False):
             for name in directories + names:
+                if not stat.S_ISREG((Path(root) / name).lstat().st_mode) and name in names:
+                    raise ValueError("Sandbox output contains a non-regular file.")
                 if (Path(root) / name).is_symlink():
                     raise ValueError("Sandbox output contains a symlink.")
         shutil.copytree(runs, "/out/runs", dirs_exist_ok=True)
@@ -167,7 +183,7 @@ def run(project: Path, image: str, runs: Path, timeout: float, cancelled: thread
     log.write_bytes(logs)
     # The immutable snapshot is mounted read-only. Check retained bytes independently.
     for item in manifest["files"]:
-        if hashlib.sha256((source / item["path"]).read_bytes()).hexdigest() != item["sha256"]:
+        if hashlib.sha256(read_regular(source / item["path"], item["bytes"])).hexdigest() != item["sha256"]:
             raise ValueError("Immutable snapshot changed during execution.")
     artifacts = []
     artifact_bytes = 0
@@ -177,11 +193,12 @@ def run(project: Path, image: str, runs: Path, timeout: float, cancelled: thread
                 raise ValueError("Refusing linked sandbox output.")
         for file in names:
             path = Path(root) / file
-            size = path.stat().st_size
+            data = read_regular(path, MAX_BYTES - artifact_bytes)
+            size = len(data)
             artifact_bytes += size
             if artifact_bytes > MAX_BYTES:
                 raise ValueError("Output budget exceeded.")
-            artifacts.append({"path": path.relative_to(output).as_posix(), "bytes": size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+            artifacts.append({"path": path.relative_to(output).as_posix(), "bytes": size, "sha256": hashlib.sha256(data).hexdigest()})
     with log.open("rb") as stream:
         stream.seek(max(0, log.stat().st_size - 32768))
         diagnostics = sanitized(stream.read().decode("utf-8", errors="replace"))
