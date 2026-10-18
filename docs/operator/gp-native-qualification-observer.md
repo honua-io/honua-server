@@ -1,3 +1,7 @@
+---
+type: reference
+---
+
 # Native GP qualification observations on AWS
 
 The native lifecycle obligation remains server #3809 and release #123/#381,
