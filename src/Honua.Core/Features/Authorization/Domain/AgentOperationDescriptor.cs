@@ -35,7 +35,7 @@ public sealed record AgentOperationDescriptor
     /// <summary>
     /// Whether the operation is destructive (irreversible without a restore).
     /// Destructive operations are what the Pro pre-change snapshot gate protects
-    /// and what Enterprise approval policy most often targets.
+    /// and what Pro and Enterprise approval policy most often targets.
     /// </summary>
     public bool IsDestructive { get; init; }
 

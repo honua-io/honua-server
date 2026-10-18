@@ -12,8 +12,8 @@ namespace Honua.Core.Tests.Features.Authorization;
 
 /// <summary>
 /// Unit tests for the AI-operations guardrail ladder (#1631): Community runs
-/// agent operations directly, Pro inserts the validation layer (plan/dry-run/
-/// validate + pre-change snapshot), and Enterprise adds approval + policy/audit.
+/// agent operations without additional edition governance; Pro and Enterprise
+/// include validation, snapshots and approval + policy/audit.
 /// </summary>
 public sealed class EditionAgentGuardrailPolicyTests
 {
@@ -32,7 +32,7 @@ public sealed class EditionAgentGuardrailPolicyTests
     [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(HonuaEdition.Community, AgentGuardrailLevel.Direct)]
-    [InlineData(HonuaEdition.Pro, AgentGuardrailLevel.Validated)]
+    [InlineData(HonuaEdition.Pro, AgentGuardrailLevel.Approval)]
     [InlineData(HonuaEdition.Enterprise, AgentGuardrailLevel.Approval)]
     public void LevelFor_MapsEditionToLadder(HonuaEdition edition, AgentGuardrailLevel expected)
     {
@@ -57,20 +57,20 @@ public sealed class EditionAgentGuardrailPolicyTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void Evaluate_Pro_RequiresValidationLayerAndSnapshotButNotApproval()
+    public void Evaluate_Pro_RequiresValidationSnapshotApprovalAndPolicyAudit()
     {
         var decision = PolicyFor(HonuaEdition.Pro).Evaluate(MutatingChange());
 
-        decision.Level.Should().Be(AgentGuardrailLevel.Validated);
+        decision.Level.Should().Be(AgentGuardrailLevel.Approval);
         decision.HasGuardrails.Should().BeTrue();
         decision.RequiresValidation.Should().BeTrue();
         decision.RequiresSnapshot.Should().BeTrue();
         decision.SnapshotUnsupported.Should().BeFalse();
-        decision.RequiresApproval.Should().BeFalse();
-        decision.RequiresPolicyAudit.Should().BeFalse();
+        decision.RequiresApproval.Should().BeTrue();
+        decision.RequiresPolicyAudit.Should().BeTrue();
         decision.ReasonCodes.Should().Contain("agent-change-requires-validation");
         decision.ReasonCodes.Should().Contain("pre-change-snapshot-required");
-        decision.ReasonCodes.Should().NotContain("agent-change-requires-approval");
+        decision.ReasonCodes.Should().Contain("agent-change-requires-approval");
     }
 
     [Trait("Tier", "Fast")]
@@ -91,10 +91,12 @@ public sealed class EditionAgentGuardrailPolicyTests
     }
 
     [Trait("Tier", "Fast")]
-    [Fact]
-    public void Evaluate_Enterprise_DestructiveChange_EmitsDestructiveApprovalReason()
+    [Theory]
+    [InlineData(HonuaEdition.Pro)]
+    [InlineData(HonuaEdition.Enterprise)]
+    public void Evaluate_PaidEdition_DestructiveChange_EmitsDestructiveApprovalReason(HonuaEdition edition)
     {
-        var decision = PolicyFor(HonuaEdition.Enterprise).Evaluate(MutatingChange(destructive: true));
+        var decision = PolicyFor(edition).Evaluate(MutatingChange(destructive: true));
 
         decision.RequiresApproval.Should().BeTrue();
         decision.ReasonCodes.Should().Contain("destructive-agent-change-requires-approval");

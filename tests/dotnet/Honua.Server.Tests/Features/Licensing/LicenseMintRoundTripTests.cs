@@ -53,7 +53,7 @@ public sealed class LicenseMintRoundTripTests
         snapshot.HasEntitlement(FeatureCatalog.FeatureServerEditsKey).Should().BeTrue();
         snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
         snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeTrue();
-        snapshot.HasEntitlement(FeatureCatalog.AiApprovalWorkflowsKey).Should().BeFalse();
+        snapshot.HasEntitlement(FeatureCatalog.AiApprovalWorkflowsKey).Should().BeTrue();
         snapshot.HasEntitlement(FeatureCatalog.PluginSdkKey).Should().BeFalse();
     }
 

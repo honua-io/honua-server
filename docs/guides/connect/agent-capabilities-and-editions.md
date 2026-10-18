@@ -1,7 +1,7 @@
 ---
 type: concept
 title: "What an agent can do in each edition"
-description: "Reading through MCP is Community. Letting an agent change anything is Pro. Organisational approval policy is Enterprise."
+description: "MCP discovery and query are Community. Licensed agent mutations and configurable approval policy are available from Pro."
 resources:
   - "honua://capability/ai.mcp-discovery"
   - "honua://capability/ai.spec-artifacts"
@@ -12,9 +12,10 @@ resources:
 ---
 # What an agent can do in each edition
 
-Connecting an agent and letting it read costs nothing. Letting it *change*
-anything is the edition boundary, and organisational approval policy is a second
-one above that. Six capability keys draw those two lines.
+Community includes MCP discovery and query. Pro adds licensed agent planning and
+execution capabilities together with configurable approval workflows and
+policy-scoped agent permissions. Enterprise includes those Pro capabilities.
+Authorization, tenant isolation and credential security apply in every edition.
 
 | Capability | Edition | What it allows |
 |---|---|---|
@@ -23,37 +24,36 @@ one above that. Six capability keys draw those two lines.
 | [`ai.agent-operations`](../../okf/capabilities/ai.agent-operations.md) | Pro | Agent-initiated changes, through a plan / dry-run / validate layer. |
 | [`ai.grounding`](../../okf/capabilities/ai.grounding.md) | Pro | Turn a natural-language request into a validated spec mutation plan. |
 | [`ai.spec-apply`](../../okf/capabilities/ai.spec-apply.md) | Pro | Apply an executable spec and submit plan-execution jobs. |
-| [`ai.approval-workflows`](../../okf/capabilities/ai.approval-workflows.md) | Enterprise | Organisational approval workflows and policy-scoped agent permissions. |
+| [`ai.approval-workflows`](../../okf/capabilities/ai.approval-workflows.md) | Pro | Organisational approval workflows and policy-scoped agent permissions. |
 
 ## Reading the table
 
-**Community gets you a working agent.** Connect Claude or any MCP client, list
-tools, search the catalog, query features, retrieve artifacts. Everything a
-read-only assistant needs is here, and none of it needs a licence file. If your
-use is "ask questions about my data", you are finished at Community.
+**Community supports an assistant that reads permitted data.** An agent can
+list tools, discover the catalog, query permitted features and retrieve supported
+artifacts. A capability being included in Community does not bypass resource
+permissions or tenant boundaries.
 
-**Pro is the write boundary.** The three Pro keys are one capability seen from
-three angles: `ai.grounding` turns a sentence into a plan, `ai.agent-operations`
-validates and dry-runs it, `ai.spec-apply` executes it. An agent that composes a
-Studio draft, changes a service, or runs a plan is using them. Without Pro, those
-tool calls are refused — the tools still appear in `tools/list`, because tool
-visibility is not an authorization boundary.
+**Pro includes agent execution and configurable governance.** `ai.grounding`
+produces a spec mutation plan, `ai.agent-operations` supplies the validation
+entitlement, and `ai.spec-apply` permits spec application and plan submission.
+`ai.approval-workflows` adds organisational approval policy and scoped agent
+permissions. These capabilities remain subject to the individual operation's
+permissions, policy, dependencies and preconditions. Tool discovery is not an
+authorization grant.
 
-**Enterprise is about who may approve, not what may be done.** Honua already
-refuses to let an agent approve its own work at every edition: mutating
-control-plane requests go through schema-closed proposal tools and a human
-resolves them. `ai.approval-workflows` adds organisational policy on top —
-scoped agent permissions and routed approvals. Buy it when "a human approves"
-must become "*this* human, under *this* policy".
+Approval policy determines which operations need review. An approval binds to a
+specific proposal; the operation gateway rejects approval by that proposal's own
+requester. This does not mean every write in every deployment is approval-gated:
+operator policies can permit direct actions, and configured administrator
+exemptions affect approval requirements. See
+[Operation policy in Production](ai-agents-mcp.md#operation-policy-in-production).
 
-## What this does not change
-
-Editions gate capabilities, not safety. The propose-and-approve model is
-structural: an agent proposes, a human disposes, and that holds on a Community
-deployment exactly as it does on an Enterprise one. See
-[Connect AI agents to Honua over MCP](ai-agents-mcp.md) for the proposal tools
-and how approval resolves.
+Pro and Enterprise use the same approval-level agent policy. An entitlement
+makes the capability available; it does not confer a user role or approve a
+change. Explicitly restricted licenses continue to grant only their listed
+entitlements. Studio draft composition remains realtime by default in every
+edition; publication and rollback retain their governed action policy. Explicit
+operator overrides still apply.
 
 Per-capability status, maturity and evidence live on each capability page above.
-The full catalogue, filterable by edition, is the
-[capability concepts index](../../okf/capabilities/README.md).
+The full catalogue is the [capability concepts index](../../okf/capabilities/README.md).

@@ -7,7 +7,7 @@ namespace Honua.Core.Features.Guardrails;
 
 /// <summary>
 /// Operator-configurable overrides for the edition guardrail ladder. The default
-/// policy (Community/Pro → DirectExecute; Enterprise → RequiresApproval for
+/// policy (Community → DirectExecute; Pro/Enterprise → RequiresApproval for
 /// in-scope mutating classes) applies when no override is configured.
 /// </summary>
 public sealed class GuardrailLadderOptions

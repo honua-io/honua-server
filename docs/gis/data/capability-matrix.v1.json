@@ -29,10 +29,10 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 379,
-      "provingTestCount": 1386,
+      "entryCount": 387,
+      "provingTestCount": 1405,
       "maturity": {
-        "implemented": 376,
+        "implemented": 384,
         "preview": 2,
         "experimental": 1
       },
@@ -97,7 +97,7 @@
       "key": "ai.approval-workflows",
       "displayName": "Agent Approval Workflows",
       "category": "AI",
-      "edition": "Enterprise",
+      "edition": "Pro",
       "status": null,
       "entryCount": 0,
       "provingTestCount": 0,
@@ -1373,10 +1373,10 @@
       "category": "Process",
       "edition": "Community",
       "status": null,
-      "entryCount": 16,
-      "provingTestCount": 215,
+      "entryCount": 18,
+      "provingTestCount": 231,
       "maturity": {
-        "implemented": 16
+        "implemented": 18
       },
       "noSurface": null,
       "cite": [],

@@ -10,9 +10,16 @@ resources:
 ---
 # Connect AI agents to Honua over MCP
 
-Honua's agent endpoint is `POST /mcp`: JSON-RPC 2.0 over Streamable HTTP, MCP protocol revision `2025-03-26`. Any MCP-capable agent connects to it and gets the same tools, the same authorization checks, and the same approval rules as every other protocol. An agent can discover the catalog, query features, plan and run geoprocessing, observe operational health, compose Studio drafts, and *propose* control-plane changes. It never approves its own proposals, and no feature-edit tool is ever advertised.
+Honua Server's MCP endpoint is `POST /mcp`: JSON-RPC 2.0 over Streamable HTTP, MCP protocol revision `2025-03-26`. This page documents that deployment endpoint and its tools. An agent can discover the catalog, query features, plan and run geoprocessing, observe operational health, compose Studio drafts, and propose control-plane changes under the caller's authorization and configured policy. It never approves its own proposals, and no feature-edit tool is ever advertised.
 
-Which tool calls an agent may make is an edition boundary: reading is Community, changing anything is Pro, and organisational approval policy is Enterprise. See [What an agent can do in each edition](agent-capabilities-and-editions.md).
+The end-to-end workflow uses one persistent agent registration, with local setup
+and optional private infrastructure adapters behind it. See
+[One agent connection and its adapters](#one-agent-connection-and-its-adapters)
+for the implementation preview and its release boundaries. Connecting directly
+to an existing server, as shown below, covers the server's advertised tools; it
+does not install Honua or automatically configure those private adapters.
+
+Which tool calls an agent may make is an edition boundary: MCP discovery and query are Community; licensed agent mutation capabilities and organisational approval policy are available from Pro. See [What an agent can do in each edition](agent-capabilities-and-editions.md).
 
 **Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md))
 and an authenticated identity for tool calls ([authentication](../secure/authentication.md)).
@@ -209,26 +216,47 @@ These tools authorize against their own operator-grant family (`StudioDraft`), s
 
 Realtime authoring is the intended design loop. See the
 [composition policy](../../studio/mcp-tools.md#composition-policy) for the current
-Enterprise and override cases that can still gate draft mutations.
+operator overrides that can still gate draft mutations.
 
 ### What is never advertised
 
 No feature-edit tool appears in any profile, by design: an agent does not mutate source GIS records through MCP. Editing stays on the human protocol and API workflows described in [Edit features](../edit/edit-features.md).
 
-## Two MCP surfaces
+## One agent connection and its adapters
 
-There are two MCP surfaces in the Honua platform, and it is easy to conflate them.
+The unified workflow keeps one public `honua-agent-mcp` registration from local
+Docker setup through connected data, Studio, and supported operations. Users do
+not register a separate DevOps MCP server for each workflow. The host composes
+the following components behind that connection:
 
-| | **honua-server `/mcp`** | **honua-devops operator agent** |
-|---|---|---|
-| Transport | HTTP `POST /mcp` (Streamable HTTP), authenticated | MCP stdio (`honua-devops --mcp`) |
-| Roster | The data-access, planning, Studio and ops-evidence tools on this page, plus a dynamic `honua_op_*` tool per published operation | Operator-intelligence tools that reason over the evidence and plan diagnosis, tuning, upgrades and remediation |
-| What it does | Serves geospatial data-access and Studio workflows and reads bounded operational evidence; at most it *proposes* a control-plane action a human approves | Consumes this server's evidence tools and acts on them through its own day-2 loop |
-| Licensing | Open-core (ELv2), included in Community | Public source under a proprietary licence; built from source or run as a container, not installed from a package registry |
+| Component | Responsibility |
+| --- | --- |
+| Agent connector | Local prerequisite checks and setup, attachment to the verified deployment, and routing to installed capabilities. |
+| Honua Server `/mcp` | Canonical data, process, Studio, operation and workspace tools; caller authorization and policy remain server responsibilities. |
+| Optional private DevOps adapter | Host-configured infrastructure and Git operations, with its own exact-plan, execution-tier and audit requirements. Its private stdio transport is an implementation detail. |
 
-The eight ops-evidence tools on this page (`honua_ops_health`, `honua_ops_findings`, `honua_alert_events`, `honua_operate_events`, `honua_platform_release_status`, `honua_deploy_operations`, `honua_supported_operation_kinds`, `honua_propose_rollback`) are deliberately public: they expose bounded read-only facts and human-gated proposals, not operator reasoning.
+This composition is an **implementation preview**, not evidence that the default
+published images support the complete journey. Use the
+[unified workflow guide](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/unified-agent-workflows.md),
+[host configuration](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/unified-agent-host-configuration.md),
+and [preview artifact requirements](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/local-agent-workspace-preview.md)
+to check the exact installed builds and optional adapters. Missing capabilities
+remain unavailable; source code, a connected MCP session, or an infrastructure
+plan does not prove a deployed workflow or successful rollback.
 
-A third, unrelated server exists in the same npm package as the Claude Desktop bridge: the standalone `honua-mcp` binary serves any public ArcGIS or OGC endpoint and needs no Honua deployment. See [the standalone MCP server](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/mcp-server.md).
+One registration does not mean one administrator credential. The connector uses
+the current scoped agent identity, and each operation must pass current tenant,
+target, resource and action authorization. Human pairing and approval are
+separate. Read the actual operation result: `AwaitingApproval` is pending;
+only a completed operation and verification establish success. See
+[agent capabilities and editions](agent-capabilities-and-editions.md) for
+licensed capabilities and Pro approval policy.
+
+The server's bounded operational evidence tools remain available independently
+of the private DevOps adapter. The standalone `honua-mcp` binary, which can read
+public ArcGIS or OGC endpoints without a Honua deployment, serves a separate
+use case; it is not another registration required for this journey. See
+[the MCP package reference](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/mcp-server.md).
 
 ## Workflow views (bounded discovery)
 
@@ -355,7 +383,7 @@ Set `Mcp:SessionMode` to `InMemory` or `Stateless` to override the automatic cho
 
 **Stateless session fallback (development only).** With `Mcp:StatelessSessionFallback=true`, a `POST` bearing a well-formed id that no instance holds, including one terminated with `DELETE /mcp` or idle-expired, is served as if it carried no session. Authentication and authorization are unchanged, because every `POST` is checked on its own. The request gets the default view with no elicitation, and the response carries no `Mcp-Session-Id`. The fallback is on by default only in the Development environment, where it lets a hand-written client keep working after a server restart. Do not enable it in production: it hides lost sessions instead of letting the client re-initialize.
 
-**Server-initiated streaming.** Leave `Mcp:ServerInitiatedStreamEnabled=false` behind any ingress that buffers responses — notably serverless gateways (CloudFront → API Gateway HTTP API → Lambda), where the SDK's standalone GET stream would hang at the origin. Enable it only behind ingress that can hold a streaming response open (nginx with `proxy_buffering off`, an ALB, or a direct connection). Regardless of this flag, a `GET /mcp` stream's teardown never invalidates the session — session lifetime is bounded only by `DELETE /mcp` or the idle TTL.
+**Server-initiated streaming.** Leave `Mcp:ServerInitiatedStreamEnabled=false` behind any ingress that buffers responses — notably serverless gateways (CloudFront → API Gateway HTTP API → Lambda), where the SDK's standalone GET stream would hang at the origin. Enable it only behind ingress that can hold a streaming response open (an ALB, YARP configured for streaming, or a direct connection). Regardless of this flag, a `GET /mcp` stream's teardown never invalidates the session — session lifetime is bounded only by `DELETE /mcp` or the idle TTL.
 
 **Principal binding.** A session is bound at `initialize` to the authenticated principal (or to anonymous where the endpoint allows anonymous access). The binding includes the auth scheme and principal identifier, so a bearer principal and an API-key principal cannot silently share the same `Mcp-Session-Id`. A later request that presents the id under a *different* identity is rejected with a structured `permission_denied` / `requiresReauthentication` error, so a leaked `Mcp-Session-Id` cannot be ridden by another caller.
 
@@ -381,7 +409,7 @@ The MCP surface is the same set of tools and resources everywhere; one configura
 | Profile | Key config | Progress delivery | `honua_plan_analysis` | Notes |
 |---|---|---|---|---|
 | **Baseline serverless** (recommended default) | `Mcp:ServerInitiatedStreamEnabled=false` | Poll `honua://jobs/{jobId}` for job state (no server push); `GET /mcp` → `405` | `engine:"fixture"` — a canned capability demo; hand-author plans from `honua://catalog/processes` and confirm with `honua_validate_plan` | Works behind buffering ingress (CloudFront → API Gateway HTTP API → Lambda); the SDK skips the optional standalone stream. |
-| **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes progress + `*/list_changed` | Unchanged by this switch (always `engine:"fixture"`) | Enable only behind nginx (`proxy_buffering off`), an ALB, or a direct connection — never a buffering serverless gateway. |
+| **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes progress + `*/list_changed` | Unchanged by this switch (always `engine:"fixture"`) | Enable only behind an ALB, YARP configured for streaming, or a direct connection — never a buffering serverless gateway. |
 
 Both profiles change only *how* the surface behaves, not *which* tools and resources it advertises. The read-only pre-flight tools (`honua_validate_plan`, `honua_dry_run_plan`) report the same execution reality in every profile — including that a job runs a single process, so multi-step or sync-only plans are flagged rather than silently under-executed.
 

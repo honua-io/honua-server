@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:7a15edf76e2865390ecd71721ee7a9307089680c0a6dc93925c0993c72c73451",
+  "bundleDigest": "sha256:b7b11229887b03f6e34949d6a8884780bedfb67a240bac8cb55086be88e57923",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -1824,7 +1824,7 @@
     {
       "id": "concepts/editions-and-licensing",
       "path": "concepts/editions-and-licensing.md",
-      "documentDigest": "sha256:58d5f43acb57f582f27e282c018532a873bf2fa4be7ad76ff3020a611b364bd6",
+      "documentDigest": "sha256:97905bfce223b42040136218d8574f11a2ebc29660942b675d4e8b2cec259995",
       "metadata": {
         "type": "concept",
         "title": "Editions and licensing",
@@ -1960,7 +1960,7 @@
     {
       "id": "get-started/with-ai",
       "path": "get-started/with-ai.md",
-      "documentDigest": "sha256:30fe0a1e94db16d72fe2942424e2c2577a186dbb14775f1eeb4d66bbe5c4b444",
+      "documentDigest": "sha256:a6ceecf180d8458f719bafc6a143669fa02716eb8e4e391d6ecea9d72ef60005",
       "metadata": {
         "type": "guide",
         "title": "Get started with AI",
@@ -2041,11 +2041,11 @@
     {
       "id": "guides/connect/agent-capabilities-and-editions",
       "path": "guides/connect/agent-capabilities-and-editions.md",
-      "documentDigest": "sha256:fbb63299bbeadd08cd1133c18bbf3b58f20056c11fa75176634925ba5b38f2c4",
+      "documentDigest": "sha256:a71b6254481cd0af47679112d053c04d5857f690fe3ed6b32b4183db44adf8ff",
       "metadata": {
         "type": "concept",
         "title": "What an agent can do in each edition",
-        "description": "Reading through MCP is Community. Letting an agent change anything is Pro. Organisational approval policy is Enterprise.",
+        "description": "MCP discovery and query are Community. Licensed agent mutations and configurable approval policy are available from Pro.",
         "resources": [
           "honua://capability/ai.mcp-discovery",
           "honua://capability/ai.spec-artifacts",
@@ -2060,7 +2060,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:2743bef16be095456fd7dd01f163e766c285a3d7aa1c26ec20e2a104ee8b3836",
+      "documentDigest": "sha256:505a2c5e83b98ab2e3efea3bf3348cddd6f9f541e1bdffdd060d0d80633ce267",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -5375,7 +5375,7 @@
     {
       "id": "okf/capabilities/README",
       "path": "okf/capabilities/README.md",
-      "documentDigest": "sha256:c4fe5de8144e62d703525e08d378e38fc10e3ba9fb9d32f556d9008fd38a3c50",
+      "documentDigest": "sha256:5e05bb1a9ee65b0fa660ad36b17a64837185df23caec7ad3fe6130e894ac8dfb",
       "metadata": {
         "type": "index",
         "title": "Capability concepts",
@@ -5391,7 +5391,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:343535fd3eabf102a6e73b570098b729e0b4d67450a516fc1e03db10f256132b",
+      "documentDigest": "sha256:b34262dc7e246f44a5330ec97910aea7e54e3f2e50c31b6aa3d1072c086ea559",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -5425,16 +5425,16 @@
     {
       "id": "okf/capabilities/ai.approval-workflows",
       "path": "okf/capabilities/ai.approval-workflows.md",
-      "documentDigest": "sha256:140890c1e97c84a9fcdcca2e3a36ff8f1f30212ede76e30901bb53f63039ddec",
+      "documentDigest": "sha256:0032abd45c0779434f36e0a4be79f0c8057286f28a82b610658ef821b8b8dcd9",
       "metadata": {
         "type": "capability",
         "title": "Agent Approval Workflows",
-        "description": "Enterprise organisational approval workflows and policy-scoped agent permissions. Essential authorization, isolation, and audit integrity remain baseline product obligations.",
+        "description": "organisational approval workflows and policy-scoped agent permissions. Essential authorization, isolation, and audit integrity remain baseline product obligations.",
         "resource": "honua://capability/ai.approval-workflows",
         "tags": [
           "capability",
           "ai",
-          "enterprise"
+          "pro"
         ]
       },
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/okf/capabilities/ai.approval-workflows.md"
@@ -6513,7 +6513,7 @@
     {
       "id": "okf/capabilities/process.geoprocessing",
       "path": "okf/capabilities/process.geoprocessing.md",
-      "documentDigest": "sha256:7ac5e0cb8aaccc6f64264dadacf3a541a6b0f9ab70e2491c6817fc6e4137cf5c",
+      "documentDigest": "sha256:b6f48f3de2105b6d80ce504ab35900743bfc32b86a263268ea5fa338e849c98c",
       "metadata": {
         "type": "capability",
         "title": "Geoprocessing Task Execution",
@@ -8257,7 +8257,7 @@
     {
       "id": "studio/mcp-tools",
       "path": "studio/mcp-tools.md",
-      "documentDigest": "sha256:514ea6aed4a258e3553056ddb7a30923949d2ed70749bc7f00a3bf198990235d",
+      "documentDigest": "sha256:16f3e4faa45a37b80e8d43b0ae331fe415f496c4b83137f79f99a4fd9fb9e74a",
       "metadata": {
         "type": "guide",
         "title": "Studio MCP tools",
