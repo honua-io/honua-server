@@ -21,6 +21,10 @@ import time
 
 SCHEMA = "honua.gp-native-observation/v1"
 TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
+# Match GeoprocessingOutputStagingOptions; store names and prefixes are not job tokens.
+STORE_REFERENCE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}\Z")
+KEY_PREFIX = re.compile(r"(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,158}\Z")
+RELATIVE_KEY = re.compile(r"(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]*\Z")
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 MAX_FILES, MAX_BYTES = 4096, 128 * 1024 * 1024
 MAX_ENTRIES, MAX_DEPTH, MAX_BARRIER_AGE_SECONDS = 4096, 32, 300
@@ -84,8 +88,9 @@ def policy(path):
         require(root.is_absolute() and str(root.resolve(strict=True)) == str(root), "policy-root")
         require(root.is_dir(), "policy-root")
     prefix = value["keyPrefix"]
-    require(isinstance(prefix, str) and all(TOKEN.fullmatch(x) for x in prefix.split("/")), "policy-prefix")
-    require(TOKEN.fullmatch(value["storeReference"]) and HEX.fullmatch(value["configurationDigest"]),
+    require(isinstance(prefix, str) and KEY_PREFIX.fullmatch(prefix), "policy-prefix")
+    require(isinstance(value["storeReference"], str) and STORE_REFERENCE.fullmatch(value["storeReference"])
+            and isinstance(value["configurationDigest"], str) and HEX.fullmatch(value["configurationDigest"]),
             "policy-store-identity")
     return value, digest
 
@@ -105,10 +110,13 @@ def process(pid):
 
 def inventory(root, relative):
     """Open each component relative to an owned directory FD; never follow links."""
-    require(all(TOKEN.fullmatch(x) for x in relative.split("/")), "inventory-path")
+    require(isinstance(relative, str) and RELATIVE_KEY.fullmatch(relative), "inventory-path")
     fd = open_directory(root)
     try:
-        for part in relative.split("/"):
+        # The production filesystem store normalizes single-dot and repeated
+        # separators. Traversal is refused above; every remaining open still
+        # uses O_NOFOLLOW so normalization cannot introduce a symlink escape.
+        for part in Path(relative).parts:
             try:
                 child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
             except FileNotFoundError:

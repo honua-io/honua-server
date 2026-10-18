@@ -49,6 +49,7 @@
     ]
   },
   "worker_native_patterns": [
+    "scripts/qualification/gp_native_observer.py",
     ".dockerignore",
     "docker/worker-gdal/**",
     "scripts/ci/verify-serving-image-boundary.py",
@@ -99,6 +100,7 @@
     ],
     "worker_workflow": ".github/workflows/worker-gdal-image.yml",
     "worker_patterns": [
+      "scripts/qualification/gp_native_observer.py",
       "docker/worker-gdal/**",
       "src/Honua.Worker.Gdal/**",
       ".dockerignore",

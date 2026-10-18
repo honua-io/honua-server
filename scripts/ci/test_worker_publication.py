@@ -122,8 +122,10 @@ class WorkerPublicationTests(unittest.TestCase):
         self.assertIs(False, events["workflow_dispatch"]["inputs"]["publish_nightly"]["default"])
         policy = json.loads((ROOT / ".github/native-image-impact.json").read_text(encoding="utf-8"))
         self.assertEqual(set(events["pull_request"]["paths"]), set(policy["legacy"]["worker_patterns"]))
-        for path in ("scripts/ci/worker_publication.py", "scripts/ci/test_worker_publication.py"):
+        for path in ("scripts/ci/worker_publication.py", "scripts/ci/test_worker_publication.py",
+                     "scripts/qualification/gp_native_observer.py"):
             self.assertIn(path, policy["worker_native_patterns"])
+            self.assertIn(path, events["pull_request"]["paths"])
         jobs = workflow["jobs"]
         publish = jobs["publish-nightly"]
         for term in ("github.event_name == 'workflow_dispatch'", "inputs.publish_nightly == true",

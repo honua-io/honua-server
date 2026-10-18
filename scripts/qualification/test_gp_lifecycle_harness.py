@@ -586,6 +586,49 @@ class NativeObserverTests(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertNotIn("changed", json.dumps(second))
 
+    def test_store_contract_identifiers_inventory_actual_dotted_and_long_prefixes(self):
+        import hashlib
+        for reference, prefix in (("gp.outputs", "gp/output.v1"),
+                                  ("s" * 160, "p" * 159),
+                                  ("gp.outputs", "gp//./output.v1/")):
+            with self.subTest(reference=reference, prefix=prefix):
+                self.policy.update(storeReference=reference, keyPrefix=prefix)
+                self.write_policy()
+                marker = json.loads(self.marker.read_text())
+                marker["StoreReference"] = reference
+                self.marker.write_text(json.dumps(marker))
+                folder = self.outputs / prefix / "job-1"
+                folder.mkdir(parents=True, exist_ok=True)
+                (folder / "result").write_bytes(b"actual stored output")
+                observation = self.observe()
+                self.assertEqual(reference, observation["store"]["reference"])
+                self.assertEqual([{"path": "result", "bytes": 19,
+                                   "sha256": hashlib.sha256(b"actual stored output").hexdigest()}],
+                                 observation["outputInventory"]["files"])
+
+    def test_store_contract_rejects_invalid_and_overlong_policy_identifiers(self):
+        for field, invalid, code in (
+                ("storeReference", ("s" * 161, "store/name", ".store", "", None), "policy-store-identity"),
+                ("keyPrefix", ("p" * 160, "gp/../output", "gp/a..b", "/gp/output", "gp\\output", "", None),
+                 "policy-prefix")):
+            original = self.policy[field]
+            for value in invalid:
+                with self.subTest(field=field, value=value):
+                    self.policy[field] = value
+                    self.write_policy()
+                    with self.assertRaisesRegex(self.observer.Refused, code):
+                        self.observe()
+            self.policy[field] = original
+        self.write_policy()
+
+    def test_dotted_prefix_still_refuses_symlink_path_component(self):
+        self.policy["keyPrefix"] = "gp/output.v1"
+        self.write_policy()
+        (self.outputs / "gp").mkdir()
+        (self.outputs / "gp/output.v1").symlink_to(self.scratch, target_is_directory=True)
+        with self.assertRaises(OSError):
+            self.observe()
+
     def test_symlink_and_special_file_inventory_fail_closed(self):
         folder = self.outputs / "gp/outputs/job-1"
         folder.mkdir(parents=True)
