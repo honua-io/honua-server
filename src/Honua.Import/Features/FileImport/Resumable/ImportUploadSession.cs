@@ -41,9 +41,17 @@ internal sealed record ImportUploadSession
 internal sealed record ImportUploadChunk(
     int Index, long Offset, int Bytes, string Sha256, string FileId, string ETag);
 
+internal enum ImportUploadMutationKind { Create, Append, Seal, RetainSource, Cancel }
+
+// Stored in the same hash/HSET as its accepted state, never in a best-effort side write.
+// Actor is the actual contributor; the session scope remains owned by its executor.
+internal sealed record ImportUploadMutation(long Version, ImportUploadMutationKind Kind,
+    string ContributorActorId, DateTimeOffset RecordedAt);
+
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(ImportUploadSession))]
 [JsonSerializable(typeof(ImportUploadChunk))]
+[JsonSerializable(typeof(ImportUploadMutation))]
 [JsonSerializable(typeof(ImportUploadScope))]
 [JsonSerializable(typeof(ImportStorageReservation))]
 [JsonSerializable(typeof(ImportStorageAccount))]

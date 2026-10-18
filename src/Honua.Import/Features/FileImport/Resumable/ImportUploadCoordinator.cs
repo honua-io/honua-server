@@ -4,7 +4,6 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
@@ -16,7 +15,7 @@ namespace Honua.Import.FileImport.Resumable;
 /// finalization and HTTP/SDK registration are separate prerequisites before advertising it.
 /// </summary>
 internal sealed class ImportUploadCoordinator(
-    IDatasetImportTaskProvider tasks, RedisImportUploadStore store, ICloudFileStorage files, IImportStorageBudget budget)
+    ImportUploadTaskAuthority authority, RedisImportUploadStore store, ICloudFileStorage files, IImportStorageBudget budget)
 {
     private readonly ImportUploadChunkStorage _storage = new(files, budget);
     private readonly ImportUploadSourceStorage _sources = new(store, files, budget);
@@ -56,8 +55,8 @@ internal sealed class ImportUploadCoordinator(
             throw new InvalidOperationException("The original upload admission window is unavailable.");
         }
 
-        await ReauthorizeAsync(principal, reference, expected, cancellationToken).ConfigureAwait(false);
-        _ = await store.TryCreateAsync(expected, cancellationToken).ConfigureAwait(false);
+        var contributor = await ReauthorizeAsync(principal, reference, expected, cancellationToken).ConfigureAwait(false);
+        _ = await store.TryCreateAsync(expected, contributor, cancellationToken).ConfigureAwait(false);
         // A racing create returns the same persisted session. A lost commit reply
         // is recovered with GetAsync against the original task, never a new ID.
         var created = await ReadCurrentAfterMutationAsync(principal, reference, cancellationToken).ConfigureAwait(false);
@@ -77,8 +76,8 @@ internal sealed class ImportUploadCoordinator(
         }
 
         var candidate = await _storage.StageAsync(current, content, sha256, cancellationToken).ConfigureAwait(false);
-        await ReauthorizeAsync(principal, reference, current, cancellationToken).ConfigureAwait(false);
-        if (!await store.TryAppendAsync(current, candidate, cancellationToken).ConfigureAwait(false))
+        var contributor = await ReauthorizeAsync(principal, reference, current, cancellationToken).ConfigureAwait(false);
+        if (!await store.TryAppendAsync(current, candidate, contributor, cancellationToken).ConfigureAwait(false))
         {
             // A definite false means this private unique candidate was not accepted.
             // On an exception the result is unknown; never delete before recovery.
@@ -109,8 +108,8 @@ internal sealed class ImportUploadCoordinator(
         var verifier = new ImportUploadContentVerifier(store, _storage);
         var verified = await verifier.VerifyAsync(current, task.Source.ExpectedSha256!,
             token => ReauthorizeAsync(principal, reference, current, token), cancellationToken).ConfigureAwait(false);
-        await ReauthorizeAsync(principal, reference, verified.Session, cancellationToken).ConfigureAwait(false);
-        _ = await store.TrySealAsync(verified.Session, verified.Sha256, cancellationToken).ConfigureAwait(false);
+        var contributor = await ReauthorizeAsync(principal, reference, verified.Session, cancellationToken).ConfigureAwait(false);
+        _ = await store.TrySealAsync(verified.Session, verified.Sha256, contributor, cancellationToken).ConfigureAwait(false);
         var sealedSession = await ReadCurrentAfterMutationAsync(principal, reference, cancellationToken).ConfigureAwait(false);
         RequireSealedDigest(sealedSession, task);
         return sealedSession;
@@ -140,8 +139,8 @@ internal sealed class ImportUploadCoordinator(
         var source = await _sources.StageAsync(current,
             scratchDirectory, maximumScratchBytes,
             token => ReauthorizeAsync(principal, reference, current, token), cancellationToken).ConfigureAwait(false);
-        await ReauthorizeAsync(principal, reference, current, cancellationToken).ConfigureAwait(false);
-        _ = await store.TryBindSourceAsync(current, source, cancellationToken).ConfigureAwait(false);
+        var contributor = await ReauthorizeAsync(principal, reference, current, cancellationToken).ConfigureAwait(false);
+        _ = await store.TryBindSourceAsync(current, source, contributor, cancellationToken).ConfigureAwait(false);
         var retained = await ReadCurrentAfterMutationAsync(principal, reference, cancellationToken).ConfigureAwait(false);
         RequireSealedDigest(retained, task);
         if (retained.StagedSource is null)
@@ -166,8 +165,8 @@ internal sealed class ImportUploadCoordinator(
             throw new InvalidOperationException("The upload cannot be cancelled at this version.");
         }
 
-        await ReauthorizeAsync(principal, reference, current, cancellationToken).ConfigureAwait(false);
-        if (!await store.TryCancelAsync(current, cancellationToken).ConfigureAwait(false))
+        var contributor = await ReauthorizeAsync(principal, reference, current, cancellationToken).ConfigureAwait(false);
+        if (!await store.TryCancelAsync(current, contributor, cancellationToken).ConfigureAwait(false))
         {
             throw new InvalidOperationException("The upload changed before cancellation.");
         }
@@ -177,25 +176,14 @@ internal sealed class ImportUploadCoordinator(
 
     private async Task<DatasetImportTask> AuthorizeAsync(ClaimsPrincipal principal, ImportUploadTaskReference reference,
         bool requireWrite, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(principal);
-        ArgumentNullException.ThrowIfNull(reference);
-        var task = await tasks.AuthorizeAsync(principal, reference.WorkspaceId, reference.TaskId, reference.Revision,
-            reference.ContentHash, requireWrite, cancellationToken).ConfigureAwait(false);
-        if (task is null || task.TaskId != reference.TaskId || task.WorkspaceId != reference.WorkspaceId ||
-            task.Revision != reference.Revision || task.ContentHash != reference.ContentHash)
-        {
-            throw new UnauthorizedAccessException("Current access to the original import task is required.");
-        }
+        => (await authority.AuthorizeAsync(principal, reference, requireWrite, cancellationToken).ConfigureAwait(false)).Task;
 
-        return task;
-    }
-
-    private async Task ReauthorizeAsync(ClaimsPrincipal principal, ImportUploadTaskReference reference,
+    private async Task<string> ReauthorizeAsync(ClaimsPrincipal principal, ImportUploadTaskReference reference,
         ImportUploadSession expected, CancellationToken cancellationToken)
     {
-        var currentTask = await AuthorizeAsync(principal, reference, requireWrite: true, cancellationToken).ConfigureAwait(false);
-        RequireBinding(expected, SessionFor(currentTask));
+        var current = await authority.AuthorizeAsync(principal, reference, requireWrite: true, cancellationToken).ConfigureAwait(false);
+        RequireBinding(expected, SessionFor(current.Task));
+        return current.ContributorActorId;
     }
 
     private async Task<ImportUploadSession> RequireSessionAsync(DatasetImportTask task, CancellationToken cancellationToken)

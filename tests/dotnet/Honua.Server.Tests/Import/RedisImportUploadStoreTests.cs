@@ -28,7 +28,8 @@ public sealed class RedisImportUploadStoreTests(RedisFixture redis)
         var a = Chunk(session, "first-object");
         var b = Chunk(session, "second-object");
 
-        var accepted = await Task.WhenAll(first.TryAppendAsync(session, a), second.TryAppendAsync(session, b));
+        var accepted = await Task.WhenAll(first.TryAppendAsync(session, a, "first-contributor"),
+            second.TryAppendAsync(session, b, "second-contributor"));
 
         accepted.Count(value => value).Should().Be(1);
         var restored = (await second.GetAsync(session.Id, session.Scope))!;
@@ -37,7 +38,10 @@ public sealed class RedisImportUploadStoreTests(RedisFixture redis)
         restored.AcceptedBytes.Should().Be(session.ChunkBytes);
         (await second.ReadChunksAsync(session.Id, session.Scope, 0, 128))
             .Should().Equal(accepted[0] ? a : b);
-        (await firstConnection.GetDatabase().HashLengthAsync(RedisImportUploadStore.Key(session.Id))).Should().Be(2);
+        var mutations = await second.ReadMutationsAsync(session.Id, session.Scope, 1, 128);
+        mutations.Select(item => item.Version).Should().Equal(1, 2);
+        mutations[1].Kind.Should().Be(ImportUploadMutationKind.Append);
+        mutations[1].ContributorActorId.Should().Be(accepted[0] ? "first-contributor" : "second-contributor");
     }
 
     [IntegrationTest]
@@ -60,7 +64,7 @@ public sealed class RedisImportUploadStoreTests(RedisFixture redis)
         uncertainConnection.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
         var uncertainStore = new RedisImportUploadStore(uncertainConnection);
 
-        await FluentActions.Invoking(() => uncertainStore.TryAppendAsync(session, chunk))
+        await FluentActions.Invoking(() => uncertainStore.TryAppendAsync(session, chunk, "original-human"))
             .Should().ThrowAsync<RedisConnectionException>();
 
         await using var replacementConnection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -71,6 +75,10 @@ public sealed class RedisImportUploadStoreTests(RedisFixture redis)
         (await restarted.ReadChunksAsync(session.Id, session.Scope, 0, 1)).Should().Equal(chunk);
         (await restarted.TryAppendAsync(session, chunk)).Should().BeFalse();
         (await restarted.GetAsync(session.Id, session.Scope))!.Version.Should().Be(recovered.Version);
+        var mutations = await restarted.ReadMutationsAsync(session.Id, session.Scope, 1, 128);
+        mutations.Should().HaveCount(2);
+        mutations[1].ContributorActorId.Should().Be("original-human");
+        mutations[1].Kind.Should().Be(ImportUploadMutationKind.Append);
     }
 
     [IntegrationTest]

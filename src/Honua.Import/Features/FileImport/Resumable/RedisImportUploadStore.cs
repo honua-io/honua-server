@@ -29,7 +29,7 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
         local now = redis.call('TIME')
         local milliseconds = tonumber(now[1]) * 1000 + math.floor(tonumber(now[2]) / 1000)
         if tonumber(ARGV[2]) <= milliseconds then return 0 end
-        redis.call('HSET', KEYS[1], 'state', ARGV[1])
+        redis.call('HSET', KEYS[1], 'state', ARGV[1], ARGV[3], ARGV[4])
         redis.call('PEXPIREAT', KEYS[1], ARGV[2])
         return 1
         """;
@@ -38,20 +38,24 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
         if redis.call('HGET', KEYS[1], 'state') ~= ARGV[1] then return 0 end
         if redis.call('PTTL', KEYS[1]) <= 0 then return 0 end
         if redis.call('HEXISTS', KEYS[1], ARGV[3]) == 1 then return 0 end
-        redis.call('HSET', KEYS[1], 'state', ARGV[2], ARGV[3], ARGV[4])
+        redis.call('HSET', KEYS[1], 'state', ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6])
         return 1
         """;
 
     private const string TransitionScript = """
         if redis.call('HGET', KEYS[1], 'state') ~= ARGV[1] then return 0 end
         if redis.call('PTTL', KEYS[1]) <= 0 then return 0 end
-        redis.call('HSET', KEYS[1], 'state', ARGV[2])
+        redis.call('HSET', KEYS[1], 'state', ARGV[2], ARGV[3], ARGV[4])
         return 1
         """;
 
     private readonly IDatabase _database = redis.GetDatabase();
 
-    public async Task<bool> TryCreateAsync(ImportUploadSession session, CancellationToken cancellationToken = default)
+    public Task<bool> TryCreateAsync(ImportUploadSession session, CancellationToken cancellationToken = default)
+        => TryCreateAsync(session, session.Scope.ActorId, cancellationToken);
+
+    public async Task<bool> TryCreateAsync(ImportUploadSession session, string contributorActorId,
+        CancellationToken cancellationToken = default)
     {
         Validate(session);
         if (session.Version != 1 || session.AcceptedBytes != 0 || session.ChunkCount != 0 ||
@@ -63,7 +67,8 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
 
         cancellationToken.ThrowIfCancellationRequested();
         return (long)await _database.ScriptEvaluateAsync(CreateScript, [Key(session.Id)],
-            [Serialize(session), session.ExpiresAt.ToUnixTimeMilliseconds()]).ConfigureAwait(false) == 1;
+            [Serialize(session), session.ExpiresAt.ToUnixTimeMilliseconds(), MutationField(session.Version),
+                Mutation(session.Version, ImportUploadMutationKind.Create, contributorActorId)]).ConfigureAwait(false) == 1;
     }
 
     public async Task<ImportUploadSession?> GetAsync(string id, ImportUploadScope scope,
@@ -83,8 +88,11 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
         return session.Id == id && session.Scope == scope ? session : null;
     }
 
+    public Task<bool> TryAppendAsync(ImportUploadSession expected, ImportUploadChunk chunk,
+        CancellationToken cancellationToken = default) => TryAppendAsync(expected, chunk, expected.Scope.ActorId, cancellationToken);
+
     public async Task<bool> TryAppendAsync(ImportUploadSession expected, ImportUploadChunk chunk,
-        CancellationToken cancellationToken = default)
+        string contributorActorId, CancellationToken cancellationToken = default)
     {
         Validate(expected);
         ArgumentNullException.ThrowIfNull(chunk);
@@ -112,22 +120,30 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
         cancellationToken.ThrowIfCancellationRequested();
         return (long)await _database.ScriptEvaluateAsync(AppendScript, [Key(expected.Id)],
             [Serialize(expected), Serialize(updated), ChunkField(chunk.Index),
-                JsonSerializer.Serialize(chunk, ImportUploadJsonContext.Default.ImportUploadChunk)]).ConfigureAwait(false) == 1;
+                JsonSerializer.Serialize(chunk, ImportUploadJsonContext.Default.ImportUploadChunk), MutationField(updated.Version),
+                Mutation(updated.Version, ImportUploadMutationKind.Append, contributorActorId)]).ConfigureAwait(false) == 1;
     }
 
     public Task<bool> TryCancelAsync(ImportUploadSession expected, CancellationToken cancellationToken = default)
+        => TryCancelAsync(expected, expected.Scope.ActorId, cancellationToken);
+
+    public Task<bool> TryCancelAsync(ImportUploadSession expected, string contributorActorId, CancellationToken cancellationToken = default)
     {
         Validate(expected);
         return expected.State != ImportUploadState.Receiving
             ? Task.FromResult(false)
-            : TransitionAsync(expected, expected with { State = ImportUploadState.Cancelled, Version = checked(expected.Version + 1) }, cancellationToken);
+            : TransitionAsync(expected, expected with { State = ImportUploadState.Cancelled, Version = checked(expected.Version + 1) },
+                ImportUploadMutationKind.Cancel, contributorActorId, cancellationToken);
     }
 
     // The caller supplies the digest computed while reading ALL verified chunk
     // bytes. A seal is not an import/job acceptance receipt and must never be
     // presented to a client as proof that a data mutation was submitted.
     public Task<bool> TrySealAsync(ImportUploadSession expected, string contentSha256,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) => TrySealAsync(expected, contentSha256, expected.Scope.ActorId, cancellationToken);
+
+    public Task<bool> TrySealAsync(ImportUploadSession expected, string contentSha256,
+        string contributorActorId, CancellationToken cancellationToken = default)
     {
         Validate(expected);
         ValidateDigest(contentSha256);
@@ -138,13 +154,16 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
                 State = ImportUploadState.Sealed,
                 ContentSha256 = contentSha256,
                 Version = checked(expected.Version + 1)
-            }, cancellationToken);
+            }, ImportUploadMutationKind.Seal, contributorActorId, cancellationToken);
     }
 
     // Select exactly one durable source before job acceptance. A lost CAS reply is
     // recovered from this receipt; another candidate cannot overwrite the winner.
     public Task<bool> TryBindSourceAsync(ImportUploadSession expected, ImportStagedSourceBinding source,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) => TryBindSourceAsync(expected, source, expected.Scope.ActorId, cancellationToken);
+
+    public Task<bool> TryBindSourceAsync(ImportUploadSession expected, ImportStagedSourceBinding source,
+        string contributorActorId, CancellationToken cancellationToken = default)
     {
         Validate(expected);
         ArgumentNullException.ThrowIfNull(source);
@@ -155,7 +174,7 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
 
         var updated = expected with { StagedSource = source, Version = checked(expected.Version + 1) };
         Validate(updated);
-        return TransitionAsync(expected, updated, cancellationToken);
+        return TransitionAsync(expected, updated, ImportUploadMutationKind.RetainSource, contributorActorId, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ImportUploadChunk>> ReadChunksAsync(string id, ImportUploadScope scope,
@@ -204,11 +223,12 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
     }
 
     private async Task<bool> TransitionAsync(ImportUploadSession expected, ImportUploadSession updated,
-        CancellationToken cancellationToken)
+        ImportUploadMutationKind kind, string contributorActorId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return (long)await _database.ScriptEvaluateAsync(TransitionScript, [Key(expected.Id)],
-            [Serialize(expected), Serialize(updated)]).ConfigureAwait(false) == 1;
+            [Serialize(expected), Serialize(updated), MutationField(updated.Version),
+                Mutation(updated.Version, kind, contributorActorId)]).ConfigureAwait(false) == 1;
     }
 
     internal static string Key(string id)
@@ -219,6 +239,41 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
         }
 
         return $"honua:import-upload:{{{id}}}:receipt";
+    }
+
+    private static string MutationField(long version) => "mutation:" + version.ToString(CultureInfo.InvariantCulture);
+
+    private static string Mutation(long version, ImportUploadMutationKind kind, string actor)
+    {
+        ValidateText(actor, 512);
+        return JsonSerializer.Serialize(new ImportUploadMutation(version, kind, actor, DateTimeOffset.UtcNow),
+            ImportUploadJsonContext.Default.ImportUploadMutation);
+    }
+
+    internal async Task<IReadOnlyList<ImportUploadMutation>> ReadMutationsAsync(string id, ImportUploadScope scope,
+        long firstVersion, int count, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(firstVersion, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(count, MaximumPageSize);
+        var session = await GetAsync(id, scope, cancellationToken).ConfigureAwait(false);
+        if (session is null || firstVersion > session.Version) return [];
+        var length = (int)Math.Min(count, session.Version - firstVersion + 1);
+        RedisValue[] fields = Enumerable.Range(0, length).Select(index => (RedisValue)MutationField(firstVersion + index)).ToArray();
+        cancellationToken.ThrowIfCancellationRequested();
+        var payloads = await _database.HashGetAsync(Key(id), fields).ConfigureAwait(false);
+        var result = new List<ImportUploadMutation>(length);
+        for (var index = 0; index < payloads.Length; index++)
+        {
+            if (!payloads[index].HasValue) throw new InvalidDataException("An accepted upload mutation receipt is unavailable.");
+            var mutation = JsonSerializer.Deserialize(payloads[index].ToString(), ImportUploadJsonContext.Default.ImportUploadMutation);
+            if (mutation is null || mutation.Version != firstVersion + index || !Enum.IsDefined(mutation.Kind) || mutation.RecordedAt == default)
+                throw new InvalidDataException("An accepted upload mutation receipt is invalid.");
+            ValidateText(mutation.ContributorActorId, 512);
+            result.Add(mutation);
+        }
+        // Expiry during lookup cannot expose detached receipts after their scoped session is gone.
+        return await GetAsync(id, scope, cancellationToken).ConfigureAwait(false) is null ? [] : result;
     }
 
     private static string ChunkField(int index) => "chunk:" + index.ToString(CultureInfo.InvariantCulture);
