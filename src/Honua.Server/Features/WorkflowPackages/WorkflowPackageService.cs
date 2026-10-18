@@ -1374,6 +1374,16 @@ internal sealed class WorkflowPackageService(
             var armSibling = !string.Equals(sibling.PublicationId, publication.PublicationId, StringComparison.Ordinal)
                 && sibling.Status == WorkflowPublicationStatus.Active
                 && sibling.Schedule?.Enabled != false;
+            // Stage the catalog binding before the scheduler journal captures its
+            // publication pins. The transaction keeps both changes atomic.
+            if (!await store.TryReplaceWorkflowDefinitionIdAsync(
+                sibling.PublicationId,
+                legacyId,
+                isolatedId,
+                cancellationToken).ConfigureAwait(false))
+            {
+                throw new GeoprocessingPreconditionFailedException("The legacy workflow publication changed during migration.");
+            }
             if (shared is not null)
             {
                 var trigger = shared.Trigger;
@@ -1401,11 +1411,6 @@ internal sealed class WorkflowPackageService(
                     cancellationToken).ConfigureAwait(false);
             }
 
-            await store.TryReplaceWorkflowDefinitionIdAsync(
-                sibling.PublicationId,
-                legacyId,
-                isolatedId,
-                cancellationToken).ConfigureAwait(false);
         }
 
         var stillShared = await store.ListPublicationsAsync(publication.PackageId, cancellationToken).ConfigureAwait(false);

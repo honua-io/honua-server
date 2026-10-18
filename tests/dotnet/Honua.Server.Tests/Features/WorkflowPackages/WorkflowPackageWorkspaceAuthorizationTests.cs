@@ -179,6 +179,8 @@ public sealed class WorkflowPackageWorkspaceAuthorizationTests
             TenantId = Tenant,
             Members = [Human, CanonicalSecurityActor.Resolve(principal)!.ActorId],
         };
+        document = AgentWorkspaceState.Update(document, new("view-a", 0, "target-a", [], null, "console"));
+        document = AgentWorkspaceState.AddTurn(document, Human, new("turn-a", "view-a", 1, "Create workflow"));
         var gate = new object();
         workspaces.GetTargetIdAsync().Returns("target-a");
         workspaces.GetAsync("workspace-a").Returns(_ => { lock (gate) return Task.FromResult<AgentWorkspaceDocument?>(document); });

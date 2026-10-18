@@ -8,6 +8,8 @@ using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Server.Features.WorkflowPackages;
+using Honua.Server.Features.Orchestration;
+using StackExchange.Redis;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -32,11 +34,14 @@ public sealed class WorkflowPackageSchedulerCommitTests(RedisFixture redis)
         var publicationId = "commit-observer-" + Guid.NewGuid().ToString("N");
         string? definitionId = null;
         var observed = false;
+        using var redisConnection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var fixture = new WebAppFixture().UseKestrel().ConfigureWebHost(builder =>
         {
             builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
         });
+        fixture.ConfigureServices(services =>
+            services.AddSingleton<IWorkflowDefinitionStore>(new RedisWorkflowDefinitionStore(redisConnection)));
         WorkflowPackageHttpFixture.Configure(fixture, async (transaction, cancellationToken) =>
         {
             await using var observer = fixture.Services.CreateAsyncScope();
