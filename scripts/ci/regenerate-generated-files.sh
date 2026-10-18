@@ -12,3 +12,6 @@ bash scripts/generate-geoservices-parity.sh "$@" --no-build --no-restore
 python3 scripts/ci/generate-capability-matrix.py
 python3 scripts/ci/generate-capability-concepts.py
 python3 scripts/examples/generate-manifest.py
+# Capability pages above are graph inputs. Publish their final document digests,
+# never the graph from before those pages were regenerated.
+python3 scripts/ci/generate-okf-graph.py

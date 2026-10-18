@@ -12,6 +12,74 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 
 
+class GeneratedGraphFreshness(unittest.TestCase):
+    def test_graph_is_owned_without_including_authored_evidence(self):
+        paths = subprocess.check_output(
+            ['bash', '-c', 'source scripts/ci/generated-files.sh; printf "%s\\n" "${GENERATED_FILES[@]}"'],
+            cwd=ROOT, text=True).splitlines()
+        self.assertEqual(paths.count('docs/okf/domain-graph.v1.json'), 1)
+        self.assertNotIn('docs/okf', paths)
+        self.assertNotIn('docs/gis/data/public-interface-proof.json', paths)
+
+    def test_actual_pipeline_refreshes_graph_after_capability_page_changes(self):
+        # Isolate unrelated managed emitters, but execute the maintained shell
+        # ordering and real canonical graph generator/checker against real files.
+        # Omitting or moving graph generation before its input change must fail.
+        pipeline = (ROOT / 'scripts/ci/regenerate-generated-files.sh').read_text()
+        graph_command = 'python3 scripts/ci/generate-okf-graph.py\n'
+        self.assertEqual(pipeline.count(graph_command), 1)
+        variants = {
+            'maintained': (pipeline, True),
+            'omitted': (pipeline.replace(graph_command, ''), False),
+            'premature': (pipeline.replace(graph_command, '').replace(
+                'python3 scripts/ci/generate-capability-concepts.py',
+                graph_command + 'python3 scripts/ci/generate-capability-concepts.py'), False),
+        }
+        for label, (source, succeeds) in variants.items():
+            with self.subTest(pipeline=label), tempfile.TemporaryDirectory() as temp:
+                repo = Path(temp)
+                ci = repo / 'scripts/ci'
+                ci.mkdir(parents=True)
+                (repo / 'scripts/examples').mkdir()
+                docs = repo / 'docs/okf/capabilities'
+                docs.mkdir(parents=True)
+                page = docs / 'test.md'
+                page.write_text('---\ntype: capability\ntitle: Test\n---\nInitial facts.\n')
+                (ci / 'okf-bundle.v1.json').write_text(
+                    '{"root":"docs","spec":{"version":"0.2"},"excludedFiles":[],"excludedDirs":[]}')
+                for name in ('generate-okf-graph.py', 'okf_frontmatter.py', 'gis_workflow.py'):
+                    shutil.copy(ROOT / 'scripts/ci' / name, ci / name)
+                for name in ('generate-feature-catalog.sh', 'generate-admin-operation-parity-exports.sh',
+                             'generate-mcp-tool-roster.sh', 'generate-geoservices-parity.sh'):
+                    (repo / 'scripts' / name).write_text('exit 0\n')
+                for name in ('verify-admin-operation-parity.py', 'generate-capability-matrix.py'):
+                    (ci / name).write_text('pass\n')
+                (repo / 'scripts/examples/generate-manifest.py').write_text('pass\n')
+                (ci / 'generate-capability-concepts.py').write_text(
+                    'from pathlib import Path\n'
+                    'with Path("docs/okf/capabilities/test.md").open("a") as stream:\n'
+                    '    stream.write("Updated generated capability facts.\\n")\n')
+                (ci / 'regenerate-generated-files.sh').write_text(source)
+
+                def generate(*args):
+                    return subprocess.run(['python3', 'scripts/ci/generate-okf-graph.py', *args],
+                                          cwd=repo, capture_output=True, text=True)
+
+                initial = generate()
+                self.assertEqual(initial.returncode, 0, initial.stdout + initial.stderr)
+                before = (repo / 'docs/okf/domain-graph.v1.json').read_bytes()
+                execution = subprocess.run(['bash', 'scripts/ci/regenerate-generated-files.sh'],
+                                           cwd=repo, capture_output=True, text=True)
+                self.assertEqual(execution.returncode, 0, execution.stdout + execution.stderr)
+                self.assertIn('Updated generated capability facts.', page.read_text())
+                check = generate('--check')
+                self.assertEqual(check.returncode == 0, succeeds, check.stdout + check.stderr)
+                if succeeds:
+                    self.assertNotEqual(before, (repo / 'docs/okf/domain-graph.v1.json').read_bytes())
+                else:
+                    self.assertIn('agent graph is stale', check.stdout)
+
+
 class GeneratedFilesContracts(unittest.TestCase):
     def test_workflow_runs_nightly_or_on_demand_and_never_writes_trunk_directly(self):
         workflow = (ROOT / '.github/workflows/generated-files-on-trunk.yml').read_text()
