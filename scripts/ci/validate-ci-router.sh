@@ -298,6 +298,19 @@ assert_exact_shards() {
 }
 
 echo "Dry-running shard router cases..."
+# #6318: both class/complement children retain every original WMS source trigger.
+for changed in \
+  tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/OgcClassicWmsTests.cs \
+  tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/RenderedRasterBaselineTests.cs; do
+  assert_exact_shards "wms-capacity-${changed##*/}" "${changed}" \
+    '["OGC Classic Maps Core","OGC Classic Maps Supporting"]'
+done
+for child in "OGC Classic Maps Core" "OGC Classic Maps Supporting"; do
+  assert_descriptor "wms-capacity-runtime-${child}" \
+    "src/Honua.Protocols.OgcClassic/Wms/WmsRequestHandlers.cs" "targeted" false "${child}"
+  assert_descriptor "wms-capacity-registration-${child}" \
+    "src/Honua.Server/EndpointRegistry.cs" "targeted" false "${child}"
+done
 # The serialized [Collection("Database")] write-path concurrency class owns its
 # own shard; it must route there and nowhere else.
 assert_exact_shards \
@@ -1552,6 +1565,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/test-geoservices-support-partition.py
 "${PYTHON_BIN}" scripts/ci/test-admin-authorization-partition.py
 "${PYTHON_BIN}" scripts/ci/test-admin-runtime-partition.py
+"${PYTHON_BIN}" scripts/ci/test-wms-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
