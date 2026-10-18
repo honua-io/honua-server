@@ -61,6 +61,9 @@ public sealed class ImportOperationAuthorizationTests
         (await ImportOperationAuthorization.CanAccessAsync(context, ownership, default)).Should().Be(allowed);
         authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>())
             .Returns(AuthorizationResult.Failed());
+        // A scoped admin:read key intentionally has a read-only policy fallback;
+        // revoke it to remove that independent grant before asserting denial.
+        if (agent) await keys.RevokeAsync(created.Record.Id, default);
         (await ImportOperationAuthorization.CanAccessAsync(context, ownership, default)).Should().BeFalse();
     }
 
