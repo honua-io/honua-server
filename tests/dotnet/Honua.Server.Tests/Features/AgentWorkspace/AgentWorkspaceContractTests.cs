@@ -26,7 +26,8 @@ public sealed class AgentWorkspaceContractTests
     [UnitTest]
     public void WorkspaceToolsHaveBoundedTypedContractsAndExplicitServerFamily()
     {
-        var descriptors = AgentWorkspaceTool.All.Concat(AgentWorkspaceTool.DatasetImportTools).Select(tool => tool.Describe()).ToArray();
+        var descriptors = AgentWorkspaceTool.All.Concat(AgentWorkspaceTool.DatasetImportTools).Concat(AgentWorkspaceTool.DatasetImportAuthorityReadTools)
+            .Concat(AgentWorkspaceTool.DatasetImportAuthorityRenewTools).Select(tool => tool.Describe()).ToArray();
         descriptors.Select(tool => tool.Name).Should().OnlyHaveUniqueItems();
         foreach (var descriptor in descriptors)
         {
@@ -64,5 +65,21 @@ public sealed class AgentWorkspaceContractTests
         var names = (await new AgentWorkspaceToolSource(store, capabilities).GetToolsAsync(default)).Select(tool => tool.Name).ToArray();
         names.Contains("honua_workspace_create_dataset_import_task").Should().Be(capture && contributor);
         names.Contains("honua_workspace_get_dataset_import_intent").Should().Be(capture && contributor);
+    }
+    [UnitTheory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task AuthorityReadAndRenewalRequireTheirInstalledCanonicalPorts(bool descriptor, bool capture)
+    {
+        var store = Substitute.For<IAgentWorkspaceStore>();
+        store.IsAvailable.Returns(true);
+        var capabilities = Substitute.For<IServiceProviderIsService>();
+        capabilities.IsService(typeof(Honua.Core.Features.Import.Abstractions.IDatasetImportAuthorityDescriptorReader)).Returns(descriptor);
+        capabilities.IsService(typeof(Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture)).Returns(capture);
+        var names = (await new AgentWorkspaceToolSource(store, capabilities).GetToolsAsync(default)).Select(tool => tool.Name).ToArray();
+        names.Contains("honua_workspace_get_dataset_import_authority").Should().Be(descriptor);
+        names.Contains("honua_workspace_renew_dataset_import_authority").Should().Be(descriptor && capture);
     }
 }

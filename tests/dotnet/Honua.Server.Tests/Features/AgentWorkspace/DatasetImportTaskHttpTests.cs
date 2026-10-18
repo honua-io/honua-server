@@ -115,6 +115,11 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
     [IntegrationTest]
     [Operation(Operations.Configuration)]
     [Endpoint("GET /api/v1/agent/workspaces/{workspaceId}/turns/{turnId}")]
+    [Endpoint("GET /api/v1/agent/workspaces/{workspaceId}/dataset-import-tasks/{taskId}/versions/{revision}/authority")]
+    [Endpoint("POST /api/v1/agent/workspaces/{workspaceId}/dataset-import-tasks/{taskId}/versions/{revision}/authority-renewals")]
+    [Endpoint("POST /mcp tools/call honua_workspace_create_dataset_import_task")]
+    [Endpoint("POST /mcp tools/call honua_workspace_get_dataset_import_authority")]
+    [Endpoint("POST /mcp tools/call honua_workspace_renew_dataset_import_authority")]
     public async Task OnlyRetainedLinkedAgentGetsHumanTaskExplanationAndCannotReadOwnerTransferResource()
     {
         var policy = new DestinationPolicy();
@@ -133,6 +138,7 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             {
                 services.AddSingleton<IDatasetImportDestinationAuthorizer>(policy);
                 services.AddScoped<IDatasetImportContributorAuthorizer, DatasetImportContributorAuthorizer>();
+                services.AddScoped<IDatasetImportAuthorityDescriptorReader, DatasetImportAuthorityDescriptorReader>();
             });
         });
         await fixture.InitializeAsync();
@@ -213,6 +219,40 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             replayDocument.Version.Should().Be(executionDocument.Version);
             replayDocument.DatasetImportExecutionBindings.Should().ContainSingle();
             executionTask.TryGetProperty("executorAuthority", out _).Should().BeFalse();
+            var authorityPath = executionRoot + $"/dataset-import-tasks/{executionTaskId}/versions/1/authority";
+            var authority = await Json(await agent.GetAsync(authorityPath + "?contentHash=" + binding.TaskContentHash));
+            authority.GetProperty("authorityRevision").GetInt64().Should().Be(1);
+            authority.GetProperty("authorityFingerprint").GetString().Should().Be(binding.AuthorityFingerprint);
+            authority.TryGetProperty("executorAuthority", out _).Should().BeFalse();
+            authority.TryGetProperty("executorPolicyContext", out _).Should().BeFalse();
+            var authorityEnvelope = await Json(await agent.PostAsJsonAsync("/mcp", new
+            {
+                jsonrpc = "2.0", id = 4, method = "tools/call",
+                @params = new { name = "honua_workspace_get_dataset_import_authority", arguments = new
+                    { workspaceId = executionId, taskId = executionTaskId, revision = 1, contentHash = binding.TaskContentHash } },
+            }));
+            authorityEnvelope.GetProperty("result").GetProperty("structuredContent").GetProperty("authorityFingerprint").GetString()
+                .Should().Be(binding.AuthorityFingerprint);
+            var renewal = new RenewDatasetImportAuthority("renewal-api-key-no-refresh", 1, binding.TaskContentHash);
+            var renewalPath = authorityPath + "-renewals";
+            var renewalEndpoint = fixture.Services.GetServices<EndpointDataSource>().SelectMany(source => source.Endpoints)
+                .OfType<RouteEndpoint>().Single(endpoint => endpoint.RoutePattern.RawText?.EndsWith("/authority-renewals", StringComparison.Ordinal) == true);
+            renewalEndpoint.Metadata.GetMetadata<IAcceptsMetadata>()!.RequestType.Should().Be(typeof(RenewDatasetImportAuthority));
+            // This nonexpiring key has no refreshed expiry; neither adapter may invent one.
+            (await agent.PostAsJsonAsync(renewalPath, renewal)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+            var rejectedRenewal = await Json(await agent.PostAsJsonAsync("/mcp", new
+            {
+                jsonrpc = "2.0", id = 5, method = "tools/call",
+                @params = new { name = "honua_workspace_renew_dataset_import_authority", arguments = new
+                    { workspaceId = executionId, taskId = executionTaskId, revision = 1, request = renewal } },
+            }));
+            rejectedRenewal.GetProperty("result").GetProperty("isError").GetBoolean().Should().BeTrue();
+            using var oversizedRenewal = new UnknownLengthJson(Encoding.UTF8.GetBytes("{\"renewalId\":\"" + new string('x', 70000) + "\"}"));
+            (await agent.PostAsync(renewalPath, oversizedRenewal)).StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+            (await fixture.Services.GetRequiredService<IAgentWorkspaceStore>().GetAsync(executionId))!.Version.Should().Be(executionDocument.Version);
+            var humanAuthority = await Json(await human.GetAsync(authorityPath + "?contentHash=" + binding.TaskContentHash));
+            humanAuthority.GetProperty("executorActorId").GetString().Should().Be(linkedActor);
+            (await human.PostAsJsonAsync(renewalPath, renewal)).StatusCode.Should().Be(HttpStatusCode.NotFound);
             var recoveredEnvelope = await Json(await agent.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0", id = 3, method = "tools/call",

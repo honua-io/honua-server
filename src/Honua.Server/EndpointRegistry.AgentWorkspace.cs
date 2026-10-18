@@ -19,6 +19,8 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/agent/workspaces/{workspaceId}/dataset-import-tasks"),
         new("GET", "/api/v1/agent/workspaces/{workspaceId}/dataset-import-task-intents/{intentId}"),
         new("GET", "/api/v1/agent/workspaces/{workspaceId}/dataset-import-tasks/{taskId}/versions/{revision}"),
+        new("GET", "/api/v1/agent/workspaces/{workspaceId}/dataset-import-tasks/{taskId}/versions/{revision}/authority"),
+        new("POST", "/api/v1/agent/workspaces/{workspaceId}/dataset-import-tasks/{taskId}/versions/{revision}/authority-renewals"),
         new("POST", "/api/v1/agent/workspaces/{workspaceId}/drafts"),
         new("GET", "/api/v1/agent/workspaces/{workspaceId}/drafts/{draftId}"),
         new("PATCH", "/api/v1/agent/workspaces/{workspaceId}/drafts/{draftId}"),

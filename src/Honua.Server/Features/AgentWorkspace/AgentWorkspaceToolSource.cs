@@ -18,11 +18,14 @@ internal sealed class AgentWorkspaceToolSource(IAgentWorkspaceStore store, IServ
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!store.IsAvailable) return ValueTask.FromResult<IReadOnlyList<IMcpTool>>([]);
-        var importReady = capabilities is not null &&
-            capabilities.IsService(typeof(Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture)) &&
-            capabilities.IsService(typeof(Honua.Core.Features.Import.Abstractions.IDatasetImportContributorAuthorizer));
-        return ValueTask.FromResult<IReadOnlyList<IMcpTool>>(importReady
-            ? [.. AgentWorkspaceTool.All, .. AgentWorkspaceTool.DatasetImportTools] : AgentWorkspaceTool.All);
+        var captureReady = capabilities is not null && capabilities.IsService(typeof(Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture));
+        var importReady = capabilities is not null && captureReady && capabilities.IsService(typeof(Honua.Core.Features.Import.Abstractions.IDatasetImportContributorAuthorizer));
+        var authorityReady = capabilities?.IsService(typeof(Honua.Core.Features.Import.Abstractions.IDatasetImportAuthorityDescriptorReader)) == true;
+        var tools = new List<IMcpTool>(AgentWorkspaceTool.All);
+        if (importReady) tools.AddRange(AgentWorkspaceTool.DatasetImportTools);
+        if (authorityReady) tools.AddRange(AgentWorkspaceTool.DatasetImportAuthorityReadTools);
+        if (authorityReady && captureReady) tools.AddRange(AgentWorkspaceTool.DatasetImportAuthorityRenewTools);
+        return ValueTask.FromResult<IReadOnlyList<IMcpTool>>(tools);
     }
 }
 
@@ -91,6 +94,25 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
             $"{Workspace},{Property("intentId", Identifier)}", "\"workspaceId\",\"intentId\"", true),
     ];
 
+    private static readonly string DatasetRevision = Property("revision", "{\"type\":\"integer\",\"minimum\":1}");
+    internal static readonly IMcpTool[] DatasetImportAuthorityReadTools =
+    [
+        new AgentWorkspaceTool("get_dataset_import_authority", "Read current scoped authority revision/fingerprints, original deadline and prepared operation metadata for an exact immutable import task. No credentials, claims, authority renewal, upload acceptance or dispatch is produced.",
+            $"{Workspace},{Property("taskId", Identifier)},{DatasetRevision},{Property("contentHash", "{\"type\":\"string\",\"pattern\":\"^[0-9a-f]{64}$\"}")}",
+            "\"workspaceId\",\"taskId\",\"revision\",\"contentHash\"", true),
+    ];
+    private const string DatasetAuthorityRenewalSchema = """
+        {"type":"object","properties":{"renewalId":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,128}$"},
+        "expectedAuthorityRevision":{"type":"integer","minimum":1},"taskContentHash":{"type":"string","pattern":"^[0-9a-f]{64}$"}},
+        "required":["renewalId","expectedAuthorityRevision","taskContentHash"],"additionalProperties":false}
+        """;
+    internal static readonly IMcpTool[] DatasetImportAuthorityRenewTools =
+    [
+        new AgentWorkspaceTool("renew_dataset_import_authority", "Explicitly renew the same executor's expired or expiring task authority through canonical CAS. Persist renewalId before calling; reuse it to recover a lost response. This never changes task intent, ownership, policy values or original deadline, and cannot renew prepared/accepted job authority.",
+            $"{Workspace},{Property("taskId", Identifier)},{DatasetRevision},{Property("request", DatasetAuthorityRenewalSchema)}",
+            "\"workspaceId\",\"taskId\",\"revision\",\"request\"", false),
+    ];
+
     public string Name => $"honua_workspace_{action}";
     public string WorkflowFamily => "lifecycle";
     public McpToolDescriptor Describe() => new()
@@ -114,7 +136,7 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
         context.Request.Method = readOnly ? "GET" : "POST";
         context.Request.Path = "/api/v1/agent/workspaces";
         foreach (var header in httpContext.Request.Headers) context.Request.Headers[header.Key] = header.Value;
-        foreach (var name in new[] { "workspaceId", "draftId", "turnId", "commandId", "operationInstanceId", "intentId" })
+        foreach (var name in new[] { "workspaceId", "draftId", "turnId", "commandId", "operationInstanceId", "intentId", "taskId" })
         {
             if (!args.TryGetProperty(name, out var value)) continue;
             if (value.ValueKind != JsonValueKind.String || !AgentWorkspaceState.IsIdentifier(value.GetString())) return Error("Invalid resource identifier.");
@@ -141,6 +163,10 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
                 "get_turn" => await AgentWorkspaceEndpoints.GetTurn(context, store).ConfigureAwait(false),
                 "conversation" => await AgentWorkspaceEndpoints.GetConversation(context, store).ConfigureAwait(false),
                 "append_message" => await AgentWorkspaceEndpoints.AppendMessage(context, store, Parse(args, AgentWorkspaceJsonContext.Default.AppendAgentMessage)).ConfigureAwait(false),
+                "get_dataset_import_authority" => await DatasetImportTaskEndpoints.ReadAuthorityAsync(context,
+                    Parse(args, AgentWorkspaceJsonContext.Default.ReadDatasetImportAuthority)).ConfigureAwait(false),
+                "renew_dataset_import_authority" => await DatasetImportTaskEndpoints.RenewAuthorityAsync(context, store,
+                    Parse(args, AgentWorkspaceJsonContext.Default.RenewDatasetImportAuthorityCall)).ConfigureAwait(false),
                 "create_dataset_import_task" => await DatasetImportTaskService.CreateAsync(args.GetProperty("workspaceId").GetString()!, context, store,
                     Parse(args.GetProperty("request"), AgentWorkspaceJsonContext.Default.CreateDatasetImportTask)).ConfigureAwait(false),
                 "get_dataset_import_intent" => await DatasetImportTaskService.ReadIntent(args.GetProperty("workspaceId").GetString()!,

@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.AgentWorkspace;
 
@@ -22,10 +22,19 @@ internal sealed record DatasetImportExecutionBinding(
     string PolicyContextFingerprint,
     AgentCredentialSnapshot ExecutorAuthority);
 
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record RenewDatasetImportAuthority(
-    string RenewalId,
-    long ExpectedAuthorityRevision,
-    string TaskContentHash);
+    [property: JsonRequired] string RenewalId,
+    [property: JsonRequired] long ExpectedAuthorityRevision,
+    [property: JsonRequired] string TaskContentHash);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record ReadDatasetImportAuthority([property: JsonRequired] string WorkspaceId, [property: JsonRequired] string TaskId,
+    [property: JsonRequired] long Revision, [property: JsonRequired] string ContentHash);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record RenewDatasetImportAuthorityCall([property: JsonRequired] string WorkspaceId, [property: JsonRequired] string TaskId,
+    [property: JsonRequired] long Revision, [property: JsonRequired] RenewDatasetImportAuthority Request);
 
 internal sealed record DatasetImportAuthorityRenewal(
     string RenewalId,
