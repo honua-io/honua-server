@@ -76,14 +76,16 @@ def restore_summary(execution, label: str) -> dict:
     # was readable but the package endpoint requires authentication. Accept
     # only this governed package's endpoint, never an arbitrary HTTP401.
     endpoint = "/honua-io/download/" + PACKAGE.lower() + "/index.json"
+    feed_index = False
     package_endpoint = False
     for value in re.findall(r"https://[^\s<>\"']+", diagnostics):
         parsed = urlsplit(value.rstrip(".,;)"))
         if (parsed.scheme == "https" and parsed.netloc == "nuget.pkg.github.com"
-                and parsed.path == endpoint and not parsed.query and not parsed.fragment):
-            package_endpoint = True
+                and not parsed.query and not parsed.fragment):
+            feed_index = feed_index or parsed.path == "/honua-io/index.json"
+            package_endpoint = package_endpoint or parsed.path == endpoint
     return {"schema": "honua.nuget-auth-attempt/v1", "attempt": label,
-            "exitCode": execution.returncode, "governedFeedMentioned": FEED in diagnostics,
+            "exitCode": execution.returncode, "governedFeedMentioned": feed_index,
             "governedPackageEndpointMentioned": package_endpoint,
             "authorizationStatusCodes": sorted(set(re.findall(r"\b(?:401|403)\b", diagnostics))),
             "nugetErrorCodes": sorted(set(re.findall(r"\bNU[0-9]{4}\b", diagnostics)))}

@@ -177,6 +177,22 @@ class CredentialTests(unittest.TestCase):
                 self.assertEqual(summary['governedPackageEndpointMentioned'], expected)
                 self.assertNotIn(TOKEN, json.dumps(summary))
 
+    def test_index_binding_rejects_substrings_queries_suffixes_and_userinfo(self):
+        for address, expected in ((proof.FEED, True),
+                (proof.FEED + '.unrelated', False),
+                (proof.FEED + '?redirect=unrelated', False),
+                (proof.FEED + '#fragment', False),
+                ('https://attacker.invalid/?feed=' + proof.FEED, False),
+                ('https://attacker.invalid/path/' + proof.FEED, False),
+                (proof.FEED.replace('nuget.pkg.github.com', 'nuget.pkg.github.com.attacker.invalid'), False),
+                (proof.FEED.replace('nuget.pkg.github.com', 'nuget.pkg.github.com@attacker.invalid'), False),
+                (proof.FEED.replace('/honua-io/', '/another-owner/'), False)):
+            with self.subTest(address=address):
+                summary = proof.restore_summary(subprocess.CompletedProcess([], 1,
+                           'error NU1301 ' + address + ' response 401', ''), 'anonymous')
+                self.assertEqual(summary['governedFeedMentioned'], expected)
+                self.assertFalse(summary['governedPackageEndpointMentioned'])
+
     def test_action_and_workflow_keep_real_proof_and_credential_contract(self):
         action = (ACTION / 'action.yml').read_text()
         self.assertNotIn('dotnet nuget update source', action)
