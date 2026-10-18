@@ -263,6 +263,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Verify artifact staging controls
+        run: python3 -m unittest discover -s tests/python/unit -p test_client_interop_artifact_staging.py -v
+
       - name: Download all lane artifacts
         uses: actions/download-artifact@v8
         with:
