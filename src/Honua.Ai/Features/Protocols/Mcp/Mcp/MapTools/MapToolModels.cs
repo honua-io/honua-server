@@ -169,6 +169,14 @@ internal sealed class McpDescribeLayerOutput
     [JsonPropertyName("layerId")]
     public int LayerId { get; set; }
 
+    /// <summary>Storage reference for process layer-id parameters, not an execution permission grant.</summary>
+    [JsonPropertyName("processLayerId")]
+    public int? ProcessLayerId { get; set; }
+
+    /// <summary>Why this publication cannot be represented by the current process layer reference.</summary>
+    [JsonPropertyName("processLayerUnavailableReason")]
+    public string? ProcessLayerUnavailableReason { get; set; }
+
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 

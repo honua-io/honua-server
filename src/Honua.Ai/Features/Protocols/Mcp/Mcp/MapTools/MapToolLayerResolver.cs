@@ -141,6 +141,31 @@ internal static class MapToolLayerResolver
         }
     }
 
+    /// <summary>
+    /// Projects an already authorized publication to the resource/binding identity used by
+    /// source.honua-layer and the canonical job authorizer. This is metadata, not a grant:
+    /// job validation and execution still check the requested operation and current caller.
+    /// </summary>
+    internal static (int? LayerId, string? UnavailableReason) ResolveProcessReference(
+        MetadataV2GraphSnapshot snapshot, MapToolLayerContext layer)
+    {
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layer.StorageLayerId, out var processResource)
+            || !string.Equals(processResource.Metadata.Id, layer.Resource.Metadata.Id, StringComparison.Ordinal))
+        {
+            return (null, "This published layer has no matching process source.");
+        }
+
+        var publicationBinding = snapshot.ResolveStorageBinding(layer.Publication);
+        if (publicationBinding is null
+            || !snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(layer.StorageLayerId, out var processBinding)
+            || !string.Equals(publicationBinding.Metadata.Id, processBinding.Metadata.Id, StringComparison.Ordinal))
+        {
+            return (null, "This publication uses a different data binding from the process source.");
+        }
+
+        return (layer.StorageLayerId, null);
+    }
+
     private static MetadataV2Service? ResolveService(MetadataV2GraphSnapshot snapshot, string serviceId)
         => snapshot.Graph.Services.FirstOrDefault(candidate =>
                string.Equals(candidate.Metadata.Id, serviceId, StringComparison.OrdinalIgnoreCase))

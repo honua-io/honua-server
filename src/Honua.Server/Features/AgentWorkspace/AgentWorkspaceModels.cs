@@ -50,7 +50,14 @@ internal sealed record AgentTargetResponse(string TargetId);
 internal sealed record AgentDevOpsAuthorizationRequest(
     string TargetId, string DeployTargetId, string Environment, string? CanonicalTool,
     Dictionary<string, System.Text.Json.JsonElement>? Arguments = null);
-internal sealed record AgentDevOpsAuthorizationResponse(string TargetId, string DeployTargetId, string Environment);
+internal sealed record AgentDevOpsAuthorizationResponse(
+    string TargetId, string DeployTargetId, string Environment, string RuntimeKind, string Backend,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? TenantId)
+{
+    public required string TargetName { get; init; }
+    public bool UsesCustomProviderEndpoint { get; init; }
+    public required Dictionary<string, string> ResourceParameters { get; init; }
+}
 internal sealed record AgentConversationResponse(AgentWorkspaceMessage[] Messages);
 internal sealed record AgentTurnResponse(string TurnId, string Status, AgentWorkspaceContext Context, AgentWorkspaceMessage[] Messages,
     AgentWorkspaceDraft? Draft, LocalProcessSnapshot? LocalProcessSnapshot = null);

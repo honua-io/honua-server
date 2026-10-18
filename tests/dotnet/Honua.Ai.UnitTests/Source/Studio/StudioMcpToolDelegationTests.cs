@@ -6,6 +6,7 @@ using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.TestKit.Attributes;
@@ -224,6 +225,205 @@ public sealed class StudioMcpToolDelegationTests
         getContent.GetProperty("generation").GetInt64().Should().Be(1);
         getContent.GetProperty("packageKey").GetString().Should().Be("apps-demo");
         getContent.GetProperty("family").GetString().Should().Be("app");
+    }
+
+    [UnitTest]
+    public async Task InlineStyle_UsesCanonicalDraftGenerationAndSurvivesLaterCompositionEdit()
+    {
+        using var provider = BuildServiceProvider();
+        var lifecycle = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(lifecycle);
+            services.AddSingleton(provider.GetRequiredService<IStudioPackageValidator>());
+            McpTestFactory.AddAllowingStudioAuthorization(services);
+        });
+        var create = new CreateStudioDraftTool(jobs, NullLogger<CreateStudioDraftTool>.Instance);
+        var created = await create.InvokeAsync(context,
+            McpTestFactory.ParseJson("""{"packageKey":"local-style-map","family":"map","schemaVersion":"1.0"}"""),
+            CancellationToken.None);
+        var draftId = created.StructuredContent!.Value.GetProperty("draftId").GetGuid();
+        var add = new AddStudioLayerTool(jobs, NullLogger<AddStudioLayerTool>.Instance);
+        await add.InvokeAsync(context,
+            McpTestFactory.ParseJson($$$"""{"draftId":"{{{draftId}}}","generation":1,"layer":{"id":"parcels","type":"fill","sourceId":"content.parcels"}}"""),
+            CancellationToken.None);
+        var style = new SetStudioLayerStyleTool(jobs, NullLogger<SetStudioLayerStyleTool>.Instance);
+        var arguments = McpTestFactory.ParseJson($$$$$"""
+            {"draftId":"{{{{{draftId}}}}}","generation":2,"layerId":"parcels",
+             "styleBody":{"parcels":{"paint":{"fill-color":"green"}}}}
+            """);
+        var result = await style.InvokeAsync(context, arguments, CancellationToken.None);
+        result.StructuredContent!.Value.GetProperty("generation").GetInt64().Should().Be(3);
+
+        // An old visual-editor snapshot cannot overwrite the intervening agent edit.
+        var stale = () => style.InvokeAsync(context, arguments, CancellationToken.None);
+        await stale.Should().ThrowAsync<StudioDraftGenerationConflictException>();
+        var view = new SetStudioViewTool(jobs, NullLogger<SetStudioViewTool>.Instance);
+        await view.InvokeAsync(context,
+            McpTestFactory.ParseJson($$$"""{"draftId":"{{{draftId}}}","generation":3,"view":{"zoom":9}}"""),
+            CancellationToken.None);
+        var draft = await lifecycle.GetDraftAsync(draftId);
+        var body = StudioCompositionBodyEditor.ReadBody(draft!.Envelope);
+        draft.Generation.Should().Be(4);
+        body.Layers.Single().StyleRef.Should().Be("honua-inline:parcels");
+        body.StyleRefs!.Single().GetProperty("body").GetProperty("parcels")
+            .GetProperty("paint").GetProperty("fill-color").GetString().Should().Be("green");
+        body.View!.Zoom.Should().Be(9);
+    }
+
+    [UnitTest]
+    public async Task FullMapStyle_UsesCanonicalGenerationAndRefusesValidationFailureWithoutMutation()
+    {
+        using var provider = BuildServiceProvider();
+        var lifecycle = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var validator = new ControlledMapStyleValidator();
+        var sources = new ControlledMapStyleSourceAuthorizer();
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(lifecycle);
+            services.AddSingleton(provider.GetRequiredService<IStudioPackageValidator>());
+            services.AddSingleton<IMapStyleValidator>(validator);
+            services.AddSingleton<IStudioMapStyleSourceAuthorizer>(sources);
+            McpTestFactory.AddAllowingStudioAuthorization(services);
+        });
+        var create = new CreateStudioDraftTool(jobs, NullLogger<CreateStudioDraftTool>.Instance);
+        var created = await create.InvokeAsync(context, McpTestFactory.ParseJson("""
+            {"packageKey":"full-style-map","family":"map","schemaVersion":"1.0","body":{
+              "layers":[{"id":"parcels","type":"fill","sourceId":"parcels","styleRef":"shared"}],
+              "mapSpec":{"version":8,"sources":{"parcels":{"type":"geojson","data":"/authorized/parcels"}},
+                         "layers":[{"id":"parcels","type":"fill","source":"parcels"}]}}}
+            """), CancellationToken.None);
+        var draftId = created.StructuredContent!.Value.GetProperty("draftId").GetGuid();
+        var tool = new SetStudioMapStyleTool(jobs, NullLogger<SetStudioMapStyleTool>.Instance);
+        var arguments = McpTestFactory.ParseJson($$$"""
+            {"draftId":"{{{draftId}}}","generation":1,"mapSpec":{
+              "version":8,"sources":{"parcels":{"type":"geojson","data":"/authorized/parcels"}},
+              "layers":[{"id":"parcels","type":"fill","source":"parcels","paint":{"fill-color":"green"}}]}}
+            """);
+        validator.Reject = true;
+        var invalid = () => tool.InvokeAsync(context, arguments, CancellationToken.None);
+        await invalid.Should().ThrowAsync<GeoprocessingValidationException>();
+        (await lifecycle.GetDraftAsync(draftId))!.Generation.Should().Be(1);
+
+        validator.Reject = false;
+        sources.Reject = true;
+        var forbidden = () => tool.InvokeAsync(context, arguments, CancellationToken.None);
+        await forbidden.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        (await lifecycle.GetDraftAsync(draftId))!.Generation.Should().Be(1);
+        sources.Reject = false;
+        await tool.InvokeAsync(context, arguments, CancellationToken.None);
+        var stale = () => tool.InvokeAsync(context, arguments, CancellationToken.None);
+        await stale.Should().ThrowAsync<StudioDraftGenerationConflictException>();
+        var draft = (await lifecycle.GetDraftAsync(draftId))!;
+        var body = StudioCompositionBodyEditor.ReadBody(draft.Envelope);
+        draft.Generation.Should().Be(2);
+        body.Layers.Single().StyleRef.Should().BeNull();
+        body.StyleRefs.Should().BeEmpty();
+        body.MapSpec!.Value.GetProperty("layers")[0].GetProperty("paint")
+            .GetProperty("fill-color").GetString().Should().Be("green");
+    }
+
+    [UnitTest]
+    public async Task WholeDraftStyleUpdate_RechecksAccessAndValidation_AndPersistsCanonicalBindings()
+    {
+        using var provider = BuildServiceProvider();
+        var lifecycle = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var validator = new ControlledMapStyleValidator();
+        var sources = new ControlledMapStyleSourceAuthorizer();
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(lifecycle);
+            services.AddSingleton(provider.GetRequiredService<IStudioPackageValidator>());
+            services.AddSingleton<IMapStyleValidator>(validator);
+            services.AddSingleton<IStudioMapStyleSourceAuthorizer>(sources);
+            McpTestFactory.AddAllowingStudioAuthorization(services);
+        });
+        const string bodyJson = """
+            {"mapPackageId":"whole-style","format":"honua_map_package.v1",
+             "layers":[{"id":"parcels","type":"fill","sourceId":"parcels","styleRef":"shared"}],
+             "widgets":[],"sourceBindings":[{"sourceId":"parcels","protocol":"geoservices_feature_service",
+               "locator":{"url":"https://wrong.invalid/FeatureServer/9","layerId":9}}],
+             "mapSpec":{"version":8,"sources":{"parcels":{"type":"geojson","data":"/authorized/parcels"}},
+               "layers":[{"id":"parcels","type":"fill","source":"parcels"}]}}
+            """;
+        var create = new CreateStudioDraftTool(jobs, NullLogger<CreateStudioDraftTool>.Instance);
+        var created = await create.InvokeAsync(context, McpTestFactory.ParseJson($$$"""
+            {"packageKey":"whole-style","family":"map","schemaVersion":"1.0","body":{{{bodyJson}}}}
+            """), CancellationToken.None);
+        var draftId = created.StructuredContent!.Value.GetProperty("draftId").GetGuid();
+        var body = System.Text.Json.Nodes.JsonNode.Parse(bodyJson)!.AsObject();
+        body["mapSpec"]!["layers"]![0]!["paint"] = new System.Text.Json.Nodes.JsonObject
+        {
+            ["fill-color"] = "green"
+        };
+        var update = new UpdateStudioDraftTool(jobs, NullLogger<UpdateStudioDraftTool>.Instance);
+        Task<Honua.Ai.Protocols.Mcp.Models.McpToolsCallResult> Invoke() => update.InvokeAsync(context,
+            McpTestFactory.ParseJson($$$"""
+                {"draftId":"{{{draftId}}}","generation":1,"packageKey":"whole-style",
+                 "schemaVersion":"1.0","body":{{{body.ToJsonString()}}}}
+                """), CancellationToken.None);
+
+        sources.Reject = true;
+        await ((Func<Task>)(async () => await Invoke())).Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        sources.Reject = false;
+        validator.Reject = true;
+        await ((Func<Task>)(async () => await Invoke())).Should().ThrowAsync<GeoprocessingValidationException>();
+        validator.Reject = false;
+        body["mapSpec"]!["sources"]!["parcels"]!["data"] = "https://wrong.invalid/private";
+        await ((Func<Task>)(async () => await Invoke())).Should().ThrowAsync<GeoprocessingValidationException>();
+        (await lifecycle.GetDraftAsync(draftId))!.Generation.Should().Be(1);
+
+        body["mapSpec"]!["sources"]!["parcels"]!["data"] = "/authorized/parcels";
+        var response = await Invoke();
+        response.StructuredContent!.Value.GetProperty("generation").GetInt64().Should().Be(2);
+        var saved = (await lifecycle.GetDraftAsync(draftId))!;
+        var result = StudioCompositionBodyEditor.ReadBody(saved.Envelope);
+        result.Layers.Single().StyleRef.Should().BeNull();
+        result.MapSpec!.Value.GetProperty("layers")[0].GetProperty("paint")
+            .GetProperty("fill-color").GetString().Should().Be("green");
+        result.SourceBindings!.Single().GetProperty("locator").GetProperty("url")
+            .GetString().Should().Be("/authorized/parcels");
+        await ((Func<Task>)(async () => await Invoke())).Should().ThrowAsync<StudioDraftGenerationConflictException>();
+    }
+
+    private sealed class ControlledMapStyleValidator : IMapStyleValidator
+    {
+        public bool Reject { get; set; }
+
+        public bool TryValidate(System.Text.Json.JsonElement style, out string? error)
+        {
+            error = Reject ? "Unsupported style property." : null;
+            return !Reject;
+        }
+    }
+
+    private sealed class ControlledMapStyleSourceAuthorizer : IStudioMapStyleSourceAuthorizer
+    {
+        public bool Reject { get; set; }
+
+        public Task<StudioCompositionBody> AuthorizeStyleReferencesAsync(System.Security.Claims.ClaimsPrincipal principal,
+            StudioCompositionBody body, CancellationToken cancellationToken) => Task.FromResult(body);
+
+        public Task<StudioCompositionBody> AuthorizeAsync(System.Security.Claims.ClaimsPrincipal principal,
+            StudioCompositionBody body, CancellationToken cancellationToken)
+        {
+            if (Reject) throw new UnauthorizedAccessException("Source access was revoked.");
+            return Task.FromResult(body with
+            {
+                MapSpec = body.MapSpec ?? McpTestFactory.ParseJson("""
+                    {"version":8,"sources":{"parcels":{"type":"geojson","data":"/authorized/parcels"}},
+                     "layers":[{"id":"parcels","type":"fill","source":"parcels"}]}
+                    """),
+                SourceBindings = [McpTestFactory.ParseJson("""
+                    {"sourceId":"parcels","protocol":"geoservices_feature_service",
+                     "locator":{"url":"/authorized/parcels","layerId":0}}
+                    """)],
+                SourceBindingIds = new HashSet<string>(StringComparer.Ordinal) { "parcels" }
+            });
+        }
     }
 
     private static ServiceProvider BuildServiceProvider()

@@ -10,6 +10,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Infrastructure.Security;
@@ -356,6 +357,31 @@ internal abstract class StudioDraftToolBase
             resourceType,
             resourceId,
             decision).ConfigureAwait(false);
+    }
+
+    /// <summary>Prepares a map mutation through the shared style policy and maps failures to MCP errors.</summary>
+    protected static async Task<StudioCompositionBody> PrepareMapStyleUpdateAsync(
+        HttpContext httpContext, ClaimsPrincipal principal, StudioCompositionBody before,
+        StudioCompositionBody after, CancellationToken cancellationToken, bool mapLocalSnapshot = false)
+    {
+        if (before.MapSpec is null && after.MapSpec is null) return after;
+        var sources = httpContext.RequestServices.GetService<IStudioMapStyleSourceAuthorizer>()
+            ?? throw new GeoprocessingValidationException("Map source authorization is unavailable on this server.");
+        var validator = httpContext.RequestServices.GetService<IMapStyleValidator>()
+            ?? throw new GeoprocessingValidationException("Map style validation is unavailable on this server.");
+        try
+        {
+            return await StudioMapStyleMutationPreparation.PrepareAsync(principal, before, after,
+                sources, validator, cancellationToken, mapLocalSnapshot).ConfigureAwait(false);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        }
+        catch (StudioCompositionBodyException ex)
+        {
+            throw new GeoprocessingValidationException(ex.Message);
+        }
     }
 
     /// <summary>

@@ -83,6 +83,50 @@ public sealed class FeatureProviderQueryRouter
     }
 
     /// <summary>
+    /// Resolves a storage-addressed process source through the same provider, connection,
+    /// mapping and capability checks as a published feature query. Callers must authorize
+    /// the storage resource before invoking this method; resolution is not authorization.
+    /// </summary>
+    /// <param name="snapshot">Current authorized metadata snapshot.</param>
+    /// <param name="storageLayerId">Canonical storage handle, not a publication index.</param>
+    /// <param name="operation">Required provider read capability.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A reader bound to the exact indexed resource and storage binding.</returns>
+    public async Task<IFeatureReader> ResolveStorageReaderAsync(
+        MetadataV2GraphSnapshot snapshot,
+        int storageLayerId,
+        FeatureProviderReadOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        cancellationToken.ThrowIfCancellationRequested();
+        using var activity = _activitySource.StartActivity("featurestore.resolve_storage_reader");
+        activity?.SetTag("storage.layer_id", storageLayerId);
+        try
+        {
+            if (!snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(storageLayerId, out var binding)
+                || !snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource)
+                || !string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("The process source has no matching storage binding.");
+            }
+
+            var providerBinding = await ResolveProviderBindingAsync(
+                snapshot, null, resource, null, binding, storageLayerId, operation, cancellationToken).ConfigureAwait(false);
+            if (providerBinding.Provider is not IBindableFeatureDataProvider bindable)
+            {
+                throw new InvalidOperationException("The process source provider cannot bind an exact storage source.");
+            }
+            return bindable.CreateReaderForBinding(providerBinding);
+        }
+        catch (InvalidOperationException ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Resolves the provider binding for a V2 feature operation without discarding
     /// the selected provider and its write capability.
     /// </summary>
@@ -118,45 +162,38 @@ public sealed class FeatureProviderQueryRouter
             var storageBinding = snapshot.ResolveStorageBinding(publication)
                 ?? throw new InvalidOperationException(
                     $"Publication '{publication.Metadata.Id}' on service '{service.Metadata.Id}' does not resolve to a storage binding.");
-            var resolvedStorageLayerId = storageBinding.StorageLayerId ?? storageLayerId;
-            var storageMapping = FeatureStorageMapping.FromMetadata(resource, storageBinding);
-
-            var (connection, providerName, missingConnectionId) = await ResolveProviderNameAsync(
-                snapshot,
-                storageBinding,
-                cancellationToken).ConfigureAwait(false);
-            if (providerName is null)
-            {
-                throw new InvalidOperationException(
-                    $"Connection '{missingConnectionId}' for publication '{publication.Metadata.Id}' on service '{service.Metadata.Id}' was not found.");
-            }
-
-            if (!_providerRegistry.TryGetProvider(providerName, out var provider))
-            {
-                throw new InvalidOperationException(
-                    $"Feature provider '{providerName}' is not registered for publication '{publication.Metadata.Id}' on service '{service.Metadata.Id}'.");
-            }
-
-            activity?.SetTag("provider.name", providerName);
-            EnsureOperationSupported(provider, operation);
-
-            var providerBinding = new FeatureProviderBinding(
-                service,
-                resource,
-                publication,
-                storageBinding,
-                storageMapping,
-                resolvedStorageLayerId,
-                provider,
-                connection);
-
-            return providerBinding;
+            return await ResolveProviderBindingAsync(snapshot, service, resource, publication,
+                storageBinding, storageLayerId, operation, cancellationToken).ConfigureAwait(false);
         }
         catch (InvalidOperationException ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
+    }
+
+    private async Task<FeatureProviderBinding> ResolveProviderBindingAsync(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service? service,
+        MetadataV2Resource resource,
+        MetadataV2Publication? publication,
+        MetadataV2StorageBinding storageBinding,
+        int storageLayerId,
+        FeatureProviderReadOperation operation,
+        CancellationToken cancellationToken)
+    {
+        var storageMapping = FeatureStorageMapping.FromMetadata(resource, storageBinding);
+        var (connection, providerName, _) = await ResolveProviderNameAsync(
+            snapshot, storageBinding, cancellationToken).ConfigureAwait(false);
+        if (providerName is null || !_providerRegistry.TryGetProvider(providerName, out var provider))
+        {
+            throw new InvalidOperationException("The source connection or feature provider is unavailable.");
+        }
+
+        Activity.Current?.SetTag("provider.name", providerName);
+        EnsureOperationSupported(provider, operation);
+        return new FeatureProviderBinding(service, resource, publication, storageBinding, storageMapping,
+            storageBinding.StorageLayerId ?? storageLayerId, provider, connection);
     }
 
     /// <summary>
@@ -197,23 +234,25 @@ public sealed class FeatureProviderQueryRouter
         MetadataV2StorageBinding storageBinding,
         CancellationToken cancellationToken)
     {
-        var v2Connection = snapshot.ResolveConnection(storageBinding);
-        if (v2Connection == null)
+        if (string.IsNullOrEmpty(storageBinding.ConnectionId))
         {
             return (null, _defaultProviderName, null);
+        }
+
+        var v2Connection = snapshot.ResolveConnection(storageBinding);
+        if (v2Connection is null)
+        {
+            return (null, null, storageBinding.ConnectionId);
         }
 
         var connection = await _connectionRegistry
             .GetConnectionAsync(v2Connection.Metadata.Id, cancellationToken)
             .ConfigureAwait(false);
-        if (connection != null)
-        {
-            return (connection, connection.NormalizedProvider, null);
-        }
-
-        return string.IsNullOrWhiteSpace(v2Connection.Provider)
+        // A declared provider is not a connection. Losing a registered credential must
+        // never redirect a bound table to a same-named table in the managed database.
+        return connection is null
             ? (null, null, v2Connection.Metadata.Id)
-            : (null, DataProviderNames.Normalize(v2Connection.Provider!), null);
+            : (connection, connection.NormalizedProvider, null);
     }
 
     private static void EnsureOperationSupported(

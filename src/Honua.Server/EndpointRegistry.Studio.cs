@@ -17,6 +17,8 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/studio/package-drafts"),
         new("GET", "/api/v1/studio/package-drafts/{draftId}"),
         new("PUT", "/api/v1/studio/package-drafts/{draftId}"),
+        new("PUT", "/api/v1/studio/package-drafts/{draftId}/style"),
+        new("POST", "/api/v1/studio/package-drafts/{draftId}/style/initialize"),
         new("DELETE", "/api/v1/studio/package-drafts/{draftId}"),
         new("POST", "/api/v1/studio/package-drafts/{draftId}/validate"),
         new("POST", "/api/v1/studio/package-drafts/{draftId}/preview-plan"),

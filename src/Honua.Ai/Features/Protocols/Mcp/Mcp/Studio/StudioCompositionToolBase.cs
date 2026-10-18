@@ -50,7 +50,8 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
         Guid draftId,
         long expectedGeneration,
         Func<StudioCompositionBody, StudioCompositionBody> mutate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<StudioCompositionBody, CancellationToken, Task<StudioCompositionBody>>? prepare = null)
     {
         try
         {
@@ -66,7 +67,11 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
             StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(draft.Family);
 
             var body = StudioCompositionBodyEditor.ReadBody(draft.Envelope);
+            if (prepare is not null)
+                body = await prepare(body, cancellationToken).ConfigureAwait(false);
             var mutatedBody = mutate(body);
+            mutatedBody = await PrepareMapStyleUpdateAsync(httpContext, principal, body, mutatedBody,
+                cancellationToken, mapLocalSnapshot: toolName == SetStudioMapStyleTool.ToolName).ConfigureAwait(false);
             var envelope = StudioCompositionBodyEditor.WriteBody(draft.Envelope, mutatedBody);
 
             var actorId = ActorIdFor(RequireAuthorizationService(httpContext), principal);
@@ -79,6 +84,10 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
 
             Audit(principal, toolName, draftId, generationBefore: expectedGeneration, generationAfter: updated.Generation);
             return updated;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         }
         catch (Exception ex) when (ex is StudioCompositionFamilyException
             or StudioCompositionConflictException

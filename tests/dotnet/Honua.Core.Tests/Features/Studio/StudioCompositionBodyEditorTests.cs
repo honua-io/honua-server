@@ -2,9 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Security.Claims;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.TestKit.Attributes;
+using NSubstitute;
 
 namespace Honua.Core.Tests.Features.Studio;
 
@@ -265,6 +269,38 @@ public sealed class StudioCompositionBodyEditorTests
         Assert.Equal("shared-source", Assert.Single(body.Controls!).SourceId);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SetLayerStyleRef_RebindsOneOwnerWithoutLeavingItsOldSharedMapping(bool shared)
+    {
+        using var style = JsonDocument.Parse("""
+            {"version":8,"sources":{"source":{"type":"geojson","data":"/source"}},"layers":[
+             {"id":"parcels","type":"fill","source":"source"},{"id":"roads","type":"line","source":"source"}]}
+            """);
+        using var reference = JsonDocument.Parse("""
+            {"styleId":"old","layerBindings":[
+             {"styleLayerId":"catalog-fill","targetLayerId":"parcels","layerType":"fill"},
+             {"styleLayerId":"catalog-line","targetLayerId":"roads","layerType":"line"}]}
+            """);
+        var body = StudioCompositionBody.Empty with
+        {
+            MapSpec = style.RootElement.Clone(),
+            StyleRefs = [reference.RootElement.Clone()],
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "source", StyleRef = "old" },
+                new StudioCompositionLayer { Id = "roads", SourceId = "source", StyleRef = shared ? "old" : null }]
+        };
+        var changed = StudioCompositionBodyEditor.SetLayerStyleRef(body, "parcels", "new");
+        Assert.Equal("new", changed.Layers[0].StyleRef);
+        if (shared)
+        {
+            var mapping = Assert.Single(Assert.Single(changed.StyleRefs!).GetProperty("layerBindings").EnumerateArray());
+            Assert.Equal("roads", mapping.GetProperty("targetLayerId").GetString());
+        }
+        else Assert.Empty(changed.StyleRefs!);
+        Assert.Equal(2, body.StyleRefs![0].GetProperty("layerBindings").GetArrayLength());
+    }
+
     [UnitTest]
     public void SetLayerStyleRef_WithMissingId_ThrowsNotFound()
         => Assert.Throws<StudioCompositionNotFoundException>(
@@ -403,6 +439,365 @@ public sealed class StudioCompositionBodyEditorTests
     [InlineData(StudioPackageFamily.Dashboard)]
     public void EnsureCompositionEligibleFamily_AllowsMapAppAndDashboard(StudioPackageFamily family)
         => StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(family);
+
+    [UnitTest]
+    public void InlineStyle_RoundTripPreservesOtherStylesAndUnrelatedMapMetadata()
+    {
+        using var source = JsonDocument.Parse("""
+            {"layers":[{"id":"parcels","styleRef":"shared"},{"id":"roads","styleRef":"shared"}],
+             "styleRefs":[{"styleId":"shared","license":"retained","body":{"roads":{"paint":{"line-color":"red"}}}}],
+             "mapPackageId":"original","mapSpec":{"version":8,"sources":{},"layers":[]}}
+            """);
+        using var overrides = JsonDocument.Parse("""
+            {"parcels":{"paint":{"fill-color":["match",["get","zoning"],"R","green","gray"]}},
+             "parcels__outline":{"paint":{"line-width":2}}}
+            """);
+        var envelope = BuildEnvelope(StudioPackageFamily.Map, source.RootElement.Clone());
+        var before = StudioCompositionBodyEditor.ReadBody(envelope);
+        var changed = StudioCompositionBodyEditor.SetInlineLayerStyle(before, "parcels", overrides.RootElement);
+        var written = StudioCompositionBodyEditor.WriteBody(envelope, changed);
+        var reopened = StudioCompositionBodyEditor.ReadBody(written);
+
+        Assert.Equal("honua-inline:parcels", reopened.Layers[0].StyleRef);
+        Assert.Equal("shared", reopened.Layers[1].StyleRef);
+        Assert.Equal("shared", before.Layers[0].StyleRef);
+        Assert.Equal("original", written.Body!.Value.GetProperty("mapPackageId").GetString());
+        Assert.Equal(8, written.Body.Value.GetProperty("mapSpec").GetProperty("version").GetInt32());
+        Assert.Equal(2, reopened.StyleRefs!.Count);
+        Assert.Equal("retained", reopened.StyleRefs[0].GetProperty("license").GetString());
+        Assert.Equal("match", reopened.StyleRefs[1].GetProperty("body").GetProperty("parcels")
+            .GetProperty("paint").GetProperty("fill-color")[0].GetString());
+    }
+
+    [UnitTest]
+    public void InlineStyle_RepeatedEditReplacesLocalBodyWithoutAccumulatingReferences()
+    {
+        using var first = JsonDocument.Parse("""{"parcels":{"paint":{"fill-color":"green"}}}""");
+        using var second = JsonDocument.Parse("""{"parcels":{"paint":{"fill-color":"blue"}}}""");
+        var body = StudioCompositionBodyEditor.AddLayer(StudioCompositionBody.Empty,
+            new StudioCompositionLayer { Id = "parcels" });
+        body = StudioCompositionBodyEditor.SetInlineLayerStyle(body, "parcels", first.RootElement);
+        body = StudioCompositionBodyEditor.SetInlineLayerStyle(body, "parcels", second.RootElement);
+
+        Assert.Equal("blue", Assert.Single(body.StyleRefs!).GetProperty("body").GetProperty("parcels")
+            .GetProperty("paint").GetProperty("fill-color").GetString());
+    }
+
+    [Theory]
+    [InlineData("{\"roads\":{\"paint\":{}}}")]
+    [InlineData("{\"parcels\":{\"source\":\"private-source\"}}")]
+    [InlineData("{\"parcels\":{\"id\":\"roads\"}}")]
+    [InlineData("{\"parcels\":{\"minzoom\":\"invalid\"}}")]
+    [InlineData("{\"parcels\":{\"minzoom\":12,\"maxzoom\":5}}")]
+    [InlineData("{\"parcels\":{\"layout\":null}}")]
+    [InlineData("{\"parcels\":{},\"parcels\":{}}")]
+    [InlineData("{}")]
+    public void InlineStyle_RefusesOtherTargetsAndMalformedOverrides(string json)
+    {
+        using var candidate = JsonDocument.Parse(json);
+        var body = StudioCompositionBodyEditor.AddLayer(StudioCompositionBody.Empty,
+            new StudioCompositionLayer { Id = "parcels" });
+
+        Assert.Throws<StudioCompositionBodyException>(() =>
+            StudioCompositionBodyEditor.SetInlineLayerStyle(body, "parcels", candidate.RootElement));
+        Assert.Null(body.Layers[0].StyleRef);
+    }
+
+    [UnitTest]
+    public void InlineStyle_RefusesAnOutlineIdOwnedByAnotherCompositionLayer()
+    {
+        using var candidate = JsonDocument.Parse("""{"parcels__outline":{"paint":{}}}""");
+        var body = StudioCompositionBody.Empty with
+        {
+            Layers = [new StudioCompositionLayer { Id = "parcels" }, new StudioCompositionLayer { Id = "parcels__outline" }]
+        };
+
+        Assert.Throws<StudioCompositionBodyException>(() =>
+            StudioCompositionBodyEditor.SetInlineLayerStyle(body, "parcels", candidate.RootElement));
+    }
+
+    [UnitTest]
+    public void FullMapStyle_KeepsSourcesAndDetachesSharedAppearanceIntoLocalSnapshot()
+    {
+        using var original = JsonDocument.Parse("""
+            {"version":8,"sources":{"parcels":{"type":"geojson","data":"/authorized/parcels"}},
+             "layers":[{"id":"parcels","type":"fill","source":"parcels"}]}
+            """);
+        using var candidate = JsonDocument.Parse("""
+            {"version":8,"sources":{"parcels":{"type":"geojson","data":"/authorized/parcels"}},
+             "layers":[{"id":"parcels","type":"fill","source":"parcels","paint":{"fill-color":"green"}},
+                       {"id":"parcel-labels","type":"symbol","source":"parcels","metadata":{"honua:compositionLayerId":"parcels"},"layout":{"text-field":["get","name"]}}]}
+            """);
+        var body = StudioCompositionBody.Empty with
+        {
+            MapSpec = original.RootElement.Clone(),
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "parcels", StyleRef = "shared" }]
+        };
+        var changed = StudioCompositionBodyEditor.SetMapStyle(body, candidate.RootElement);
+
+        Assert.Equal("shared", body.Layers[0].StyleRef);
+        Assert.Null(changed.Layers[0].StyleRef);
+        Assert.Equal("parcels", changed.Layers[0].SourceId);
+        Assert.Empty(changed.StyleRefs!);
+        Assert.Equal(2, changed.MapSpec!.Value.GetProperty("layers").GetArrayLength());
+    }
+
+    [UnitTest]
+    public void FullMapStyle_RejectsReassigningExistingLabelToAnotherAuthorizedOwner()
+    {
+        using var original = JsonDocument.Parse("""
+            {"version":8,"sources":{"shared":{"type":"geojson","data":"/source"}},"layers":[
+              {"id":"labels","type":"symbol","source":"shared","metadata":{"honua:compositionLayerId":"parcels"}}]}
+            """);
+        using var candidate = JsonDocument.Parse("""
+            {"version":8,"sources":{"shared":{"type":"geojson","data":"/source"}},"layers":[
+              {"id":"labels","type":"symbol","source":"shared","metadata":{"honua:compositionLayerId":"roads"}}]}
+            """);
+        var body = StudioCompositionBody.Empty with
+        {
+            MapSpec = original.RootElement.Clone(),
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "shared" },
+                new StudioCompositionLayer { Id = "roads", SourceId = "shared" }]
+        };
+        Assert.Throws<StudioCompositionBodyException>(() =>
+            StudioCompositionBodyEditor.SetMapStyle(body, candidate.RootElement));
+    }
+
+    [UnitTest]
+    public void RemoveLayer_RemovesItsLabelsAndInlineStyle_WithoutDeletingOtherOwnersOnSameSource()
+    {
+        using var style = JsonDocument.Parse("""
+            {"version":8,"sources":{"shared":{"type":"geojson","data":"/source"}},"layers":[
+              {"id":"parcels","type":"fill","source":"shared"},
+              {"id":"parcels__outline","type":"line","source":"shared"},
+              {"id":"labels","type":"symbol","source":"shared","metadata":{"honua:compositionLayerId":"parcels"}},
+              {"id":"other","type":"fill","source":"shared","metadata":{"honua:compositionLayerId":"other"}}]}
+            """);
+        using var reference = JsonDocument.Parse("""{"styleId":"honua-inline:parcels","body":{}}""");
+        var body = StudioCompositionBody.Empty with
+        {
+            MapSpec = style.RootElement.Clone(),
+            StyleRefs = [reference.RootElement.Clone()],
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "shared" },
+                new StudioCompositionLayer { Id = "other", SourceId = "shared" }]
+        };
+        var changed = StudioCompositionBodyEditor.RemoveLayer(body, "parcels");
+        Assert.Equal("other", Assert.Single(changed.Layers).Id);
+        Assert.Equal("other", Assert.Single(changed.MapSpec!.Value.GetProperty("layers").EnumerateArray()).GetProperty("id").GetString());
+        Assert.Empty(changed.StyleRefs!);
+        Assert.Equal(4, body.MapSpec!.Value.GetProperty("layers").GetArrayLength());
+    }
+
+    [UnitTest]
+    public void ReconcileMapStyle_AddsOnlyNewLayer_WithoutResurrectingDeletedAppearance()
+    {
+        using var original = JsonDocument.Parse("""
+            {"version":8,"sources":{"parcels":{"type":"geojson","data":"/parcels"}},
+             "layers":[{"id":"background","type":"background"}]}
+            """);
+        using var projection = JsonDocument.Parse("""
+            {"version":8,"sources":{"parcels":{"type":"geojson","data":"/parcels"},"roads":{"type":"geojson","data":"/roads"}},
+             "layers":[{"id":"parcels","type":"fill","source":"parcels"},
+                       {"id":"roads","type":"line","source":"roads","paint":{"line-color":"blue"}}]}
+            """);
+        var before = StudioCompositionBody.Empty with
+        {
+            MapSpec = original.RootElement.Clone(),
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "parcels" }]
+        };
+        var added = StudioCompositionBodyEditor.AddLayer(before,
+            new StudioCompositionLayer { Id = "roads", SourceId = "roads" }, "parcels");
+        var after = StudioCompositionBodyEditor.ReconcileMapStyle(before, added, projection.RootElement);
+        Assert.Equal(new[] { "background", "roads" }, after.MapSpec!.Value.GetProperty("layers")
+            .EnumerateArray().Select(layer => layer.GetProperty("id").GetString()));
+        Assert.Equal(2, after.MapSpec.Value.GetProperty("sources").EnumerateObject().Count());
+
+        var removed = StudioCompositionBodyEditor.RemoveLayer(after, "roads");
+        var restored = StudioCompositionBodyEditor.ReconcileMapStyle(after, removed, original.RootElement);
+        Assert.Equal("background", Assert.Single(restored.MapSpec!.Value.GetProperty("layers").EnumerateArray())
+            .GetProperty("id").GetString());
+        Assert.False(restored.MapSpec.Value.GetProperty("sources").TryGetProperty("roads", out _));
+    }
+
+    [UnitTest]
+    public void ReconcileMapStyle_ReordersOwnedRendersOnlyWhenCompositionOrderChanges()
+    {
+        using var style = JsonDocument.Parse("""
+            {"version":8,"sources":{"shared":{"type":"geojson","data":"/source"}},"layers":[
+              {"id":"background","type":"background"},
+              {"id":"parcels","type":"fill","source":"shared"},
+              {"id":"roads","type":"line","source":"shared"},
+              {"id":"labels","type":"symbol","source":"shared","metadata":{"honua:compositionLayerId":"parcels"}}]}
+            """);
+        var before = StudioCompositionBody.Empty with
+        {
+            MapSpec = style.RootElement.Clone(),
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "shared" },
+                new StudioCompositionLayer { Id = "roads", SourceId = "shared" }]
+        };
+        var unchanged = StudioCompositionBodyEditor.ReconcileMapStyle(before, before, style.RootElement);
+        Assert.True(JsonElement.DeepEquals(style.RootElement, unchanged.MapSpec!.Value));
+
+        var reordered = StudioCompositionBodyEditor.ReconcileMapStyle(before,
+            before with { Layers = [before.Layers[1], before.Layers[0]] }, style.RootElement);
+        Assert.Equal(new[] { "background", "roads", "parcels", "labels" }, reordered.MapSpec!.Value
+            .GetProperty("layers").EnumerateArray().Select(layer => layer.GetProperty("id").GetString()));
+        Assert.Equal("parcels", before.MapSpec!.Value.GetProperty("layers")[1].GetProperty("id").GetString());
+    }
+
+    [UnitTest]
+    public void ReconcileMapStyle_GenericLayerRemovalCleansOwnedAppearanceAndInlineReference()
+    {
+        using var style = JsonDocument.Parse("""
+            {"version":8,"sources":{"shared":{"type":"geojson","data":"/source"}},"layers":[
+              {"id":"parcels","type":"fill","source":"shared"},
+              {"id":"labels","type":"symbol","source":"shared","metadata":{"honua:compositionLayerId":"parcels"}},
+              {"id":"roads","type":"line","source":"shared"}]}
+            """);
+        using var removedReference = JsonDocument.Parse("""{"styleId":"honua-inline:parcels","body":{}}""");
+        using var retainedReference = JsonDocument.Parse("""{"styleId":"shared-roads"}""");
+        var before = StudioCompositionBody.Empty with
+        {
+            MapSpec = style.RootElement.Clone(),
+            StyleRefs = [removedReference.RootElement.Clone(), retainedReference.RootElement.Clone()],
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "shared" },
+                new StudioCompositionLayer { Id = "roads", SourceId = "shared", StyleRef = "shared-roads" }]
+        };
+        // A visual editor sends the replacement composition without calling Core.RemoveLayer.
+        var changed = StudioCompositionBodyEditor.ReconcileMapStyle(before,
+            before with { Layers = [before.Layers[1]] }, style.RootElement);
+        Assert.Equal("roads", Assert.Single(changed.MapSpec!.Value.GetProperty("layers").EnumerateArray())
+            .GetProperty("id").GetString());
+        Assert.Equal("shared-roads", Assert.Single(changed.StyleRefs!).GetProperty("styleId").GetString());
+        Assert.True(changed.MapSpec.Value.GetProperty("sources").TryGetProperty("shared", out _));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    public async Task PrepareStyleUpdate_PreservesSharedRefsForRemoval_ButDetachesExplicitAppearance(bool editAppearance)
+    {
+        using var style = JsonDocument.Parse("""
+            {"version":8,"sources":{"shared":{"type":"geojson","data":"/source"}},"layers":[
+              {"id":"parcels","type":"fill","source":"shared"},
+              {"id":"roads","type":"line","source":"shared","paint":{"line-color":"blue"}}]}
+            """);
+        using var reference = JsonDocument.Parse("""{"styleId":"shared-roads"}""");
+        var before = StudioCompositionBody.Empty with
+        {
+            MapSpec = style.RootElement.Clone(),
+            StyleRefs = [reference.RootElement.Clone()],
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "shared" },
+                new StudioCompositionLayer { Id = "roads", SourceId = "shared", StyleRef = "shared-roads" }]
+        };
+        var after = before with { Layers = [before.Layers[1]] };
+        if (editAppearance)
+        {
+            using var edited = JsonDocument.Parse(style.RootElement.GetRawText().Replace("blue", "green", StringComparison.Ordinal));
+            after = after with { MapSpec = edited.RootElement.Clone() };
+        }
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([], "test"));
+        var authorizer = Substitute.For<IStudioMapStyleSourceAuthorizer>();
+        authorizer.AuthorizeAsync(principal, Arg.Any<StudioCompositionBody>(), CancellationToken.None)
+            .Returns(after with { MapSpec = style.RootElement.Clone() });
+        authorizer.AuthorizeStyleReferencesAsync(principal, Arg.Any<StudioCompositionBody>(), CancellationToken.None)
+            .Returns(call => call.ArgAt<StudioCompositionBody>(1));
+        var validator = Substitute.For<IMapStyleValidator>();
+        validator.TryValidate(Arg.Any<JsonElement>(), out Arg.Any<string?>()).Returns(true);
+        var result = await StudioMapStyleMutationPreparation.PrepareAsync(principal, before, after,
+            authorizer, validator, CancellationToken.None);
+
+        var rendered = Assert.Single(result.MapSpec!.Value.GetProperty("layers").EnumerateArray());
+        Assert.Equal("roads", rendered.GetProperty("id").GetString());
+        Assert.Equal(editAppearance ? "green" : "blue", rendered.GetProperty("paint").GetProperty("line-color").GetString());
+        if (editAppearance)
+        {
+            Assert.Null(result.Layers[0].StyleRef);
+            Assert.Empty(result.StyleRefs!);
+        }
+        else
+        {
+            Assert.Equal("shared-roads", result.Layers[0].StyleRef);
+            Assert.Single(result.StyleRefs!);
+        }
+        await authorizer.Received(1).AuthorizeAsync(principal,
+            Arg.Is<StudioCompositionBody>(body => body.MapSpec == null && body.Layers.Count == 1), CancellationToken.None);
+    }
+
+    [UnitTest]
+    public async Task PrepareMapStyle_InitialBaseAppearancePreservesExplicitSharedSelection()
+    {
+        using var style = JsonDocument.Parse("""
+            {"version":8,"sources":{"source":{"type":"geojson","data":"/source"}},"layers":[
+             {"id":"parcels","type":"fill","source":"source","paint":{"fill-color":"green"}}]}
+            """);
+        using var reference = JsonDocument.Parse("""{"styleId":"shared"}""");
+        var after = StudioCompositionBody.Empty with
+        {
+            MapSpec = style.RootElement.Clone(),
+            StyleRefs = [reference.RootElement.Clone()],
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "source", StyleRef = "shared" }]
+        };
+        using var generated = JsonDocument.Parse(style.RootElement.GetRawText().Replace("green", "blue", StringComparison.Ordinal));
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([], "test"));
+        var authorizer = Substitute.For<IStudioMapStyleSourceAuthorizer>();
+        authorizer.AuthorizeAsync(principal, Arg.Any<StudioCompositionBody>(), CancellationToken.None)
+            .Returns(after with { MapSpec = generated.RootElement.Clone() });
+        authorizer.AuthorizeStyleReferencesAsync(principal, Arg.Any<StudioCompositionBody>(), CancellationToken.None)
+            .Returns(call => call.ArgAt<StudioCompositionBody>(1));
+        var validator = Substitute.For<IMapStyleValidator>();
+        validator.TryValidate(Arg.Any<JsonElement>(), out Arg.Any<string?>()).Returns(true);
+        var result = await StudioMapStyleMutationPreparation.PrepareAsync(principal, StudioCompositionBody.Empty,
+            after, authorizer, validator, CancellationToken.None);
+        Assert.Equal("shared", result.Layers[0].StyleRef);
+        Assert.Single(result.StyleRefs!);
+        Assert.Equal("green", result.MapSpec!.Value.GetProperty("layers")[0].GetProperty("paint").GetProperty("fill-color").GetString());
+        await authorizer.Received(1).AuthorizeStyleReferencesAsync(principal,
+            Arg.Is<StudioCompositionBody>(body => body.StyleRefs!.Count == 1), CancellationToken.None);
+    }
+
+    [UnitTest]
+    public void ReconcileMapStyle_RejectsClientSourceRetargetingDuringLayerAdd()
+    {
+        using var original = JsonDocument.Parse("""
+            {"version":8,"sources":{"parcels":{"type":"geojson","data":"/parcels"}},
+             "layers":[{"id":"parcels","type":"fill","source":"parcels"}]}
+            """);
+        var before = StudioCompositionBody.Empty with
+        {
+            MapSpec = original.RootElement.Clone(),
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "parcels" }]
+        };
+        var candidate = System.Text.Json.Nodes.JsonNode.Parse(original.RootElement.GetRawText())!;
+        candidate["sources"]!["parcels"]!["data"] = "https://unapproved.example/private";
+        using var changed = JsonDocument.Parse(candidate.ToJsonString());
+        var after = before with { MapSpec = changed.RootElement.Clone() };
+        Assert.Throws<StudioCompositionBodyException>(() =>
+            StudioCompositionBodyEditor.ReconcileMapStyle(before, after, original.RootElement));
+    }
+
+    [Theory]
+    [InlineData("sources", "{\"parcels\":{\"type\":\"geojson\",\"data\":\"https://unapproved.example/data\"}}")]
+    [InlineData("glyphs", "\"https://unapproved.example/fonts/{fontstack}/{range}.pbf\"")]
+    [InlineData("sprite", "\"https://unapproved.example/sprite\"")]
+    [InlineData("imports", "[{\"id\":\"foreign\",\"url\":\"https://unapproved.example/style\"}]")]
+    [InlineData("layers", "[{\"id\":\"foreign\",\"type\":\"fill\",\"source\":\"private-source\"}]")]
+    [InlineData("layers", "[{\"id\":\"foreign\",\"type\":\"fill\",\"source\":\"parcels\",\"source-layer\":\"private-table\"}]")]
+    public void FullMapStyle_RejectsSourceAndExternalAssetChanges(string member, string replacement)
+    {
+        using var original = JsonDocument.Parse("""
+            {"version":8,"sources":{"parcels":{"type":"geojson","data":"/authorized/parcels"}},
+             "layers":[{"id":"parcels","type":"fill","source":"parcels"}]}
+            """);
+        var candidate = System.Text.Json.Nodes.JsonNode.Parse(original.RootElement.GetRawText())!;
+        candidate[member] = System.Text.Json.Nodes.JsonNode.Parse(replacement);
+        using var candidateDocument = JsonDocument.Parse(candidate.ToJsonString());
+        var body = StudioCompositionBody.Empty with { MapSpec = original.RootElement.Clone() };
+
+        Assert.Throws<StudioCompositionBodyException>(() =>
+            StudioCompositionBodyEditor.SetMapStyle(body, candidateDocument.RootElement));
+    }
 
     private static StudioPackageEnvelope BuildEnvelope(StudioPackageFamily family, System.Text.Json.JsonElement? body)
         => new()

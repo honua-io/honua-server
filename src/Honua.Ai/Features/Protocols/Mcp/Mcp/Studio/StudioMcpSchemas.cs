@@ -319,7 +319,47 @@ internal static class StudioMcpSchemas
             "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to style." },
-            "styleRef": { "type": ["string", "null"], "maxLength": 200, "description": "Style reference (catalog styleId or inline style key). Omit or set null to clear the binding." }
+            "styleRef": { "type": ["string", "null"], "maxLength": 256, "description": "Catalog styleId or inline style key. Omit/null clears the binding unless styleBody is supplied." },
+            "styleBody": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 2,
+              "description": "Map-local overrides keyed by the selected layer id and optionally its __outline companion. Replaces that local style body under draft generation CAS; never writes the shared catalog. Omit styleRef when using this member. Data-driven expressions must use actual authorized layer fields.",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "paint": { "type": "object" },
+                  "layout": { "type": "object" },
+                  "filter": { "type": "array" },
+                  "minzoom": { "type": "number", "minimum": 0, "maximum": 24 },
+                  "maxzoom": { "type": "number", "minimum": 0, "maximum": 24 },
+                  "metadata": { "type": "object" }
+                }
+              }
+            }
+          }
+        }
+        """;
+
+    private const string SetMapStyleArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["draftId", "generation", "mapSpec"],
+          "additionalProperties": false,
+          "properties": {
+            "draftId": { "type": "string", "format": "uuid" },
+            "generation": { "type": "integer", "minimum": 1 },
+            "mapSpec": {
+              "type": "object",
+              "required": ["version", "sources", "layers"],
+              "description": "Resolved map-local style, at most 1 MiB. Existing sources/assets remain identical. Shared style bindings are converted to a local snapshot, never edited in the catalog.",
+              "properties": {
+                "version": { "const": 8 },
+                "sources": { "type": "object" },
+                "layers": { "type": "array", "items": { "type": "object" } }
+              }
+            }
           }
         }
         """;
@@ -410,6 +450,9 @@ internal static class StudioMcpSchemas
 
     /// <summary>Schema for <see cref="McpStudioSetLayerStyleArgument"/>.</summary>
     public static readonly JsonElement SetLayerStyleArgumentSchema = Parse(SetLayerStyleArgumentSchemaJson);
+
+    /// <summary>Schema for <see cref="McpStudioSetMapStyleArgument"/>.</summary>
+    public static readonly JsonElement SetMapStyleArgumentSchema = Parse(SetMapStyleArgumentSchemaJson);
 
     /// <summary>Schema for <see cref="McpStudioSetLayerVisibilityArgument"/>.</summary>
     public static readonly JsonElement SetLayerVisibilityArgumentSchema = Parse(SetLayerVisibilityArgumentSchemaJson);

@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 
@@ -20,7 +21,7 @@ namespace Honua.Core.Features.Studio.Services;
 /// checking and validation stay owned by the lifecycle service (no lifecycle
 /// logic is duplicated here).
 /// </summary>
-public static class StudioCompositionBodyEditor
+public static partial class StudioCompositionBodyEditor
 {
     /// <summary>Package families whose composition body the editor understands.</summary>
     public static readonly IReadOnlyCollection<StudioPackageFamily> CompositionEligibleFamilies =
@@ -128,8 +129,8 @@ public static class StudioCompositionBodyEditor
     /// <remarks>
     /// <para>
     /// <see cref="StudioCompositionBody"/> is a PROJECTION of the stored document — it models
-    /// <c>layers</c>, <c>view</c>, <c>widgets</c>, <c>interactions</c> and <c>layout</c> and nothing
-    /// else — but a canonical map package
+    /// <c>layers</c>, <c>view</c>, <c>widgets</c>, <c>interactions</c>, <c>layout</c> and optional
+    /// portable styling blocks — but a canonical map package
     /// also carries <c>mapPackageId</c>, <c>format</c>, <c>status</c>, <c>createdAt</c>,
     /// <c>sourceBindings</c> and <c>initialView</c> (all part of the canonical
     /// <c>MapPackage</c> the draft factory emits).
@@ -334,7 +335,7 @@ public static class StudioCompositionBodyEditor
                 + $"'{orphanedControl.SourceId}'. Remove or rebind the control first.");
         }
 
-        return updated;
+        return RemoveComposedLayerAppearance(updated, layerId, removedLayer.SourceId);
     }
 
     /// <summary>Sets (or clears) a layer's bound <see cref="StudioCompositionLayer.StyleRef"/>.</summary>
@@ -349,8 +350,25 @@ public static class StudioCompositionBodyEditor
         }
 
         var layers = body.Layers.ToList();
+        var previousStyle = layers[index].StyleRef;
         layers[index] = layers[index] with { StyleRef = styleRef };
-        return body with { Layers = layers };
+        var references = body.StyleRefs;
+        if (previousStyle is not null && previousStyle != styleRef && !layers.Any(layer => layer.StyleRef == previousStyle))
+            references = references?.Where(reference => !(reference.ValueKind == JsonValueKind.Object
+                && reference.TryGetProperty("styleId", out var id) && id.ValueKind == JsonValueKind.String
+                && id.GetString() == previousStyle)).ToArray();
+        // Applying the same shared reference deliberately refreshes this owner's
+        // catalog structure. Other owners keep their exact existing bindings.
+        else if (previousStyle is not null && body.MapSpec is { ValueKind: JsonValueKind.Object } style)
+        {
+            var targets = JsonNode.Parse(style.GetRawText())!["layers"]!.AsArray().OfType<JsonObject>()
+                .Where(render => RenderOwner(render, body) == layerId).Select(render => render["id"]!.GetValue<string>())
+                .ToHashSet(StringComparer.Ordinal);
+            references = references?.Select(reference => reference.ValueKind == JsonValueKind.Object
+                && reference.TryGetProperty("styleId", out var id) && id.ValueKind == JsonValueKind.String && id.GetString() == previousStyle
+                    ? RemoveStyleBindingTargets(reference, targets) : reference).ToArray();
+        }
+        return body with { Layers = layers, StyleRefs = references };
     }
 
     /// <summary>
@@ -740,6 +758,11 @@ public sealed class StudioCompositionFamilyException : Exception
 /// <summary>Raised when a draft's composition body cannot be parsed.</summary>
 public sealed class StudioCompositionBodyException : Exception
 {
+    public StudioCompositionBodyException(string message)
+        : base(message)
+    {
+    }
+
     public StudioCompositionBodyException(string message, Exception innerException)
         : base(message, innerException)
     {

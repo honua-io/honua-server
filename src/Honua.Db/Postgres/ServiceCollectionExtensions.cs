@@ -930,7 +930,8 @@ internal static class ServiceCollectionExtensions
             new HonuaLayerDagSource(
                 serviceProvider.GetRequiredService<IStreamingFeatureStore>(),
                 serviceProvider.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
-                serviceProvider.GetService<ILayerSelectionFilterTranslator>()));
+                serviceProvider.GetService<ILayerSelectionFilterTranslator>(),
+                serviceProvider.GetRequiredService<Honua.Core.Features.FeatureStore.Services.FeatureProviderQueryRouter>()));
         services.AddScoped<IDagFeatureSource, ExternalPostgisDagSource>(_ =>
             new ExternalPostgisDagSource());
 

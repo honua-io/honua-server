@@ -114,8 +114,23 @@ internal static class AgentWorkspaceEndpoints
         var registry = context.RequestServices.GetService<IDeployTargetRegistry>();
         if (registry is null) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
         var target = await registry.GetAsync(request.DeployTargetId, context.RequestAborted).ConfigureAwait(false);
-        if (target is null || target.TargetKind != DeployTargetKind.AwsEcs ||
-            !string.Equals(target.Environment, request.Environment, StringComparison.Ordinal)) return Results.Forbid();
+        if (target is null || !string.Equals(target.Environment, request.Environment, StringComparison.Ordinal)) return Results.Forbid();
+        // A target kind alone is insufficient: Kubernetes GitOps passthrough is
+        // not the native Deployment actuator, and runtime identity comes from this registry.
+        var runtimeKind = (target.TargetKind, target.Backend) switch
+        {
+            (DeployTargetKind.AwsEcs, "honua-aws-ecs-alb") => "aws-ecs",
+            (DeployTargetKind.AwsLambda, "honua-gitops-aws-lambda") => "aws-lambda",
+            (DeployTargetKind.Kubernetes, "honua-kubernetes-deployment") => "aws-eks",
+            _ => null
+        };
+        if (runtimeKind is null) return Results.Forbid();
+        var hasRuntimeMarker = target.Parameters.TryGetValue("honua.runtime_kind", out var runtimeMarker);
+        if (hasRuntimeMarker && runtimeMarker != runtimeKind || runtimeKind == "aws-eks" && !hasRuntimeMarker)
+            return Results.Forbid();
+        if (request.CanonicalTool == "provision_infrastructure" &&
+            (request.Arguments is null || !request.Arguments.TryGetValue("stack", out var stack) ||
+             stack.ValueKind != System.Text.Json.JsonValueKind.String || stack.GetString() != runtimeKind)) return Results.Forbid();
         var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
         var permission = await gate.CheckAuthorizationAsync(context.User, new OperatorAuthorizationRequest
         {
@@ -124,6 +139,10 @@ internal static class AgentWorkspaceEndpoints
             ResourceId = target.TargetId,
         }, context.RequestAborted).ConfigureAwait(false);
         if (!permission.IsAllowed || !DevOpsArgumentsMatchEnvironment(request)) return Results.Forbid();
+        // Use the same validated identity binding as operation recovery. Request tenant
+        // overrides cannot retarget a platform deployment or its installation receipt.
+        var tenantOptions = context.RequestServices.GetService<Microsoft.Extensions.Options.IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>>()?.Value;
+        var tenant = PlatformDeployAuthority.ResolveTenantId(context.User, tenantOptions);
         if (request.CanonicalTool is "get_gitops_proposal" or "get_devops_operation_status")
         {
             var operationId = request.Arguments?.FirstOrDefault(pair =>
@@ -133,12 +152,18 @@ internal static class AgentWorkspaceEndpoints
             var operations = context.RequestServices.GetService<IWorkflowOperationStore>();
             if (operations is null) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
             var operation = await operations.GetAsync(operationKey, context.RequestAborted).ConfigureAwait(false);
-            var tenantOptions = context.RequestServices.GetService<Microsoft.Extensions.Options.IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>>()?.Value;
-            var tenant = PlatformDeployAuthority.ResolveTenantId(context.User, tenantOptions);
             if (operation?.Deploy is not { } deploy || deploy.TargetId != target.TargetId ||
-                deploy.Environment != target.Environment || operation.Audit.TenantId != tenant) return Results.Forbid();
+                deploy.Environment != target.Environment || deploy.TargetKind != target.TargetKind ||
+                deploy.Backend != target.Backend || operation.Audit.TenantId != tenant) return Results.Forbid();
         }
-        return Results.Ok(new AgentDevOpsAuthorizationResponse(request.TargetId, target.TargetId, target.Environment));
+        return Results.Ok(new AgentDevOpsAuthorizationResponse(request.TargetId, target.TargetId, target.Environment, runtimeKind, target.Backend, tenant)
+        {
+            TargetName = target.TargetName,
+            UsesCustomProviderEndpoint = runtimeKind == "aws-lambda" &&
+                (target.Parameters.TryGetValue("aws.service_url", out var awsUrl) && !string.IsNullOrWhiteSpace(awsUrl) ||
+                 target.Parameters.TryGetValue("lambda.service_url", out var lambdaUrl) && !string.IsNullOrWhiteSpace(lambdaUrl)),
+            ResourceParameters = AgentDevOpsResourceIdentity.Project(target, runtimeKind),
+        });
     }
 
     private static bool DevOpsArgumentsMatchEnvironment(AgentDevOpsAuthorizationRequest request)

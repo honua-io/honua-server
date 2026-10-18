@@ -13,6 +13,8 @@ using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -380,6 +382,56 @@ public sealed class DagSourceReaderTests
 
         await act.Should().ThrowAsync<DagSourceSelectionException>().WithMessage("Invalid parameter: *not time-aware*");
         store.DidNotReceive().StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_BoundSource_StreamsExactProviderInsteadOfManagedSnapshot()
+    {
+        var managed = Substitute.For<IStreamingFeatureStore>();
+        var boundReader = Substitute.For<IFeatureReader, IStreamingFeatureStore>();
+        var boundStream = (IStreamingFeatureStore)boundReader;
+        boundStream.StreamFeaturesAsync(42, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsync(new Feature
+            {
+                Id = 87,
+                Geometry = null,
+                Attributes = ImmutableDictionary<string, object?>.Empty.Add("source", "live-table")
+            }));
+        var provider = Substitute.For<IFeatureDataProvider, IBindableFeatureDataProvider>();
+        provider.ProviderName.Returns(DataProviderNames.Postgis);
+        provider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
+        var bindable = (IBindableFeatureDataProvider)provider;
+        bindable.CreateReaderForBinding(Arg.Any<FeatureProviderBinding>()).Returns(boundReader);
+        var router = new FeatureProviderQueryRouter(Substitute.For<ISecureConnectionRegistry>(),
+            new FeatureDataProviderRegistry([provider]));
+        var source = new HonuaLayerDagSource(managed, SingleLayerMetadata(42), queryRouter: router);
+
+        var result = await CollectAsync(source.ReadAsync(new DagSourceRequest { LayerId = 42, Where = "active = true" }));
+
+        result.Should().ContainSingle().Which.Attributes["source"].Should().Be("live-table");
+        bindable.Received(1).CreateReaderForBinding(Arg.Is<FeatureProviderBinding>(binding =>
+            binding.StorageLayerId == 42 && binding.StorageMapping.QualifiedName == "public.layer_42"));
+        boundStream.Received(1).StreamFeaturesAsync(42,
+            Arg.Is<FeatureQuery>(query => query.Where == "active = true"), Arg.Any<CancellationToken>());
+        managed.DidNotReceive().StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_BoundSourceWithoutStreaming_RefusesManagedSnapshotFallback()
+    {
+        var managed = Substitute.For<IStreamingFeatureStore>();
+        var provider = Substitute.For<IFeatureDataProvider, IBindableFeatureDataProvider>();
+        provider.ProviderName.Returns(DataProviderNames.Postgis);
+        provider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
+        ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(Arg.Any<FeatureProviderBinding>())
+            .Returns(Substitute.For<IFeatureReader>());
+        var router = new FeatureProviderQueryRouter(Substitute.For<ISecureConnectionRegistry>(),
+            new FeatureDataProviderRegistry([provider]));
+        var source = new HonuaLayerDagSource(managed, SingleLayerMetadata(42), queryRouter: router);
+
+        var act = async () => await CollectAsync(source.ReadAsync(new DagSourceRequest { LayerId = 42 }));
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*does not support streaming*");
+        managed.DidNotReceive().StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
     private static FixedMetadataV2GraphProvider SingleLayerMetadata(int layerId)
