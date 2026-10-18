@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:7a15edf76e2865390ecd71721ee7a9307089680c0a6dc93925c0993c72c73451",
+  "bundleDigest": "sha256:8d4c7651f03ccd3ff5ca83ebef7a7bce64c2f0c30bfa5bc830bbd59117f50755",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -5391,7 +5391,7 @@
     {
       "id": "okf/capabilities/admin.control-plane",
       "path": "okf/capabilities/admin.control-plane.md",
-      "documentDigest": "sha256:343535fd3eabf102a6e73b570098b729e0b4d67450a516fc1e03db10f256132b",
+      "documentDigest": "sha256:28ca58e290e4b9e49a3924c7cbd26c3855b6d102062ca3bf8dc9f13bff467a96",
       "metadata": {
         "type": "capability",
         "title": "Admin Control Plane",
@@ -5459,7 +5459,7 @@
     {
       "id": "okf/capabilities/ai.mcp-discovery",
       "path": "okf/capabilities/ai.mcp-discovery.md",
-      "documentDigest": "sha256:6056e93f5b25285a86ce3a093fcbdd46bb06d33769d316674e2a2a95e0d2d78f",
+      "documentDigest": "sha256:03209dcece2893fb28a6f99204da78ae5d14ea13dde16b463e8623c5a4bb5b96",
       "metadata": {
         "type": "capability",
         "title": "MCP Discovery & Query",
@@ -5952,7 +5952,7 @@
     {
       "id": "okf/capabilities/discovery.capability-manifest",
       "path": "okf/capabilities/discovery.capability-manifest.md",
-      "documentDigest": "sha256:59e8967b7cecbbcbd688de78bf3c3c69ece9a5364876036c7ac81c67675af3f2",
+      "documentDigest": "sha256:9855173969d665e4a179ebf2fd5c83963bcbbc2e71d10c5234260b4e900d0d5b",
       "metadata": {
         "type": "capability",
         "title": "Capability Manifest",
@@ -6054,7 +6054,7 @@
     {
       "id": "okf/capabilities/editing.featureserver-edits",
       "path": "okf/capabilities/editing.featureserver-edits.md",
-      "documentDigest": "sha256:028d7b61d2a0e08674d8a2dc1e55a453b5f6d972701a6efe906a21c7969d6f14",
+      "documentDigest": "sha256:2de1c9109c8008a6e7dee33c989e3265b9a9318017c121802389ebcea686ea15",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Editing",
@@ -6292,7 +6292,7 @@
     {
       "id": "okf/capabilities/identity.portal-token",
       "path": "okf/capabilities/identity.portal-token.md",
-      "documentDigest": "sha256:f3bcbd834267705471c95f98f853d7add438b3a2034f183df12ed502c5dcc3af",
+      "documentDigest": "sha256:30b3ebc302441fe2895798173aaa9d84d20414da942b1c27f0059aca742a2c8e",
       "metadata": {
         "type": "capability",
         "title": "ArcGIS Portal Token Issuance",
@@ -6343,7 +6343,7 @@
     {
       "id": "okf/capabilities/import.file",
       "path": "okf/capabilities/import.file.md",
-      "documentDigest": "sha256:9ac72dceae822d7ebcefdf81ca9608e38b16f1a8a9a6cc56556bbd575a9bad94",
+      "documentDigest": "sha256:0361798ad486331cebdfbe97d03b892e119eb8d9c772a80e187ddb77c66153b8",
       "metadata": {
         "type": "capability",
         "title": "File Import",
@@ -6428,7 +6428,7 @@
     {
       "id": "okf/capabilities/ops.health",
       "path": "okf/capabilities/ops.health.md",
-      "documentDigest": "sha256:55921393568d0979aba2f7ed4b63593b33c598a6b3706db3275fb5914a4dad9d",
+      "documentDigest": "sha256:3d35e445dd1a393a8e2ce283278b11947fbc3599e357f86efe2f8d8d3408948d",
       "metadata": {
         "type": "capability",
         "title": "Health Checks",
@@ -6513,7 +6513,7 @@
     {
       "id": "okf/capabilities/process.geoprocessing",
       "path": "okf/capabilities/process.geoprocessing.md",
-      "documentDigest": "sha256:7ac5e0cb8aaccc6f64264dadacf3a541a6b0f9ab70e2491c6817fc6e4137cf5c",
+      "documentDigest": "sha256:b6f48f3de2105b6d80ce504ab35900743bfc32b86a263268ea5fa338e849c98c",
       "metadata": {
         "type": "capability",
         "title": "Geoprocessing Task Execution",
@@ -6666,7 +6666,7 @@
     {
       "id": "okf/capabilities/raster.terrain-rgb",
       "path": "okf/capabilities/raster.terrain-rgb.md",
-      "documentDigest": "sha256:ad068f84ee4ddc61cfb2283d1e971f6ab189760c48a0d43526a52b813ae8c765",
+      "documentDigest": "sha256:27c0bdecd61de21d36ea39e055ae8e5fdbf84b0cc1c267b76a1f3ffe27045782",
       "metadata": {
         "type": "capability",
         "title": "Terrain-RGB Tiles",
@@ -6785,7 +6785,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:6d4908a645c92c9237d2cf162583a8c04f8114ff7632ef5f70a3da090e324c53",
+      "documentDigest": "sha256:9cf3b9cffa641f47d22a093a7f19a46677ce4ba2d2bbfe9e3a21881ff9ddac8d",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
