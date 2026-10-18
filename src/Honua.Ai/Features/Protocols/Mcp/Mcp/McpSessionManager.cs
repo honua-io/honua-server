@@ -733,8 +733,17 @@ internal sealed partial class McpSessionManager
         }
 
         session.Channel.Writer.TryComplete();
-        session.Lifetime.Cancel();
-        session.Lifetime.Dispose();
+        try
+        {
+            session.Lifetime.Cancel();
+        }
+        finally
+        {
+            // Linked provider callbacks can throw. Preserve that failure while
+            // still disposing the session-owned cancellation resources.
+            session.Lifetime.Dispose();
+        }
+
         return true;
     }
 

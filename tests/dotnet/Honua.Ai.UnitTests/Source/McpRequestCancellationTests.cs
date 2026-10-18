@@ -225,6 +225,32 @@ public sealed class McpRequestCancellationTests
     }
 
     [UnitTest]
+    public async Task ThrowingProviderCallback_OnSessionTermination_PropagatesFailureButDisposesLifetimeAndCleansRequest()
+    {
+        var manager = new McpSessionManager();
+        manager.TryCreateSession(Alice, false, out var session);
+        var lifetime = manager.GetLifetimeToken(session!);
+        _ = lifetime.WaitHandle; // Materialize a session-owned native resource.
+        var (lease, _) = await manager.StartRequestAsync(session!, Alice, Id("1"), CancellationToken.None);
+        await using var request = Assert.IsType<McpSessionManager.McpRequestLease>(lease);
+        using var callback = request.Token.Register(() => throw new InvalidOperationException("provider cancellation failed"));
+        var stopped = Task.Delay(Timeout.Infinite, request.Token);
+
+        Assert.Throws<AggregateException>(() => manager.Terminate(session!));
+
+        Assert.False(manager.IsValid(session!));
+        Assert.True(request.Token.IsCancellationRequested);
+        Assert.Throws<ObjectDisposedException>(() => lifetime.WaitHandle);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stopped.WaitAsync(TimeSpan.FromSeconds(4)));
+        Assert.False(await request.CompleteAsync());
+        Assert.Equal(0, manager.ActiveRequestCount);
+        manager.TryCreateSession(Alice, false, out var replacement);
+        var next = await manager.StartRequestAsync(replacement!, Alice, Id("1"), CancellationToken.None);
+        await using var reused = Assert.IsType<McpSessionManager.McpRequestLease>(next.Lease);
+        Assert.True(await reused.CompleteAsync());
+    }
+
+    [UnitTest]
     public async Task DisposalAndOriginalAbort_ReleaseSlotsWithoutCreatingAJob()
     {
         var manager = new McpSessionManager();

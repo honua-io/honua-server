@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
@@ -86,8 +87,17 @@ public sealed class McpRequestCancellationIntegrationTests : IAsyncLifetime
             // no cancellation authority over the blocked work.
             using var wrongSession = await PostAsync(client, Cancellation("blocked-query"), otherSession);
             Assert.Equal(HttpStatusCode.Accepted, wrongSession.StatusCode);
-            Assert.True(await IsBlockedAsync(observer, pid, blocker.ProcessID));
-            Assert.False(original.IsCompleted);
+            // A wrong-session cancellation bug only becomes visible when the
+            // active replica's monitor observes it. Keep observing the actual
+            // provider and open HTTP request across three complete poll intervals.
+            var isolationObservation = Stopwatch.StartNew();
+            do
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50));
+                Assert.True(await IsBlockedAsync(observer, pid, blocker.ProcessID));
+                Assert.False(original.IsCompleted);
+            }
+            while (isolationObservation.Elapsed < McpRequestBounds.PollInterval * 3);
 
             using var cancel = await PostAsync(client, Cancellation("blocked-query"), session);
             Assert.Equal(HttpStatusCode.Accepted, cancel.StatusCode);
@@ -182,13 +192,13 @@ public sealed class McpRequestCancellationIntegrationTests : IAsyncLifetime
         return (string)(await command.ExecuteScalarAsync())!;
     }
 
-    private static string Query(string id) => $$"""
-        {"jsonrpc":"2.0","id":"{{id}}","method":"tools/call","params":{
+    private static string Query(string id) => $$$$"""
+        {"jsonrpc":"2.0","id":"{{{{id}}}}","method":"tools/call","params":{
           "name":"honua_query_features","arguments":{"serviceId":"test","layerId":0,"returnCountOnly":true}}}
         """;
 
-    private static string Cancellation(string id) => $$"""
-        {"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"{{id}}","reason":"test cancellation"}}
+    private static string Cancellation(string id) => $$$$"""
+        {"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"{{{{id}}}}","reason":"test cancellation"}}
         """;
 
     private static async Task<string> InitializeSessionAsync(HttpClient client)
