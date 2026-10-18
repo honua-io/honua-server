@@ -1099,28 +1099,6 @@ internal sealed class McpCancelJobOutput
 }
 
 /// <summary>
-/// Envelope for stub tools returning <c>not_implemented</c> with enough
-/// information for operators to understand the contract and the unblock path.
-/// </summary>
-internal sealed class McpNotImplementedOutput
-{
-    [JsonPropertyName("status")]
-    public string Status { get; set; } = "not_implemented";
-
-    [JsonPropertyName("tool")]
-    public string Tool { get; set; } = string.Empty;
-
-    [JsonPropertyName("blockedBy")]
-    public string BlockedBy { get; set; } = string.Empty;
-
-    [JsonPropertyName("contract")]
-    public string Contract { get; set; } = string.Empty;
-
-    [JsonPropertyName("nextSteps")]
-    public IReadOnlyList<string> NextSteps { get; set; } = [];
-}
-
-/// <summary>
 /// Structured envelope emitted in <see cref="McpToolsCallResult.StructuredContent"/>
 /// when a tool execution fails (auth, validation, approval, domain error). Per
 /// MCP 2025-03-26 tool errors surface inside <c>result</c> with

@@ -124,33 +124,3 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
             ?? throw new NotSupportedException($"Type '{typeof(T).FullName}' is not registered in {nameof(CacheJsonContext)}.");
     }
 }
-
-/// <summary>
-/// Null object implementation for when no cache is available.
-/// </summary>
-internal sealed class NullCacheManager : ICacheManager
-{
-    public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) =>
-        Task.FromResult<T?>(default);
-
-    public Task SetAsync<T>(string key, T value, TimeSpan? expiration = null, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
-
-    public Task<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) =>
-        Task.FromResult(false);
-
-    public Task<int> RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default) =>
-        Task.FromResult(0);
-
-    public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
-        Task.FromResult(false);
-
-    public CacheHealthInfo GetHealthInfo() => new()
-    {
-        IsHealthy = true,
-        TotalKeys = 0,
-        MemoryUsageBytes = 0,
-        HitRatePercent = 0,
-        HealthMessage = "Null cache (no caching)"
-    };
-}

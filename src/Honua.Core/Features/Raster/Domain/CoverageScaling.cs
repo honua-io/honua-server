@@ -4,28 +4,6 @@
 namespace Honua.Core.Features.Raster.Domain;
 
 /// <summary>
-/// Identifies which kind of WCS 2.0 Scaling extension request produced a
-/// <see cref="CoverageScalingResult"/>.
-/// </summary>
-public enum CoverageScalingKind
-{
-    /// <summary>
-    /// A uniform scale factor applied to every spatial axis (SCALEFACTOR).
-    /// </summary>
-    Factor,
-
-    /// <summary>
-    /// A per-axis scale factor (SCALEAXES).
-    /// </summary>
-    Axes,
-
-    /// <summary>
-    /// An explicit per-axis output grid size (SCALEEXTENT).
-    /// </summary>
-    Extent
-}
-
-/// <summary>
 /// Resolved output grid dimensions for a WCS 2.0 Scaling extension request.
 /// </summary>
 public readonly record struct CoverageScalingResult

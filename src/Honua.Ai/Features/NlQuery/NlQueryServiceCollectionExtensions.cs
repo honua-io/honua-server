@@ -41,17 +41,6 @@ internal static class NlQueryServiceCollectionExtensions
 
         services.AddOptions<NlQueryConfiguration>()
             .Bind(section)
-            .PostConfigure(options =>
-            {
-                if (string.IsNullOrWhiteSpace(options.ApiKey))
-                {
-                    var envKey = Environment.GetEnvironmentVariable("HONUA_NLQUERY_API_KEY");
-                    if (!string.IsNullOrWhiteSpace(envKey))
-                    {
-                        options.ApiKey = envKey;
-                    }
-                }
-            })
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<NlQueryConfiguration>, NlQueryConfigurationValidator>();
 
