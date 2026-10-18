@@ -22,6 +22,8 @@ public sealed class DatasetImportRenewalReceiptTests
     [InlineData("membership")]
     [InlineData("target")]
     [InlineData("task")]
+    [InlineData("task-deleted-after-authorization")]
+    [InlineData("task-deadline-after-authorization")]
     [InlineData("later-authority")]
     [InlineData("foreign-revision")]
     [InlineData("foreign-hash")]
@@ -49,11 +51,22 @@ public sealed class DatasetImportRenewalReceiptTests
         var document = new AgentWorkspaceDocument
         {
             WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-1", AgentActorId = actor,
-            TenantId = "tenant-1", Members = [actor, "human-1"],
+            TenantId = "tenant-1", Members = [actor, "human-1"], DatasetImportTasks = new() { [task.TaskId] = [task] },
             DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
             DatasetImportAuthorityRenewals = new() { [DatasetImportTaskState.RenewalKey(task.TaskId, change == "foreign-revision" ? task.Revision + 1 : task.Revision,
                 change == "foreign-hash" ? new string('b', 64) : task.ContentHash, original.RenewalId)] = original },
         };
+        var authorizations = 0;
+        tasks.AuthorizeAsync(principal, "workspace-1", task.TaskId, 1, task.ContentHash, false, Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            if (++authorizations == 2)
+            {
+                if (change == "task-deleted-after-authorization") document = document with { DatasetImportTasks = [] };
+                else if (change == "task-deadline-after-authorization") document = document with { DatasetImportTasks = new()
+                    { [task.TaskId] = [task with { UploadAdmissionDeadline = task.UploadAdmissionDeadline.AddHours(1) }] } };
+            }
+            return allowed ? task : null;
+        });
         var store = Substitute.For<IAgentWorkspaceStore>();
         var target = "target-1";
         store.GetTargetIdAsync().Returns(_ => target);

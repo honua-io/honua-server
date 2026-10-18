@@ -94,6 +94,8 @@ internal static class DatasetImportAuthorityRenewalService
         var actor = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
         return actor is not null && latest is not null && latest.OwnerId == original.OwnerId &&
             latest.AgentActorId == original.AgentActorId && latest.TenantId == original.TenantId && target == original.TargetId &&
+            latest.DatasetImportTasks.TryGetValue(taskId, out var retainedTasks) &&
+            retainedTasks.SingleOrDefault(candidate => candidate.Revision == revision) is { } retainedTask && retainedTask == task &&
             AgentWorkspaceState.CanRead(latest, actor,
                 context.RequestServices.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId, target) &&
             await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false);
