@@ -60,6 +60,11 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-generated-files.py
 fi
 
+echo "Validating secret-safe NuGet environment setup..."
+if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/test-nuget-auth.py
+fi
+
 echo "Validating ci-shards.json structure..."
 jq -e '
   type == "object"
