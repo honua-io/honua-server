@@ -260,7 +260,10 @@ public static partial class OidcAuthenticationExtensions
                 services.PostConfigure<Microsoft.AspNetCore.Authorization.AuthorizationOptions>(options =>
                 {
                     var defaults = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder(options.DefaultPolicy);
-                    if (defaults.AuthenticationSchemes.Count == 0) defaults.AuthenticationSchemes.Add(AuthenticationExtensions.ApiKeyScheme);
+                    if (defaults.AuthenticationSchemes.Count == 0)
+                    {
+                        defaults.AuthenticationSchemes.Add(AuthenticationExtensions.ApiKeyScheme);
+                    }
                     defaults.AuthenticationSchemes.Add(OperatorBearerScheme);
                     options.DefaultPolicy = defaults.Build();
                     foreach (var name in new[]
@@ -272,9 +275,19 @@ public static partial class OidcAuthenticationExtensions
                         AuthenticationExtensions.StudioLifecyclePolicy, AuthenticationExtensions.StudioAiProxyPolicy,
                     })
                     {
-                        if (options.GetPolicy(name) is not { } existing) continue;
+                        if (options.GetPolicy(name) is not { } existing)
+                        {
+                            continue;
+                        }
                         var policy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder(existing);
-                        if (!policy.AuthenticationSchemes.Contains(OperatorBearerScheme)) policy.AuthenticationSchemes.Add(OperatorBearerScheme);
+                        if (policy.AuthenticationSchemes.Count == 0)
+                        {
+                            policy.AuthenticationSchemes.Add(AuthenticationExtensions.ApiKeyScheme);
+                        }
+                        if (!policy.AuthenticationSchemes.Contains(OperatorBearerScheme))
+                        {
+                            policy.AuthenticationSchemes.Add(OperatorBearerScheme);
+                        }
                         options.AddPolicy(name, policy.Build());
                     }
                 });

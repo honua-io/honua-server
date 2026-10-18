@@ -27,10 +27,18 @@ public sealed class OperatorBearerWithoutOidcPolicyTests
         var services = new ServiceCollection().AddLogging();
         services.AddApiKeyAuthentication(configuration);
         services.AddOidcAuthentication(configuration);
+        // Exercise a named policy that relies on the implicit default scheme.
+        services.Configure<AuthorizationOptions>(options =>
+            options.AddPolicy(AuthenticationExtensions.StudioAiProxyPolicy, policy => policy.RequireAuthenticatedUser()));
         services.AddOidcAuthorization(configuration);
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<AuthorizationOptions>>().Value;
         options.DefaultPolicy.AuthenticationSchemes.Contains(OidcAuthenticationExtensions.OperatorBearerScheme).Should().Be(enabled);
+        if (enabled)
+        {
+            options.GetPolicy(AuthenticationExtensions.StudioAiProxyPolicy)!.AuthenticationSchemes
+                .Should().Contain(AuthenticationExtensions.ApiKeyScheme);
+        }
         options.DefaultPolicy.Requirements.Should().Contain(requirement => requirement is DenyAnonymousAuthorizationRequirement);
         foreach (var name in new[] { AuthenticationExtensions.AdminPolicy, AuthenticationExtensions.AdminApprovePolicy })
         {
