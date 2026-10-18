@@ -89,6 +89,7 @@ internal static class AgentJobSecurityBridge
             if (principal is null || !JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal)
                 || !await JobExecutionLeaseTransientAuthority.IsCurrentAsync(principal, cancellationToken).ConfigureAwait(false)
                 || Honua.Core.Features.Authorization.JobSecurityScope.Current?.Submitter is not { } scoped
+                || scoped.ExecutionLease != context.ExecutionLease
                 || JobExecutionLeaseIntentFingerprint.ComputeContext(scoped) != JobExecutionLeaseIntentFingerprint.ComputeContext(context))
             {
                 throw new UnauthorizedAccessException("The lease requires current authority inside its actual job execution scope.");

@@ -29,6 +29,10 @@ public sealed class JobExecutionLeaseTransientAuthorityTests
         using (JobSecurityScope.BeginExecution(fixture.Job, fixture.Context))
         {
             Assert.True(await AgentCredentialAuthority.IsCurrentAsync(fixture.Principal, fixture.Services, default));
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => AgentJobSecurityBridge.RevalidateAsync(fixture.Context with
+            {
+                ExecutionLease = fixture.Context.ExecutionLease! with { ExpiresAt = fixture.Context.ExecutionLease.ExpiresAt.AddDays(1) }
+            }, fixture.Services, default));
             using (JobSecurityScope.Begin(fixture.Context with { Claims = [new("department", "admin")] }))
             {
                 Assert.False(await AgentCredentialAuthority.IsCurrentAsync(fixture.Principal, fixture.Services, default));
