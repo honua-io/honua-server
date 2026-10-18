@@ -27,7 +27,7 @@ public sealed class StylePackageConsumerIndexTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
-    [Operation(Operations.Read)]
+    [Operation(Operations.GetById)]
     [Endpoint("GET /ogc/styles/{styleId}/impact")]
     public async Task CanonicalIndex_TracksDraftsHistoricalVersionsAndApps_ExcludesInlineAndForgedDependencies()
     {
@@ -99,7 +99,7 @@ public sealed class StylePackageConsumerIndexTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.Read)]
+    [Operation(Operations.GetById)]
     [Endpoint("GET /ogc/styles/{styleId}/impact")]
     public async Task CanonicalIndex_ResolvesAppCreatedBeforeMap_WithoutCrossWorkspaceNameGuessing()
     {
@@ -159,7 +159,7 @@ public sealed class StylePackageConsumerIndexTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.Read)]
+    [Operation(Operations.GetById)]
     [Endpoint("GET /ogc/styles/{styleId}/impact")]
     public async Task ImpactHttp_HidesUnauthorizedPackageIdentityAndCount_AndDisablesSharedEdit()
     {
