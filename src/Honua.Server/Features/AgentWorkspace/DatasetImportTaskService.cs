@@ -61,7 +61,9 @@ internal static class DatasetImportTaskService
                 authorizedTurn.TargetId != workspace.TargetId || authorizedTurn.TenantId != workspace.TenantId) return Results.Forbid();
             var policyCapture = context.RequestServices.GetService<Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture>();
             if (policyCapture is null) return Results.Forbid();
-            var policy = await policyCapture.CaptureCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            JobSecurityContext policy;
+            try { policy = await policyCapture.CaptureCurrentAsync(context.RequestAborted).ConfigureAwait(false); }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
             var authority = policy.AgentCredential;
             if (authority is null || policy.PrincipalId != actor || policy.OwnerActorId != actor || policy.TenantId != workspace.TenantId)
                 return Results.Forbid();

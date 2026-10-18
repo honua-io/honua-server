@@ -12,12 +12,16 @@ using Honua.Server.Features.Operations;
 namespace Honua.Server.Features.AgentWorkspace;
 
 /// <summary>Projects the installed durable workspace capability into the existing MCP surface.</summary>
-internal sealed class AgentWorkspaceToolSource(IAgentWorkspaceStore store) : IMcpToolSource
+internal sealed class AgentWorkspaceToolSource(IAgentWorkspaceStore store, IServiceProviderIsService? capabilities = null) : IMcpToolSource
 {
     public ValueTask<IReadOnlyList<IMcpTool>> GetToolsAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.FromResult<IReadOnlyList<IMcpTool>>(store.IsAvailable ? AgentWorkspaceTool.All : []);
+        if (!store.IsAvailable) return ValueTask.FromResult<IReadOnlyList<IMcpTool>>([]);
+        var importReady = capabilities?.IsService(typeof(Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture)) == true &&
+            capabilities.IsService(typeof(Honua.Core.Features.Import.Abstractions.IDatasetImportContributorAuthorizer));
+        return ValueTask.FromResult<IReadOnlyList<IMcpTool>>(importReady
+            ? [.. AgentWorkspaceTool.All, .. AgentWorkspaceTool.DatasetImportTools] : AgentWorkspaceTool.All);
     }
 }
 
@@ -60,6 +64,32 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
             $"{Workspace},{Property("commandId", Identifier)},{Property("operationInstanceId", Identifier)}", "\"workspaceId\"", true),
     ];
 
+    private const string DatasetImportRequestSchema = """
+        {"type":"object","properties":{
+          "intentId":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,128}$"},
+          "viewId":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,128}$"},
+          "contextRevision":{"type":"integer","minimum":0},
+          "destination":{"type":"object","properties":{"schema":{"type":"string","minLength":1,"maxLength":63},"table":{"type":"string","minLength":1,"maxLength":63}},"required":["schema","table"],"additionalProperties":false},
+          "source":{"type":"object","properties":{
+            "kind":{"type":"string","enum":["browser-file","local-process-artifact"]},
+            "fileName":{"type":"string","minLength":1,"maxLength":255},"totalBytes":{"type":"integer","minimum":1},
+            "expectedSha256":{"type":["string","null"],"pattern":"^[0-9a-f]{64}$"},
+            "artifact":{"type":["object","null"],"properties":{
+              "projectId":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,128}$"},"snapshotId":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,128}$"},
+              "snapshotDigest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"runId":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,128}$"},
+              "path":{"type":"string","minLength":1,"maxLength":1024}},"required":["projectId","snapshotId","snapshotDigest","runId","path"],"additionalProperties":false}
+          },"required":["kind","fileName","totalBytes"],"additionalProperties":false},
+          "options":{"type":"object","properties":{"loadMode":{"type":"integer","enum":[0,1]},"targetSrid":{"type":"integer","minimum":1},"sourceSrid":{"type":["integer","null"],"minimum":1}},"additionalProperties":false}
+        },"required":["intentId","viewId","contextRevision","destination","source","options"],"additionalProperties":false}
+        """;
+    internal static readonly IMcpTool[] DatasetImportTools =
+    [
+        new AgentWorkspaceTool("create_dataset_import_task", "Create a canonical immutable dataset-import task from the original bound turn and authorized source/destination. Persist intentId before calling; recover a lost reply with get_dataset_import_intent. This creates no upload session, job or approval and never grants unsupported existing-table mutation.",
+            $"{Workspace},{Property("request", DatasetImportRequestSchema)}", "\"workspaceId\",\"request\"", false),
+        new AgentWorkspaceTool("get_dataset_import_intent", "Read the original same-owner import task by its persisted client intentId. This never creates a task or dispatches an upload/job, and never changes focus or the original admission deadline.",
+            $"{Workspace},{Property("intentId", Identifier)}", "\"workspaceId\",\"intentId\"", true),
+    ];
+
     public string Name => $"honua_workspace_{action}";
     public string WorkflowFamily => "lifecycle";
     public McpToolDescriptor Describe() => new()
@@ -83,7 +113,7 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
         context.Request.Method = readOnly ? "GET" : "POST";
         context.Request.Path = "/api/v1/agent/workspaces";
         foreach (var header in httpContext.Request.Headers) context.Request.Headers[header.Key] = header.Value;
-        foreach (var name in new[] { "workspaceId", "draftId", "turnId", "commandId", "operationInstanceId" })
+        foreach (var name in new[] { "workspaceId", "draftId", "turnId", "commandId", "operationInstanceId", "intentId" })
         {
             if (!args.TryGetProperty(name, out var value)) continue;
             if (value.ValueKind != JsonValueKind.String || !AgentWorkspaceState.IsIdentifier(value.GetString())) return Error("Invalid resource identifier.");
@@ -110,6 +140,10 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
                 "get_turn" => await AgentWorkspaceEndpoints.GetTurn(context, store).ConfigureAwait(false),
                 "conversation" => await AgentWorkspaceEndpoints.GetConversation(context, store).ConfigureAwait(false),
                 "append_message" => await AgentWorkspaceEndpoints.AppendMessage(context, store, Parse(args, AgentWorkspaceJsonContext.Default.AppendAgentMessage)).ConfigureAwait(false),
+                "create_dataset_import_task" => await DatasetImportTaskService.CreateAsync(args.GetProperty("workspaceId").GetString()!, context, store,
+                    Parse(args.GetProperty("request"), AgentWorkspaceJsonContext.Default.CreateDatasetImportTask)).ConfigureAwait(false),
+                "get_dataset_import_intent" => await DatasetImportTaskService.ReadIntent(args.GetProperty("workspaceId").GetString()!,
+                    args.GetProperty("intentId").GetString()!, context, store).ConfigureAwait(false),
                 "create_draft" => await AgentWorkspaceEndpoints.CreateDraft(context, store, Parse(args, AgentWorkspaceJsonContext.Default.CreateAgentDraft)).ConfigureAwait(false),
                 "get_draft" => await AgentWorkspaceEndpoints.GetDraft(context, store).ConfigureAwait(false),
                 "patch_draft" => await AgentWorkspaceEndpoints.PatchDraft(context, store, Parse(args, AgentWorkspaceJsonContext.Default.PatchAgentDraft)).ConfigureAwait(false),
@@ -130,7 +164,7 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
             return Error("Version conflict. Read the latest workspace or reconcile the existing command; do not overwrite newer edits.");
         }
         catch (Exception exception) when (exception is ArgumentException or JsonException or KeyNotFoundException or
-            AgentWorkspaceNotFoundException or AgentWorkspaceUnavailableException or LocalProcessWorkspaceException or StackExchange.Redis.RedisException)
+            AgentWorkspaceNotFoundException or AgentWorkspaceUnavailableException or LocalProcessWorkspaceException or UnauthorizedAccessException or StackExchange.Redis.RedisException)
         {
             return Error("Workspace request unavailable or unauthorized. Reconcile existing commands before retrying mutations.");
         }

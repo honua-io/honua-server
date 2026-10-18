@@ -129,7 +129,11 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             builder.UseSetting("AgentWorkspace:ReleaseId", "isolated-task-context-test");
             builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
             builder.UseSetting("Authentication:OperatorBearer:SigningKey", "task-context-test-signing-key-at-least-32-bytes");
-            builder.ConfigureServices(services => services.AddSingleton<IDatasetImportDestinationAuthorizer>(policy));
+            builder.ConfigureServices(services =>
+            {
+                services.AddSingleton<IDatasetImportDestinationAuthorizer>(policy);
+                services.AddScoped<IDatasetImportContributorAuthorizer, DatasetImportContributorAuthorizer>();
+            });
         });
         await fixture.InitializeAsync();
         try
@@ -177,7 +181,20 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             var executionRequest = request with { IntentId = "agent-import-intent", ViewId = "execution-tab" };
             agent.DefaultRequestHeaders.Add("X-Honua-Workspace", executionId);
             agent.DefaultRequestHeaders.Add("X-Honua-Turn", "turn-create-import");
-            var executionTask = await Json(await agent.PostAsJsonAsync(executionRoot + "/dataset-import-tasks", executionRequest));
+            var initialized = await agent.PostAsJsonAsync("/mcp", new
+            {
+                jsonrpc = "2.0", id = 1, method = "initialize",
+                @params = new { protocolVersion = "2025-03-26", capabilities = new { }, clientInfo = new { name = "dataset-task-test", version = "1" } },
+            });
+            initialized.EnsureSuccessStatusCode();
+            agent.DefaultRequestHeaders.Add("Mcp-Session-Id", initialized.Headers.GetValues("Mcp-Session-Id").Single());
+            var envelope = await Json(await agent.PostAsJsonAsync("/mcp", new
+            {
+                jsonrpc = "2.0", id = 2, method = "tools/call",
+                @params = new { name = "honua_workspace_create_dataset_import_task", arguments = new { workspaceId = executionId, request = executionRequest } },
+            }));
+            envelope.TryGetProperty("error", out _).Should().BeFalse();
+            var executionTask = envelope.GetProperty("result").GetProperty("structuredContent");
             var executionTaskId = executionTask.GetProperty("taskId").GetString()!;
             var executionDocument = (await fixture.Services.GetRequiredService<IAgentWorkspaceStore>().GetAsync(executionId))!;
             var binding = executionDocument.DatasetImportExecutionBindings[executionTaskId];
@@ -196,6 +213,17 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             replayDocument.Version.Should().Be(executionDocument.Version);
             replayDocument.DatasetImportExecutionBindings.Should().ContainSingle();
             executionTask.TryGetProperty("executorAuthority", out _).Should().BeFalse();
+            var recoveredEnvelope = await Json(await agent.PostAsJsonAsync("/mcp", new
+            {
+                jsonrpc = "2.0", id = 3, method = "tools/call",
+                @params = new { name = "honua_workspace_get_dataset_import_intent", arguments = new { workspaceId = executionId, intentId = executionRequest.IntentId } },
+            }));
+            recoveredEnvelope.GetProperty("result").GetProperty("structuredContent").GetProperty("taskId").GetString().Should().Be(executionTaskId);
+            (await fixture.Services.GetRequiredService<IAgentWorkspaceStore>().GetAsync(executionId))!.Version.Should().Be(executionDocument.Version);
+            var humanObservation = await Json(await human.PostAsJsonAsync(executionRoot + "/turns", new { turnId = "turn-human-observe",
+                viewId = "execution-tab", contextRevision = 1, prompt = "Explain the agent's prepared import target" }));
+            humanObservation.GetProperty("datasetImportContext").GetProperty("taskId").GetString().Should().Be(executionTaskId);
+            (await human.GetAsync(executionRoot + $"/dataset-import-tasks/{executionTaskId}/versions/1")).StatusCode.Should().Be(HttpStatusCode.NotFound);
             agent.DefaultRequestHeaders.Remove("X-Honua-Workspace");
             agent.DefaultRequestHeaders.Remove("X-Honua-Turn");
             policy.AllowRead = false;

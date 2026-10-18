@@ -55,7 +55,9 @@ internal static class DatasetImportAuthorityRenewalService
             authorizedTurn.TargetId != document.TargetId || authorizedTurn.TenantId != document.TenantId) return null;
         var policyCapture = context.RequestServices.GetService<Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture>();
         if (policyCapture is null) return null;
-        var freshPolicy = await policyCapture.CaptureCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        JobSecurityContext freshPolicy;
+        try { freshPolicy = await policyCapture.CaptureCurrentAsync(context.RequestAborted).ConfigureAwait(false); }
+        catch (UnauthorizedAccessException) { return null; }
         var fresh = freshPolicy.AgentCredential;
         // Compare canonical renewal lineage, retaining every original policy value.
         // Refresh metadata is never substituted into the frozen policy context.

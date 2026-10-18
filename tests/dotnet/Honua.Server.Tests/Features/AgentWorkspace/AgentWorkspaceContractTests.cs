@@ -5,6 +5,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.AgentWorkspace;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.AgentWorkspace;
 
@@ -24,7 +26,7 @@ public sealed class AgentWorkspaceContractTests
     [UnitTest]
     public void WorkspaceToolsHaveBoundedTypedContractsAndExplicitServerFamily()
     {
-        var descriptors = AgentWorkspaceTool.All.Select(tool => tool.Describe()).ToArray();
+        var descriptors = AgentWorkspaceTool.All.Concat(AgentWorkspaceTool.DatasetImportTools).Select(tool => tool.Describe()).ToArray();
         descriptors.Select(tool => tool.Name).Should().OnlyHaveUniqueItems();
         foreach (var descriptor in descriptors)
         {
@@ -46,5 +48,21 @@ public sealed class AgentWorkspaceContractTests
         var action = () => store.GetTargetIdAsync();
         await action.Should().ThrowAsync<AgentWorkspaceUnavailableException>();
         (await new AgentWorkspaceToolSource(store).GetToolsAsync(CancellationToken.None)).Should().BeEmpty();
+    }
+    [UnitTheory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task DatasetCreationIsAdvertisedOnlyWithCanonicalCaptureAndContributorAuthority(bool capture, bool contributor)
+    {
+        var store = Substitute.For<IAgentWorkspaceStore>();
+        store.IsAvailable.Returns(true);
+        var capabilities = Substitute.For<IServiceProviderIsService>();
+        capabilities.IsService(typeof(Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture)).Returns(capture);
+        capabilities.IsService(typeof(Honua.Core.Features.Import.Abstractions.IDatasetImportContributorAuthorizer)).Returns(contributor);
+        var names = (await new AgentWorkspaceToolSource(store, capabilities).GetToolsAsync(default)).Select(tool => tool.Name).ToArray();
+        names.Contains("honua_workspace_create_dataset_import_task").Should().Be(capture && contributor);
+        names.Contains("honua_workspace_get_dataset_import_intent").Should().Be(capture && contributor);
     }
 }
