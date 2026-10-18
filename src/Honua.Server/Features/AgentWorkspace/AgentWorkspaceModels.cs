@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.AgentWorkspace.Domain;
@@ -84,7 +85,7 @@ internal sealed record AgentWorkspaceError(string Message);
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(AgentWorkspaceDocument))]
 [JsonSerializable(typeof(AgentWorkspaceTurn))]
-[JsonSerializable(typeof(Honua.Infrastructure.Authentication.AgentCredentialSnapshot))]
+[JsonSerializable(typeof(Honua.Core.Features.Authorization.Domain.AgentCredentialSnapshot))]
 [JsonSerializable(typeof(DatasetImportTask))]
 [JsonSerializable(typeof(CreateDatasetImportTask))]
 [JsonSerializable(typeof(string[]))]

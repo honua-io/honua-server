@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using System.Text.Json;
 using System.Security.Cryptography;
 using Honua.Core.Features.Import.Abstractions;

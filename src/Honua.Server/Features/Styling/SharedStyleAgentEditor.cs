@@ -105,7 +105,7 @@ internal sealed record SharedStyleApprovalPayload
 {
     public required string ActorId { get; init; }
     public required Guid KeyId { get; init; }
-    public Honua.Infrastructure.Authentication.AgentCredentialSnapshot? Credential { get; init; }
+    public Honua.Core.Features.Authorization.Domain.AgentCredentialSnapshot? Credential { get; init; }
     public required string[] Permissions { get; init; }
     public required JobSecurityContext AuthorSecurityContext { get; init; }
     public required string WorkspaceId { get; init; }
