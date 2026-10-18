@@ -24,7 +24,7 @@ public sealed record DatasetImportArtifactSource(string ProjectId, string Snapsh
 /// <param name="Kind">browser-file or local-process-artifact.</param>
 /// <param name="FileName">Bounded filename used for format detection.</param>
 /// <param name="TotalBytes">Declared immutable source length.</param>
-/// <param name="ExpectedSha256">Expected content digest when independently available.</param>
+/// <param name="ExpectedSha256">Expected whole-content digest; required before resumable admission.</param>
 /// <param name="Artifact">Required canonical provenance for a local process artifact.</param>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record DatasetImportSource(string Kind, string FileName, long TotalBytes,
@@ -49,6 +49,8 @@ public sealed record DatasetImportTaskOptions(ImportLoadMode LoadMode = ImportLo
 /// <param name="Destination">Frozen operational database destination.</param>
 /// <param name="Source">Frozen source declaration.</param>
 /// <param name="Options">Frozen bounded import options.</param>
+/// <param name="UploadAdmissionDeadline">Server-persisted original upload admission deadline, never refreshed by replay.</param>
 public sealed record DatasetImportTask(string TaskId, long Revision, string ContentHash,
     string OwnerActorId, string? TenantId, string TargetId, string WorkspaceId,
-    DatasetImportDestination Destination, DatasetImportSource Source, DatasetImportTaskOptions Options);
+    DatasetImportDestination Destination, DatasetImportSource Source, DatasetImportTaskOptions Options,
+    DateTimeOffset UploadAdmissionDeadline);

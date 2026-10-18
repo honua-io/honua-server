@@ -23,7 +23,9 @@ public interface IDatasetImportTaskProvider
 /// <summary>Current destination-specific access, separate from broad import/Create permission.</summary>
 public interface IDatasetImportDestinationAuthorizer
 {
-    /// <summary>Checks this exact operational destination under current actor/resource grants.</summary>
+    /// <summary>Checks this exact operational destination and frozen load mode under current actor/resource grants.
+    /// Unsupported constrained bulk writes and load modes must fail closed.</summary>
     Task<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string targetId,
-        DatasetImportDestination destination, bool requireWrite, CancellationToken cancellationToken = default);
+        DatasetImportDestination destination, DatasetImportTaskOptions options, bool requireWrite,
+        CancellationToken cancellationToken = default);
 }
