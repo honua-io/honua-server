@@ -66,7 +66,8 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
     {
         Name = Name,
         Description = description,
-        InputSchema = ParseJson($"{{\"type\":\"object\",\"properties\":{{{properties}}},\"required\":[{required}],\"additionalProperties\":false{(action == "get_command" ? ",\"oneOf\":[{\"required\":[\"commandId\"]},{\"required\":[\"operationInstanceId\"]}]" : "")}}"),
+        InputSchema = ParseJson($"{{\"type\":\"object\",\"properties\":{{{properties}}},\"required\":[{required}],\"additionalProperties\":false" +
+            (action == "get_command" ? ",\"oneOf\":[{\"required\":[\"commandId\"]},{\"required\":[\"operationInstanceId\"]}]" : "") + "}"),
         Annotations = new() { ReadOnlyHint = readOnly, DestructiveHint = action == "submit_draft", IdempotentHint = action != "create" && action != "create_draft" },
         Meta = ParseJson("""{"honua.studio":{"family":"honua.workspace.canonical","view":"workspace","revision":"1"}}"""),
     };
