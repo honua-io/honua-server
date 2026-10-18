@@ -33,6 +33,7 @@ internal sealed record AgentWorkspaceDocument
     public required string WorkspaceId { get; init; }
     public required string TargetId { get; init; }
     public required string OwnerId { get; init; }
+    public string? AgentActorId { get; init; }
     public string? TenantId { get; init; }
     public required string[] Members { get; init; }
     public long Version { get; init; }
@@ -75,7 +76,7 @@ internal sealed record AgentDevOpsAuthorizationResponse(
 }
 internal sealed record AgentConversationResponse(AgentWorkspaceMessage[] Messages);
 internal sealed record AgentTurnResponse(string TurnId, string Status, AgentWorkspaceContext Context, AgentWorkspaceMessage[] Messages,
-    AgentWorkspaceDraft? Draft, LocalProcessSnapshot? LocalProcessSnapshot = null);
+    AgentWorkspaceDraft? Draft, LocalProcessSnapshot? LocalProcessSnapshot = null, DatasetImportTask? DatasetImportContext = null);
 internal sealed record AgentWorkspaceError(string Message);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

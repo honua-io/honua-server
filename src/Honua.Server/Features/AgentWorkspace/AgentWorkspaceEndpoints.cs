@@ -29,7 +29,9 @@ internal static class AgentWorkspaceEndpoints
         services.AddSingleton<IAgentWorkspaceStore>(sp => new AgentWorkspaceStore(sp.GetService<IConnectionMultiplexer>(),
             sp.GetRequiredService<IConfiguration>()["AgentWorkspace:DeploymentId"]));
         services.TryAddSingleton(TimeProvider.System);
-        services.AddScoped<Honua.Core.Features.Import.Abstractions.IDatasetImportTaskProvider, DatasetImportTaskProvider>();
+        services.AddScoped<DatasetImportTaskProvider>();
+        services.AddScoped<Honua.Core.Features.Import.Abstractions.IDatasetImportTaskProvider>(sp => sp.GetRequiredService<DatasetImportTaskProvider>());
+        services.AddScoped<Honua.Core.Features.Import.Abstractions.IDatasetImportTaskContextReader>(sp => sp.GetRequiredService<DatasetImportTaskProvider>());
         services.AddScoped<Honua.Core.Features.Import.Abstractions.IDatasetImportDestinationAuthorizer, DatasetImportDestinationAuthorizer>();
         services.AddScoped<IAgentWorkspaceTurnAuthorizer, AgentWorkspaceTurnAuthorizer>();
         services.AddHttpClient<ILocalProcessWorkspaceGateway, LocalProcessWorkspaceGateway>(client => client.Timeout = TimeSpan.FromSeconds(30))
@@ -271,6 +273,7 @@ internal static class AgentWorkspaceEndpoints
             TargetId = targetId,
             TenantId = Tenant(context),
             OwnerId = owner,
+            AgentActorId = string.IsNullOrWhiteSpace(linkedAgent) ? null : linkedAgent,
             Members = string.IsNullOrWhiteSpace(linkedAgent) ? [owner] : [owner, linkedAgent],
         };
         var snapshot = AgentWorkspaceState.Current(document, request.ViewId);
@@ -355,8 +358,13 @@ internal static class AgentWorkspaceEndpoints
         var projected = await Project(context, turn.Context, document).ConfigureAwait(false);
         if (projected.SelectedResources.Length != turn.Context.SelectedResources.Length || projected.Task != turn.Context.Task) return Results.Forbid();
         if (!await LocalProcessWorkspaceAuthorization.CanReadTurnAsync(context, document, turn).ConfigureAwait(false)) return Results.Forbid();
+        var importContext = projected.Task is { Kind: "dataset-import" } importTask
+            ? await context.RequestServices.GetRequiredService<Honua.Core.Features.Import.Abstractions.IDatasetImportTaskContextReader>()
+                .ReadAsync(context.User, document.WorkspaceId, importTask.Id, importTask.Revision, importTask.ContentHash!, context.RequestAborted).ConfigureAwait(false)
+            : null;
+        if (projected.Task is { Kind: "dataset-import" } && importContext is null) return Results.Forbid();
         return Results.Ok(new AgentTurnResponse(turn.TurnId, "accepted", projected,
-            await VisibleMessages(context, document).ConfigureAwait(false), turn.Draft, turn.LocalProcessSnapshot));
+            await VisibleMessages(context, document).ConfigureAwait(false), turn.Draft, turn.LocalProcessSnapshot, importContext));
     }
 
     private static async Task<AgentWorkspaceMessage[]> VisibleMessages(HttpContext context, AgentWorkspaceDocument document)

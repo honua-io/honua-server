@@ -49,8 +49,8 @@ internal static class AgentWorkspaceResourceAuthorization
         if (task.Kind == "dataset-import")
         {
             if (workspace is null) return false;
-            return await context.RequestServices.GetRequiredService<Honua.Core.Features.Import.Abstractions.IDatasetImportTaskProvider>()
-                .AuthorizeAsync(context.User, workspace.WorkspaceId, task.Id, task.Revision, task.ContentHash!, false, context.RequestAborted)
+            return await context.RequestServices.GetRequiredService<Honua.Core.Features.Import.Abstractions.IDatasetImportTaskContextReader>()
+                .ReadAsync(context.User, workspace.WorkspaceId, task.Id, task.Revision, task.ContentHash!, context.RequestAborted)
                 .ConfigureAwait(false) is not null;
         }
         if (task.Kind == "local-process-workspace")

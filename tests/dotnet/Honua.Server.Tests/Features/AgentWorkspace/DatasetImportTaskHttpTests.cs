@@ -4,6 +4,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.Http.Headers;
+using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.Configuration;
 using System.Text;
 using System.Security.Claims;
 using System.Text.Json;
@@ -106,6 +108,71 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             afterNavigation.GetProperty("taskId").GetString().Should().Be(taskId);
             AgentWorkspaceState.Current((await store.GetAsync(workspaceId))!, "tab-1").Task.Should().BeNull();
             (await client.GetAsync(root + "/dataset-import-tasks/foreign-task/versions/1")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/v1/agent/workspaces/{workspaceId}/turns/{turnId}")]
+    public async Task OnlyRetainedLinkedAgentGetsHumanTaskExplanationAndCannotReadOwnerTransferResource()
+    {
+        var policy = new DestinationPolicy();
+        var fixture = new WebAppFixture().UseKestrel().ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
+            builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.UseSetting("AgentWorkspace:DeploymentId", $"task-context-{Guid.NewGuid():N}");
+            builder.UseSetting("AgentWorkspace:ReleaseId", "isolated-task-context-test");
+            builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+            builder.UseSetting("Authentication:OperatorBearer:SigningKey", "task-context-test-signing-key-at-least-32-bytes");
+            builder.ConfigureServices(services => services.AddSingleton<IDatasetImportDestinationAuthorizer>(policy));
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var bootstrap = fixture.CreateAdminClient();
+            var keyResponse = await bootstrap.PostAsJsonAsync("/api/v1/admin/api-keys", new
+            { name = "linked-context-agent", permissions = new[] { "admin:read", "agent:workspace" } });
+            keyResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            using var keyJson = JsonDocument.Parse(await keyResponse.Content.ReadAsStringAsync());
+            var key = keyJson.RootElement.GetProperty("data");
+            var keyId = key.GetProperty("apiKey").GetProperty("id").GetString()!;
+            var material = key.GetProperty("key").GetString()!;
+            var linkedActor = $"apikey:api-key:{keyId}";
+            fixture.Services.GetRequiredService<IConfiguration>()["AgentWorkspace:LocalAgentPrincipalId"] = linkedActor;
+            var bearer = fixture.Services.GetRequiredService<OperatorBearerTokenService>().Issue(
+                [new() { Type = ClaimTypes.NameIdentifier, Value = "task-human" }, new() { Type = ClaimTypes.Role, Value = "admin" },
+                 new() { Type = "tenant_id", Value = "public" }], DateTimeOffset.UtcNow.AddMinutes(5));
+            bearer.Should().NotBeNull();
+            using var human = fixture.CreateClient(c => c.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearer!.Token));
+            using var agent = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", material));
+            var created = await Json(await human.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "tab-1", agentActorId = "body-selected-imposter" }));
+            var workspaceId = created.GetProperty("workspaceId").GetString()!;
+            var root = $"/api/v1/agent/workspaces/{workspaceId}";
+            var stored = (await fixture.Services.GetRequiredService<IAgentWorkspaceStore>().GetAsync(workspaceId))!;
+            stored.AgentActorId.Should().Be(linkedActor);
+            var request = new CreateDatasetImportTask("intent-human", "tab-1", 0, new("public", "roads"),
+                new("browser-file", "roads.geojson", 5L * 1024 * 1024 * 1024, new string('a', 64)), new());
+            var task = await Json(await human.PostAsJsonAsync(root + "/dataset-import-tasks", request));
+            var taskId = task.GetProperty("taskId").GetString()!;
+            var current = await Json(await human.GetAsync(root + "?viewId=tab-1"));
+            await Json(await human.PostAsJsonAsync(root + "/turns", new { turnId = "turn-explain", viewId = "tab-1",
+                contextRevision = current.GetProperty("revision").GetInt64(), prompt = "Explain this upload target" }));
+            var observed = await Json(await agent.GetAsync(root + "/turns/turn-explain"));
+            observed.GetProperty("datasetImportContext").GetProperty("taskId").GetString().Should().Be(taskId);
+            observed.GetProperty("datasetImportContext").GetProperty("contentHash").GetString().Should().Be(task.GetProperty("contentHash").GetString());
+            // Explanation does not grant access through the strict transfer-owner resource.
+            (await agent.GetAsync(root + $"/dataset-import-tasks/{taskId}/versions/1")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            policy.AllowRead = false;
+            (await agent.GetAsync(root + "/turns/turn-explain")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            policy.AllowRead = true;
+            stored = (await fixture.Services.GetRequiredService<IAgentWorkspaceStore>().GetAsync(workspaceId))!;
+            (await fixture.Services.GetRequiredService<IAgentWorkspaceStore>().SaveAsync(stored with { AgentActorId = null })).Should().BeTrue();
+            (await agent.GetAsync(root + "/turns/turn-explain")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         }
         finally { await fixture.DisposeAsync(); }
     }

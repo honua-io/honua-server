@@ -15,10 +15,18 @@ using Honua.Infrastructure.Security;
 namespace Honua.Server.Features.AgentWorkspace;
 
 internal sealed class DatasetImportTaskProvider(IAgentWorkspaceStore store, IHttpContextAccessor accessor)
-    : IDatasetImportTaskProvider
+    : IDatasetImportTaskProvider, IDatasetImportTaskContextReader
 {
-    public async Task<DatasetImportTask?> AuthorizeAsync(ClaimsPrincipal principal, string workspaceId,
+    public Task<DatasetImportTask?> AuthorizeAsync(ClaimsPrincipal principal, string workspaceId,
         string taskId, long revision, string contentHash, bool requireWrite, CancellationToken cancellationToken = default)
+        => AuthorizeCoreAsync(principal, workspaceId, taskId, revision, contentHash, requireWrite, false, cancellationToken);
+
+    public Task<DatasetImportTask?> ReadAsync(ClaimsPrincipal principal, string workspaceId,
+        string taskId, long revision, string contentHash, CancellationToken cancellationToken = default)
+        => AuthorizeCoreAsync(principal, workspaceId, taskId, revision, contentHash, false, true, cancellationToken);
+
+    private async Task<DatasetImportTask?> AuthorizeCoreAsync(ClaimsPrincipal principal, string workspaceId,
+        string taskId, long revision, string contentHash, bool requireWrite, bool allowLinkedContext, CancellationToken cancellationToken)
     {
         var transport = accessor.HttpContext;
         if (transport is null || principal.Identity?.IsAuthenticated != true || !AgentWorkspaceState.IsIdentifier(workspaceId) ||
@@ -32,7 +40,7 @@ internal sealed class DatasetImportTaskProvider(IAgentWorkspaceStore store, IHtt
         if (document is null || !AgentWorkspaceState.CanRead(document, actor, tenant, target) ||
             !document.DatasetImportTasks.TryGetValue(taskId, out var versions)) return null;
         var task = versions.SingleOrDefault(item => item.Revision == revision);
-        if (task is null || task.TaskId != taskId || task.OwnerActorId != actor || task.TenantId != tenant ||
+        if (task is null || task.TaskId != taskId || !CanObserve(principal, document, task, actor, allowLinkedContext) || task.TenantId != tenant ||
             task.TargetId != target || task.WorkspaceId != workspaceId || task.ContentHash != contentHash ||
             DatasetImportTaskState.ContentHash(task) != contentHash) return null;
         if (!await transport.RequestServices.GetRequiredService<IDatasetImportDestinationAuthorizer>()
@@ -45,10 +53,15 @@ internal sealed class DatasetImportTaskProvider(IAgentWorkspaceStore store, IHtt
         if (latest is null || !AgentWorkspaceState.CanRead(latest, actor, tenant, target) ||
             !latest.DatasetImportTasks.TryGetValue(taskId, out var latestVersions) ||
             latestVersions.SingleOrDefault(item => item.Revision == revision) is not { } latestTask ||
-            latestTask != task ||
+            latestTask != task || !CanObserve(principal, latest, latestTask, actor, allowLinkedContext) ||
             !await AgentCredentialAuthority.IsCurrentAsync(principal, transport.RequestServices, cancellationToken).ConfigureAwait(false)) return null;
         return task;
     }
+
+    private static bool CanObserve(ClaimsPrincipal principal, AgentWorkspaceDocument workspace,
+        DatasetImportTask task, string actor, bool allowLinkedContext)
+        => task.OwnerActorId == actor || allowLinkedContext && AgentCredentialAuthority.IsAgent(principal) &&
+            workspace.AgentActorId == actor && workspace.OwnerId == task.OwnerActorId;
 
     internal static async Task<bool> SourceAuthorizedAsync(HttpContext context, AgentWorkspaceDocument workspace,
         DatasetImportSource source, CancellationToken cancellationToken)
