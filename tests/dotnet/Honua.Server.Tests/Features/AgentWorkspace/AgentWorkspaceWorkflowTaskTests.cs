@@ -99,6 +99,50 @@ public sealed class AgentWorkspaceWorkflowTaskTests
         }
     }
 
+    [UnitTest]
+    public void CreatedArtifactAttachesOnceAndReplayCannotRetargetLaterHumanFocus()
+    {
+        var (document, command) = AuthoringDocument();
+        var attached = AgentWorkspaceState.AttachWorkflowArtifact(document, command, command.PackageId, 1, Hash);
+        attached.Task.Should().Be(new AgentTaskReference(command.PackageId, 1, "workflow-package", ContentHash: Hash));
+        attached.WorkflowAuthoringCommands[command.CommandId].AttachmentState.Should().Be("Attached");
+        attached.WorkflowAuthoringCommands[command.CommandId].AttachedRevision.Should().Be(2);
+        attached.Turns[command.TurnId].Context.Revision.Should().Be(1);
+        var later = AgentWorkspaceState.Update(attached, new("tab-1", 2, "target-1", [], Reference));
+        AgentWorkspaceState.AttachWorkflowArtifact(later, later.WorkflowAuthoringCommands[command.CommandId], command.PackageId, 1, Hash)
+            .Should().BeSameAs(later);
+        later.Task.Should().Be(Reference);
+    }
+
+    [UnitTest]
+    public void HumanNavigationProducesDurableConflictWithoutDiscardingArtifactOrReattachingOnRetry()
+    {
+        var (document, command) = AuthoringDocument();
+        var navigated = AgentWorkspaceState.Update(document, new("tab-1", 1, "target-1", [], Reference));
+        var conflict = AgentWorkspaceState.AttachWorkflowArtifact(navigated, command, command.PackageId, 1, Hash);
+        conflict.Task.Should().Be(Reference);
+        conflict.WorkflowAuthoringCommands[command.CommandId].AttachmentState.Should().Be("Conflict");
+        conflict.WorkflowAuthoringCommands[command.CommandId].AttachedRevision.Should().BeNull();
+        AgentWorkspaceState.AttachWorkflowArtifact(conflict, conflict.WorkflowAuthoringCommands[command.CommandId], command.PackageId, 1, Hash)
+            .Should().BeSameAs(conflict);
+        var wrongArtifact = () => AgentWorkspaceState.AttachWorkflowArtifact(document, command, "other-package", 1, Hash);
+        wrongArtifact.Should().Throw<AgentWorkspaceConflictException>();
+    }
+
+    private static (AgentWorkspaceDocument Document, AgentWorkflowAuthoringCommand Command) AuthoringDocument()
+    {
+        var document = new AgentWorkspaceDocument
+        {
+            WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-owner", Members = ["human-owner", "agent"]
+        };
+        document = AgentWorkspaceState.Update(document, new("tab-1", 0, "target-1", [], null));
+        document = AgentWorkspaceState.AddTurn(document, "agent", new("turn-1", "tab-1", 1, "Create a process"));
+        var command = new AgentWorkflowAuthoringCommand("command-1", "agent", document.WorkspaceId, "turn-1", "fingerprint",
+            "agent-workflow-1", 1, Hash, document.OwnerId, "public", document.TargetId, "release-1", "tab-1", 1);
+        document = document with { WorkflowAuthoringCommands = new() { [command.CommandId] = command } };
+        return (document, command);
+    }
+
     private static WorkflowPackageVersion Version(string owner) => new()
     {
         PackageId = Reference.Id, Version = 2, SchemaVersion = "workflow-package.v1", PackageHash = Hash,

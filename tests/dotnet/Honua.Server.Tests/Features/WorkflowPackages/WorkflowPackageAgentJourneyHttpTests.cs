@@ -106,14 +106,10 @@ public sealed class WorkflowPackageAgentJourneyHttpTests(RedisFixture redis)
             (await packages.ListPublicationsAsync(packageId)).Should().BeEmpty();
             // This is the Studio Processes host attach/read contract: an immutable built-in
             // reference, never an invented draft id or client-provided ownership field.
-            var attached = await Read(await human.PutAsJsonAsync(workspaceRoot + "/context", new
-            {
-                viewId = "workflow-tab",
-                expectedRevision = 0,
-                targetId = target.GetProperty("targetId").GetString(),
-                selectedResources = Array.Empty<object>(),
-                task = new { kind = "workflow-package", id = packageId, revision = 1, contentHash = hash },
-            }), HttpStatusCode.OK);
+            authored.GetProperty("attachmentState").GetString().Should().Be("Attached");
+            authored.GetProperty("attachedRevision").GetInt64().Should().Be(1);
+            workspace.Task.Should().Be(new AgentTaskReference(packageId, 1, "workflow-package", ContentHash: hash));
+            var attached = await Read(await human.GetAsync(workspaceRoot + "?viewId=workflow-tab"), HttpStatusCode.OK);
             attached.GetProperty("task").GetProperty("contentHash").GetString().Should().Be(hash);
             await Read(await human.PostAsJsonAsync(workspaceRoot + "/turns", new
             { turnId = "publish-turn", viewId = "workflow-tab", contextRevision = 1, prompt = "Propose this exact attached built-in workflow for human review." }), HttpStatusCode.OK);

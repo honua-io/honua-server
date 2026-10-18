@@ -71,6 +71,30 @@ internal static class AgentWorkspaceState
         return document with { Views = views, Task = request.Task };
     }
 
+    internal static AgentWorkspaceDocument AttachWorkflowArtifact(AgentWorkspaceDocument document,
+        AgentWorkflowAuthoringCommand command, string packageId, int version, string contentHash)
+    {
+        if (!document.WorkflowAuthoringCommands.TryGetValue(command.CommandId, out var stored) || stored != command ||
+            command.PackageId != packageId || command.ExpectedVersion != version || command.PackageHash != contentHash)
+            throw new AgentWorkspaceConflictException("The immutable workflow receipt does not match its reserved command.");
+        if (command.AttachmentState is "Attached" or "Conflict") return document;
+        var updated = document;
+        var state = "Conflict";
+        long? revision = null;
+        if (command.CapturedViewId is not null && command.CapturedContextRevision is not null &&
+            Current(document, command.CapturedViewId).Revision == command.CapturedContextRevision)
+        {
+            var current = Current(document, command.CapturedViewId);
+            updated = Update(document, new(command.CapturedViewId, current.Revision, document.TargetId,
+                current.SelectedResources, new(packageId, version, "workflow-package", ContentHash: contentHash), "agent-workflow"));
+            state = "Attached";
+            revision = Current(updated, command.CapturedViewId).Revision;
+        }
+        var commands = new Dictionary<string, AgentWorkflowAuthoringCommand>(updated.WorkflowAuthoringCommands, StringComparer.Ordinal)
+        { [command.CommandId] = command with { AttachmentState = state, AttachedRevision = revision } };
+        return updated with { WorkflowAuthoringCommands = commands };
+    }
+
     public static AgentWorkspaceDocument AddTurn(AgentWorkspaceDocument document, string actorId, CreateAgentTurn request)
     {
         if (!IsIdentifier(request.TurnId) || !IsIdentifier(request.ViewId) || string.IsNullOrWhiteSpace(request.Prompt) || request.Prompt.Length > 16000)

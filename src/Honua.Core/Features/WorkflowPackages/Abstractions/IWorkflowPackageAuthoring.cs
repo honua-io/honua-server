@@ -17,4 +17,11 @@ public interface IWorkflowPackageAuthoring
 
     /// <summary>Creates a command-bound new package and validated immutable version; retries reconcile the same version; never modifies a previous package or executes the graph.</summary>
     Task<WorkflowPackageVersion> CreateAsync(ClaimsPrincipal principal, string workspaceId, string turnId, string commandId, string name, WorkflowGraph graph, CancellationToken cancellationToken);
+    /// <summary>Creates the immutable artifact and reports the durable captured-context attachment outcome.</summary>
+    async Task<WorkflowPackageAuthoringResult> CreateAndAttachAsync(ClaimsPrincipal principal, string workspaceId, string turnId,
+        string commandId, string name, WorkflowGraph graph, CancellationToken cancellationToken)
+        => new(await CreateAsync(principal, workspaceId, turnId, commandId, name, graph, cancellationToken).ConfigureAwait(false), "Unsupported", null);
 }
+
+/// <summary>Immutable authoring receipt with a durable attachment result; conflict never discards the artifact.</summary>
+public sealed record WorkflowPackageAuthoringResult(WorkflowPackageVersion Version, string AttachmentState, long? AttachedRevision);

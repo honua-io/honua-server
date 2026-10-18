@@ -9,6 +9,7 @@ internal static class WorkflowPackageToolSchemas
 {
     public static readonly JsonElement AuthoringOutput = JsonDocument.Parse("""
         {"type":"object","required":["qualification"],"properties":{
+          "attachmentState":{"type":["string","null"]},"attachedRevision":{"type":["integer","null"]},
           "qualification":{"type":"string"},"packages":{"type":["array","null"],"items":{"type":"object"}},
           "version":{"type":["object","null"],"properties":{
             "packageId":{"type":"string"},"version":{"type":"integer","minimum":1},"packageHash":{"type":"string"},

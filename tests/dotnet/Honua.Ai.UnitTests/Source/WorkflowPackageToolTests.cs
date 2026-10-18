@@ -46,6 +46,27 @@ public sealed class WorkflowPackageToolTests
         await authoring.Received(1).ReadAsync(context.User, "workspace-a", "turn-a", "package-a", 3, Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task CreateReturnsActualArtifactAndDurableAttachmentConflict()
+    {
+        var authoring = Substitute.For<IWorkflowPackageAuthoring>();
+        var context = Context(authoring);
+        var graph = new WorkflowGraph { Nodes = [] };
+        var version = new WorkflowPackageVersion
+        {
+            PackageId = "package-created", Version = 1, PackageHash = new string('a', 64), Graph = graph,
+            Validation = WorkflowPackageValidationResult.Success(new string('a', 64)), CreatedAt = DateTimeOffset.UnixEpoch,
+        };
+        authoring.CreateAndAttachAsync(context.User, "workspace-a", "turn-a", "command-a", "Area", Arg.Any<WorkflowGraph>(),
+            Arg.Any<CancellationToken>()).Returns(new WorkflowPackageAuthoringResult(version, "Conflict", null));
+        var result = await new WorkflowPackageTool().InvokeAsync(context, JsonSerializer.SerializeToElement(new
+        {
+            action = "create", workspaceId = "workspace-a", turnId = "turn-a", commandId = "command-a", name = "Area", graph,
+        }), CancellationToken.None);
+        result.StructuredContent!.Value.GetProperty("version").GetProperty("packageId").GetString().Should().Be("package-created");
+        result.StructuredContent.Value.GetProperty("attachmentState").GetString().Should().Be("Conflict");
+    }
+
     [UnitTheory]
     [InlineData("""{"action":"create","workspaceId":"w","turnId":"t","packageId":"existing","name":"Edit","graph":{"nodes":[]}}""")]
     [InlineData("""{"action":"publish","workspaceId":"w","turnId":"t"}""")]

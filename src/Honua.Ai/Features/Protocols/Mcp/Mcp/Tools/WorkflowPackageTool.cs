@@ -38,7 +38,7 @@ internal sealed class WorkflowPackageTool : IMcpTool
         Title = "Author built-in workflow package",
         Description = "List visible workflow packages, read an immutable version, or create a new package plus validated immutable version. "
             + "Supply the authorized workspace and frozen turn; ownership comes from the server's verified workspace owner. "
-            + "Each edit uses a new commandId and new package; retrying the same command reconciles its immutable version: use the returned packageId/version/content hash in Studio process nodes. "
+            + "Each edit uses a new commandId and new package; retrying the same command reconciles its immutable version: the server attaches the accepted version only if the captured view revision still matches. An attachment conflict retains the immutable artifact and never overwrites later human focus. "
             + "Validation is not execution verification. This tool never publishes, schedules, enables, or runs a workflow.",
         InputSchema = Schema,
         OutputSchema = WorkflowPackageToolSchemas.AuthoringOutput,
@@ -70,10 +70,13 @@ internal sealed class WorkflowPackageTool : IMcpTool
                         ?? throw new GeoprocessingNotFoundException("Workflow package version was not found."),
                 }, WorkflowPackageToolJsonContext.Default.WorkflowPackageToolOutput);
             case "create" when input.Name is { Length: > 0 and <= 200 } && input.Graph is not null && input.PackageId is null && input.Version is null && !string.IsNullOrWhiteSpace(input.CommandId):
+                var created = await authoring.CreateAndAttachAsync(principal, input.WorkspaceId, input.TurnId, input.CommandId!, input.Name,
+                    input.Graph, cancellationToken).ConfigureAwait(false);
                 return McpToolHelpers.SuccessResult(new WorkflowPackageToolOutput
                 {
-                    Version = await authoring.CreateAsync(principal, input.WorkspaceId, input.TurnId, input.CommandId!, input.Name,
-                        input.Graph, cancellationToken).ConfigureAwait(false),
+                    Version = created.Version,
+                    AttachmentState = created.AttachmentState,
+                    AttachedRevision = created.AttachedRevision,
                 }, WorkflowPackageToolJsonContext.Default.WorkflowPackageToolOutput);
             default:
                 throw new GeoprocessingValidationException("Use list, read with packageId/version, or create with commandId/name/graph.");
@@ -98,6 +101,8 @@ internal sealed record WorkflowPackageToolOutput
 {
     public WorkflowPackage[]? Packages { get; init; }
     public WorkflowPackageVersion? Version { get; init; }
+    public string? AttachmentState { get; init; }
+    public long? AttachedRevision { get; init; }
     public string Qualification { get; init; } = "validated-not-execution-verified";
 }
 

@@ -25,7 +25,8 @@ internal sealed record AgentWorkspaceCommand(
 internal sealed record AgentWorkflowAuthoringCommand(
     string CommandId, string ActorId, string WorkspaceId, string TurnId, string RequestFingerprint,
     string PackageId, int ExpectedVersion, string PackageHash, string OwnerActorId, string TenantId,
-    string TargetId, string ReleaseId);
+    string TargetId, string ReleaseId, string? CapturedViewId = null, long? CapturedContextRevision = null,
+    string AttachmentState = "Pending", long? AttachedRevision = null);
 internal sealed record AgentWorkspaceDocument
 {
     public required string WorkspaceId { get; init; }

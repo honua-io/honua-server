@@ -281,6 +281,14 @@ public sealed class McpWorkflowViewTests
                 McpWorkflowViewCatalog.Setup.Stages.ToList().FindIndex(stage => stage.Id == "compose"));
         }
 
+        foreach (var name in new[] { "honua_workflow_package", "honua_workflow_package_propose" })
+        {
+            var descriptor = full.Tools.Single(t => t.GetProperty("name").GetString() == name);
+            descriptor.GetProperty("_meta").GetProperty("honua.studio").GetProperty("family").GetString()
+                .Should().Be("honua.workspace.canonical", "native discovery must retain canonical workflow authoring and governance tools");
+            descriptor.GetRawText().Should().Be(view.Tools.Single(t => t.GetProperty("name").GetString() == name).GetRawText());
+        }
+
         fullStudio.GetProperty("annotations").ValueKind.Should().Be(JsonValueKind.Object);
         fullStudio.GetProperty("outputSchema").ValueKind.Should().Be(JsonValueKind.Object);
 
