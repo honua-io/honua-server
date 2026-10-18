@@ -25,7 +25,7 @@ export async function requestCancellation({ client, transport, otherClient, othe
   let armed = false;
   let outcome;
   let settled = false;
-  let stage = "fixture";
+  let stage = "session-authority";
   let failure;
   let proof;
   let otherClosed = false;
@@ -63,7 +63,6 @@ export async function requestCancellation({ client, transport, otherClient, othe
     return { observedAfterMs, samples };
   };
   try {
-    stage = "session-authority";
     require(typeof transport.sessionId === "string" && transport.sessionId.length > 0
       && typeof otherTransport.sessionId === "string" && otherTransport.sessionId !== transport.sessionId,
     "independent authenticated stateful SDK sessions are required");
