@@ -16,10 +16,10 @@ namespace Honua.Server.Features.Studio;
 internal static partial class StudioPackageEndpoints
 {
     private static Task<StudioCompositionBody> PrepareDraftMapStyleAsync(HttpContext context,
-        StudioCompositionBody before, StudioCompositionBody after)
+        StudioCompositionBody before, StudioCompositionBody after, bool mapLocalSnapshot = false)
         => StudioMapStyleMutationPreparation.PrepareAsync(context.User, before, after,
             context.RequestServices.GetRequiredService<IStudioMapStyleSourceAuthorizer>(),
-            context.RequestServices.GetRequiredService<IMapStyleValidator>(), context.RequestAborted);
+            context.RequestServices.GetRequiredService<IMapStyleValidator>(), context.RequestAborted, mapLocalSnapshot);
 
     private static Task<IResult> HandleUpdateDraftStyle(
         Guid draftId,
@@ -38,7 +38,7 @@ internal static partial class StudioPackageEndpoints
                 if (!validator.TryValidate(request.MapSpec, out var error))
                     throw new StudioCompositionBodyException(error ?? "This map style is not supported.");
                 return candidate;
-            });
+            }, mapLocalSnapshot: true);
 
     private static Task<IResult> HandleInitializeDraftStyle(
         Guid draftId,
@@ -59,7 +59,7 @@ internal static partial class StudioPackageEndpoints
         StudioEndpointAuthorization authorization,
         ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context,
-        Func<StudioCompositionBody, Task<StudioCompositionBody>> mutate)
+        Func<StudioCompositionBody, Task<StudioCompositionBody>> mutate, bool mapLocalSnapshot = false)
     {
         if (generation is null or < 1)
             return BadRequest(context, "generation must be the current positive draft generation.");
@@ -80,7 +80,7 @@ internal static partial class StudioPackageEndpoints
             StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(existing.Family);
             var before = StudioCompositionBodyEditor.ReadBody(existing.Envelope);
             var body = await mutate(before).ConfigureAwait(false);
-            body = await PrepareDraftMapStyleAsync(context, before, body).ConfigureAwait(false);
+            body = await PrepareDraftMapStyleAsync(context, before, body, mapLocalSnapshot).ConfigureAwait(false);
             var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.UpdateAsync(draftId, new UpdateStudioPackageDraftCommand
             {

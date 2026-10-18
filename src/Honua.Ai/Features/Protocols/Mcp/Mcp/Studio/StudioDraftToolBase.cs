@@ -362,7 +362,7 @@ internal abstract class StudioDraftToolBase
     /// <summary>Prepares a map mutation through the shared style policy and maps failures to MCP errors.</summary>
     protected static async Task<StudioCompositionBody> PrepareMapStyleUpdateAsync(
         HttpContext httpContext, ClaimsPrincipal principal, StudioCompositionBody before,
-        StudioCompositionBody after, CancellationToken cancellationToken)
+        StudioCompositionBody after, CancellationToken cancellationToken, bool mapLocalSnapshot = false)
     {
         if (before.MapSpec is null && after.MapSpec is null) return after;
         var sources = httpContext.RequestServices.GetService<IStudioMapStyleSourceAuthorizer>()
@@ -372,7 +372,7 @@ internal abstract class StudioDraftToolBase
         try
         {
             return await StudioMapStyleMutationPreparation.PrepareAsync(principal, before, after,
-                sources, validator, cancellationToken).ConfigureAwait(false);
+                sources, validator, cancellationToken, mapLocalSnapshot).ConfigureAwait(false);
         }
         catch (UnauthorizedAccessException)
         {

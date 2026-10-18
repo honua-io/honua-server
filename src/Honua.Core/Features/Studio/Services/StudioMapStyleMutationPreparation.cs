@@ -19,7 +19,7 @@ public static class StudioMapStyleMutationPreparation
     public static async Task<StudioCompositionBody> PrepareAsync(
         ClaimsPrincipal principal, StudioCompositionBody before, StudioCompositionBody after,
         IStudioMapStyleSourceAuthorizer authorizer, IMapStyleValidator validator,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool mapLocalSnapshot = false)
     {
         if (before.MapSpec is null && after.MapSpec is null) return after;
         if (after.MapSpec is not { ValueKind: JsonValueKind.Object } proposed)
@@ -35,9 +35,9 @@ public static class StudioMapStyleMutationPreparation
         StudioCompositionBody candidate;
         if (before.MapSpec is { ValueKind: JsonValueKind.Object })
         {
-            candidate = StudioCompositionBodyEditor.ReconcileMapStyle(before, after, authorizedStyle);
+            candidate = StudioCompositionBodyEditor.ReconcileMapStyle(before, after, authorizedStyle, preserveSharedLabels: mapLocalSnapshot);
             var compositionOnly = StudioCompositionBodyEditor.ReconcileMapStyle(
-                before, after with { MapSpec = before.MapSpec }, authorizedStyle);
+                before, after with { MapSpec = before.MapSpec }, authorizedStyle, preserveSharedLabels: mapLocalSnapshot);
             if (!JsonElement.DeepEquals(candidate.MapSpec!.Value, compositionOnly.MapSpec!.Value))
             {
                 // A whole-style replacement has the same snapshot semantics as the
@@ -48,8 +48,10 @@ public static class StudioMapStyleMutationPreparation
         else if (before.MapSpec is null)
         {
             candidate = StudioCompositionBodyEditor.SetMapStyle(projection, proposed);
-            if (JsonElement.DeepEquals(proposed, authorizedStyle))
-                candidate = candidate with { StyleRefs = after.StyleRefs, Layers = after.Layers };
+            // Initial base appearance may differ from the generated defaults.
+            // Preserve explicitly selected references and validate them below;
+            // a typed snapshot edit already cleared its references before here.
+            candidate = candidate with { StyleRefs = after.StyleRefs, Layers = after.Layers };
         }
         else
         {
@@ -58,10 +60,11 @@ public static class StudioMapStyleMutationPreparation
 
         if (!validator.TryValidate(candidate.MapSpec!.Value, out var error))
             throw new StudioCompositionBodyException(error ?? "The resulting map style is not supported.");
-        return candidate with
+        candidate = candidate with
         {
             SourceBindings = projection.SourceBindings,
             SourceBindingIds = projection.SourceBindingIds
         };
+        return await authorizer.AuthorizeStyleReferencesAsync(principal, candidate, cancellationToken).ConfigureAwait(false);
     }
 }

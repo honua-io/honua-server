@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 
@@ -349,8 +350,25 @@ public static partial class StudioCompositionBodyEditor
         }
 
         var layers = body.Layers.ToList();
+        var previousStyle = layers[index].StyleRef;
         layers[index] = layers[index] with { StyleRef = styleRef };
-        return body with { Layers = layers };
+        var references = body.StyleRefs;
+        if (previousStyle is not null && previousStyle != styleRef && !layers.Any(layer => layer.StyleRef == previousStyle))
+            references = references?.Where(reference => !(reference.ValueKind == JsonValueKind.Object
+                && reference.TryGetProperty("styleId", out var id) && id.ValueKind == JsonValueKind.String
+                && id.GetString() == previousStyle)).ToArray();
+        // Applying the same shared reference deliberately refreshes this owner's
+        // catalog structure. Other owners keep their exact existing bindings.
+        else if (previousStyle is not null && body.MapSpec is { ValueKind: JsonValueKind.Object } style)
+        {
+            var targets = JsonNode.Parse(style.GetRawText())!["layers"]!.AsArray().OfType<JsonObject>()
+                .Where(render => RenderOwner(render, body) == layerId).Select(render => render["id"]!.GetValue<string>())
+                .ToHashSet(StringComparer.Ordinal);
+            references = references?.Select(reference => reference.ValueKind == JsonValueKind.Object
+                && reference.TryGetProperty("styleId", out var id) && id.ValueKind == JsonValueKind.String && id.GetString() == previousStyle
+                    ? RemoveStyleBindingTargets(reference, targets) : reference).ToArray();
+        }
+        return body with { Layers = layers, StyleRefs = references };
     }
 
     /// <summary>

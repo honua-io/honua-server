@@ -269,6 +269,38 @@ public sealed class StudioCompositionBodyEditorTests
         Assert.Equal("shared-source", Assert.Single(body.Controls!).SourceId);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SetLayerStyleRef_RebindsOneOwnerWithoutLeavingItsOldSharedMapping(bool shared)
+    {
+        using var style = JsonDocument.Parse("""
+            {"version":8,"sources":{"source":{"type":"geojson","data":"/source"}},"layers":[
+             {"id":"parcels","type":"fill","source":"source"},{"id":"roads","type":"line","source":"source"}]}
+            """);
+        using var reference = JsonDocument.Parse("""
+            {"styleId":"old","layerBindings":[
+             {"styleLayerId":"catalog-fill","targetLayerId":"parcels","layerType":"fill"},
+             {"styleLayerId":"catalog-line","targetLayerId":"roads","layerType":"line"}]}
+            """);
+        var body = StudioCompositionBody.Empty with
+        {
+            MapSpec = style.RootElement.Clone(),
+            StyleRefs = [reference.RootElement.Clone()],
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "source", StyleRef = "old" },
+                new StudioCompositionLayer { Id = "roads", SourceId = "source", StyleRef = shared ? "old" : null }]
+        };
+        var changed = StudioCompositionBodyEditor.SetLayerStyleRef(body, "parcels", "new");
+        Assert.Equal("new", changed.Layers[0].StyleRef);
+        if (shared)
+        {
+            var mapping = Assert.Single(Assert.Single(changed.StyleRefs!).GetProperty("layerBindings").EnumerateArray());
+            Assert.Equal("roads", mapping.GetProperty("targetLayerId").GetString());
+        }
+        else Assert.Empty(changed.StyleRefs!);
+        Assert.Equal(2, body.StyleRefs![0].GetProperty("layerBindings").GetArrayLength());
+    }
+
     [UnitTest]
     public void SetLayerStyleRef_WithMissingId_ThrowsNotFound()
         => Assert.Throws<StudioCompositionNotFoundException>(
@@ -669,6 +701,8 @@ public sealed class StudioCompositionBodyEditorTests
         var authorizer = Substitute.For<IStudioMapStyleSourceAuthorizer>();
         authorizer.AuthorizeAsync(principal, Arg.Any<StudioCompositionBody>(), CancellationToken.None)
             .Returns(after with { MapSpec = style.RootElement.Clone() });
+        authorizer.AuthorizeStyleReferencesAsync(principal, Arg.Any<StudioCompositionBody>(), CancellationToken.None)
+            .Returns(call => call.ArgAt<StudioCompositionBody>(1));
         var validator = Substitute.For<IMapStyleValidator>();
         validator.TryValidate(Arg.Any<JsonElement>(), out Arg.Any<string?>()).Returns(true);
         var result = await StudioMapStyleMutationPreparation.PrepareAsync(principal, before, after,
@@ -689,6 +723,38 @@ public sealed class StudioCompositionBodyEditorTests
         }
         await authorizer.Received(1).AuthorizeAsync(principal,
             Arg.Is<StudioCompositionBody>(body => body.MapSpec == null && body.Layers.Count == 1), CancellationToken.None);
+    }
+
+    [UnitTest]
+    public async Task PrepareMapStyle_InitialBaseAppearancePreservesExplicitSharedSelection()
+    {
+        using var style = JsonDocument.Parse("""
+            {"version":8,"sources":{"source":{"type":"geojson","data":"/source"}},"layers":[
+             {"id":"parcels","type":"fill","source":"source","paint":{"fill-color":"green"}}]}
+            """);
+        using var reference = JsonDocument.Parse("""{"styleId":"shared"}""");
+        var after = StudioCompositionBody.Empty with
+        {
+            MapSpec = style.RootElement.Clone(),
+            StyleRefs = [reference.RootElement.Clone()],
+            Layers = [new StudioCompositionLayer { Id = "parcels", SourceId = "source", StyleRef = "shared" }]
+        };
+        using var generated = JsonDocument.Parse(style.RootElement.GetRawText().Replace("green", "blue", StringComparison.Ordinal));
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([], "test"));
+        var authorizer = Substitute.For<IStudioMapStyleSourceAuthorizer>();
+        authorizer.AuthorizeAsync(principal, Arg.Any<StudioCompositionBody>(), CancellationToken.None)
+            .Returns(after with { MapSpec = generated.RootElement.Clone() });
+        authorizer.AuthorizeStyleReferencesAsync(principal, Arg.Any<StudioCompositionBody>(), CancellationToken.None)
+            .Returns(call => call.ArgAt<StudioCompositionBody>(1));
+        var validator = Substitute.For<IMapStyleValidator>();
+        validator.TryValidate(Arg.Any<JsonElement>(), out Arg.Any<string?>()).Returns(true);
+        var result = await StudioMapStyleMutationPreparation.PrepareAsync(principal, StudioCompositionBody.Empty,
+            after, authorizer, validator, CancellationToken.None);
+        Assert.Equal("shared", result.Layers[0].StyleRef);
+        Assert.Single(result.StyleRefs!);
+        Assert.Equal("green", result.MapSpec!.Value.GetProperty("layers")[0].GetProperty("paint").GetProperty("fill-color").GetString());
+        await authorizer.Received(1).AuthorizeStyleReferencesAsync(principal,
+            Arg.Is<StudioCompositionBody>(body => body.StyleRefs!.Count == 1), CancellationToken.None);
     }
 
     [UnitTest]

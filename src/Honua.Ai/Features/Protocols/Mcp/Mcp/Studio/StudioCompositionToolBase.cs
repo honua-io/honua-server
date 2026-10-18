@@ -71,7 +71,7 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
                 body = await prepare(body, cancellationToken).ConfigureAwait(false);
             var mutatedBody = mutate(body);
             mutatedBody = await PrepareMapStyleUpdateAsync(httpContext, principal, body, mutatedBody,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken, mapLocalSnapshot: toolName == SetStudioMapStyleTool.ToolName).ConfigureAwait(false);
             var envelope = StudioCompositionBodyEditor.WriteBody(draft.Envelope, mutatedBody);
 
             var actorId = ActorIdFor(RequireAuthorizationService(httpContext), principal);

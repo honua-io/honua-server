@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -11,13 +12,24 @@ namespace Honua.Core.Features.Studio.Services;
 
 public static partial class StudioCompositionBodyEditor
 {
+    /// <summary>Returns the stable identity of a server-generated shared symbol target.</summary>
+    public static string SharedSymbolRenderId(string ownerId, string styleId, string styleLayerId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(styleLayerId);
+        // Length prefixes make the tuple unambiguous without a serializer dependency.
+        var identity = FormattableString.Invariant($"{ownerId.Length}:{ownerId}{styleId.Length}:{styleId}{styleLayerId.Length}:{styleLayerId}");
+        return "honua-shared-label:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
+    }
+
     /// <summary>
     /// Reconciles a composition transition with a freshly authorized server projection.
     /// Existing appearances are retained; only genuinely added composition layers get
     /// generated defaults. Intentionally removed render layers are never resurrected.
     /// </summary>
     public static StudioCompositionBody ReconcileMapStyle(StudioCompositionBody before,
-        StudioCompositionBody after, JsonElement authorizedProjection)
+        StudioCompositionBody after, JsonElement authorizedProjection, bool preserveSharedLabels = false)
     {
         if (before.MapSpec is not { ValueKind: JsonValueKind.Object } original)
             throw new StudioCompositionBodyException("Initialize the map before reconciling its style.");
@@ -41,10 +53,16 @@ public static partial class StudioCompositionBodyEditor
         candidate["sources"] = sources.DeepClone();
         var renders = candidate["layers"]?.AsArray()
             ?? throw new StudioCompositionBodyException("The map style must contain a layer array.");
+        // A style-reference transition removes only the generated targets of
+        // that former binding. Full map-local snapshots retain their own labels.
+        var switchedLabelIds = !preserveSharedLabels && JsonElement.DeepEquals(after.MapSpec ?? original, original)
+            ? FindSwitchedSharedLabels(before, after) : new HashSet<string>(StringComparer.Ordinal);
         for (var index = renders.Count - 1; index >= 0; index--)
         {
             var owner = RenderOwner(renders[index], before);
-            if (owner is not null && removedIds.Contains(owner)) renders.RemoveAt(index);
+            if (owner is not null && removedIds.Contains(owner)
+                || renders[index] is JsonObject render && render["id"] is JsonValue id
+                && id.TryGetValue<string>(out var renderId) && switchedLabelIds.Contains(renderId)) renders.RemoveAt(index);
         }
         foreach (var layer in after.Layers.Where(layer => !previousIds.Contains(layer.Id)))
         {
@@ -89,14 +107,87 @@ public static partial class StudioCompositionBodyEditor
         using var candidateDocument = JsonDocument.Parse(candidate.ToJsonString());
         _ = SetMapStyle(after with { MapSpec = anchorDocument.RootElement.Clone() }, candidateDocument.RootElement);
         var removedInlineStyles = removedIds.Select(id => $"honua-inline:{id}").ToHashSet(StringComparer.Ordinal);
+        var remainingStyles = after.Layers.Select(layer => layer.StyleRef).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        var removedStyles = before.Layers.Where(layer => removedIds.Contains(layer.Id)).Select(layer => layer.StyleRef)
+            .OfType<string>().Where(id => !remainingStyles.Contains(id)).ToHashSet(StringComparer.Ordinal);
+        var changedOwners = before.Layers.Where(layer => layer.StyleRef is not null
+            && after.Layers.Any(next => next.Id == layer.Id && next.StyleRef != layer.StyleRef)).ToArray();
+        removedStyles.UnionWith(changedOwners.Select(layer => layer.StyleRef!).Where(id => !remainingStyles.Contains(id)));
+        var removedRenderIds = JsonNode.Parse(original.GetRawText())!["layers"]!.AsArray()
+            .OfType<JsonObject>().Where(render => RenderOwner(render, before) is { } owner && removedIds.Contains(owner))
+            .Select(render => render["id"]!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
         return after with
         {
             MapSpec = candidateDocument.RootElement.Clone(),
             StyleRefs = after.StyleRefs?.Where(reference =>
                 !(reference.ValueKind == JsonValueKind.Object
                     && reference.TryGetProperty("styleId", out var id) && id.ValueKind == JsonValueKind.String
-                    && removedInlineStyles.Contains(id.GetString()!))).ToArray()
+                    && (removedInlineStyles.Contains(id.GetString()!) || removedStyles.Contains(id.GetString()!))))
+                .Select(reference => RemoveStyleBindingTargets(reference, removedRenderIds))
+                .Select(reference => PruneChangedStyleOwners(reference, before, changedOwners)).ToArray()
         };
+    }
+
+    private static JsonElement PruneChangedStyleOwners(JsonElement reference, StudioCompositionBody before,
+        StudioCompositionLayer[] changedOwners)
+    {
+        if (reference.ValueKind != JsonValueKind.Object || !reference.TryGetProperty("styleId", out var style)
+            || style.ValueKind != JsonValueKind.String || before.MapSpec is not { ValueKind: JsonValueKind.Object } map) return reference;
+        var owners = changedOwners.Where(owner => owner.StyleRef == style.GetString()).Select(owner => owner.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        if (owners.Count == 0) return reference;
+        var targets = JsonNode.Parse(map.GetRawText())!["layers"]!.AsArray().OfType<JsonObject>()
+            .Where(render => RenderOwner(render, before) is { } owner && owners.Contains(owner))
+            .Select(render => render["id"]!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
+        return RemoveStyleBindingTargets(reference, targets);
+    }
+
+    private static HashSet<string> FindSwitchedSharedLabels(StudioCompositionBody before, StudioCompositionBody after)
+    {
+        var targets = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var owner in before.Layers.Where(layer => layer.StyleRef is not null
+            && after.Layers.Any(next => next.Id == layer.Id)))
+        {
+            foreach (var reference in before.StyleRefs ?? [])
+            {
+                if (reference.ValueKind != JsonValueKind.Object || !reference.TryGetProperty("styleId", out var style)
+                    || style.ValueKind != JsonValueKind.String || style.GetString() != owner.StyleRef
+                    || !reference.TryGetProperty("layerBindings", out var bindings) || bindings.ValueKind != JsonValueKind.Array) continue;
+                foreach (var binding in bindings.EnumerateArray())
+                {
+                    if (binding.ValueKind != JsonValueKind.Object || !binding.TryGetProperty("layerType", out var type)
+                        || type.ValueKind != JsonValueKind.String || type.GetString() != "symbol"
+                        || !binding.TryGetProperty("styleLayerId", out var source) || source.ValueKind != JsonValueKind.String
+                        || !binding.TryGetProperty("targetLayerId", out var target) || target.ValueKind != JsonValueKind.String) continue;
+                    if (target.GetString() == SharedSymbolRenderId(owner.Id, owner.StyleRef!, source.GetString()!)
+                        && (after.Layers.Single(next => next.Id == owner.Id).StyleRef != owner.StyleRef
+                            || !HasSharedTargetBinding(after, owner.StyleRef!, target.GetString()!)))
+                        targets.Add(target.GetString()!);
+                }
+            }
+        }
+        return targets;
+    }
+
+    private static bool HasSharedTargetBinding(StudioCompositionBody body, string styleId, string targetId)
+        => (body.StyleRefs ?? []).Any(reference => reference.ValueKind == JsonValueKind.Object
+            && reference.TryGetProperty("styleId", out var style) && style.ValueKind == JsonValueKind.String && style.GetString() == styleId
+            && reference.TryGetProperty("layerBindings", out var bindings) && bindings.ValueKind == JsonValueKind.Array
+            && bindings.EnumerateArray().Any(binding => binding.ValueKind == JsonValueKind.Object
+                && binding.TryGetProperty("targetLayerId", out var target) && target.ValueKind == JsonValueKind.String
+                && target.GetString() == targetId));
+
+    private static JsonElement RemoveStyleBindingTargets(JsonElement reference, HashSet<string> targets)
+    {
+        if (targets.Count == 0 || reference.ValueKind != JsonValueKind.Object
+            || !reference.TryGetProperty("layerBindings", out var bindings) || bindings.ValueKind != JsonValueKind.Array) return reference;
+        var node = JsonNode.Parse(reference.GetRawText())!.AsObject();
+        var mappings = node["layerBindings"]!.AsArray();
+        for (var index = mappings.Count - 1; index >= 0; index--)
+            if (mappings[index] is JsonObject mapping && mapping["targetLayerId"] is JsonValue value
+                && value.TryGetValue<string>(out var target) && targets.Contains(target)) mappings.RemoveAt(index);
+        using var document = JsonDocument.Parse(node.ToJsonString());
+        return document.RootElement.Clone();
     }
 
     private static string? RenderOwner(JsonNode? render, StudioCompositionBody body)
@@ -315,7 +406,7 @@ public static partial class StudioCompositionBodyEditor
         }
 
         ValidateInlineLayerOverrides(body, layerId, styleBody);
-        var references = (body.StyleRefs ?? []).ToList();
+        var references = (updated.StyleRefs ?? []).ToList();
         var found = -1;
         for (var index = 0; index < references.Count; index++)
         {

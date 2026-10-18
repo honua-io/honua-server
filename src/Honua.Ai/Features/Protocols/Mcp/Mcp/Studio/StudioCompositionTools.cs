@@ -205,7 +205,9 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
             + "For visual or conversational map-local editing, supply styleBody instead of styleRef: a dictionary of "
             + "MapLibre layer overrides keyed by this layer id (and optionally its __outline companion). "
             + "This updates the same draft's inline style, never the reusable catalog style. "
-            + "Binding a catalog styleRef does not validate the reference against a style catalog.",
+            + "Catalog references are checked against the current authorized style and source fields. "
+            + "Reapplying the same styleRef refreshes this layer's catalog render bindings, including added or removed labels. "
+            + "This replaces this layer's explicit binding selection with compatible catalog defaults; other layers' bindings remain unchanged.",
         InputSchema = StudioMcpSchemas.SetLayerStyleArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Re-pointing a style binding is non-destructive; re-applying the same

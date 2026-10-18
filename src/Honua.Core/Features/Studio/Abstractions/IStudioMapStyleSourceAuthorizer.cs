@@ -14,4 +14,11 @@ public interface IStudioMapStyleSourceAuthorizer
     /// resolved from authorized publications. Throws when current source access is denied.
     /// </summary>
     Task<StudioCompositionBody> AuthorizeAsync(ClaimsPrincipal principal, StudioCompositionBody body, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Resolves live catalog bindings using current read authority and validates the
+    /// effective appearance against the map's actual sources and visible fields.
+    /// </summary>
+    Task<StudioCompositionBody> AuthorizeStyleReferencesAsync(ClaimsPrincipal principal,
+        StudioCompositionBody body, CancellationToken cancellationToken);
 }

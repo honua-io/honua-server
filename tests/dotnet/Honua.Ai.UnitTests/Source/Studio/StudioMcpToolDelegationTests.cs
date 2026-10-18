@@ -249,8 +249,8 @@ public sealed class StudioMcpToolDelegationTests
             McpTestFactory.ParseJson($$$"""{"draftId":"{{{draftId}}}","generation":1,"layer":{"id":"parcels","type":"fill","sourceId":"content.parcels"}}"""),
             CancellationToken.None);
         var style = new SetStudioLayerStyleTool(jobs, NullLogger<SetStudioLayerStyleTool>.Instance);
-        var arguments = McpTestFactory.ParseJson($$$"""
-            {"draftId":"{{{draftId}}}","generation":2,"layerId":"parcels",
+        var arguments = McpTestFactory.ParseJson($$$$$"""
+            {"draftId":"{{{{{draftId}}}}}","generation":2,"layerId":"parcels",
              "styleBody":{"parcels":{"paint":{"fill-color":"green"}}}}
             """);
         var result = await style.InvokeAsync(context, arguments, CancellationToken.None);
@@ -403,6 +403,9 @@ public sealed class StudioMcpToolDelegationTests
     private sealed class ControlledMapStyleSourceAuthorizer : IStudioMapStyleSourceAuthorizer
     {
         public bool Reject { get; set; }
+
+        public Task<StudioCompositionBody> AuthorizeStyleReferencesAsync(System.Security.Claims.ClaimsPrincipal principal,
+            StudioCompositionBody body, CancellationToken cancellationToken) => Task.FromResult(body);
 
         public Task<StudioCompositionBody> AuthorizeAsync(System.Security.Claims.ClaimsPrincipal principal,
             StudioCompositionBody body, CancellationToken cancellationToken)

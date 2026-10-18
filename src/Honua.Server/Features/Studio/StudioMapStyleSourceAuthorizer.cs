@@ -16,6 +16,10 @@ internal sealed class StudioMapStyleSourceAuthorizer(IHttpContextAccessor access
         return await StudioDraftStyleInitializer.InitializeAsync(authorizedContext, body, cancellationToken).ConfigureAwait(false);
     }
 
+    public Task<StudioCompositionBody> AuthorizeStyleReferencesAsync(ClaimsPrincipal principal,
+        StudioCompositionBody body, CancellationToken cancellationToken)
+        => StudioDraftStyleReferences.ResolveAsync(CreateCallerContext(principal), body, cancellationToken);
+
     private HttpContext CreateCallerContext(ClaimsPrincipal principal)
     {
         var context = accessor.HttpContext;
