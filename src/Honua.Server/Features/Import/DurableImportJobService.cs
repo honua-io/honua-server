@@ -184,8 +184,13 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
 
         using var scope = _scopeFactory.CreateScope();
         var format = scope.ServiceProvider.GetRequiredService<IFileImportService>().DetectFormat(request.FileName);
+        if (format is null)
+        {
+            return null;
+        }
+
         return ImportProgress.CreateInitial(
-            job.OperationId, request.TableName, format, size, request.FileName,
+            job.OperationId, request.TableName, format.Value, size, request.FileName,
             request.SourceKind, request.SourceUrl, request.CloudFileId, request.UploadId,
             operationInstanceId: request.OperationInstanceId,
             correlationId: request.CorrelationId,

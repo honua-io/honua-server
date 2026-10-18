@@ -392,6 +392,25 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
     }
 
     [UnitTest]
+    public async Task GetProgressAsync_MissingProjection_UnknownFormatDoesNotInventProgressOrDispatch()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new InMemoryProgressStore();
+        var queue = Substitute.For<IJobQueue>();
+        var decision = BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false);
+        var record = DurableImportJobService.BuildJobRecord(
+            "unknown-format", StagedRequest() with { FileName = "data.unknown" }, 10, decision, DateTimeOffset.UtcNow);
+        await jobStore.TryCreateAsync(record);
+        using var service = CreateService(decision,
+            new ProgressReadingImportJobService(progressStore), jobStore, progressStore, [], queue,
+            detectedFormat: null);
+
+        (await service.GetProgressAsync(record.OperationId)).Should().BeNull();
+        (await progressStore.GetProgressAsync<ImportProgress>(record.OperationId)).Should().BeNull();
+        await queue.DidNotReceiveWithAnyArgs().EnqueueAsync(default!, default, default);
+    }
+
+    [UnitTest]
     public async Task GetProgressAsync_ExpiredSuccessfulProjection_DoesNotInventOutputOrRestartJob()
     {
         var jobStore = new InMemoryExecutionJobStore();
@@ -477,10 +496,11 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
         IUniversalProgressStore progressStore,
         IEnumerable<IBatchComputeBackend> backends,
         IJobQueue? queue = null,
-        ImportLimits? limits = null)
+        ImportLimits? limits = null,
+        SupportedFileFormat? detectedFormat = SupportedFileFormat.GeoJson)
     {
         var importService = Substitute.For<IFileImportService>();
-        importService.DetectFormat(Arg.Any<string>()).Returns(SupportedFileFormat.GeoJson);
+        importService.DetectFormat(Arg.Any<string>()).Returns(detectedFormat);
         importService.Limits.Returns(limits ?? new ImportLimits());
         var services = new ServiceCollection();
         services.AddScoped(_ => importService);
