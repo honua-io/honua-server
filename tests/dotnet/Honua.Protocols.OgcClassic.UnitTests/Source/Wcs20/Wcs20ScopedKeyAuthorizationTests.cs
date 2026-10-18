@@ -227,6 +227,83 @@ public sealed class Wcs20ScopedKeyAuthorizationTests
         AssertDenied(result);
     }
 
+    [UnitTest]
+    public async Task Issue6347_DirectRoute_ScopedKeyMatchesTheGrantOwner()
+    {
+        var original = Graph();
+        var second = original.Services[0] with
+        {
+            Metadata = original.Services[0].Metadata with { Id = "service-second", Name = "second" }
+        };
+        var graph = original with
+        {
+            Services = [.. original.Services, second],
+            Publications =
+            [
+                .. original.Publications,
+                original.Publications[0] with
+                {
+                    Metadata = original.Publications[0].Metadata with { Id = "publication-second" },
+                    ServiceId = second.Metadata.Id
+                }
+            ]
+        };
+
+        var secondKey = await ExecuteAsync("2.0.1", "GetCoverage", Key("read:second/elevation"), graph: graph, directLayer: 101);
+        secondKey.Status.Should().Be(200, secondKey.Text);
+        secondKey.Body.Should().Equal(CoverageBytes);
+        var firstKey = await ExecuteAsync("2.0.1", "GetCoverage", Key("read:imagery/elevation"), graph: graph, directLayer: 101);
+        firstKey.Status.Should().Be(200, firstKey.Text);
+        var denied = await ExecuteAsync("2.0.1", "GetCoverage", Key("read:other/elevation"), graph: graph, directLayer: 101);
+        AssertDenied(denied);
+    }
+
+    [UnitTest]
+    public async Task Issue6347_LayerIndexFallback_IgnoresFeaturePublication()
+    {
+        var original = Graph();
+        var feature = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service-features", Name = "features" },
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Protocols = ["FeatureServer"],
+            EnabledProtocols = ["FeatureServer"],
+            AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] }
+        };
+        var roads = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-roads", Name = "roads" },
+            Type = MetadataV2ResourceType.EsriFeatureLayer,
+            AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] }
+        };
+        var featurePublication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "publication-roads", Name = "roads" },
+            ServiceId = feature.Metadata.Id,
+            ResourceId = roads.Metadata.Id,
+            LayerIndex = 101
+        };
+        var graph = original with
+        {
+            Services = [feature, .. original.Services],
+            Resources = [roads, .. original.Resources],
+            StorageBindings = [],
+            Publications =
+            [
+                featurePublication,
+                original.Publications[0] with { LayerIndex = 101 },
+                .. original.Publications.Skip(1)
+            ]
+        };
+
+        var featureKey = await ExecuteAsync("2.0.1", "GetCoverage", Key("read:features/roads"), graph: graph, directLayer: 101);
+        AssertDenied(featureKey);
+        featureKey.Exports.Should().BeEmpty();
+        var imageryKey = await ExecuteAsync("2.0.1", "GetCoverage", Key("read:imagery/elevation"), graph: graph, directLayer: 101);
+        imageryKey.Status.Should().Be(200, imageryKey.Text);
+        imageryKey.Body.Should().Equal(CoverageBytes);
+    }
+
     [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]

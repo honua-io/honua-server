@@ -777,18 +777,33 @@ internal sealed partial class Wcs20Handler
             return false;
         }
 
-        var candidate = snapshot.Graph.Publications
-            .Where(p => p.LayerIndex == layerId)
-            .Select(publication => (Publication: publication, Resource: snapshot.ResolveResource(publication)))
-            .FirstOrDefault(entry => snapshot.IsRoutable(entry.Publication) &&
-                snapshot.Index.ServicesById.TryGetValue(entry.Publication.ServiceId, out var service) &&
-                TenantScopeHelpers.IsPublicationVisible(context, entry.Publication, entry.Resource, service));
-        if (candidate.Resource is not null)
+        // No storage binding. A publication LayerIndex can belong to any protocol, so
+        // this fallback must use the same coverage-protocol filter as TryFindOwningService.
+        // Otherwise a FeatureServer publication at the same integer authorizes the WCS
+        // route for a key such as read:features/roads.
+        var fallbackOwners = snapshot.Graph.Publications
+            .Where(publication => publication.LayerIndex == layerId)
+            .Select(publication => (
+                Publication: publication,
+                Resource: snapshot.ResolveResource(publication),
+                Service: snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)
+                    ? service
+                    : null))
+            .Where(entry => entry.Resource is not null &&
+                entry.Service is not null &&
+                snapshot.IsRoutable(entry.Publication) &&
+                IsCoverageProtocol(entry.Service) &&
+                TenantScopeHelpers.IsPublicationVisible(context, entry.Publication, entry.Resource, entry.Service))
+            .Select(entry => (Resource: entry.Resource!, Service: entry.Service!))
+            .ToArray();
+        if (fallbackOwners.Length > 0)
         {
-            resource = candidate.Resource;
-            owningService = snapshot.Index.ServicesById.TryGetValue(candidate.Publication.ServiceId, out var byPublication)
-                ? byPublication
-                : null;
+            var rasterOwners = fallbackOwners
+                .Where(entry => entry.Resource.Type == MetadataV2ResourceType.RasterDataset)
+                .ToArray();
+            (resource, owningService) = SelectCoverageOwner(
+                context,
+                rasterOwners.Length > 0 ? rasterOwners : fallbackOwners);
             return true;
         }
 
@@ -809,9 +824,10 @@ internal sealed partial class Wcs20Handler
     /// WCS — are considered. A resource can be published by several services, and
     /// borrowing the policy of one that cannot serve coverages at all (a feature
     /// service, say) would let an unrelated policy decide a coverage request in either
-    /// direction. Prefer a policy-bearing service as before, but retain the owning
-    /// service name even when its policy is null so scoped keys have a real target.
-    /// When coverage publications exist but none is tenant-visible, fail closed.
+    /// direction. A scope-governed key selects a visible owner its grant allows.
+    /// Other callers prefer a policy-bearing service, and a service with a null
+    /// policy is still retained so scoped keys have a real target. When coverage
+    /// publications exist but none is tenant-visible, fail closed.
     /// </remarks>
     private static bool TryFindOwningService(
         HttpContext context,
@@ -821,6 +837,7 @@ internal sealed partial class Wcs20Handler
     {
         owningService = null;
         var hasCoveragePublication = false;
+        var visible = new List<(MetadataV2Resource Resource, MetadataV2Service Service)>();
         foreach (var publication in snapshot.Graph.Publications)
         {
             if (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) ||
@@ -830,8 +847,7 @@ internal sealed partial class Wcs20Handler
             }
 
             if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) &&
-                (IsProtocolEnabled(service, WcsProtocolName) ||
-                 IsProtocolEnabled(service, ServiceProtocols.ImageServer)))
+                IsCoverageProtocol(service))
             {
                 hasCoveragePublication = true;
                 if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
@@ -839,18 +855,54 @@ internal sealed partial class Wcs20Handler
                     continue;
                 }
 
-                if (service.AccessPolicy is not null)
-                {
-                    owningService = service;
-                    return true;
-                }
-
-                owningService ??= service;
+                visible.Add((resource, service));
             }
         }
 
-        return owningService is not null || !hasCoveragePublication;
+        if (visible.Count == 0)
+        {
+            return !hasCoveragePublication;
+        }
+
+        (_, owningService) = SelectCoverageOwner(context, visible);
+        return true;
     }
+
+    /// <summary>
+    /// Picks the coverage service a direct layer route is authorized against.
+    /// A scope-governed key is matched to a visible owner its grant allows, so graph
+    /// order cannot reject <c>read:second/resource</c> just because another
+    /// policy-bearing owner was published first. Callers that are not scope-governed
+    /// still prefer the first policy-bearing owner, which keeps an anonymous or
+    /// role-restricted publication from hiding behind an earlier unrestricted one.
+    /// </summary>
+    private static (MetadataV2Resource Resource, MetadataV2Service Service) SelectCoverageOwner(
+        HttpContext context,
+        IReadOnlyList<(MetadataV2Resource Resource, MetadataV2Service Service)> visible)
+    {
+        (MetadataV2Resource Resource, MetadataV2Service Service)? policyBearing = null;
+        (MetadataV2Resource Resource, MetadataV2Service Service)? grantMatch = null;
+        var scopeGoverned = LayerScopedWriteKey.IsScopeGovernedPrincipal(context.User);
+        foreach (var candidate in visible)
+        {
+            if (candidate.Service.AccessPolicy is not null)
+            {
+                policyBearing ??= candidate;
+            }
+
+            if (scopeGoverned &&
+                AccessPolicyHelpers.EvaluateResourceAccess(context, candidate.Resource, candidate.Service).IsAllowed)
+            {
+                grantMatch ??= candidate;
+            }
+        }
+
+        return grantMatch ?? policyBearing ?? visible[0];
+    }
+
+    private static bool IsCoverageProtocol(MetadataV2Service service)
+        => IsProtocolEnabled(service, WcsProtocolName) ||
+           IsProtocolEnabled(service, ServiceProtocols.ImageServer);
 
     private static ServiceResolutionResult ResolveService(
         HttpContext context,
