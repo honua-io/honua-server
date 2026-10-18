@@ -279,7 +279,7 @@ internal sealed class WorkflowEventTriggerBackgroundService(
                 : WorkflowTriggerKind.ObjectStore;
 
             await engine
-                .CreateRunAsync(definition, triggerKind, principal, metadata, cancellationToken)
+                .CreateRunAsync(definition, triggerKind, principal, metadata, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (WorkflowDefinitionValidationException ex)

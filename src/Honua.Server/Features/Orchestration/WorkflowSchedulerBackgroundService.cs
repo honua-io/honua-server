@@ -214,7 +214,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
                     WorkflowTriggerKind.Cron,
                     principal,
                     metadata,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 OrchestrationLog.SchedulerTriggered(logger, definition.WorkflowId, next.Value);
                 runCreated = true;

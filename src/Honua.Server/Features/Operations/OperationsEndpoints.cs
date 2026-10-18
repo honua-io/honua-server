@@ -124,8 +124,7 @@ internal static class OperationsEndpoints
         string id,
         OperationInvokeRequest request,
         IOperationInvoker invoker,
-        CancellationToken cancellationToken,
-        bool durableOperatorApproval)
+        CancellationToken cancellationToken)
     {
         SetNoStore(context);
         if (!await OperationAdminAuthorization.IsAuthorizedAsync(
@@ -167,7 +166,7 @@ internal static class OperationsEndpoints
     internal static Task<IResult> HandleSubmitOperation(
         HttpContext context, string id, OperationInvokeRequest request,
         IOperationCatalog catalog, IOperationInvoker invoker, CancellationToken cancellationToken)
-        => HandleSubmitOperationWithApproval(context, id, request, catalog, invoker, cancellationToken, false);
+        => HandleSubmitOperationWithApproval(context, id, request, catalog, invoker, false, cancellationToken);
 
     internal static async Task<IResult> HandleSubmitOperationWithApproval(
         HttpContext context,
@@ -175,6 +174,7 @@ internal static class OperationsEndpoints
         OperationInvokeRequest request,
         IOperationCatalog catalog,
         IOperationInvoker invoker,
+        bool durableOperatorApproval,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
