@@ -26,6 +26,7 @@ internal static class DatasetImportTaskService
             return await AuthorizedVersion(context, workspace, existing.TaskId, existing.Revision).ConfigureAwait(false);
         }
         AgentWorkspaceCapturedContext.RequireOriginal(context, workspace, request.ViewId, request.ContextRevision);
+        RequireOriginalSource(context, workspace, request.Source);
         var current = AgentWorkspaceState.Current(workspace, request.ViewId);
         if (current.Revision != request.ContextRevision)
             throw new AgentWorkspaceConflictException("The workspace context changed. Review the import destination before creating a task.");
@@ -52,6 +53,16 @@ internal static class DatasetImportTaskService
         if (!await store.SaveAsync(next).ConfigureAwait(false))
             throw new AgentWorkspaceConflictException("The workspace changed. Read the original import intent before retrying.");
         return Results.Json(task, AgentWorkspaceJsonContext.Default.DatasetImportTask);
+    }
+
+    internal static void RequireOriginalSource(HttpContext context, AgentWorkspaceDocument workspace, DatasetImportSource source)
+    {
+        var turn = AgentWorkspaceCapturedContext.ReadBoundTurn(context, workspace);
+        if (turn is null || source.Kind != "local-process-artifact") return;
+        if (turn.LocalProcessSnapshot is not { } captured || source.Artifact is not { } artifact ||
+            artifact.ProjectId != captured.ProjectId || artifact.SnapshotId != captured.SnapshotId ||
+            artifact.SnapshotDigest != captured.SnapshotDigest)
+            throw new AgentWorkspaceConflictException("The artifact must come from the original turn's captured process snapshot. Submit a new turn to select another snapshot.");
     }
 
     internal static async Task<IResult> ReadIntent(string workspaceId, string intentId, HttpContext context, IAgentWorkspaceStore store)

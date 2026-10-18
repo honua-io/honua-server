@@ -56,4 +56,30 @@ public sealed class AgentWorkspaceCapturedContextTests
         (await tool.InvokeAsync(context, arguments.RootElement, default)).IsError.Should().NotBeTrue();
         await store.Received(1).SaveAsync(Arg.Any<AgentWorkspaceDocument>());
     }
+    [UnitTheory]
+    [InlineData("project")]
+    [InlineData("snapshot")]
+    [InlineData("digest")]
+    [InlineData("exact")]
+    [InlineData("human-selection")]
+    public void ImportArtifactMustMatchOriginalCapturedSnapshot(string selection)
+    {
+        var context = new DefaultHttpContext();
+        var document = new AgentWorkspaceDocument
+        { WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-1", Members = ["human-1"] };
+        var captured = new AgentWorkspaceContext(document.WorkspaceId, document.TargetId, "view-1", 0, [], null);
+        document.Turns["turn-1"] = new("turn-1", "human-1", "Import original output", captured, null,
+            new("project-original", "snapshot-original", "digest-original", "image-pinned", 1));
+        context.Request.Headers["X-Honua-Workspace"] = document.WorkspaceId;
+        context.Request.Headers["X-Honua-Turn"] = "turn-1";
+        var artifact = new Honua.Core.Features.Import.Domain.DatasetImportArtifactSource(
+            selection == "project" ? "later-project" : "project-original",
+            selection == "snapshot" ? "later-snapshot" : "snapshot-original",
+            selection == "digest" ? "later-digest" : "digest-original", "successful-run", "outputs/points.geojson");
+        if (selection == "human-selection") context.Request.Headers.Clear();
+        var source = new Honua.Core.Features.Import.Domain.DatasetImportSource("local-process-artifact", "points.geojson", 123, new string('a', 64), artifact);
+        var act = () => DatasetImportTaskService.RequireOriginalSource(context, document, source);
+        if (selection is "exact" or "human-selection") act.Should().NotThrow();
+        else act.Should().Throw<AgentWorkspaceConflictException>();
+    }
 }
