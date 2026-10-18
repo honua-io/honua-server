@@ -18,7 +18,8 @@ internal sealed class AgentWorkspaceToolSource(IAgentWorkspaceStore store, IServ
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!store.IsAvailable) return ValueTask.FromResult<IReadOnlyList<IMcpTool>>([]);
-        var importReady = capabilities?.IsService(typeof(Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture)) == true &&
+        var importReady = capabilities is not null &&
+            capabilities.IsService(typeof(Honua.Core.Features.Authorization.Abstractions.IAgentJobSecurityContextCapture)) &&
             capabilities.IsService(typeof(Honua.Core.Features.Import.Abstractions.IDatasetImportContributorAuthorizer));
         return ValueTask.FromResult<IReadOnlyList<IMcpTool>>(importReady
             ? [.. AgentWorkspaceTool.All, .. AgentWorkspaceTool.DatasetImportTools] : AgentWorkspaceTool.All);
