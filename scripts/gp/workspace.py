@@ -48,22 +48,41 @@ def read_regular(path: Path, limit: int) -> bytes:
         os.close(descriptor)
 
 
+CREDENTIAL_DIRECTORIES = {".aws", ".azure", ".ssh", ".gnupg", ".kube", ".docker", ".config"}
+CREDENTIAL_NAMES = {".npmrc", ".pypirc", ".netrc", ".git-credentials", ".yarnrc.yml", "application_default_credentials.json", "credentials", "credentials.json", "secrets.json", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
+
+
+def secret_path(path: Path) -> bool:
+    names = [part.lower() for part in path.parts]
+    name = names[-1] if names else ""
+    return any(part in CREDENTIAL_DIRECTORIES for part in names) or name in CREDENTIAL_NAMES or name.startswith((".env", "client_secret", "service-account", "service_account", "secrets.")) or path.suffix.lower() in {".pem", ".key", ".pfx", ".p12"}
+
+
+def source_manifest(project: Path) -> dict:
+    return _capture(project, None)
+
+
 def snapshot(project: Path, destination: Path) -> dict:
+    return _capture(project, destination)
+
+
+def _capture(project: Path, destination: Path | None) -> dict:
     """Copy regular source AND fixture input bytes; reject links/special files."""
     project = project.resolve(strict=True)
     if not (project / "honua-gp.yaml").is_file():
         raise ValueError("A GP devkit project descriptor is required.")
-    destination.mkdir(parents=True, exist_ok=False)
+    if destination is not None: destination.mkdir(parents=True, exist_ok=False)
     files = []
     total = 0
     for directory, directories, names in os.walk(project, followlinks=False):
-        directories[:] = sorted(name for name in directories if name not in EXCLUDED)
+        directories[:] = sorted(name for name in directories if name not in EXCLUDED and not secret_path(Path(directory).relative_to(project) / name))
         root = Path(directory)
         if root.relative_to(project).parts == (".honua",):
             # Installed devkit projects carry their canonical harness here. Retain
             # it in the immutable snapshot, but never retain prior run output.
             directories[:] = [name for name in directories if name == "toolchain"]
             names = []
+        names = [name for name in names if not secret_path(root.relative_to(project) / name)]
         for name in directories + sorted(names):
             source = root / name
             if source.is_symlink():
@@ -74,13 +93,15 @@ def snapshot(project: Path, destination: Path) -> dict:
                 raise ValueError("Snapshot refuses non-regular files.")
             relative = source.relative_to(project)
             data = read_regular(source, MAX_BYTES - total)
+            if source.name.lower() in {"nuget.config", "pip.conf"} and re.search(rb"(?i)(packagesourcecredentials|cleartextpassword|\[apikeys\]|https?://[^/\s]+:[^/\s]+@)", data): continue
             total += len(data)
             if total > MAX_BYTES or len(files) >= MAX_FILES:
                 raise ValueError("Source/input snapshot exceeds the size budget.")
-            target = destination / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
-            target.chmod(0o444)
+            if destination is not None:
+                target = destination / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+                target.chmod(0o444)
             files.append({"path": relative.as_posix(), "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
     encoded = json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
     return {"schema": "honua.gp.workspace-snapshot/v1", "digest": hashlib.sha256(encoded).hexdigest(), "files": files}
