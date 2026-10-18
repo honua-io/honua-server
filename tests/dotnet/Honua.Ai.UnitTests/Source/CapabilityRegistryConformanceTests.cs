@@ -207,8 +207,11 @@ public sealed class CapabilityRegistryConformanceTests
             .Select(t => t.Name)
             .ToHashSet(StringComparer.Ordinal);
 
+        // Deployment-contributed dynamic tools are checked by the server composition
+        // tests; they need not be installed in this AI-only baseline surface.
         var registryToolNames = Registry.All
             .Where(d => d.Id.StartsWith(CapabilityRegistry.McpToolIdPrefix, StringComparison.Ordinal))
+            .Where(d => !d.IsDynamic || liveToolNames.Contains(d.McpToolName!))
             .Select(d => d.McpToolName!)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -223,7 +226,8 @@ public sealed class CapabilityRegistryConformanceTests
             .ToDictionary(t => t.Name, t => t.WorkflowFamily, StringComparer.Ordinal);
 
         foreach (var descriptor in Registry.All
-                     .Where(d => d.Id.StartsWith(CapabilityRegistry.McpToolIdPrefix, StringComparison.Ordinal)))
+                     .Where(d => d.Id.StartsWith(CapabilityRegistry.McpToolIdPrefix, StringComparison.Ordinal))
+                     .Where(d => !d.IsDynamic || liveFamilyByName.ContainsKey(d.McpToolName!)))
         {
             descriptor.McpToolName.Should().NotBeNull();
             liveFamilyByName.TryGetValue(descriptor.McpToolName!, out var liveFamily).Should().BeTrue();

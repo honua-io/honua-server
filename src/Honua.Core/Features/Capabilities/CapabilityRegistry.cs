@@ -150,6 +150,20 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_studio_get_version", "studio_get_version", "lifecycle"),
             ("honua_workflow_package", "workflow_package", "lifecycle"),
             ("honua_workflow_package_propose", "workflow_package_propose", "lifecycle"),
+
+            // Deployment-contributed workspace tools are served when the durable store is available.
+            ("honua_workspace_create", "workspace_create", "lifecycle"),
+            ("honua_workspace_get", "workspace_get", "lifecycle"),
+            ("honua_workspace_set_context", "workspace_set_context", "lifecycle"),
+            ("honua_workspace_create_turn", "workspace_create_turn", "lifecycle"),
+            ("honua_workspace_get_turn", "workspace_get_turn", "lifecycle"),
+            ("honua_workspace_conversation", "workspace_conversation", "lifecycle"),
+            ("honua_workspace_append_message", "workspace_append_message", "lifecycle"),
+            ("honua_workspace_create_draft", "workspace_create_draft", "lifecycle"),
+            ("honua_workspace_get_draft", "workspace_get_draft", "lifecycle"),
+            ("honua_workspace_patch_draft", "workspace_patch_draft", "lifecycle"),
+            ("honua_workspace_submit_draft", "workspace_submit_draft", "lifecycle"),
+            ("honua_workspace_get_command", "workspace_get_command", "lifecycle"),
             ("honua_studio_reopen_version", "studio_reopen_version", "lifecycle"),
             ("honua_studio_add_layer", "studio_add_layer", "execution"),
             ("honua_studio_remove_layer", "studio_remove_layer", "execution"),
@@ -186,7 +200,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 Maturity = CapabilityMaturity.Implemented,
                 StandardName = standard,
                 McpToolName = advertised,
-                IsDynamic = advertised == "honua_admin_server_status",
+                IsDynamic = advertised == "honua_admin_server_status" || advertised.StartsWith("honua_workspace_", StringComparison.Ordinal),
                 ConformanceMapping = "tools",
             };
         }

@@ -234,7 +234,13 @@ public sealed class AgentDevOpsAuthorizationTests
         }
     }
 
-    private static int? Status(IResult result) => (result as IStatusCodeHttpResult)?.StatusCode;
+    private static int? Status(IResult result) => result switch
+    {
+        Microsoft.AspNetCore.Http.HttpResults.ForbidHttpResult => StatusCodes.Status403Forbidden,
+        Microsoft.AspNetCore.Http.HttpResults.ChallengeHttpResult => StatusCodes.Status401Unauthorized,
+        IStatusCodeHttpResult status => status.StatusCode,
+        _ => null,
+    };
     private static Dictionary<string, JsonElement> Args(object value)
         => JsonSerializer.SerializeToElement(value).EnumerateObject().ToDictionary(property => property.Name, property => property.Value);
     private static WorkflowOperationRecord Operation(string target, string tenant) => new()
