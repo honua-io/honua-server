@@ -163,6 +163,131 @@ public sealed class ImportUploadContentVerifierTests(RedisFixture redis)
         (await store.GetAsync(session.Id, session.Scope)).Should().Be(session);
     }
 
+    [IntegrationTest]
+    public async Task Scratch_AfterRestart_ReturnsVerifiedSeekableHandleAndDeletesItOnDispose()
+    {
+        using var disk = new StorageFixture();
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisImportUploadStore(connection);
+        var (session, digest) = await StageAsync(store, disk.Storage, fullChunks: 129);
+        (await store.TrySealAsync(session, digest)).Should().BeTrue();
+        var sealedSession = (await store.GetAsync(session.Id, session.Scope))!;
+        var expiry = await connection.GetDatabase().KeyExpireTimeAsync(RedisImportUploadStore.Key(session.Id));
+        await using var restarted = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var scratchDirectory = Path.Join(disk.Root, "scratch");
+        var materializer = new ImportUploadScratch(new RedisImportUploadStore(restarted),
+            new ImportUploadChunkStorage(disk.OpenStorage()));
+        var authorizations = 0;
+        await using (var file = await materializer.OpenAsync(sealedSession, scratchDirectory, sealedSession.TotalBytes, _ =>
+        {
+            authorizations++;
+            return Task.CompletedTask;
+        }))
+        {
+            file.CanSeek.Should().BeTrue();
+            file.Position.Should().Be(0);
+            file.Length.Should().Be(sealedSession.TotalBytes);
+            Convert.ToHexStringLower(await SHA256.HashDataAsync(file)).Should().Be(digest);
+            file.Position = 65536;
+            file.ReadByte().Should().Be((65536 + 1) % 251);
+        }
+
+        Directory.EnumerateFiles(scratchDirectory).Should().BeEmpty();
+        authorizations.Should().BeGreaterThan(sealedSession.ChunkCount);
+        (await store.GetAsync(session.Id, session.Scope)).Should().Be(sealedSession);
+        (await connection.GetDatabase().KeyExpireTimeAsync(RedisImportUploadStore.Key(session.Id))).Should().Be(expiry);
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Scratch_UnsealedOrExceedsAllowance_DoesNotReadChunksOrAllocateScratch(bool seal)
+    {
+        using var disk = new StorageFixture();
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisImportUploadStore(connection);
+        var (session, digest) = await StageAsync(store, disk.Storage);
+        if (seal)
+        {
+            (await store.TrySealAsync(session, digest)).Should().BeTrue();
+            session = (await store.GetAsync(session.Id, session.Scope))!;
+        }
+
+        var unavailable = Substitute.For<ICloudFileStorage>();
+        var materializer = new ImportUploadScratch(store, new ImportUploadChunkStorage(unavailable));
+        var scratchDirectory = Path.Join(disk.Root, "scratch");
+        await FluentActions.Invoking(() => materializer.OpenAsync(session, scratchDirectory,
+            seal ? session.TotalBytes - 1 : session.TotalBytes, static _ => Task.CompletedTask))
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        unavailable.ReceivedCalls().Should().BeEmpty();
+        Directory.Exists(scratchDirectory).Should().BeFalse();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Scratch_WrongFullDigestOrCorruptChunk_RemovesPartialFile(bool corruptChunk)
+    {
+        using var disk = new StorageFixture();
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisImportUploadStore(connection);
+        var (session, digest) = await StageAsync(store, disk.Storage);
+        (await store.TrySealAsync(session, corruptChunk ? digest : new string('0', 64))).Should().BeTrue();
+        session = (await store.GetAsync(session.Id, session.Scope))!;
+        if (corruptChunk)
+        {
+            var chunk = (await store.ReadChunksAsync(session.Id, session.Scope, session.ChunkCount - 1, 1)).Single();
+            var metadata = (await disk.Storage.GetMetadataAsync(chunk.FileId))!;
+            await File.WriteAllBytesAsync(Path.Join(disk.Root, metadata.StoragePath), new byte[chunk.Bytes]);
+        }
+
+        var scratchDirectory = Path.Join(disk.Root, "scratch");
+        var materializer = new ImportUploadScratch(store, new ImportUploadChunkStorage(disk.Storage));
+        await FluentActions.Invoking(() => materializer.OpenAsync(session, scratchDirectory,
+            session.TotalBytes, static _ => Task.CompletedTask)).Should().ThrowAsync<InvalidDataException>();
+
+        Directory.EnumerateFiles(scratchDirectory).Should().BeEmpty();
+        (await store.GetAsync(session.Id, session.Scope)).Should().Be(session);
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Scratch_RevokedOrCancelledDuringProviderRead_DoesNotExposePartialFile(bool cancel)
+    {
+        using var disk = new StorageFixture();
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisImportUploadStore(connection);
+        var (session, digest) = await StageAsync(store, disk.Storage, fullChunks: 0);
+        (await store.TrySealAsync(session, digest)).Should().BeTrue();
+        session = (await store.GetAsync(session.Id, session.Scope))!;
+        using var cancellation = new CancellationTokenSource();
+        var revoked = false;
+        var observed = Substitute.For<ICloudFileStorage>();
+        observed.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => disk.Storage.GetMetadataAsync(call.ArgAt<string>(0), call.ArgAt<CancellationToken>(1)));
+        observed.DownloadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            var stream = await disk.Storage.DownloadAsync(call.ArgAt<string>(0), call.ArgAt<CancellationToken>(1));
+            if (cancel) await cancellation.CancelAsync();
+            else revoked = true;
+            return stream;
+        });
+        var scratchDirectory = Path.Join(disk.Root, "scratch");
+        var materializer = new ImportUploadScratch(store, new ImportUploadChunkStorage(observed));
+        var action = () => materializer.OpenAsync(session, scratchDirectory, session.TotalBytes, _ =>
+        {
+            if (revoked) throw new UnauthorizedAccessException("Revoked during source read");
+            return Task.CompletedTask;
+        }, cancellation.Token);
+        if (cancel) await FluentActions.Invoking(action).Should().ThrowAsync<OperationCanceledException>();
+        else await FluentActions.Invoking(action).Should().ThrowAsync<UnauthorizedAccessException>();
+
+        Directory.EnumerateFiles(scratchDirectory).Should().BeEmpty();
+        (await store.GetAsync(session.Id, session.Scope)).Should().Be(session);
+    }
+
     private static async Task<(ImportUploadSession Session, string Digest)> StageAsync(
         RedisImportUploadStore store, LocalFileStorage storage, int fullChunks = 2)
     {

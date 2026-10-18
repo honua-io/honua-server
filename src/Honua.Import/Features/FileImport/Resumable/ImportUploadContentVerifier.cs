@@ -20,17 +20,42 @@ internal sealed class ImportUploadContentVerifier(RedisImportUploadStore store, 
         string expectedSha256, CancellationToken cancellationToken = default)
         => VerifyAsync(session, expectedSha256, static _ => Task.CompletedTask, cancellationToken);
 
-    public async Task<ImportUploadVerifiedContent> VerifyAsync(ImportUploadSession session,
+    public Task<ImportUploadVerifiedContent> VerifyAsync(ImportUploadSession session,
         string expectedSha256, Func<CancellationToken, Task> reauthorize, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(reauthorize);
         RedisImportUploadStore.Validate(session);
-        RedisImportUploadStore.ValidateDigest(expectedSha256);
         if (session.State != ImportUploadState.Receiving || session.AcceptedBytes != session.TotalBytes)
         {
             throw new InvalidOperationException("Upload content is not complete and awaiting verification.");
         }
 
+        return VerifyContentAsync(session, expectedSha256, null, reauthorize, cancellationToken);
+    }
+
+    /// <summary>
+    /// Copies a sealed source into caller-owned private scratch while rechecking its
+    /// exact generations and full digest. Partial bytes must never be exposed to an
+    /// importer: the caller disposes scratch on any failure and only uses it after return.
+    /// </summary>
+    internal Task<ImportUploadVerifiedContent> CopySealedAsync(ImportUploadSession session,
+        Stream destination, Func<CancellationToken, Task> reauthorize, CancellationToken cancellationToken = default)
+    {
+        RedisImportUploadStore.Validate(session);
+        ArgumentNullException.ThrowIfNull(destination);
+        if (!destination.CanWrite || session.State != ImportUploadState.Sealed || session.AcceptedBytes != session.TotalBytes)
+        {
+            throw new InvalidOperationException("A sealed complete source and writable private scratch are required.");
+        }
+
+        return VerifyContentAsync(session, session.ContentSha256!, destination, reauthorize, cancellationToken);
+    }
+
+    private async Task<ImportUploadVerifiedContent> VerifyContentAsync(ImportUploadSession session,
+        string expectedSha256, Stream? destination, Func<CancellationToken, Task> reauthorize,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(reauthorize);
+        RedisImportUploadStore.ValidateDigest(expectedSha256);
         await RequireCurrentAsync(session, reauthorize, cancellationToken).ConfigureAwait(false);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
@@ -61,6 +86,15 @@ internal sealed class ImportUploadContentVerifier(RedisImportUploadStore store, 
                     {
                         hash.AppendData(buffer.AsSpan(0, read));
                         total = checked(total + read);
+                        if (total > session.TotalBytes)
+                        {
+                            throw new InvalidDataException("Upload content exceeds its sealed length.");
+                        }
+
+                        if (destination is not null)
+                        {
+                            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                        }
                     }
 
                     // Cancellation/expiry during a provider read must not produce a
