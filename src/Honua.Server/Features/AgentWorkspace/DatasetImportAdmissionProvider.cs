@@ -89,7 +89,7 @@ internal sealed class DatasetImportAdmissionProvider(IAgentWorkspaceStore store,
         var identity = JsonSerializer.SerializeToUtf8Bytes(new[] { document.TargetId, document.WorkspaceId, taskId,
             taskRevision.ToString(System.Globalization.CultureInfo.InvariantCulture), taskContentHash, task.OwnerActorId }, AgentWorkspaceJsonContext.Default.StringArray);
         var prepared = new DatasetImportPreparedAdmission(taskId, taskRevision, taskContentHash,
-            "dataset-import-" + Convert.ToHexStringLower(SHA256.HashData(identity)), binding.AuthorityRevision,
+            Convert.ToHexStringLower(SHA256.HashData(identity).AsSpan(0, 16)), binding.AuthorityRevision,
             binding.AuthorityFingerprint, binding.ExecutorActorId, binding.InitiatingHumanActorId, binding.OriginatingTurnId,
             binding.OriginalTurnHash, binding.ExecutorPolicyContext with { AgentCredential = binding.ExecutorAuthority },
             binding.PolicyContextFingerprint, binding.ExecutorAuthority, task.UploadAdmissionDeadline);

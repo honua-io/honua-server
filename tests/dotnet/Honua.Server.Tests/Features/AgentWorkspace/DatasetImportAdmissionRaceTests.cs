@@ -102,6 +102,7 @@ public sealed class DatasetImportAdmissionRaceTests(RedisFixture redis)
             {
                 var prepared = await preparation;
                 prepared!.AuthorityRevision.Should().Be(1);
+                prepared.OperationId.Should().MatchRegex("\\A[0-9a-f]{32}\\z");
                 prepared.AcceptBefore.Should().Be(task.UploadAdmissionDeadline);
                 (await store.SaveAsync(nextAuthority)).Should().BeFalse();
             }
