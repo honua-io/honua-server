@@ -36,6 +36,7 @@ public static partial class EndpointRegistry
         .. OperateStatusEndpoints,
         .. IdentityProvisioningEndpoints,
         .. ConsoleEndpoints,
+        .. AgentWorkspaceEndpoints,
         .. StudioEndpoints,
         .. TemporalEndpoints,
         .. AdminMetadataLayerEndpoints,
