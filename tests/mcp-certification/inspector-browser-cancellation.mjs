@@ -190,12 +190,16 @@ export async function inspectorBrowserCancellation({ endpoint, inspectorVersion,
     const queryPid = await observer.blocked(call.startedAt);
     require(!call.complete && !call.aborted, 'original blocked request');
     await ui.cancel();
+    await until(() => wire.capture?.notification, 2_000);
+    await ui.localCancellationSettled();
     if (dropCancellation) {
       // A public Cancel click may finish locally. Observe the provider after
       // three monitor periods; that must still fail rather than earn cessation.
       await new Promise((resolve) => setTimeout(resolve, 650));
       const state = await observer.state(queryPid);
-      require(state.waiting && state.blockerHeld && !call.complete, 'dropped notification control remained blocked');
+      const observed = wire.capture; // Also fails on malformed/failed wire activity.
+      require(state.waiting && state.blockerHeld && observed.notification && observed.upstreamOpenAtNotification
+        && !observed.complete && !observed.aborted, 'dropped genuine notification control remained blocked');
       throw new Error('Inspector cancellation proof rejected dropped notification with blocked provider');
     }
     await until(() => wire.capture?.complete, 5_000);
@@ -219,6 +223,7 @@ export async function inspectorBrowserCancellation({ endpoint, inspectorVersion,
       requestId: terminal.id, notificationRequestId: terminal.id, responseId: terminal.id, responseCount: 1,
       notificationMethod: 'notifications/cancelled', protocolCode: -32800, code: 'cancelled', hasResult: false,
       publicUiAction: 'Execute Tool / Cancel', clientAbortUsed: true, genuineNotificationObserved: true,
+      localUiCancellationObserved: true,
       originalUpstreamKeptOpen: true, recoveryReadMatchesFixture: true,
       provider: { kind: 'postgres-relation-lock', tableSchema: observer.tableSchema, tableName: 'features',
         blockerPid, queryPid, observedBlocked: true, ceasedBeforeBlockerRelease: true, relationLocksReleased: true,

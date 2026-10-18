@@ -111,6 +111,7 @@ for (const dropCancellation of [false, true]) {
         assert.equal(proof.protocolVersion, '2025-06-18');
         assert.equal(proof.protocolEra, 'legacy');
         assert.equal(proof.genuineNotificationObserved, true);
+        assert.equal(proof.localUiCancellationObserved, true);
         assert.equal(proof.originalUpstreamKeptOpen, true);
         assert.equal(proof.provider.ceasedBeforeBlockerRelease, true);
         assert.equal(proof.clientAbortUsed, true);

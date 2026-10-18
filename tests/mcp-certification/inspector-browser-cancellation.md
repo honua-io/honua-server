@@ -16,6 +16,10 @@ and never uses an AbortSignal. A positive Inspector proof requires all of:
   its original upstream request is still open. The proxy never shields aborts.
 - The actual UI initialization binds that session and negotiated protocol
   version; the consumer compares it with its reported client protocol identity.
+- The public Cancel button disappears and Execute Tool is enabled again,
+  independently observing that the local UI settled. The dropped-notification
+  control must also intercept the real correlated notification before refusing
+  proof; an inert button or absent wire activity cannot satisfy that control.
 - Exactly one correlated server response contains protocol code -32800 and
   typed code `cancelled`, without a result.
 - An independent connection sees the blocked query and its relation locks cease

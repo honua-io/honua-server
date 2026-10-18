@@ -111,6 +111,12 @@ export async function openInspectorPublicUi({ inspectorEntry, chromium, endpoint
     return {
       async execute(arguments_) { savedArguments = arguments_; await action('public argument entry and execution', () => execute(arguments_)); },
       async cancel() { await action('public Cancel button', () => page.getByRole('button', { name: 'Cancel', exact: true }).click()); },
+      async localCancellationSettled() {
+        await action('public local cancellation state', async () => {
+          await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor({ state: 'hidden' });
+          await until(() => page.getByRole('button', { name: 'Execute Tool', exact: true }).isEnabled(), 2_000);
+        });
+      },
       async recover() {
         await action('public recovery execution', async () => {
           await page.getByRole('button', { name: 'Execute Tool', exact: true }).waitFor({ state: 'visible' });
