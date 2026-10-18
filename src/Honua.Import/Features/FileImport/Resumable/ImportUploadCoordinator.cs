@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Import.FileImport.Resumable;
 
@@ -15,14 +16,19 @@ namespace Honua.Import.FileImport.Resumable;
 /// finalization and HTTP/SDK registration are separate prerequisites before advertising it.
 /// </summary>
 internal sealed class ImportUploadCoordinator(
-    IDatasetImportTaskProvider tasks, RedisImportUploadStore store, ImportUploadChunkStorage storage)
+    IDatasetImportTaskProvider tasks, RedisImportUploadStore store, ICloudFileStorage files)
 {
+    private readonly ImportUploadChunkStorage _storage = new(files);
+    private readonly ImportUploadSourceStorage _sources = new(store, files);
+
     public async Task<ImportUploadSession?> GetAsync(ClaimsPrincipal principal, ImportUploadTaskReference reference,
         CancellationToken cancellationToken = default)
     {
         var task = await AuthorizeAsync(principal, reference, requireWrite: false, cancellationToken).ConfigureAwait(false);
         var expected = SessionFor(task);
         var current = await store.GetAsync(expected.Id, expected.Scope, cancellationToken).ConfigureAwait(false);
+        var latestTask = await AuthorizeAsync(principal, reference, requireWrite: false, cancellationToken).ConfigureAwait(false);
+        RequireBinding(expected, SessionFor(latestTask));
         if (current is not null)
         {
             RequireBinding(current, expected);
@@ -42,7 +48,7 @@ internal sealed class ImportUploadCoordinator(
         if (existing is not null)
         {
             RequireBinding(existing, expected);
-            return existing;
+            return await ReadCurrentAfterMutationAsync(principal, reference, cancellationToken).ConfigureAwait(false);
         }
 
         if (expected.ExpiresAt <= DateTimeOffset.UtcNow || expected.ExpiresAt > DateTimeOffset.UtcNow.AddDays(1))
@@ -70,13 +76,13 @@ internal sealed class ImportUploadCoordinator(
             throw new InvalidOperationException("The upload range or version changed. Read the original session before continuing.");
         }
 
-        var candidate = await storage.StageAsync(current, content, sha256, cancellationToken).ConfigureAwait(false);
+        var candidate = await _storage.StageAsync(current, content, sha256, cancellationToken).ConfigureAwait(false);
         await ReauthorizeAsync(principal, reference, current, cancellationToken).ConfigureAwait(false);
         if (!await store.TryAppendAsync(current, candidate, cancellationToken).ConfigureAwait(false))
         {
             // A definite false means this private unique candidate was not accepted.
             // On an exception the result is unknown; never delete before recovery.
-            _ = await storage.DeleteUnacceptedAsync(candidate, cancellationToken).ConfigureAwait(false);
+            _ = await _storage.DeleteUnacceptedAsync(candidate, cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException("The upload changed before the chunk could be accepted.");
         }
 
@@ -91,7 +97,7 @@ internal sealed class ImportUploadCoordinator(
         if (current.State == ImportUploadState.Sealed)
         {
             RequireSealedDigest(current, task);
-            return current;
+            return await ReadCurrentAfterMutationAsync(principal, reference, cancellationToken).ConfigureAwait(false);
         }
 
         if (current.Version != expectedVersion)
@@ -100,7 +106,7 @@ internal sealed class ImportUploadCoordinator(
         }
 
         await ReauthorizeAsync(principal, reference, current, cancellationToken).ConfigureAwait(false);
-        var verifier = new ImportUploadContentVerifier(store, storage);
+        var verifier = new ImportUploadContentVerifier(store, _storage);
         var verified = await verifier.VerifyAsync(current, task.Source.ExpectedSha256!,
             token => ReauthorizeAsync(principal, reference, current, token), cancellationToken).ConfigureAwait(false);
         await ReauthorizeAsync(principal, reference, verified.Session, cancellationToken).ConfigureAwait(false);
@@ -110,6 +116,41 @@ internal sealed class ImportUploadCoordinator(
         return sealedSession;
     }
 
+    // This only selects an immutable source. Queue admission and accepting a job
+    // remain separate, and require quota-backed storage and source-aware deadlines.
+    public async Task<ImportUploadSession> RetainSourceAsync(ClaimsPrincipal principal, ImportUploadTaskReference reference,
+        long expectedVersion, string scratchDirectory, long maximumScratchBytes, CancellationToken cancellationToken = default)
+    {
+        var task = await AuthorizeAsync(principal, reference, requireWrite: false, cancellationToken).ConfigureAwait(false);
+        var current = await RequireSessionAsync(task, cancellationToken).ConfigureAwait(false);
+        RequireSealedDigest(current, task);
+        if (current.StagedSource is not null)
+        {
+            // A retry observes the original winner even when new-write authority
+            // has changed. Observation still requires current task read access.
+            return await ReadCurrentAfterMutationAsync(principal, reference, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (current.Version != expectedVersion)
+        {
+            throw new InvalidOperationException("The upload version changed before source retention.");
+        }
+
+        await ReauthorizeAsync(principal, reference, current, cancellationToken).ConfigureAwait(false);
+        var source = await _sources.StageAsync(current,
+            scratchDirectory, maximumScratchBytes,
+            token => ReauthorizeAsync(principal, reference, current, token), cancellationToken).ConfigureAwait(false);
+        await ReauthorizeAsync(principal, reference, current, cancellationToken).ConfigureAwait(false);
+        _ = await store.TryBindSourceAsync(current, source, cancellationToken).ConfigureAwait(false);
+        var retained = await ReadCurrentAfterMutationAsync(principal, reference, cancellationToken).ConfigureAwait(false);
+        RequireSealedDigest(retained, task);
+        if (retained.StagedSource is null)
+        {
+            throw new IOException("The retained source receipt is unavailable. Its outcome is unknown.");
+        }
+        return retained;
+    }
+
     public async Task<ImportUploadSession> CancelAsync(ClaimsPrincipal principal, ImportUploadTaskReference reference,
         long expectedVersion, CancellationToken cancellationToken = default)
     {
@@ -117,7 +158,7 @@ internal sealed class ImportUploadCoordinator(
         var current = await RequireSessionAsync(task, cancellationToken).ConfigureAwait(false);
         if (current.State == ImportUploadState.Cancelled)
         {
-            return current;
+            return await ReadCurrentAfterMutationAsync(principal, reference, cancellationToken).ConfigureAwait(false);
         }
 
         if (current.State != ImportUploadState.Receiving || current.Version != expectedVersion)
