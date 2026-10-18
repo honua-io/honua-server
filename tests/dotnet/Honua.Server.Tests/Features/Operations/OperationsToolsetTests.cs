@@ -2019,7 +2019,10 @@ public sealed class OperationsToolsetTests
                 Reason = "preview required before commit"
             }));
 
-        var handle = await dispatcher.SubmitAsync(BuildRequest(), new OperationPolicyContext(), CancellationToken.None);
+        var handle = await dispatcher.SubmitAsync(BuildRequest(), new OperationPolicyContext
+        {
+            RequiredApprovalPolicyRef = "agent-workspace.human-approval",
+        }, CancellationToken.None);
 
         // Guardrail seam: DryRunFirst never reaches the executor — no side effect.
         await publishing.DidNotReceive().PublishLayerAsync(

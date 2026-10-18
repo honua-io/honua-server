@@ -366,6 +366,48 @@ public sealed class McpStyleToolTests
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(PolicyDecisionKind.Allow)]
+    [InlineData(PolicyDecisionKind.Deny)]
+    [InlineData(PolicyDecisionKind.DryRunFirst)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_WorkspaceAdminStyle_CreatesDurableApprovalWithoutWeakeningPolicy(PolicyDecisionKind policy)
+    {
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        var bridge = Substitute.For<IOperationApprovalBridge>();
+        bridge.CreateProposalAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
+            Arg.Any<OperationPolicyContext>(), Arg.Any<PolicyDecision>(), Arg.Any<CancellationToken>())
+            .Returns(new OperationApprovalBridgeResult
+            {
+                IsDurable = true, ProposalId = "workspace-style-proposal", AuditId = "workspace-style-audit",
+            });
+        var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            catalog: catalog, graphSync: graphSync, approvalRequired: true,
+            policyDecision: policy, approvalBridge: bridge, workspaceAgent: true);
+        response!.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue();
+        if (policy == PolicyDecisionKind.Allow)
+        {
+            response.Result.Value.GetProperty("structuredContent").GetProperty("proposalId").GetString()
+                .Should().Be("workspace-style-proposal");
+            await bridge.Received(1).CreateProposalAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
+                Arg.Is<OperationPolicyContext>(context => context.RequiredApprovalPolicyRef == "agent-workspace.human-approval"),
+                Arg.Any<PolicyDecision>(), Arg.Any<CancellationToken>());
+        }
+        else
+        {
+            await bridge.DidNotReceiveWithAnyArgs().CreateProposalAsync(default!, default!, default!, default!, default);
+        }
+        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
+    }
+
     [UnitTest]
     [Operation(Operations.Update)]
     [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
@@ -1073,7 +1115,8 @@ public sealed class McpStyleToolTests
         OperationPolicyOptions? policyOptions = null,
         IOperationInstanceStore? instanceStore = null,
         TestMetadataV2GraphProvider? graphProvider = null,
-        bool includeGraphSyncRuntime = true)
+        bool includeGraphSyncRuntime = true,
+        bool workspaceAgent = false)
     {
         var surface = new McpDataAccessSurface(
             [
@@ -1142,6 +1185,15 @@ public sealed class McpStyleToolTests
         }
 
         var context = McpTestFactory.AuthenticatedHttpContext();
+        if (workspaceAgent)
+        {
+            context.User = new ClaimsPrincipal(new ClaimsIdentity([
+                new Claim("api_key_id", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                new Claim(ClaimTypes.Role, "admin"),
+                new Claim("permission", "admin:read"), new Claim("permission", "admin:write"),
+                new Claim("permission", "agent:workspace"),
+            ], "ApiKey"));
+        }
         context.RequestServices = services.BuildServiceProvider();
 
         return await surface.DispatchAsync(context, ToolCall("style-1", toolName, argumentsJson), CancellationToken.None);

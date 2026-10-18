@@ -65,6 +65,34 @@ public sealed class PublishServiceToolTests
         => McpTestFactory.ToArguments(argument, McpJsonContext.Default.McpPublishServiceArgument);
 
     [UnitTest]
+    public async Task PublishService_WorkspaceAdmin_CarriesApprovalRestrictionIntoCanonicalInvoker()
+    {
+        OperationPolicyContext? captured = null;
+        var invoker = new FakeInvoker((_, context) =>
+        {
+            captured = context;
+            return new OperationHandle
+            {
+                OperationId = PublishServiceTool.PublishOperationId,
+                OperationInstanceId = "op-workspace", CorrelationId = "corr-workspace",
+                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+                Status = OperationHandleStatus.RequiresApproval,
+                ProposalId = "durable-proposal", AuditId = "durable-audit",
+                ApprovalLane = "control-plane",
+            };
+        });
+        var http = ContextWithInvoker(invoker);
+        ((ClaimsIdentity)http.User.Identity!).AddClaims([
+            new Claim(ClaimTypes.Role, "admin"), new Claim("permission", "agent:workspace")]);
+        var result = await CreateTool().InvokeAsync(http, Arguments(new McpPublishServiceArgument
+        {
+            ConnectionId = "conn-1", Schema = "public", Table = "parcels", LayerName = "Parcels",
+        }), CancellationToken.None);
+        captured!.RequiredApprovalPolicyRef.Should().Be("agent-workspace.human-approval");
+        result.StructuredContent!.Value.GetProperty("proposalId").GetString().Should().Be("durable-proposal");
+    }
+
+    [UnitTest]
     public void Describe_AdvertisesWriteAnnotationsAndOutputSchema()
     {
         var descriptor = CreateTool().Describe();

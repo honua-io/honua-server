@@ -70,6 +70,12 @@ public sealed record StudioDraftMutationContext
     public string? CorrelationId { get; init; }
     public string? IdempotencyKey { get; init; }
     public string AuthorizationOutcome { get; init; } = "authorized";
+
+    /// <summary>
+    /// Trusted adapter requirement for a durable human approval decision. This field is not
+    /// part of any client request DTO and can only strengthen an allowed policy decision.
+    /// </summary>
+    public string? RequiredApprovalPolicyRef { get; init; }
     public IReadOnlyList<string> Roles { get; init; } = [];
     public bool ScopeGoverned { get; init; }
     public IReadOnlyList<string> RecognizedScopes { get; init; } = [];

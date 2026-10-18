@@ -4,6 +4,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -11,6 +12,7 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -41,7 +43,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
     private const string SigningKey = "studio-admin-publication-signing-key-at-least-32-chars";
     private const string Tenant = "tenant-a";
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().UseKestrel();
     private readonly RedisFixture _redis = new();
 
     public async Task InitializeAsync()
@@ -129,7 +131,71 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         unpublished.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/rollback-requests")]
+    public async Task WorkspaceAdminKey_PublishesOnlyThroughDurableHumanApproval_McpAndRest()
+    {
+        using var admin = _fixture.CreateAdminClient();
+        using var issued = await admin.PostAsJsonAsync("/api/v1/admin/api-keys", new
+        {
+            name = "workspace-studio-review", permissions = new[] { "admin:read", "admin:write", "read:*", "agent:workspace" },
+        });
+        issued.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var keyBody = JsonDocument.Parse(await issued.Content.ReadAsStringAsync());
+        using var agent = _fixture.CreateClient();
+        agent.DefaultRequestHeaders.Add("X-API-Key", keyBody.RootElement.GetProperty("data").GetProperty("key").GetString());
+
+        var lifecycle = _fixture.Services.GetRequiredService<IStudioPackageLifecycleService>();
+        var mcpRoute = $"/maps/workspace-mcp-{Guid.NewGuid():N}";
+        var (proposed, mcpItem) = await ProposeAsync(agent, mcpRoute, "public");
+        proposed.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        proposed.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
+        var mcpProposal = proposed.GetProperty("proposalId").GetString();
+        mcpProposal.Should().NotBeNullOrWhiteSpace();
+        proposed.TryGetProperty("shareUrl", out _).Should().BeFalse();
+        (await lifecycle.GetPointersAsync(mcpItem))!.PublishedVersionId.Should().BeNull();
+        using var inbox = await admin.GetAsync($"/api/v1/admin/proposals/{mcpProposal}");
+        inbox.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var approval = await agent.PostAsJsonAsync($"/api/v1/admin/proposals/{mcpProposal}/approve", new { reason = "Not human authority" });
+        approval.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // Editing and saving through the actual scoped key succeeds; publication alone is governed.
+        var version = await SaveVersionAsync(agent);
+        var restItem = version.GetProperty("itemId").GetGuid();
+        var versionId = version.GetProperty("versionId").GetGuid();
+        using var rest = await agent.PostAsJsonAsync($"/api/v1/studio/content-items/{restItem:D}/versions/{versionId:D}/publish-requests", new
+        {
+            intent = new { route = $"/maps/workspace-rest-{Guid.NewGuid():N}", visibility = "public" },
+        });
+        rest.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        using var restBody = JsonDocument.Parse(await rest.Content.ReadAsStringAsync());
+        var handle = restBody.RootElement.GetProperty("data");
+        handle.GetProperty("status").GetInt32().Should().Be((int)OperationHandleStatus.RequiresApproval);
+        handle.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace();
+        (await lifecycle.GetPointersAsync(restItem))!.PublishedVersionId.Should().BeNull();
+        using var rollback = await agent.PostAsJsonAsync($"/api/v1/studio/content-items/{restItem:D}/rollback-requests", new
+        {
+            targetVersionId = versionId, pointer = "published", reason = "Review a published pointer restoration",
+        });
+        rollback.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        using var rollbackBody = JsonDocument.Parse(await rollback.Content.ReadAsStringAsync());
+        rollbackBody.RootElement.GetProperty("data").GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace();
+        (await lifecycle.GetPointersAsync(restItem))!.PublishedVersionId.Should().BeNull();
+    }
+
     private static async Task<(JsonElement Proposed, Guid ItemId)> ProposeAsync(HttpClient client, string route, string visibility)
+    {
+        var version = await SaveVersionAsync(client);
+        var itemId = version.GetProperty("itemId").GetGuid();
+        var proposed = await CallToolAsync(client, "honua_studio_propose_publication",
+            $$"""{"itemId":"{{itemId:D}}","versionId":"{{version.GetProperty("versionId").GetGuid():D}}","contentHash":"{{version.GetProperty("contentHash").GetString()}}","route":"{{route}}","visibility":"{{visibility}}"}""");
+        return (proposed, itemId);
+    }
+
+    private static async Task<JsonElement> SaveVersionAsync(HttpClient client)
     {
         var packageKey = $"admin-publish-{Guid.NewGuid():N}";
         var created = await CallToolAsync(client, "honua_studio_create_draft",
@@ -146,10 +212,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
             $$"""{"draftId":"{{draftId:D}}","generation":{{generation}}}""");
         var version = saved.GetProperty("version");
 
-        var itemId = version.GetProperty("itemId").GetGuid();
-        var proposed = await CallToolAsync(client, "honua_studio_propose_publication",
-            $$"""{"itemId":"{{itemId:D}}","versionId":"{{version.GetProperty("versionId").GetGuid():D}}","contentHash":"{{version.GetProperty("contentHash").GetString()}}","route":"{{route}}","visibility":"{{visibility}}"}""");
-        return (proposed, itemId);
+        return version;
     }
 
     private HttpClient CreateBearerClient(string token)

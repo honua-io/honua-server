@@ -19,6 +19,15 @@ internal sealed class DefaultOperatorApprovalEvaluator(
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
                   ?? principal.FindFirstValue("sub");
 
+        // Workspace agents carry an admin transport grant, not human approval authority.
+        // Governance mutations remain approval-bound even when host policy exempts admins.
+        if (principal.HasClaim("permission", "agent:workspace") &&
+            (request.Operation is OperatorOperation.Publish or OperatorOperation.Promote ||
+             request.IsDestructive || request.RequiresExplicitApproval))
+        {
+            return ApprovalRequirement.Required("agent-workspace.human-approval", "workspace-agent-mutation");
+        }
+
         // Admin exemption: admins bypass approval gates when configured.
         if (options.Value.AdminExemptFromApproval && IsAdmin(principal))
         {

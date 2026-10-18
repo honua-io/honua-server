@@ -815,6 +815,7 @@ internal sealed class StudioDraftMutationRuntime(
             CorrelationId = context.CorrelationId,
             IdempotencyKey = ScopeIdempotencyKey(context),
             AuthorizationOutcome = context.AuthorizationOutcome,
+            RequiredApprovalPolicyRef = context.RequiredApprovalPolicyRef,
             Roles = context.Roles,
             ScopeGoverned = context.ScopeGoverned,
             RecognizedScopes = context.RecognizedScopes,

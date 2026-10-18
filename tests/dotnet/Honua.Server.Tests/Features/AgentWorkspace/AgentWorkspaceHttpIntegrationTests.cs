@@ -55,8 +55,8 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             builder.UseSetting("AgentWorkspace:ReleaseId", "isolated-http-test");
             builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
             builder.UseSetting("Authentication:OperatorBearer:SigningKey", "http-integration-only-signing-key-at-least-32-bytes");
-            builder.UseSetting("OperatorApproval:PublishRequiresApproval", "true");
-            builder.UseSetting("OperatorApproval:AdminExemptFromApproval", "false");
+            builder.UseSetting("OperatorApproval:PublishRequiresApproval", "false");
+            builder.UseSetting("OperatorApproval:AdminExemptFromApproval", "true");
         });
         await fixture.InitializeAsync();
         try
@@ -134,6 +134,39 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             conversation.GetProperty("messages").EnumerateArray().Count(value => value.GetProperty("id").GetString() == "message-one").Should().Be(1);
             (await foreign.GetAsync(root + "/conversation")).StatusCode.Should().Be(HttpStatusCode.NotFound);
             (await agent.PostAsJsonAsync("/api/v1/admin/api-keys", new { name = "forbidden-escalation", permissions = new[] { "admin:write" } })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            // Generic MCP publishing must share the durable inbox even with admin exemption enabled.
+            agent.DefaultRequestHeaders.Add("X-Honua-Workspace", created.GetProperty("workspaceId").GetString());
+            agent.DefaultRequestHeaders.Add("X-Honua-Turn", "turn-one");
+            var initialized = await agent.PostAsJsonAsync("/mcp", new
+            {
+                jsonrpc = "2.0", id = 1, method = "initialize",
+                @params = new { protocolVersion = "2025-03-26", capabilities = new { }, clientInfo = new { name = "workspace-publish-test", version = "1" } },
+            });
+            initialized.EnsureSuccessStatusCode();
+            var mcpSession = initialized.Headers.GetValues("Mcp-Session-Id").Single();
+            using var publishRequest = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+            {
+                Content = JsonContent.Create(new
+                {
+                    jsonrpc = "2.0", id = 2, method = "tools/call",
+                    @params = new { name = "honua_publish_service", arguments = new
+                    {
+                        connectionId = Guid.NewGuid().ToString(), schema = "public", table = "isolated_fixture", layerName = "Generic review",
+                    } },
+                }),
+            };
+            publishRequest.Headers.Add("Mcp-Session-Id", mcpSession);
+            var generic = await Read(await agent.SendAsync(publishRequest), HttpStatusCode.OK);
+            var genericHandle = generic.GetProperty("result").GetProperty("structuredContent");
+            genericHandle.GetProperty("status").GetString().Should().Be("RequiresApproval");
+            var genericProposal = genericHandle.GetProperty("proposalId").GetString();
+            genericProposal.Should().NotBeNullOrWhiteSpace();
+            (await human.GetAsync($"/api/v1/admin/proposals/{genericProposal}")).StatusCode.Should().Be(HttpStatusCode.OK);
+            genericHandle.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace();
+            (await agent.PostAsJsonAsync($"/api/v1/admin/proposals/{genericProposal}/approve", new { reason = "Agent cannot approve generic publication" })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            agent.DefaultRequestHeaders.Remove("X-Honua-Workspace");
+            agent.DefaultRequestHeaders.Remove("X-Honua-Turn");
 
             // The gate creates a durable canonical proposal; no source table or publish executor runs.
             var submit = new { commandId = "command-one", expectedRevision = edited.GetProperty("revision").GetInt64() + 1, viewId = "tab-a" };

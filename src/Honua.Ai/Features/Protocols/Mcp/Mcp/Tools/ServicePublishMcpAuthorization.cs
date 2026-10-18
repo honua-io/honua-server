@@ -19,7 +19,9 @@ internal static class ServicePublishMcpAuthorization
     internal const OperationSideEffectClass SideEffectClass = OperationSideEffectClass.CreatesMetadata;
     internal const OperationApprovalModel ApprovalModel = OperationApprovalModel.OperatorGate;
 
-    internal static async Task<string> EnsureAuthorizedAndApprovedAsync(
+    internal sealed record Admission(string AuthorizationOutcome, string? RequiredApprovalPolicyRef);
+
+    internal static async Task<Admission> EnsureAuthorizedAndApprovedAsync(
         HttpContext httpContext,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
@@ -34,6 +36,12 @@ internal static class ServicePublishMcpAuthorization
             throw new GeoprocessingAuthorizationException(
                 requiresAuthentication: false,
                 message: "Caller is not authorized to invoke admin operations.");
+        }
+
+        // Carry agent approval into the dispatcher: throwing here would lose the durable inbox.
+        if (principal.HasClaim("permission", "agent:workspace"))
+        {
+            return new Admission(authorization.AuthorizationOutcome, "agent-workspace.human-approval");
         }
 
         var gate = httpContext.RequestServices.GetService<OperatorApprovalGate>()
@@ -57,6 +65,6 @@ internal static class ServicePublishMcpAuthorization
             throw new GeoprocessingApprovalRequiredException(approval.PolicyRef);
         }
 
-        return authorization.AuthorizationOutcome;
+        return new Admission(authorization.AuthorizationOutcome, null);
     }
 }
