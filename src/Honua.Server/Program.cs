@@ -123,6 +123,15 @@ var builder = WebApplication.CreateBuilder(args);
 // resolution steps so aws:secretsmanager: references inside the document resolve exactly as if
 // they had come from the environment. Precedence: appsettings < document < env vars < command line.
 await SettingsDocumentConfiguration.AddSettingsDocumentAsync(builder.Configuration);
+// Run-to-completion database initialization uses the same provider migration services, but
+// branches before Redis, licensing, HTTP endpoints or background processors are composed.
+if (Honua.Server.Hosting.MigrationOnlyHost.IsRequested(builder.Configuration))
+{
+    StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
+    Environment.ExitCode = await Honua.Server.Hosting.MigrationOnlyHost.RunProcessAsync(builder.Configuration);
+    return;
+}
+
 Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configuration);
 
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute
