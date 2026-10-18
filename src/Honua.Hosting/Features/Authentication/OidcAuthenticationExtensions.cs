@@ -253,6 +253,32 @@ public static partial class OidcAuthenticationExtensions
 
         if (!oidcOptions.Enabled)
         {
+            if (configuration.GetValue<bool>($"{OperatorBearerOptions.SectionName}:Enabled"))
+            {
+                // Operator bearers are a host-issued authentication mode independent
+                // of external OIDC. Retain every existing authorization requirement.
+                services.PostConfigure<Microsoft.AspNetCore.Authorization.AuthorizationOptions>(options =>
+                {
+                    var defaults = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder(options.DefaultPolicy);
+                    if (defaults.AuthenticationSchemes.Count == 0) defaults.AuthenticationSchemes.Add(AuthenticationExtensions.ApiKeyScheme);
+                    defaults.AuthenticationSchemes.Add(OperatorBearerScheme);
+                    options.DefaultPolicy = defaults.Build();
+                    foreach (var name in new[]
+                    {
+                        AuthenticationExtensions.AdminPolicy, AuthenticationExtensions.AdminPolicyAlias,
+                        AuthenticationExtensions.AdminApprovePolicy, AuthenticationExtensions.OpsReadPolicy,
+                        AuthenticationExtensions.TemporalHistoryReadPolicy, AuthenticationExtensions.TemporalDiffReadPolicy,
+                        AuthenticationExtensions.TemporalRollbackExecutePolicy, AuthenticationExtensions.ConformanceMutatePolicy,
+                        AuthenticationExtensions.StudioLifecyclePolicy, AuthenticationExtensions.StudioAiProxyPolicy,
+                    })
+                    {
+                        if (options.GetPolicy(name) is not { } existing) continue;
+                        var policy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder(existing);
+                        if (!policy.AuthenticationSchemes.Contains(OperatorBearerScheme)) policy.AuthenticationSchemes.Add(OperatorBearerScheme);
+                        options.AddPolicy(name, policy.Build());
+                    }
+                });
+            }
             return services;
         }
 
