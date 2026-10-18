@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:035f2e7e0fd7c14f877ca9d4291e2ac39560b514e7bf3af648795cdceba94ad8",
+  "bundleDigest": "sha256:8ef759c58fea5a9eef1716d4af620d231f60b188b85bf1afb1eeb48eff3be7e7",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2434,7 +2434,7 @@
     {
       "id": "guides/publish/import-from-object-storage",
       "path": "guides/publish/import-from-object-storage.md",
-      "documentDigest": "sha256:60f1671633e2cca7a2b93212ad346da96717abbd6e5af9f51733006439514f11",
+      "documentDigest": "sha256:fe787124c8e18300c69e66ad8a488def990c111d267fbf5101382f53d4a58595",
       "metadata": {
         "type": "guide",
         "title": "Import a layer from object storage",
@@ -7767,7 +7767,7 @@
     {
       "id": "reference/configuration/environment-variables",
       "path": "reference/configuration/environment-variables.md",
-      "documentDigest": "sha256:3ad4e6f823af3b5f9a7353294cad738e000b1fef988538993debdea6742a6906",
+      "documentDigest": "sha256:482432d3a34fe73988c83136190cf54ad3fba33adf804c485e5173b4ce784c04",
       "metadata": {
         "type": "reference",
         "title": "Environment variables",

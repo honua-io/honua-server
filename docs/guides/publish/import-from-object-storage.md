@@ -22,6 +22,8 @@ Optional `Import__ObjectStore__Region`, `Import__ObjectStore__ServiceUrl`, and `
 
 ## Limits
 
+Multipart uploads and downloaded URLs use the separate `Import__Limits__MaxUploadFileBytes` ceiling (100 MiB by default). This limit does not increase importer memory or the threshold for background processing. Request-body, proxy and staging-disk limits still apply; multipart upload is not resumable.
+
 `GET /api/v1/admin/import/limits` includes `maxObjectStoreImportBytes` (the `Import__Limits__MaxObjectStoreImportBytes` setting, 50 GiB unless you set it). An object above that size is refused with `import.source_too_large` before any byte is read. The detail names the object size and the limit.
 
 An object above `backgroundJobThresholdBytes`, and every archive (`.zip`, `.kmz`, `.gdb.zip`), returns `202 Accepted` with a `jobId`. The accepting request does not download the object. The worker reads it with the preflight ETag pinned (`If-Match`). A host with no background runner returns `503` and `Background import service not available. File is too large for synchronous import.` before that read.

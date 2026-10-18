@@ -332,7 +332,7 @@ internal static partial class ImportEndpoints
 
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
-        var maxFileSizeBytes = Math.Max(importService.Limits.BackgroundJobThresholdBytes, importService.Limits.MaxMemoryBytes);
+        var maxFileSizeBytes = importService.Limits.MaxUploadFileBytes;
         var parseResult = await ParseMultipartImportUploadAsync(
             context,
             importService,
@@ -549,7 +549,7 @@ internal static partial class ImportEndpoints
 
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
-        var maxFileSizeBytes = Math.Max(importService.Limits.BackgroundJobThresholdBytes, importService.Limits.MaxMemoryBytes);
+        var maxFileSizeBytes = importService.Limits.MaxUploadFileBytes;
         var staged = await DownloadRemoteImportSourceAsync(
             context,
             request.SourceUrl,

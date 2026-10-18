@@ -178,6 +178,7 @@ When `ConnectionStrings__Redis` is set, MCP session records are shared through R
 | `Import__ObjectStore__Region` | SDK default | Optional region for the customer-bucket client. |
 | `Import__ObjectStore__ServiceUrl` | — | Optional endpoint override for a VPC endpoint or a development emulator. Production imports leave this unset. |
 | `Import__ObjectStore__ForcePathStyle` | `false` (on when `ServiceUrl` is set) | Path-style addressing for the customer-bucket client. |
+| `Import__Limits__MaxUploadFileBytes` | 100 MiB | File-byte ceiling for multipart uploads and URL downloads. Independent of importer memory and background-job routing. Lower proxy/request-body limits still apply; raising this does not provide resumable uploads or reserve staging disk. |
 | `Import__Limits__MaxObjectStoreImportBytes` | 50 GiB | Largest `s3://` object the import will accept. Published as `maxObjectStoreImportBytes` on `GET /api/v1/admin/import/limits`. An object above this size is refused before any byte is read. |
 | `Limits__Imports__MaxPreviewSize` | `10485760` (10 MiB) | Max file size for import preview. |
 | `Limits__Imports__MaxSyncImportSize` | `52428800` (50 MiB) | Max file size for general synchronous imports; direct PostGIS raster uploads use the lower of this value and the fixed 50 MiB serving-process ceiling. |

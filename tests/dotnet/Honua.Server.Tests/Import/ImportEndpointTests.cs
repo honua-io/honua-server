@@ -1174,6 +1174,56 @@ public class ImportEndpointTests : IAsyncLifetime
         }
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("Tier", "Fast")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task ImportFile_UsesIndependentUploadCeiling_WithoutIncreasingMemoryOrBackgroundThreshold(bool withinUploadLimit)
+    {
+        const string geoJson = """{"type":"FeatureCollection","features":[]}""";
+        var bytes = Encoding.UTF8.GetByteCount(geoJson);
+        var importer = Substitute.For<IFileImportService>();
+        importer.Limits.Returns(new ImportLimits
+        {
+            MaxMemoryBytes = 1,
+            BackgroundJobThresholdBytes = 1,
+            MaxUploadFileBytes = withinUploadLimit ? bytes : bytes - 1,
+        });
+        importer.DetectFormat(Arg.Any<string>()).Returns(SupportedFileFormat.GeoJson);
+        var jobs = Substitute.For<IImportJobService>();
+        jobs.QueueImportAsync(Arg.Any<ImportRequest>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns("independent-limit-job");
+        var fixture = new WebAppFixture().ReplaceService<IFileImportService>(importer)
+            .ReplaceService<IImportJobService>(jobs);
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateClient();
+            using var body = new MultipartFormDataContent();
+            body.Add(new StringContent(geoJson, Encoding.UTF8, "application/json"), "File", "limit.geojson");
+            body.Add(new StringContent("independent_limit"), "TableName");
+
+            using var response = await client.PostAsync("/api/v1/admin/import/upload", body);
+
+            if (withinUploadLimit)
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+                await jobs.Received(1).QueueImportAsync(Arg.Any<ImportRequest>(), bytes, Arg.Any<CancellationToken>());
+            }
+            else
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+                await jobs.DidNotReceiveWithAnyArgs().QueueImportAsync(default!, default, default);
+            }
+            await importer.DidNotReceiveWithAnyArgs().ImportFileAsync(default!, default);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/import/limits")]
     public async Task GetImportLimits_V1_ReturnsLimitsConfiguration()

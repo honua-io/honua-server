@@ -27,6 +27,14 @@ public sealed record ImportLimits
     public long MaxMemoryBytes { get; init; } = FileSizeConstants.OneHundredMB;
 
     /// <summary>
+    /// Maximum bytes accepted from a multipart upload or downloaded URL before import.
+    /// Independent of memory budget and background routing. Request-body and deployment
+    /// transport limits still apply. Default: 100 MiB; operators may configure a larger
+    /// staging budget without increasing importer memory or synchronous execution limits.
+    /// </summary>
+    public long MaxUploadFileBytes { get; init; } = FileSizeConstants.OneHundredMB;
+
+    /// <summary>
     /// File size threshold in bytes above which imports are queued for background processing.
     /// Default: 100MB (104857600 bytes).
     /// </summary>
@@ -194,6 +202,7 @@ public sealed record ImportLimits
     {
         BatchSize = 500,
         MaxMemoryBytes = FileSizeConstants.FiftyMB,
+        MaxUploadFileBytes = FileSizeConstants.FiftyMB,
         BackgroundJobThresholdBytes = FileSizeConstants.FiftyMB,
         StreamBufferSize = 32 * (int)FileSizeConstants.OneKB
     };
@@ -206,6 +215,7 @@ public sealed record ImportLimits
     {
         BatchSize = 5000,
         MaxMemoryBytes = FileSizeConstants.FiveHundredMB,
+        MaxUploadFileBytes = FileSizeConstants.FiveHundredMB,
         BackgroundJobThresholdBytes = FileSizeConstants.FiveHundredMB,
         StreamBufferSize = 256 * (int)FileSizeConstants.OneKB
     };
