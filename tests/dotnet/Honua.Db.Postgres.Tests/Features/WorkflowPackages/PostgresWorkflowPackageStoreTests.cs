@@ -142,9 +142,45 @@ public sealed class PostgresWorkflowPackageStoreTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task Ownership_PreservesFirstWriterAndLegacyUnknown_AndCopiesToVersion()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresWorkflowPackageStoreTests) + "Ownership");
+        try
+        {
+            await ApplyMigrationAsync(schema);
+            var store = new PostgresWorkflowPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var owner = new WorkflowPackageOwnership { OwnerActorId = "actor:first", TenantId = "tenant:first" };
+            foreach (var initial in new WorkflowPackageOwnership?[] { owner, null })
+            {
+                var package = SamplePackage(initial is null ? "legacy" : "owned") with { Ownership = initial };
+                await store.SavePackageAsync(package);
+                var attempted = package with
+                {
+                    Ownership = new WorkflowPackageOwnership { OwnerActorId = "actor:other", TenantId = "tenant:other" },
+                    Metadata = new Dictionary<string, string> { ["ownerActorId"] = "actor:other" }
+                };
+                (await store.SavePackageAsync(attempted)).Ownership.Should().Be(initial);
+                var hash = WorkflowPackageGraphHasher.Compute(package.Graph);
+                var version = await store.CreateVersionAsync(package.PackageId, hash, package.Graph,
+                    WorkflowPackageValidationResult.Success(hash), "different-version-author");
+                version.Ownership.Should().Be(initial);
+                var peer = new PostgresWorkflowPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+                (await peer.GetVersionAsync(package.PackageId, version.Version))!.Ownership.Should().Be(initial);
+                (await peer.GetPackageAsync(package.PackageId))!.Ownership.Should().Be(initial);
+            }
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private async Task ApplyMigrationAsync(string schema)
     {
-        var sql = await File.ReadAllTextAsync(FindMigration());
+        var migration = FindMigration();
+        var sql = await File.ReadAllTextAsync(migration);
+        sql += await File.ReadAllTextAsync(Path.Join(Path.GetDirectoryName(migration)!, "133_AddWorkflowPackageOwnership.sql"));
         sql = sql.Replace("$HonuaSchema$", "\"" + schema.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"", StringComparison.Ordinal);
         await using var connection = await fixture.GetConnectionAsync(schema);
         await using var command = connection.CreateCommand();

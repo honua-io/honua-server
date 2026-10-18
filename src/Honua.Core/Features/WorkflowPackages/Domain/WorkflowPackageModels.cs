@@ -4,10 +4,25 @@
 namespace Honua.Core.Features.WorkflowPackages.Domain;
 
 /// <summary>
+/// Server-authored ownership captured at package creation and copied to immutable versions.
+/// </summary>
+public sealed record WorkflowPackageOwnership
+{
+    /// <summary>Canonical authenticated actor that owns the package.</summary>
+    public required string OwnerActorId { get; init; }
+
+    /// <summary>Trusted tenant context at creation, when tenancy is configured.</summary>
+    public string? TenantId { get; init; }
+}
+
+/// <summary>
 /// Mutable workflow package draft metadata and graph.
 /// </summary>
 public sealed record WorkflowPackage
 {
+    /// <summary>Immutable server-authored ownership; null for legacy unknown provenance.</summary>
+    public WorkflowPackageOwnership? Ownership { get; init; }
+
     /// <summary>
     /// Stable package identifier.
     /// </summary>
@@ -69,6 +84,9 @@ public sealed record WorkflowPackage
 /// </summary>
 public sealed record WorkflowPackageVersion
 {
+    /// <summary>Ownership copied from the locked package at version creation.</summary>
+    public WorkflowPackageOwnership? Ownership { get; init; }
+
     /// <summary>
     /// Stable package identifier.
     /// </summary>

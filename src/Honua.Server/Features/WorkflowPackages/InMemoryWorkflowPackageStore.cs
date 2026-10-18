@@ -54,7 +54,11 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
             var latest = _versions.TryGetValue(package.PackageId, out var versions) && versions.Count > 0
                 ? versions.Max(version => version.Version)
                 : package.LatestVersion;
-            var stored = package with { LatestVersion = latest };
+            // Preserve the first persisted ownership, including unknown legacy provenance.
+            var ownership = _packages.TryGetValue(package.PackageId, out var existing)
+                ? existing.Ownership
+                : package.Ownership;
+            var stored = package with { LatestVersion = latest, Ownership = ownership };
             _packages[package.PackageId] = stored;
             return Task.FromResult(stored);
         }
@@ -99,6 +103,7 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
                     ? "workflow-package.v1"
                     : validatedGraph.SchemaVersion,
                 PackageHash = packageHash,
+                Ownership = package.Ownership,
                 Graph = validatedGraph,
                 Validation = validation,
                 CreatedAt = DateTimeOffset.UtcNow,

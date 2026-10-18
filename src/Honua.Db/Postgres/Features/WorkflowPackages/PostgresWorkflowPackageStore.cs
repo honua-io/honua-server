@@ -36,7 +36,7 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
     {
         var sql = $"""
             SELECT package_id, name, description, namespace, graph_json::text, latest_version,
-                   created_at, updated_at, created_by, updated_by, metadata_json::text
+                   created_at, updated_at, created_by, updated_by, metadata_json::text, owner_actor_id, owner_tenant_id
             FROM {_packagesTable}
             ORDER BY name, package_id
             """;
@@ -57,7 +57,7 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
         ArgumentException.ThrowIfNullOrWhiteSpace(packageId);
         var sql = $"""
             SELECT package_id, name, description, namespace, graph_json::text, latest_version,
-                   created_at, updated_at, created_by, updated_by, metadata_json::text
+                   created_at, updated_at, created_by, updated_by, metadata_json::text, owner_actor_id, owner_tenant_id
             FROM {_packagesTable}
             WHERE package_id = @package_id
             """;
@@ -74,10 +74,10 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
         var sql = $"""
             INSERT INTO {_packagesTable} (
                 package_id, name, description, namespace, graph_json, latest_version,
-                created_at, updated_at, created_by, updated_by, metadata_json)
+                created_at, updated_at, created_by, updated_by, metadata_json, owner_actor_id, owner_tenant_id)
             VALUES (
                 @package_id, @name, @description, @namespace, @graph_json::jsonb, @latest_version,
-                @created_at, @updated_at, @created_by, @updated_by, @metadata_json::jsonb)
+                @created_at, @updated_at, @created_by, @updated_by, @metadata_json::jsonb, @owner_actor_id, @owner_tenant_id)
             ON CONFLICT (package_id) DO UPDATE SET
                 name = EXCLUDED.name,
                 description = EXCLUDED.description,
@@ -90,7 +90,7 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
                 updated_by = EXCLUDED.updated_by,
                 metadata_json = EXCLUDED.metadata_json
             RETURNING package_id, name, description, namespace, graph_json::text, latest_version,
-                      created_at, updated_at, created_by, updated_by, metadata_json::text
+                      created_at, updated_at, created_by, updated_by, metadata_json::text, owner_actor_id, owner_tenant_id
             """;
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
@@ -120,9 +120,10 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         WorkflowGraph lockedGraph;
+        WorkflowPackageOwnership? lockedOwnership;
         await using (var lockCommand = new NpgsqlCommand(
             $"""
-            SELECT graph_json::text
+            SELECT graph_json::text, owner_actor_id, owner_tenant_id
             FROM {_packagesTable}
             WHERE package_id = @package_id
             FOR UPDATE
@@ -137,6 +138,7 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
                 throw new KeyNotFoundException($"Workflow package '{packageId}' was not found.");
             }
 
+            lockedOwnership = ReadOwnership(packageReader, 1, 2);
             lockedGraph = JsonSerializer.Deserialize(packageReader.GetString(0), WorkflowPackageStoreJsonContext.Default.WorkflowGraph)
                 ?? throw new InvalidOperationException("Stored workflow package graph was empty.");
         }
@@ -168,10 +170,10 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
         await using (var insert = new NpgsqlCommand(
             $"""
             INSERT INTO {_versionsTable} (
-                package_id, version, schema_version, package_hash, graph_json, validation_json, created_at, created_by)
+                package_id, version, schema_version, package_hash, graph_json, validation_json, created_at, created_by, owner_actor_id, owner_tenant_id)
             VALUES (
-                @package_id, @version, @schema_version, @package_hash, @graph_json::jsonb, @validation_json::jsonb, @created_at, @created_by)
-            RETURNING package_id, version, schema_version, package_hash, graph_json::text, validation_json::text, created_at, created_by
+                @package_id, @version, @schema_version, @package_hash, @graph_json::jsonb, @validation_json::jsonb, @created_at, @created_by, @owner_actor_id, @owner_tenant_id)
+            RETURNING package_id, version, schema_version, package_hash, graph_json::text, validation_json::text, created_at, created_by, owner_actor_id, owner_tenant_id
             """,
             connection,
             transaction))
@@ -184,6 +186,7 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
             insert.Parameters.Add(JsonParameter("validation_json", JsonSerializer.Serialize(validation, WorkflowPackageStoreJsonContext.Default.WorkflowPackageValidationResult)));
             insert.Parameters.AddWithValue("created_at", createdAt);
             insert.Parameters.AddWithValue("created_by", (object?)createdBy ?? DBNull.Value);
+            BindOwnership(insert, lockedOwnership);
             await using var reader = await insert.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -378,7 +381,7 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
 
     private string VersionSelect()
         => $"""
-            SELECT package_id, version, schema_version, package_hash, graph_json::text, validation_json::text, created_at, created_by
+            SELECT package_id, version, schema_version, package_hash, graph_json::text, validation_json::text, created_at, created_by, owner_actor_id, owner_tenant_id
             FROM {_versionsTable}
             """;
 
@@ -395,6 +398,7 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
     private static void BindPackage(NpgsqlCommand command, WorkflowPackage package)
     {
         command.Parameters.AddWithValue("package_id", package.PackageId);
+        BindOwnership(command, package.Ownership);
         command.Parameters.AddWithValue("name", package.Name);
         command.Parameters.AddWithValue("description", (object?)package.Description ?? DBNull.Value);
         command.Parameters.AddWithValue("namespace", (object?)package.Namespace ?? DBNull.Value);
@@ -432,6 +436,7 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
     private static WorkflowPackage ReadPackage(NpgsqlDataReader reader)
         => new()
         {
+            Ownership = ReadOwnership(reader, 11, 12),
             PackageId = reader.GetString(0),
             Name = reader.GetString(1),
             Description = reader.IsDBNull(2) ? null : reader.GetString(2),
@@ -450,6 +455,7 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
     private static WorkflowPackageVersion ReadVersion(NpgsqlDataReader reader)
         => new()
         {
+            Ownership = ReadOwnership(reader, 8, 9),
             PackageId = reader.GetString(0),
             Version = reader.GetInt32(1),
             SchemaVersion = reader.GetString(2),
@@ -484,6 +490,19 @@ internal sealed class PostgresWorkflowPackageStore : IWorkflowPackageStore
             Provenance = JsonSerializer.Deserialize(reader.GetString(13), WorkflowPackageStoreJsonContext.Default.DictionaryStringString)
                 ?? new Dictionary<string, string>()
         };
+
+    private static WorkflowPackageOwnership? ReadOwnership(NpgsqlDataReader reader, int actorOrdinal, int tenantOrdinal)
+        => reader.IsDBNull(actorOrdinal) ? null : new WorkflowPackageOwnership
+        {
+            OwnerActorId = reader.GetString(actorOrdinal),
+            TenantId = reader.IsDBNull(tenantOrdinal) ? null : reader.GetString(tenantOrdinal)
+        };
+
+    private static void BindOwnership(NpgsqlCommand command, WorkflowPackageOwnership? ownership)
+    {
+        command.Parameters.Add(new NpgsqlParameter("owner_actor_id", NpgsqlDbType.Text) { Value = (object?)ownership?.OwnerActorId ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter("owner_tenant_id", NpgsqlDbType.Text) { Value = (object?)ownership?.TenantId ?? DBNull.Value });
+    }
 
     private static NpgsqlParameter JsonParameter(string name, string? json)
         => new(name, NpgsqlDbType.Jsonb) { Value = (object?)json ?? DBNull.Value };

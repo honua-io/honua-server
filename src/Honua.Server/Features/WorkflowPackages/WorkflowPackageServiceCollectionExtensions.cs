@@ -49,7 +49,8 @@ internal static class WorkflowPackageServiceCollectionExtensions
             sp.GetService<IWorkflowDefinitionStore>(),
             sp.GetService<WorkflowOrchestrationEngine>(),
             sp.GetService<IMetadataReleaseService>(),
-            sp.GetService<WorkflowAuthorSecurityContextCapturer>()));
+            sp.GetService<WorkflowAuthorSecurityContextCapturer>(),
+            sp.GetService<ITenantContext>()));
 
         return services;
     }
