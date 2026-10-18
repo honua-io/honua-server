@@ -54,7 +54,42 @@ def download(url: str, maximum: int) -> bytes:
     return data
 
 
-def prepare_verified_nuget_feed(locked: dict, verified_feed: Path) -> None:
+def build_nuget_content_hash_reader(root: Path, dotnet: Path, sdk_version: str, env: dict):
+    """Use the verified SDK's official signed-package hashing before extraction."""
+    helper = root / "trusted-nuget-hash-reader"
+    helper.mkdir()
+    project = ET.Element("Project", Sdk="Microsoft.NET.Sdk")
+    properties = ET.SubElement(project, "PropertyGroup")
+    for name, value in {"TargetFramework": "net10.0", "OutputType": "Exe", "ImplicitUsings": "enable", "NuGetAudit": "false", "EnableDefaultItems": "true", "TreatWarningsAsErrors": "true"}.items():
+        ET.SubElement(properties, name).text = value
+    references = ET.SubElement(project, "ItemGroup")
+    sdk_directory = dotnet.parent / "sdk" / sdk_version
+    for name in ("NuGet.Packaging", "NuGet.Common", "NuGet.Frameworks", "NuGet.Versioning", "System.Security.Cryptography.Pkcs"):
+        ET.SubElement(references, "Reference", Include=name, HintPath=str(sdk_directory / (name + ".dll")), Private="true")
+    ET.ElementTree(project).write(helper / "reader.csproj")
+    (helper / "Program.cs").write_text("using NuGet.Packaging;\nusing var reader = new PackageArchiveReader(args[0]);\nConsole.WriteLine(reader.GetContentHash(CancellationToken.None));\n")
+    (helper / "NuGet.Config").write_text("<configuration><packageSources><clear /></packageSources></configuration>")
+    output = helper / "compiled"
+    subprocess.run([str(dotnet), "build", str(helper / "reader.csproj"), "--configuration", "Release", "--output", str(output),
+                    "--configfile", str(helper / "NuGet.Config"), "-p:UseSharedCompilation=false", "-p:ImportDirectoryBuildProps=false",
+                    "-p:ImportDirectoryBuildTargets=false", "-p:ImportDirectoryPackagesProps=false"],
+                   env=env, cwd=helper, check=True, timeout=180)
+    quarantine = helper / "untrusted-input.nupkg"
+    def read_content_hash(data: bytes) -> bytes:
+        quarantine.write_bytes(data)
+        try:
+            result = subprocess.run([str(dotnet), str(output / "reader.dll"), str(quarantine)], env=env, cwd=helper,
+                                    check=True, capture_output=True, text=True, timeout=60)
+            value = base64.b64decode(result.stdout.strip(), validate=True)
+            if len(value) != 64: raise ValueError("NuGet returned no valid SHA-512 content hash.")
+            return value
+        finally:
+            quarantine.unlink(missing_ok=True)
+    return read_content_hash
+
+
+def prepare_verified_nuget_feed(locked: dict, verified_feed: Path, content_hash_reader=None) -> dict:
+    receipts = {}
     for (name, version), content_hash in sorted(locked.items()):
         if not re.fullmatch(r"[a-z0-9_.-]{1,128}", name) or not re.fullmatch(r"[a-z0-9_.+-]{1,128}", version):
             raise ValueError("Invalid dependency in the published default template lock.")
@@ -62,9 +97,14 @@ def prepare_verified_nuget_feed(locked: dict, verified_feed: Path) -> None:
         if len(expected) != 64: raise ValueError("Invalid SHA-512 in the published template lock.")
         filename = f"{name}.{version}.nupkg"
         data = download(f"https://api.nuget.org/v3-flatcontainer/{name}/{version}/{filename}", 128 * 1024 * 1024)
-        if hashlib.sha512(data).digest() != expected:
+        # Signed package lock hashes exclude signature context. The production
+        # reader is NuGet's official SDK implementation, not raw archive hashing.
+        actual = content_hash_reader(data) if content_hash_reader else hashlib.sha512(data).digest()
+        if actual != expected:
             raise ValueError("Default NuGet artifact differs from its lock before extraction: " + name)
         (verified_feed / filename).write_bytes(data)
+        receipts[(name, version)] = {"contentHash": content_hash, "nupkgSha256": hashlib.sha256(data).hexdigest(), "nupkgSha512": hashlib.sha512(data).hexdigest()}
+    return receipts
 
 
 def assemble(options) -> dict:
@@ -127,6 +167,8 @@ def assemble(options) -> dict:
     executable = tools / "honua-gp-devkit"
     bootstrap = root / "bootstrap"
     subprocess.run([str(executable), "workspace", "bootstrap", "--output", str(bootstrap)], env=env, cwd=root, check=True, timeout=60)
+    if (bootstrap / "assemble_workspace_image.py").read_bytes() != Path(__file__).read_bytes():
+        raise ValueError("Run the exact assembler shipped by the selected installed devkit.")
     defaults = root / "defaults"
     for language in ("python", "dotnet"):
         subprocess.run([str(executable), "init", "--language", language, "--name", "default-" + language,
@@ -154,7 +196,8 @@ def assemble(options) -> dict:
     ET.ElementTree(project).write(seed / "seed.csproj")
     verified_feed = root / "verified-default-feed"
     verified_feed.mkdir()
-    prepare_verified_nuget_feed(locked, verified_feed)
+    content_hash_reader = build_nuget_content_hash_reader(root, dotnet, options.sdk_version, env)
+    verified_nuget = prepare_verified_nuget_feed(locked, verified_feed, content_hash_reader)
     # Only verified bytes enter NuGet extraction/MSBuild; no public restore feed.
     sources.find("add").set("key", "verified-default-artifacts")
     sources.find("add").set("value", str(verified_feed))
@@ -166,8 +209,10 @@ def assemble(options) -> dict:
     for (name, version), content_hash in sorted(locked.items()):
         directory = nuget / name / version
         artifact = directory / f"{name}.{version}.nupkg"
-        if base64.b64encode(bytes.fromhex(digest(artifact, "sha512"))).decode() != content_hash: raise ValueError("Default NuGet artifact differs from published template lock: " + name)
-        nuget_provenance[name + "/" + version] = {"contentHash": content_hash, "nupkgSha256": digest(artifact)}
+        expected = verified_nuget[(name, version)]
+        if digest(artifact, "sha512") != expected["nupkgSha512"] or digest(artifact) != expected["nupkgSha256"]:
+            raise ValueError("Restored NuGet artifact differs from verified pre-extraction bytes: " + name)
+        nuget_provenance[name + "/" + version] = expected
     # Every cache byte comes from this clean restore; remove dependencies not in locks.
     for name in nuget.iterdir():
         for version in name.iterdir():

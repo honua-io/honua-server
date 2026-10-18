@@ -117,3 +117,5 @@ Public evaluation requires the normally released installed devkit and a digest-p
 sandbox image with exact devkit, SDK and locked dependency provenance. A locally
 built image is qualification evidence, not a published release. SIGINT/SIGTERM
 shutdown signals existing runner cancellation and waits a bounded time for cleanup.
+
+The assembler verifies NuGet `packages.lock.json` content hashes before admitting downloads to the restore feed. For signed packages this uses the official `NuGet.Packaging.PackageArchiveReader` from the SHA512-verified complete .NET SDK: NuGet content hashes exclude signature context and are not raw archive hashes. The trusted reader is built outside user projects and only reads the quarantined archive. Exact raw SHA256/SHA512 values are recorded separately, and the restored cache must retain those exact bytes. No dependency archive is extracted or built before the content check. The assembler also requires its own bytes to match the selected installed devkit payload.
