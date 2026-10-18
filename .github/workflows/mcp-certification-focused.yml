@@ -88,7 +88,7 @@ jobs:
                       'serverSource': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
                       'canonicalClientSource': '372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4',
                       'inspectorVersion': '2.10.1', 'playwrightVersion': '1.59.1', 'controls': {}}
-          for name, floor in [('wire', 10), ('browser-postgres', 2)]:
+          for name, floor in [('wire', 12), ('browser-postgres', 2)]:
               text = Path(f'artifacts/inspector-browser-controls/{name}.tap').read_text()
               counts = {key: int(value) for key, value in re.findall(r'^# (tests|pass|fail|skipped|cancelled) (\d+)$', text, re.M)}
               assert counts.get('tests', 0) >= floor and counts.get('pass') == counts['tests'], (name, counts)

@@ -14,6 +14,8 @@ and never uses an AbortSignal. A positive Inspector proof requires all of:
 - The exact authored query reaches a real PostgreSQL relation-lock blocker.
 - The actual client sends a session-bound, typed `notifications/cancelled` while
   its original upstream request is still open. The proxy never shields aborts.
+- The actual UI initialization binds that session and negotiated protocol
+  version; the consumer compares it with its reported client protocol identity.
 - Exactly one correlated server response contains protocol code -32800 and
   typed code `cancelled`, without a result.
 - An independent connection sees the blocked query and its relation locks cease

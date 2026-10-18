@@ -45,6 +45,7 @@ export async function cancellationWireObserver(endpoint, { dropCancellation = fa
   let expected;
   let capture;
   let recovery;
+  let initialization;
   const proxy = createServer(async (incoming, outgoing) => {
     let upstream;
     try {
@@ -53,6 +54,11 @@ export async function cancellationWireObserver(endpoint, { dropCancellation = fa
       for await (const chunk of incoming) { require((size += chunk.length) <= LIMIT, 'request limit'); chunks.push(chunk); }
       const body = Buffer.concat(chunks);
       const message = incoming.method === 'POST' ? JSON.parse(body) : undefined;
+      let initialize;
+      if (message?.method === 'initialize') {
+        require(!initialization, 'one actual UI initialization');
+        initialize = initialization = { id: message.id, complete: false, aborted: false, responses: [] };
+      }
       let initial = false;
       if (armed && message?.method === 'tools/call') {
         require(!capture && message.params?.name === 'honua_query_features'
@@ -75,6 +81,7 @@ export async function cancellationWireObserver(endpoint, { dropCancellation = fa
           calls.push(recovery); call = recovery;
         }
       }
+      const tracked = call ?? initialize;
       if (message?.method === 'notifications/cancelled') {
         notifications++;
         require(capture && message.params?.requestId === capture.id
@@ -93,29 +100,37 @@ export async function cancellationWireObserver(endpoint, { dropCancellation = fa
         const bytes = []; let length = 0;
         outgoing.writeHead(response.statusCode, response.headers);
         response.on('data', (chunk) => {
-          if (!call) return;
+          if (!tracked) return;
           if ((length += chunk.length) > LIMIT || (total += chunk.length) > 4 * LIMIT) {
             invalid = true; response.destroy(); return;
           }
           bytes.push(chunk);
         });
         response.on('end', () => {
-          if (!call) return;
+          if (!tracked) return;
           try {
             require(response.statusCode === 200, 'terminal HTTP status');
-            call.responses = frames(Buffer.concat(bytes), response.headers).filter((frame) => frame.id === call.id);
-            call.complete = true;
+            tracked.responses = frames(Buffer.concat(bytes), response.headers).filter((frame) => frame.id === tracked.id);
+            if (initialize) {
+              require(tracked.responses.length === 1 && tracked.responses[0].jsonrpc === '2.0'
+                && !Object.hasOwn(tracked.responses[0], 'error')
+                && /^\d{4}-\d{2}-\d{2}$/.test(tracked.responses[0].result?.protocolVersion)
+                && typeof response.headers['mcp-session-id'] === 'string', 'actual UI protocol negotiation');
+              initialize.protocolVersion = tracked.responses[0].result.protocolVersion;
+              initialize.session = response.headers['mcp-session-id'];
+            }
+            tracked.complete = true;
           } catch { invalid = true; }
         });
-        response.on('error', () => { invalid = true; if (call) call.aborted = true; outgoing.destroy(); });
+        response.on('error', () => { invalid = true; if (tracked) tracked.aborted = true; outgoing.destroy(); });
         response.pipe(outgoing);
       });
       active.add(upstream);
       upstream.on('close', () => active.delete(upstream));
       upstream.on('timeout', () => upstream.destroy());
-      upstream.on('error', () => { invalid = true; if (call) call.aborted = true; outgoing.destroy(); });
+      upstream.on('error', () => { invalid = true; if (tracked) tracked.aborted = true; outgoing.destroy(); });
       outgoing.on('close', () => {
-        if (call && !outgoing.writableFinished) call.aborted = true;
+        if (tracked && !outgoing.writableFinished) tracked.aborted = true;
         upstream.destroy();
       });
       upstream.end(body);
@@ -133,12 +148,14 @@ export async function cancellationWireObserver(endpoint, { dropCancellation = fa
     assertTerminal() {
       require(!invalid && !dropCancellation && calls.length >= 1 && calls.length <= 2 && notifications === 1, 'complete notification history');
       const call = capture;
+      require(initialization?.complete && !initialization.aborted && initialization.session === call?.session,
+        'initialized session and negotiated protocol');
       require(call?.notification && call.upstreamOpenAtNotification && call.complete && !call.aborted
         && call.responses.length === 1, 'open original and exactly one terminal');
       const response = call.responses[0];
       require(response.jsonrpc === '2.0' && response.error?.code === -32800
         && response.error?.data?.code === 'cancelled' && !Object.hasOwn(response, 'result'), 'typed server cancellation');
-      return { ...call, session: undefined, sessionSha256: hash(call.session) };
+      return { ...call, session: undefined, sessionSha256: hash(call.session), protocolVersion: initialization.protocolVersion };
     },
     async recoveryResult() {
       await until(() => { require(!invalid, 'recovery wire observation'); return recovery?.complete; }, 5_000);
@@ -195,6 +212,7 @@ export async function inspectorBrowserCancellation({ endpoint, inspectorVersion,
     await verifyRecovery(await wire.recoveryResult());
     wire.assertTerminal();
     proof = { schema: INSPECTOR_CANCELLATION_CONTRACT, performedBy: 'MCP Inspector', inspectorVersion,
+      protocolVersion: terminal.protocolVersion, transport: 'streamable-http', protocolEra: 'legacy',
       fixtureSourceSha: sourceSha, seedSqlSha256: fixture.seedSqlSha256, allocatedIdsSha256: fixture.allocatedIdsSha256,
       requestMethod: 'tools/call', toolName: 'honua_query_features', serviceName: fixture.serviceName, layerId: fixture.layerId,
       sessionSha256: terminal.sessionSha256, argumentsSha256: hash(JSON.stringify(queryArguments(fixture))),

@@ -12,6 +12,11 @@ async function exercise(mode) {
   const peer = createServer(async (request, response) => {
     const chunks = []; for await (const chunk of request) chunks.push(chunk);
     const message = JSON.parse(Buffer.concat(chunks));
+    if (message.method === 'initialize') {
+      response.writeHead(200, { 'Content-Type': 'application/json', 'Mcp-Session-Id': mode === 'initialization-session' ? 'different-session' : 'control-session' })
+        .end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: '2025-06-18' } }));
+      return;
+    }
     if (message.method === 'tools/call') {
       reached = true; original = response;
       reply = () => {
@@ -35,6 +40,7 @@ async function exercise(mode) {
     headers: { 'Content-Type': 'application/json', 'Mcp-Session-Id': session }, body: JSON.stringify(message), signal });
   let outcome;
   try {
+    if (mode !== 'no-initialization') await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
     wire.arm(queryArguments(fixture));
     outcome = post({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'honua_query_features', arguments: queryArguments(fixture) } }, undefined, abort.signal)
       .then((response) => response.text()).catch(() => undefined);
@@ -56,7 +62,7 @@ async function exercise(mode) {
   }
 }
 
-for (const mode of ['json', 'gzip-sse', 'wrong-terminal', 'result-present', 'duplicate', 'no-notification',
+for (const mode of ['json', 'gzip-sse', 'no-initialization', 'initialization-session', 'wrong-terminal', 'result-present', 'duplicate', 'no-notification',
   'wrong-id-type', 'wrong-session', 'local-abort', 'dropped']) {
   test(`independent cancellation observer ${mode}`, { timeout: 5_000 }, () => exercise(mode));
 }

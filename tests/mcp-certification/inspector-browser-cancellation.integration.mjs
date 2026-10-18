@@ -108,6 +108,8 @@ for (const dropCancellation of [false, true]) {
         assert.ok(queryPid > 0, 'negative must reach actual PostgreSQL blocked work');
       } else {
         const proof = await operation;
+        assert.equal(proof.protocolVersion, '2025-06-18');
+        assert.equal(proof.protocolEra, 'legacy');
         assert.equal(proof.genuineNotificationObserved, true);
         assert.equal(proof.originalUpstreamKeptOpen, true);
         assert.equal(proof.provider.ceasedBeforeBlockerRelease, true);
