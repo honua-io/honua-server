@@ -10,10 +10,8 @@ namespace Honua.Core.Features.Authorization.Abstractions;
 /// Shared policy that maps the active edition onto the AI-operations guardrail
 /// ladder for an agent-initiated operation (#1631):
 /// <list type="bullet">
-///   <item>Community — direct agent operability, no enforced guardrails.</item>
-///   <item>Pro — validation layer: plan + dry-run + validate and a pre-change
-///   snapshot/backup gate before apply.</item>
-///   <item>Enterprise — approval + policy: the validation layer plus
+///   <item>Community — no additional edition-driven agent governance; authorization remains enforced.</item>
+///   <item>Pro and Enterprise — validation, pre-change snapshot/backup, and
 ///   human-in-the-loop approval, policy-scoped permissions, and immutable
 ///   audit.</item>
 /// </list>
@@ -27,8 +25,7 @@ public interface IAgentGuardrailPolicy
     /// <summary>
     /// Resolves the guardrail level that applies at a given edition, independent
     /// of any specific operation. Community maps to
-    /// <see cref="AgentGuardrailLevel.Direct"/>, Pro to
-    /// <see cref="AgentGuardrailLevel.Validated"/>, and Enterprise to
+    /// <see cref="AgentGuardrailLevel.Direct"/>, and Pro and Enterprise to
     /// <see cref="AgentGuardrailLevel.Approval"/>.
     /// </summary>
     /// <param name="edition">The active platform edition.</param>

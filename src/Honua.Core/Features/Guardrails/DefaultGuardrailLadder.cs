@@ -11,11 +11,10 @@ namespace Honua.Core.Features.Guardrails;
 
 /// <summary>
 /// Default <see cref="IGuardrailLadder"/> built over <see cref="HonuaEdition"/>
-/// and the license entitlement snapshot. Implements the locked default policy
-/// from #1690: Community/Pro execute directly (subject to RBAC + entitlement),
-/// Enterprise routes in-scope mutating operation classes through approval.
-/// Under <c>Licensing:Mode=Disabled</c> (Enterprise-equivalent), Studio draft
-/// composition executes directly while discriminated Studio steps keep approval (#4758).
+/// and the license entitlement snapshot. Community executes directly (subject to
+/// RBAC + entitlement); Pro and Enterprise route governed operation classes
+/// through approval. Studio draft composition remains realtime in every edition,
+/// while discriminated publication and rollback steps use their governed tier.
 /// Operator overrides can tighten or loosen the default per operation class.
 /// </summary>
 public sealed class DefaultGuardrailLadder : IGuardrailLadder
@@ -95,20 +94,20 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
         string source)
     {
         // A discriminated action is a governed step rather than draft composition, so its
-        // baseline never takes the Disabled-mode Studio composition tier.
-        var baseline = ResolveClass(operationClass, edition, disabledStudioComposition: false);
+        // baseline never takes the Studio draft composition tier.
+        var baseline = ResolveClass(operationClass, edition, allowDraftComposition: false);
         var effective = (GuardrailTier)Math.Max((int)actionTier, (int)baseline.Tier);
         return new GuardrailDecision(effective, operationClass, edition, source);
     }
 
     /// <inheritdoc />
     public GuardrailDecision Resolve(OperationClass operationClass, HonuaEdition edition)
-        => ResolveClass(operationClass, edition, disabledStudioComposition: true);
+        => ResolveClass(operationClass, edition, allowDraftComposition: true);
 
     private GuardrailDecision ResolveClass(
         OperationClass operationClass,
         HonuaEdition edition,
-        bool disabledStudioComposition)
+        bool allowDraftComposition)
     {
         // Unknown/undeclared operation classes fail closed (or open in dev).
         if (!Enum.IsDefined(operationClass))
@@ -124,16 +123,16 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
             return overridden;
         }
 
-        // #4758: Licensing:Mode=Disabled grants every entitlement and reports Enterprise, but it
-        // is the unlicensed 2026.1 posture rather than an Enterprise governance deployment. Studio
-        // draft composition therefore executes directly, as on Community. Publication, rollback
-        // and agent proposals resolve with an action discriminator and keep the approval baseline.
-        if (disabledStudioComposition &&
-            operationClass == OperationClass.StudioDraftMutation &&
-            _entitlements.GetSnapshot().Mode == LicenseMode.Disabled)
+        // Draft composition is the realtime authoring loop in every edition. Publication,
+        // rollback and agent proposals carry action discriminators and keep the approval
+        // baseline. Explicit operator overrides above still apply to the whole class.
+        if (allowDraftComposition &&
+            operationClass == OperationClass.StudioDraftMutation && Enum.IsDefined(edition))
         {
             return new GuardrailDecision(
-                GuardrailTier.DirectExecute, operationClass, edition, "licensing-disabled-studio-composition");
+                GuardrailTier.DirectExecute, operationClass, edition,
+                _entitlements.GetSnapshot().Mode == LicenseMode.Disabled
+                    ? "licensing-disabled-studio-composition" : "studio-draft-composition");
         }
 
         return new GuardrailDecision(ResolveDefaultTier(edition), operationClass, edition, "default-policy");
@@ -141,11 +140,11 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
 
     private static GuardrailTier ResolveDefaultTier(HonuaEdition edition) => edition switch
     {
-        // Enterprise routes in-scope mutating classes through approval.
-        HonuaEdition.Enterprise => GuardrailTier.RequiresApproval,
+        // Pro and Enterprise include configurable approval governance.
+        HonuaEdition.Pro or HonuaEdition.Enterprise => GuardrailTier.RequiresApproval,
 
-        // Community/Pro execute directly (subject to RBAC + entitlement).
-        HonuaEdition.Community or HonuaEdition.Pro => GuardrailTier.DirectExecute,
+        // Community executes directly (subject to RBAC + entitlement).
+        HonuaEdition.Community => GuardrailTier.DirectExecute,
 
         // Defensive default: any future/unknown edition fails closed to approval.
         _ => GuardrailTier.RequiresApproval,

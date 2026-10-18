@@ -5,10 +5,9 @@ namespace Honua.Core.Features.Authorization.Domain;
 
 /// <summary>
 /// Edition-driven guardrail level applied to an agent-initiated operation.
-/// Models the AI-operations guardrail ladder (#1631): Community runs agent
-/// operations directly with no enforced flow, Pro inserts a validation layer
-/// (planned, dry-run, validated, pre-change snapshot before apply), and
-/// Enterprise additionally requires human approval and policy-scoped audit.
+/// Community has no additional edition-driven governance. Pro and Enterprise
+/// include validation, pre-change snapshots, approval and policy-scoped audit.
+/// Authorization and tenant isolation apply independently in every edition.
 /// </summary>
 /// <remarks>
 /// Values are ordered so a numerically higher level is strictly more
@@ -18,19 +17,19 @@ namespace Honua.Core.Features.Authorization.Domain;
 public enum AgentGuardrailLevel
 {
     /// <summary>
-    /// Community posture: full agent operability with no enforced guardrails.
-    /// Discipline is bring-your-own (scoped credentials, operator-owned backups).
+    /// No additional edition-driven governance. Operation permissions, tenant
+    /// isolation and baseline safety checks still apply.
     /// </summary>
     Direct = 0,
 
     /// <summary>
-    /// Pro posture: every agent-initiated change is planned, dry-run, and
+    /// Validation-only level retained for contract compatibility: changes are planned, dry-run, and
     /// validated, with a pre-change snapshot/backup gate, before apply.
     /// </summary>
     Validated = 1,
 
     /// <summary>
-    /// Enterprise posture: the validation layer plus human-in-the-loop approval,
+    /// Pro and Enterprise posture: validation plus human-in-the-loop approval,
     /// policy-scoped agent permissions, and immutable audit of agent actions.
     /// </summary>
     Approval = 2,

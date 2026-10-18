@@ -495,7 +495,7 @@ internal static class SpecEndpoints
             return validationGate;
         }
 
-        // Enterprise approval + policy layer: the approval-workflows entitlement
+        // Pro and Enterprise approval + policy layer: the approval-workflows entitlement
         // must be provisioned before approval-gated agent apply proceeds.
         if (decision.RequiresApproval)
         {

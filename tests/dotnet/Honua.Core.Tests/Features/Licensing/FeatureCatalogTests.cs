@@ -191,17 +191,16 @@ public sealed class FeatureCatalogTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void All_BranchVersioningIsProAndApprovalPolicyIsEnterprise()
+    public void All_BranchVersioningAndApprovalPolicyArePro()
     {
-        // Commercial-boundaries ruling (2026-09-04): core versioning is Pro;
-        // organisational approval and policy controls remain Enterprise.
+        // Core versioning and configurable AI approval policy are Pro capabilities.
         var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.BranchVersioningKey);
 
         feature.Should().NotBeNull("feature catalog must define branch versioning");
         feature!.Category.Should().Be(FeatureCatalog.Categories.Editing);
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
         FeatureCatalog.All.Single(f => f.Key == FeatureCatalog.AiApprovalWorkflowsKey)
-            .MinimumEdition.Should().Be(HonuaEdition.Enterprise);
+            .MinimumEdition.Should().Be(HonuaEdition.Pro);
     }
 
     [Trait("Tier", "Fast")]
@@ -257,8 +256,7 @@ public sealed class FeatureCatalogTests
     {
         // Ticket #1631 / #1592: the AI-operations guardrail ladder is the edition
         // axis. MCP discovery/query stays Community (agent reads never gated), the
-        // agent-operations validation layer is Pro, and approval workflows are
-        // Enterprise.
+        // agent-operations validation layer and approval workflows are Pro.
         var discovery = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.McpDiscoveryKey);
         var operations = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.AiOperationsKey);
         var approval = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.AiApprovalWorkflowsKey);
@@ -271,9 +269,9 @@ public sealed class FeatureCatalogTests
         operations!.Category.Should().Be(FeatureCatalog.Categories.Ai);
         operations.MinimumEdition.Should().Be(HonuaEdition.Pro);
 
-        approval.Should().NotBeNull("agent approval workflows are Enterprise for ticket #1631");
+        approval.Should().NotBeNull("agent approval workflows are available from Pro");
         approval!.Category.Should().Be(FeatureCatalog.Categories.Ai);
-        approval.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
+        approval.MinimumEdition.Should().Be(HonuaEdition.Pro);
     }
 
     [Trait("Tier", "Fast")]

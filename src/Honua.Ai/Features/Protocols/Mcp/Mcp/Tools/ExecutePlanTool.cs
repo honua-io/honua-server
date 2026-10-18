@@ -27,7 +27,7 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 ///   <item>Community — direct execution, no enforced guardrails.</item>
 ///   <item>Pro — requires the <c>ai.agent-operations</c> validation-layer
 ///   entitlement; denials surface as a <c>failed_precondition</c> tool error.</item>
-///   <item>Enterprise — additionally requires the <c>ai.approval-workflows</c>
+///   <item>Pro and Enterprise — additionally require the <c>ai.approval-workflows</c>
 ///   entitlement so approval/policy/audit guardrails are provisioned.</item>
 /// </list>
 /// </remarks>
@@ -91,7 +91,7 @@ internal sealed class ExecutePlanTool : IMcpTool
         // AI-operations guardrail ladder (#1631): agent-initiated execution is a
         // mutating operation, so it also crosses the shared edition-driven policy.
         // Community runs directly; Pro requires the validation-layer entitlement;
-        // Enterprise additionally requires the approval-workflows entitlement.
+        // Pro and Enterprise additionally require the approval-workflows entitlement.
         // This composes with (rather than replaces) the spec-apply gate above,
         // mirroring SpecEndpoints.HandleApplyAsync.
         EnforceGuardrails(httpContext);
@@ -190,7 +190,7 @@ internal sealed class ExecutePlanTool : IMcpTool
             throw new GeoprocessingPreconditionFailedException(operations.UpgradeMessage);
         }
 
-        // Enterprise approval + policy layer: the approval-workflows entitlement
+        // Pro and Enterprise approval + policy layer: the approval-workflows entitlement
         // must be provisioned before approval-gated agent execution proceeds.
         if (decision.RequiresApproval)
         {

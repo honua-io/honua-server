@@ -12,7 +12,7 @@ resources:
 
 Honua's agent endpoint is `POST /mcp`: JSON-RPC 2.0 over Streamable HTTP, MCP protocol revision `2025-03-26`. Any MCP-capable agent connects to it and gets the same tools, the same authorization checks, and the same approval rules as every other protocol. An agent can discover the catalog, query features, plan and run geoprocessing, observe operational health, compose Studio drafts, and *propose* control-plane changes. It never approves its own proposals, and no feature-edit tool is ever advertised.
 
-Which tool calls an agent may make is an edition boundary: reading is Community, changing anything is Pro, and organisational approval policy is Enterprise. See [What an agent can do in each edition](agent-capabilities-and-editions.md).
+Which tool calls an agent may make is an edition boundary: MCP discovery and query are Community; licensed agent mutation capabilities and organisational approval policy are available from Pro. See [What an agent can do in each edition](agent-capabilities-and-editions.md).
 
 **Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md))
 and an authenticated identity for tool calls ([authentication](../secure/authentication.md)).
@@ -187,7 +187,7 @@ These tools authorize against their own operator-grant family (`StudioDraft`), s
 
 Realtime authoring is the intended design loop. See the
 [composition policy](../../studio/mcp-tools.md#composition-policy) for the current
-Enterprise and override cases that can still gate draft mutations.
+operator overrides that can still gate draft mutations.
 
 ### What is never advertised
 

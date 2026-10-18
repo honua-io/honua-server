@@ -27,7 +27,7 @@ each page. Some entitlement keys are deliberately not published here at all.
 | --- | --- | --- | --- |
 | [Admin Control Plane](admin.control-plane.md) | ControlPlane | Community | ga |
 | [Agent Operations (Validation Layer)](ai.agent-operations.md) | AI | Pro | ga |
-| [Agent Approval Workflows](ai.approval-workflows.md) | AI | Enterprise | ga |
+| [Agent Approval Workflows](ai.approval-workflows.md) | AI | Pro | ga |
 | [Spec Grounding Mutations](ai.grounding.md) | AI | Pro | ga |
 | [MCP Discovery & Query](ai.mcp-discovery.md) | AI | Community | ga |
 | [Spec Apply Execution](ai.spec-apply.md) | AI | Pro | ga |

@@ -31,7 +31,7 @@ public sealed class EditionAgentGuardrailPolicy(ILicenseEntitlementService entit
     public AgentGuardrailLevel LevelFor(HonuaEdition edition) => edition switch
     {
         HonuaEdition.Enterprise => AgentGuardrailLevel.Approval,
-        HonuaEdition.Pro => AgentGuardrailLevel.Validated,
+        HonuaEdition.Pro => AgentGuardrailLevel.Approval,
         _ => AgentGuardrailLevel.Direct,
     };
 
@@ -67,7 +67,7 @@ public sealed class EditionAgentGuardrailPolicy(ILicenseEntitlementService entit
             ? "pre-change-snapshot-unsupported"
             : "pre-change-snapshot-required");
 
-        // Approval (Enterprise): human-in-the-loop approval plus policy-scoped
+        // Approval (Pro and Enterprise): human-in-the-loop approval plus policy-scoped
         // permissions and immutable audit.
         var requiresApproval = level == AgentGuardrailLevel.Approval;
         var requiresPolicyAudit = level == AgentGuardrailLevel.Approval;

@@ -3,7 +3,7 @@
 ## Status
 Accepted
 
-> **Commercial amendment (2026-10-03):** The [current commercial boundaries](../../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261) supersede older tier descriptions below. Core branch versioning is Pro; organisational approval/policy is Enterprise; existing Community 3D serving/discovery/elevation/feature-layer generation stays Community; specialised ingest and I3S stay Enterprise. Multi-tenancy is internal, used only on Honua's demo infrastructure at demo.honua.io, and is not offered for customer deployment. Essential secure operation and recoverability are baseline in all editions.
+> **Commercial amendment (2026-10-03):** The [current commercial boundaries](../../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261) supersede older tier descriptions below. Core branch versioning is Pro; organisational AI approval/policy is Pro (2026-10-18 founder amendment); existing Community 3D serving/discovery/elevation/feature-layer generation stays Community; specialised ingest and I3S stay Enterprise. Multi-tenancy is internal, used only on Honua's demo infrastructure at demo.honua.io, and is not offered for customer deployment. Essential secure operation and recoverability are baseline in all editions.
 
 ## Context
 

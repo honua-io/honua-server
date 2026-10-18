@@ -144,7 +144,7 @@ public static class FeatureCatalog
 
     /// <summary>
     /// Entitlement key for human-in-the-loop approval workflows over
-    /// agent-initiated operations (#1631). Enterprise-only: layers approval,
+    /// agent-initiated operations. Pro and above: layers approval,
     /// policy-scoped agent permissions, and immutable audit on top of the Pro
     /// validation layer.
     /// </summary>
@@ -570,9 +570,9 @@ public static class FeatureCatalog
         new(AiOperationsKey, "Agent Operations (Validation Layer)", Categories.Ai,
             HonuaEdition.Pro, "Agent-initiated changes run through a validation layer — planned, dry-run, validated, with a pre-change snapshot/backup gate before apply (spec apply, NL grounding mutations, workflow generation, and MCP execute tools)."),
 
-        // AI — Enterprise (approval + policy on top of the validation layer)
+        // AI — Pro (approval + policy on top of the validation layer)
         new(AiApprovalWorkflowsKey, "Agent Approval Workflows", Categories.Ai,
-            HonuaEdition.Enterprise, "Enterprise organisational approval workflows and policy-scoped agent permissions. Essential authorization, isolation, and audit integrity remain baseline product obligations."),
+            HonuaEdition.Pro, "Organisational approval workflows and policy-scoped agent permissions. Essential authorization, isolation, and audit integrity remain baseline product obligations."),
 
         // Disaster Recovery — Enterprise (HA/DR: backup automation, failover, RTO/RPO reporting)
         new(BackupAutomationKey, "Backup Automation", Categories.DisasterRecovery,

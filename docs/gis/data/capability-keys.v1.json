@@ -30,8 +30,8 @@
       "key": "ai.approval-workflows",
       "displayName": "Agent Approval Workflows",
       "category": "AI",
-      "edition": "Enterprise",
-      "description": "Enterprise organisational approval workflows and policy-scoped agent permissions. Essential authorization, isolation, and audit integrity remain baseline product obligations."
+      "edition": "Pro",
+      "description": "organisational approval workflows and policy-scoped agent permissions. Essential authorization, isolation, and audit integrity remain baseline product obligations."
     },
     {
       "key": "ai.grounding",

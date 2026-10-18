@@ -54,14 +54,12 @@ and does not get a share URL.
 
 ## Composition policy
 
-Realtime draft editing is the intended Studio authoring experience. The current
-server guardrail executes draft composition directly under Community/Pro defaults
-and under `Licensing:Mode=Disabled`. With licensing enabled, the Enterprise default
-still requires approval for `StudioDraftMutation`; an operator override can also
-require approval or block it. This is a current runtime limitation relative to the
-realtime product direction, not a reason for clients to invent approval steps for
-every design turn. Respect the actual operation outcome and report the mismatch.
-Do not change deployment policy as an implicit part of a creative edit.
+Realtime draft editing executes directly under the default policy in every
+edition, including `Licensing:Mode=Disabled`. An explicit operator override can
+require approval or block `StudioDraftMutation`; clients must respect the actual
+operation outcome. Do not change deployment policy as an implicit part of a
+creative edit. Publication and rollback carry separate action discriminators
+and retain their governed policy; the realtime draft rule does not bypass them.
 
 Publication has a separate branch: an authorized admin receives `Published`,
 `humanConfirmationRequired: false`, and the server-issued `shareUrl` only after

@@ -88,11 +88,11 @@ public class DefaultGuardrailLadderTests
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
     [InlineData(BuiltInGuardrailActions.StudioPublicationRequest, HonuaEdition.Community, LicenseMode.Enabled, GuardrailTier.DirectExecute)]
-    [InlineData(BuiltInGuardrailActions.StudioPublicationRequest, HonuaEdition.Pro, LicenseMode.Enabled, GuardrailTier.DirectExecute)]
+    [InlineData(BuiltInGuardrailActions.StudioPublicationRequest, HonuaEdition.Pro, LicenseMode.Enabled, GuardrailTier.RequiresApproval)]
     [InlineData(BuiltInGuardrailActions.StudioPublicationRequest, HonuaEdition.Enterprise, LicenseMode.Enabled, GuardrailTier.RequiresApproval)]
     [InlineData(BuiltInGuardrailActions.StudioPublicationRequest, HonuaEdition.Enterprise, LicenseMode.Disabled, GuardrailTier.RequiresApproval)]
     [InlineData(BuiltInGuardrailActions.StudioRollback, HonuaEdition.Community, LicenseMode.Enabled, GuardrailTier.DirectExecute)]
-    [InlineData(BuiltInGuardrailActions.StudioRollback, HonuaEdition.Pro, LicenseMode.Enabled, GuardrailTier.DirectExecute)]
+    [InlineData(BuiltInGuardrailActions.StudioRollback, HonuaEdition.Pro, LicenseMode.Enabled, GuardrailTier.RequiresApproval)]
     [InlineData(BuiltInGuardrailActions.StudioRollback, HonuaEdition.Enterprise, LicenseMode.Enabled, GuardrailTier.RequiresApproval)]
     [InlineData(BuiltInGuardrailActions.StudioRollback, HonuaEdition.Enterprise, LicenseMode.Disabled, GuardrailTier.RequiresApproval)]
     public void Resolve_StudioGovernedSteps_KeepEditionTierAndNeverTakeDisabledCompositionTier(
@@ -128,15 +128,18 @@ public class DefaultGuardrailLadderTests
         Assert.Equal("default-policy", decision.Source);
     }
 
-    [UnitTest]
-    public void Resolve_LicensingEnabledEnterprise_StudioDraftCompositionStillRequiresApproval()
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(HonuaEdition.Community)]
+    [InlineData(HonuaEdition.Pro)]
+    [InlineData(HonuaEdition.Enterprise)]
+    public void Resolve_LicensingEnabled_StudioDraftCompositionRemainsRealtime(HonuaEdition edition)
     {
-        var ladder = CreateLadder(HonuaEdition.Enterprise);
-
+        var ladder = CreateLadder(edition);
         var decision = ladder.Resolve(OperationClass.StudioDraftMutation);
-
-        Assert.Equal(GuardrailTier.RequiresApproval, decision.Tier);
-        Assert.Equal("default-policy", decision.Source);
+        Assert.Equal(GuardrailTier.DirectExecute, decision.Tier);
+        Assert.Equal("studio-draft-composition", decision.Source);
     }
 
     [UnitTest]
@@ -161,10 +164,10 @@ public class DefaultGuardrailLadderTests
     [InlineData(HonuaEdition.Community, OperationClass.Deploy, GuardrailTier.DirectExecute)]
     [InlineData(HonuaEdition.Community, OperationClass.MetadataRelease, GuardrailTier.DirectExecute)]
     [InlineData(HonuaEdition.Community, OperationClass.Seed, GuardrailTier.DirectExecute)]
-    [InlineData(HonuaEdition.Pro, OperationClass.AdminConfigChange, GuardrailTier.DirectExecute)]
-    [InlineData(HonuaEdition.Pro, OperationClass.Deploy, GuardrailTier.DirectExecute)]
-    [InlineData(HonuaEdition.Pro, OperationClass.MetadataRelease, GuardrailTier.DirectExecute)]
-    [InlineData(HonuaEdition.Pro, OperationClass.Seed, GuardrailTier.DirectExecute)]
+    [InlineData(HonuaEdition.Pro, OperationClass.AdminConfigChange, GuardrailTier.RequiresApproval)]
+    [InlineData(HonuaEdition.Pro, OperationClass.Deploy, GuardrailTier.RequiresApproval)]
+    [InlineData(HonuaEdition.Pro, OperationClass.MetadataRelease, GuardrailTier.RequiresApproval)]
+    [InlineData(HonuaEdition.Pro, OperationClass.Seed, GuardrailTier.RequiresApproval)]
     [InlineData(HonuaEdition.Enterprise, OperationClass.AdminConfigChange, GuardrailTier.RequiresApproval)]
     [InlineData(HonuaEdition.Enterprise, OperationClass.Deploy, GuardrailTier.RequiresApproval)]
     [InlineData(HonuaEdition.Enterprise, OperationClass.MetadataRelease, GuardrailTier.RequiresApproval)]
@@ -321,15 +324,18 @@ public class DefaultGuardrailLadderTests
         Assert.Equal("action-catalog:alerts.redrive_dead_letters", decision.Source);
     }
 
-    [UnitTest]
-    public void Resolve_KnownAction_NeverLoosensEditionPolicy()
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(HonuaEdition.Pro)]
+    [InlineData(HonuaEdition.Enterprise)]
+    public void Resolve_KnownAction_NeverLoosensEditionPolicy(HonuaEdition edition)
     {
-        // Enterprise resolves AdminConfigChange to RequiresApproval; a DirectExecute
-        // action tier must not loosen it.
+        // A direct action cannot loosen the edition's approval baseline.
         var catalog = new StubActionCatalog { ["alerts.resume_channel"] = GuardrailTier.DirectExecute };
-        var ladder = CreateLadder(HonuaEdition.Enterprise, catalog: catalog);
+        var ladder = CreateLadder(edition, catalog: catalog);
 
-        var decision = ladder.Resolve(OperationClass.AdminConfigChange, "alerts.resume_channel", HonuaEdition.Enterprise);
+        var decision = ladder.Resolve(OperationClass.AdminConfigChange, "alerts.resume_channel", edition);
 
         Assert.Equal(GuardrailTier.RequiresApproval, decision.Tier);
     }
@@ -385,6 +391,14 @@ public class DefaultGuardrailLadderTests
             OperationClass.StudioDraftMutation, BuiltInGuardrailActions.StudioPublicationProposal, HonuaEdition.Pro);
 
         Assert.Equal(GuardrailTier.RequiresApproval, decision.Tier);
+    }
+
+    [UnitTest]
+    public void Resolve_StudioDraftWithUnknownEdition_FailsClosed()
+    {
+        var ladder = CreateLadder((HonuaEdition)999);
+
+        Assert.Equal(GuardrailTier.RequiresApproval, ladder.Resolve(OperationClass.StudioDraftMutation).Tier);
     }
 
     private sealed class StubActionCatalog : Honua.Core.Features.Guardrails.Abstractions.IOpsActionGuardrailCatalog
