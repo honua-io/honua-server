@@ -7,6 +7,8 @@ using Honua.Core.Features.AgentWorkspace.Abstractions;
 using Honua.Core.Features.AgentWorkspace.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
+using Honua.Core.Features.WorkflowPackages.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.WorkflowPackages;
@@ -140,6 +142,48 @@ public sealed class WorkflowPackageWorkspaceAuthorizationTests
         var delete = () => service.DeletePublicationAsync("own-publication", CancellationToken.None);
         await delete.Should().ThrowAsync<GeoprocessingApprovalRequiredException>();
         (await store.GetPublicationAsync("own-publication"))!.Status.Should().Be(WorkflowPublicationStatus.Active);
+    }
+
+    [UnitTest]
+    public async Task BuiltInAuthoring_CreatesDistinctImmutablePackages_WithVerifiedHumanOwnership_WithoutActuation()
+    {
+        var (_, store, context, turns, principal) = Harness();
+        turns.AuthorizeAsync(principal, "workspace-a", "turn-a", Arg.Any<CancellationToken>())
+            .Returns(new AgentWorkspaceTurnAuthorization("workspace-a", "turn-a", "target-a", Tenant, "release-a", Human));
+        var authorization = new WorkflowPackageAuthorization(new HttpContextAccessor { HttpContext = context }, TenantContext(), turns);
+        var registry = Substitute.For<IWorkflowNodeRegistry>();
+        registry.GetSnapshotAsync(Arg.Any<CancellationToken>()).Returns(new WorkflowNodeRegistrySnapshot
+        {
+            RegistryVersion = "fixture", GeneratedAt = DateTimeOffset.UnixEpoch, Providers = [],
+            Nodes = [new WorkflowNodeDefinition
+            {
+                NodeTypeId = "process:test.echo", ProviderId = "test", RuntimeKind = WorkflowNodeRuntimeKind.Geoprocessing,
+                Title = "Echo", Description = "Echo", Category = "test", ParameterSchemas = [],
+                CapabilityFlags = new() { Executable = true, SupportsJob = true }, RuntimeHints = new(),
+            }],
+        });
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        jobs.ValidatePlan(Arg.Any<AnalysisPlan>(), principal).Returns(new PlanValidationResult { IsExecutable = true });
+        var packages = new WorkflowPackageService(store, registry, jobs, TimeProvider.System,
+            NullLogger<WorkflowPackageService>.Instance,
+            authorSecurityContextCapturer: new WorkflowAuthorSecurityContextCapturer(tenantContext: TenantContext(), packageAuthorization: authorization));
+        var authoring = new WorkflowPackageAuthoring(packages, authorization);
+        var graph = new WorkflowGraph { Nodes = [new WorkflowNode { NodeId = "echo", NodeTypeId = "process:test.echo" }] };
+        var first = await authoring.CreateAsync(principal, "workspace-a", "turn-a", "First", graph, CancellationToken.None);
+        var second = await authoring.CreateAsync(principal, "workspace-a", "turn-a", "Edited", graph, CancellationToken.None);
+        second.PackageId.Should().NotBe(first.PackageId);
+        first.Version.Should().Be(1);
+        second.Version.Should().Be(1);
+        first.Ownership.Should().Be(new WorkflowPackageOwnership { OwnerActorId = Human, TenantId = Tenant });
+        first.CreatedBy.Should().Be(CanonicalSecurityActor.Resolve(principal)!.ActorId);
+        (await authoring.ReadAsync(principal, "workspace-a", "turn-a", first.PackageId, 1, CancellationToken.None)).Should().Be(first);
+        (await store.ListPublicationsAsync()).Should().BeEmpty();
+        // No execution method is invoked: only canonical authorization and plan validation.
+        jobs.ReceivedCalls().Should().OnlyContain(call => call.GetMethodInfo().Name is "EnsureCallerAuthorizedAsync" or "ValidatePlan");
+        turns.AuthorizeAsync(principal, "workspace-a", "turn-a", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<AgentWorkspaceTurnAuthorization?>(null));
+        var revoked = () => authoring.ReadAsync(principal, "workspace-a", "turn-a", first.PackageId, 1, CancellationToken.None);
+        await revoked.Should().ThrowAsync<GeoprocessingAuthorizationException>();
     }
 
     private static (WorkflowPackageService Service, InMemoryWorkflowPackageStore Store, DefaultHttpContext Context,

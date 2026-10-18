@@ -30,10 +30,10 @@ internal sealed class WorkflowAuthorSecurityContextCapturer(
 {
     /// <summary>Resolves resource access without letting missing policy widen a delegated agent's authority.</summary>
     public async Task<WorkflowPackageAccess?> ResolvePackageAccessAsync(
-        ClaimsPrincipal? principal, CancellationToken cancellationToken, bool write = false)
+        ClaimsPrincipal? principal, CancellationToken cancellationToken, bool write = false, string? workspaceId = null, string? turnId = null)
     {
         if (packageAuthorization is not null)
-            return await packageAuthorization.ResolveAsync(principal, cancellationToken, write: write).ConfigureAwait(false);
+            return await packageAuthorization.ResolveAsync(principal, cancellationToken, workspaceId, turnId, write: write).ConfigureAwait(false);
         if (principal?.HasClaim("permission", "agent:workspace") == true)
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         return null;

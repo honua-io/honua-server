@@ -39,6 +39,7 @@ internal static class WorkflowPackageServiceCollectionExtensions
         // membership source stays unbound in this path (as it was before), so behavior is unchanged.
         services.AddHttpContextAccessor();
         services.TryAddScoped<WorkflowPackageAuthorization>();
+        services.TryAddScoped<IWorkflowPackageAuthoring, WorkflowPackageAuthoring>();
         services.TryAddScoped(sp => new WorkflowAuthorSecurityContextCapturer(
             sp.GetService<IOptions<RbacOptions>>(),
             sp.GetService<ITenantContext>(),
