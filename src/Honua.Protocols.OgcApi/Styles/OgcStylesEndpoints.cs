@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
@@ -102,6 +103,11 @@ public static class OgcStylesEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .CacheOutput("OgcStylesMetadata");
 
+        group.MapGet("/{styleId}/impact", GetStyleImpact)
+            .WithName("GetStyleEditImpact").WithSummary("Review authorized shared-style impact")
+            .Produces<StyleEditImpact>(StatusCodes.Status200OK).Produces(StatusCodes.Status404NotFound)
+            .RequireAdminAuthorization();
+
         group.MapPut("/{styleId}", UpdateStyle)
             .WithDisplayName("Update Style")
             .WithName("UpdateStyle")
@@ -110,6 +116,7 @@ public static class OgcStylesEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status412PreconditionFailed)
             .Produces(StatusCodes.Status413PayloadTooLarge)
             .Produces(StatusCodes.Status415UnsupportedMediaType)
             .RequireAdminAuthorization();
@@ -281,6 +288,7 @@ public static class OgcStylesEndpoints
             ? StyleEndpointUrlResolver.Resolve(stylesheet.Content, BaseUrlResolver.GetBaseUrl(context), context.Request)
             : stylesheet.Content;
 
+        if (stylesheet.StyleVersion is { } version) context.Response.Headers.ETag = StyleVersionTag.Format(version);
         return Results.Content(content, stylesheet.MediaType, Encoding.UTF8);
     }
 
@@ -401,6 +409,15 @@ public static class OgcStylesEndpoints
     /// Update an existing style (manage-styles, PUT). Honors Prefer: handling=strict
     /// and ?validate for strict validation.
     /// </summary>
+    private static async Task<IResult> GetStyleImpact(string styleId, HttpContext context,
+        IStyleEditImpactService impacts, CancellationToken cancellationToken)
+    {
+        var impact = await impacts.GetAsync(styleId, cancellationToken).ConfigureAwait(false);
+        if (impact is null) return StandardErrorHelpers.CreateNotFound(context, "Style not found.");
+        context.Response.Headers.ETag = impact.Etag;
+        return Results.Json(impact, OgcStylesJsonContext.Default.StyleEditImpact);
+    }
+
     private static async Task<IResult> UpdateStyle(
         string styleId,
         HttpContext context,
@@ -409,6 +426,16 @@ public static class OgcStylesEndpoints
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
+        if (context.User.HasClaim("permission", "agent:workspace"))
+            return StandardErrorHelpers.CreateForbidden(context, "Shared style changes require a canonical human-approved proposal.");
+        int? expectedVersion = null;
+        if (context.Request.Headers.TryGetValue(HeaderNames.IfMatch, out var match))
+        {
+            if (match.Count != 1 || !StyleVersionTag.TryParse(match[0], out var parsedVersion))
+                return StandardErrorHelpers.CreateBadRequest(context, "If-Match must contain one exact style revision ETag from GET.");
+            expectedVersion = parsedVersion;
+        }
+
         var contentType = context.Request.ContentType;
         var isEsri = IsEsriDrawingInfoContentType(contentType);
         if (!string.IsNullOrWhiteSpace(contentType)
@@ -442,14 +469,19 @@ public static class OgcStylesEndpoints
 
         var strict = IsStrictRequested(context);
 
-        var result = isEsri
-            ? await projection.UpdateStyleFromDrawingInfoAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false)
-            : await projection.UpdateStyleAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false);
+        var result = expectedVersion is { } expected
+            ? isEsri
+                ? await projection.UpdateStyleFromDrawingInfoIfVersionAsync(styleId, body, expected, strict, cancellationToken).ConfigureAwait(false)
+                : await projection.UpdateStyleIfVersionAsync(styleId, body, expected, strict, cancellationToken).ConfigureAwait(false)
+            : isEsri
+                ? await projection.UpdateStyleFromDrawingInfoAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false)
+                : await projection.UpdateStyleAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false);
         var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Api.Styles.OgcStylesEndpoints");
 
         switch (result.Status)
         {
             case OgcStyleUpdateStatus.Updated:
+                if (result.StyleVersion is { } committedVersion) context.Response.Headers.ETag = StyleVersionTag.Format(committedVersion);
                 OgcStylesLog.StyleUpdated(logger, styleId);
                 await EvictStylesOutputCacheAsync(context, logger).ConfigureAwait(false);
                 // Surface lossy-conversion warnings non-blockingly so the client can show them (the canonical
@@ -461,6 +493,8 @@ public static class OgcStylesEndpoints
                 }
 
                 return Results.NoContent();
+            case OgcStyleUpdateStatus.PreconditionFailed:
+                return StandardErrorHelpers.CreatePreconditionFailed(context, "The style changed; reload and reconcile before saving.");
             case OgcStyleUpdateStatus.NotFound:
                 OgcStylesLog.StyleNotFound(logger, styleId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Style '{styleId}' not found.");
@@ -488,6 +522,9 @@ public static class OgcStylesEndpoints
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
+        if (context.User.HasClaim("permission", "agent:workspace"))
+            return StandardErrorHelpers.CreateForbidden(context, "Shared style changes require a canonical human-approved proposal.");
+
         var contentType = context.Request.ContentType;
         if (!string.IsNullOrWhiteSpace(contentType)
             && !IsMapboxStyleContentType(contentType))
@@ -562,6 +599,9 @@ public static class OgcStylesEndpoints
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
+        if (context.User.HasClaim("permission", "agent:workspace"))
+            return StandardErrorHelpers.CreateForbidden(context, "Shared style changes require a canonical human-approved proposal.");
+
         var result = await projection.DeleteStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
         var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Api.Styles.OgcStylesEndpoints");
 

@@ -12,6 +12,12 @@ namespace Honua.Server.Features.Styling;
 /// </summary>
 internal interface ILayerStyleService
 {
+    /// <summary>Updates an exact canonical layer style revision without overwriting another editor.</summary>
+    Task<LayerStyleUpdateResult> UpdateStyleIfVersionAsync(
+        MetadataV2Resource resource, int layerId, JsonElement? mapLibreStyle, JsonElement? drawingInfo, int expectedVersion,
+        string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Conditional layer style updates are unavailable.");
+
     /// <summary>
     /// Retrieves the style snapshot for a layer.
     /// </summary>
@@ -84,7 +90,9 @@ internal enum LayerStyleUpdateStatus
     /// <summary>
     /// Style payload was invalid.
     /// </summary>
-    Invalid
+    Invalid,
+    /// <summary>The expected canonical style revision no longer matches.</summary>
+    PreconditionFailed
 }
 
 /// <summary>

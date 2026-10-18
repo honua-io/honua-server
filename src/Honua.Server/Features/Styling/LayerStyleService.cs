@@ -95,14 +95,23 @@ internal sealed class LayerStyleService : ILayerStyleService
     }
 
     /// <inheritdoc />
-    public async Task<LayerStyleUpdateResult> UpdateStyleAsync(
-        MetadataV2Resource resource,
-        int layerId,
-        JsonElement? mapLibreStyle,
-        JsonElement? drawingInfo,
-        string? revisedBy = null,
-        string? changeSummary = null,
-        CancellationToken cancellationToken = default)
+    public Task<LayerStyleUpdateResult> UpdateStyleAsync(
+        MetadataV2Resource resource, int layerId, JsonElement? mapLibreStyle, JsonElement? drawingInfo,
+        string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
+        => UpdateStyleCoreAsync(resource, layerId, mapLibreStyle, drawingInfo, null, revisedBy, changeSummary, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<LayerStyleUpdateResult> UpdateStyleIfVersionAsync(
+        MetadataV2Resource resource, int layerId, JsonElement? mapLibreStyle, JsonElement? drawingInfo, int expectedVersion,
+        string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedVersion);
+        return UpdateStyleCoreAsync(resource, layerId, mapLibreStyle, drawingInfo, expectedVersion, revisedBy, changeSummary, cancellationToken);
+    }
+
+    private async Task<LayerStyleUpdateResult> UpdateStyleCoreAsync(
+        MetadataV2Resource resource, int layerId, JsonElement? mapLibreStyle, JsonElement? drawingInfo, int? expectedVersion,
+        string? revisedBy, string? changeSummary, CancellationToken cancellationToken)
     {
         var styleLayer = await ResolveStyleLayerAsync(resource, layerId, cancellationToken).ConfigureAwait(false);
         var hasMapLibre = mapLibreStyle.HasValue && mapLibreStyle.Value.ValueKind != JsonValueKind.Null;
@@ -123,12 +132,12 @@ internal sealed class LayerStyleService : ILayerStyleService
                 return new LayerStyleUpdateResult(LayerStyleUpdateStatus.Invalid, null, error);
             }
 
-            var updated = await _styleCatalog
-                .SetMapLibreStyleAsync(styleLayer.Id, normalized, revisedBy, changeSummary, cancellationToken)
-                .ConfigureAwait(false);
+            var updated = expectedVersion is { } expected
+                ? await _styleCatalog.SetMapLibreStyleIfVersionAsync(styleLayer.Id, normalized, expected, revisedBy, changeSummary, cancellationToken).ConfigureAwait(false)
+                : await _styleCatalog.SetMapLibreStyleAsync(styleLayer.Id, normalized, revisedBy, changeSummary, cancellationToken).ConfigureAwait(false);
             if (updated == null)
             {
-                return new LayerStyleUpdateResult(LayerStyleUpdateStatus.NotFound, null, null);
+                return new LayerStyleUpdateResult(expectedVersion.HasValue ? LayerStyleUpdateStatus.PreconditionFailed : LayerStyleUpdateStatus.NotFound, null, null);
             }
 
             var generatedDrawingInfoJson = MapLibreToGeoServicesConverter.Convert(normalized, styleLayer);
@@ -159,12 +168,12 @@ internal sealed class LayerStyleService : ILayerStyleService
         var conversion = GeoServicesToMapLibreConverter.Convert(drawingInfo.Value, styleLayer);
         var mapLibreJson = conversion.MapLibreStyleJson;
 
-        var saved = await _styleCatalog
-            .SetStyleAsync(styleLayer.Id, mapLibreJson, drawingInfoJson, revisedBy, changeSummary, cancellationToken)
-            .ConfigureAwait(false);
+        var saved = expectedVersion is { } expectedDrawing
+            ? await _styleCatalog.SetStyleIfVersionAsync(styleLayer.Id, mapLibreJson, drawingInfoJson, expectedDrawing, revisedBy, changeSummary, cancellationToken).ConfigureAwait(false)
+            : await _styleCatalog.SetStyleAsync(styleLayer.Id, mapLibreJson, drawingInfoJson, revisedBy, changeSummary, cancellationToken).ConfigureAwait(false);
         if (saved == null)
         {
-            return new LayerStyleUpdateResult(LayerStyleUpdateStatus.NotFound, null, null);
+            return new LayerStyleUpdateResult(expectedVersion.HasValue ? LayerStyleUpdateStatus.PreconditionFailed : LayerStyleUpdateStatus.NotFound, null, null);
         }
 
         await SyncIndependentStyleCatalogAsync(

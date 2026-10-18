@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -46,6 +47,16 @@ internal static class AgentWorkspaceResourceAuthorization
         if (task.Kind == "publish-layer") return true; // Workspace membership protects workspace-owned forms.
         if (task.Kind == "local-process-workspace")
             return await LocalProcessWorkspaceAuthorization.CanReadTaskAsync(context, workspace, task, requireGeneration).ConfigureAwait(false);
+        if (task.Kind == "shared-style")
+        {
+            var current = await context.RequestServices.GetRequiredService<IStyleEditImpactService>()
+                .GetAsync(task.Id, context.RequestAborted).ConfigureAwait(false);
+            var matches = current is not null && current.StyleId == task.Id && current.StyleVersion == task.Revision &&
+                current.ContentHash == task.ContentHash && current.ImpactHash == task.ImpactHash;
+            if (!matches && requireGeneration)
+                throw new AgentWorkspaceConflictException("The shared style or its visible impact changed. Review it before sending.");
+            return matches;
+        }
         if (task.Kind == "workflow-package")
         {
             var version = await context.RequestServices.GetRequiredService<IWorkflowPackageStore>()

@@ -13,6 +13,16 @@ namespace Honua.Core.Features.Styling.Abstractions;
 /// </summary>
 public interface IOgcStyleProjection
 {
+    /// <summary>Validates and updates an exact existing canonical style revision.</summary>
+    Task<OgcStyleUpdateResult> UpdateStyleFromDrawingInfoIfVersionAsync(
+        string styleId, string drawingInfoJson, int expectedVersion, bool strict, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Conditional style projection updates are unavailable.");
+
+    /// <summary>Validates and updates an exact existing canonical style revision.</summary>
+    Task<OgcStyleUpdateResult> UpdateStyleIfVersionAsync(
+        string styleId, string mapLibreStyleJson, int expectedVersion, bool strict, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Conditional style projection updates are unavailable.");
+
     /// <summary>
     /// Lists the styles available through the OGC API - Styles surface: every storage-bound
     /// feature collection projects to exactly one OGC style — its stored MapLibre style, or the
@@ -177,7 +187,8 @@ public sealed record OgcStyleSummary(string StyleId, string Title);
 /// <param name="Content">Serialized stylesheet content (MapLibre JSON or SLD XML).</param>
 /// <param name="MediaType">IANA media type for <paramref name="Content"/>.</param>
 /// <param name="Encoding">Encoding that was produced.</param>
-public sealed record OgcStylesheet(string Content, string MediaType, OgcStyleEncoding Encoding);
+/// <param name="StyleVersion">Canonical revision from the same stored snapshot as the content.</param>
+public sealed record OgcStylesheet(string Content, string MediaType, OgcStyleEncoding Encoding, int? StyleVersion = null);
 
 /// <summary>
 /// Descriptive metadata for an OGC style.
@@ -208,7 +219,10 @@ public enum OgcStyleUpdateStatus
     NotFound,
 
     /// <summary>The supplied stylesheet was invalid.</summary>
-    Invalid
+    Invalid,
+
+    /// <summary>The expected canonical version no longer matches.</summary>
+    PreconditionFailed
 }
 
 /// <summary>
@@ -220,10 +234,11 @@ public enum OgcStyleUpdateStatus
 /// Non-fatal lossy-conversion warnings (e.g. an Esri renderer feature the canonical MapLibre style can't
 /// represent), each a short "code: guidance" string. Empty/null when the conversion was lossless.
 /// </param>
+/// <param name="StyleVersion">Committed canonical revision on success.</param>
 public sealed record OgcStyleUpdateResult(
     OgcStyleUpdateStatus Status,
     string? ErrorMessage,
-    IReadOnlyList<string>? UnsupportedSymbolizers = null);
+    IReadOnlyList<string>? UnsupportedSymbolizers = null, int? StyleVersion = null);
 
 /// <summary>
 /// Status of an OGC style create attempt.

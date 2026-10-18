@@ -10,6 +10,23 @@ namespace Honua.Core.Features.Styling.Abstractions;
 /// </summary>
 public interface ILayerStyleCatalog
 {
+    /// <summary>Invalidates any decorator cache after an atomic canonical multi-record edit.</summary>
+    Task InvalidateStyleCacheAsync(int layerId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    /// <summary>Updates only when the current canonical version equals the expected version; null means no matching row.</summary>
+    Task<LayerStyleDefinition?> SetMapLibreStyleIfVersionAsync(
+        int layerId, string mapLibreStyleJson, int expectedVersion,
+        string? revisedBy = null, string? changeSummary = null,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Conditional style updates are unavailable.");
+
+    /// <summary>Updates only when the current canonical version equals the expected version; null means no matching row.</summary>
+    Task<LayerStyleDefinition?> SetStyleIfVersionAsync(
+        int layerId, string mapLibreStyleJson, string drawingInfoJson, int expectedVersion,
+        string? revisedBy = null, string? changeSummary = null,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Conditional style updates are unavailable.");
+
     /// <summary>
     /// Retrieves the stored style for a layer.
     /// </summary>

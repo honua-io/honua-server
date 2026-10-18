@@ -108,7 +108,7 @@ internal static class AgentWorkspaceState
     }
 
     public static bool IsValidTaskReference(AgentTaskReference task)
-        => task.Revision >= 0 && (task.Kind switch
+        => task.Revision >= 0 && (task.Kind == "shared-style" || task.ImpactHash is null) && (task.Kind switch
         {
             "publish-layer" => IsIdentifier(task.Id) && task.PackageKey is null && task.ContentHash is null,
             "studio-composition" => Guid.TryParse(task.Id, out _) && task.PackageKey is { Length: > 0 and <= 256 } && !task.PackageKey.Any(char.IsControl) && task.ContentHash is null,
@@ -116,6 +116,10 @@ internal static class AgentWorkspaceState
                 task.Revision > 0 && task.PackageKey is null && task.ContentHash is { Length: 64 } &&
                 task.ContentHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f'),
             // Package ids are opaque store keys; generated slugs can contain Unicode.
+            "shared-style" => task.Id is { Length: > 0 and <= 256 } && task.Id == task.Id.Trim() && !task.Id.Any(char.IsControl) &&
+                task.Revision <= int.MaxValue && task.PackageKey is null &&
+                task.ContentHash is { Length: 64 } && task.ContentHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') &&
+                task.ImpactHash is { Length: 64 } && task.ImpactHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f'),
             "workflow-package" => task.Id is { Length: > 0 and <= 256 } && task.Id == task.Id.Trim() && !task.Id.Any(char.IsControl) &&
                 task.Revision is > 0 and <= int.MaxValue && task.PackageKey is null &&
                 task.ContentHash is { Length: 64 } && task.ContentHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f'),

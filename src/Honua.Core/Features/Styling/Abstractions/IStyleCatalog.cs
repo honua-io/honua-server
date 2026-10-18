@@ -16,6 +16,24 @@ namespace Honua.Core.Features.Styling.Abstractions;
 /// </summary>
 public interface IStyleCatalog
 {
+    /// <summary>Reads canonical style, optional mirror layer, and associations from one consistent store snapshot.</summary>
+    Task<StyleEditStoreSnapshot> GetEditSnapshotAsync(string styleId, int? canonicalLayerId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Coherent style editing snapshots are unavailable.");
+
+    /// <summary>Locks and compares the complete reviewed snapshot, reauthorizes after waiting, and atomically updates canonical bytes and any layer mirror.</summary>
+    Task<StyleEditStoreSnapshot?> ApplyEditIfSnapshotAsync(StyleEditStoreSnapshot expected, string mapLibreStyleJson,
+        string drawingInfoJson, string? revisedBy, Func<CancellationToken, Task> revalidate,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Atomic shared style editing is unavailable.");
+
+    /// <summary>Updates only when the current canonical version equals the expected version; null means no matching row.</summary>
+    Task<StyleCatalogRecord?> UpdateStyleIfVersionAsync(
+        string styleId, string mapLibreStyleJson, int expectedVersion,
+        string? title = null, string? description = null, string? drawingInfoJson = null,
+        string? revisedBy = null, string? changeSummary = null,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Conditional style updates are unavailable.");
+
     /// <summary>
     /// Gets a single catalog style by its stable identifier.
     /// </summary>
