@@ -72,7 +72,9 @@ public sealed class InMemoryImportJobServiceCleanupTests
     [Fact]
     public async Task QueueImportAsync_WithLocalFilePath_DeletesStagedFileAfterCompletion()
     {
-        var importService = new FakeFileImportService();
+        var importService = new FakeFileImportService(ImportResult.CreateSuccess(
+            "import_local", SupportedFileFormat.GeoJson, 1,
+            physicalTableName: "actual_import_local", schema: "tenant_data"));
         var performanceMonitor = new NoopPerformanceMonitor();
         var logger = NullLogger<InMemoryImportJobService>.Instance;
         using var jobService = new InMemoryImportJobService(importService, performanceMonitor, logger);
@@ -88,10 +90,14 @@ public sealed class InMemoryImportJobServiceCleanupTests
             TargetSrid = 4326
         };
 
-        _ = await jobService.QueueImportAsync(request, fileSize: new FileInfo(tempFilePath).Length);
+        var jobId = await jobService.QueueImportAsync(request, fileSize: new FileInfo(tempFilePath).Length);
         await WaitForCompletionAsync(jobService, TimeSpan.FromSeconds(30));
 
         File.Exists(tempFilePath).Should().BeFalse();
+        var progress = await jobService.GetProgressAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.PhysicalTableName.Should().Be("actual_import_local");
+        progress.Schema.Should().Be("tenant_data");
     }
 
     [Trait("Tier", "Fast")]

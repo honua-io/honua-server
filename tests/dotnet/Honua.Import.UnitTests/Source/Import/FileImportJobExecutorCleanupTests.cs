@@ -22,6 +22,27 @@ public sealed class FileImportJobExecutorCleanupTests
 {
     private const long SixGiB = 6L * 1024 * 1024 * 1024;
 
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task TerminalStatus_ReportsCommittedIdentityOnlyForSuccessfulImport(bool success)
+    {
+        var progress = new MemoryProgress();
+        var importer = new ScriptedImporter((_, _) => Task.FromResult(new ImportResult
+        {
+            Success = success,
+            TableName = "roads",
+            PhysicalTableName = "provider_actual_roads",
+            Schema = "tenant_data",
+            Format = SupportedFileFormat.GeoPackage,
+        }));
+        await ExecuteAsync(new RecordingStorage(), importer, SixGiB, progressStore: progress);
+        var terminal = progress.Last.Should().BeOfType<ImportProgress>().Subject;
+        terminal.Status.Should().Be(success ? ImportStatus.Completed : ImportStatus.Failed);
+        terminal.PhysicalTableName.Should().Be(success ? "provider_actual_roads" : null);
+        terminal.Schema.Should().Be(success ? "tenant_data" : null);
+    }
+
     [UnitTest]
     public async Task StagedCopy_IsDeletedAfterSuccess()
     {
@@ -76,7 +97,8 @@ public sealed class FileImportJobExecutorCleanupTests
         RecordingStorage storage,
         ScriptedImporter importer,
         long fileSize,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        MemoryProgress? progressStore = null)
     {
         var request = new ImportRequest
         {
@@ -108,7 +130,7 @@ public sealed class FileImportJobExecutorCleanupTests
         storage.Scope = scope;
         var executor = new FileImportJobExecutor(
             new SingleScopeFactory(scope),
-            new MemoryProgress(),
+            progressStore ?? new MemoryProgress(),
             NullLogger<FileImportJobExecutor>.Instance);
         return executor.ExecuteAsync(job, new RecordingContext("job-1"), cancellationToken);
     }
@@ -151,12 +173,17 @@ public sealed class FileImportJobExecutorCleanupTests
 
     private sealed class MemoryProgress : IUniversalProgressStore
     {
+        public IOperationProgress? Last { get; private set; }
+
         public Task SetProgressAsync(
             string operationId,
             IOperationProgress progress,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+        {
+            Last = progress;
+            return Task.CompletedTask;
+        }
 
         public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
             string operationId,

@@ -278,6 +278,8 @@ internal sealed partial class FileImportJobExecutor(
             ErrorCode = result?.ErrorCode,
             Warnings = result?.Warnings ?? current.Warnings,
             DetectedSrid = result?.DetectedSrid ?? current.DetectedSrid,
+            PhysicalTableName = status == ImportStatus.Completed && result?.Success == true ? result.PhysicalTableName : null,
+            Schema = status == ImportStatus.Completed && result?.Success == true ? result.Schema : null,
             CurrentPhase = status == ImportStatus.Completed ? "Import completed" : "Import failed",
             Runner = fallback.Runner,
             InstanceId = fallback.InstanceId,

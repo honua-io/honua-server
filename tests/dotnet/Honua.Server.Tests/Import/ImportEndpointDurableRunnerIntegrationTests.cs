@@ -306,6 +306,9 @@ public sealed class ImportEndpointDurableRunnerIntegrationTests : IAsyncLifetime
             physical = reader.GetString(1);
         }
 
+        progress.PhysicalTableName.Should().Be(physical, "status must identify the committed provider table for publication recovery");
+        progress.Schema.Should().Be(schema);
+
         await using var count = new NpgsqlCommand($"SELECT count(*) FROM \"{schema}\".\"{physical}\"", connection);
         Convert.ToInt64(await count.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture)
             .Should().Be(FeatureCount);

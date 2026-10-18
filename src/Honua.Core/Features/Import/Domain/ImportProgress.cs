@@ -110,6 +110,15 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
     public required string TableName { get; init; }
 
     /// <summary>
+    /// Actual committed provider table reported by a successfully completed import.
+    /// Null for pending, failed, cancelled or older jobs; never inferred from the requested name.
+    /// </summary>
+    public string? PhysicalTableName { get; init; }
+
+    /// <summary>Provider schema owning <see cref="PhysicalTableName"/>, when reported by the completed import.</summary>
+    public string? Schema { get; init; }
+
+    /// <summary>
     /// Original file name being imported.
     /// </summary>
     public string? FileName { get; init; }

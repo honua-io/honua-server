@@ -35,7 +35,8 @@ public sealed class UniversalImportJobServiceTests
         var progressStore = new InMemoryUniversalProgressStore();
         var importService = new FakeFileImportService(
             (_, _, _) => Task.FromResult(ImportResult.CreateSuccess(
-                "widgets", SupportedFileFormat.GeoJson, featureCount: 3, warnings: ["1 feature repaired."])));
+                "widgets", SupportedFileFormat.GeoJson, featureCount: 3, warnings: ["1 feature repaired."],
+                physicalTableName: "actual_widgets", schema: "tenant_data")));
         using var jobService = CreateService(importService, progressStore);
 
         using var stream = new MemoryStream([0x01]);
@@ -47,6 +48,8 @@ public sealed class UniversalImportJobServiceTests
 
         progress.Status.Should().Be(ImportStatus.Completed);
         progress.FeaturesProcessed.Should().Be(3);
+        progress.PhysicalTableName.Should().Be("actual_widgets");
+        progress.Schema.Should().Be("tenant_data");
         progress.Warnings.Should().Equal("1 feature repaired.");
         progress.CurrentPhase.Should().Be("Import completed");
         progress.CompletedAt.Should().NotBeNull();
