@@ -104,7 +104,11 @@ observer control channel. Unset preserves the existing all-barrier harness.
 An unsupported selection cannot produce the required native readiness record.
 No new simulated operation is introduced.
 
-The selected entry lane uses only the image's native `ogr2ogr` ELF executable.
+The selected entry lane uses only the image's native `ogr2ogr` ELF executable,
+resolved to `/usr/bin/ogr2ogr` or `/usr/local/bin/ogr2ogr`. Normal aliases resolving
+to those fixed paths are accepted; a different resolved image layout is nonpass
+until explicitly reviewed. The built-image control retains the actual resolved
+path with the image ID/source revision and tests both release and cancellation.
 A fixed, root-owned `/app/libhonua_gp_entry.so` is injected into that child by
 reviewed worker code; no caller selects a loader path. Its constructor runs
 **after actual exec, before native main**, publishes a fresh nonce/PID/parent/

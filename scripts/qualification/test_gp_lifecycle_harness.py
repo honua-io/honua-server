@@ -526,7 +526,7 @@ class NativeObserverTests(unittest.TestCase):
         self.ready_path.write_text(json.dumps(self.ready))
         # OS-contract fixtures use a real Python child; native loader/main behavior
         # is independently exercised by the compiled ELF controls below.
-        self.observer.NATIVE_EXECUTABLES = (sys.executable,)
+        self.observer.NATIVE_EXECUTABLES = (str(Path(sys.executable).resolve()),)
         self.entry_path = self.barriers / "job-1/native-process-started.entry.json"
         self.entry = {"schema": "honua.gp-native-entry/v1", "boundary": "native-exec-entry-paused",
                       "pid": self.child.pid, "parentPid": os.getpid(), "nonce": "c" * 32,
@@ -800,6 +800,15 @@ class NativeEntryShimTests(unittest.TestCase):
         self.assertEqual("native-exec-entry-paused", value["boundary"])
         return value
 
+    def publish_release(self, nonce=None):
+        temporary = self.release.with_suffix(".complete")
+        with temporary.open("x") as stream:
+            stream.write(nonce or self.nonce)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, self.release)
+        temporary.unlink()
+
     def test_actual_exec_fast_main_and_effects_are_held_until_fresh_release(self):
         import time
         child = self.start()
@@ -807,7 +816,7 @@ class NativeEntryShimTests(unittest.TestCase):
         time.sleep(0.15)
         self.assertIsNone(child.poll())
         self.assertFalse(self.effect.exists(), "actual main must not win a Process.Start/observer race")
-        self.release.write_text(self.nonce)
+        self.publish_release()
         self.assertEqual(0, child.wait(timeout=5))
         self.assertEqual("main ran", self.effect.read_text())
 
@@ -850,7 +859,7 @@ class NativeEntryShimTests(unittest.TestCase):
                     target.write_text(self.nonce)
                     self.release.symlink_to(target)
                 else:
-                    self.release.write_text("c" * 32)
+                    self.publish_release("c" * 32)
                 self.assertEqual(125, child.wait(timeout=5))
                 self.assertFalse(self.effect.exists())
 

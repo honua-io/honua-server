@@ -49,6 +49,10 @@ internal sealed class NativeEntryQualification
             throw new InvalidOperationException("Native entry qualification refuses a caller-selected executable path.");
         }
         var executable = new FileInfo(tool).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? tool;
+        if (!candidates.Contains(executable, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException("The resolved executable is outside the supported native entry image layout.");
+        }
         using (var binary = File.OpenRead(executable))
         {
             Span<byte> magic = stackalloc byte[4];

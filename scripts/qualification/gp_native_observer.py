@@ -217,7 +217,8 @@ def observe(config, job, nonce, phase, expected=None):
             and type(entry.get("parentPid")) is int and entry["parentPid"] == ready["workerProcessId"]
             and isinstance(entry.get("nonce"), str) and re.fullmatch(r"[0-9a-f]{32}", entry["nonce"]),
             "native-entry-identity")
-    executables = {str(Path(path).resolve(strict=True)) for path in NATIVE_EXECUTABLES if Path(path).exists()}
+    executables = {str(Path(path).resolve(strict=True)) for path in NATIVE_EXECUTABLES
+                   if Path(path).exists() and str(Path(path).resolve(strict=True)) in NATIVE_EXECUTABLES}
     require(entry.get("executable") in executables, "native-entry-executable")
     require(0 <= time.time() - entry_path.stat().st_mtime <= MAX_BARRIER_AGE_SECONDS
             and entry_path.stat().st_mtime <= ready_at.timestamp() + 1, "native-entry-stale")

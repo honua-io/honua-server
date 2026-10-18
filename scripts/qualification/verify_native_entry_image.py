@@ -1,6 +1,7 @@
 """Verify actual image ogr2ogr exec is held before main; never AWS qualification."""
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -20,6 +21,8 @@ def verify(image, source):
         raise RuntimeError("native image user changed")
     expected_executable = docker("run", "--rm", "--read-only", "--network", "none",
                                  "--entrypoint", "/usr/bin/readlink", image, "-f", "/usr/bin/ogr2ogr")
+    if expected_executable not in ("/usr/bin/ogr2ogr", "/usr/local/bin/ogr2ogr"):
+        raise RuntimeError("resolved image executable is outside the supported native-entry contract")
     observations = []
     for cancel in (False, True):
         with tempfile.TemporaryDirectory(prefix="honua-native-entry-image-") as temporary:
@@ -58,7 +61,13 @@ def verify(image, source):
                     if exit_code == 0 or "GDAL" in docker("logs", name):
                         raise RuntimeError("cancelled native entry reached main")
                 else:
-                    (root / "release").write_text(nonce)
+                    temporary_release = root / "release.pending"
+                    with temporary_release.open("x") as stream:
+                        stream.write(nonce)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    os.link(temporary_release, root / "release")
+                    temporary_release.unlink()
                     exit_code = int(docker("wait", name))
                     if exit_code != 0 or "GDAL" not in docker("logs", name):
                         raise RuntimeError("released native main did not execute")
