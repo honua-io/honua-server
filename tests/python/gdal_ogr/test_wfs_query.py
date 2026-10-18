@@ -30,6 +30,13 @@ class TestWfsQuery:
         evidence_collector: EvidenceCollector,
     ):
         """ogr2ogr -where filters WFS features by attribute."""
+        baseline = http_client.get("/wfs", params={"SERVICE": "WFS", "REQUEST": "GetFeature", "VERSION": "2.0.0",
+            "TYPENAMES": wfs_layer_name, "OUTPUTFORMAT": "application/geo+json", "COUNT": 100})
+        assert baseline.status_code == 200, baseline.text
+        source = baseline.json()
+        source_subset(source, wfs_layer_name)
+        alpha = next(row for row in source["features"] if row["properties"]["name"] == "alpha")
+        expected = {identity(alpha, wfs_layer_name): {"name": "alpha"}}
         filter_xml = """
 <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
   <fes:PropertyIsEqualTo>
@@ -58,6 +65,7 @@ class TestWfsQuery:
         assert server_names == {"alpha"}, (
             f"Expected server-side WFS filter to return only 'alpha', got {server_names}"
         )
+        exact_rows(server_data, expected, wfs_layer_name)
 
         result: OgrResult = ogr_run(
             [
@@ -69,7 +77,6 @@ class TestWfsQuery:
         result.assert_success("WFS attribute query failed")
 
         data = json.loads(result.stdout)
-        expected = {identity(server_features[0], wfs_layer_name): {"name": "alpha"}}
         exact_rows(data, expected, wfs_layer_name)
         evidence_collector.record(
             "test_attribute_query", "wfs", "attribute_query", "pass",

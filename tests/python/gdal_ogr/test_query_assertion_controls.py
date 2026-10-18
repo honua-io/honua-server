@@ -44,13 +44,16 @@ def canonical_lane_script():
 
 
 
-def run_probe(document, output, operation):
-    collector = SimpleNamespace(records=[])
+def run_probe(document, output, operation, *, filtered=None, collector=None):
+    collector = collector if collector is not None else SimpleNamespace(records=[])
     collector.record = lambda *args, **kwargs: collector.records.append((args, kwargs))
     raw = deepcopy(document)
     if operation == "attribute":
         raw["features"] = raw["features"][:1]
-    with httpx.Client(base_url="http://controlled", trust_env=False, transport=httpx.MockTransport(lambda request: httpx.Response(200, json=raw))) as client:
+    def respond(request):
+        response = (filtered if filtered is not None else raw) if "FILTER" in request.url.params else document
+        return httpx.Response(200, json=response)
+    with httpx.Client(base_url="http://controlled", trust_env=False, transport=httpx.MockTransport(respond)) as client:
         def ogr(args):
             return OgrResult(args, 0, json.dumps(output), "")
         if operation == "attribute":
@@ -101,6 +104,19 @@ def test_actual_attribute_probe_rejects_nonsemantic_success(monkeypatch, fault):
         del output["features"][0]["properties"]["objectid"]
     with pytest.raises(AssertionError):
         run_probe(document, output, "attribute")
+
+
+def test_attribute_probe_refuses_matching_identity_corruption_in_both_filtered_paths(monkeypatch):
+    monkeypatch.setenv("HONUA_BASE_URL", "http://controlled")
+    document = source_document()
+    filtered = deepcopy(document)
+    filtered["features"] = filtered["features"][:1]
+    filtered["features"][0]["id"] = 999
+    filtered["features"][0]["properties"]["objectid"] = 999
+    collector = SimpleNamespace(records=[])
+    with pytest.raises(AssertionError, match="unexpected feature identity"):
+        run_probe(document, filtered, "attribute", filtered=filtered, collector=collector)
+    assert collector.records == []
 
 
 @pytest.mark.parametrize("fault", ["changed-type", "moved-interior", "removed-vertex", "extra-hole"])
