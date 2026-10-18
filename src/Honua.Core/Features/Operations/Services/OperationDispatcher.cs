@@ -85,7 +85,7 @@ public sealed class OperationDispatcher : IOperationInvoker
             string.IsNullOrWhiteSpace(context.ApprovedPlanHash) || _approvalReplayVerifier is null ||
             OperationScopeMapping.ExceedsScopeAuthority(request, context) ||
             !_executors.TryGetValue(request.OperationId, out var executor) || executor is not IOperationCommittedReceiptReader reader ||
-            !await _approvalReplayVerifier.VerifyAsync(context.ApprovedProposalId, context.OperationInstanceId,
+            !await _approvalReplayVerifier.VerifyCommittedReceiptAsync(context.ApprovedProposalId, context.OperationInstanceId,
                 context.ApprovedPlanHash, cancellationToken).ConfigureAwait(false)) return null;
         // No canonical writes, including audit/acceptance, until the SQL proof exists and authority is fresh.
         var receipt = await reader.ReadCommittedReceiptAsync(request, context, cancellationToken).ConfigureAwait(false);
@@ -98,9 +98,16 @@ public sealed class OperationDispatcher : IOperationInvoker
             var current = await _instanceStore.GetAsync(context.OperationInstanceId, cancellationToken).ConfigureAwait(false);
             if (current is null || current.OperationId != request.OperationId || current.TenantId != context.TenantId ||
                 string.IsNullOrWhiteSpace(current.AuditId)) return null;
-            if (IsTerminal(current.Status)) return current;
-            var completed = current with { Status = OperationHandleStatus.Completed, Result = receipt.Result,
-                UpdatedAt = _clock.GetUtcNow(), Reason = null, AuthorizationOutcome = "approved-receipt-reconciled" };
+            if (current.Status == OperationHandleStatus.Completed) return current;
+            if (IsTerminal(current.Status) && current.Status is not (OperationHandleStatus.Failed or OperationHandleStatus.Indeterminate)) return null;
+            var completed = current with
+            {
+                Status = OperationHandleStatus.Completed,
+                Result = receipt.Result,
+                UpdatedAt = _clock.GetUtcNow(),
+                Reason = null,
+                AuthorizationOutcome = "approved-receipt-reconciled"
+            };
             var auditId = await WriteAuditAsync(completed, context with { AuditId = current.AuditId },
                 "operation.receipt-reconciliation-attempt", AuditOutcome.Success, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(auditId)) return null;

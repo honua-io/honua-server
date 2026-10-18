@@ -61,7 +61,7 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         int layerId, string mapLibreStyleJson,
 
         string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
-        => SetMapLibreStyleCoreAsync(layerId, mapLibreStyleJson, null,  revisedBy, changeSummary, cancellationToken);
+        => SetMapLibreStyleCoreAsync(layerId, mapLibreStyleJson, null, revisedBy, changeSummary, cancellationToken);
 
     /// <inheritdoc />
     public Task<LayerStyleDefinition?> SetMapLibreStyleIfVersionAsync(
@@ -70,7 +70,7 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(expectedVersion);
-        return SetMapLibreStyleCoreAsync(layerId, mapLibreStyleJson, expectedVersion,  revisedBy, changeSummary, cancellationToken);
+        return SetMapLibreStyleCoreAsync(layerId, mapLibreStyleJson, expectedVersion, revisedBy, changeSummary, cancellationToken);
     }
 
     private async Task<LayerStyleDefinition?> SetMapLibreStyleCoreAsync(
@@ -115,7 +115,7 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         int layerId, string mapLibreStyleJson, string drawingInfoJson,
 
         string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
-        => SetStyleCoreAsync(layerId, mapLibreStyleJson, drawingInfoJson, null,  revisedBy, changeSummary, cancellationToken);
+        => SetStyleCoreAsync(layerId, mapLibreStyleJson, drawingInfoJson, null, revisedBy, changeSummary, cancellationToken);
 
     /// <inheritdoc />
     public Task<LayerStyleDefinition?> SetStyleIfVersionAsync(
@@ -124,7 +124,7 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         string? revisedBy = null, string? changeSummary = null, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(expectedVersion);
-        return SetStyleCoreAsync(layerId, mapLibreStyleJson, drawingInfoJson, expectedVersion,  revisedBy, changeSummary, cancellationToken);
+        return SetStyleCoreAsync(layerId, mapLibreStyleJson, drawingInfoJson, expectedVersion, revisedBy, changeSummary, cancellationToken);
     }
 
     private async Task<LayerStyleDefinition?> SetStyleCoreAsync(

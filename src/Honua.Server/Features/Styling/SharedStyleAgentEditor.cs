@@ -59,16 +59,30 @@ internal sealed class SharedStyleAgentEditor(IOperationInvoker invoker, IHttpCon
         var fingerprint = StyleEditHashes.Parts([actor, turn.Binding.TenantId, workspaceId, turnId,
             intent.StyleId, intent.StyleVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
             intent.ContentHash, intent.ImpactHash, StyleEditHashes.Content(intent.Style.GetRawText()), restoreSourceProposalId ?? ""]);
+        var operationId = Honua.Core.Features.Operations.Services.OperationEnvelopeFactory.DeriveIdempotentInstanceId(
+            SharedStyleEditOperation.OperationId, "shared-style:" + fingerprint, turn.Binding.TenantId);
+        var prior = await context.RequestServices.GetRequiredService<IOperationInstanceStore>()
+            .GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        if (prior?.ProposalId is not null)
+        {
+            if (!prior.EvidenceRefs.Contains("idempotency-request-sha256:" + fingerprint, StringComparer.Ordinal))
+                throw new GeoprocessingPreconditionFailedException("The original command fingerprint differs.");
+            return await SharedStyleOperationStatus.ReadAsync(context, workspaceId, operationId, cancellationToken).ConfigureAwait(false)
+                ?? throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        }
         return await invoker.SubmitAsync(new()
         {
             OperationId = SharedStyleEditOperation.OperationId,
             Parameters = new Dictionary<string, string?> { ["workspaceId"] = workspaceId, ["turnId"] = turnId, ["intent"] = json, ["restoreSourceProposalId"] = restoreSourceProposalId },
         }, new()
         {
-            PrincipalId = actor, TenantId = turn.Binding.TenantId,
+            PrincipalId = actor,
+            TenantId = turn.Binding.TenantId,
             SchemaName = context.RequestServices.GetService<Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext>()?.CurrentSchema,
-            AuthorizationOutcome = decision.AuthorizationOutcome, RequiredApprovalPolicyRef = "agent-workspace.human-approval",
-            IdempotencyKey = "shared-style:" + fingerprint, IdempotencyRequestHash = fingerprint,
+            AuthorizationOutcome = decision.AuthorizationOutcome,
+            RequiredApprovalPolicyRef = "agent-workspace.human-approval",
+            IdempotencyKey = "shared-style:" + fingerprint,
+            IdempotencyRequestHash = fingerprint,
         }, cancellationToken).ConfigureAwait(false);
     }
 

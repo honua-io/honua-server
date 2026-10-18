@@ -32,4 +32,16 @@ internal sealed class OperationApprovalReplayVerifier(IOperationProposalStore pr
                 OperationApprovalPlanSeal.Compute(proposal.Plan),
                 StringComparison.Ordinal);
     }
+    public async Task<bool> VerifyCommittedReceiptAsync(string proposalId, string operationInstanceId, string planHash,
+        CancellationToken cancellationToken = default)
+    {
+        var proposal = await proposalStore.GetAsync(proposalId, cancellationToken).ConfigureAwait(false);
+        return proposal is not null && proposal.OperationId == SharedStyleEditOperation.OperationId &&
+            proposal.Status is OperationProposalStatus.Executing or OperationProposalStatus.Failed or OperationProposalStatus.Succeeded &&
+            !string.IsNullOrWhiteSpace(proposal.ApprovedByAtClaim) && proposal.ApprovedAtClaim is { } approvedAt &&
+            approvedAt >= proposal.CreatedAt && approvedAt <= DateTimeOffset.UtcNow &&
+            !proposal.ApprovedByAtClaim.Equals(proposal.RequestedBy, StringComparison.OrdinalIgnoreCase) &&
+            proposal.Audit.OperationInstanceId == operationInstanceId && proposal.SealedPlanHash == planHash &&
+            proposal.SealedPlanHash == OperationApprovalPlanSeal.Compute(proposal.Plan);
+    }
 }

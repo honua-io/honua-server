@@ -93,6 +93,7 @@ internal static class AgentWorkspaceEndpoints
         group.MapPatch("/workspaces/{workspaceId}/drafts/{draftId}", PatchDraft);
         group.MapPost("/workspaces/{workspaceId}/drafts/{draftId}/submit", SubmitDraft);
         group.MapGet("/workspaces/{workspaceId}/commands/{commandId}", GetCommand);
+        group.MapGet("/workspaces/{workspaceId}/operations/{operationInstanceId}", GetOperation);
         group.MapLocalProcesses();
     }
 
@@ -459,6 +460,18 @@ internal static class AgentWorkspaceEndpoints
         {
             context.Request.Headers["Idempotency-Key"] = previousKey;
         }
+    }
+
+    internal static async Task<IResult> GetOperation(HttpContext context, IAgentWorkspaceStore store)
+    {
+        var document = await Read(context, store).ConfigureAwait(false);
+        var operationId = context.Request.RouteValues["operationInstanceId"]?.ToString();
+        if (!AgentWorkspaceState.IsIdentifier(operationId)) return Results.NotFound();
+        var handle = await Honua.Server.Features.Styling.SharedStyleOperationStatus.ReadAsync(context, document.WorkspaceId,
+            operationId!, context.RequestAborted).ConfigureAwait(false);
+        if (handle is null) return Results.NotFound();
+        return await OperationsEndpoints.HandleGetHandleStatus(context, operationId!,
+            context.RequestServices.GetRequiredService<IOperationInstanceStore>(), context.RequestAborted).ConfigureAwait(false);
     }
 
     internal static async Task<IResult> GetCommand(HttpContext context, IAgentWorkspaceStore store)

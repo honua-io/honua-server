@@ -152,8 +152,16 @@ internal sealed partial class PostgresStyleCatalog
         updated = await ReadConsumersAsync(connection, transaction, updated, expected.ReferenceIds, bounded.Token).ConfigureAwait(false);
         StyleMutationReceipt? committedReceipt = null;
         if (identity is not null)
+        {
+            // PostgreSQL JSONB can normalize numeric spellings. Receipt evidence describes
+            // the authoritative committed representation, not the submitted spelling.
+            var storedJson = updated.LayerStyle?.MapLibreStyleJson ?? updated.CatalogStyle!.MapLibreStyleJson;
+            using var storedDocument = System.Text.Json.JsonDocument.Parse(storedJson!);
+            var storedCanonical = Honua.Core.Features.Collaboration.Operations.SavedMapOperationIdempotency.CanonicalPayload(storedDocument.RootElement);
+            var storedHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(storedCanonical)));
             committedReceipt = await InsertMutationReceiptAsync(connection, transaction, identity,
-                updated.LayerStyle?.StyleVersion ?? updated.CatalogStyle!.StyleVersion, bounded.Token).ConfigureAwait(false);
+                updated.LayerStyle?.StyleVersion ?? updated.CatalogStyle!.StyleVersion, storedHash, bounded.Token).ConfigureAwait(false);
+        }
         await transaction.CommitSafelyAsync(bounded.Token).ConfigureAwait(false);
         return (updated, committedReceipt);
     }
@@ -187,8 +195,10 @@ internal sealed partial class PostgresStyleCatalog
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) layer = new()
             {
-                LayerId = reader.GetInt32(0), MapLibreStyleJson = reader.IsDBNull(1) ? null : reader.GetString(1),
-                DrawingInfoJson = reader.IsDBNull(2) ? null : reader.GetString(2), StyleVersion = reader.GetInt32(3),
+                LayerId = reader.GetInt32(0),
+                MapLibreStyleJson = reader.IsDBNull(1) ? null : reader.GetString(1),
+                DrawingInfoJson = reader.IsDBNull(2) ? null : reader.GetString(2),
+                StyleVersion = reader.GetInt32(3),
                 StyleRevisedAt = reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4),
                 StyleRevisedBy = reader.IsDBNull(5) ? null : reader.GetString(5),
                 StyleChangeSummary = reader.IsDBNull(6) ? null : reader.GetString(6),

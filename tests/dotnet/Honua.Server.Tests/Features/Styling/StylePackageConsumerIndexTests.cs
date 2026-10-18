@@ -48,9 +48,13 @@ public sealed class StylePackageConsumerIndexTests : IAsyncLifetime
         // separate HTTP agent journey qualifies proposal/approval execution.
         await packages.CreatePublicationRequestAsync(new()
         {
-            RequestId = Guid.NewGuid(), ItemId = savedApp.ItemId, VersionId = savedApp.VersionId,
-            Status = StudioPublicationRequestStatus.Accepted, Validation = savedApp.Validation,
-            RequestedBy = "consumer-owner", CreatedAt = DateTimeOffset.UtcNow,
+            RequestId = Guid.NewGuid(),
+            ItemId = savedApp.ItemId,
+            VersionId = savedApp.VersionId,
+            Status = StudioPublicationRequestStatus.Accepted,
+            Validation = savedApp.Validation,
+            RequestedBy = "consumer-owner",
+            CreatedAt = DateTimeOffset.UtcNow,
         }, savedApp.VersionId);
         var inline = await packages.CreateDraftAsync(Draft(StudioPackageFamily.Map,
             key => new { mapPackageId = key, styleRefs = new[] { new { styleId, body = new { } } } }));
@@ -64,8 +68,11 @@ public sealed class StylePackageConsumerIndexTests : IAsyncLifetime
         snapshot.Consumers.Should().NotContain(consumer => consumer.ItemId == inline.ItemId);
         (await catalog.GetEditSnapshotAsync(forgedId, null)).Consumers.Should().BeEmpty();
         // Removing a mutable reference cannot erase the still-loadable immutable dependency.
-        await packages.UpdateDraftAsync(map with { Envelope = map.Envelope with
-        { Body = JsonSerializer.SerializeToElement(new { mapPackageId = map.PackageKey, styleRefs = Array.Empty<object>() }) } });
+        await packages.UpdateDraftAsync(map with
+        {
+            Envelope = map.Envelope with
+            { Body = JsonSerializer.SerializeToElement(new { mapPackageId = map.PackageKey, styleRefs = Array.Empty<object>() }) }
+        });
         var after = await catalog.GetEditSnapshotAsync(styleId, null);
         after.Consumers.Should().NotContain(consumer => consumer.DraftId == map.DraftId);
         after.Consumers.Should().Contain(consumer => consumer.VersionId == saved.VersionId);
@@ -74,9 +81,13 @@ public sealed class StylePackageConsumerIndexTests : IAsyncLifetime
         var secondAppVersion = await packages.CreateVersionAsync(app, "second saved version", "consumer-owner");
         await packages.CreatePublicationRequestAsync(new()
         {
-            RequestId = Guid.NewGuid(), ItemId = secondAppVersion.ItemId, VersionId = secondAppVersion.VersionId,
-            Status = StudioPublicationRequestStatus.Accepted, Validation = secondAppVersion.Validation,
-            RequestedBy = "consumer-owner", CreatedAt = DateTimeOffset.UtcNow,
+            RequestId = Guid.NewGuid(),
+            ItemId = secondAppVersion.ItemId,
+            VersionId = secondAppVersion.VersionId,
+            Status = StudioPublicationRequestStatus.Accepted,
+            Validation = secondAppVersion.Validation,
+            RequestedBy = "consumer-owner",
+            CreatedAt = DateTimeOffset.UtcNow,
         }, secondAppVersion.VersionId);
         var replaced = await catalog.GetEditSnapshotAsync(styleId, null);
         replaced.Consumers.Should().Contain(consumer => consumer.VersionId == secondAppVersion.VersionId && consumer.IsPublished);
@@ -185,10 +196,17 @@ public sealed class StylePackageConsumerIndexTests : IAsyncLifetime
         var key = packageKey ?? "consumer-package-" + Guid.NewGuid().ToString("N");
         return new()
         {
-            DraftId = Guid.NewGuid(), ItemId = Guid.NewGuid(), PackageKey = key, WorkspaceId = workspace,
-            OwnerId = owner, TenantId = "public", Family = family, Generation = 1,
+            DraftId = Guid.NewGuid(),
+            ItemId = Guid.NewGuid(),
+            PackageKey = key,
+            WorkspaceId = workspace,
+            OwnerId = owner,
+            TenantId = "public",
+            Family = family,
+            Generation = 1,
             Envelope = new() { Family = family, SchemaVersion = "1.0", Body = JsonSerializer.SerializeToElement(body(key)) },
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
         };
     }
 }

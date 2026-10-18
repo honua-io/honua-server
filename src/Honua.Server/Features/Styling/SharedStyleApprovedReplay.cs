@@ -150,7 +150,7 @@ internal sealed class SharedStyleApprovedReplay
         if (request.OperationId != SharedStyleEditOperation.OperationId || string.IsNullOrWhiteSpace(context.ApprovedProposalId) ||
             string.IsNullOrWhiteSpace(context.ApprovedPlanHash)) Deny();
         var proposal = await services.GetRequiredService<IOperationProposalStore>().GetAsync(context.ApprovedProposalId!, cancellationToken).ConfigureAwait(false);
-        if (proposal is null || (proposal.Status != OperationProposalStatus.Executing && !(receiptOnly && proposal.Status == OperationProposalStatus.Succeeded)) || proposal.OperationId != request.OperationId ||
+        if (proposal is null || (proposal.Status != OperationProposalStatus.Executing && !(receiptOnly && proposal.Status is (OperationProposalStatus.Succeeded or OperationProposalStatus.Failed))) || proposal.OperationId != request.OperationId ||
             proposal.RequestedBy != context.PrincipalId || proposal.Audit.OperationInstanceId != context.OperationInstanceId ||
             proposal.SealedPlanHash != context.ApprovedPlanHash || proposal.SealedPlanHash != OperationApprovalPlanSeal.Compute(proposal.Plan) ||
             proposal.Plan.ExecutionPayload is null || !request.Parameters.TryGetValue("sealedPayload", out var supplied) ||

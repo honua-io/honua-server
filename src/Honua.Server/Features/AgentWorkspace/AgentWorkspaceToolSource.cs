@@ -56,16 +56,17 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
             $"{Workspace},{Draft},{View},{Revision},{Property("changes", Fields)}", "\"workspaceId\",\"draftId\",\"viewId\",\"expectedRevision\",\"changes\"", false),
         new AgentWorkspaceTool("submit_draft", "Submit the frozen form through canonical service.publish with current caller RBAC and policy. Persist and reuse commandId; approval-required is not published.",
             $"{Workspace},{Draft},{View},{Revision},{Property("commandId", Identifier)}", "\"workspaceId\",\"draftId\",\"viewId\",\"expectedRevision\",\"commandId\"", false),
-        new AgentWorkspaceTool("get_command", "Reconcile a prior command against its canonical operation receipt before retrying.",
-            $"{Workspace},{Property("commandId", Identifier)}", "\"workspaceId\",\"commandId\"", true),
+        new AgentWorkspaceTool("get_command", "Read or reconcile an existing command in this authorized workspace. Supply exactly one selector: commandId from a workspace draft submission, or operationInstanceId returned by honua_shared_style_propose. Shared-style operation status works from a later chat, preserves the original frozen task and human approval, and never creates a new mutation or approval.",
+            $"{Workspace},{Property("commandId", Identifier)},{Property("operationInstanceId", Identifier)}", "\"workspaceId\"", true),
     ];
 
     public string Name => $"honua_workspace_{action}";
     public string WorkflowFamily => "lifecycle";
     public McpToolDescriptor Describe() => new()
     {
-        Name = Name, Description = description,
-        InputSchema = ParseJson($"{{\"type\":\"object\",\"properties\":{{{properties}}},\"required\":[{required}],\"additionalProperties\":false}}"),
+        Name = Name,
+        Description = description,
+        InputSchema = ParseJson($"{{\"type\":\"object\",\"properties\":{{{properties}}},\"required\":[{required}],\"additionalProperties\":false{(action == "get_command" ? ",\"oneOf\":[{\"required\":[\"commandId\"]},{\"required\":[\"operationInstanceId\"]}]" : "")}}"),
         Annotations = new() { ReadOnlyHint = readOnly, DestructiveHint = action == "submit_draft", IdempotentHint = action != "create" && action != "create_draft" },
         Meta = ParseJson("""{"honua.studio":{"family":"honua.workspace.canonical","view":"workspace","revision":"1"}}"""),
     };
@@ -81,12 +82,14 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
         context.Request.Method = readOnly ? "GET" : "POST";
         context.Request.Path = "/api/v1/agent/workspaces";
         foreach (var header in httpContext.Request.Headers) context.Request.Headers[header.Key] = header.Value;
-        foreach (var name in new[] { "workspaceId", "draftId", "turnId", "commandId" })
+        foreach (var name in new[] { "workspaceId", "draftId", "turnId", "commandId", "operationInstanceId" })
         {
             if (!args.TryGetProperty(name, out var value)) continue;
             if (value.ValueKind != JsonValueKind.String || !AgentWorkspaceState.IsIdentifier(value.GetString())) return Error("Invalid resource identifier.");
             context.Request.RouteValues[name] = value.GetString();
         }
+        if (action == "get_command" && (args.TryGetProperty("commandId", out _) == args.TryGetProperty("operationInstanceId", out _)))
+            return Error("Supply exactly one of commandId or operationInstanceId.");
         var boundWorkspace = httpContext.Request.Headers["X-Honua-Workspace"].ToString();
         if (boundWorkspace.Length > 0 && context.Request.RouteValues["workspaceId"]?.ToString() != boundWorkspace)
             return Error("The tool call does not match the active workspace.");
@@ -110,7 +113,9 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
                 "get_draft" => await AgentWorkspaceEndpoints.GetDraft(context, store).ConfigureAwait(false),
                 "patch_draft" => await AgentWorkspaceEndpoints.PatchDraft(context, store, Parse(args, AgentWorkspaceJsonContext.Default.PatchAgentDraft)).ConfigureAwait(false),
                 "submit_draft" => await AgentWorkspaceEndpoints.SubmitDraft(context, store, Parse(args, AgentWorkspaceJsonContext.Default.SubmitAgentDraft)).ConfigureAwait(false),
-                "get_command" => await AgentWorkspaceEndpoints.GetCommand(context, store).ConfigureAwait(false),
+                "get_command" => args.TryGetProperty("operationInstanceId", out _)
+                    ? await AgentWorkspaceEndpoints.GetOperation(context, store).ConfigureAwait(false)
+                    : await AgentWorkspaceEndpoints.GetCommand(context, store).ConfigureAwait(false),
                 _ => throw new ArgumentException("Unknown workspace action."),
             };
             if (result is not IValueHttpResult { Value: { } value } || result is IStatusCodeHttpResult { StatusCode: >= 400 }) return Error("Workspace operation refused; inspect the current authorized state.");

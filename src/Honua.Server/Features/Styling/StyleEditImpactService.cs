@@ -56,7 +56,7 @@ internal sealed class StyleEditImpactService(IStyleCatalog catalog, IMetadataV2G
                 : named;
             layerId = primary is null ? null : graph.ResolveStorageLayerId(primary);
             if (layerId.HasValue)
-                {
+            {
                 var mirrorId = "style-layer-" + layerId.Value.ToString(CultureInfo.InvariantCulture);
                 var aliases = graph.Graph.Resources.GroupBy(resource => resource.Metadata.Name, StringComparer.Ordinal)
                     .Where(group => graph.ResolveStorageLayerId(group.First()) == layerId)

@@ -22,7 +22,7 @@ internal sealed partial class OperationGateway
     {
         var proposal = await _proposalStore.GetAsync(proposalId, cancellationToken).ConfigureAwait(false);
         if (proposal is null || proposal.OperationId != SharedStyleEditOperation.OperationId ||
-            proposal.Status != OperationProposalStatus.Executing ||
+            proposal.Status is not (OperationProposalStatus.Executing or OperationProposalStatus.Failed) ||
             string.IsNullOrWhiteSpace(proposal.ApprovedByAtClaim) || proposal.ApprovedAtClaim is null ||
             proposal.ApprovedAtClaim < proposal.CreatedAt || proposal.ApprovedAtClaim > DateTimeOffset.UtcNow ||
             proposal.ApprovedByAtClaim.Equals(proposal.RequestedBy, StringComparison.OrdinalIgnoreCase) ||
@@ -40,10 +40,15 @@ internal sealed partial class OperationGateway
         if (services.GetService<SchemaContext>() is { } schema) schema.CurrentSchema = replay.SchemaName;
         var context = new OperationPolicyContext
         {
-            OperationInstanceId = proposal.Audit.OperationInstanceId, CorrelationId = proposal.Audit.CorrelationId,
-            PrincipalId = proposal.RequestedBy, TenantId = replay.TenantId, SchemaName = replay.SchemaName,
-            ApprovedProposalId = proposal.ProposalId, ApprovedPlanHash = proposal.SealedPlanHash,
-            ScopeGoverned = proposal.ScopeGoverned, RecognizedScopes = proposal.RecognizedScopes,
+            OperationInstanceId = proposal.Audit.OperationInstanceId,
+            CorrelationId = proposal.Audit.CorrelationId,
+            PrincipalId = proposal.RequestedBy,
+            TenantId = replay.TenantId,
+            SchemaName = replay.SchemaName,
+            ApprovedProposalId = proposal.ProposalId,
+            ApprovedPlanHash = proposal.SealedPlanHash,
+            ScopeGoverned = proposal.ScopeGoverned,
+            RecognizedScopes = proposal.RecognizedScopes,
             AuthorizationOutcome = "approved-receipt-reconciliation",
         };
         // The exact SQL proof and current key, role, workspace and readable scope are verified
@@ -63,11 +68,16 @@ internal sealed partial class OperationGateway
         {
             var latest = await _proposalStore.GetAsync(proposalId, cancellationToken).ConfigureAwait(false);
             if (latest is null) return null;
-            if (latest.Status != OperationProposalStatus.Executing) return latest;
+            if (latest.Status is not (OperationProposalStatus.Executing or OperationProposalStatus.Failed)) return latest;
             if (latest.ApprovedByAtClaim != proposal.ApprovedByAtClaim || latest.ApprovedAtClaim != proposal.ApprovedAtClaim ||
                 latest.SealedPlanHash != proposal.SealedPlanHash) return null;
-            var resolved = latest with { Status = OperationProposalStatus.Succeeded,
-                ResolvedBy = proposal.ApprovedByAtClaim, ResolvedAt = DateTimeOffset.UtcNow };
+            var resolved = latest with
+            {
+                Status = OperationProposalStatus.Succeeded,
+                ResolutionReason = null,
+                ResolvedBy = proposal.ApprovedByAtClaim,
+                ResolvedAt = DateTimeOffset.UtcNow
+            };
             if (await _proposalStore.TrySetAsync(resolved, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
                 // Same terminal publication semantics as normal approval completion, preserving

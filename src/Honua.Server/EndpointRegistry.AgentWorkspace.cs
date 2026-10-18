@@ -21,6 +21,7 @@ public static partial class EndpointRegistry
         new("PATCH", "/api/v1/agent/workspaces/{workspaceId}/drafts/{draftId}"),
         new("POST", "/api/v1/agent/workspaces/{workspaceId}/drafts/{draftId}/submit"),
         new("GET", "/api/v1/agent/workspaces/{workspaceId}/commands/{commandId}"),
+        new("GET", "/api/v1/agent/workspaces/{workspaceId}/operations/{operationInstanceId}"),
         new("GET", "/api/v1/agent/workspaces/{workspaceId}/processes/local/project/identity"),
         new("POST", "/api/v1/agent/workspaces/{workspaceId}/processes/local/project/bind"),
         new("DELETE", "/api/v1/agent/workspaces/{workspaceId}/processes/local/project/bindings/{bindingId}"),

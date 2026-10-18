@@ -20,16 +20,26 @@ internal static class SharedStyleEditOperation
     public const string OperationId = "style.replace-shared";
     internal static OperationDescriptor BuildDescriptor() => new()
     {
-        OperationId = OperationId, ProviderId = ServicePublishOperation.ProviderId, Category = "style",
-        Title = "Replace reviewed shared style", Description = "Replace exact canonical style bytes and their reviewed layer impact after distinct human approval.",
-        ExecutionKind = OperationExecutionKind.Synchronous, ApprovalModel = OperationApprovalModel.OperatorGate,
-        Policy = new() { SideEffectClass = OperationSideEffectClass.MutatesMetadata,
-            BlastRadiusClass = OperationBlastRadiusClass.ServiceScope, Determinism = OperationDeterminism.RuntimeDynamic, SupportsDryRun = true },
-        InputSchema = [], OutputSchema = [],
+        OperationId = OperationId,
+        ProviderId = ServicePublishOperation.ProviderId,
+        Category = "style",
+        Title = "Replace reviewed shared style",
+        Description = "Replace exact canonical style bytes and their reviewed layer impact after distinct human approval.",
+        ExecutionKind = OperationExecutionKind.Synchronous,
+        ApprovalModel = OperationApprovalModel.OperatorGate,
+        Policy = new()
+        {
+            SideEffectClass = OperationSideEffectClass.MutatesMetadata,
+            BlastRadiusClass = OperationBlastRadiusClass.ServiceScope,
+            Determinism = OperationDeterminism.RuntimeDynamic,
+            SupportsDryRun = true
+        },
+        InputSchema = [],
+        OutputSchema = [],
     };
 }
 
-internal sealed class SharedStyleEditExecutor(IServiceProvider services) : IOperationExecutor, IOperationCommittedReceiptReader, IOperationRequestPreparer
+internal sealed class SharedStyleEditExecutor(IServiceProvider services) : Honua.Core.Features.Operations.Abstractions.IOperationExecutor, IOperationCommittedReceiptReader, IOperationRequestPreparer
 {
     public string OperationId => SharedStyleEditOperation.OperationId;
 
@@ -68,15 +78,29 @@ internal sealed class SharedStyleEditExecutor(IServiceProvider services) : IOper
             ?? throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         var payload = new SharedStyleApprovalPayload
         {
-            ActorId = actor, KeyId = keyId, Permissions = record.Permissions.ToArray(),
+            ActorId = actor,
+            KeyId = keyId,
+            Permissions = record.Permissions.ToArray(),
             AuthorSecurityContext = await services.GetRequiredService<WorkflowAuthorSecurityContextCapturer>().CaptureAsync(http.User, cancellationToken).ConfigureAwait(false),
-            WorkspaceId = turn.Binding.WorkspaceId, TurnId = turn.Binding.TurnId, OwnerActorId = turn.Binding.OwnerActorId!,
-            TargetId = turn.Binding.TargetId, ReleaseId = turn.Binding.ReleaseId, TenantId = turn.Binding.TenantId, SchemaName = context.SchemaName,
-            Impact = current.Impact, StoreSnapshot = current.StoreSnapshot, PrimaryResourceId = current.PrimaryResource?.Metadata.Id, Candidate = candidate!,
-            BeforeMapLibreJson = current.CanonicalStyleJson, RestoreSourceProposalId = restoreSource,
+            WorkspaceId = turn.Binding.WorkspaceId,
+            TurnId = turn.Binding.TurnId,
+            OwnerActorId = turn.Binding.OwnerActorId!,
+            TargetId = turn.Binding.TargetId,
+            ReleaseId = turn.Binding.ReleaseId,
+            TenantId = turn.Binding.TenantId,
+            SchemaName = context.SchemaName,
+            Impact = current.Impact,
+            StoreSnapshot = current.StoreSnapshot,
+            PrimaryResourceId = current.PrimaryResource?.Metadata.Id,
+            Candidate = candidate!,
+            BeforeMapLibreJson = current.CanonicalStyleJson,
+            RestoreSourceProposalId = restoreSource,
         };
-        return request with { Parameters = new Dictionary<string, string?>
-        { ["sealedPayload"] = JsonSerializer.Serialize(payload, SharedStyleGovernanceJsonContext.Default.SharedStyleApprovalPayload) } };
+        return request with
+        {
+            Parameters = new Dictionary<string, string?>
+            { ["sealedPayload"] = JsonSerializer.Serialize(payload, SharedStyleGovernanceJsonContext.Default.SharedStyleApprovalPayload) }
+        };
     }
 
     public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
@@ -110,20 +134,36 @@ internal sealed class SharedStyleEditExecutor(IServiceProvider services) : IOper
         var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
         return new()
         {
-            OperationId = OperationId, OperationInstanceId = context.OperationInstanceId ?? throw new InvalidOperationException("Missing canonical operation instance."),
-            CorrelationId = context.CorrelationId ?? "", Status = OperationHandleStatus.Completed, CreatedAt = now, UpdatedAt = now,
-            Result = new() { Summary = "Reviewed shared style replacement completed.", Details = new Dictionary<string, string>
-            { ["styleId"] = replay.Payload.Impact.StyleId, ["styleVersion"] = outcome.ResultVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
-              ["contentHash"] = outcome.ResultContentHash } },
+            OperationId = OperationId,
+            OperationInstanceId = context.OperationInstanceId ?? throw new InvalidOperationException("Missing canonical operation instance."),
+            CorrelationId = context.CorrelationId ?? "",
+            Status = OperationHandleStatus.Completed,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Result = new()
+            {
+                Summary = "Reviewed shared style replacement completed.",
+                Details = new Dictionary<string, string>
+                {
+                    ["styleId"] = replay.Payload.Impact.StyleId,
+                    ["styleVersion"] = outcome.ResultVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["contentHash"] = outcome.ResultContentHash
+                }
+            },
         };
     }
 
     public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
         => Task.FromResult(new OperationStatus
         {
-            OperationInstanceId = handle.OperationInstanceId, OperationId = handle.OperationId,
-            CorrelationId = handle.CorrelationId, Status = handle.Status,
-            CreatedAt = handle.CreatedAt, UpdatedAt = handle.UpdatedAt, Result = handle.Result, Reason = handle.Reason,
+            OperationInstanceId = handle.OperationInstanceId,
+            OperationId = handle.OperationId,
+            CorrelationId = handle.CorrelationId,
+            Status = handle.Status,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            Result = handle.Result,
+            Reason = handle.Reason,
         });
 
     private static string Required(OperationRequest request, string name) => request.Parameters.TryGetValue(name, out var value) &&
@@ -144,12 +184,18 @@ internal sealed class SharedStyleEditApprovalMapper : IOperationApprovalRequestM
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         return new()
         {
-            OperationInstanceId = context.OperationInstanceId, OperationId = OperationId, Kind = OperationClass.AdminConfigChange,
-            RequestedBy = context.PrincipalId, Reason = decision.Reason, CorrelationId = context.CorrelationId, ExecutionPayload = json,
+            OperationInstanceId = context.OperationInstanceId,
+            OperationId = OperationId,
+            Kind = OperationClass.AdminConfigChange,
+            RequestedBy = context.PrincipalId,
+            Reason = decision.Reason,
+            CorrelationId = context.CorrelationId,
+            ExecutionPayload = json,
             Plan = new()
             {
                 Summary = $"Replace shared style '{payload.Impact.StyleId}' revision {payload.Impact.StyleVersion}.",
-                RiskLevel = ProposalRiskLevel.Medium, ExecutionPayload = json,
+                RiskLevel = ProposalRiskLevel.Medium,
+                ExecutionPayload = json,
                 Diff = [.. (payload.RestoreSourceProposalId is { } restore ? new[] { "Restore retained appearance from canonical proposal: " + restore } : Array.Empty<string>()),
                     $"Current content: {payload.Impact.ContentHash}; impact: {payload.Impact.ImpactHash}",
                     $"Proposed content: {StyleEditHashes.Content(payload.Candidate.MapLibreJson)}",
@@ -167,7 +213,8 @@ internal sealed class SharedStyleEditApprovalMapper : IOperationApprovalRequestM
         return new()
         {
             Request = new() { OperationId = OperationId, Parameters = new Dictionary<string, string?> { ["sealedPayload"] = json } },
-            TenantId = payload.TenantId, SchemaName = payload.SchemaName,
+            TenantId = payload.TenantId,
+            SchemaName = payload.SchemaName,
         };
     }
 }

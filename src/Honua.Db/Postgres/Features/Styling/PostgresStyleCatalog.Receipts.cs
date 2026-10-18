@@ -33,7 +33,7 @@ internal sealed partial class PostgresStyleCatalog
     }
 
     private async Task<StyleMutationReceipt> InsertMutationReceiptAsync(NpgsqlConnection connection,
-        NpgsqlTransaction transaction, StyleMutationIdentity identity, int resultVersion, CancellationToken cancellationToken)
+        NpgsqlTransaction transaction, StyleMutationIdentity identity, int resultVersion, string resultContentHash, CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand($"""
             INSERT INTO {_mutationReceiptsTable}
@@ -54,9 +54,9 @@ internal sealed partial class PostgresStyleCatalog
         command.Parameters.AddWithValue("styleId", identity.StyleId);
         command.Parameters.AddWithValue("expectedVersion", identity.ExpectedVersion);
         command.Parameters.AddWithValue("resultVersion", resultVersion);
-        command.Parameters.AddWithValue("resultHash", identity.CandidateHash);
-        var committedAt = (DateTime) (await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
-        return new(identity, resultVersion, identity.CandidateHash, new DateTimeOffset(committedAt));
+        command.Parameters.AddWithValue("resultHash", resultContentHash);
+        var committedAt = (DateTime)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
+        return new(identity, resultVersion, resultContentHash, new DateTimeOffset(committedAt));
     }
 
     private static string IdentityHash(StyleMutationIdentity identity)

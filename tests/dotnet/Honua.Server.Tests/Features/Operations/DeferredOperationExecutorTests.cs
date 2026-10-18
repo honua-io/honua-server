@@ -20,9 +20,15 @@ public sealed class DeferredOperationExecutorTests
         inner.OperationId.Returns("style.replace-shared");
         var request = new OperationRequest { OperationId = inner.OperationId };
         var context = new OperationPolicyContext { PrincipalId = "original-agent" };
-        var handle = new OperationHandle { OperationId = inner.OperationId, OperationInstanceId = "instance",
-            CorrelationId = "correlation", Status = OperationHandleStatus.Completed,
-            CreatedAt = DateTimeOffset.UnixEpoch, UpdatedAt = DateTimeOffset.UnixEpoch };
+        var handle = new OperationHandle
+        {
+            OperationId = inner.OperationId,
+            OperationInstanceId = "instance",
+            CorrelationId = "correlation",
+            Status = OperationHandleStatus.Completed,
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch
+        };
         ((IOperationCommittedReceiptReader)inner).ReadCommittedReceiptAsync(request, context, CancellationToken.None).Returns(handle);
         var services = new ServiceCollection();
         services.AddDeferredOperationExecutor(inner.OperationId, _ => inner);

@@ -133,3 +133,14 @@ operation and proposal without actuating another edit or obtaining another appro
 Recovery rechecks current key, roles, membership, tenant and readable scope, preserves
 terminal operation results, and refreshes projections from current canonical storage.
 A missing receipt never proves success and cannot advance canonical state.
+
+Lost shared-style responses can be reconciled using the returned operation identity:
+`honua_workspace_get_command` accepts `workspaceId` and exactly one of `commandId`
+or `operationInstanceId`. The latter currently supports sealed shared-style
+operations only. A later chat may read the original operation; the server checks
+its original workspace, task, target, tenant, credential and human approval rather
+than using the later chat's selection. An exact committed SQL receipt completes
+uncertain canonical status without another style write or approval. Missing
+receipts never establish success. Repeating the original proposal with the same
+frozen turn and payload also returns that same operation; it cannot retarget a
+new selection or restore old bytes.

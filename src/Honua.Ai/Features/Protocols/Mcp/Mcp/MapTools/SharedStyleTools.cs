@@ -18,11 +18,13 @@ internal sealed class SharedStyleGetTool : IMcpTool
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Results;
     public McpToolDescriptor Describe() => new()
     {
-        Name = Name, Title = "Read frozen shared style",
+        Name = Name,
+        Title = "Read frozen shared style",
         Description = "Read the actual canonical style bytes and authorized impact of this frozen shared-style workspace task. "
             + "Requires workspaceId/turnId and current key/tenant/resource authority; a prior map task cannot stand in for a style. "
             + "Shared catalog edits use honua_shared_style_propose and distinct human approval; map-local draft appearance remains realtime.",
-        InputSchema = SharedStyleToolSchemas.ReadInput, OutputSchema = SharedStyleToolSchemas.ReadOutput,
+        InputSchema = SharedStyleToolSchemas.ReadInput,
+        OutputSchema = SharedStyleToolSchemas.ReadOutput,
         Annotations = McpToolAnnotationSets.ReadOnly("Read frozen shared style"),
     };
     public async Task<McpToolsCallResult> InvokeAsync(HttpContext context, JsonElement? arguments, CancellationToken cancellationToken)
@@ -45,12 +47,15 @@ internal sealed class SharedStyleProposeTool : IMcpTool
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
     public McpToolDescriptor Describe() => new()
     {
-        Name = Name, Title = "Propose shared style replacement",
+        Name = Name,
+        Title = "Propose shared style replacement",
         Description = "Propose the complete canonical MapLibre style for the exact styleId/version/contentHash/impactHash captured by this shared-style turn. "
             + "The existing canonical operation returns a durable human approval proposal and operation receipt; the agent never approves or directly writes. "
             + "Approval rechecks the original key, roles, membership, tenant, frozen task, style revisions and entire authorized layer impact under the canonical mutation lock. "
+            + "After a lost response, use honua_workspace_get_command with the same workspaceId and returned operationInstanceId, including from a later chat; receipt reconciliation never applies the style again or requests another approval. Repeating this exact original turn/payload also reconciles the same operation. "
             + "Read current bytes with honua_shared_style_get; validation alone does not verify rendering. Restore uses restoreFromProposalId from a successful retained canonical proposal, with a fresh frozen task and human approval; a version number alone cannot restore appearance.",
-        InputSchema = SharedStyleToolSchemas.ProposeInput, OutputSchema = SharedStyleToolSchemas.ProposeOutput,
+        InputSchema = SharedStyleToolSchemas.ProposeInput,
+        OutputSchema = SharedStyleToolSchemas.ProposeOutput,
         Annotations = McpToolAnnotationSets.Write("Propose shared style replacement", destructive: true, idempotent: true),
     };
     public async Task<McpToolsCallResult> InvokeAsync(HttpContext context, JsonElement? arguments, CancellationToken cancellationToken)

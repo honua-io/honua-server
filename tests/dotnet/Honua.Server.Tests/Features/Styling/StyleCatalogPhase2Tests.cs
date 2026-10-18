@@ -37,6 +37,35 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Update)]
+    public async Task MutationReceipt_ResultHashUsesAuthoritativeJsonbNumbers()
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var id = "receipt-numeric-" + Guid.NewGuid().ToString("N");
+        var initial = BuildDefaultStyleJson();
+        await catalog.CreateStyleAsync(id, initial);
+        var snapshot = await catalog.GetEditSnapshotAsync(id, null);
+        const string candidate = """{"version":8,"sources":{},"layers":[],"metadata":{"number":1e2}}""";
+        static string Hash(string json)
+        {
+            using var document = JsonDocument.Parse(json);
+            var canonical = Honua.Core.Features.Collaboration.Operations.SavedMapOperationIdempotency.CanonicalPayload(document.RootElement);
+            return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical)));
+        }
+        var identity = new Honua.Core.Features.Styling.Domain.StyleMutationIdentity(
+            Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), new string('a', 64),
+            "agent:numeric-test", "public", "honua", "target", id, snapshot.CatalogStyle!.StyleVersion,
+            Hash(snapshot.CatalogStyle.MapLibreStyleJson), new string('b', 64), Hash(candidate), Hash(snapshot.CatalogStyle.MapLibreStyleJson));
+        var result = await catalog.ApplyEditOnceAsync(snapshot, candidate, "{}", identity.ActorId, identity,
+            _ => Task.CompletedTask, _ => Task.CompletedTask);
+        var stored = (await catalog.GetStyleAsync(id))!;
+        result!.Receipt.ResultContentHash.Should().Be(Hash(stored.MapLibreStyleJson));
+        result.Receipt.ResultContentHash.Should().NotBe(identity.CandidateHash, "JSONB normalizes exponent spelling");
+        (await catalog.GetMutationReceiptAsync(identity)).Should().Be(result.Receipt);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
     public async Task UpdatingLayerStyle_PopulatesStyleResourceIdsWithTypeStyleResource()
     {

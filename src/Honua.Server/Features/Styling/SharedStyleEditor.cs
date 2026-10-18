@@ -30,11 +30,11 @@ internal sealed class SharedStyleEditor(IStyleCatalog catalog, StyleEditImpactSe
         if (actor is null) return new(OgcStyleUpdateStatus.Forbidden, "An authenticated operator is required.");
         try
         {
-        return await ApplyReviewedAsync(current, candidate!, actor, async token =>
-        {
-            var fresh = await impacts.ResolveAsync(styleId, token).ConfigureAwait(false);
-            RequireUnchanged(current, fresh);
-        }, cancellationToken).ConfigureAwait(false);
+            return await ApplyReviewedAsync(current, candidate!, actor, async token =>
+            {
+                var fresh = await impacts.ResolveAsync(styleId, token).ConfigureAwait(false);
+                RequireUnchanged(current, fresh);
+            }, cancellationToken).ConfigureAwait(false);
         }
         catch (Honua.Geoprocessing.GeoprocessingPreconditionFailedException)
         {

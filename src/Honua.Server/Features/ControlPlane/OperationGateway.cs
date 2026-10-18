@@ -401,9 +401,8 @@ internal sealed partial class OperationGateway : IOperationGateway
             ResolvedBy = approvedBy,
             ResolvedAt = now,
             ExecutionOperationId = executionOperationId,
-            Plan = failureMessage == null
-                ? proposal.Plan
-                : proposal.Plan with { BlockingReasons = [.. proposal.Plan.BlockingReasons, failureMessage] }
+            // Execution outcomes must never mutate the already sealed approval plan.
+            ResolutionReason = failureMessage
         };
 
         await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, cancellationToken).ConfigureAwait(false);

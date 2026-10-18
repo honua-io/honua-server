@@ -280,7 +280,8 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 OgcStyleMediaTypes.EsriDrawingInfo,
                 OgcStyleEncoding.EsriDrawingInfo),
             _ => DeriveSld(mapLibreJson, resource, storageLayerId, encoding),
-        }) with { StyleVersion = 0 };
+        }) with
+        { StyleVersion = 0 };
     }
 
     private async Task<OgcStylesheet?> GetCatalogStylesheetAsync(
