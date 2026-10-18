@@ -993,6 +993,7 @@ jobs:
         if: matrix.family == 'server'
         timeout-minutes: 10
         run: |
+          python3 -m pip install -r scripts/ci/okf-requirements.txt
           bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
           bash scripts/ci/report-generated-file-drift.sh
 
