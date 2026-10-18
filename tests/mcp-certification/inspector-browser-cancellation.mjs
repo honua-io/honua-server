@@ -83,10 +83,11 @@ export async function cancellationWireObserver(endpoint, { dropCancellation = fa
       }
       const tracked = call ?? initialize;
       if (message?.method === 'notifications/cancelled') {
-        notifications++;
+        require(message.jsonrpc === '2.0' && !Object.hasOwn(message, 'id'), 'JSON-RPC notification envelope');
         require(capture && message.params?.requestId === capture.id
           && incoming.headers['mcp-session-id'] === capture.session, 'genuine correlated notification');
         require(!capture.complete && !capture.aborted, 'original upstream still open');
+        notifications++;
         capture.notification = true; capture.upstreamOpenAtNotification = true;
         if (dropCancellation) { outgoing.writeHead(202).end(); return; }
       }
