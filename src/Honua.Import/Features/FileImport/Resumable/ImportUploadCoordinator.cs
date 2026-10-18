@@ -16,10 +16,10 @@ namespace Honua.Import.FileImport.Resumable;
 /// finalization and HTTP/SDK registration are separate prerequisites before advertising it.
 /// </summary>
 internal sealed class ImportUploadCoordinator(
-    IDatasetImportTaskProvider tasks, RedisImportUploadStore store, ICloudFileStorage files)
+    IDatasetImportTaskProvider tasks, RedisImportUploadStore store, ICloudFileStorage files, IImportStorageBudget budget)
 {
-    private readonly ImportUploadChunkStorage _storage = new(files);
-    private readonly ImportUploadSourceStorage _sources = new(store, files);
+    private readonly ImportUploadChunkStorage _storage = new(files, budget);
+    private readonly ImportUploadSourceStorage _sources = new(store, files, budget);
 
     public async Task<ImportUploadSession?> GetAsync(ClaimsPrincipal principal, ImportUploadTaskReference reference,
         CancellationToken cancellationToken = default)
@@ -82,7 +82,7 @@ internal sealed class ImportUploadCoordinator(
         {
             // A definite false means this private unique candidate was not accepted.
             // On an exception the result is unknown; never delete before recovery.
-            _ = await _storage.DeleteUnacceptedAsync(candidate, cancellationToken).ConfigureAwait(false);
+            _ = await _storage.DeleteUnacceptedAsync(current, candidate, cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException("The upload changed before the chunk could be accepted.");
         }
 

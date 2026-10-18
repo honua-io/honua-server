@@ -13,10 +13,10 @@ namespace Honua.Import.FileImport.Resumable;
 /// session's admission window. The coordinator must reauthorize and bind exactly one
 /// candidate before durable job acceptance. No upload or job capability is advertised here.
 /// </summary>
-internal sealed class ImportUploadSourceStorage(RedisImportUploadStore store, ICloudFileStorage storage)
+internal sealed class ImportUploadSourceStorage(RedisImportUploadStore store, ICloudFileStorage storage, IImportStorageBudget budget)
 {
     // This is bounded source retention, not a promise of indefinite queue/retry life.
-    // Source-aware queue deadlines and aggregate reservations remain admission prerequisites.
+    // Source-aware queue deadlines and scratch quotas remain admission prerequisites.
     internal static readonly TimeSpan SourceRetention = TimeSpan.FromDays(7);
 
     public async Task<ImportStagedSourceBinding> StageAsync(ImportUploadSession session, string scratchDirectory,
@@ -32,6 +32,9 @@ internal sealed class ImportUploadSourceStorage(RedisImportUploadStore store, IC
             reauthorize, cancellationToken).ConfigureAwait(false);
         await reauthorize(cancellationToken).ConfigureAwait(false);
         var key = $"imports/resumable/{session.Id}/source-{Guid.NewGuid():N}";
+        if (!await budget.TryReserveAsync(RedisImportStorageBudget.ForObject(session, key, session.TotalBytes), cancellationToken).ConfigureAwait(false))
+            throw new InvalidOperationException("The import storage budget is exhausted.");
+        await reauthorize(cancellationToken).ConfigureAwait(false);
         var minimumRetention = DateTimeOffset.UtcNow + SourceRetention;
         var result = await storage.UploadAsync(new FileUploadRequest
         {

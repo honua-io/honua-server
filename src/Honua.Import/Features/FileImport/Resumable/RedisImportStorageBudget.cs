@@ -14,7 +14,7 @@ namespace Honua.Import.FileImport.Resumable;
 /// objects were deleted. This ledger requires durable Redis and must be reconciled
 /// with storage before admitting writes after loss of accounting state.
 /// </summary>
-internal sealed class RedisImportStorageBudget
+internal sealed class RedisImportStorageBudget : IImportStorageBudget
 {
     // Lua numbers exactly represent every integer within this admitted range.
     internal const long MaximumBudgetBytes = 1L << 50;
@@ -92,7 +92,7 @@ internal sealed class RedisImportStorageBudget
         Key = $"honua:import-storage:{{{Hash(storageBudgetId)}}}:reservations";
     }
 
-    internal async Task<bool> TryReserveAsync(ImportStorageReservation reservation, CancellationToken cancellationToken = default)
+    public async Task<bool> TryReserveAsync(ImportStorageReservation reservation, CancellationToken cancellationToken = default)
     {
         Validate(reservation);
         cancellationToken.ThrowIfCancellationRequested();
@@ -106,7 +106,7 @@ internal sealed class RedisImportStorageBudget
     // Only the storage cleanup coordinator may call this after proving that its
     // writer finished and the exact unique candidate was removed. A TTL, missing
     // upload receipt, timeout, or uncertain provider response is not that proof.
-    internal async Task<bool> ReleaseDeletedAsync(ImportStorageReservation reservation, CancellationToken cancellationToken = default)
+    public async Task<bool> ReleaseDeletedAsync(ImportStorageReservation reservation, CancellationToken cancellationToken = default)
     {
         Validate(reservation);
         cancellationToken.ThrowIfCancellationRequested();
@@ -163,3 +163,11 @@ internal sealed class RedisImportStorageBudget
 internal sealed record ImportStorageBudgetLimits(long GlobalBytes, long TenantBytes, long OwnerBytes, int MaximumObjects);
 internal sealed record ImportStorageReservation(string UploadId, ImportUploadScope Scope, string FileId, long Bytes);
 internal sealed record ImportStorageAccount(string TargetId, string? TenantId, string? ActorId);
+
+// Admission precedes provider writes. Release requires a completed writer and a
+// positively confirmed deletion of its exact generation, never a timeout or TTL.
+internal interface IImportStorageBudget
+{
+    Task<bool> TryReserveAsync(ImportStorageReservation reservation, CancellationToken cancellationToken = default);
+    Task<bool> ReleaseDeletedAsync(ImportStorageReservation reservation, CancellationToken cancellationToken = default);
+}

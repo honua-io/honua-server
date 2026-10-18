@@ -128,7 +128,8 @@ public sealed class ImportUploadChunkStorageTests
         using var fixture = new StorageFixture();
         var bytes = Content(65536);
         await using var input = new MemoryStream(bytes, writable: false);
-        var chunk = await fixture.Chunks.StageAsync(Session(), input, Convert.ToHexStringLower(SHA256.HashData(bytes)));
+        var session = Session();
+        var chunk = await fixture.Chunks.StageAsync(session, input, Convert.ToHexStringLower(SHA256.HashData(bytes)));
         await using var replacement = new MemoryStream(bytes, writable: false);
         var changed = await fixture.Storage.UploadAsync(new FileUploadRequest
         {
@@ -140,7 +141,7 @@ public sealed class ImportUploadChunkStorageTests
         changed.Success.Should().BeTrue();
 
         await FluentActions.Invoking(() => fixture.Chunks.OpenVerifiedAsync(chunk)).Should().ThrowAsync<InvalidDataException>();
-        (await fixture.Chunks.DeleteUnacceptedAsync(chunk)).Should().BeFalse();
+        (await fixture.Chunks.DeleteUnacceptedAsync(session, chunk)).Should().BeFalse();
         (await fixture.Storage.GetMetadataAsync(chunk.FileId))!.ETag.Should().Be(changed.File!.ETag);
     }
 
@@ -236,7 +237,9 @@ public sealed class ImportUploadChunkStorageTests
         {
             Storage = new LocalFileStorage(Options.Create(new LocalStorageOptions { BasePath = Root, CreateDirectoryIfNotExists = true }),
                 NullLogger<LocalFileStorage>.Instance, Substitute.For<IUploadProgressStore>());
-            Chunks = new ImportUploadChunkStorage(Storage);
+            var budget = Substitute.For<IImportStorageBudget>();
+            budget.TryReserveAsync(Arg.Any<ImportStorageReservation>(), Arg.Any<CancellationToken>()).Returns(true);
+            Chunks = new ImportUploadChunkStorage(Storage, budget);
         }
 
         public void Dispose() => Directory.Delete(Root, recursive: true);

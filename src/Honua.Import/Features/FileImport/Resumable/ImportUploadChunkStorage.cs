@@ -15,11 +15,12 @@ namespace Honua.Import.FileImport.Resumable;
 /// This is format I/O, not an authorization or import-acceptance boundary: the coordinator
 /// must revalidate current authority before staging and before appending a durable receipt.
 /// </summary>
-internal sealed class ImportUploadChunkStorage(ICloudFileStorage storage)
+internal sealed class ImportUploadChunkStorage(ICloudFileStorage storage, IImportStorageBudget? budget = null)
 {
     public async Task<ImportUploadChunk> StageAsync(ImportUploadSession session, Stream source,
         string sha256, CancellationToken cancellationToken = default)
     {
+        if (budget is null) throw new InvalidOperationException("Import storage admission is required before staging bytes.");
         RedisImportUploadStore.Validate(session);
         if (session.State != ImportUploadState.Receiving || session.ExpiresAt <= DateTimeOffset.UtcNow ||
             session.AcceptedBytes == session.TotalBytes)
@@ -32,6 +33,11 @@ internal sealed class ImportUploadChunkStorage(ICloudFileStorage storage)
         // Only server-generated keys are used. Concurrent writers stage independent
         // objects; the receipt store chooses one without overwriting the other's bytes.
         var objectKey = $"imports/resumable/{session.Id}/{Guid.NewGuid():N}.part";
+        var reservation = RedisImportStorageBudget.ForObject(session, objectKey, bytes);
+        if (!await budget.TryReserveAsync(reservation, cancellationToken).ConfigureAwait(false))
+            throw new InvalidOperationException("The import storage budget is exhausted.");
+        // From this point, failed/unknown provider writes remain charged. A client
+        // retry gets a different object identity and cannot hide the earlier usage.
         cancellationToken.ThrowIfCancellationRequested();
         var result = await storage.UploadAsync(new FileUploadRequest
         {
@@ -98,8 +104,18 @@ internal sealed class ImportUploadChunkStorage(ICloudFileStorage storage)
     /// Removes only this candidate generation after the coordinator has proved it
     /// was not accepted. Never call after an ambiguous receipt commit without recovery.
     /// </summary>
-    public Task<bool> DeleteUnacceptedAsync(ImportUploadChunk candidate, CancellationToken cancellationToken = default)
-        => storage.DeleteIfMatchAsync(candidate.FileId, candidate.ETag, cancellationToken);
+    public async Task<bool> DeleteUnacceptedAsync(ImportUploadSession session, ImportUploadChunk candidate,
+        CancellationToken cancellationToken = default)
+    {
+        if (budget is null) throw new InvalidOperationException("Import storage accounting is required for cleanup.");
+        var reservation = RedisImportStorageBudget.ForObject(session, candidate.FileId, candidate.Bytes);
+        if (!await storage.DeleteIfMatchAsync(candidate.FileId, candidate.ETag, cancellationToken).ConfigureAwait(false))
+            return false;
+        // A lost deletion response or accounting reply keeps a conservative charge
+        // until durable cleanup reconciliation proves what happened.
+        _ = await budget.ReleaseDeletedAsync(reservation, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
 
     private static void RequireGeneration(CloudFile? file, ImportUploadChunk chunk)
     {

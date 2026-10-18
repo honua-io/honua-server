@@ -299,7 +299,7 @@ public sealed class ImportUploadContentVerifierTests(RedisFixture redis)
         (await store.TrySealAsync(session, digest)).Should().BeTrue();
         session = (await store.GetAsync(session.Id, session.Scope))!;
         var originalExpiry = await connection.GetDatabase().KeyExpireTimeAsync(RedisImportUploadStore.Key(session.Id));
-        var publisher = new ImportUploadSourceStorage(store, disk.Storage);
+        var publisher = new ImportUploadSourceStorage(store, disk.Storage, AllowStorageBudget());
         var source = await publisher.StageAsync(session, Path.Join(disk.Root, "scratch"), session.TotalBytes,
             static _ => Task.CompletedTask);
         source.ExpiresAt.Should().BeAfter(session.ExpiresAt);
@@ -331,7 +331,7 @@ public sealed class ImportUploadContentVerifierTests(RedisFixture redis)
         var (session, digest) = await StageAsync(first, disk.Storage, fullChunks: 0);
         (await first.TrySealAsync(session, digest)).Should().BeTrue();
         session = (await first.GetAsync(session.Id, session.Scope))!;
-        var publisher = new ImportUploadSourceStorage(first, disk.Storage);
+        var publisher = new ImportUploadSourceStorage(first, disk.Storage, AllowStorageBudget());
         var a = await publisher.StageAsync(session, Path.Join(disk.Root, "scratch"), session.TotalBytes, static _ => Task.CompletedTask);
         var b = await publisher.StageAsync(session, Path.Join(disk.Root, "scratch"), session.TotalBytes, static _ => Task.CompletedTask);
         a.FileId.Should().NotBe(b.FileId);
@@ -380,7 +380,7 @@ public sealed class ImportUploadContentVerifierTests(RedisFixture redis)
                 : result;
         });
         var scratchDirectory = Path.Join(disk.Root, "scratch");
-        var publish = () => new ImportUploadSourceStorage(store, observed).StageAsync(session,
+        var publish = () => new ImportUploadSourceStorage(store, observed, AllowStorageBudget()).StageAsync(session,
             scratchDirectory, session.TotalBytes, _ =>
             {
                 if (revoked) throw new UnauthorizedAccessException("Credential revoked during source write");
@@ -408,7 +408,7 @@ public sealed class ImportUploadContentVerifierTests(RedisFixture redis)
         var (session, digest) = await StageAsync(store, disk.Storage, fullChunks: 0);
         (await store.TrySealAsync(session, digest)).Should().BeTrue();
         session = (await store.GetAsync(session.Id, session.Scope))!;
-        var source = await new ImportUploadSourceStorage(store, disk.Storage).StageAsync(session,
+        var source = await new ImportUploadSourceStorage(store, disk.Storage, AllowStorageBudget()).StageAsync(session,
             Path.Join(disk.Root, "scratch"), session.TotalBytes, static _ => Task.CompletedTask);
         var database = Substitute.For<IDatabase>();
         database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
@@ -468,7 +468,7 @@ public sealed class ImportUploadContentVerifierTests(RedisFixture redis)
             ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
         };
         (await store.TryCreateAsync(session)).Should().BeTrue();
-        var chunks = new ImportUploadChunkStorage(storage);
+        var chunks = new ImportUploadChunkStorage(storage, AllowStorageBudget());
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         while (session.AcceptedBytes < session.TotalBytes)
         {
@@ -486,6 +486,14 @@ public sealed class ImportUploadContentVerifierTests(RedisFixture redis)
         }
 
         return (session, Convert.ToHexStringLower(hash.GetHashAndReset()));
+    }
+
+    // These cases isolate content/retention behavior; aggregate admission has real Redis/provider coverage.
+    private static IImportStorageBudget AllowStorageBudget()
+    {
+        var budget = Substitute.For<IImportStorageBudget>();
+        budget.TryReserveAsync(Arg.Any<ImportStorageReservation>(), Arg.Any<CancellationToken>()).Returns(true);
+        return budget;
     }
 
     private sealed class StorageFixture : IDisposable
