@@ -98,8 +98,8 @@ public sealed class FileImportJobExecutorCleanupTests
         RecordingStorage storage,
         ScriptedImporter importer,
         long fileSize,
-        CancellationToken cancellationToken = default,
-        MemoryProgress? progressStore = null)
+        MemoryProgress? progressStore = null,
+        CancellationToken cancellationToken = default)
     {
         var request = new ImportRequest
         {
