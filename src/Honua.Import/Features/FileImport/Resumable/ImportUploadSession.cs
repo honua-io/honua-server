@@ -42,4 +42,5 @@ internal sealed record ImportUploadChunk(
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(ImportUploadSession))]
 [JsonSerializable(typeof(ImportUploadChunk))]
+[JsonSerializable(typeof(ImportUploadScope))]
 internal sealed partial class ImportUploadJsonContext : JsonSerializerContext;

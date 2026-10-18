@@ -16,9 +16,14 @@ internal sealed class ImportUploadContentVerifier(RedisImportUploadStore store, 
 {
     private const int ManifestPageSize = 128;
 
-    public async Task<ImportUploadVerifiedContent> VerifyAsync(ImportUploadSession session,
+    public Task<ImportUploadVerifiedContent> VerifyAsync(ImportUploadSession session,
         string expectedSha256, CancellationToken cancellationToken = default)
+        => VerifyAsync(session, expectedSha256, static _ => Task.CompletedTask, cancellationToken);
+
+    public async Task<ImportUploadVerifiedContent> VerifyAsync(ImportUploadSession session,
+        string expectedSha256, Func<CancellationToken, Task> reauthorize, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(reauthorize);
         RedisImportUploadStore.Validate(session);
         RedisImportUploadStore.ValidateDigest(expectedSha256);
         if (session.State != ImportUploadState.Receiving || session.AcceptedBytes != session.TotalBytes)
@@ -26,7 +31,7 @@ internal sealed class ImportUploadContentVerifier(RedisImportUploadStore store, 
             throw new InvalidOperationException("Upload content is not complete and awaiting verification.");
         }
 
-        await RequireCurrentAsync(session, cancellationToken).ConfigureAwait(false);
+        await RequireCurrentAsync(session, reauthorize, cancellationToken).ConfigureAwait(false);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
         long total = 0;
@@ -44,7 +49,7 @@ internal sealed class ImportUploadContentVerifier(RedisImportUploadStore store, 
 
                 foreach (var chunk in chunks)
                 {
-                    await RequireCurrentAsync(session, cancellationToken).ConfigureAwait(false);
+                    await RequireCurrentAsync(session, reauthorize, cancellationToken).ConfigureAwait(false);
                     if (chunk.Offset != total)
                     {
                         throw new InvalidDataException("Upload chunk order does not match the complete file.");
@@ -60,7 +65,7 @@ internal sealed class ImportUploadContentVerifier(RedisImportUploadStore store, 
 
                     // Cancellation/expiry during a provider read must not produce a
                     // verification receipt, including when this was the final chunk.
-                    await RequireCurrentAsync(session, cancellationToken).ConfigureAwait(false);
+                    await RequireCurrentAsync(session, reauthorize, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -70,7 +75,7 @@ internal sealed class ImportUploadContentVerifier(RedisImportUploadStore store, 
                 throw new InvalidDataException("The complete upload length or SHA-256 does not match its intent.");
             }
 
-            await RequireCurrentAsync(session, cancellationToken).ConfigureAwait(false);
+            await RequireCurrentAsync(session, reauthorize, cancellationToken).ConfigureAwait(false);
             return new ImportUploadVerifiedContent(session, actualSha256);
         }
         finally
@@ -79,9 +84,11 @@ internal sealed class ImportUploadContentVerifier(RedisImportUploadStore store, 
         }
     }
 
-    private async Task RequireCurrentAsync(ImportUploadSession session, CancellationToken cancellationToken)
+    private async Task RequireCurrentAsync(ImportUploadSession session, Func<CancellationToken, Task> reauthorize,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        await reauthorize(cancellationToken).ConfigureAwait(false);
         var current = await store.GetAsync(session.Id, session.Scope, cancellationToken).ConfigureAwait(false);
         if (current is null || current != session || current.ExpiresAt <= DateTimeOffset.UtcNow)
         {
