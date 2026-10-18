@@ -15,6 +15,7 @@ internal sealed class WorkflowPublicationSchedulerJournal(IWorkflowDefinitionSto
 {
     private readonly Dictionary<string, WorkflowDefinition?> _before = new(StringComparer.Ordinal);
     private readonly Dictionary<string, WorkflowDefinition> _attempted = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, WorkflowDefinition> _pendingEnabled = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _publicationPins = new(StringComparer.Ordinal);
     internal IWorkflowPackageStore? Catalog { get; set; }
 
@@ -33,18 +34,43 @@ internal sealed class WorkflowPublicationSchedulerJournal(IWorkflowDefinitionSto
     {
         await CaptureAsync(definition.WorkflowId, cancellationToken).ConfigureAwait(false);
         _attempted[definition.WorkflowId] = definition;
-        await inner.SetAsync(definition, cancellationToken).ConfigureAwait(false);
+        if (definition.Trigger?.Enabled == true) _pendingEnabled[definition.WorkflowId] = definition;
+        else _pendingEnabled.Remove(definition.WorkflowId);
+        await inner.SetAsync(Dormant(definition), cancellationToken).ConfigureAwait(false);
     }
     public async Task<bool> TryCreateAsync(WorkflowDefinition definition, CancellationToken cancellationToken = default)
     {
         await CaptureAsync(definition.WorkflowId, cancellationToken).ConfigureAwait(false);
-        _attempted[definition.WorkflowId] = definition;
-        return await inner.TryCreateAsync(definition, cancellationToken).ConfigureAwait(false);
+        var created = await inner.TryCreateAsync(Dormant(definition), cancellationToken).ConfigureAwait(false);
+        if (created)
+        {
+            _attempted[definition.WorkflowId] = definition;
+            if (definition.Trigger?.Enabled == true) _pendingEnabled[definition.WorkflowId] = definition;
+        }
+        return created;
     }
     public async Task<bool> DeleteAsync(string workflowId, CancellationToken cancellationToken = default)
     {
         await CaptureAsync(workflowId, cancellationToken).ConfigureAwait(false);
+        _pendingEnabled.Remove(workflowId);
         return await inner.DeleteAsync(workflowId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static WorkflowDefinition Dormant(WorkflowDefinition definition)
+        => definition.Trigger is { Enabled: true } trigger ? definition with { Trigger = trigger with { Enabled = false } } : definition;
+
+    internal async Task PublishCommittedAsync(IWorkflowPackageStore committed, CancellationToken cancellationToken)
+    {
+        var publications = await committed.ListPublicationsAsync(null, cancellationToken).ConfigureAwait(false);
+        foreach (var (id, definition) in _pendingEnabled)
+        {
+            var references = publications.Where(publication => publication.WorkflowDefinitionId == id).ToArray();
+            if (references.Length == 0) continue;
+            if (!_publicationPins.TryGetValue(id, out var pins) || references.Any(publication => !pins.Contains(Identity(publication))))
+                throw new InvalidOperationException("The committed workflow publication differs from the scheduler activation intent.");
+            if (references.Any(publication => publication.Status == WorkflowPublicationStatus.Active && publication.Schedule?.Enabled != false))
+                await inner.SetAsync(definition, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     internal async Task ReconcileAsync(IWorkflowPackageStore committed, CancellationToken cancellationToken)

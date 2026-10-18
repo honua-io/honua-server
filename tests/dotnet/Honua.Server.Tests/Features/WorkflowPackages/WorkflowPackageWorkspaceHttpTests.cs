@@ -42,9 +42,11 @@ public sealed class WorkflowPackageWorkspaceHttpTests
             builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
         });
+        WorkflowPackageHttpFixture.Configure(fixture);
         await fixture.InitializeAsync();
         try
         {
+            await WorkflowPackageHttpFixture.InitializeSchemaAsync(fixture);
             using var admin = fixture.CreateAdminClient();
             var keyA = await Key(admin, "workflow-owner");
             var keyB = await Key(admin, "workflow-foreign");

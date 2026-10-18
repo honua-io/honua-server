@@ -25,10 +25,18 @@ internal sealed partial class PostgresWorkflowPackageStore
         Func<IWorkflowPackageStore, CancellationToken, Task<TResult>> mutation,
         Func<IWorkflowPackageStore, Exception, CancellationToken, Task> reconcile,
         CancellationToken cancellationToken = default)
+        => await ExecuteSerializedPublicationMutationAsync(mutation, reconcile, null, cancellationToken).ConfigureAwait(false);
+
+    public async Task<TResult> ExecuteSerializedPublicationMutationAsync<TResult>(
+        Func<IWorkflowPackageStore, CancellationToken, Task<TResult>> mutation,
+        Func<IWorkflowPackageStore, Exception, CancellationToken, Task> reconcile,
+        Func<IWorkflowPackageStore, CancellationToken, Task>? afterCommit,
+        CancellationToken cancellationToken = default)
     {
         if (_publicationConnection is not null)
         {
             _publicationOwner!.RequireActive();
+            if (afterCommit is not null) throw new InvalidOperationException("Post-commit activation belongs to the outer publication transaction.");
             return await mutation(this, cancellationToken).ConfigureAwait(false);
         }
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -58,6 +66,14 @@ internal sealed partial class PostgresWorkflowPackageStore
                 finally { lifetime.Active = false; }
                 if (_publicationCommit is null) await transaction.CommitSafelyAsync(bounded.Token).ConfigureAwait(false);
                 else await _publicationCommit(transaction, bounded.Token).ConfigureAwait(false);
+                if (afterCommit is not null)
+                {
+                    await using var activationTransaction = await connection.BeginTransactionAsync(bounded.Token).ConfigureAwait(false);
+                    var activationLifetime = new PublicationLockOwner();
+                    try { await afterCommit(new PostgresWorkflowPackageStore(this, connection, activationTransaction, activationLifetime), bounded.Token).ConfigureAwait(false); }
+                    finally { activationLifetime.Active = false; }
+                    await activationTransaction.CommitSafelyAsync(bounded.Token).ConfigureAwait(false);
+                }
                 return result;
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)

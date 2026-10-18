@@ -44,12 +44,22 @@ internal sealed class WorkflowPackageApprovedReplay
            JsonSerializer.Serialize(intent, WorkflowPackageGovernanceJsonContext.Default.WorkflowPackageGovernanceIntent) ==
            JsonSerializer.Serialize(Payload.Intent, WorkflowPackageGovernanceJsonContext.Default.WorkflowPackageGovernanceIntent);
 
+    private static async Task RevalidateMembershipAsync(IServiceProvider services, JobSecurityContext snapshot, CancellationToken cancellationToken)
+    {
+        var membership = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(snapshot,
+            services.GetService<IPrincipalMembershipSource>(), services.GetService<IOptions<RbacOptions>>()?.Value ?? new(),
+            cancellationToken).ConfigureAwait(false);
+        if (membership.HasRemovedRoles || membership.Status is JobSecurityContextMembershipStatus.Changed or
+            JobSecurityContextMembershipStatus.Inactive or JobSecurityContextMembershipStatus.ManagedUnresolved) Deny();
+    }
+
     internal async Task RevalidateKeyAndMembershipAsync(CancellationToken cancellationToken)
     {
         var record = await _services.GetRequiredService<IAdminApiKeyStore>().GetAsync(Payload.KeyId, cancellationToken).ConfigureAwait(false);
         var now = _services.GetRequiredService<TimeProvider>().GetUtcNow();
         if (record is null || record.RevokedAt is not null || record.ExpiresAt <= now ||
             !record.Permissions.Order(StringComparer.Ordinal).SequenceEqual(Payload.Permissions.Order(StringComparer.Ordinal))) Deny();
+        await RevalidateMembershipAsync(_services, Payload.AuthorSecurityContext, cancellationToken).ConfigureAwait(false);
         var workspaces = _services.GetRequiredService<IAgentWorkspaceStore>();
         var document = await workspaces.GetAsync(Payload.WorkspaceId).ConfigureAwait(false);
         if (document is null || document.OwnerId != Payload.OwnerActorId ||
@@ -96,11 +106,7 @@ internal sealed class WorkflowPackageApprovedReplay
         if (snapshot.OwnerActorId != payload.ActorId || snapshot.TenantId != payload.TenantId ||
             !snapshot.Claims.Where(claim => claim.Type == "permission").Select(claim => claim.Value)
                 .Order(StringComparer.Ordinal).SequenceEqual(payload.Permissions.Order(StringComparer.Ordinal))) Deny();
-        var membership = await JobSecurityContextCapture.RevalidateRoleMembershipAsync(snapshot,
-            services.GetService<IPrincipalMembershipSource>(), services.GetService<IOptions<RbacOptions>>()?.Value ?? new(),
-            cancellationToken).ConfigureAwait(false);
-        if (membership.HasRemovedRoles || membership.Status is JobSecurityContextMembershipStatus.Changed or
-            JobSecurityContextMembershipStatus.Inactive or JobSecurityContextMembershipStatus.ManagedUnresolved) Deny();
+        await RevalidateMembershipAsync(services, snapshot, cancellationToken).ConfigureAwait(false);
         // Carry original claims/RLS inputs into actuation, never newly expanded memberships.
         var restored = JobSecurityContextCapture.Restore(snapshot);
         var pinnedIdentity = new ClaimsIdentity(restored.Claims, AuthenticationExtensions.ApiKeyScheme,

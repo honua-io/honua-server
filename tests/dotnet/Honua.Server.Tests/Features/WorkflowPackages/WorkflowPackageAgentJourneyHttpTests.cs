@@ -51,9 +51,11 @@ public sealed class WorkflowPackageAgentJourneyHttpTests(RedisFixture redis)
             builder.UseSetting("OperatorApproval:PublishRequiresApproval", "false");
             builder.UseSetting("OperatorApproval:AdminExemptFromApproval", "true");
         });
+        WorkflowPackageHttpFixture.Configure(fixture);
         await fixture.InitializeAsync();
         try
         {
+            await WorkflowPackageHttpFixture.InitializeSchemaAsync(fixture);
             using var bootstrap = fixture.CreateAdminClient();
             var key = await Read(await bootstrap.PostAsJsonAsync("/api/v1/admin/api-keys", new
             { name = "workflow-agent", permissions = new[] { "admin", "read:*", "agent:workspace" } }), HttpStatusCode.Created);
@@ -102,6 +104,30 @@ public sealed class WorkflowPackageAgentJourneyHttpTests(RedisFixture redis)
             var packages = scope.ServiceProvider.GetRequiredService<IWorkflowPackageStore>();
             (await packages.ListVersionsAsync(packageId)).Should().ContainSingle();
             (await packages.ListPublicationsAsync(packageId)).Should().BeEmpty();
+            // This is the Studio Processes host attach/read contract: an immutable built-in
+            // reference, never an invented draft id or client-provided ownership field.
+            var attached = await Read(await human.PutAsJsonAsync(workspaceRoot + "/context", new
+            {
+                viewId = "workflow-tab", expectedRevision = 0, targetId = target.GetProperty("targetId").GetString(), selectedResources = Array.Empty<object>(),
+                task = new { kind = "workflow-package", id = packageId, revision = 1, contentHash = hash },
+            }), HttpStatusCode.OK);
+            attached.GetProperty("task").GetProperty("contentHash").GetString().Should().Be(hash);
+            await Read(await human.PostAsJsonAsync(workspaceRoot + "/turns", new
+            { turnId = "publish-turn", viewId = "workflow-tab", contextRevision = 1, prompt = "Propose this exact attached built-in workflow for human review." }), HttpStatusCode.OK);
+            agent.DefaultRequestHeaders.Remove("X-Honua-Turn");
+            agent.DefaultRequestHeaders.Add("X-Honua-Turn", "publish-turn");
+            var captured = await Read(await agent.GetAsync(workspaceRoot + "/turns/publish-turn"), HttpStatusCode.OK);
+            captured.GetProperty("context").GetProperty("task").GetProperty("id").GetString().Should().Be(packageId);
+            var storedVersion = await Read(await human.GetAsync($"/api/v1/console/workflow-packages/{packageId}/versions/1"), HttpStatusCode.OK);
+            storedVersion.GetProperty("data").GetProperty("packageHash").GetString().Should().Be(hash);
+            storedVersion.GetProperty("data").GetProperty("graph").GetProperty("nodes")[0].GetProperty("nodeTypeId").GetString().Should().Be("process:geometry.area");
+            var agentVersion = await Tool(agent, "honua_workflow_package", new { action = "read", workspaceId, turnId = "publish-turn", packageId, version = 1 });
+            agentVersion.GetProperty("version").GetProperty("packageHash").GetString().Should().Be(hash);
+            (await human.PutAsJsonAsync(workspaceRoot + "/context", new
+            {
+                viewId = "workflow-tab", expectedRevision = 1, targetId = target.GetProperty("targetId").GetString(), selectedResources = Array.Empty<object>(),
+                task = new { kind = "workflow-package", id = packageId, revision = 1, contentHash = new string('0', 64) },
+            })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
             var publicationId = "workflow-http-publication-" + Guid.NewGuid().ToString("N");
             var scheduled = await ProposeAndApprove(new WorkflowPackageGovernanceIntent
             {
@@ -128,11 +154,11 @@ public sealed class WorkflowPackageAgentJourneyHttpTests(RedisFixture redis)
             async Task<WorkflowPublication> ProposeAndApprove(WorkflowPackageGovernanceIntent intent)
             {
                 var before = await packages.GetPublicationAsync(publicationId);
-                var handle = await Tool(agent, "honua_workflow_package_propose", new { workspaceId, turnId = "author-turn", intent });
+                var handle = await Tool(agent, "honua_workflow_package_propose", new { workspaceId, turnId = "publish-turn", intent });
                 handle.GetProperty("status").GetString().Should().Be("RequiresApproval");
                 var proposalId = handle.GetProperty("proposalId").GetString()!;
                 var operationId = handle.GetProperty("operationInstanceId").GetString()!;
-                var repeated = await Tool(agent, "honua_workflow_package_propose", new { workspaceId, turnId = "author-turn", intent });
+                var repeated = await Tool(agent, "honua_workflow_package_propose", new { workspaceId, turnId = "publish-turn", intent });
                 repeated.GetProperty("operationInstanceId").GetString().Should().Be(operationId);
                 var pending = await packages.GetPublicationAsync(publicationId);
                 pending.Should().Be(before, "proposing may not actuate the workflow transition");

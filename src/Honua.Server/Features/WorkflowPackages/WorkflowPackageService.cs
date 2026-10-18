@@ -627,7 +627,8 @@ internal sealed class WorkflowPackageService(
             var locked = new WorkflowPackageService(lockedStore, nodeRegistry, geoprocessingJobService, clock, logger,
                 journal, orchestrationEngine, metadataReleaseService, authorSecurityContextCapturer);
             return await mutation(locked, token).ConfigureAwait(false);
-        }, (committed, _, token) => journal?.ReconcileAsync(committed, token) ?? Task.CompletedTask, cancellationToken);
+        }, (committed, _, token) => journal?.ReconcileAsync(committed, token) ?? Task.CompletedTask,
+            (committed, token) => journal?.PublishCommittedAsync(committed, token) ?? Task.CompletedTask, cancellationToken);
     }
 
     private async Task<bool> CanAccessPublicationAsync(

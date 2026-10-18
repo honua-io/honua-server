@@ -39,6 +39,13 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
         Func<IWorkflowPackageStore, CancellationToken, Task<TResult>> mutation,
         Func<IWorkflowPackageStore, Exception, CancellationToken, Task> reconcile,
         CancellationToken cancellationToken = default)
+        => await ExecuteSerializedPublicationMutationAsync(mutation, reconcile, null, cancellationToken).ConfigureAwait(false);
+
+    public async Task<TResult> ExecuteSerializedPublicationMutationAsync<TResult>(
+        Func<IWorkflowPackageStore, CancellationToken, Task<TResult>> mutation,
+        Func<IWorkflowPackageStore, Exception, CancellationToken, Task> reconcile,
+        Func<IWorkflowPackageStore, CancellationToken, Task>? afterCommit,
+        CancellationToken cancellationToken = default)
     {
         if (_ownsPublicationLock)
         {
@@ -49,7 +56,12 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
         bounded.CancelAfter(TimeSpan.FromSeconds(60));
         await _publicationGate.WaitAsync(bounded.Token).ConfigureAwait(false);
         var locked = new InMemoryWorkflowPackageStore(this);
-        try { return await mutation(locked, bounded.Token).ConfigureAwait(false); }
+        try
+        {
+            var result = await mutation(locked, bounded.Token).ConfigureAwait(false);
+            if (afterCommit is not null) await afterCommit(locked, bounded.Token).ConfigureAwait(false);
+            return result;
+        }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             using var recovery = new CancellationTokenSource(TimeSpan.FromSeconds(15));

@@ -19,6 +19,17 @@ public interface IWorkflowPackageStore
         Func<IWorkflowPackageStore, CancellationToken, Task<TResult>> mutation,
         Func<IWorkflowPackageStore, Exception, CancellationToken, Task> reconcile,
         CancellationToken cancellationToken = default)
+        => ExecuteSerializedPublicationMutationAsync(mutation, reconcile, null, cancellationToken);
+
+    /// <summary>
+    /// Runs a scheduler activation phase only after catalog commit, while retaining the same
+    /// serialization. Enabled triggers must remain dormant until this callback.
+    /// </summary>
+    Task<TResult> ExecuteSerializedPublicationMutationAsync<TResult>(
+        Func<IWorkflowPackageStore, CancellationToken, Task<TResult>> mutation,
+        Func<IWorkflowPackageStore, Exception, CancellationToken, Task> reconcile,
+        Func<IWorkflowPackageStore, CancellationToken, Task>? afterCommit,
+        CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Serialized workflow publication governance is unavailable.");
 
     /// <summary>

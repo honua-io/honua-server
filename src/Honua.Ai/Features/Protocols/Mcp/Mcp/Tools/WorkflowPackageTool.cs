@@ -39,8 +39,8 @@ internal sealed class WorkflowPackageTool : IMcpTool
             + "Supply the authorized workspace and frozen turn; ownership comes from the server's verified workspace owner. "
             + "Each edit uses a new commandId and new package; retrying the same command reconciles its immutable version: use the returned packageId/version/content hash in Studio process nodes. "
             + "Validation is not execution verification. This tool never publishes, schedules, enables, or runs a workflow.",
-        InputSchema = Schema,
-        Annotations = McpToolAnnotationSets.Write("Author built-in workflow package", destructive: false, idempotent: false),
+        InputSchema = Schema, OutputSchema = WorkflowPackageToolSchemas.AuthoringOutput,
+        Annotations = McpToolAnnotationSets.Write("Author built-in workflow package", destructive: false, idempotent: true),
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(HttpContext httpContext, JsonElement? arguments,

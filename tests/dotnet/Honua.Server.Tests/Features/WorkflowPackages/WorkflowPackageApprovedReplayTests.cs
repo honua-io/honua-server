@@ -116,6 +116,24 @@ public sealed class WorkflowPackageApprovedReplayTests
         (await fixture.Packages.GetPublicationAsync("publication")).Should().NotBeNull();
     }
 
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task MembershipChangedAfterProofVerification_IsRejectedAgainInsideMutationLock(bool active)
+    {
+        var fixture = await Fixture.Create();
+        var membership = Substitute.For<IPrincipalMembershipSource>();
+        membership.ResolveMembershipAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new PrincipalMembership(true, ["admin"]));
+        var services = fixture.Rebuild(fixture.Keys, membership);
+        var replay = await WorkflowPackageApprovedReplay.VerifyAsync(services, fixture.Request, fixture.Context, CancellationToken.None);
+        membership.ResolveMembershipAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new PrincipalMembership(active, active ? ["admin", "expanded-data-role"] : []));
+        var invoke = () => replay.RevalidateKeyAndMembershipAsync(CancellationToken.None);
+        await invoke.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        (await fixture.Packages.GetPublicationAsync("publication")).Should().NotBeNull();
+    }
+
     private sealed record Fixture
     {
         public required ServiceProvider Services { get; init; }

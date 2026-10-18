@@ -51,6 +51,17 @@ public sealed class McpWorkflowViewTests
     // ------------------------------------------------------------------
 
     [UnitTest]
+    public async Task BuiltInWorkflowAuthoringAndApproval_AreDiscoverableInDistinctVersionedStages()
+    {
+        var view = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
+        view.Names.Should().Contain("honua_workflow_package").And.Contain("honua_workflow_package_propose");
+        StageOf(view, "compose").Should().Contain("honua_workflow_package").And.NotContain("honua_workflow_package_propose");
+        StageOf(view, "publication").Should().Contain("honua_workflow_package_propose");
+        McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v4");
+        McpWorkflowViewCatalog.Configure.Revision.Should().Be("configure.v2");
+    }
+
+    [UnitTest]
     public async Task SetupView_EligibleLifecycleOperationAddedAndRemoved_RefreshesMembership()
     {
         McpDataAccessSurface Surface(params IMcpToolSource[] sources) => new(
@@ -163,6 +174,7 @@ public sealed class McpWorkflowViewTests
             "honua_studio_preview_draft",
             "honua_studio_save_version",
             "honua_studio_get_version",
+            "honua_workflow_package",
             "honua_studio_reopen_version",
             "honua_studio_add_layer",
             "honua_studio_remove_layer",
@@ -176,9 +188,10 @@ public sealed class McpWorkflowViewTests
             "honua_studio_add_control",
             "honua_studio_remove_control",
             "honua_studio_propose_publication",
+            "honua_workflow_package_propose",
             "honua_supported_operation_kinds",
         ]);
-        view.Names.Should().HaveCount(37);
+        view.Names.Should().HaveCount(39);
 
         var stages = view.Meta.GetProperty("stages").EnumerateArray().ToArray();
         stages.Select(s => s.GetProperty("id").GetString()).Should().Equal(
@@ -676,7 +689,7 @@ public sealed class McpWorkflowViewTests
 
         after.Names.Should().NotContain("honua_op_import_geojson")
             .And.NotContain("honua_op_service_promote");
-        after.Names.Should().HaveCount(37);
+        after.Names.Should().HaveCount(39);
 
         // Removing the operation drops it again, still with no edit.
         var removed = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
@@ -709,7 +722,7 @@ public sealed class McpWorkflowViewTests
 
         var baseline = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, BuildCatalogEntries());
         names.Should().Equal(baseline.Members.Select(m => m.ToolName));
-        names.Should().HaveCount(37);
+        names.Should().HaveCount(39);
     }
 
     [UnitTest]

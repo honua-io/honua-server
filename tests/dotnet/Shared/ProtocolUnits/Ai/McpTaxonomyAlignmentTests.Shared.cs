@@ -107,6 +107,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             new PreviewStudioDraftTool(jobService, NullLogger<PreviewStudioDraftTool>.Instance),
             new SaveStudioVersionTool(jobService, NullLogger<SaveStudioVersionTool>.Instance),
             new GetStudioVersionTool(jobService, NullLogger<GetStudioVersionTool>.Instance),
+            new WorkflowPackageTool(),
+            new WorkflowPackageGovernanceTool(),
             new ReopenStudioVersionTool(jobService, NullLogger<ReopenStudioVersionTool>.Instance),
             new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
             new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),

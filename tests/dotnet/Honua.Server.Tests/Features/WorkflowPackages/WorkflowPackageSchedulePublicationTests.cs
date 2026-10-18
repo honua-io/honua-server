@@ -684,6 +684,15 @@ public sealed class WorkflowPackageSchedulePublicationTests
             => inner.ExecuteSerializedPublicationMutationAsync((locked, token) => mutation(new SaveFailingPackageStore(locked), token),
                 (locked, exception, token) => reconcile(new SaveFailingPackageStore(locked), exception, token), cancellationToken);
 
+        public Task<TResult> ExecuteSerializedPublicationMutationAsync<TResult>(
+            Func<IWorkflowPackageStore, CancellationToken, Task<TResult>> mutation,
+            Func<IWorkflowPackageStore, Exception, CancellationToken, Task> reconcile,
+            Func<IWorkflowPackageStore, CancellationToken, Task>? afterCommit,
+            CancellationToken cancellationToken = default)
+            => inner.ExecuteSerializedPublicationMutationAsync((locked, token) => mutation(new SaveFailingPackageStore(locked), token),
+                (locked, exception, token) => reconcile(new SaveFailingPackageStore(locked), exception, token),
+                afterCommit is null ? null : (locked, token) => afterCommit(new SaveFailingPackageStore(locked), token), cancellationToken);
+
         public Task<IReadOnlyList<WorkflowPackage>> ListPackagesAsync(CancellationToken cancellationToken = default)
             => inner.ListPackagesAsync(cancellationToken);
 
