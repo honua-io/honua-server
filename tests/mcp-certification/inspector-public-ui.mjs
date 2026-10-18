@@ -75,17 +75,23 @@ export async function openInspectorPublicUi({ inspectorEntry, chromium, endpoint
     stage = 'public connection switch';
     // --config supplies the single public server entry; --server is advisory
     // in the web launcher. Connect using the actual rendered switch.
+    // Mantine's visual track overlays its native input. Use the accessible
+    // keyboard interaction rather than bypassing pointer actionability.
+    const setChecked = async (control, value) => {
+      if ((await control.isChecked()) !== value) await control.press('Space');
+      await until(async () => (await control.isChecked()) === value, 2_000);
+    };
     const connect = page.getByRole('switch', { name: /^Connect or disconnect/ });
-    if (!(await connect.isChecked())) await connect.check();
+    await setChecked(connect, true);
     const tools = page.getByRole('tab', { name: /^Tools/ });
     if (await tools.count()) await tools.click();
     stage = 'public tool selection';
     await page.getByText(toolLabel, { exact: true }).first().click();
     stage = 'public argument editor';
     const editJson = page.getByLabel('Edit as JSON', { exact: true });
-    if (!(await editJson.isChecked())) await editJson.check();
+    await setChecked(editJson, true);
     const task = page.getByLabel('Run as task', { exact: true });
-    if (await task.count()) { if (await task.isChecked()) await task.uncheck(); }
+    if (await task.count()) await setChecked(task, false);
     const execute = async (arguments_) => {
       const editor = page.getByRole('textbox', { name: 'Arguments JSON', exact: true });
       await editor.click();
