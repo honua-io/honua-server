@@ -272,8 +272,8 @@ public sealed class McpWorkflowViewTests
         fullStudio.GetProperty("outputSchema").ValueKind.Should().Be(JsonValueKind.Object);
 
         full.Tools.Single(t => t.GetProperty("name").GetString() == "honua_query_features")
-            .TryGetProperty("_meta", out _)
-            .Should().BeFalse("unrelated tools must not be routed into the Studio family");
+            .GetProperty("_meta").GetProperty("honua.studio").GetProperty("family").GetString()
+            .Should().Be("honua.workspace.canonical", "canonical non-Studio tools use a separate opt-in native family");
     }
 
     // ------------------------------------------------------------------

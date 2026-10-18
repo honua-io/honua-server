@@ -7,6 +7,7 @@ using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.AgentWorkspace.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
@@ -58,13 +59,32 @@ internal static class StudioAiProxyEndpoints
     private static async Task<IResult> HandleGetCapabilities(
         HttpContext context,
         IStudioAiProxyService service,
+        IStudioAuthorizationService authorizationService,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
+        if (!authorizationService.IsAdmin(context.User)
+            && !await AuthorizeWorkspaceAgentRequestAsync(context, cancellationToken).ConfigureAwait(false))
+        {
+            return Results.Forbid();
+        }
         var capabilities = await service.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
         return Results.Json(
             ApiResponse<StudioAiCapabilitiesResponse>.CreateSuccess(capabilities),
             StudioAiProxyEndpointsJsonContext.Default.ApiResponseStudioAiCapabilitiesResponse);
+    }
+
+    private static async Task<bool> AuthorizeWorkspaceAgentRequestAsync(HttpContext context, CancellationToken cancellationToken)
+    {
+        if (!StudioAiProxyAuthorizationHandler.IsWorkspaceAgentEligible(context.User))
+        {
+            return true; // The route policy already admitted an interactive principal.
+        }
+        var authorizer = context.RequestServices.GetService<IAgentWorkspaceTurnAuthorizer>();
+        var workspaceId = context.Request.Headers["X-Honua-Workspace"].ToString();
+        var turnId = context.Request.Headers["X-Honua-Turn"].ToString();
+        return authorizer is not null && !string.IsNullOrWhiteSpace(workspaceId) && !string.IsNullOrWhiteSpace(turnId)
+            && await authorizer.AuthorizeAsync(context.User, workspaceId, turnId, cancellationToken).ConfigureAwait(false) is not null;
     }
 
     private static async Task<IResult> HandleChat(
@@ -104,11 +124,10 @@ internal static class StudioAiProxyEndpoints
         // for end users. Admin callers retain explicit overrides, while every non-admin request
         // is pinned to configured limits by omitting both wire-level overrides before dispatch.
         var allowCallerOverrides = authorizationService.IsAdmin(context.User);
-        if (httpRequest.Certification is not null && !allowCallerOverrides)
+        if (!allowCallerOverrides && !await AuthorizeWorkspaceAgentRequestAsync(context, cancellationToken).ConfigureAwait(false))
         {
             return Results.Forbid();
         }
-
         // The tenant is a server-resolved binding, never a wire value, and it is handed to the
         // mapper rather than stitched into a rebuilt request: rebuilding drops the accepted request
         // bytes the transcript signature binds, silently downgrading provenance to a re-serialization.
@@ -118,6 +137,18 @@ internal static class StudioAiProxyEndpoints
             if (!tenantContext.RequireTenantId(out var tenantId, out _))
             {
                 return BadRequest(context, "A resolved tenant is required for a certification request.");
+            }
+
+            if (!allowCallerOverrides && !await StudioAiWorkspaceCertification.AuthorizeAsync(
+                    context.RequestServices.GetService<IAgentWorkspaceTurnAuthorizer>(),
+                    context.User,
+                    context.Request.Headers["X-Honua-Workspace"].ToString(),
+                    context.Request.Headers["X-Honua-Turn"].ToString(),
+                    tenantId,
+                    httpRequest.Certification,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                return Results.Forbid();
             }
 
             certificationTenantId = tenantId;

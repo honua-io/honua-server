@@ -338,8 +338,9 @@ public static class AuthenticationExtensions
 
     /// <summary>
     /// Requires Studio AI proxy authorization for an endpoint or group (honua-server#3303).
-    /// In addition to the Studio lifecycle feature-flag gate, non-admin callers must be
-    /// authenticated through an interactive OIDC/session identity rather than an API key.
+    /// In addition to the Studio lifecycle feature-flag gate, non-admin callers require an
+    /// interactive identity or the dedicated agent workspace credential. Agent membership and
+    /// turn authority are checked inside the endpoint after tenant resolution.
     /// </summary>
     public static TBuilder RequireStudioAiProxyAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(StudioAiProxyPolicy);
