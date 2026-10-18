@@ -9,9 +9,12 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Server.Features.AgentWorkspace;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
@@ -37,8 +40,10 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
     [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
     public async Task FrozenSharedStyle_AgentProposes_HumanApproves_ExactBytesCommitAndLostResponseReconciles()
     {
+        var membership = new MutableMembership();
         var fixture = new WebAppFixture().UseKestrel().ConfigureWebHost(builder =>
         {
+            builder.ConfigureServices(services => services.AddSingleton<IPrincipalMembershipSource>(membership));
             builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
             builder.UseSetting("HONUA_DEV_AUTH", "false");
@@ -141,11 +146,35 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
             await SetProposalState(proposalStore, successfulProposal with { Status = OperationProposalStatus.Executing,
                 ResolvedBy = null, ResolvedAt = null });
             await instanceStore.SetAsync(waitingHandle with { Status = OperationHandleStatus.Accepted });
+            // A non-proposer may read an authorized inbox entry but cannot adopt its receipt.
+            (await ReadProposal(human, proposalId)).GetProperty("status").GetString().Should().Be("Executing");
+            (await instanceStore.GetAsync(operationId))!.Status.Should().Be(OperationHandleStatus.Accepted);
+            var legacyExecuting = (await proposalStore.GetAsync(proposalId))!;
+            await SetProposalState(proposalStore, legacyExecuting with { ApprovedByAtClaim = null, ApprovedAtClaim = null });
+            (await ReadProposal(agent, proposalId)).GetProperty("status").GetString().Should().Be("Executing");
+            (await instanceStore.GetAsync(operationId))!.Status.Should().Be(OperationHandleStatus.Accepted);
+            await SetProposalState(proposalStore, legacyExecuting);
+            var workspaceStore = scope.ServiceProvider.GetRequiredService<IAgentWorkspaceStore>();
+            var workspaceDocument = (await workspaceStore.GetAsync(workspaceId))!;
+            (await workspaceStore.SaveAsync(workspaceDocument with { Members = [workspaceDocument.OwnerId] })).Should().BeTrue();
+            var removedMembership = await ProposalEnvelope(agent, proposalId);
+            IsFailure(removedMembership).Should().BeTrue();
+            (await instanceStore.GetAsync(operationId))!.Status.Should().Be(OperationHandleStatus.Accepted);
+            var removedDocument = (await workspaceStore.GetAsync(workspaceId))!;
+            (await workspaceStore.SaveAsync(workspaceDocument with { Version = removedDocument.Version })).Should().BeTrue();
+            membership.Current = new(false, []);
+            IsFailure(await ProposalEnvelope(agent, proposalId)).Should().BeTrue();
+            (await instanceStore.GetAsync(operationId))!.Status.Should().Be(OperationHandleStatus.Accepted);
+            membership.Current = null;
             var recovered = await Task.WhenAll(ReadProposal(agent, proposalId), ReadProposal(agent, proposalId));
             recovered.Should().OnlyContain(value => value.GetProperty("status").GetString() == "Succeeded");
             var recoveredProposal = (await proposalStore.GetAsync(proposalId))!;
             recoveredProposal.ResolvedBy.Should().Be(successfulProposal.ApprovedByAtClaim);
             recoveredProposal.Audit.OperationInstanceId.Should().Be(operationId);
+            var recoveryAudit = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(new()
+            { ResourceId = proposalId, Action = "operation.receipt_reconciled" });
+            recoveryAudit.Items.Should().ContainSingle();
+            recoveryAudit.Items[0].Actor.Should().Be(successfulProposal.ApprovedByAtClaim);
             (await instanceStore.GetAsync(operationId))!.Status.Should().Be(OperationHandleStatus.Completed);
             (await catalog.GetStyleAsync(styleId))!.StyleVersion.Should().Be(task.revision + 1);
             // The reverse ordering (original completion already persisted) is a terminal no-op for the handle.
@@ -180,6 +209,18 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
             using var restoredBytes = JsonDocument.Parse(restored.MapLibreStyleJson);
             restoredBytes.RootElement.GetProperty("layers")[0].GetProperty("paint").GetProperty("background-color").GetString().Should().Be("#112233");
 
+            var restoredProposal = (await proposalStore.GetAsync(restoreId))!;
+            await SetProposalState(proposalStore, restoredProposal with { Status = OperationProposalStatus.Executing });
+            var restoredOperationId = restoredProposal.Audit.OperationInstanceId!;
+            var restoredHandle = (await instanceStore.GetAsync(restoredOperationId))!;
+            await instanceStore.SetAsync(restoredHandle with { Status = OperationHandleStatus.Accepted });
+            await scope.ServiceProvider.GetRequiredService<IAdminApiKeyStore>().RevokeAsync(Guid.Parse(keyId), CancellationToken.None);
+            using var revokedResponse = await agent.PostAsJsonAsync("/mcp", new
+            { jsonrpc = "2.0", id = "revoked", method = "resources/read", @params = new { uri = "honua://proposals/" + restoreId } });
+            revokedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            (await proposalStore.GetAsync(restoreId))!.Status.Should().Be(OperationProposalStatus.Executing);
+            (await instanceStore.GetAsync(restoredOperationId))!.Status.Should().Be(OperationHandleStatus.Accepted);
+
         }
         finally { await fixture.DisposeAsync(); }
     }
@@ -198,10 +239,20 @@ public sealed class SharedStyleAgentJourneyHttpTests(RedisFixture redis)
         (await store.TrySetAsync(proposal with { Version = current.Version })).Should().BeTrue();
     }
 
+    private sealed class MutableMembership : IPrincipalMembershipSource
+    {
+        public PrincipalMembership? Current { get; set; }
+        public Task<PrincipalMembership?> ResolveMembershipAsync(string principalId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Current);
+    }
+
+    private static async Task<JsonElement> ProposalEnvelope(HttpClient client, string id)
+        => await Read(await client.PostAsJsonAsync("/mcp", new
+        { jsonrpc = "2.0", id = Guid.NewGuid().ToString("N"), method = "resources/read", @params = new { uri = "honua://proposals/" + id } }), HttpStatusCode.OK);
+
     private static async Task<JsonElement> ReadProposal(HttpClient client, string id)
     {
-        var envelope = await Read(await client.PostAsJsonAsync("/mcp", new
-        { jsonrpc = "2.0", id = Guid.NewGuid().ToString("N"), method = "resources/read", @params = new { uri = "honua://proposals/" + id } }), HttpStatusCode.OK);
+        var envelope = await ProposalEnvelope(client, id);
         envelope.TryGetProperty("error", out _).Should().BeFalse();
         using var parsed = JsonDocument.Parse(envelope.GetProperty("result").GetProperty("contents")[0].GetProperty("text").GetString()!);
         return parsed.RootElement.Clone();
