@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:7a15edf76e2865390ecd71721ee7a9307089680c0a6dc93925c0993c72c73451",
+  "bundleDigest": "sha256:ab063ed9c0d24df01309b09237c5aa1f80f58033732c03923f3f3e5049bab09e",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -8063,7 +8063,7 @@
     {
       "id": "reference/protocols/wms-wfs-wcs-wmts",
       "path": "reference/protocols/wms-wfs-wcs-wmts.md",
-      "documentDigest": "sha256:ec405bc26b05ef799d4f738d5cc4a1863c6377bcca93d72e07df7c7e3b8976f4",
+      "documentDigest": "sha256:89dfa408c1b9ead722625c738e0f0a00196a363ec6c98f3ab163410cfd726067",
       "metadata": {
         "type": "reference",
         "title": "WMS, WFS, WCS, WMTS (classic OGC)",
