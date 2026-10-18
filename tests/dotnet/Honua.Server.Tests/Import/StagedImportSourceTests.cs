@@ -112,6 +112,69 @@ public sealed class StagedImportSourceTests
         content.CanRead.Should().BeFalse();
     }
 
+    [UnitTest]
+    public async Task Materialize_ExpiredSourceIsRefusedBeforeProviderAccess()
+    {
+        var source = new ImportStagedSourceBinding("imports/pinned", "generation", 100, new string('a', 64),
+            DateTimeOffset.UtcNow.AddMinutes(-1));
+        var storage = Substitute.For<ICloudFileStorage>();
+
+        await FluentActions.Invoking(() => StagedImportSourceMaterializer.OpenAsync(source, storage, source.Bytes))
+            .Should().ThrowAsync<InvalidDataException>();
+
+        storage.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Materialize_RetentionChangesBeforeOrDuringDownload_RejectsSource(bool duringDownload)
+    {
+        using var fixture = new Fixture();
+        var source = await fixture.StageAsync();
+        var metadata = (await fixture.Storage.GetMetadataAsync(source.FileId))!;
+        var changed = metadata with { ExpiresAt = DateTimeOffset.UtcNow.AddDays(7) };
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync(source.FileId, Arg.Any<CancellationToken>())
+            .Returns(duringDownload ? metadata : changed, changed);
+        Stream? downloaded = null;
+        storage.DownloadAsync(source.FileId, Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            downloaded = await fixture.Storage.DownloadAsync(source.FileId, call.ArgAt<CancellationToken>(1));
+            return downloaded;
+        });
+
+        await FluentActions.Invoking(() => StagedImportSourceMaterializer.OpenAsync(source, storage, source.Bytes))
+            .Should().ThrowAsync<InvalidDataException>();
+
+        if (duringDownload)
+        {
+            downloaded.Should().NotBeNull();
+            downloaded!.CanRead.Should().BeFalse();
+        }
+        else
+        {
+            await storage.DidNotReceive().DownloadAsync(source.FileId, Arg.Any<CancellationToken>());
+        }
+    }
+
+    [UnitTheory]
+    [InlineData("")]
+    [InlineData("invalid")]
+    [InlineData("2030-01-01")]
+    public void Parameters_InvalidRetentionCannotDowngradeToPermanentSource(string invalidExpiry)
+    {
+        var source = new ImportStagedSourceBinding("imports/pinned", "generation", 100, new string('a', 64),
+            DateTimeOffset.UtcNow.AddDays(7));
+        var parameters = FileImportJobParameters.Build(Request(source), source.Bytes);
+        FileImportJobParameters.TryParse(parameters, out var restored, out _, out _).Should().BeTrue();
+        restored!.StagedSource.Should().Be(source);
+
+        parameters[FileImportJobParameters.StagedSourceExpiresAt] = invalidExpiry;
+
+        FileImportJobParameters.TryParse(parameters, out _, out _, out _).Should().BeFalse();
+    }
+
     [IntegrationTest]
     public async Task Materialize_GenerationChangesDuringDownload_RejectsSameContentReplacement()
     {

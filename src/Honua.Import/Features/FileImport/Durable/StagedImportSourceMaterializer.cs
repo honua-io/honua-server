@@ -22,6 +22,10 @@ internal static class StagedImportSourceMaterializer
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(storage);
         source.Validate();
+        if (source.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            throw new InvalidDataException("The accepted staged source retention window expired.");
+        }
         if (maximumScratchBytes <= 0 || source.Bytes > maximumScratchBytes)
         {
             throw new InvalidOperationException("The staged source exceeds the configured worker scratch allowance.");
@@ -82,7 +86,8 @@ internal static class StagedImportSourceMaterializer
 
     private static void RequireGeneration(CloudFile? file, ImportStagedSourceBinding source)
     {
-        if (file is null || file.FileId != source.FileId || file.ETag != source.ETag || file.SizeBytes != source.Bytes)
+        if (file is null || file.FileId != source.FileId || file.ETag != source.ETag || file.SizeBytes != source.Bytes ||
+            file.ExpiresAt != source.ExpiresAt || source.ExpiresAt <= DateTimeOffset.UtcNow)
         {
             throw new InvalidDataException("The accepted staged source generation is unavailable.");
         }

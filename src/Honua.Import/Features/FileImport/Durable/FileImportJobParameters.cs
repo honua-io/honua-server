@@ -40,6 +40,7 @@ internal static class FileImportJobParameters
     public const string AcceptanceDeadline = "import.acceptance_deadline";
     public const string StagedSourceETag = "import.staged_source_etag";
     public const string StagedSourceSha256 = "import.staged_source_sha256";
+    public const string StagedSourceExpiresAt = "import.staged_source_expires_at";
 
     /// <summary>Customer object URI (<c>s3://bucket/key</c>) read by the worker with the host identity.</summary>
     public const string ObjectStoreUri = "import.object_store_uri";
@@ -132,6 +133,7 @@ internal static class FileImportJobParameters
         {
             parameters[StagedSourceETag] = stagedSource.ETag;
             parameters[StagedSourceSha256] = stagedSource.Sha256;
+            AddIfPresent(parameters, StagedSourceExpiresAt, stagedSource.ExpiresAt?.ToString("O", CultureInfo.InvariantCulture));
         }
         return parameters;
     }
@@ -194,7 +196,7 @@ internal static class FileImportJobParameters
         _ = long.TryParse(Get(parameters, FileSizeBytes), NumberStyles.Integer, CultureInfo.InvariantCulture, out fileSizeBytes);
 
         ImportStagedSourceBinding? stagedSource = null;
-        if (parameters.ContainsKey(StagedSourceETag) || parameters.ContainsKey(StagedSourceSha256))
+        if (parameters.ContainsKey(StagedSourceETag) || parameters.ContainsKey(StagedSourceSha256) || parameters.ContainsKey(StagedSourceExpiresAt))
         {
             if (cloudFileId is null || objectStoreUri is not null || Get(parameters, StagedSourceETag) is not { } stagedETag ||
                 Get(parameters, StagedSourceSha256) is not { } stagedSha256)
@@ -203,7 +205,19 @@ internal static class FileImportJobParameters
                 return false;
             }
 
-            stagedSource = new ImportStagedSourceBinding(cloudFileId, stagedETag, fileSizeBytes, stagedSha256);
+            DateTimeOffset? sourceExpiresAt = null;
+            if (parameters.ContainsKey(StagedSourceExpiresAt))
+            {
+                if (!DateTimeOffset.TryParseExact(Get(parameters, StagedSourceExpiresAt), "O", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var parsedExpiry))
+                {
+                    error = "The staged import source expiry is invalid.";
+                    return false;
+                }
+                sourceExpiresAt = parsedExpiry;
+            }
+
+            stagedSource = new ImportStagedSourceBinding(cloudFileId, stagedETag, fileSizeBytes, stagedSha256, sourceExpiresAt);
             try
             {
                 stagedSource.Validate();

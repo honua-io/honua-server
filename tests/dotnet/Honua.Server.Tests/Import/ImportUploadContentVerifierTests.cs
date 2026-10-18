@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.FileStorage;
 using Honua.Import.FileImport.Resumable;
 using Honua.TestKit;
@@ -285,6 +286,173 @@ public sealed class ImportUploadContentVerifierTests(RedisFixture redis)
         else await FluentActions.Invoking(action).Should().ThrowAsync<UnauthorizedAccessException>();
 
         Directory.EnumerateFiles(scratchDirectory).Should().BeEmpty();
+        (await store.GetAsync(session.Id, session.Scope)).Should().Be(session);
+    }
+
+    [IntegrationTest]
+    public async Task RetainedSource_SurvivesTransferReceiptExpiry_AndReopensExactBytesAfterRestart()
+    {
+        using var disk = new StorageFixture();
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisImportUploadStore(connection);
+        var (session, digest) = await StageAsync(store, disk.Storage);
+        (await store.TrySealAsync(session, digest)).Should().BeTrue();
+        session = (await store.GetAsync(session.Id, session.Scope))!;
+        var originalExpiry = await connection.GetDatabase().KeyExpireTimeAsync(RedisImportUploadStore.Key(session.Id));
+        var publisher = new ImportUploadSourceStorage(store, disk.Storage);
+        var source = await publisher.StageAsync(session, Path.Join(disk.Root, "scratch"), session.TotalBytes,
+            static _ => Task.CompletedTask);
+        source.ExpiresAt.Should().BeAfter(session.ExpiresAt);
+        (await store.TryBindSourceAsync(session, source)).Should().BeTrue();
+        await using var restart = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var restartedStore = new RedisImportUploadStore(restart);
+        var bound = (await restartedStore.GetAsync(session.Id, session.Scope))!;
+        bound.StagedSource.Should().Be(source);
+        (await restart.GetDatabase().KeyExpireTimeAsync(RedisImportUploadStore.Key(session.Id))).Should().Be(originalExpiry);
+        (await restartedStore.TryBindSourceAsync(bound, source)).Should().BeFalse("a bound source is immutable");
+        Directory.EnumerateFiles(Path.Join(disk.Root, "scratch")).Should().BeEmpty();
+
+        // Expire the transfer receipt; the retained job source is independently readable.
+        (await restart.GetDatabase().KeyExpireAsync(RedisImportUploadStore.Key(session.Id), TimeSpan.Zero)).Should().BeTrue();
+        (await restartedStore.GetAsync(session.Id, session.Scope)).Should().BeNull();
+        await using var input = await Honua.Import.FileImport.Durable.StagedImportSourceMaterializer.OpenAsync(
+            bound.StagedSource!, disk.OpenStorage(), session.TotalBytes);
+        Convert.ToHexStringLower(await SHA256.HashDataAsync(input)).Should().Be(digest);
+    }
+
+    [IntegrationTest]
+    public async Task RetainedSource_ConcurrentCandidates_SelectOneOriginalGeneration()
+    {
+        using var disk = new StorageFixture();
+        await using var firstConnection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var secondConnection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var first = new RedisImportUploadStore(firstConnection);
+        var second = new RedisImportUploadStore(secondConnection);
+        var (session, digest) = await StageAsync(first, disk.Storage, fullChunks: 0);
+        (await first.TrySealAsync(session, digest)).Should().BeTrue();
+        session = (await first.GetAsync(session.Id, session.Scope))!;
+        var publisher = new ImportUploadSourceStorage(first, disk.Storage);
+        var a = await publisher.StageAsync(session, Path.Join(disk.Root, "scratch"), session.TotalBytes, static _ => Task.CompletedTask);
+        var b = await publisher.StageAsync(session, Path.Join(disk.Root, "scratch"), session.TotalBytes, static _ => Task.CompletedTask);
+        a.FileId.Should().NotBe(b.FileId);
+
+        var accepted = await Task.WhenAll(first.TryBindSourceAsync(session, a), second.TryBindSourceAsync(session, b));
+
+        accepted.Count(value => value).Should().Be(1);
+        var winner = (await second.GetAsync(session.Id, session.Scope))!;
+        winner.StagedSource.Should().Be(accepted[0] ? a : b);
+        winner.Version.Should().Be(session.Version + 1);
+        (await first.TryBindSourceAsync(winner, accepted[0] ? b : a)).Should().BeFalse();
+    }
+
+    [IntegrationTheory]
+    [InlineData("revoked")]
+    [InlineData("expired-session")]
+    [InlineData("short-retention")]
+    public async Task RetainedSource_WriteSucceedsButAuthorityOrLifetimeChanges_DoesNotReturnAcceptedSource(string change)
+    {
+        using var disk = new StorageFixture();
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisImportUploadStore(connection);
+        var (session, digest) = await StageAsync(store, disk.Storage, fullChunks: 0);
+        (await store.TrySealAsync(session, digest)).Should().BeTrue();
+        session = (await store.GetAsync(session.Id, session.Scope))!;
+        var revoked = false;
+        CloudFile? written = null;
+        var observed = Substitute.For<ICloudFileStorage>();
+        observed.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => disk.Storage.GetMetadataAsync(call.ArgAt<string>(0), call.ArgAt<CancellationToken>(1)));
+        observed.DownloadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => disk.Storage.DownloadAsync(call.ArgAt<string>(0), call.ArgAt<CancellationToken>(1)));
+        observed.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            var result = await disk.Storage.UploadAsync(call.ArgAt<FileUploadRequest>(0), call.ArgAt<CancellationToken>(1));
+            result.Success.Should().BeTrue();
+            written = result.File!;
+            if (change == "revoked") revoked = true;
+            if (change == "expired-session")
+            {
+                (await connection.GetDatabase().KeyExpireAsync(RedisImportUploadStore.Key(session.Id), TimeSpan.Zero))
+                    .Should().BeTrue();
+            }
+            return change == "short-retention"
+                ? result with { File = written with { ExpiresAt = session.ExpiresAt } }
+                : result;
+        });
+        var scratchDirectory = Path.Join(disk.Root, "scratch");
+        var publish = () => new ImportUploadSourceStorage(store, observed).StageAsync(session,
+            scratchDirectory, session.TotalBytes, _ =>
+            {
+                if (revoked) throw new UnauthorizedAccessException("Credential revoked during source write");
+                return Task.CompletedTask;
+            });
+
+        if (change == "revoked") await FluentActions.Invoking(publish).Should().ThrowAsync<UnauthorizedAccessException>();
+        else if (change == "expired-session") await FluentActions.Invoking(publish).Should().ThrowAsync<InvalidDataException>();
+        else await FluentActions.Invoking(publish).Should().ThrowAsync<IOException>();
+
+        written.Should().NotBeNull("the failure occurs after an actual storage write");
+        written!.ExpiresAt.Should().NotBeNull("unaccepted candidates must have bounded retention");
+        var current = await store.GetAsync(session.Id, session.Scope);
+        if (change == "expired-session") current.Should().BeNull();
+        else current.Should().Be(session, "no candidate may be bound after authorization or storage verification fails");
+        Directory.EnumerateFiles(scratchDirectory).Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    public async Task RetainedSource_LostBindReply_RecoversCommittedSourceWithoutReplacement()
+    {
+        using var disk = new StorageFixture();
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisImportUploadStore(connection);
+        var (session, digest) = await StageAsync(store, disk.Storage, fullChunks: 0);
+        (await store.TrySealAsync(session, digest)).Should().BeTrue();
+        session = (await store.GetAsync(session.Id, session.Scope))!;
+        var source = await new ImportUploadSourceStorage(store, disk.Storage).StageAsync(session,
+            Path.Join(disk.Root, "scratch"), session.TotalBytes, static _ => Task.CompletedTask);
+        var database = Substitute.For<IDatabase>();
+        database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
+            .Returns(async call =>
+            {
+                await connection.GetDatabase().ScriptEvaluateAsync(call.ArgAt<string>(0),
+                    call.ArgAt<RedisKey[]>(1), call.ArgAt<RedisValue[]>(2));
+                throw new RedisConnectionException(ConnectionFailureType.SocketFailure, "Lost source binding reply after actual commit");
+            });
+        var interrupted = Substitute.For<IConnectionMultiplexer>();
+        interrupted.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        await FluentActions.Invoking(() => new RedisImportUploadStore(interrupted).TryBindSourceAsync(session, source))
+            .Should().ThrowAsync<RedisConnectionException>();
+
+        await using var restart = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var recovered = (await new RedisImportUploadStore(restart).GetAsync(session.Id, session.Scope))!;
+        recovered.StagedSource.Should().Be(source);
+        recovered.Version.Should().Be(session.Version + 1);
+    }
+
+    [IntegrationTheory]
+    [InlineData("bytes")]
+    [InlineData("digest")]
+    [InlineData("expiry")]
+    [InlineData("foreign")]
+    public async Task RetainedSource_InvalidBindingCannotReplaceSealedIntent(string mutation)
+    {
+        using var disk = new StorageFixture();
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisImportUploadStore(connection);
+        var (session, digest) = await StageAsync(store, disk.Storage, fullChunks: 0);
+        (await store.TrySealAsync(session, digest)).Should().BeTrue();
+        session = (await store.GetAsync(session.Id, session.Scope))!;
+        var source = new Honua.Core.Features.Import.Domain.ImportStagedSourceBinding(
+            $"imports/resumable/{session.Id}/source-{Guid.NewGuid():N}", "generation", session.TotalBytes, digest,
+            DateTimeOffset.UtcNow.AddDays(7));
+        source = mutation switch
+        {
+            "bytes" => source with { Bytes = source.Bytes + 1 },
+            "digest" => source with { Sha256 = new string('0', 64) },
+            "expiry" => source with { ExpiresAt = session.ExpiresAt },
+            _ => source with { FileId = "imports/resumable/foreign/source-file" }
+        };
+        await FluentActions.Invoking(() => store.TryBindSourceAsync(session, source)).Should().ThrowAsync<ArgumentException>();
         (await store.GetAsync(session.Id, session.Scope)).Should().Be(session);
     }
 

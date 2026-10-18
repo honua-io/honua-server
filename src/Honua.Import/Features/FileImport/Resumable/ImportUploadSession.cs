@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Import.Domain;
 
 namespace Honua.Import.FileImport.Resumable;
 
@@ -31,6 +32,7 @@ internal sealed record ImportUploadSession
     public int ChunkCount { get; init; }
     public ImportUploadState State { get; init; }
     public string? ContentSha256 { get; init; }
+    public ImportStagedSourceBinding? StagedSource { get; init; }
 }
 
 // FileId is a server-generated, unique storage object, never a client object key.

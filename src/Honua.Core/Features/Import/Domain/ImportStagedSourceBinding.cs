@@ -12,7 +12,9 @@ namespace Honua.Core.Features.Import.Domain;
 /// <param name="ETag">Opaque provider generation returned when that object was staged.</param>
 /// <param name="Bytes">Exact verified source length.</param>
 /// <param name="Sha256">Lowercase SHA-256 of the complete source bytes.</param>
-public sealed record ImportStagedSourceBinding(string FileId, string ETag, long Bytes, string Sha256)
+/// <param name="ExpiresAt">Exact source expiry, or null for a provider object without automatic expiry.</param>
+public sealed record ImportStagedSourceBinding(string FileId, string ETag, long Bytes, string Sha256,
+    DateTimeOffset? ExpiresAt = null)
 {
     /// <summary>Validates a complete source receipt without granting access to the source.</summary>
     public void Validate()

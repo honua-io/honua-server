@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Import.Domain;
 using StackExchange.Redis;
 
 namespace Honua.Import.FileImport.Resumable;
@@ -54,7 +55,7 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
     {
         Validate(session);
         if (session.Version != 1 || session.AcceptedBytes != 0 || session.ChunkCount != 0 ||
-            session.State != ImportUploadState.Receiving || session.ContentSha256 is not null ||
+            session.State != ImportUploadState.Receiving || session.ContentSha256 is not null || session.StagedSource is not null ||
             session.ExpiresAt > DateTimeOffset.UtcNow.AddDays(1))
         {
             throw new ArgumentException("An upload must start with an empty receiving session.", nameof(session));
@@ -138,6 +139,23 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
                 ContentSha256 = contentSha256,
                 Version = checked(expected.Version + 1)
             }, cancellationToken);
+    }
+
+    // Select exactly one durable source before job acceptance. A lost CAS reply is
+    // recovered from this receipt; another candidate cannot overwrite the winner.
+    public Task<bool> TryBindSourceAsync(ImportUploadSession expected, ImportStagedSourceBinding source,
+        CancellationToken cancellationToken = default)
+    {
+        Validate(expected);
+        ArgumentNullException.ThrowIfNull(source);
+        if (expected.State != ImportUploadState.Sealed || expected.StagedSource is not null)
+        {
+            return Task.FromResult(false);
+        }
+
+        var updated = expected with { StagedSource = source, Version = checked(expected.Version + 1) };
+        Validate(updated);
+        return TransitionAsync(expected, updated, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ImportUploadChunk>> ReadChunksAsync(string id, ImportUploadScope scope,
@@ -234,6 +252,18 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
         if (session.ContentSha256 is not null)
         {
             ValidateDigest(session.ContentSha256);
+        }
+
+        if (session.StagedSource is { } source)
+        {
+            source.Validate();
+            if (session.State != ImportUploadState.Sealed || source.Bytes != session.TotalBytes ||
+                source.Sha256 != session.ContentSha256 ||
+                source.ExpiresAt is null || source.ExpiresAt <= session.ExpiresAt ||
+                !source.FileId.StartsWith($"imports/resumable/{session.Id}/source-", StringComparison.Ordinal))
+            {
+                throw new ArgumentException("The staged source must match this sealed upload.", nameof(session));
+            }
         }
     }
 
