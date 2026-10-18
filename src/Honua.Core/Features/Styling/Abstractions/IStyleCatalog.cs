@@ -20,6 +20,11 @@ public interface IStyleCatalog
     Task<StyleEditStoreSnapshot> GetEditSnapshotAsync(string styleId, int? canonicalLayerId, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Coherent style editing snapshots are unavailable.");
 
+    /// <summary>Reads style bytes and all actual live-reference aliases and indexed Studio consumers coherently.</summary>
+    Task<StyleEditStoreSnapshot> GetEditSnapshotForReferencesAsync(string styleId, int? canonicalLayerId,
+        IReadOnlyList<string> referenceIds, CancellationToken cancellationToken = default)
+        => GetEditSnapshotAsync(styleId, canonicalLayerId, cancellationToken);
+
     /// <summary>Locks and compares the complete reviewed snapshot, reauthorizes after waiting, and atomically updates canonical bytes and any layer mirror.</summary>
     Task<StyleEditStoreSnapshot?> ApplyEditIfSnapshotAsync(StyleEditStoreSnapshot expected, string mapLibreStyleJson,
         string drawingInfoJson, string? revisedBy, Func<CancellationToken, Task> revalidate,

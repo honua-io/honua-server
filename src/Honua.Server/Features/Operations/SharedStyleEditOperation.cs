@@ -132,6 +132,7 @@ internal sealed class SharedStyleEditApprovalMapper : IOperationApprovalRequestM
                     $"Current content: {payload.Impact.ContentHash}; impact: {payload.Impact.ImpactHash}",
                     $"Proposed content: {StyleEditHashes.Content(payload.Candidate.MapLibreJson)}",
                     .. payload.Impact.Associations.Select(item => $"Affected resource: {item.ResourceId}; service: {item.ServiceId ?? "unpublished"}"),
+                    .. payload.Impact.Consumers.Select(item => $"Affected {item.Kind}: {item.PackageKey}; item {item.ItemId:D}; version {item.VersionId?.ToString("D") ?? "draft"}; state {item.PublicationState}"),
                     "Proposed canonical MapLibre: " + payload.Candidate.MapLibreJson],
             },
         };

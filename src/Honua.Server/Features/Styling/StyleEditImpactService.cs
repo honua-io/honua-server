@@ -13,6 +13,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Operations;
@@ -49,12 +50,22 @@ internal sealed class StyleEditImpactService(IStyleCatalog catalog, IMetadataV2G
             styleId == "style-layer-" + parsedLayer.ToString(CultureInfo.InvariantCulture);
         if (snapshot.CatalogStyle is null || synthetic)
         {
-            primary = synthetic
+            var named = graph.Graph.Resources.FirstOrDefault(resource => resource.Metadata.Name == styleId);
+            primary = synthetic && (named is null || !graph.ResolveStorageLayerId(named).HasValue)
                 ? graph.Graph.Resources.FirstOrDefault(resource => graph.ResolveStorageLayerId(resource) == parsedLayer)
-                : graph.Graph.Resources.FirstOrDefault(resource => resource.Metadata.Name == styleId);
+                : named;
             layerId = primary is null ? null : graph.ResolveStorageLayerId(primary);
             if (layerId.HasValue)
-                snapshot = await catalog.GetEditSnapshotAsync("style-layer-" + layerId.Value.ToString(CultureInfo.InvariantCulture), layerId, cancellationToken).ConfigureAwait(false);
+                {
+                var mirrorId = "style-layer-" + layerId.Value.ToString(CultureInfo.InvariantCulture);
+                var aliases = graph.Graph.Resources.GroupBy(resource => resource.Metadata.Name, StringComparer.Ordinal)
+                    .Where(group => graph.ResolveStorageLayerId(group.First()) == layerId)
+                    .Select(group => group.Key).Append(styleId).ToList();
+                var mirrorNamed = graph.Graph.Resources.FirstOrDefault(resource => resource.Metadata.Name == mirrorId);
+                if (mirrorNamed is null || !graph.ResolveStorageLayerId(mirrorNamed).HasValue || graph.ResolveStorageLayerId(mirrorNamed) == layerId)
+                    aliases.Add(mirrorId);
+                snapshot = await catalog.GetEditSnapshotForReferencesAsync(mirrorId, layerId, aliases, cancellationToken).ConfigureAwait(false);
+            }
         }
         // Style metadata itself and a layer-owned primary remain protected even
         // when no associations have been materialized yet.
@@ -84,7 +95,8 @@ internal sealed class StyleEditImpactService(IStyleCatalog catalog, IMetadataV2G
         // read-only datasets still support styling when the complete scope is visible.
         var canEdit = await OperationAdminAuthorization.IsAuthorizedAsync(context, context.User,
             OperationSideEffectClass.MutatesMetadata, cancellationToken).ConfigureAwait(false);
-        var completeReadableScope = true;
+        var completeReadableScope = snapshot.ConsumerIndexComplete;
+        canEdit &= snapshot.ConsumerIndexComplete;
         List<StyleEditAssociation> visible = [];
         List<string> geometryPins = [];
         foreach (var affectedLayer in affected)
@@ -117,6 +129,23 @@ internal sealed class StyleEditImpactService(IStyleCatalog catalog, IMetadataV2G
                 }
             }
         }
+        List<StyleEditConsumer> consumers = [];
+        var studio = context.RequestServices.GetService<IStudioAuthorizationService>();
+        foreach (var consumer in snapshot.Consumers)
+        {
+            var decision = studio is null ? null : await studio.AuthorizeAsync(context.User,
+                studio.ResolveCallerId(context.User), consumer.DraftId.HasValue ? StudioAuthorizationOperation.ReadDraft : StudioAuthorizationOperation.ReadContentItem,
+                consumer.OwnerActorId, consumer.TenantId, false,
+                (consumer.DraftId ?? consumer.ItemId).ToString("D"), cancellationToken).ConfigureAwait(false);
+            if (decision is not { IsAllowed: true })
+            {
+                canEdit = false;
+                completeReadableScope = false;
+                continue;
+            }
+            consumers.Add(new(consumer.Kind, consumer.ItemId, consumer.PackageKey, consumer.VersionId, consumer.DraftId,
+                consumer.Generation, consumer.ContentHash, consumer.DraftId.HasValue ? "draft" : consumer.IsPublished ? "published" : "saved", consumer.IsCurrent));
+        }
         var associations = visible.Distinct().OrderBy(item => item.ResourceId, StringComparer.Ordinal)
             .ThenBy(item => item.ServiceId, StringComparer.Ordinal).ToArray();
         // Public hashes contain only visible references; hidden scope is never exposed.
@@ -129,14 +158,22 @@ internal sealed class StyleEditImpactService(IStyleCatalog catalog, IMetadataV2G
             publicPins.Add(mirror.CreatedAt.ToString("O", CultureInfo.InvariantCulture));
         }
         publicPins.AddRange(geometryPins.Distinct().Order(StringComparer.Ordinal));
+        if (completeReadableScope) publicPins.AddRange(snapshot.ReferenceIds);
+        foreach (var consumer in consumers)
+            publicPins.Add(StyleEditHashes.Parts([consumer.Kind, consumer.ItemId.ToString("D"), consumer.PackageKey,
+                consumer.VersionId?.ToString("D") ?? "", consumer.DraftId?.ToString("D") ?? "",
+                consumer.Generation?.ToString(CultureInfo.InvariantCulture) ?? "", consumer.ContentHash,
+                consumer.PublicationState, consumer.IsCurrent.ToString()]));
         foreach (var association in associations)
         {
             publicPins.Add(association.ResourceId);
+            publicPins.Add(association.Name);
+            publicPins.Add(association.Title ?? "");
             publicPins.Add(association.ServiceId ?? "");
         }
         var impact = new StyleEditImpact(styleId, version, StyleVersionTag.Format(version), contentHash,
             canEdit, StyleEditHashes.Parts([.. publicPins]), associations)
-        { CanonicalLayerId = layerId, AssociatedLayerIds = canEdit ? affected : [] };
+        { CanonicalLayerId = layerId, AssociatedLayerIds = canEdit ? affected : [], Consumers = consumers, ImpactComplete = completeReadableScope };
         return new(impact, snapshot, primary, raw, completeReadableScope);
     }
 }

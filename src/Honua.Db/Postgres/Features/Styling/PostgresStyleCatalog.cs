@@ -31,12 +31,24 @@ internal sealed partial class PostgresStyleCatalog : IStyleCatalog
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _stylesTable;
+    private readonly string _styleImpactBarrierKey;
+    private readonly string _studioItemsTable;
+    private readonly string _studioVersionsTable;
+    private readonly string _studioDraftsTable;
+    private readonly string _studioDependenciesTable;
+    private readonly string _studioDraftDependenciesTable;
     private readonly string _refsTable;
     private readonly string _layersTable;
 
     public PostgresStyleCatalog(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _styleImpactBarrierKey = Infrastructure.StudioStyleDependencyBarrier.Key(schemaName);
+        _studioItemsTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_content_items", schemaName);
+        _studioVersionsTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_content_versions", schemaName);
+        _studioDraftsTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_package_drafts", schemaName);
+        _studioDependenciesTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_content_version_dependencies", schemaName);
+        _studioDraftDependenciesTable = Infrastructure.SchemaSearchPath.QualifyTable("studio_draft_style_dependencies", schemaName);
         _stylesTable = Infrastructure.SchemaSearchPath.QualifyTable("styles", schemaName);
         _refsTable = Infrastructure.SchemaSearchPath.QualifyTable("layer_style_refs", schemaName);
         _layersTable = Infrastructure.SchemaSearchPath.QualifyTable("layers", schemaName);

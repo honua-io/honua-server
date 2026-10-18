@@ -9,13 +9,18 @@ namespace Honua.Db.Postgres.Features.Styling;
 
 internal sealed partial class PostgresStyleCatalog
 {
-    public async Task<StyleEditStoreSnapshot> GetEditSnapshotAsync(string styleId, int? canonicalLayerId,
+    public Task<StyleEditStoreSnapshot> GetEditSnapshotAsync(string styleId, int? canonicalLayerId,
         CancellationToken cancellationToken = default)
+        => GetEditSnapshotForReferencesAsync(styleId, canonicalLayerId, [styleId], cancellationToken);
+
+    public async Task<StyleEditStoreSnapshot> GetEditSnapshotForReferencesAsync(string styleId, int? canonicalLayerId,
+        IReadOnlyList<string> referenceIds, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken).ConfigureAwait(false);
         var result = await ReadEditSnapshotAsync(connection, transaction, styleId, canonicalLayerId, false, cancellationToken).ConfigureAwait(false);
+        result = await ReadConsumersAsync(connection, transaction, result, referenceIds, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return result;
     }
@@ -30,8 +35,10 @@ internal sealed partial class PostgresStyleCatalog
         bounded.CancelAfter(TimeSpan.FromSeconds(30));
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(bounded.Token).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(bounded.Token).ConfigureAwait(false);
+        await Infrastructure.StudioStyleDependencyBarrier.AcquireAsync(connection, transaction, _styleImpactBarrierKey, true, bounded.Token).ConfigureAwait(false);
         var current = await ReadEditSnapshotAsync(connection, transaction, expected.StyleId,
             expected.LayerStyle?.LayerId, true, bounded.Token).ConfigureAwait(false);
+        current = await ReadConsumersAsync(connection, transaction, current, expected.ReferenceIds, bounded.Token).ConfigureAwait(false);
         if (!SameSnapshot(expected, current)) return null;
         // This callback rechecks live key, membership, tenant, frozen turn and every
         // affected resource after the lock wait, before changing any canonical bytes.
@@ -92,12 +99,16 @@ internal sealed partial class PostgresStyleCatalog
         }
         var updated = await ReadEditSnapshotAsync(connection, transaction, expected.StyleId,
             expected.LayerStyle?.LayerId, false, bounded.Token).ConfigureAwait(false);
+        updated = await ReadConsumersAsync(connection, transaction, updated, expected.ReferenceIds, bounded.Token).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(bounded.Token).ConfigureAwait(false);
         return updated;
     }
 
     private static bool SameSnapshot(StyleEditStoreSnapshot expected, StyleEditStoreSnapshot current)
         => expected.StyleId == current.StyleId &&
+           expected.ConsumerIndexComplete && current.ConsumerIndexComplete &&
+           expected.ReferenceIds.SequenceEqual(current.ReferenceIds) &&
+           expected.Consumers.SequenceEqual(current.Consumers) &&
            expected.CatalogStyle?.StyleVersion == current.CatalogStyle?.StyleVersion &&
            expected.CatalogStyle?.CreatedAt == current.CatalogStyle?.CreatedAt &&
            expected.CatalogStyle?.MapLibreStyleJson == current.CatalogStyle?.MapLibreStyleJson &&

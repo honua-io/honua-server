@@ -7,6 +7,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Operations;
@@ -26,7 +27,9 @@ internal static class SharedStyleHistory
             proposal.SealedPlanHash != OperationApprovalPlanSeal.Compute(proposal.Plan)) Missing();
         var payload = JsonSerializer.Deserialize(proposal!.Plan.ExecutionPayload!, SharedStyleGovernanceJsonContext.Default.SharedStyleApprovalPayload);
         if (payload is null || payload.ActorId != proposal.RequestedBy || payload.OwnerActorId != current.Binding.OwnerActorId ||
-            payload.TenantId != current.Binding.TenantId || payload.Impact.StyleId != current.Task.Id ||
+            payload.TenantId != current.Binding.TenantId || payload.TargetId != current.Binding.TargetId ||
+            payload.SchemaName != context.RequestServices.GetService<Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext>()?.CurrentSchema ||
+            payload.Impact.StyleId != current.Task.Id ||
             string.IsNullOrWhiteSpace(payload.BeforeMapLibreJson)) Missing();
         var graph = await context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>().GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         // Historical scope cannot become a backdoor to references no longer visible now.
@@ -37,6 +40,32 @@ internal static class SharedStyleHistory
             if (association.ServiceId is not null && service is null || !TenantScopeHelpers.IsTenantVisible(context, resource!, service) ||
                 !(await AccessPolicyHelpers.EvaluateResourceAccessAsync(context, resource!, service,
                     AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false)).IsAllowed) Missing();
+        }
+        var studio = context.RequestServices.GetRequiredService<IStudioPackageStore>();
+        var authorization = context.RequestServices.GetRequiredService<IStudioAuthorizationService>();
+        foreach (var consumer in payload.StoreSnapshot.Consumers)
+        {
+            string? owner;
+            string? tenant;
+            if (consumer.VersionId is { } versionId)
+            {
+                var version = await studio.GetVersionAsync(consumer.ItemId, versionId, cancellationToken).ConfigureAwait(false);
+                if (version is null || version.ContentHash != consumer.ContentHash) Missing();
+                owner = version!.OwnerId;
+                tenant = version.TenantId;
+            }
+            else if (consumer.DraftId is { } draftId)
+            {
+                var draft = await studio.GetDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
+                if (draft is null || draft.ItemId != consumer.ItemId) Missing();
+                owner = draft!.OwnerId;
+                tenant = draft.TenantId;
+            }
+            else throw new GeoprocessingNotFoundException("Retained consumer identity cannot be verified.");
+            var allowed = await authorization.AuthorizeAsync(context.User, authorization.ResolveCallerId(context.User),
+                consumer.DraftId.HasValue ? StudioAuthorizationOperation.ReadDraft : StudioAuthorizationOperation.ReadContentItem,
+                owner, tenant, false, (consumer.DraftId ?? consumer.ItemId).ToString("D"), cancellationToken).ConfigureAwait(false);
+            if (!allowed.IsAllowed) Missing();
         }
         using var before = JsonDocument.Parse(payload.BeforeMapLibreJson);
         if (StyleEditHashes.Content(payload.BeforeMapLibreJson) != payload.Impact.ContentHash) Missing();

@@ -24,8 +24,8 @@ internal static class SharedStyleCandidatePreparation
         string canonical;
         if (drawingInfo)
         {
-            if (!OgcStyleProjection.TryValidateDrawingInfoShape(input, out var error))
-                return (null, new(OgcStyleUpdateStatus.Invalid, error));
+            if (!OgcStyleProjection.TryValidateDrawingInfoShape(input, out var rendererError))
+                return (null, new(OgcStyleUpdateStatus.Invalid, rendererError));
             var descriptor = current.PrimaryResource is { } primary && current.Impact.CanonicalLayerId is { } layer
                 ? StyleLayerDescriptor.FromResource(primary, layer)
                 : StandaloneStyleDescriptor.FromMapLibre(current.Impact.StyleId, current.CanonicalStyleJson);
@@ -56,11 +56,11 @@ internal static class SharedStyleCandidatePreparation
         else canonical = input.GetRawText();
         if (current.PrimaryResource is { } resourceForLayer && current.Impact.CanonicalLayerId is { } layerId)
         {
-            if (!MapLibreStyleNormalizer.TryNormalize(input, StyleLayerDescriptor.FromResource(resourceForLayer, layerId), out canonical, out var error))
-                return (null, new(OgcStyleUpdateStatus.Invalid, error));
+            if (!MapLibreStyleNormalizer.TryNormalize(input, StyleLayerDescriptor.FromResource(resourceForLayer, layerId), out canonical, out var normalizationError))
+                return (null, new(OgcStyleUpdateStatus.Invalid, normalizationError));
         }
-        else if (!MapLibreStyleNormalizer.TryValidateStandalone(input, out var error))
-            return (null, new(OgcStyleUpdateStatus.Invalid, error));
+        else if (!MapLibreStyleNormalizer.TryValidateStandalone(input, out var validationError))
+            return (null, new(OgcStyleUpdateStatus.Invalid, validationError));
         var styleDescriptor = current.PrimaryResource is { } bound && current.Impact.CanonicalLayerId is { } id
             ? StyleLayerDescriptor.FromResource(bound, id)
             : StandaloneStyleDescriptor.FromMapLibre(current.Impact.StyleId, canonical);

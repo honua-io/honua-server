@@ -33,8 +33,10 @@ internal static class SharedStyleWorkspaceAuthorization
         var document = await store.GetAsync(workspaceId).ConfigureAwait(false);
         if (binding is null || document is null || binding.OwnerActorId != document.OwnerId ||
             binding.TenantId != context.RequestServices.GetRequiredService<ITenantContext>().TenantId ||
-            !AgentWorkspaceState.CanRead(document, actor!, binding.TenantId, binding.TargetId) ||
-            !document.Turns.TryGetValue(turnId, out var turn) || turn.Context.Task is not { Kind: "shared-style" } task) Deny();
+            !AgentWorkspaceState.CanRead(document, actor!, binding.TenantId, binding.TargetId)) Deny();
+        if (!document!.Turns.TryGetValue(turnId, out var turn)) Deny();
+        var task = turn?.Context.Task;
+        if (task is not { Kind: "shared-style" }) Deny();
         return new(binding!, task!);
     }
 

@@ -92,8 +92,16 @@ its own appearance. The editor must disclose this choice explicitly.
 Read the stylesheet ETag and `/ogc/styles/{styleId}/impact` before editing. Conditional
 PUT requires the exact `If-Match: "style-vN"` and `X-Honua-Style-Impact` hash from the
 reviewed revision. Stale revisions or changed impact return 412 without overwriting.
-Impact returns only authorized associations; editing is unavailable when the entire
-affected scope cannot be authorized. Existing headerless human clients remain
+Impact separates direct data-layer/service `associations` from versioned map/app
+`consumers`, including drafts, loadable saved versions and current published pointers.
+Only unresolved `styleRefs` are live dependencies; inline bodies are detached.
+The index derives references from canonical package bodies/bindings and resolves
+actual identity through workspace/family/tenant joins. Declared dependency lists
+are not authority. An exclusive transaction barrier keeps reference creation and
+pointer changes from racing a reviewed shared edit; ordinary Studio writers share
+the barrier and do not acquire human approval for creative edits. `impactComplete`
+and `canEdit` must both be true before saving. Hidden consumer IDs and counts are
+omitted; incomplete, unresolved, oversized or unauthorized scope disables editing. Existing headerless human clients remain
 compatible, so conditional editing must be selected explicitly by new clients.
 
 Workspace agents read a frozen `shared-style` task with

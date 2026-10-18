@@ -10,43 +10,67 @@
       "get": {
         "summary": "List styles",
         "parameters": [
-          { "$ref": "#/components/parameters/metadataFormat" }
+          {
+            "$ref": "#/components/parameters/metadataFormat"
+          }
         ],
         "responses": {
           "200": {
             "description": "Available styles and service links",
             "content": {
               "application/json": {
-                "schema": { "type": "object" }
+                "schema": {
+                  "type": "object"
+                }
               },
               "text/html": {
-                "schema": { "type": "string" }
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "406": { "$ref": "#/components/responses/NotAcceptable" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "406": {
+            "$ref": "#/components/responses/NotAcceptable"
+          }
         }
       },
       "post": {
         "summary": "Create a standalone style",
         "security": [
-          { "ApiKeyAuth": [] },
-          { "BearerAuth": [] }
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
         ],
         "parameters": [
-          { "$ref": "#/components/parameters/requestedStyleId" },
-          { "$ref": "#/components/parameters/validate" },
-          { "$ref": "#/components/parameters/prefer" }
+          {
+            "$ref": "#/components/parameters/requestedStyleId"
+          },
+          {
+            "$ref": "#/components/parameters/validate"
+          },
+          {
+            "$ref": "#/components/parameters/prefer"
+          }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/vnd.mapbox.style+json": {
-              "schema": { "type": "object" }
+              "schema": {
+                "type": "object"
+              }
             },
             "application/json": {
-              "schema": { "type": "object" }
+              "schema": {
+                "type": "object"
+              }
             }
           }
         },
@@ -56,19 +80,32 @@
             "headers": {
               "Location": {
                 "description": "Absolute URL of the created style",
-                "schema": { "type": "string", "format": "uri" }
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
               }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/StyleEntry" }
+                "schema": {
+                  "$ref": "#/components/schemas/StyleEntry"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "409": { "$ref": "#/components/responses/Conflict" },
-          "413": { "$ref": "#/components/responses/PayloadTooLarge" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          }
         }
       }
     },
@@ -80,7 +117,9 @@
             "description": "Conformance declaration",
             "content": {
               "application/json": {
-                "schema": { "type": "object" }
+                "schema": {
+                  "type": "object"
+                }
               }
             }
           }
@@ -91,26 +130,38 @@
       "get": {
         "summary": "Get the OGC API Styles OpenAPI document",
         "parameters": [
-          { "$ref": "#/components/parameters/openApiFormat" }
+          {
+            "$ref": "#/components/parameters/openApiFormat"
+          }
         ],
         "responses": {
           "200": {
             "description": "OpenAPI document",
             "content": {
               "application/vnd.oai.openapi+json": {
-                "schema": { "type": "object" }
+                "schema": {
+                  "type": "object"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "406": { "$ref": "#/components/responses/NotAcceptable" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "406": {
+            "$ref": "#/components/responses/NotAcceptable"
+          }
         }
       }
     },
     "/ogc/styles/{styleId}": {
       "parameters": [
-        { "$ref": "#/components/parameters/styleId" }
+        {
+          "$ref": "#/components/parameters/styleId"
+        }
       ],
       "get": {
         "summary": "Get a stylesheet",
@@ -118,32 +169,101 @@
           "200": {
             "description": "Stylesheet",
             "content": {
-              "application/vnd.mapbox.style+json": { "schema": { "type": "object" } },
-              "application/vnd.ogc.sld+xml;version=1.0": { "schema": { "type": "string" } },
-              "application/vnd.ogc.sld+xml;version=1.1": { "schema": { "type": "string" } },
-              "application/vnd.esri.drawinginfo+json": { "schema": { "type": "object" } }
+              "application/vnd.mapbox.style+json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "application/vnd.ogc.sld+xml;version=1.0": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/vnd.ogc.sld+xml;version=1.1": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/vnd.esri.drawinginfo+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "Canonical style revision captured with the returned representation.",
+                "schema": {
+                  "type": "string",
+                  "example": "\"style-v1\""
+                }
+              }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "406": { "$ref": "#/components/responses/NotAcceptable" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "406": {
+            "$ref": "#/components/responses/NotAcceptable"
+          }
         }
       },
       "put": {
         "summary": "Update an existing style",
         "security": [
-          { "ApiKeyAuth": [] },
-          { "BearerAuth": [] }
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
         ],
         "parameters": [
-          { "$ref": "#/components/parameters/validate" },
-          { "$ref": "#/components/parameters/prefer" }
+          {
+            "$ref": "#/components/parameters/validate"
+          },
+          {
+            "$ref": "#/components/parameters/prefer"
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "description": "Exact canonical style ETag; weak, wildcard, and multiple tags are unsupported. When supplied, reviewed impact is also required.",
+            "schema": {
+              "type": "string",
+              "example": "\"style-v1\""
+            }
+          },
+          {
+            "name": "X-Honua-Style-Impact",
+            "in": "header",
+            "required": false,
+            "description": "Exact authorized impact hash from GET impact, required for conditional edits.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
           "content": {
-            "application/vnd.mapbox.style+json": { "schema": { "type": "object" } },
-            "application/json": { "schema": { "type": "object" } },
-            "application/vnd.esri.drawinginfo+json": { "schema": { "type": "object" } }
+            "application/vnd.mapbox.style+json": {
+              "schema": {
+                "type": "object"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            },
+            "application/vnd.esri.drawinginfo+json": {
+              "schema": {
+                "type": "object"
+              }
+            }
           }
         },
         "responses": {
@@ -152,61 +272,286 @@
             "headers": {
               "X-Style-Unsupported-Symbolizers": {
                 "description": "Lossy Esri symbolizer conversions that did not block storage",
-                "schema": { "type": "string" }
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "description": "Canonical style revision captured with the returned representation.",
+                "schema": {
+                  "type": "string",
+                  "example": "\"style-v1\""
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "413": { "$ref": "#/components/responses/PayloadTooLarge" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" }
-        }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "412": {
+            "description": "The reviewed canonical revision or impact changed; edits were not stored.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The complete shared edit scope is not authorized, or an agent attempted direct mutation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "description": "Conditional shared editing requires the exact If-Match revision and reviewed X-Honua-Style-Impact hash. A changed revision or impact returns 412 without writing. Workspace agents use canonical reviewed shared-style proposals instead of direct mutations. Headerless human legacy clients retain compatibility."
       },
       "delete": {
         "summary": "Delete a standalone style",
         "description": "Deletes an ordinary standalone style. Canonical per-layer default styles are protected.",
         "security": [
-          { "ApiKeyAuth": [] },
-          { "BearerAuth": [] }
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
         ],
         "responses": {
-          "204": { "description": "Style deleted" },
+          "204": {
+            "description": "Style deleted"
+          },
           "403": {
             "description": "The requested style is a protected per-layer default style",
             "content": {
               "application/problem+json": {
-                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/ogc/styles/{styleId}/metadata": {
       "parameters": [
-        { "$ref": "#/components/parameters/styleId" }
+        {
+          "$ref": "#/components/parameters/styleId"
+        }
       ],
       "get": {
         "summary": "Get style metadata",
         "parameters": [
-          { "$ref": "#/components/parameters/metadataFormat" }
+          {
+            "$ref": "#/components/parameters/metadataFormat"
+          }
         ],
         "responses": {
           "200": {
             "description": "Style metadata and links",
             "content": {
               "application/json": {
-                "schema": { "type": "object" }
+                "schema": {
+                  "type": "object"
+                }
               },
               "text/html": {
-                "schema": { "type": "string" }
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "406": { "$ref": "#/components/responses/NotAcceptable" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "406": {
+            "$ref": "#/components/responses/NotAcceptable"
+          }
+        }
+      }
+    },
+    "/ogc/styles/{styleId}/impact": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/styleId"
+        }
+      ],
+      "get": {
+        "summary": "Read authorized shared-style editing impact",
+        "description": "One coherent canonical read supplies revision, content hash and visible associations. Hidden references and counts are omitted; editing is unavailable if the complete affected scope cannot be authorized. This is not rendering qualification.",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized canonical edit snapshot",
+            "headers": {
+              "ETag": {
+                "description": "Canonical style revision captured with the returned representation.",
+                "schema": {
+                  "type": "string",
+                  "example": "\"style-v1\""
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "styleId",
+                    "styleVersion",
+                    "etag",
+                    "contentHash",
+                    "canEdit",
+                    "associations",
+                    "consumers",
+                    "impactComplete"
+                  ],
+                  "properties": {
+                    "styleId": {
+                      "type": "string"
+                    },
+                    "styleVersion": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "etag": {
+                      "type": "string"
+                    },
+                    "contentHash": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    },
+                    "impactHash": {
+                      "type": "string",
+                      "nullable": true,
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "associations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "resourceId",
+                          "name"
+                        ],
+                        "properties": {
+                          "resourceId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "serviceId": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        }
+                      },
+                      "description": "Direct data-layer/service associations only; versioned map and app consumers are listed separately."
+                    },
+                    "impactComplete": {
+                      "type": "boolean",
+                      "description": "False when any actual index, reference, or affected consumer scope cannot be resolved and authorized. No hidden IDs or counts are exposed."
+                    },
+                    "consumers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "kind",
+                          "itemId",
+                          "packageKey",
+                          "contentHash",
+                          "publicationState",
+                          "isCurrent"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "itemId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "packageKey": {
+                            "type": "string"
+                          },
+                          "versionId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "nullable": true
+                          },
+                          "draftId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "nullable": true
+                          },
+                          "generation": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "contentHash": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                          },
+                          "publicationState": {
+                            "type": "string",
+                            "enum": [
+                              "draft",
+                              "saved",
+                              "published"
+                            ]
+                          },
+                          "isCurrent": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     }
@@ -217,14 +562,18 @@
         "name": "styleId",
         "in": "path",
         "required": true,
-        "schema": { "type": "string" }
+        "schema": {
+          "type": "string"
+        }
       },
       "requestedStyleId": {
         "name": "X-Style-Id",
         "in": "header",
         "required": false,
         "description": "Optional stable identifier requested for the new style; the server generates one when omitted",
-        "schema": { "type": "string" }
+        "schema": {
+          "type": "string"
+        }
       },
       "validate": {
         "name": "validate",
@@ -233,7 +582,11 @@
         "description": "Request strict stylesheet validation",
         "schema": {
           "type": "string",
-          "enum": ["true", "yes", "strict"]
+          "enum": [
+            "true",
+            "yes",
+            "strict"
+          ]
         }
       },
       "prefer": {
@@ -241,56 +594,107 @@
         "in": "header",
         "required": false,
         "description": "Use handling=strict to request strict stylesheet validation",
-        "schema": { "type": "string", "example": "handling=strict" }
+        "schema": {
+          "type": "string",
+          "example": "handling=strict"
+        }
       },
       "metadataFormat": {
         "name": "f",
         "in": "query",
         "required": false,
         "description": "Metadata response format",
-        "schema": { "type": "string", "enum": ["json", "html"] }
+        "schema": {
+          "type": "string",
+          "enum": [
+            "json",
+            "html"
+          ]
+        }
       },
       "openApiFormat": {
         "name": "f",
         "in": "query",
         "required": false,
         "description": "OpenAPI response format",
-        "schema": { "type": "string", "enum": ["json"] }
+        "schema": {
+          "type": "string",
+          "enum": [
+            "json"
+          ]
+        }
       }
     },
     "schemas": {
       "StyleEntry": {
         "type": "object",
-        "required": ["id", "links"],
+        "required": [
+          "id",
+          "links"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "title": { "type": "string", "nullable": true },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
           "links": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/Link" }
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
           }
         }
       },
       "Link": {
         "type": "object",
-        "required": ["href"],
+        "required": [
+          "href"
+        ],
         "properties": {
-          "href": { "type": "string", "format": "uri-reference" },
-          "rel": { "type": "string" },
-          "type": { "type": "string" },
-          "templated": { "type": "boolean" },
-          "hreflang": { "type": "string" },
-          "title": { "type": "string" }
+          "href": {
+            "type": "string",
+            "format": "uri-reference"
+          },
+          "rel": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "templated": {
+            "type": "boolean"
+          },
+          "hreflang": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
         }
       },
       "ProblemDetails": {
         "type": "object",
         "properties": {
-          "type": { "type": "string", "format": "uri-reference" },
-          "title": { "type": "string" },
-          "status": { "type": "integer" },
-          "detail": { "type": "string" },
-          "instance": { "type": "string", "format": "uri-reference" }
+          "type": {
+            "type": "string",
+            "format": "uri-reference"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string",
+            "format": "uri-reference"
+          }
         }
       }
     },
@@ -298,37 +702,61 @@
       "BadRequest": {
         "description": "Invalid request",
         "content": {
-          "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
         }
       },
       "NotFound": {
         "description": "Style or document not found",
         "content": {
-          "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
         }
       },
       "NotAcceptable": {
         "description": "No acceptable representation is available",
         "content": {
-          "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
         }
       },
       "Conflict": {
         "description": "A style with the requested identifier already exists",
         "content": {
-          "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
         }
       },
       "PayloadTooLarge": {
         "description": "The stylesheet exceeds the configured size limit",
         "content": {
-          "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
         }
       },
       "UnsupportedMediaType": {
         "description": "The stylesheet media type is not supported",
         "content": {
-          "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
         }
       }
     },
