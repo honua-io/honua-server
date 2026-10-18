@@ -29,4 +29,3 @@ public sealed record AgentCredentialSnapshot
     /// <summary>Granted permissions captured at proposal time.</summary>
     public required string[] Permissions { get; init; }
 }
-
