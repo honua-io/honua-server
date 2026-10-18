@@ -149,6 +149,9 @@ echo "Validating shard headroom instrumentation..."
 scripts/ci/fixtures/validate-shard-headroom.sh
 
 if [[ -n "${PYTHON_BIN}" ]]; then
+  echo "Validating positive shard execution evidence..."
+  "${PYTHON_BIN}" scripts/ci/test-shard-execution-evidence.py
+
   echo "Validating GitHub Actions baseline measurement contract..."
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-actions-baseline.py
 

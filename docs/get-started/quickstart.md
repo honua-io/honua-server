@@ -27,8 +27,9 @@ and pinned clients below can be used without a customer install manifest.
 
 After release promotion, the release channel will be
 `ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA).
-Use that channel only when its image and install manifest are publicly available;
-the preview instructions below do not depend on it.
+The exact digest is in the release's `customer-install-manifest.json`
+(`server.image`). Use that channel only when its image and install manifest are
+publicly available; the preview instructions below do not depend on it.
 
 The clients are pinned:
 [honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/) and

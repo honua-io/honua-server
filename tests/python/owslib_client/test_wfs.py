@@ -25,7 +25,6 @@ from owslib.fes2 import FilterRequest, PropertyIsEqualTo, PropertyIsGreaterThan
 from owslib.ogcapi.features import Features
 from owslib.util import ServiceException, openURL
 from owslib.wfs import WebFeatureService
-
 from shared import canonical_fixture as fx
 from shared.cert_envelope import (
     GEOGRAPHIC_TOLERANCE_DEGREES,
@@ -40,6 +39,7 @@ from .conftest import (
     geographic_delta,
     web_mercator,
 )
+from .transport import record_transport
 
 pytestmark = pytest.mark.owslib_client
 
@@ -212,18 +212,8 @@ def test_conn01_capabilities(wfs: WebFeatureService, wfs_collector: Certificatio
 
 
 @pytest.mark.cert("CERT-CONN-02")
-def test_conn02_transport(base_url: str, wfs_collector: CertificationEvidenceCollector) -> None:
-    scheme = base_url.split("://", 1)[0]
-    assert scheme == "http"
-    wfs_collector.record(
-        "CERT-CONN-02", "pass" if scheme == "https" else "not-applicable",
-        notes=(
-            "Transport verified as plain http on the compose client-compat network, which "
-            "terminates no TLS. TLS handshake behaviour is exercised in the release tier, "
-            "where the same lane runs against the HTTPS candidate."
-        ),
-        evidence_ref=base_url,
-    )
+def test_conn02_transport(base_url: str, wfs, wfs_collector: CertificationEvidenceCollector) -> None:
+    record_transport(base_url, wfs, wfs_collector, "WFS")
 
 
 @pytest.mark.cert("CERT-AUTH-01")

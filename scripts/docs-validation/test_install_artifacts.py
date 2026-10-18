@@ -29,6 +29,19 @@ class ArtifactTests(unittest.TestCase):
     def test_current_installation_examples_are_consistent(self):
         self.assertEqual([], artifacts.check(self.root))
 
+    def test_each_installation_page_retains_the_customer_manifest_pointer(self):
+        for path in artifacts.INSTALL_PAGES:
+            with self.subTest(path=path):
+                file = self.root / path
+                original = file.read_text()
+                self.assertIn("customer-install-manifest.json", original)
+                file.write_text(original.replace("customer-install-manifest.json", "missing-manifest.json"))
+                try:
+                    self.assertTrue(any(path in error and "customer-install-manifest.json" in error
+                                        for error in artifacts.check(self.root)))
+                finally:
+                    file.write_text(original)
+
     def test_new_image_needs_no_test_code_change(self):
         manifest = json.loads((self.root / artifacts.MANIFEST).read_text())
         old = manifest["serverImage"]

@@ -30,6 +30,8 @@ def check(root: Path = ROOT) -> list[str]:
     problems = []
     pages = {path: (root / path).read_text() for path in INSTALL_PAGES + CLIENT_PAGES}
     for path in INSTALL_PAGES:
+        if "customer-install-manifest.json" not in pages[path]:
+            problems.append(f"{path}: installation instructions must reference customer-install-manifest.json")
         pins = IMAGE_ASSIGNMENT.findall(pages[path])
         if not pins or any(pin != image for pin in pins):
             problems.append(f"{path}: image assignments must match {MANIFEST}: {image}")

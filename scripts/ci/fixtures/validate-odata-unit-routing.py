@@ -72,9 +72,10 @@ def check_runner_filters() -> None:
     with tempfile.TemporaryDirectory() as directory:
         temporary = Path(directory)
         stub = temporary / "dotnet"
-        stub.write_text("#!" + sys.executable + "\nimport json, os, sys\n"
+        stub.write_text("#!" + sys.executable + "\nimport json, os, subprocess, sys\n"
                         "open(os.environ['HONUA_FIXTURE_CAPTURE'], 'w').write(json.dumps(sys.argv[1:]))\n"
-                        "print('Passed! - Failed: 0, Passed: 80')\n")
+                        "subprocess.run([sys.executable, 'scripts/ci/fixtures/write-shard-trx.py', *sys.argv[1:]], check=True)\n"
+                        "print('Passed! - Failed: 0, Passed: 1 (synthetic routing control)')\n")
         stub.chmod(0o755)
         for index, (project, expected_fast) in enumerate([
             (selector.ODATA_UNIT_PROJECT, False),
