@@ -18,7 +18,7 @@ namespace Honua.Server.Features.WorkflowPackages;
 /// <c>PostgresWorkflowPackageStore</c>, and deleting or disabling the publication
 /// removes or disables that definition while this process is still up.
 /// </summary>
-internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
+internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore, IDisposable
 {
     private readonly ConcurrentDictionary<string, WorkflowPackage> _packages = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, List<WorkflowPackageVersion>> _versions = new(StringComparer.Ordinal);
@@ -27,6 +27,13 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
     private readonly SemaphoreSlim _publicationGate = new(1, 1);
     private readonly bool _ownsPublicationLock;
     private readonly PublicationLockOwner? _publicationOwner;
+
+    // Serialized mutation views borrow the original store's semaphore. Only the
+    // container-owned root store releases it at host shutdown.
+    public void Dispose()
+    {
+        if (!_ownsPublicationLock) _publicationGate.Dispose();
+    }
 
     public InMemoryWorkflowPackageStore() { }
     private InMemoryWorkflowPackageStore(InMemoryWorkflowPackageStore owner)
