@@ -82,6 +82,7 @@ internal sealed partial class RateLimitingMiddleware
     private readonly IConnectionMultiplexer? _redis;
     private readonly RateLimitingOptions _options;
     private readonly ILogger<RateLimitingMiddleware> _logger;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RateLimitingMiddleware"/> class.
@@ -97,18 +98,21 @@ internal sealed partial class RateLimitingMiddleware
     /// injection; when <see langword="null"/> the middleware falls back to process-local
     /// fixed-window counters.
     /// </param>
+    /// <param name="timeProvider">Clock for quota windows and retry headers; defaults to system UTC.</param>
     public RateLimitingMiddleware(
         RequestDelegate next,
         IRateLimitPolicyStore policyStore,
         IOptions<RateLimitingOptions> options,
         ILogger<RateLimitingMiddleware> logger,
-        IConnectionMultiplexer? redis)
+        IConnectionMultiplexer? redis,
+        TimeProvider? timeProvider = null)
     {
         _next = next;
         _policyStore = policyStore;
         _redis = redis;
         _options = options.Value;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -301,7 +305,7 @@ internal sealed partial class RateLimitingMiddleware
             {
                 IsAllowed = true,
                 RequestsRemaining = _options.GlobalRequestsPerMinute,
-                WindowReset = DateTimeOffset.UtcNow.AddMinutes(1)
+                WindowReset = _timeProvider.GetUtcNow().AddMinutes(1)
             };
         }
     }
@@ -361,7 +365,7 @@ internal sealed partial class RateLimitingMiddleware
     private async Task<RateLimitResult> CheckRateLimitRedisAsync(string counterKey, ResolvedRateLimit resolved)
     {
         var database = _redis!.GetDatabase();
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var window = resolved.Window;
         var windowStart = now - window;
 
@@ -419,7 +423,7 @@ internal sealed partial class RateLimitingMiddleware
     /// <returns>Rate limit check result.</returns>
     private RateLimitResult CheckRateLimitMemory(string counterKey, ResolvedRateLimit resolved)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var window = resolved.Window;
 
         // Align the fixed window to epoch-anchored buckets so an arbitrary policy window
@@ -710,7 +714,7 @@ internal sealed partial class RateLimitingMiddleware
 
         // RFC 9110 Retry-After: advise clients how long to wait (in whole seconds, never
         // negative) before retrying. Mirrors the X-RateLimit-Reset window boundary.
-        var retryAfterSeconds = Math.Max(0, (int)Math.Ceiling((result.WindowReset - DateTimeOffset.UtcNow).TotalSeconds));
+        var retryAfterSeconds = Math.Max(0, (int)Math.Ceiling((result.WindowReset - _timeProvider.GetUtcNow()).TotalSeconds));
         await BackpressureResponseWriter.WriteAsync(
             context,
             BackpressureKind.Throttled,
