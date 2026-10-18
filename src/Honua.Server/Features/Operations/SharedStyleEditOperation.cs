@@ -46,6 +46,7 @@ internal sealed class SharedStyleEditExecutor(IServiceProvider services) : Honua
 
     public async Task<OperationRequest> PrepareAsync(OperationRequest request, OperationPolicyContext context, CancellationToken cancellationToken = default)
     {
+        AgentApprovalEntitlement.Require(services);
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
             _ = await SharedStyleApprovedReplay.VerifyAsync(services, request, context, cancellationToken).ConfigureAwait(false);
@@ -112,6 +113,7 @@ internal sealed class SharedStyleEditExecutor(IServiceProvider services) : Honua
 
     public async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context, CancellationToken cancellationToken = default)
     {
+        AgentApprovalEntitlement.Require(services);
         // Even an unexpected Allow decision cannot skip the canonical sealed approval proof.
         var replay = await SharedStyleApprovedReplay.VerifyAsync(services, request, context, cancellationToken).ConfigureAwait(false);
         var outcome = await services.GetRequiredService<SharedStyleEditor>().ApplyReviewedOnceAsync(replay, cancellationToken).ConfigureAwait(false);

@@ -498,6 +498,8 @@ internal static class AgentWorkspaceEndpoints
         if (!AgentWorkspaceState.IsIdentifier(operationId)) return Results.NotFound();
         var handle = await Honua.Server.Features.Styling.SharedStyleOperationStatus.ReadAsync(context, document.WorkspaceId,
             operationId!, context.RequestAborted).ConfigureAwait(false);
+        handle ??= await Honua.Server.Features.WorkflowPackages.WorkflowPackageOperationStatus.ReadAsync(context, document.WorkspaceId,
+            operationId!, context.RequestAborted).ConfigureAwait(false);
         if (handle is null) return Results.NotFound();
         return await OperationsEndpoints.HandleGetHandleStatus(context, operationId!,
             context.RequestServices.GetRequiredService<IOperationInstanceStore>(), context.RequestAborted).ConfigureAwait(false);

@@ -32,6 +32,8 @@ public sealed class WorkflowPackageAgentJourneyHttpTests(RedisFixture redis)
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /mcp tools/call honua_workflow_package")]
     [Endpoint("POST /mcp tools/call honua_workflow_package_propose")]
+    [Endpoint("POST /mcp tools/call honua_workspace_get_command")]
+    [Endpoint("GET /api/v1/agent/workspaces/{workspaceId}/operations/{operationInstanceId}")]
     [Endpoint("GET /api/v1/admin/proposals/{id}")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task AgentAuthorsImmutableVersion_HumanApprovesScheduleStatusAndDelete_WithNoAgentApprovalOrExecution()
@@ -178,6 +180,16 @@ public sealed class WorkflowPackageAgentJourneyHttpTests(RedisFixture redis)
                 handle.GetProperty("status").GetString().Should().Be("RequiresApproval");
                 var proposalId = handle.GetProperty("proposalId").GetString()!;
                 var operationId = handle.GetProperty("operationInstanceId").GetString()!;
+                var waiting = await Tool(agent, "honua_workspace_get_command", new { workspaceId, operationInstanceId = operationId });
+                waiting.GetProperty("data").GetProperty("status").GetString().Should().Be("RequiresApproval");
+                // Pairing the same agent to another workspace cannot expose this operation there.
+                var otherWorkspace = await Read(await human.PostAsJsonAsync("/api/v1/agent/workspaces", new
+                { viewId = "other-tab", targetId = target.GetProperty("targetId").GetString() }), HttpStatusCode.OK);
+                var otherWorkspaceId = otherWorkspace.GetProperty("workspaceId").GetString();
+                (await agent.GetAsync($"/api/v1/agent/workspaces/{otherWorkspaceId}/operations/{operationId}"))
+                    .StatusCode.Should().Be(HttpStatusCode.NotFound);
+                (await human.GetAsync(workspaceRoot + $"/operations/{operationId}"))
+                    .StatusCode.Should().Be(HttpStatusCode.NotFound, "human inbox authority does not impersonate the original agent");
                 var repeated = await Tool(agent, "honua_workflow_package_propose", new { workspaceId, turnId = "publish-turn", intent });
                 repeated.GetProperty("operationInstanceId").GetString().Should().Be(operationId);
                 var pending = await packages.GetPublicationAsync(publicationId);
@@ -191,6 +203,17 @@ public sealed class WorkflowPackageAgentJourneyHttpTests(RedisFixture redis)
                 (await human.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null)).StatusCode.Should().Be(HttpStatusCode.OK);
                 var proposal = await scope.ServiceProvider.GetRequiredService<IOperationProposalStore>().GetAsync(proposalId);
                 proposal!.Status.Should().Be(OperationProposalStatus.Succeeded);
+                var completed = await Tool(agent, "honua_workspace_get_command", new { workspaceId, operationInstanceId = operationId });
+                completed.GetProperty("data").GetProperty("status").GetString().Should().Be("Completed");
+                var laterTurnId = "status-" + Guid.NewGuid().ToString("N");
+                await Read(await human.PostAsJsonAsync(workspaceRoot + "/turns", new
+                { turnId = laterTurnId, viewId = "workflow-tab", contextRevision = 1, prompt = "Check the previous operation." }), HttpStatusCode.OK);
+                agent.DefaultRequestHeaders.Remove("X-Honua-Turn");
+                agent.DefaultRequestHeaders.Add("X-Honua-Turn", laterTurnId);
+                var later = await Tool(agent, "honua_workspace_get_command", new { workspaceId, operationInstanceId = operationId });
+                later.GetProperty("data").GetProperty("status").GetString().Should().Be("Completed");
+                agent.DefaultRequestHeaders.Remove("X-Honua-Turn");
+                agent.DefaultRequestHeaders.Add("X-Honua-Turn", "publish-turn");
                 var after = await packages.GetPublicationAsync(publicationId);
                 return after ?? before ?? throw new InvalidOperationException("No publication receipt after approved transition.");
             }

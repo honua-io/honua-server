@@ -31,8 +31,10 @@ internal sealed class WorkflowPackageGovernanceTool : IMcpTool
         Name = Name,
         Title = "Propose workflow publication transition",
         Description = "Propose publish, delete or set-status for an exact immutable workflow package/version/hash and publication. "
+            + "Requires the ai.approval-workflows entitlement (Pro or Enterprise). "
             + "Requires an authorized workspace/frozen turn. The canonical operation returns a durable proposal for a distinct human to approve; "
-            + "the agent cannot approve it. Poll the returned canonical proposal and operation identities. Draft graph edits use honua_workflow_package.",
+            + "the agent cannot approve it. Read operation status using honua_workspace_get_command with workspaceId and the returned operationInstanceId, including from a later turn. "
+            + "Status reads preserve the original authorization and never repeat publication; an interrupted operation remains unresolved until canonical completion is recorded. Draft graph edits use honua_workflow_package.",
         InputSchema = Schema,
         OutputSchema = WorkflowPackageToolSchemas.GovernanceOutput,
         Annotations = McpToolAnnotationSets.Write("Propose workflow publication transition", destructive: true, idempotent: true),

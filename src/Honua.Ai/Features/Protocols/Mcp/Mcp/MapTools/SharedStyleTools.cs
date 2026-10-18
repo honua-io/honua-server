@@ -50,6 +50,7 @@ internal sealed class SharedStyleProposeTool : IMcpTool
         Name = Name,
         Title = "Propose shared style replacement",
         Description = "Propose the complete canonical MapLibre style for the exact styleId/version/contentHash/impactHash captured by this shared-style turn. "
+            + "Requires the ai.approval-workflows entitlement (Pro or Enterprise). Map-local draft appearance remains realtime in every edition. "
             + "The existing canonical operation returns a durable human approval proposal and operation receipt; the agent never approves or directly writes. "
             + "Approval rechecks the original key, roles, membership, tenant, frozen task, style revisions and entire authorized layer impact under the canonical mutation lock. "
             + "After a lost response, use honua_workspace_get_command with the same workspaceId and returned operationInstanceId, including from a later chat; receipt reconciliation never applies the style again or requests another approval. Repeating this exact original turn/payload also reconciles the same operation. "

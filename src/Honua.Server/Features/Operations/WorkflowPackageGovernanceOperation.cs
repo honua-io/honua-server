@@ -48,6 +48,7 @@ internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider service
     public async Task<OperationRequest> PrepareAsync(OperationRequest request, OperationPolicyContext context,
         CancellationToken cancellationToken = default)
     {
+        AgentApprovalEntitlement.Require(services);
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
             _ = await WorkflowPackageApprovedReplay.VerifyAsync(services, request, context, cancellationToken).ConfigureAwait(false);
@@ -119,6 +120,7 @@ internal sealed class WorkflowPackageGovernanceExecutor(IServiceProvider service
     public async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context,
         CancellationToken cancellationToken = default)
     {
+        AgentApprovalEntitlement.Require(services);
         // A direct Allow decision cannot bypass the durable proposal proof, even if a
         // caller invokes this typed executor outside the advertised governed adapter.
         var replay = await WorkflowPackageApprovedReplay.VerifyAsync(services, request, context, cancellationToken).ConfigureAwait(false);

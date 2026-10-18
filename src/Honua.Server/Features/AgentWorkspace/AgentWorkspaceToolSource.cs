@@ -56,7 +56,7 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
             $"{Workspace},{Draft},{View},{Revision},{Property("changes", Fields)}", "\"workspaceId\",\"draftId\",\"viewId\",\"expectedRevision\",\"changes\"", false),
         new AgentWorkspaceTool("submit_draft", "Submit the frozen form through canonical service.publish with current caller RBAC and policy. Persist and reuse commandId; approval-required is not published.",
             $"{Workspace},{Draft},{View},{Revision},{Property("commandId", Identifier)}", "\"workspaceId\",\"draftId\",\"viewId\",\"expectedRevision\",\"commandId\"", false),
-        new AgentWorkspaceTool("get_command", "Read or reconcile an existing command in this authorized workspace. Supply exactly one selector: commandId from a workspace draft submission, or operationInstanceId returned by honua_shared_style_propose. Shared-style operation status works from a later chat, preserves the original frozen task and human approval, and never creates a new mutation or approval.",
+        new AgentWorkspaceTool("get_command", "Read or reconcile an existing command in this authorized workspace. Supply exactly one selector: commandId from a workspace draft submission, or operationInstanceId returned by honua_shared_style_propose or honua_workflow_package_propose. Status works from a later chat under the original frozen turn and current authority, and never creates a new mutation or approval. Shared-style reads reconcile committed receipts; workflow reads report persisted status without retrying interrupted publication.",
             $"{Workspace},{Property("commandId", Identifier)},{Property("operationInstanceId", Identifier)}", "\"workspaceId\"", true),
     ];
 

@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:b7b11229887b03f6e34949d6a8884780bedfb67a240bac8cb55086be88e57923",
+  "bundleDigest": "sha256:86f3dc512b93bb6ac860f661404952ceab6d7fc3e8986ca67a1b99543c3a15e2",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -53,7 +53,7 @@
     {
       "id": "concepts/architecture",
       "path": "concepts/architecture.md",
-      "documentDigest": "sha256:f1e4e08df48766b4f9eb15f2009d4af23ae97abb7ea4f02e8034c06fe3fcefd7",
+      "documentDigest": "sha256:c2d1f2acdad941d2872fa73b3d7cf20390f7a162158415c22722c86839b34bb9",
       "metadata": {
         "type": "concept",
         "title": "Architecture",
@@ -2060,7 +2060,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:505a2c5e83b98ab2e3efea3bf3348cddd6f9f541e1bdffdd060d0d80633ce267",
+      "documentDigest": "sha256:e5723290daa073134b439db86cb7ec01063fd209df8a0efe770252090ff0a5da",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
@@ -2165,6 +2165,17 @@
       "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/deploy/configuration.md"
     },
     {
+      "id": "guides/deploy/database-initialization",
+      "path": "guides/deploy/database-initialization.md",
+      "documentDigest": "sha256:62745434906539d268142041146130057bdcbdafb35d9f730877551ac99cab86",
+      "metadata": {
+        "type": "guide",
+        "title": "Initialize the database without starting Honua",
+        "description": "Run the guarded database migrations as a separate task before starting or updating a serving deployment."
+      },
+      "humanDocument": "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/deploy/database-initialization.md"
+    },
+    {
       "id": "guides/deploy/docker-compose",
       "path": "guides/deploy/docker-compose.md",
       "documentDigest": "sha256:9b9d3e8a9118037534e7ce3e77054c1f751cdc935db1e5b005a070a7cf746288",
@@ -2249,7 +2260,7 @@
     {
       "id": "guides/deploy/upgrade-and-rollback",
       "path": "guides/deploy/upgrade-and-rollback.md",
-      "documentDigest": "sha256:597af7a6d308fe8bdd062208d0ad79c44a330f0b1c3aa9e201dba7e18c670e96",
+      "documentDigest": "sha256:91d7b293d6b4828fd49f21ac3c44c8c374e303d40a10b55e769e7c90062dce6f",
       "metadata": {
         "type": "guide",
         "title": "Upgrade and roll back",
@@ -2353,7 +2364,7 @@
     {
       "id": "guides/operate/README",
       "path": "guides/operate/README.md",
-      "documentDigest": "sha256:dc9e0d8303e13fe1d0b9faa7c9624bbfa4c59d8218dc472449988e5e2d4b462a",
+      "documentDigest": "sha256:4ef2e532933c524efde2ca80fc0733eb443c802e499ce65e3150730a25f9a317",
       "metadata": {
         "type": "index",
         "title": "Operating Honua",
@@ -2638,7 +2649,7 @@
     {
       "id": "guides/secure/authentication",
       "path": "guides/secure/authentication.md",
-      "documentDigest": "sha256:b11899b89c730dd791c3f5d4ed1a7e2a10850cc767568ac8a7c0d5bd6ef01376",
+      "documentDigest": "sha256:84adb867aa850394b381e0fb3df5063fece1c80efd9c64b248d45c2583c8921d",
       "metadata": {
         "type": "guide",
         "title": "Authenticate clients",
@@ -7537,7 +7548,7 @@
     {
       "id": "reference/admin-api/styles",
       "path": "reference/admin-api/styles.md",
-      "documentDigest": "sha256:38976588ec9f33fdede9178fc53ee64e403280a9724cf845e68fef5ea8b20ec6",
+      "documentDigest": "sha256:36ba6817f37500e267633c6405bfa847e65c111c494002b9e1772d2b900b163e",
       "metadata": {
         "type": "reference",
         "title": "Styles",
@@ -11494,6 +11505,11 @@
       "target": "reference/configuration/environment-variables"
     },
     {
+      "source": "guides/deploy/database-initialization",
+      "relation": "links_to",
+      "target": "guides/deploy/upgrade-and-rollback"
+    },
+    {
       "source": "guides/deploy/docker-compose",
       "relation": "links_to",
       "target": "get-started/linux-packages"
@@ -11692,6 +11708,11 @@
       "source": "guides/deploy/upgrade-and-rollback",
       "relation": "links_to",
       "target": "guides/deploy/cloud-deployments"
+    },
+    {
+      "source": "guides/deploy/upgrade-and-rollback",
+      "relation": "links_to",
+      "target": "guides/deploy/database-initialization"
     },
     {
       "source": "guides/deploy/upgrade-and-rollback",

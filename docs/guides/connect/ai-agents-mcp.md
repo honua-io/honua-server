@@ -192,7 +192,13 @@ are separate governed actions.
 `honua_workflow_package_propose` proposes publication, deletion or status changes
 for that exact version through the canonical human approval inbox. The agent
 cannot approve its own proposal, including when its scoped key carries an admin
-role. Studio attaches the immutable reference as
+role. This governed proposal requires the `ai.approval-workflows` entitlement
+(Pro or Enterprise), checked again before execution. Poll the returned
+`operationInstanceId` with `honua_workspace_get_command` and the original
+`workspaceId`, including from a later chat. Status reads recheck current authority
+against the original turn and report persisted state; they never repeat a
+publication or treat an interrupted execution as completed.
+Studio attaches the immutable reference as
 `{kind: "workflow-package", id: packageId, revision: version, contentHash: packageHash}`
 and reads the stored version before accepting it. These workspace tools require
 the corresponding preview server build; older published images do not acquire

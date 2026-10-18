@@ -106,7 +106,9 @@ compatible, so conditional editing must be selected explicitly by new clients.
 
 Workspace agents read a frozen `shared-style` task with
 `honua_shared_style_get` and propose a complete replacement with
-`honua_shared_style_propose`. Actual current credentials, membership, tenant,
+`honua_shared_style_propose`. Proposal preparation and execution require the live
+`ai.approval-workflows` entitlement (Pro or Enterprise).
+Actual current credentials, membership, tenant,
 revision, bytes, and affected resource authority are checked again on execution.
 The agent cannot approve its own proposal or bypass this through direct style PUT.
 Map-local draft composition remains a separate realtime edit.
@@ -136,8 +138,8 @@ A missing receipt never proves success and cannot advance canonical state.
 
 Lost shared-style responses can be reconciled using the returned operation identity:
 `honua_workspace_get_command` accepts `workspaceId` and exactly one of `commandId`
-or `operationInstanceId`. The latter currently supports sealed shared-style
-operations only. A later chat may read the original operation; the server checks
+or `operationInstanceId`. Operation IDs support sealed shared-style and workflow
+publication proposals. A later chat may read the original operation; the server checks
 its original workspace, task, target, tenant, credential and human approval rather
 than using the later chat's selection. An exact committed SQL receipt completes
 uncertain canonical status without another style write or approval. Missing
