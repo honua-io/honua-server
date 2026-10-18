@@ -404,6 +404,22 @@ internal sealed class ApiKeyAuthenticationHandler(
     }
 
     /// <summary>
+    /// Reconstructs the live-authentication principal from already validated stored-key metadata.
+    /// Callers must revalidate current key lifetime, grants and sealed replay authority first.
+    /// No bootstrap/password semantics or secret material are accepted by this seam.
+    /// </summary>
+    internal static ClaimsPrincipal CreateStoredKeyPrincipal(Guid apiKeyId, string apiKeyName, IReadOnlyList<string> permissions)
+    {
+        if (apiKeyId == Guid.Empty) throw new ArgumentException("A stored key identifier is required.", nameof(apiKeyId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(apiKeyName);
+        ArgumentNullException.ThrowIfNull(permissions);
+        var result = CreateSuccessfulAuthenticationResult(AuthenticationExtensions.ApiKeyScheme, "admin-api-key",
+            apiKeyId, apiKeyName, permissions);
+        return result.Succeeded && result.Principal is not null
+            ? result.Principal : throw new InvalidOperationException("Stored key metadata has invalid authority bindings.");
+    }
+
+    /// <summary>
     /// Creates a successful authentication result with admin claims
     /// </summary>
     private static AuthenticateResult CreateSuccessfulAuthenticationResult(
