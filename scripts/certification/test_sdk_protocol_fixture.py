@@ -6,9 +6,8 @@ import importlib.util
 import json
 import shutil
 import tempfile
-import unittest
 from pathlib import Path
-from unittest import mock
+from unittest import TestCase, main, mock
 
 HERE = Path(__file__).resolve().parent
 
@@ -25,7 +24,7 @@ VERIFY = load("sdk_protocol_verify", "verify-sdk-protocol-fixture.py")
 SEED = load("sdk_protocol_seed", "seed-sdk-protocol-fixture.py")
 
 
-class SdkProtocolFixtureTests(unittest.TestCase):
+class SdkProtocolFixtureTests(TestCase):
     def setUp(self) -> None:
         self.manifest = VERIFY.verify_source()
 
@@ -116,4 +115,4 @@ class SdkProtocolFixtureTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()
