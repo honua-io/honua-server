@@ -2,6 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Operations.Domain;
 
@@ -43,4 +46,34 @@ public static class ImportAdminAuthorization
         var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal);
         return OperatorScopeCatalog.PermitsOperation(scopes, OperatorOperation.Create);
     }
+    // Shared principal-based kernel for canonical task and accepted-job adapters.
+    // It supplies the same Admin policy a typed semantic resource, not HttpContext.
+    internal static async Task<bool> IsAuthorizedAsync(IServiceProvider services, ClaimsPrincipal principal,
+        string targetId, bool requireWrite, CancellationToken cancellationToken,
+        OperatorAuthorizationRequest? sealedOperation = null)
+    {
+        var resource = new SemanticImportAuthorizationResource(targetId, requireWrite, sealedOperation);
+        if (!resource.IsValid || !await AgentCredentialAuthority.IsCurrentAsync(principal, services, cancellationToken).ConfigureAwait(false)) return false;
+        var operation = resource.OperatorRequest;
+        var source = principal;
+        if (JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal))
+        {
+            if (!JobExecutionLeaseTransientAuthority.AllowsOperator(principal, operation)
+                || !await JobExecutionLeaseTransientAuthority.IsCurrentAsync(principal, cancellationToken).ConfigureAwait(false)) return false;
+            // This private source principal never crosses the canonical authorization seam.
+            source = JobExecutionLeaseTransientAuthority.GetAuthorizationPrincipal(principal);
+        }
+        if (!(services.GetService<IOperatorScopeAuthorizer>()?.Evaluate(source,
+            operation.ResourceType, operation.Operation).IsAllowed ?? false)) return false;
+        var authorization = services.GetService<IAuthorizationService>();
+        if (authorization is null) return false;
+        var result = await authorization.AuthorizeAsync(source, resource, AuthenticationExtensions.AdminPolicy).ConfigureAwait(false);
+        if (!result.Succeeded && (requireWrite || !AdminApiKeyPermission.IsAuthorized(source, resource.Method,
+            SemanticImportAuthorizationResource.CanonicalPath))) return false;
+        if (source.FindFirst("api_key_id") is not null && !AdminApiKeyPermission.IsAuthorized(source,
+            resource.Method, SemanticImportAuthorizationResource.CanonicalPath)) return false;
+        cancellationToken.ThrowIfCancellationRequested();
+        return await AgentCredentialAuthority.IsCurrentAsync(principal, services, cancellationToken).ConfigureAwait(false);
+    }
+
 }

@@ -42,10 +42,14 @@ internal sealed class AdminPermissionAuthorizationHandler(
         // authorization middleware supplies (HttpContext in minimal APIs) and fall
         // back to the ambient accessor so the requirement also works when invoked
         // outside the endpoint resource (e.g. imperative IAuthorizationService).
-        var httpContext = context.Resource as HttpContext ?? _httpContextAccessor.HttpContext;
-        var method = httpContext?.Request.Method;
+        var semanticImport = context.Resource as SemanticImportAuthorizationResource;
+        if (semanticImport is { IsValid: false }) return Task.CompletedTask;
+        var httpContext = semanticImport is null
+            ? context.Resource as HttpContext ?? _httpContextAccessor.HttpContext : null;
+        var method = semanticImport?.Method ?? httpContext?.Request.Method;
+        var path = semanticImport is null ? httpContext?.Request.Path.Value : SemanticImportAuthorizationResource.CanonicalPath;
 
-        if (AdminApiKeyPermission.IsAuthorized(context.User, method, httpContext?.Request.Path.Value))
+        if (AdminApiKeyPermission.IsAuthorized(context.User, method, path))
         {
             context.Succeed(requirement);
         }
