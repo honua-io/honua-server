@@ -739,6 +739,67 @@ public sealed class MigrationFidelityEvaluatorTests
         act.Should().Throw<ArgumentNullException>();
     }
 
+    [UnitTest]
+    public void Evaluate_WhenInheritedNullGeometryMatches_StaysFullFidelity()
+    {
+        var evaluation = MigrationFidelityEvaluator.Evaluate(FullyVerifiedInput() with
+        {
+            DataReconciliation = GeometryArtifact(
+                inherited: 1,
+                rewrites: 0,
+                losses: 0,
+                classification: MigrationReconciliationClassifications.Pass)
+        });
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.FullFidelity);
+        evaluation.IsBlocking.Should().BeFalse();
+        evaluation.Differences.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void Evaluate_WhenWellFormedTargetReplacesSourceDefect_IsUnverifiedNotRepaired()
+    {
+        var evaluation = MigrationFidelityEvaluator.Evaluate(FullyVerifiedInput() with
+        {
+            DataReconciliation = GeometryArtifact(
+                inherited: 0,
+                rewrites: 1,
+                losses: 0,
+                classification: MigrationReconciliationClassifications.Warn)
+        });
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Unverified);
+        evaluation.IsBlocking.Should().BeFalse();
+        var difference = evaluation.Differences.Should().ContainSingle().Subject;
+        difference.Code.Should().Be(MigrationFidelityDifferenceCodes.GeometrySourceNotRepaired);
+        difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Unverified);
+        difference.Summary.Should().Contain("not a successful repair");
+    }
+
+    [UnitTest]
+    public void Evaluate_WhenTransferLossAccompaniesSourceDefectRewrite_StaysIncompleteAndVisible()
+    {
+        var evaluation = MigrationFidelityEvaluator.Evaluate(FullyVerifiedInput() with
+        {
+            DataReconciliation = GeometryArtifact(
+                inherited: 0,
+                rewrites: 2,
+                losses: 1,
+                classification: MigrationReconciliationClassifications.Fail,
+                reasons: ["1 source geometries were lost in transfer."])
+        });
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        evaluation.IsBlocking.Should().BeTrue();
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.DataReconciliationFailed &&
+            difference.Severity == MigrationFidelityDifferenceSeverities.Blocking);
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.GeometrySourceNotRepaired &&
+            difference.Severity == MigrationFidelityDifferenceSeverities.Unverified &&
+            difference.Summary.Contains("not a successful repair", StringComparison.Ordinal));
+    }
+
     /// <summary>
     /// A run where every required check executed and reported parity, with no data, attachment or
     /// relationship loss. The only input shape that may be reported as a full-fidelity migration.
@@ -771,6 +832,64 @@ public sealed class MigrationFidelityEvaluatorTests
             Reasons = reasons,
             Options = new LayerReconciliationOptions()
         };
+
+    private static MigrationReconciliationArtifact GeometryArtifact(
+        int inherited,
+        int rewrites,
+        int losses,
+        string classification,
+        params string[] reasons)
+    {
+        var geometryClassification = losses > 0
+            ? MigrationReconciliationClassifications.Fail
+            : rewrites > 0
+                ? MigrationReconciliationClassifications.Warn
+                : MigrationReconciliationClassifications.Pass;
+        return new MigrationReconciliationArtifact
+        {
+            RunId = "run-4826",
+            SourceKind = "arcgis-geoservices-rest",
+            Classification = classification,
+            StartedAt = DateTimeOffset.UnixEpoch,
+            CompletedAt = DateTimeOffset.UnixEpoch,
+            Summary = new MigrationReconciliationSummary
+            {
+                LayerCount = 1,
+                PassCount = classification == MigrationReconciliationClassifications.Pass ? 1 : 0,
+                WarnCount = classification == MigrationReconciliationClassifications.Warn ? 1 : 0,
+                FailCount = classification == MigrationReconciliationClassifications.Fail ? 1 : 0
+            },
+            Layers =
+            [
+                new MigrationReconciliationLayerReport
+                {
+                    SourceLayerId = "svc#0",
+                    Classification = classification,
+                    Count = new MigrationReconciliationCountProbe
+                    {
+                        Classification = MigrationReconciliationClassifications.Pass
+                    },
+                    Geometry = new MigrationReconciliationGeometryProbe
+                    {
+                        InheritedSourceDefects = inherited,
+                        SourceDefectRewrites = rewrites,
+                        MigrationLosses = losses,
+                        Classification = geometryClassification
+                    },
+                    Content = new MigrationReconciliationContentProbe
+                    {
+                        Classification = MigrationReconciliationClassifications.Pass
+                    },
+                    Extent = new MigrationReconciliationExtentProbe
+                    {
+                        Classification = MigrationReconciliationClassifications.Pass
+                    }
+                }
+            ],
+            Reasons = reasons,
+            Options = new LayerReconciliationOptions()
+        };
+    }
 
     private static MigrationCatalogReconciliationReport CatalogReport(
         string sourceResourceId,
