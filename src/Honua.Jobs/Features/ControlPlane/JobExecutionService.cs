@@ -513,9 +513,11 @@ internal sealed partial class JobExecutionService(
 
         // Create execution context with heartbeat pump. The claimed attempt number
         // fences artifact publication: a stale attempt cannot publish after requeue.
+        var claimedImportIntent = running.Spec.Kind == ExecutionJobKind.FileImport
+            ? JobExecutionLeaseIntentFingerprint.Compute(running) : null;
         using var context = new JobExecutionContext(
             operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, jobCts, logger,
-            running.AttemptCount, licenseCancellation, JobExecutionLeaseIntentFingerprint.Compute(running));
+            running.AttemptCount, licenseCancellation, claimedImportIntent);
 
         // Start heartbeat pump in background.
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
@@ -561,9 +563,10 @@ internal sealed partial class JobExecutionService(
                 : jobCts.Token;
             var result = await executor.ExecuteAsync(running, context, executorCancellationToken).ConfigureAwait(false);
 
-            var committedImport = IsCommittedImportResult(
-                await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false), result,
-                JobExecutionLeaseIntentFingerprint.Compute(running));
+            var committedImport = claimedImportIntent is not null && result.Status == ExecutionJobStatus.Succeeded
+                && result.CompletedWithCommittedEffects && result.FileImportOutput is not null
+                && IsCommittedImportResult(await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false),
+                    result, claimedImportIntent);
             if (result.Status == ExecutionJobStatus.Succeeded && !committedImport)
             {
                 // Artifact publication has already happened inside the executor. Keep the
@@ -595,7 +598,7 @@ internal sealed partial class JobExecutionService(
                         partitionLeaseOwner).ConfigureAwait(false);
                 var finalized = partitionCurrent && await FinalizeJobAsync(operationId, workerId, result,
                     partitionLeaseId, partitionLeaseOwner, CancellationToken.None, running.AttemptCount,
-                    JobExecutionLeaseIntentFingerprint.Compute(running)).ConfigureAwait(false);
+                    claimedImportIntent).ConfigureAwait(false);
                 if (!finalized)
                 {
                     await AbandonJobAsync(running, workerId, "Exclusive partition lease lost before committed receipt finalization.",
@@ -1114,6 +1117,9 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
+        var retainedImportTruth = HasExactImportReceipt(job)
+            ? new[] { $"honua-import-commit:{job.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(job)}" }
+            : Array.Empty<string>();
         var now = DateTimeOffset.UtcNow;
         var terminal = job with
         {
@@ -1126,11 +1132,11 @@ internal sealed partial class JobExecutionService(
                 ? [.. job.Warnings, CommittedCancellationWarning] : job.Warnings,
             ArtifactReferences = reason switch
             {
-                "license expired" => [],
+                "license expired" => retainedImportTruth,
                 DrainDeadlineFailureMessage => job.CommittedEffectReferences,
                 _ => job.ArtifactReferences
             },
-            CommittedEffectReferences = reason == "license expired" ? [] : job.CommittedEffectReferences,
+            CommittedEffectReferences = reason == "license expired" ? retainedImportTruth : job.CommittedEffectReferences,
             FileImportOutput = null,
             PercentComplete = reason is "license expired" or DrainDeadlineFailureMessage ? null : job.PercentComplete,
             CurrentPhase = terminalStatus == ExecutionJobStatus.Cancelled

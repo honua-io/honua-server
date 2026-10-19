@@ -32,6 +32,7 @@ public sealed class JobExecutionServiceTests
     [InlineData("wrong-marker", false)]
     [InlineData("missing-flag", false)]
     [InlineData("different-intent", false)]
+    [InlineData("fault-after-marker", false)]
     public async Task ProcessJob_ExactCommittedImportTruthSurvivesLateExecutionExpiry(string change, bool succeeds)
     {
         using var expired = new CancellationTokenSource();
@@ -59,6 +60,7 @@ public sealed class JobExecutionServiceTests
                 else if (change == "cancel") durable = durable with { CancellationRequestedAt = DateTimeOffset.UtcNow };
                 else await expired.CancelAsync();
                 await context.RecordCommittedEffectAsync(marker, CancellationToken.None);
+                if (change == "fault-after-marker") throw new IOException("Response lost after commit.");
                 if (change is "license" or "missing-flag")
                     await Assert.ThrowsAnyAsync<OperationCanceledException>(() => context.TryPublishArtifactAsync("ordinary-after-expiry", CancellationToken.None));
                 if (change == "cancel") Assert.False(await context.TryPublishArtifactAsync("ordinary-after-expiry", CancellationToken.None));
@@ -69,7 +71,7 @@ public sealed class JobExecutionServiceTests
         await InvokeProcessJobAsync(service, durable.OperationId, durable.ClaimedBy!);
         Assert.Equal(succeeds ? ExecutionJobStatus.Succeeded : ExecutionJobStatus.Failed, durable.Status);
         Assert.Equal(succeeds ? output : null, durable.FileImportOutput);
-        if (succeeds) Assert.Contains(durable.CommittedEffectReferences, reference => reference.StartsWith("honua-import-commit:", StringComparison.Ordinal));
+        if (succeeds || change == "fault-after-marker") Assert.Contains(durable.CommittedEffectReferences, reference => reference.StartsWith("honua-import-commit:", StringComparison.Ordinal));
     }
 
     [UnitTheory]
