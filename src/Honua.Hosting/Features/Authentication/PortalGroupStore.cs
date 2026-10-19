@@ -13,10 +13,8 @@ namespace Honua.Infrastructure.Authentication;
 /// share content to groups.
 /// </summary>
 /// <remarks>
-/// In-memory to mirror the established <see cref="IOAuthClientStore"/> /
-/// <c>IAdminApiKeyStore</c> pattern — no parallel durable store (ADR-0049). A
-/// future increment may back it with the durable store behind this same interface
-/// without changing callers. Identity is consumed from the shared
+/// The Postgres profile uses durable storage; non-Postgres profiles use the
+/// process-local implementation below. Identity is consumed from the shared
 /// principal/role model; this store owns only group membership, not RBAC roles.
 /// </remarks>
 internal interface IPortalGroupStore
@@ -42,8 +40,6 @@ internal interface IPortalGroupStore
     /// <summary>Removes users from a group (idempotent). Returns the updated record, or null when absent.</summary>
     Task<PortalGroupRecord?> RemoveUsersAsync(string groupId, IReadOnlyList<string> usernames, CancellationToken cancellationToken);
 
-    /// <summary>Returns the ids of groups <paramref name="username"/> belongs to.</summary>
-    Task<IReadOnlyList<string>> GetGroupIdsForUserAsync(string username, CancellationToken cancellationToken);
 }
 
 /// <summary>Group access tiers (ArcGIS community group <c>access</c>).</summary>
@@ -154,12 +150,6 @@ internal sealed class InMemoryPortalGroupStore(TimeProvider? timeProvider = null
 
     public Task<PortalGroupRecord?> RemoveUsersAsync(string groupId, IReadOnlyList<string> usernames, CancellationToken cancellationToken)
         => MutateMembersAsync(groupId, usernames, add: false, cancellationToken);
-
-    public Task<IReadOnlyList<string>> GetGroupIdsForUserAsync(string username, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(GetGroupIdsForUser(username));
-    }
 
     public IReadOnlyList<string> GetGroupIdsForUser(string username, string? tenantId = null)
     {

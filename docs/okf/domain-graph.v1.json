@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:f21d2b53baf7667554666dd6cc7303a728451599fdce1ea5c818d9bc10160611",
+  "bundleDigest": "sha256:338254e141ebe910b7ed7a557f390c4b7c9191ab838a2e5416ecea0fd3cd91eb",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2590,7 +2590,7 @@
     {
       "id": "guides/query-analyze/run-geoprocessing",
       "path": "guides/query-analyze/run-geoprocessing.md",
-      "documentDigest": "sha256:603ba96d3b4761f3528174e7caf63de83ca7df2536168fb356d73d2ebcb8b558",
+      "documentDigest": "sha256:60ea93240a44559b5b70ecc2495948388ff42baa1757ad2ee0cb3d1356bdc49a",
       "metadata": {
         "type": "guide",
         "title": "Run geoprocessing",
@@ -6275,7 +6275,7 @@
     {
       "id": "okf/capabilities/identity.portal-sharing",
       "path": "okf/capabilities/identity.portal-sharing.md",
-      "documentDigest": "sha256:520b29c6febcb48bd300765e0dd1a3804f8eb3d72991a577ad46ba8e8064550b",
+      "documentDigest": "sha256:82700d10c055dbe84c320f0697d76b730bbf8714f08a08012113c384cf43f00d",
       "metadata": {
         "type": "capability",
         "title": "ArcGIS Portal Sharing Read Surface",
@@ -6513,7 +6513,7 @@
     {
       "id": "okf/capabilities/process.geoprocessing",
       "path": "okf/capabilities/process.geoprocessing.md",
-      "documentDigest": "sha256:b6f48f3de2105b6d80ce504ab35900743bfc32b86a263268ea5fa338e849c98c",
+      "documentDigest": "sha256:f2671cefe2eb1e7973be07f43a616dff4e4db762e7715d8edffc1d318b147676",
       "metadata": {
         "type": "capability",
         "title": "Geoprocessing Task Execution",
@@ -6785,7 +6785,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:9cf3b9cffa641f47d22a093a7f19a46677ce4ba2d2bbfe9e3a21881ff9ddac8d",
+      "documentDigest": "sha256:091ed5c41f16bb0d5bd82457abee918aa346cd80bd372fd824291579783dbeee",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
@@ -7608,7 +7608,7 @@
     {
       "id": "reference/compatibility/geoservices-parity",
       "path": "reference/compatibility/geoservices-parity.md",
-      "documentDigest": "sha256:08951596ffa6147f389ffc022bed27be9a76bf40e2f50aa2294958c3fea95ca0",
+      "documentDigest": "sha256:1b060e5a6d20c29b64fb82fdac2986c7c5e8bb7fd86960652c42ecd24daf5cdf",
       "metadata": {
         "type": "reference",
         "title": "GeoServices REST parity",

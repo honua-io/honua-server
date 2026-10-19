@@ -1741,6 +1741,11 @@ app.UseHonuaTenantSchemaRouting();
 // unchanged until tenants are provisioned through the admin surface.
 app.UseHonuaTenantStatusEnforcement();
 
+// The canonical service-policy path is synchronous. Hydrate a fresh, tenant-bound
+// PostgreSQL sharing audience once per authenticated request before any handler can
+// evaluate it; revocations take effect on the next request across replicas.
+Honua.Server.Features.Portal.Sharing.PortalAudienceHydrationExtensions.UsePortalAudienceHydration(app);
+
 // Reject invalid Esri portal tokens only after the shared rate limiter has metered the
 // request, so repeated bad credentials cannot bypass the configured source-IP bucket.
 app.UsePortalTokenAuthenticationRejection();

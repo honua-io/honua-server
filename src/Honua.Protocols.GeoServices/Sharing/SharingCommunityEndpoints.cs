@@ -24,9 +24,9 @@ namespace Honua.Protocols.GeoServices.Sharing;
 /// </summary>
 /// <remarks>
 /// <para>
-/// These mutate the in-memory <see cref="IPortalGroupStore"/> /
-/// <see cref="IPortalItemSharingStore"/> overlays (no parallel durable store —
-/// ADR-0049). Authorization composes the existing identity/role model rather than a
+/// These mutate the <see cref="IPortalGroupStore"/> and
+/// <see cref="IPortalItemSharingStore"/> selected by the server profile. The Postgres
+/// profile persists both across replicas. Authorization composes the existing identity/role model rather than a
 /// new one: every mutation requires an authenticated principal, and group/item
 /// mutations require the caller to be the owner or hold the <c>admin</c> role
 /// (resolved from the shared <see cref="ClaimsPrincipal"/>, exactly as the rest of
@@ -149,6 +149,11 @@ internal static class SharingCommunityEndpoints
         if (!PortalResourceReadAuthorizer.TryGetTrustedTenant(context, out _))
         {
             return StandardErrorHelpers.CreateForbidden(context, "A trusted request tenant context is required.");
+        }
+
+        if (RequireDurableMutation(context) is { } unsupported)
+        {
+            return unsupported;
         }
 
         var form = await ReadFormOrQueryAsync(context).ConfigureAwait(false);
@@ -296,6 +301,11 @@ internal static class SharingCommunityEndpoints
             return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to delete a group.");
         }
 
+        if (RequireDurableMutation(context) is { } unsupported)
+        {
+            return unsupported;
+        }
+
         var record = await groupStore.GetAsync(groupId, context.RequestAborted).ConfigureAwait(false);
         if (record is null || !PortalResourceReadAuthorizer.IsGroupTenantVisible(context, record))
         {
@@ -343,6 +353,11 @@ internal static class SharingCommunityEndpoints
         if (caller is null)
         {
             return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to change group membership.");
+        }
+
+        if (RequireDurableMutation(context) is { } unsupported)
+        {
+            return unsupported;
         }
 
         var record = await groupStore.GetAsync(groupId, context.RequestAborted).ConfigureAwait(false);
@@ -411,6 +426,11 @@ internal static class SharingCommunityEndpoints
             return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to change item sharing.");
         }
 
+        if (RequireDurableMutation(context) is { } unsupported)
+        {
+            return unsupported;
+        }
+
         var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var service = snapshot.Graph.Services.FirstOrDefault(candidate =>
             string.Equals(candidate.Metadata.Id, itemId, StringComparison.Ordinal));
@@ -453,7 +473,7 @@ internal static class SharingCommunityEndpoints
             notSharedWith.Add("org");
         }
 
-        var existingState = sharingStore.Get(itemId);
+        var existingState = await sharingStore.GetAsync(itemId, context.RequestAborted).ConfigureAwait(false);
         var eligibleGroups = new List<string>();
         foreach (var groupId in groups)
         {
@@ -472,7 +492,7 @@ internal static class SharingCommunityEndpoints
         }
 
         var state = eligibleGroups.Count == 0
-            ? sharingStore.Get(itemId)
+            ? existingState
             : share
                 ? await sharingStore.ShareAsync(itemId, service.Metadata.Publisher ?? caller,
                     new PortalItemShareRequest(false, false, eligibleGroups), context.RequestAborted).ConfigureAwait(false)
@@ -513,6 +533,12 @@ internal static class SharingCommunityEndpoints
 
         return null;
     }
+
+    private static IResult? RequireDurableMutation(HttpContext context)
+        => context.RequestServices.GetService<IPortalAudienceSnapshotProvider>() is null
+            ? StandardErrorHelpers.CreateNotImplemented(
+                context, "Portal group and item sharing mutations require a durable sharing store.")
+            : null;
 
     private static bool CanSeeGroup(PortalGroupRecord record, ClaimsPrincipal principal)
     {

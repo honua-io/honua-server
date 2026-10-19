@@ -10997,6 +10997,8 @@
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.SqlInjection_InWhereClause_ShouldBeBlocked",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.XSS_InParameters_ShouldBeSanitized",
         "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_ActualHttpReadMatchesSql_ThenMembershipAndUnshareRevoke",
+        "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_AfterHostRestart_ReadsPersistedAudience_AndNextRequestSeesRevocation",
+        "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTestsPostgresDurability.AcceptedGroupsAndShares_SurviveReplicaReconstruction_AndRevokeFreshReads",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_SqlInspectionExemption_IsLimitedToPassword",
         "Honua.Server.Tests.GeoParquetBudgetEndpointTests.Query_ExceedsInputOrOutputBudget_ReturnsCompleteErrorAndCanEncodeNextRequest",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithBoundedQueryWriterOutput_PreservesRowsAcrossRowGroupBoundaries",
@@ -11384,6 +11386,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.FindRoutesExecuteTests.Execute_DefaultOrSupportedOptions_MatchesCanonicalRouteSolve",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecuteGet_SyncEligibleTask_ReturnsInlineResults",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ProcessingSpatialReference_IsRejectedBeforeExecutionOrSubmission",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GenerateServiceAreasExecuteTests.Execute_MatchesCanonicalServiceAreaRequestAndEveryPolygon",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GenerateServiceAreasExecuteTests.Execute_MatchingOutputSpatialReferenceAliases_AreHonored",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests.GetToolInfo_ReturnsTheNetworkDescriptionAndServiceLimits"
@@ -11482,8 +11485,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJobGet_UnknownTask_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJobGet_WithEnvProcessSR_IsAccepted"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ProcessingSpatialReference_IsRejectedBeforeExecutionOrSubmission",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJobGet_UnknownTask_ReturnsNotFound"
       ],
       "proof_ledger_surface": "gpserver-adapter",
       "maturity": "implemented",
@@ -13713,6 +13716,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_ActualHttpReadMatchesSql_ThenMembershipAndUnshareRevoke",
+        "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_AfterHostRestart_ReadsPersistedAudience_AndNextRequestSeesRevocation",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.GroupContent_ControlledStoreFixture_PagesAndPreservesUnderlyingRbac",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.GroupContent_PublicDescriptionDoesNotGrantContentAccess",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.GroupContent_UnsupportedPublicShare_RemainsEmpty"
@@ -13889,6 +13893,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_AfterHostRestart_ReadsPersistedAudience_AndNextRequestSeesRevocation",
         "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.Search_Anonymous_ProjectsOnlyPublicTier",
         "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.Search_Clauses_FilterVisibleItems",
         "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.Search_WithNamedUserToken_ProjectsPublicAndOrgTiers_NotRoleGatedPrivate",
@@ -22485,6 +22490,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_WithContextOutSR_ReprojectsGeometryOutput",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_WithEnvOutSR_HonorsControl",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_WithEsriResultOptions_TreatsOptionsAsProtocolControls",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ProcessingSpatialReference_IsRejectedBeforeExecutionOrSubmission",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.Execute_ByEsriAlias_RunsCanonicalProcessInline",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.Execute_UnknownAlias_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GenerateServiceAreasExecuteTests.Execute_CaseInsensitiveGpNamesAndTravelModeObject_PreserveCanonicalValues",
@@ -22552,6 +22558,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WithRedisBackedRuntime_CompletesAndReturnsDurableResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WorkspaceProviderUnavailable_FailsDurablyAfterOneAttempt",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.Workspace_ProductionStorePreservesOutputAcrossRestartAndHonorsOverwrite",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ProcessingSpatialReference_IsRejectedBeforeExecutionOrSubmission",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJobPost_WithEnvInQueryString_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_CatalogStorageUnavailable_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_ChoiceValueInNonCatalogCasing_RemainsExecutable",
@@ -22562,7 +22569,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_ProtocolDisabledService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_UnauthenticatedWithInvalidEnvControls_Returns401BeforeBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_UnknownTask_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_WithContextSpatialReferences_ThreadsThemOntoJobMetadata",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_WithContextOutputSpatialReference_ThreadsItOntoJobMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_WithEnvOutSR_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_WithEnvWorkspaceAndOverwriteOutput_ThreadsProtocolMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.SubmitJob_WithIdempotencyKeyParameter_ThreadsKeyToJobService",
@@ -23912,6 +23919,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapCancelJob_UsesTruthfulCanonicalCancellation",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapExecute_TerminalFailure_ReturnsFaultInsteadOfSuccessfulEmptyResults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapExecution_ProcessAuthorization_PrecedesParameterValidation",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapExecution_ProcessingSpatialReference_IsRefusedBeforeSubmission",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapJobMetadata_SucceededJob_DoesNotRequireResultStore",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapJobOperation_CrossServiceBinding_CannotReadOrCancel",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapJobOperation_OwnershipDenial_IsPropagated",
@@ -24007,7 +24015,8 @@
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_Authenticated_CreatesGroupOwnedByCaller",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_FormToken_AuthenticatesAndPreservesFormForEndpoint",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_InvalidFormToken_Returns498",
-        "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_MultipartToken_DoesNotAuthenticate"
+        "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_MultipartToken_DoesNotAuthenticate",
+        "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.MissingDurableSharingBinding_AuthenticatedMutationsReturnProtocolRefusal"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
       "maturity": "implemented",
