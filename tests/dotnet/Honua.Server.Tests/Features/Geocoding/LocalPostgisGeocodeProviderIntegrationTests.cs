@@ -97,6 +97,72 @@ public sealed class LocalPostgisGeocodeProviderIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ForwardGeocodeAsync_CountryCodes_RestrictsStoredCountryBeforeRankingAndLimit()
+    {
+        // The Canadian record matches the query more tightly and would rank
+        // first without a SQL-level country predicate before LIMIT 1.
+        await InsertReferenceAsync(
+            "380 New York St, Toronto, ON",
+            "380 new york st redlands",
+            "380", "New York St", "Toronto", "ON", "M5H 2N2", "CA", "PointAddress",
+            -79.3832, 43.6532);
+
+        var unrestricted = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("380 New York St Redlands", 1, 4326));
+        Assert.Equal("380 New York St, Toronto, ON", Assert.Single(unrestricted).Address);
+
+        var us = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("380 New York St Redlands", 1, 4326, CountryCodes: " us "));
+        Assert.Equal("380 New York St, Redlands, CA 92373", Assert.Single(us).Address);
+
+        var ca = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("380 New York St Redlands", 1, 4326, CountryCodes: "CA"));
+        Assert.Equal("380 New York St, Toronto, ON", Assert.Single(ca).Address);
+
+        var multiple = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("380 New York St Redlands", 1, 4326, CountryCodes: "ca, US"));
+        Assert.Equal("380 New York St, Toronto, ON", Assert.Single(multiple).Address);
+
+        var excluded = await _provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("1 Microsoft Way Redmond", 1, 4326, CountryCodes: "ca"));
+        Assert.Empty(excluded);
+    }
+
+    [Fact]
+    public async Task ForwardGeocodeAsync_MalformedCountryCodes_RefusesBeforeSearching()
+    {
+        foreach (var filter in new[] { "USA", "US,", ",US", "U1", "üS", new string('U', 1025) })
+        {
+            var error = await Assert.ThrowsAsync<GeocodeRequestException>(() =>
+                _provider.ForwardGeocodeAsync(
+                    new ForwardGeocodeRequest("380 New York St Redlands", 1, 4326, CountryCodes: filter)));
+            Assert.Equal("countryCodes", error.ParameterName);
+        }
+    }
+
+    [Fact]
+    public async Task BatchGeocodeAsync_CountryCodes_RestrictsEachInputAndPreservesResultIds()
+    {
+        await InsertReferenceAsync(
+            "380 New York St, Toronto, ON",
+            "380 new york st redlands",
+            "380", "New York St", "Toronto", "ON", "M5H 2N2", "CA", "PointAddress",
+            -79.3832, 43.6532);
+
+        var results = await _provider.BatchGeocodeAsync(
+            new BatchGeocodeRequest(
+                ["380 New York St Redlands", "1 Microsoft Way Redmond"],
+                CountryCodes: " ca "));
+
+        Assert.Equal(2, results.Count);
+        Assert.True(results[0].IsMatch);
+        Assert.Equal("380 New York St, Toronto, ON", results[0].Address);
+        Assert.Equal("0", results[0].Attributes[GeocodeCandidate.ResultIdAttribute]);
+        Assert.False(results[1].IsMatch);
+        Assert.Equal("1", results[1].Attributes[GeocodeCandidate.ResultIdAttribute]);
+    }
+
+    [Fact]
     public async Task ForwardGeocodeAsync_SeventyThousandTokens_ThrowsGeocodeRequestException()
     {
         var query = string.Join(' ', Enumerable.Repeat("e", 70_000));

@@ -48,7 +48,8 @@ public sealed class McpLocationToolTests
                 Arg.Is<ForwardGeocodeRequest>(request =>
                     request.Query == "1600 Amphitheatre Parkway" &&
                     request.MaxResults == 1 &&
-                    request.SpatialReferenceWkid == 4326),
+                    request.SpatialReferenceWkid == 4326 &&
+                    request.CountryCodes == "us"),
                 "mock",
                 true,
                 Arg.Any<CancellationToken>())
@@ -78,7 +79,7 @@ public sealed class McpLocationToolTests
         var response = await surface.DispatchAsync(
             AuthenticatedContext(services),
             ToolCall("geo-1", GeocodeTool.ToolName, """
-                {"address":"1600 Amphitheatre Parkway","maxResults":1,"provider":"mock"}
+                {"address":"1600 Amphitheatre Parkway","maxResults":1,"provider":"mock","countryCodes":"us"}
                 """),
             CancellationToken.None);
 

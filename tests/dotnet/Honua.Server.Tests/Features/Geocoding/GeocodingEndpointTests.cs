@@ -76,6 +76,40 @@ public sealed class GeocodingEndpointTests
         Assert.True(postPayload.RootElement.GetProperty("candidates").GetArrayLength() > 0);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    public async Task CountryCodes_MalformedFilterReturns400_ValidFilterReachesProvider()
+    {
+        var provider = new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true));
+        using var factory = CreateFactory(provider, grantEnterpriseForBatch: true);
+        using var client = factory.CreateClient();
+        var forwardUrl = "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=380+New+York+St&f=json";
+        var records = """[{"attributes":{"SingleLine":"380 New York St"}}]""";
+        var batchUrl = $"/rest/services/World/GeocodeServer/geocodeAddresses?records={Uri.EscapeDataString(records)}&f=json";
+
+        using var invalidForward = await client.GetAsync(forwardUrl + "&countryCodes=US%2C");
+        await invalidForward.AssertGeoServicesErrorAsync(400);
+        Assert.Null(provider.LastForwardRequest);
+
+        using var invalidBatch = await client.GetAsync(batchUrl + "&countryCodes=US%2C");
+        await invalidBatch.AssertGeoServicesErrorAsync(400);
+        Assert.Null(provider.LastBatchRequest);
+
+        using var validForward = await client.GetAsync(forwardUrl + "&countryCodes=us%2CCA");
+        Assert.Equal(HttpStatusCode.OK, validForward.StatusCode);
+        Assert.Equal("us,CA", provider.LastForwardRequest?.CountryCodes);
+
+        using var validBatch = await client.GetAsync(batchUrl + "&countryCodes=us%2CCA");
+        Assert.Equal(HttpStatusCode.OK, validBatch.StatusCode);
+        Assert.Equal("us,CA", provider.LastBatchRequest?.CountryCodes);
+    }
+
     // Regression (#1428): findAddressCandidates must reproject candidate locations to a
     // requested outSR (e.g. Web Mercator 3857) instead of rejecting it with 400.
     [IntegrationTest]
@@ -1648,6 +1682,8 @@ public sealed class GeocodingEndpointTests
         // can be asserted without depending on a live upstream geocoder.
         public CoreForwardGeocodeRequest? LastForwardRequest { get; private set; }
 
+        public CoreBatchGeocodeRequest? LastBatchRequest { get; private set; }
+
         public CoreReverseGeocodeRequest? LastReverseRequest { get; private set; }
 
         public CoreSuggestGeocodeRequest? LastSuggestRequest { get; private set; }
@@ -1752,6 +1788,7 @@ public sealed class GeocodingEndpointTests
 
         public Task<IReadOnlyList<CoreGeocodeCandidate>> BatchGeocodeAsync(CoreBatchGeocodeRequest request, CancellationToken cancellationToken)
         {
+            LastBatchRequest = request;
             var results = new List<CoreGeocodeCandidate>();
             for (int i = 0; i < request.Queries.Count; i++)
             {

@@ -82,6 +82,14 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
             };
         }
 
+        if (!GeocodeCountryCodes.TryParse(request.CountryCodes, out var countryCodes))
+        {
+            throw new GeocodeRequestException(GeocodeCountryCodes.InvalidMessage)
+            {
+                ParameterName = "countryCodes"
+            };
+        }
+
         // Structured input contributes discrete components; otherwise the single-line query is used.
         var searchText = ComposeSearchText(request);
         var tokens = Tokenize(searchText);
@@ -101,6 +109,14 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
         {
             conditions.Add($"search_text LIKE @t{i}");
             command.Parameters.AddWithValue($"t{i}", "%" + EscapeLike(tokens[i]) + "%");
+        }
+
+        if (countryCodes is not null)
+        {
+            // The stored country is an imported ISO alpha-2 value. Restrict
+            // candidates in SQL before ordering and LIMIT, never after ranking.
+            conditions.Add("upper(country) = ANY(@country_codes)");
+            command.Parameters.AddWithValue("country_codes", countryCodes);
         }
 
         var whereClause = string.Join(" AND ", conditions);
