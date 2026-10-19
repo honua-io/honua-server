@@ -14,13 +14,17 @@ internal static class DatasetImportSubmissionEndpoints
         if (services?.IsService(typeof(DatasetImportSubmissionService)) != true) return;
         var submission = group.MapGroup("/workspaces/{workspaceId}/dataset-import-tasks/{taskId}/versions/{revision:long}/submission")
             .RequireAuthorization();
-        submission.MapGet("", (string workspaceId, string taskId, long revision, string contentHash, HttpContext context) =>
-            ReadAsync(context, new(workspaceId, taskId, revision, contentHash)));
-        submission.MapPost("", async (string workspaceId, string taskId, long revision, HttpContext context) =>
-        {
-            var parsed = await DatasetImportTaskEndpoints.ReadBoundedAsync(context, AgentWorkspaceJsonContext.Default.SubmitDatasetImport).ConfigureAwait(false);
-            return parsed.Error ?? await SubmitAsync(context, new(workspaceId, taskId, revision, parsed.Request!)).ConfigureAwait(false);
-        }).Accepts<SubmitDatasetImport>("application/json");
+        submission.MapGet("", Read);
+        submission.MapPost("", Submit).Accepts<SubmitDatasetImport>("application/json");
+    }
+
+    private static Task<IResult> Read(string workspaceId, string taskId, long revision, string contentHash, HttpContext context)
+        => ReadAsync(context, new(workspaceId, taskId, revision, contentHash));
+
+    private static async Task<IResult> Submit(string workspaceId, string taskId, long revision, HttpContext context)
+    {
+        var parsed = await DatasetImportTaskEndpoints.ReadBoundedAsync(context, AgentWorkspaceJsonContext.Default.SubmitDatasetImport).ConfigureAwait(false);
+        return parsed.Error ?? await SubmitAsync(context, new(workspaceId, taskId, revision, parsed.Request!)).ConfigureAwait(false);
     }
 
     internal static async Task<IResult> ReadAsync(HttpContext context, ReadDatasetImportAuthority? request)

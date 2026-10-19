@@ -1096,7 +1096,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
 
         var expression = parse.Expression;
-        if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
+        if (!Honua.Infrastructure.Helpers.FilterExpressionHelpers.IsBooleanFilterExpression(expression))
         {
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid where clause."));
         }

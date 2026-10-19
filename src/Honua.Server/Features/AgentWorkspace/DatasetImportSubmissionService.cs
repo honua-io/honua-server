@@ -226,6 +226,6 @@ internal sealed class DatasetImportSubmissionService(IAgentWorkspaceStore store)
     private static ImportUploadTaskAuthority Authority(HttpContext context) => new(context.RequestServices.GetRequiredService<IDatasetImportTaskProvider>(),
         context.RequestServices.GetService<IDatasetImportContributorAuthorizer>());
     private static bool Same<T>(T? left, T? right, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> type) where T : class
-        => JsonSerializer.Serialize(left, type) == JsonSerializer.Serialize(right, type);
+        => left is null ? right is null : right is not null && JsonSerializer.Serialize(left, type) == JsonSerializer.Serialize(right, type);
     private sealed record BoundSubmission(DatasetImportTask Task, DatasetImportExecutionBinding Binding, DatasetImportPreparedAdmission? Prepared);
 }
