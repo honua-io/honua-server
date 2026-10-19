@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:81f434e37af3f818bed869450fa126faf27d5e8a6bee8906efd25dbde298805e",
+  "bundleDigest": "sha256:599bd9cee25bb7bb2d48171fd04c9f0d51bbbc417a57b7c1b9093b25620f931f",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -6785,7 +6785,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:36ed3bfeea4535e618f2607e72e468efeace29c73e18a9586b28d7b3bb7ceb21",
+      "documentDigest": "sha256:091ed5c41f16bb0d5bd82457abee918aa346cd80bd372fd824291579783dbeee",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
