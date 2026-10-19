@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
@@ -70,6 +71,102 @@ public sealed class MigrationFidelityEvaluatorTests
         difference.Expected.Should().Be("StatusDomain");
         difference.Actual.Should().Be("(none)");
         evaluation.BlockingReason.Should().Contain(MigrationCatalogReconciliationCodes.DomainMissing);
+    }
+
+    [UnitTest]
+    public void Evaluate_WhenCompositeCatalogWasDowngraded_StaysBlockingDespiteSuccessfulRelationshipWrite()
+    {
+        var input = FullyVerifiedInput() with
+        {
+            Relationships =
+            [
+                new MigrationRelationshipApplyOutcome
+                {
+                    SourceRelationshipId = "summary",
+                    Outcome = MigrationCatalogWriteOutcome.Created,
+                    Message = "Inserted honua.relationships row.",
+                    TargetRelationshipRef = "rel-10-0",
+                    Deferred = false
+                }
+            ],
+            CatalogReconciliation = CatalogReport(
+                "resource:Helicopter:layer:0",
+                MigrationCatalogReconciliationClassifications.Fail,
+                new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.RelationshipCompositeDowngraded,
+                    Severity = MigrationCatalogReconciliationSeverities.Fail,
+                    Subject = "summary",
+                    Expected = "composite",
+                    Actual = "simple",
+                    Summary = "Relationship 'summary' was published without composite ownership."
+                },
+                new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.FieldMissing,
+                    Severity = MigrationCatalogReconciliationSeverities.Fail,
+                    Subject = "Join_ID",
+                    Expected = "Join_ID",
+                    Actual = "(none)",
+                    Summary = "Join_ID is missing from the published catalog entry."
+                })
+        };
+
+        var evaluation = MigrationFidelityEvaluator.Evaluate(input);
+
+        evaluation.IsBlocking.Should().BeTrue();
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.CatalogReconciliationFailed
+            && difference.Subject == "resource:Helicopter:layer:0:summary");
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.CatalogReconciliationFailed
+            && difference.Subject == "resource:Helicopter:layer:0:Join_ID");
+        evaluation.Differences.Should().NotContain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.RelationshipOmitted);
+    }
+
+    [UnitTest]
+    public void EvaluateBatch_SuccessfulRelationshipWriteDoesNotClearChildReview()
+    {
+        var evaluation = MigrationBatchFidelityEvaluator.Evaluate(new MigrationBatchFidelityInput
+        {
+            ConstructAccounting = new MigrationConstructAccountingReport { Executed = true },
+            RelationshipApplyRequested = true,
+            RelationshipApplyExecuted = true,
+            Relationships =
+            [
+                new MigrationRelationshipApplyOutcome
+                {
+                    SourceRelationshipId = "summary",
+                    Outcome = MigrationCatalogWriteOutcome.Created,
+                    Message = "Appended composite relationship.",
+                    TargetRelationshipRef = "rel-10-0",
+                    Deferred = false
+                }
+            ],
+            Children =
+            [
+                new MigrationBatchChildRecord
+                {
+                    BatchId = "batch",
+                    Ordinal = 0,
+                    SourceResourceId = "resource:Helicopter:layer:0",
+                    ServiceUrl = "https://example.test/FeatureServer",
+                    SourceLayerId = 0,
+                    TableName = "aggregated_polygons",
+                    Status = MigrationBatchChildStatus.NeedsReview,
+                    FidelityVerdict = MigrationFidelityVerdicts.Incomplete,
+                    StatusNote = "geometry census mismatch"
+                }
+            ]
+        });
+
+        evaluation.IsBlocking.Should().BeTrue();
+        evaluation.Differences.Should().Contain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.ServiceLayerIncomplete
+            && difference.Summary.Contains("geometry census mismatch", StringComparison.Ordinal));
+        evaluation.Differences.Should().NotContain(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.RelationshipOmitted);
     }
 
     [Trait("Tier", "Fast")]
