@@ -8,13 +8,17 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.Deployment.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Db.Postgres.Features.Publishing;
 using Honua.Db.Postgres.Features.Studio;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 
 namespace Honua.Server.Tests.Features.Studio;
@@ -43,9 +47,19 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
         });
         _fixture.ConfigureServices(services =>
         {
-            // The isolated test host wires PostgreSQL in ConfigureTestServices after
-            // Program's feature registration. Register the real resource handlers once
-            // the fixture has registered its production Postgres stores.
+            // TestKit re-registers the real Postgres provider after Program's feature
+            // composition but leaves Database:Schema unset. Bind the production stores
+            // to this fixture's retained schema before constructing MCP handlers.
+            var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.");
+            services.RemoveAll<IStudioPackageStore>();
+            services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), schema));
+            services.RemoveAll<IDeploymentStore>();
+            services.AddSingleton<IDeploymentStore>(provider => new PostgresDeploymentStore(
+                provider.GetRequiredService<NpgsqlDataSource>(), schema));
+            services.RemoveAll<IPublishedServiceStore>();
+            services.AddSingleton<IPublishedServiceStore>(provider => new PostgresPublishedServiceStore(
+                provider.GetRequiredService<NpgsqlDataSource>(), schema));
             services.AddMcpPromotionSurface();
         });
         await _fixture.InitializeAsync();
@@ -53,7 +67,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
         scope.ServiceProvider.GetRequiredService<IStudioPackageStore>()
             .Should().BeOfType<PostgresStudioPackageStore>();
         _fixture.Services.GetRequiredService<IDeploymentStore>()
-            .GetType().Name.Should().Be("PostgresDeploymentStore");
+            .Should().BeOfType<PostgresDeploymentStore>();
         await ApplyStudioMigrationsAsync();
     }
 
