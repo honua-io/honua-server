@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:28b7c2fe1726525bc4330a2504baa7edb787b3a9b9f1764504a609f8c3d64beb",
+  "bundleDigest": "sha256:d37b1da92556a29504ec06bc3afd1a0ea28c2805ea644c7424b1f8d1c2bcc173",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2590,7 +2590,7 @@
     {
       "id": "guides/query-analyze/run-geoprocessing",
       "path": "guides/query-analyze/run-geoprocessing.md",
-      "documentDigest": "sha256:603ba96d3b4761f3528174e7caf63de83ca7df2536168fb356d73d2ebcb8b558",
+      "documentDigest": "sha256:60ea93240a44559b5b70ecc2495948388ff42baa1757ad2ee0cb3d1356bdc49a",
       "metadata": {
         "type": "guide",
         "title": "Run geoprocessing",
@@ -6513,7 +6513,7 @@
     {
       "id": "okf/capabilities/process.geoprocessing",
       "path": "okf/capabilities/process.geoprocessing.md",
-      "documentDigest": "sha256:b6f48f3de2105b6d80ce504ab35900743bfc32b86a263268ea5fa338e849c98c",
+      "documentDigest": "sha256:f2671cefe2eb1e7973be07f43a616dff4e4db762e7715d8edffc1d318b147676",
       "metadata": {
         "type": "capability",
         "title": "Geoprocessing Task Execution",
@@ -7608,7 +7608,7 @@
     {
       "id": "reference/compatibility/geoservices-parity",
       "path": "reference/compatibility/geoservices-parity.md",
-      "documentDigest": "sha256:08951596ffa6147f389ffc022bed27be9a76bf40e2f50aa2294958c3fea95ca0",
+      "documentDigest": "sha256:b58b68b244d1ade65633738a22265faa15b72fc9b0b93a7dde00e460965cc8b2",
       "metadata": {
         "type": "reference",
         "title": "GeoServices REST parity",

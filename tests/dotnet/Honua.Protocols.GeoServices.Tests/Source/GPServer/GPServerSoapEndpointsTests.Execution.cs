@@ -53,6 +53,37 @@ public sealed partial class GPServerSoapEndpointsTests
         await jobs.DidNotReceiveWithAnyArgs().SubmitGPServerJobAsync(default!, default, default!, default!, default, default);
     }
 
+    [IntegrationTheory]
+    [InlineData("SubmitJob", "cartographicCoordinateSystem")]
+    [InlineData("Execute", "cartographicCoordinateSystem")]
+    [InlineData("SubmitJob", "processSR")]
+    [InlineData("Execute", "processSR")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    public async Task SoapExecution_ProcessingSpatialReference_IsRefusedBeforeSubmission(string operation, string key)
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
+        {
+            services.RemoveAll<IGeoprocessingJobService>();
+            services.AddSingleton(jobs);
+        });
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        var environment = $"""
+            <EnvironmentValues><PropertyArray><PropertySetProperty>
+            <Key>{key}</Key><Value xsi:type="tns:GPLong"><Value>4326</Value></Value>
+            </PropertySetProperty></PropertyArray></EnvironmentValues>
+            """;
+        using var response = await PostAsync(client, operation, AreaArguments + environment);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+        body.Should().Contain("processing CRS");
+        var document = XDocument.Parse(body);
+        document.Descendants(XName.Get("Fault", Soap11)).Should().ContainSingle();
+        document.Descendants("Result").Should().BeEmpty();
+        await jobs.DidNotReceiveWithAnyArgs().SubmitGPServerJobAsync(default!, default, default!, default!, default, default);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /services/{serviceId}/GPServer")]
