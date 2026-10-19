@@ -435,4 +435,13 @@ internal static partial class FeatureServerLog
     /// <param name="layerId">The layer identifier.</param>
     [LoggerMessage(Level = LogLevel.Warning, Message = "Post-commit side-effects timed out for service {ServiceId} layer {LayerId}; data was committed successfully.")]
     public static partial void PostCommitSideEffectsTimedOut(ILogger logger, string serviceId, int layerId);
+
+    /// <summary>
+    /// Logs when a calculate post-commit hook fails after the writer transaction has committed.
+    /// The hook cannot roll the rows back.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="exception">The exception raised by the hook.</param>
+    [LoggerMessage(EventId = 2410, Level = LogLevel.Warning, Message = "Calculate post-commit hook failed after the edit transaction committed")]
+    public static partial void CalculatePostCommitHookFailed(ILogger logger, Exception exception);
 }
