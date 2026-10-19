@@ -109,7 +109,7 @@ internal static class MapToolSchemas
             "outFields": {
               "type": "array",
               "items": { "type": "string" },
-              "description": "Optional attribute fields to return; omit for all fields."
+              "description": "Optional visible attribute fields to return; omit or use '*' for all visible fields. Unknown or publisher-hidden names are refused."
             },
             "limit": {
               "type": "integer",
