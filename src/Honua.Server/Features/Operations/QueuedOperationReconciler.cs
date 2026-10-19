@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Infrastructure.MultiTenancy;
 
 namespace Honua.Server.Features.Operations;
 
@@ -77,6 +79,14 @@ internal sealed partial class QueuedOperationReconciler(
     private async Task ReconcileAsync(OperationHandle envelope, CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
+        if (!string.IsNullOrWhiteSpace(envelope.TenantId))
+        {
+            // The persisted envelope owns this background scope. Job status reads enforce
+            // tenant equality, so restore its accepted tenant before resolving the executor.
+            scope.ServiceProvider.GetRequiredService<RequestTenantContext>()
+                .Set(envelope.TenantId, TenantContextSource.Default);
+        }
+
         var executor = scope.ServiceProvider.GetServices<IOperationExecutor>()
             .SingleOrDefault(candidate => string.Equals(candidate.OperationId, envelope.OperationId, StringComparison.Ordinal));
         if (executor is null)
