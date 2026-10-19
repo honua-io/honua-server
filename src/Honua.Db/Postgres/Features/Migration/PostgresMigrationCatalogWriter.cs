@@ -365,26 +365,95 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             .ThenBy(static r => r.SourceRelationshipId, StringComparer.Ordinal)
             .ToArray();
 
-        var graphOutcomes = graphStore == null
-            ? new Dictionary<string, GraphRelationshipOutcome>(StringComparer.Ordinal)
-            : await ApplyRelationshipGraphPatchAsync(graphStore, orderedRequests, cancellationToken).ConfigureAwait(false);
+        var simpleRequests = new List<MigrationRelationshipApplyRequest>();
+        var compositeRequests = new List<MigrationRelationshipApplyRequest>();
+        foreach (var request in orderedRequests)
+        {
+            if (request.Composite)
+            {
+                compositeRequests.Add(request);
+            }
+            else
+            {
+                simpleRequests.Add(request);
+            }
+        }
+
+        var decisions = new Dictionary<string, MigrationRelationshipApplyOutcome>(StringComparer.Ordinal);
+        var graphOutcomes = new Dictionary<string, GraphRelationshipOutcome>(StringComparer.Ordinal);
+        var v1Requests = new List<MigrationRelationshipApplyRequest>(simpleRequests);
+
+        // honua.relationships.relationship_type stores the Esri role, not composite
+        // ownership. A v1-only write would publish the relationship as simple.
+        if (compositeRequests.Count > 0 && graphStore is null)
+        {
+            foreach (var request in compositeRequests)
+            {
+                decisions[OutcomeKey(request)] = DeferredComposite(
+                    request,
+                    "Composite ownership requires a Metadata v2 graph and was not rewritten as a simple relationship.");
+            }
+        }
+
+        if (graphStore is not null && simpleRequests.Count > 0)
+        {
+            var simpleGraph = await ApplyRelationshipGraphPatchAsync(
+                graphStore, simpleRequests.ToArray(), cancellationToken).ConfigureAwait(false);
+            foreach (var pair in simpleGraph)
+            {
+                graphOutcomes[pair.Key] = pair.Value;
+            }
+        }
+
+        if (graphStore is not null && compositeRequests.Count > 0)
+        {
+            var plan = await ApplyPlannedCompositeRelationshipsAsync(
+                graphStore, compositeRequests, cancellationToken).ConfigureAwait(false);
+            foreach (var decision in plan.Accepted)
+            {
+                var request = MatchCompositeRequest(compositeRequests, decision);
+                graphOutcomes[OutcomeKey(request)] = new GraphRelationshipOutcome(decision.Outcome, decision.Message);
+                v1Requests.Add(request);
+            }
+
+            foreach (var decision in plan.Rejected)
+            {
+                var request = MatchCompositeRequest(compositeRequests, decision);
+                decisions[OutcomeKey(request)] = DeferredComposite(request, decision.Message);
+            }
+        }
+
+        if (v1Requests.Count == 0)
+        {
+            Log.RelationshipsPersisted(_logger, 0, 0, graphStore is null ? "skipped" : "deferred");
+            return MaterializeRelationshipOutcomes(orderedRequests, decisions);
+        }
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        var results = new List<MigrationRelationshipApplyOutcome>(orderedRequests.Length);
         var v1Created = 0;
         var v1AlreadyExists = 0;
 
-        foreach (var request in orderedRequests)
+        foreach (var request in v1Requests)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             // V1 honua.relationships row: required for the FeatureServer
             // queryRelatedRecords path that reads from honua.relationships via the
             // shared IRelationshipStore. The unique key (layer_id, relationship_id)
-            // keeps re-apply idempotent.
+            // keeps re-apply idempotent. Composite requests reach this insert only
+            // after the Metadata v2 candidate kept their ownership flag.
             var v1Outcome = await InsertRelationshipRowAsync(connection, request, cancellationToken).ConfigureAwait(false);
+            if (request.Composite && v1Outcome == MigrationCatalogWriteOutcome.AlreadyExists &&
+                !await ExistingRelationshipMatchesAsync(connection, request, cancellationToken).ConfigureAwait(false))
+            {
+                decisions[OutcomeKey(request)] = DeferredComposite(request,
+                    "The existing SQL relationship does not match the reviewed composite mapping. " +
+                    "Related layer, role, name, and join fields must agree before this mapping can be accepted.");
+                continue;
+            }
+
             if (v1Outcome == MigrationCatalogWriteOutcome.Created)
             {
                 v1Created++;
@@ -394,20 +463,51 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
                 v1AlreadyExists++;
             }
 
-            graphOutcomes.TryGetValue(request.SourceRelationshipId, out var graphOutcome);
+            graphOutcomes.TryGetValue(OutcomeKey(request), out var graphOutcome);
             var combined = CombineRelationshipOutcomes(graphOutcome, v1Outcome, graphStore != null);
-            results.Add(new MigrationRelationshipApplyOutcome
+            decisions[OutcomeKey(request)] = new MigrationRelationshipApplyOutcome
             {
                 SourceRelationshipId = request.SourceRelationshipId,
                 Outcome = combined.Outcome,
                 Message = combined.Message,
                 TargetRelationshipRef = BuildTargetRelationshipRef(request)
-            });
+            };
         }
 
         Log.RelationshipsPersisted(_logger, v1Created, v1AlreadyExists, graphStore == null ? "skipped" : "applied");
+        return MaterializeRelationshipOutcomes(orderedRequests, decisions);
+    }
+
+    private static MigrationRelationshipApplyOutcome[] MaterializeRelationshipOutcomes(
+        MigrationRelationshipApplyRequest[] orderedRequests,
+        Dictionary<string, MigrationRelationshipApplyOutcome> decisions)
+    {
+        var results = new List<MigrationRelationshipApplyOutcome>(orderedRequests.Length);
+        foreach (var request in orderedRequests)
+        {
+            if (!decisions.TryGetValue(OutcomeKey(request), out var decision))
+            {
+                throw new InvalidOperationException(
+                    $"Relationship '{request.SourceRelationshipId}' produced no apply outcome.");
+            }
+
+            results.Add(decision);
+        }
+
         return results.ToArray();
     }
+
+    private static MigrationRelationshipApplyOutcome DeferredComposite(
+        MigrationRelationshipApplyRequest request,
+        string message)
+        => new()
+        {
+            SourceRelationshipId = request.SourceRelationshipId,
+            Outcome = MigrationCatalogWriteOutcome.AlreadyExists,
+            Message = message,
+            TargetRelationshipRef = BuildTargetRelationshipRef(request),
+            Deferred = true
+        };
 
     private static async Task<Dictionary<string, GraphRelationshipOutcome>> ApplyRelationshipGraphPatchAsync(
         IMetadataV2GraphStore graphStore,
@@ -564,6 +664,33 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             : MigrationCatalogWriteOutcome.Created;
     }
 
+    private static async Task<bool> ExistingRelationshipMatchesAsync(
+        NpgsqlConnection connection,
+        MigrationRelationshipApplyRequest request,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT related_layer_id, relationship_type, origin_foreign_key, destination_foreign_key, name
+            FROM honua.relationships
+            WHERE layer_id = @layerId AND relationship_id = @relationshipId;
+            """;
+        var relationshipId = request.EsriRelationshipId ?? DeriveStableRelationshipId(request.SourceRelationshipId);
+        var expectedName = string.IsNullOrWhiteSpace(request.Name)
+            ? $"rel-{relationshipId.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            : request.Name!;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@layerId", request.OriginLayerId);
+        command.Parameters.AddWithValue("@relationshipId", relationshipId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            && reader.GetInt32(0) == request.RelatedLayerId
+            && string.Equals(NormalizeRelationshipRole(reader.GetString(1)),
+                NormalizeRelationshipRole(request.Role), StringComparison.Ordinal)
+            && string.Equals(reader.GetString(2), request.OriginKeyField, StringComparison.Ordinal)
+            && string.Equals(reader.GetString(3), request.DestinationKeyField, StringComparison.Ordinal)
+            && string.Equals(reader.GetString(4), expectedName, StringComparison.Ordinal);
+    }
+
     private static (MigrationCatalogWriteOutcome Outcome, string Message) CombineRelationshipOutcomes(
         GraphRelationshipOutcome? graphOutcome,
         MigrationCatalogWriteOutcome v1Outcome,
@@ -608,8 +735,235 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             Cardinality = MapCardinalityToV2(request.Cardinality),
             OriginField = request.OriginKeyField,
             DestinationField = request.DestinationKeyField,
-            EsriRelationshipId = request.EsriRelationshipId
+            EsriRelationshipId = request.EsriRelationshipId,
+            Composite = request.Composite
         };
+    }
+
+    /// <summary>
+    /// Builds one composite candidate, validates ownership rules, and saves it once.
+    /// A stale ETag is retried against a fresh snapshot. An invalid candidate is not saved.
+    /// </summary>
+    internal static async Task<CompositeRelationshipPlan> ApplyPlannedCompositeRelationshipsAsync(
+        IMetadataV2GraphStore graphStore,
+        IReadOnlyList<MigrationRelationshipApplyRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var plan = PlanCompositeRelationships(snapshot.Graph, requests);
+        if (!plan.Changed)
+        {
+            return plan;
+        }
+
+        try
+        {
+            await graphStore.SaveAsync(plan.Candidate, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+            return plan;
+        }
+        catch (InvalidOperationException)
+        {
+            // Another writer advanced the current snapshot. Rebuild the candidate
+            // from the fresh graph instead of replaying the stale patch.
+        }
+
+        snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        plan = PlanCompositeRelationships(snapshot.Graph, requests);
+        if (!plan.Changed)
+        {
+            return plan;
+        }
+
+        await graphStore.SaveAsync(plan.Candidate, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+        return plan;
+    }
+
+    /// <summary>
+    /// Plans a composite graph patch without writing it. New errors from
+    /// <see cref="MetadataV2GraphValidator"/> reject the whole composite set.
+    /// </summary>
+    internal static CompositeRelationshipPlan PlanCompositeRelationships(
+        MetadataV2Graph graph,
+        IReadOnlyList<MigrationRelationshipApplyRequest> requests)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(requests);
+
+        var updated = graph.Resources.ToList();
+        var indexById = updated
+            .Select(static (resource, index) => (resource, index))
+            .ToDictionary(item => item.resource.Metadata.Id, item => item.index, StringComparer.Ordinal);
+        var accepted = new List<CompositeRelationshipDecision>();
+        var rejected = new List<CompositeRelationshipDecision>();
+        var staged = new Dictionary<int, List<MetadataV2Relationship>>();
+        var stagedScopes = new HashSet<string>(StringComparer.Ordinal);
+        var seenOnOrigin = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var request in requests)
+        {
+            if (!request.Composite)
+            {
+                rejected.Add(new CompositeRelationshipDecision(
+                    request.SourceRelationshipId,
+                    MigrationCatalogWriteOutcome.AlreadyExists,
+                    "Only composite ownership requests belong in the composite relationship plan.",
+                    Deferred: true,
+                    OriginLayerId: request.OriginLayerId));
+                continue;
+            }
+
+            var originResourceId = BuildResourceId(request.OriginLayerId);
+            if (!indexById.TryGetValue(originResourceId, out var index))
+            {
+                rejected.Add(new CompositeRelationshipDecision(
+                    request.SourceRelationshipId,
+                    MigrationCatalogWriteOutcome.AlreadyExists,
+                    $"Origin resource '{originResourceId}' is not in the Metadata v2 graph. Composite ownership was not rewritten as a simple relationship.",
+                    Deferred: true,
+                    OriginLayerId: request.OriginLayerId));
+                continue;
+            }
+
+            // The same ArcGIS relationship id is translated onto both ends. Duplicate
+            // detection is per origin resource, so the reciprocal request is kept.
+            var scope = RelationshipScope(request);
+            if (!seenOnOrigin.Add(scope))
+            {
+                rejected.Add(new CompositeRelationshipDecision(
+                    request.SourceRelationshipId,
+                    MigrationCatalogWriteOutcome.AlreadyExists,
+                    $"Relationship '{request.SourceRelationshipId}' is ambiguous in the composite batch and was not written.",
+                    Deferred: true,
+                    OriginLayerId: request.OriginLayerId));
+                continue;
+            }
+
+            var relationshipId = BuildRelationshipId(request);
+            var existing = updated[index].Relationships.FirstOrDefault(relationship =>
+                string.Equals(relationship.Id, relationshipId, StringComparison.Ordinal));
+            if (existing is not null)
+            {
+                if (RetainsCompositeOwnership(existing, request))
+                {
+                    accepted.Add(new CompositeRelationshipDecision(
+                        request.SourceRelationshipId,
+                        MigrationCatalogWriteOutcome.AlreadyExists,
+                        $"Relationship '{relationshipId}' already retains composite ownership on '{originResourceId}'.",
+                        Deferred: false,
+                        OriginLayerId: request.OriginLayerId));
+                }
+                else
+                {
+                    rejected.Add(new CompositeRelationshipDecision(
+                        request.SourceRelationshipId,
+                        MigrationCatalogWriteOutcome.AlreadyExists,
+                        $"Relationship '{relationshipId}' on '{originResourceId}' does not retain composite ownership, roles, and keys. It was left unchanged and was not rewritten as a simple relationship.",
+                        Deferred: true,
+                        OriginLayerId: request.OriginLayerId));
+                }
+
+                continue;
+            }
+
+            if (staged.TryGetValue(index, out var pending) && pending.Any(relationship =>
+                    string.Equals(relationship.Id, relationshipId, StringComparison.Ordinal)))
+            {
+                rejected.Add(new CompositeRelationshipDecision(
+                    request.SourceRelationshipId,
+                    MigrationCatalogWriteOutcome.AlreadyExists,
+                    $"Relationship '{relationshipId}' is ambiguous in the composite batch and was not written.",
+                    Deferred: true,
+                    OriginLayerId: request.OriginLayerId));
+                continue;
+            }
+
+            if (!staged.TryGetValue(index, out var additions))
+            {
+                additions = [];
+                staged[index] = additions;
+            }
+
+            additions.Add(BuildRelationshipMetadata(request, relationshipId));
+            stagedScopes.Add(scope);
+            accepted.Add(new CompositeRelationshipDecision(
+                request.SourceRelationshipId,
+                MigrationCatalogWriteOutcome.Created,
+                $"Appended composite relationship '{relationshipId}' to resource '{originResourceId}'.",
+                Deferred: false,
+                OriginLayerId: request.OriginLayerId));
+        }
+
+        if (staged.Count == 0)
+        {
+            return new CompositeRelationshipPlan(graph, Changed: false, accepted, rejected);
+        }
+
+        foreach (var (index, additions) in staged)
+        {
+            var origin = updated[index];
+            updated[index] = origin with
+            {
+                Relationships = origin.Relationships.Concat(additions).ToArray()
+            };
+        }
+
+        var candidate = graph with
+        {
+            Revision = Math.Max(graph.Revision + 1, 1),
+            GeneratedAt = graph.GeneratedAt,
+            Resources = updated
+        };
+        var beforeErrors = MetadataV2GraphValidator.Validate(graph).Errors.ToHashSet(StringComparer.Ordinal);
+        var introduced = MetadataV2GraphValidator.Validate(candidate).Errors
+            .Where(error => !beforeErrors.Contains(error))
+            .ToArray();
+        if (introduced.Length == 0)
+        {
+            return new CompositeRelationshipPlan(candidate, Changed: true, accepted, rejected);
+        }
+
+        var kept = new List<CompositeRelationshipDecision>();
+        foreach (var decision in accepted)
+        {
+            if (!stagedScopes.Contains(RelationshipScope(decision.OriginLayerId, decision.SourceRelationshipId)))
+            {
+                kept.Add(decision);
+                continue;
+            }
+
+            rejected.Add(new CompositeRelationshipDecision(
+                decision.SourceRelationshipId,
+                MigrationCatalogWriteOutcome.AlreadyExists,
+                $"Composite relationship was not written because the candidate graph is invalid: {introduced[0]} Composite ownership was not rewritten as a simple relationship.",
+                Deferred: true,
+                OriginLayerId: decision.OriginLayerId));
+        }
+
+        return new CompositeRelationshipPlan(graph, Changed: false, kept, rejected);
+    }
+
+    private static bool RetainsCompositeOwnership(
+        MetadataV2Relationship existing,
+        MigrationRelationshipApplyRequest request)
+    {
+        var role = NormalizeRelationshipRole(request.Role);
+        if (!existing.Composite
+            || !string.Equals(existing.RelatedResourceId, BuildResourceId(request.RelatedLayerId), StringComparison.Ordinal)
+            || !string.Equals(existing.OriginField, request.OriginKeyField, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(existing.DestinationField, request.DestinationKeyField, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(NormalizeRelationshipRole(existing.Role), role, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(existing.Cardinality, MapCardinalityToV2(request.Cardinality), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Name)
+            && !string.Equals(existing.Name, request.Name, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return !request.EsriRelationshipId.HasValue || existing.EsriRelationshipId == request.EsriRelationshipId;
     }
 
     private static string BuildRelationshipId(MigrationRelationshipApplyRequest request)
@@ -700,6 +1054,40 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
     }
 
     private sealed record GraphRelationshipOutcome(MigrationCatalogWriteOutcome Outcome, string Message);
+
+    internal readonly record struct CompositeRelationshipPlan(
+        MetadataV2Graph Candidate,
+        bool Changed,
+        IReadOnlyList<CompositeRelationshipDecision> Accepted,
+        IReadOnlyList<CompositeRelationshipDecision> Rejected);
+
+    internal sealed record CompositeRelationshipDecision(
+        string SourceRelationshipId,
+        MigrationCatalogWriteOutcome Outcome,
+        string Message,
+        bool Deferred,
+        int OriginLayerId);
+
+    private static string RelationshipScope(int originLayerId, string sourceRelationshipId)
+        => string.Concat(
+            originLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "\u001f",
+            sourceRelationshipId);
+
+    private static string RelationshipScope(MigrationRelationshipApplyRequest request)
+        => RelationshipScope(request.OriginLayerId, request.SourceRelationshipId);
+
+    private static string OutcomeKey(MigrationRelationshipApplyRequest request)
+        => request.Composite
+            ? RelationshipScope(request)
+            : request.SourceRelationshipId;
+
+    private static MigrationRelationshipApplyRequest MatchCompositeRequest(
+        List<MigrationRelationshipApplyRequest> requests,
+        CompositeRelationshipDecision decision)
+        => requests.First(candidate =>
+            candidate.OriginLayerId == decision.OriginLayerId
+            && string.Equals(candidate.SourceRelationshipId, decision.SourceRelationshipId, StringComparison.Ordinal));
 
     private static async Task<long> CountRowsAsync(NpgsqlConnection connection, string identifier, CancellationToken cancellationToken)
     {
