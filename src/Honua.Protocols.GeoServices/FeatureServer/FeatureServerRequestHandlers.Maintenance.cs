@@ -668,9 +668,139 @@ internal static partial class FeatureServerEndpoints
         var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
         var editLimits = limitsOptions.Value.Edits;
         var batchSize = Math.Max(1, Math.Min(editLimits.MaxFeaturesPerEdit, editLimits.MaxEditsPerTransaction));
-        var updatedCount = 0;
-        var allSucceeded = true;
+        return await ApplyCalculateBatchesAsync(
+            context,
+            editsHandler,
+            serviceId,
+            layerId,
+            updates,
+            gdbVersion,
+            calculateIdempotencyKey,
+            editLimits,
+            batchSize,
+            versionContext is { IsDefault: false },
+            cancellationToken).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// Applies calculate updates through the shared edit pipeline. One batch uses that
+    /// pipeline's own transaction. More than one batch shares a writer transaction so a
+    /// later failure rolls back earlier batches from this request before anything commits
+    /// (#6359). A provider that cannot share a transaction refuses the split instead.
+    /// </summary>
+    private static async Task<IResult> ApplyCalculateBatchesAsync(
+        HttpContext httpContext,
+        FeatureServerEditsHandler editsHandler,
+        string serviceId,
+        int layerId,
+        GeoServicesFeature[] updates,
+        string? gdbVersion,
+        string? calculateIdempotencyKey,
+        EditLimits editLimits,
+        int batchSize,
+        bool versioned,
+        CancellationToken cancellationToken)
+    {
+        if (updates.Length <= batchSize)
+        {
+            var single = await ApplyCalculateBatchLoopAsync(
+                editsHandler,
+                serviceId,
+                layerId,
+                updates,
+                gdbVersion,
+                calculateIdempotencyKey,
+                editLimits,
+                batchSize,
+                ambient: null,
+                cancellationToken).ConfigureAwait(false);
+            return single.Result!;
+        }
+
+        if (versioned)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                httpContext,
+                "Too many features for one versioned calculate",
+                ["A versioned calculate that exceeds one edit batch cannot be applied atomically. Narrow the where clause and retry."]);
+        }
+
+        IFeatureWriterTransaction transaction;
+        try
+        {
+            transaction = await editsHandler.BeginSharedEditTransactionAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                httpContext,
+                "Too many features for one calculate",
+                ["This provider cannot apply a calculate across multiple edit batches in one transaction. Narrow the where clause and retry."]);
+        }
+
+        var ambient = new AmbientFeatureEditTransaction { Transaction = transaction };
+        var committed = false;
+        await using (transaction.ConfigureAwait(false))
+        {
+            try
+            {
+                var batchResult = await ApplyCalculateBatchLoopAsync(
+                    editsHandler,
+                    serviceId,
+                    layerId,
+                    updates,
+                    gdbVersion,
+                    calculateIdempotencyKey,
+                    editLimits,
+                    batchSize,
+                    ambient,
+                    cancellationToken).ConfigureAwait(false);
+                if (!batchResult.Succeeded)
+                {
+                    return batchResult.Result!;
+                }
+
+                committed = await editsHandler.CommitAmbientEditTransactionAsync(ambient, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!committed)
+                {
+                    // The provider could not confirm the commit. Keep reservations and do not
+                    // roll back: the rows may already be durable.
+                    ambient.PreserveReservations = true;
+                    return Results.Json(
+                        new CalculateResponse { Success = false, UpdatedFeatureCount = 0 },
+                        FeatureServerJsonContext.Default.CalculateResponse,
+                        contentType: "application/json");
+                }
+
+                return Results.Json(
+                    new CalculateResponse { Success = true, UpdatedFeatureCount = batchResult.UpdatedCount },
+                    FeatureServerJsonContext.Default.CalculateResponse,
+                    contentType: "application/json");
+            }
+            finally
+            {
+                if (!committed && !ambient.PreserveReservations)
+                {
+                    await editsHandler.RollbackAmbientEditTransactionAsync(ambient).ConfigureAwait(false);
+                }
+            }
+        }
+    }
+
+    private static async Task<(IResult? Result, int UpdatedCount, bool Succeeded)> ApplyCalculateBatchLoopAsync(
+        FeatureServerEditsHandler editsHandler,
+        string serviceId,
+        int layerId,
+        GeoServicesFeature[] updates,
+        string? gdbVersion,
+        string? calculateIdempotencyKey,
+        EditLimits editLimits,
+        int batchSize,
+        AmbientFeatureEditTransaction? ambient,
+        CancellationToken cancellationToken)
+    {
+        var updatedCount = 0;
         for (int offset = 0, batchIndex = 0; offset < updates.Length; offset += batchSize, batchIndex++)
         {
             var batch = updates[offset..Math.Min(offset + batchSize, updates.Length)];
@@ -687,38 +817,58 @@ internal static partial class FeatureServerEndpoints
                 ? new ApplyEditsIdempotencyChoice(null)
                 : new ApplyEditsIdempotencyChoice(DeriveCalculateBatchKey(calculateIdempotencyKey, batchIndex));
             var batchResult = await editsHandler.HandleApplyEditsAsync(
-                serviceId, layerId, applyRequest, editLimits, batchKey, cancellationToken);
+                serviceId,
+                layerId,
+                applyRequest,
+                editLimits,
+                batchKey,
+                cancellationToken,
+                ambient).ConfigureAwait(false);
 
             if (batchResult is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult ||
                 jsonResult.Value is null)
             {
-                // A protocol-level error (e.g. license/validation). Surface it directly
-                // when nothing has been written yet; otherwise report a partial result.
-                if (updatedCount == 0)
+                // Nothing from this request stays committed when the batches share a transaction,
+                // so the protocol error can be returned as-is. Independent batches still report a
+                // partial calculate once an earlier batch has committed.
+                if (ambient is not null || updatedCount == 0)
                 {
-                    return batchResult;
+                    return (batchResult, 0, false);
                 }
 
-                allSucceeded = false;
-                break;
+                return (CalculateFailure(), updatedCount, false);
             }
 
             var batchResponse = jsonResult.Value;
-            updatedCount += batchResponse.UpdateResults?.Count(static r => r.Success) ?? 0;
             if (!batchResponse.Success)
             {
-                allSucceeded = false;
-                break;
+                if (ambient is not null)
+                {
+                    return (CalculateFailure(), 0, false);
+                }
+
+                updatedCount += batchResponse.UpdateResults?.Count(static r => r.Success) ?? 0;
+                return (CalculateFailure(updatedCount), updatedCount, false);
             }
+
+            updatedCount += batchResponse.UpdateResults?.Count(static r => r.Success) ?? 0;
         }
 
-        var calcResponse = new CalculateResponse
+        if (ambient is not null)
         {
-            Success = allSucceeded,
-            UpdatedFeatureCount = updatedCount
-        };
+            return (null, updatedCount, true);
+        }
 
-        return Results.Json(calcResponse, FeatureServerJsonContext.Default.CalculateResponse, contentType: "application/json");
+        return (Results.Json(
+            new CalculateResponse { Success = true, UpdatedFeatureCount = updatedCount },
+            FeatureServerJsonContext.Default.CalculateResponse,
+            contentType: "application/json"), updatedCount, true);
+
+        static IResult CalculateFailure(int updatedCount = 0)
+            => Results.Json(
+                new CalculateResponse { Success = false, UpdatedFeatureCount = updatedCount },
+                FeatureServerJsonContext.Default.CalculateResponse,
+                contentType: "application/json");
     }
 
     private static string DeriveCalculateBatchKey(string header, int batchIndex)
