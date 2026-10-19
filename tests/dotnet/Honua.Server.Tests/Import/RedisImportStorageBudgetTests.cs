@@ -84,7 +84,11 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
             (await recovered.TryReserveAsync(reservation)).Should().BeTrue();
             (await recovered.TryReserveAsync(Reservation(1))).Should().BeFalse();
             ((long)await restarted.GetDatabase().HashGetAsync(recovered.Key, "bytes")).Should().Be(100);
-            await FluentActions.Invoking(() => recovered.TryReserveAsync(reservation with { Bytes = 99 }))
+            await FluentActions.Invoking(() => recovered.TryReserveAsync(reservation with
+            {
+                Bytes = 99,
+                PhysicalLocation = reservation.PhysicalLocation! with { MaximumContentBytes = 99 }
+            }))
                 .Should().ThrowAsync<InvalidOperationException>();
             await FluentActions.Invoking(() => recovered.ReleaseDeletedAsync(reservation with { Scope = reservation.Scope with { ActorId = "foreign" } }))
                 .Should().ThrowAsync<InvalidOperationException>();

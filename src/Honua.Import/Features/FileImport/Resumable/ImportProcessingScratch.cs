@@ -47,6 +47,7 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
     IStorageDomainMutationFence? domainFence = null, IAsyncDisposable? mutationLease = null) : IImportProcessingScratch
 {
     internal const int FileAccountingOverhead = 64 * 1024;
+    internal const int ManifestMaximumBytes = 32 * 1024;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly List<ImportStorageReservation> _reservations = [];
     private readonly HashSet<string> _paths = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
@@ -77,7 +78,11 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
             var reservation = new ImportStorageReservation(transfer.UploadId,
                 new ImportUploadScope(transfer.OwnerActorId, transfer.TenantId, transfer.TargetId,
                     transfer.WorkspaceId, transfer.TaskId, transfer.TaskRevision),
-                $"imports/resumable/{transfer.UploadId}/scratch-{id}", chargedBytes);
+                $"imports/resumable/{transfer.UploadId}/scratch-{id}", chargedBytes)
+            {
+                PhysicalLocation = new(ImportStorageRootKind.ProcessingScratch,
+                    Path.GetFileName(DirectoryPath) + "/" + Path.GetRelativePath(DirectoryPath, fullPath).Replace('\\', '/'), expectedBytes)
+            };
             _reservations.Add(reservation);
             _reservedBytes += chargedBytes;
 
@@ -93,13 +98,14 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
             var manifest = JsonSerializer.SerializeToUtf8Bytes(
                 new ImportProcessingScratchReservation(reservation, Path.GetRelativePath(DirectoryPath, fullPath)),
                 ImportProcessingScratchJsonContext.Default.ImportProcessingScratchReservation);
-            if (manifest.Length > 8192) throw new InvalidDataException("Processing scratch metadata exceeds its allowance.");
+            if (manifest.Length > ManifestMaximumBytes) throw new InvalidDataException("Processing scratch metadata exceeds its allowance.");
             await using (var metadata = new FileStream(Path.Join(metadataDirectory, id + ".json"),
                 FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous | FileOptions.WriteThrough))
             {
                 await metadata.WriteAsync(manifest, cancellationToken).ConfigureAwait(false);
-                await metadata.FlushAsync(cancellationToken).ConfigureAwait(false);
+                metadata.Flush(flushToDisk: true);
             }
+            if (domainFence is not null) LocalStorageDurability.FlushDirectoryTree(metadataDirectory, DirectoryPath);
             cancellationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
             await using var output = new FileStream(fullPath, new FileStreamOptions

@@ -19,9 +19,9 @@ namespace Honua.Import.FileImport.Resumable;
 // and does not initialize Redis or enable an import deployment by itself.
 internal sealed partial class LocalImportStorageJournal
 {
-    // Fits the canonical maximum scope lengths even when JSON escapes every
-    // UTF-16 character; the journal must not invent smaller actor/tenant limits.
-    internal const int PageBytes = 16 * 1024;
+    // Fits maximum canonical scope lengths and the physical location even when
+    // JSON escapes every UTF-16 character; do not narrow actor/tenant limits.
+    internal const int PageBytes = 32 * 1024;
     private const int HeaderBytes = 32;
     private const int HashBytes = 32;
     private const ulong Magic = 0x314C4E4A41554E48;
@@ -61,6 +61,17 @@ internal sealed partial class LocalImportStorageJournal
     }
 
     internal long AllocatedBytes => checked((2L + (2L * _capacity)) * PageBytes);
+    internal string DirectoryPath => _directory;
+
+    internal async Task<LocalImportStorageJournalEntry?> ReadEntryAsync(string fileId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
+        await using var held = await _journalLock.EnterAsync(exclusive: false, cancellationToken).ConfigureAwait(false);
+        await using var file = Open();
+        _ = await ReadHeaderAsync(file, cancellationToken).ConfigureAwait(false);
+        var found = await FindAsync(file, fileId, cancellationToken).ConfigureAwait(false);
+        return found.Entry is { } entry ? new(entry.Reservation, entry.State) : null;
+    }
 
     // Only fresh-domain bootstrap may call this, under the exclusive domain fence
     // after a raw physical census proves the configured data roots empty.

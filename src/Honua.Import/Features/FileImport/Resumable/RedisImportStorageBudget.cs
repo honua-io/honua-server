@@ -125,7 +125,10 @@ internal sealed partial class RedisImportStorageBudget : IImportStorageBudget
     {
         RedisImportUploadStore.Validate(session);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(bytes, session.TotalBytes);
-        var reservation = new ImportStorageReservation(session.Id, session.Scope, fileId, bytes);
+        var reservation = new ImportStorageReservation(session.Id, session.Scope, fileId, bytes)
+        {
+            PhysicalLocation = new(ImportStorageRootKind.ProviderObjects, fileId, bytes)
+        };
         Validate(reservation);
         return reservation;
     }
@@ -145,6 +148,7 @@ internal sealed partial class RedisImportStorageBudget : IImportStorageBudget
             : leaf.StartsWith("source-", StringComparison.Ordinal) ? leaf[7..]
             : leaf.StartsWith("scratch-", StringComparison.Ordinal) ? leaf[8..] : string.Empty;
         _ = RedisImportUploadStore.Key(identity);
+        reservation.PhysicalLocation?.Validate(reservation);
     }
 
     private static bool Interpret(long result) => result switch
@@ -175,7 +179,10 @@ internal sealed partial class RedisImportStorageBudget : IImportStorageBudget
 }
 
 internal sealed record ImportStorageBudgetLimits(long GlobalBytes, long TenantBytes, long OwnerBytes, int MaximumObjects);
-internal sealed record ImportStorageReservation(string UploadId, ImportUploadScope Scope, string FileId, long Bytes);
+internal sealed record ImportStorageReservation(string UploadId, ImportUploadScope Scope, string FileId, long Bytes)
+{
+    public ImportStoragePhysicalLocation? PhysicalLocation { get; init; }
+}
 internal sealed record ImportStorageAccount(string TargetId, string? TenantId, string? ActorId);
 
 // Admission precedes provider writes. Release requires a completed writer and a

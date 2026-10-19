@@ -74,7 +74,11 @@ internal sealed class ImportScratchStorage
         if (maximumScratchBytes < 1 || bytes < 1 || bytes > maximumScratchBytes || bytes > RedisImportUploadStore.MaximumFileBytes)
             throw new InvalidOperationException("The source does not fit the worker scratch allowance.");
         var id = Guid.NewGuid().ToString("N");
-        var reservation = new ImportStorageReservation(uploadId, scope, $"imports/resumable/{uploadId}/scratch-{id}", bytes);
+        var fileName = $"honua-upload-{uploadId}-{id}.tmp";
+        var reservation = new ImportStorageReservation(uploadId, scope, $"imports/resumable/{uploadId}/scratch-{id}", bytes)
+        {
+            PhysicalLocation = new(ImportStorageRootKind.SourceScratch, fileName, bytes)
+        };
         var mutationLease = _domainFence is null ? null
             : await _domainFence.EnterMutationAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -86,7 +90,7 @@ internal sealed class ImportScratchStorage
             // There is deliberately no expiry that could release a still-running writer.
             cancellationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(_directory);
-            var path = Path.Join(_directory, $"honua-upload-{uploadId}-{id}.tmp");
+            var path = Path.Join(_directory, fileName);
             var file = new FileStream(path, new FileStreamOptions
             {
                 Mode = FileMode.CreateNew,

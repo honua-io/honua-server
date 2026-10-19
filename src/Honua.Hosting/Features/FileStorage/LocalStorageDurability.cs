@@ -10,6 +10,18 @@ namespace Honua.FileStorage;
 // directory as well as file bytes before acknowledging a durable object mutation.
 internal static partial class LocalStorageDurability
 {
+    internal static long ReadRegularFileLength(string path)
+    {
+        if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Local census requires Linux statx.");
+        // AT_FDCWD, AT_SYMLINK_NOFOLLOW, STATX_TYPE | STATX_SIZE. This does
+        // not open content: a FIFO or socket must never block a recovery census.
+        if (Statx(-100, path, 0x100, 0x201, out var status) != 0)
+            throw new IOException($"The physical object could not be inspected (errno {Marshal.GetLastPInvokeError()}).");
+        if ((status.Mask & 0x201) != 0x201 || (status.Mode & 0xf000) != 0x8000 || status.Size > long.MaxValue)
+            throw new IOException("A census object must be a regular file with a known length.");
+        return (long)status.Size;
+    }
+
     internal static void FlushDirectoryTree(string directory, string root)
     {
         if (!OperatingSystem.IsLinux())
@@ -35,4 +47,18 @@ internal static partial class LocalStorageDurability
 
     [LibraryImport("libc", EntryPoint = "fsync", SetLastError = true)]
     private static partial int Fsync(SafeFileHandle handle);
+
+    [LibraryImport("libc", EntryPoint = "statx", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    private static partial int Statx(int directory, string path, int flags, uint mask, out LinuxStatx status);
+
+    // Fixed Linux UAPI layout, including the reserved tail so the kernel cannot
+    // overwrite a truncated managed buffer. Only requested fields are consumed.
+    // https://github.com/torvalds/linux/blob/master/include/uapi/linux/stat.h
+    [StructLayout(LayoutKind.Explicit, Size = 256)]
+    private struct LinuxStatx
+    {
+        [FieldOffset(0)] internal uint Mask;
+        [FieldOffset(28)] internal ushort Mode;
+        [FieldOffset(40)] internal ulong Size;
+    }
 }

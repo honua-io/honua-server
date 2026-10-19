@@ -146,16 +146,21 @@ public sealed class LocalImportStorageJournalTests
     }
 
     [UnitTest]
-    public async Task CanonicalMaximumUnicodeScopeFitsWithoutInventingSmallerIdentityLimits()
+    public async Task CanonicalMaximumUnicodeScopeAndPhysicalBindingFitWithoutNarrowingIdentityLimits()
     {
         if (!OperatingSystem.IsLinux()) return;
         using var disk = new Disk();
         var journal = disk.Open();
         await journal.CreateEmptyAsync(Guid.NewGuid().ToString("N"));
-        var reservation = Reservation() with
+        var original = Reservation();
+        var reservation = original with
         {
+            FileId = $"imports/resumable/{original.UploadId}/scratch-{Guid.NewGuid():N}",
+            Bytes = 16 + ImportProcessingScratch.FileAccountingOverhead,
             Scope = new ImportUploadScope(new string('界', 512), new string('県', 256), new string('地', 256),
-                new string('図', 256), new string('層', 256), 1)
+                new string('図', 256), new string('層', 256), 1),
+            PhysicalLocation = new(ImportStorageRootKind.ProcessingScratch,
+                $"honua-processing-{original.UploadId}-{Guid.NewGuid():N}/" + string.Join('/', Enumerable.Repeat(new string('路', 230), 5)), 16)
         };
         Assert.True(await journal.TryRecordIntentAsync(reservation));
         Assert.Equal(reservation, Assert.Single(await ReadAll(disk.Open())).Reservation);
