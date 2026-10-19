@@ -41,7 +41,10 @@ def reject_runtime_overrides():
              "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_WEB_IDENTITY_TOKEN_FILE",
              "AWS_ROLE_ARN", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE",
              "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"}
-    require(not any(key.startswith(prefixes) or key.upper() in exact for key in os.environ),
+    require(not any((key.startswith("LD_") and bool(value)) or
+                    (not key.startswith("LD_") and
+                     (key.startswith(prefixes) or key.upper() in exact))
+                    for key, value in os.environ.items()),
             "ambient-override-refused")
 
 

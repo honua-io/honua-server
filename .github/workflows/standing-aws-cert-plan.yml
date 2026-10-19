@@ -57,13 +57,26 @@ jobs:
       CERT_REQUEST_FILE: /home/runner/.local/state/honua/cert-plan-stage/request.json
       CERT_DEPLOY_ROLE_ARN: ${{ vars.HONUA_CERT_DEPLOY_ROLE_ARN }}
       AWS_REGION: ${{ vars.REALAWS_CERT_REGION || 'us-east-1' }}
+      # The runner applies these before starting any shell, action or Python
+      # process with OIDC access; an in-process refusal alone is too late.
+      LD_PRELOAD: ''
+      LD_AUDIT: ''
+      LD_LIBRARY_PATH: ''
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          LD_PRELOAD: ''
+          LD_AUDIT: ''
+          LD_LIBRARY_PATH: ''
         with:
           persist-credentials: false
 
       - name: Checkout exact current IaC trunk
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          LD_PRELOAD: ''
+          LD_AUDIT: ''
+          LD_LIBRARY_PATH: ''
         with:
           repository: honua-io/honua-iac
           ref: trunk
@@ -71,6 +84,10 @@ jobs:
           persist-credentials: false
 
       - name: Install pinned Terraform CLI
+        env:
+          LD_PRELOAD: ''
+          LD_AUDIT: ''
+          LD_LIBRARY_PATH: ''
         run: python3 -I scripts/cloud/standing-cert-hosted.py install-terraform
 
       - name: Admit reviewed recipient and immutable setup inputs before credentials
@@ -78,12 +95,19 @@ jobs:
           CERT_REQUEST_JSON: ${{ secrets.HONUA_CERT_REQUEST_JSON }}
           CERT_TFVARS_JSON: ${{ secrets.HONUA_CERT_TFVARS_JSON }}
           CERT_BACKEND_HCL: ${{ secrets.HONUA_CERT_BACKEND_HCL }}
+          LD_PRELOAD: ''
+          LD_AUDIT: ''
+          LD_LIBRARY_PATH: ''
         run: |
           test -n "$CERT_DEPLOY_ROLE_ARN"
           python3 -I scripts/cloud/standing-cert-hosted.py prepare
 
       - name: Assume existing standing deployment role through cert OIDC
         uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6
+        env:
+          LD_PRELOAD: ''
+          LD_AUDIT: ''
+          LD_LIBRARY_PATH: ''
         with:
           role-to-assume: ${{ env.CERT_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -91,13 +115,25 @@ jobs:
           role-session-name: honua-standing-cert-plan
 
       - name: Verify existing backend and restore reviewed bootstrap bytes
+        env:
+          LD_PRELOAD: ''
+          LD_AUDIT: ''
+          LD_LIBRARY_PATH: ''
         run: python3 -I scripts/cloud/standing-cert-hosted.py backend
 
       - name: Produce and seal unapproved packet
+        env:
+          LD_PRELOAD: ''
+          LD_AUDIT: ''
+          LD_LIBRARY_PATH: ''
         run: python3 -I scripts/cloud/standing-cert-hosted.py plan-and-seal
 
       - name: Upload exact ciphertext and safe receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        env:
+          LD_PRELOAD: ''
+          LD_AUDIT: ''
+          LD_LIBRARY_PATH: ''
         with:
           name: standing-aws-cert-plan-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -109,6 +145,10 @@ jobs:
       - name: Remove owned transient plaintext and export
         if: always()
         shell: bash
+        env:
+          LD_PRELOAD: ''
+          LD_AUDIT: ''
+          LD_LIBRARY_PATH: ''
         run: |
           set -euo pipefail
           rm -rf -- "$HOME/.local/state/honua/cert-plan-stage" "$GITHUB_WORKSPACE/sealed" "$GITHUB_WORKSPACE/iac"

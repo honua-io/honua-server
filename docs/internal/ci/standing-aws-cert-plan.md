@@ -64,6 +64,10 @@ role session is not treated as proof of Terraform's credentials.
 
 Source review and offline controls establish refusal behavior, not live AWS
 permissions, original state, deployed ZIP identity or successful plan execution.
+The supported workflow clears dynamic-loader code injection variables at the
+job and every privileged step boundary before starting a process with OIDC
+access; the server wrapper refuses nonempty loader overrides and removes the
+empty entries before launching the IaC producer.
 After a real protected run, the trusted receiver must authenticate the GitHub
 run/attempt/artifact digest, decrypt using the dedicated local identity, verify
 the complete packet, and retain it under separate custody. No approval,

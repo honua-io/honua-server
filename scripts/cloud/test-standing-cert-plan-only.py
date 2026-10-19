@@ -6,6 +6,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import subprocess
 import stat
 import tempfile
@@ -85,6 +86,18 @@ class StandingCertPlanWorkflow(unittest.TestCase):
                 hosted.with_backend_token_rotation(source, token, lambda: time.sleep(0.03), 0.01)
             self.assertEqual(token.read_text(), "new.header.signature")
 
+    def test_workflow_clears_loader_injection_before_privileged_steps(self):
+        workflow = (Path(__file__).parents[2] / ".github/workflows/standing-aws-cert-plan.yml").read_text()
+        plan = workflow.split("  plan:\n", 1)[1]
+        required = ("LD_PRELOAD: ''", "LD_AUDIT: ''", "LD_LIBRARY_PATH: ''")
+        job_env = plan.split("    steps:\n", 1)[0]
+        self.assertTrue(all(name in job_env for name in required))
+        steps = re.split(r"^      - ", plan.split("    steps:\n", 1)[1], flags=re.MULTILINE)[1:]
+        self.assertGreaterEqual(len(steps), 9)
+        for step in steps:
+            with self.subTest(step=step.splitlines()[0]):
+                self.assertTrue(all(name in step for name in required))
+
     def test_private_packet_receipt_only_and_token_cleanup(self):
         receipt = {key: "fixture" for key in entry.PUBLIC_KEYS}
         receipt["schema"] = "honua.aws-cert-plan-public/v1"
@@ -137,13 +150,32 @@ while True:
         self.assertFalse(self.token.exists())
 
     def test_python_startup_override_refused_before_token(self):
-        for name in ("PYTHONUSERBASE", "PYTHONWARNINGS", "PYTHONINSPECT"):
+        for name in ("PYTHONUSERBASE", "PYTHONWARNINGS", "PYTHONINSPECT",
+                     "LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH"):
             with self.subTest(name=name), mock.patch.dict(os.environ,
                     dict(self.env, **{name: "unsafe"}), clear=True), \
                  mock.patch.object(entry, "oidc_token") as token:
                 with self.assertRaisesRegex(ValueError, "environment override"):
                     entry.main()
                 token.assert_not_called()
+
+    def test_empty_workflow_loader_overrides_are_stripped_from_producer(self):
+        receipt = {key: "fixture" for key in entry.PUBLIC_KEYS}
+        receipt.update(schema="honua.aws-cert-plan-public/v1", status="planned-unapproved",
+                       approvalStatus="not-approved", qualificationStatus="not-evaluated",
+                       iacRevision=self.revision, candidateDigest=self.candidate,
+                       expiresAtUtc=(datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat())
+        for key in ("planSha256", "planMetadataDigest", "packetSha256"):
+            receipt[key] = "c" * 64
+        env = dict(self.env, LD_PRELOAD="", LD_AUDIT="", LD_LIBRARY_PATH="")
+        child = mock.Mock(returncode=0, stdout=json.dumps(receipt), stderr="")
+        with mock.patch.dict(os.environ, env, clear=True), \
+             mock.patch.object(entry.subprocess, "check_output", side_effect=self.git), \
+             mock.patch.object(entry, "run_producer", return_value=child) as run, \
+             mock.patch.object(entry, "oidc_token", return_value="header.payload.signature"), \
+             contextlib.redirect_stdout(io.StringIO()):
+            entry.main()
+        self.assertFalse(any(key.startswith("LD_") for key in run.call_args.args[2]))
 
     def test_dirty_checkout_refused_before_token(self):
         with mock.patch.dict(os.environ, self.env, clear=True), \
@@ -289,7 +321,8 @@ while True:
         for name in ("TF_CLI_ARGS_init", "TF_CLI_CONFIG_FILE", "TF_DATA_DIR", "TF_WORKSPACE",
                      "AWS_ENDPOINT_URL_STS", "AWS_CA_BUNDLE", "AWS_PROFILE", "AWS_ROLE_ARN",
                      "https_proxy", "BASH_FUNC_terraform%%", "BASHOPTS", "GIT_CONFIG_COUNT",
-                     "PYTHONUSERBASE", "PYTHONWARNINGS", "PYTHONINSPECT"):
+                     "PYTHONUSERBASE", "PYTHONWARNINGS", "PYTHONINSPECT",
+                     "LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH"):
             with self.subTest(name=name), mock.patch.dict(os.environ, {name: "unsafe"}, clear=True):
                 with self.assertRaisesRegex(ValueError, "ambient-override-refused"):
                     hosted.reject_runtime_overrides()
@@ -297,6 +330,9 @@ while True:
                                               "AWS_SECRET_ACCESS_KEY": "synthetic",
                                               "AWS_SESSION_TOKEN": "synthetic",
                                               "AWS_REGION": "us-east-1"}, clear=True):
+            hosted.reject_runtime_overrides()
+        with mock.patch.dict(os.environ, {"LD_PRELOAD": "", "LD_AUDIT": "",
+                                              "LD_LIBRARY_PATH": ""}, clear=True):
             hosted.reject_runtime_overrides()
 
     def test_hosted_request_requires_fixed_private_paths(self):

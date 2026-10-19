@@ -92,10 +92,11 @@ def main():
     os.umask(0o077)
     if os.environ.get("GITHUB_REPOSITORY") != "honua-io/honua-server" or os.environ.get("GITHUB_REF") != "refs/heads/trunk":
         raise ValueError("workflow identity")
-    if any(k.upper() in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "AWS_CA_BUNDLE",
+    if any((k.startswith("LD_") and bool(value)) or
+           (not k.startswith("LD_") and (k.upper() in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "AWS_CA_BUNDLE",
                          "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE",
-                         "LD_PRELOAD", "LD_LIBRARY_PATH", "BASH_ENV", "ENV")
-           or k.startswith(("GIT_", "PYTHON")) for k in os.environ):
+                         "BASH_ENV", "ENV") or k.startswith(("GIT_", "PYTHON"))))
+           for k, value in os.environ.items()):
         raise ValueError("environment override")
     revision = os.environ["CERT_IAC_REVISION"]
     request_sha = os.environ["CERT_REQUEST_SHA256"]
@@ -148,7 +149,8 @@ def main():
                 stream.flush()
                 os.fsync(stream.fileno())
         child_env = {key: value for key, value in os.environ.items()
-                     if not key.startswith("ACTIONS_") and key not in ("GITHUB_TOKEN", "GH_TOKEN")}
+                     if not key.startswith(("ACTIONS_", "LD_"))
+                     and key not in ("GITHUB_TOKEN", "GH_TOKEN")}
         result = run_producer(["python3", "-I", str(script), "--request", str(request_file)],
                               source, child_env)
         document = json.loads(result.stdout)
