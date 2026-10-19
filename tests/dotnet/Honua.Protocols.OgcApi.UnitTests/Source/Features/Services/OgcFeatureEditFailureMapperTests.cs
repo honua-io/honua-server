@@ -59,7 +59,8 @@ public sealed class OgcFeatureEditFailureMapperTests
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         context.Response.Body.Position = 0;
-        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        using var reader = new StreamReader(context.Response.Body);
+        var body = await reader.ReadToEndAsync();
         body.Should().Contain(denial);
         body.Should().NotContain("alice");
     }
