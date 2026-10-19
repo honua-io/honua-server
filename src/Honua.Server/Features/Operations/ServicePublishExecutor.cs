@@ -46,6 +46,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
     /// Accepts the publish off the request token. Omitted only by tests that construct the executor
     /// directly; production composition always supplies it.
     /// </param>
+    /// <param name="publishedServices">Optional persisted service store for promotion identity checks.</param>
     public ServicePublishExecutor(
         ILayerPublishingService publishingService,
         ISecureConnectionResolver connectionResolver,
