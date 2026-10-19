@@ -29,6 +29,7 @@ using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Admin;
 
@@ -178,10 +179,13 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task PublishTwice_QueuedCompletionAndHostRestart_ReadPersistedGraphAtExactUri()
     {
+        using var errors = new McpPublicationErrorCapture();
+        _fixture.Services.GetRequiredService<ILoggerFactory>().AddProvider(errors);
         (await CountSourceRowsAsync(_firstTable)).Should().Be(1);
         (await CountSourceRowsAsync(_secondTable)).Should().Be(2);
         var first = await PublishAsync(_firstTable, "first layer");
-        first.GetProperty("status").GetString().Should().Be("Completed");
+        first.GetProperty("status").GetString().Should().Be("Completed", "{0}{1}{2}",
+            first.GetRawText(), Environment.NewLine, errors.Diagnostics);
         var exactUri = first.GetProperty("serviceUri").GetString();
         exactUri.Should().NotBeNullOrWhiteSpace();
         var firstStorageId = int.Parse(first.GetProperty("layerId").GetString()!, CultureInfo.InvariantCulture);

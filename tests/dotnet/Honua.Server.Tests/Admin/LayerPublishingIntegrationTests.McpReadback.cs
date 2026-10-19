@@ -8,6 +8,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Admin;
 
@@ -20,6 +22,8 @@ public sealed partial class LayerPublishingIntegrationTests
     [Endpoint("POST /mcp")]
     public async Task McpPublishService_CompletedPublication_ReturnedResourceIsReadableByFreshClient()
     {
+        using var errors = new McpPublicationErrorCapture();
+        _fixture.Services.GetRequiredService<ILoggerFactory>().AddProvider(errors);
         await UseServerFeatureStoreConnectionAsync();
         using var publishResponse = await _client.PostAsJsonAsync("/mcp", new
         {
@@ -76,7 +80,7 @@ public sealed partial class LayerPublishingIntegrationTests
         readResponse.StatusCode.Should().Be(HttpStatusCode.OK, readBody);
         using var readDocument = JsonDocument.Parse(readBody);
         var read = readDocument.RootElement;
-        read.TryGetProperty("error", out _).Should().BeFalse(readBody);
+        read.TryGetProperty("error", out _).Should().BeFalse("{0}{1}{2}", readBody, Environment.NewLine, errors.Diagnostics);
         var contents = read.GetProperty("result").GetProperty("contents");
         contents.GetArrayLength().Should().Be(1);
         contents[0].GetProperty("uri").GetString().Should().Be(resourceUri);
