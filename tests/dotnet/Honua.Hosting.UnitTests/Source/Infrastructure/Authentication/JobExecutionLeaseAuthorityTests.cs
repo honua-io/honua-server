@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using FluentAssertions;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -18,6 +19,39 @@ namespace Honua.Hosting.UnitTests.Infrastructure.Authentication;
 
 public sealed class JobExecutionLeaseAuthorityTests
 {
+    [Fact]
+    public async Task CurrentPolicy_IsExactFreshAndDetectsNewApprovalRequirement()
+    {
+        using var fixture = await Fixture.CreateAsync();
+        var lease = await fixture.Authority.IssueAsync(fixture.Request);
+        fixture.Stored = fixture.Accept(lease);
+        var evaluator = fixture.Services.GetRequiredService<IOperatorAuthorizationEvaluator>();
+        evaluator.EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Honua.Core.Features.Security.Domain.AccessDecision.Allowed());
+        var approvals = fixture.Services.GetRequiredService<IOperatorApprovalEvaluator>();
+        approvals.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(ApprovalRequirement.Required("new-current-policy", "tightened"));
+        IJobExecutionLeaseCurrentPolicy? retained = null;
+        OperatorAuthorizationRequest? exact = null;
+        fixture.Policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(),
+            Arg.Any<JobExecutionLeaseScope>(), Arg.Any<IJobExecutionLeaseCurrentPolicy>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                retained = call.ArgAt<IJobExecutionLeaseCurrentPolicy>(3);
+                exact = call.ArgAt<JobExecutionLeaseScope>(2).Operations[0];
+                var decision = await retained.EvaluateAsync(exact);
+                decision.Authorization.IsAllowed.Should().BeTrue();
+                decision.Approval.PolicyRef.Should().Be("new-current-policy");
+                var changed = () => retained.EvaluateAsync(exact with { ApprovalReasonCodes = ["different"] });
+                await changed.Should().ThrowAsync<UnauthorizedAccessException>();
+                throw new UnauthorizedAccessException("No retained approval matches tightened policy.");
+            });
+        var execute = () => fixture.Authority.RevalidateForExecutionAsync(fixture.Stored!);
+        await execute.Should().ThrowAsync<UnauthorizedAccessException>();
+        var expiredCallback = () => retained!.EvaluateAsync(exact!);
+        await expiredCallback.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
     [Fact]
     public async Task Issuance_RequiresActualAcceptanceAndRetainsUnchangedCredentialPositive()
     {
@@ -55,7 +89,7 @@ public sealed class JobExecutionLeaseAuthorityTests
             case "revoked": await fixture.Keys.RevokeAsync(fixture.KeyId, default); break;
             case "cancelled": fixture.Stored = accepted with { CancellationRequestedAt = DateTimeOffset.UtcNow }; break;
             case "intent": fixture.Stored = accepted with { Spec = accepted.Spec with { Backend = "different" } }; break;
-            case "policy": fixture.Policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<CancellationToken>())
+            case "policy": fixture.Policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<IJobExecutionLeaseCurrentPolicy>(), Arg.Any<CancellationToken>())
                     .Returns(Task.FromException(new UnauthorizedAccessException("Approval withdrawn."))); break;
             case "missing": fixture.Stored = null; break;
         }
@@ -161,7 +195,7 @@ public sealed class JobExecutionLeaseAuthorityTests
             return Task.FromResult(new JobExecutionLeasePolicyDecision
                 { IsAllowed = true, DecisionId = "benign", MaximumExpiresAt = DateTimeOffset.UtcNow.AddHours(1) });
         }
-        public Task RequireCurrentAsync(ExecutionJobRecord job, JobExecutionLeasePolicyDecision decision, CancellationToken cancellationToken = default)
+        public Task RequireCurrentAsync(ExecutionJobRecord job, JobExecutionLeasePolicyDecision decision, JobExecutionLeaseScope scope, IJobExecutionLeaseCurrentPolicy currentPolicy, CancellationToken cancellationToken = default)
         {
             ObjectDisposedException.ThrowIf(Disposed, this);
             return Task.CompletedTask;
@@ -192,6 +226,8 @@ public sealed class JobExecutionLeaseAuthorityTests
             var services = new ServiceCollection().AddSingleton<JobExecutionLeaseAuthority>(_ => currentAuthority
                     ?? throw new InvalidOperationException("Fixture authority is not initialized."))
                 .AddSingleton<IAdminApiKeyStore>(keys)
+                .AddSingleton(Substitute.For<IOperatorAuthorizationEvaluator>())
+                .AddSingleton(Substitute.For<IOperatorApprovalEvaluator>())
                 .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions())).BuildServiceProvider();
             var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
             var context = await AgentJobSecurityBridge.CaptureAsync(principal, new RbacOptions(), services, null, default);
@@ -210,7 +246,7 @@ public sealed class JobExecutionLeaseAuthorityTests
             var policy = Substitute.For<IJobExecutionLeasePolicy>();
             policy.AuthorizeIssuanceAsync(Arg.Any<JobExecutionLeaseIssuanceRequest>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<CancellationToken>())
                 .Returns(new JobExecutionLeasePolicyDecision { IsAllowed = true, DecisionId = "canonical-benign", MaximumExpiresAt = now.AddHours(1) });
-            policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+            policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<IJobExecutionLeaseCurrentPolicy>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
             var provider = Substitute.For<IJobExecutionLeaseScopeProvider>();
             provider.Kind.Returns(job.Spec.Kind);
             provider.PrepareAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(scope);

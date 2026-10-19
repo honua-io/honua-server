@@ -203,7 +203,7 @@ public sealed class DelegatedAgentJwtBearerTests
         var policy = Substitute.For<IJobExecutionLeasePolicy>();
         policy.AuthorizeIssuanceAsync(Arg.Any<JobExecutionLeaseIssuanceRequest>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<CancellationToken>())
             .Returns(new JobExecutionLeasePolicyDecision { IsAllowed = true, DecisionId = "canonical-benign", MaximumExpiresAt = clock.GetUtcNow().AddMinutes(30) });
-        policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<IJobExecutionLeaseCurrentPolicy>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         var services = new ServiceCollection().AddLogging().AddMemoryCache()
             .AddSingleton<IConfiguration>(config).AddSingleton<TimeProvider>(clock)
             .AddSingleton(membership).AddSingleton(roles).AddSingleton(tenant).AddSingleton(store)

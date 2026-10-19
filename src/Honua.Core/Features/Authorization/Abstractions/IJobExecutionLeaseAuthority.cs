@@ -48,11 +48,14 @@ public interface IJobExecutionLeasePolicy
     Task<JobExecutionLeasePolicyDecision> AuthorizeIssuanceAsync(JobExecutionLeaseIssuanceRequest request,
         JobExecutionLeaseScope scope, CancellationToken cancellationToken = default);
 
-    /// <summary>Refuses revoked, changed or missing approval evidence required by the original decision.</summary>
+    /// <summary>Re-evaluates current policy for every sealed operation, including newly required approval, and validates retained evidence.</summary>
     /// <param name="job">Authoritative accepted job.</param>
     /// <param name="decision">Original sealed policy decision.</param>
+    /// <param name="scope">Private copy of the original sealed exact canonical operation and resource closure.</param>
+    /// <param name="currentPolicy">Closed current authorization and approval evaluation for exact sealed operations.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task RequireCurrentAsync(ExecutionJobRecord job, JobExecutionLeasePolicyDecision decision,
+    Task RequireCurrentAsync(ExecutionJobRecord job, JobExecutionLeasePolicyDecision decision, JobExecutionLeaseScope scope,
+        IJobExecutionLeaseCurrentPolicy currentPolicy,
         CancellationToken cancellationToken = default);
 }
 
