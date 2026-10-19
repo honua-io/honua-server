@@ -14,6 +14,7 @@ using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
@@ -75,6 +76,47 @@ public sealed class SharingCommunityTests : IAsyncLifetime
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/community/createGroup")]
+    public async Task MissingDurableSharingBinding_AuthenticatedMutationsReturnProtocolRefusal()
+    {
+        await using var unsupported = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
+            });
+        unsupported.ConfigureServices(services => services.RemoveAll<IPortalAudienceSnapshotProvider>());
+        await unsupported.InitializeAsync();
+        var token = await IssueUserTokenAsync(unsupported, "alice");
+        using var client = unsupported.CreateClient(c => c.DefaultRequestHeaders.Add("Referer", Referer));
+
+        foreach (var path in new[]
+        {
+            "/sharing/rest/community/createGroup",
+            "/sharing/rest/community/groups/absent/delete",
+            "/sharing/rest/community/groups/absent/addUsers",
+            "/sharing/rest/community/groups/absent/removeUsers",
+            "/sharing/rest/content/items/absent/share",
+            "/sharing/rest/content/items/absent/unshare",
+        })
+        {
+            using var response = await PostFormAsync(client, $"{path}?token={token}",
+                ("title", "Crew"), ("users", "bob"), ("groups", "absent"));
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            body.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(501);
+            body.RootElement.TryGetProperty("success", out _).Should().BeFalse();
+        }
+
+        using var discovery = await client.GetAsync($"/sharing/rest/community/groups/absent?token={token}");
+        using var discoveryBody = JsonDocument.Parse(await discovery.Content.ReadAsStringAsync());
+        discoveryBody.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
+    }
 
     [IntegrationTest]
     [Operation(Operations.Security)]
@@ -432,12 +474,14 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         return payload.GroupId;
     }
 
-    private async Task<string> IssueUserTokenAsync(string username)
+    private Task<string> IssueUserTokenAsync(string username) => IssueUserTokenAsync(_fixture, username);
+
+    private static async Task<string> IssueUserTokenAsync(WebAppFixture fixture, string username)
     {
         // A referer-bound portal token authenticates the caller on the AllowAnonymous
         // sharing routes via the portal-token bridge, without the IP binding the
         // in-process TestServer cannot populate.
-        var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
+        var issuer = fixture.Services.GetRequiredService<IPortalTokenIssuer>();
         var issuance = await issuer.IssueAsync(
             new PortalTokenIssueRequest(
                 PrincipalId: username,

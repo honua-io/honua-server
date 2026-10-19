@@ -151,6 +151,11 @@ internal static class SharingCommunityEndpoints
             return StandardErrorHelpers.CreateForbidden(context, "A trusted request tenant context is required.");
         }
 
+        if (RequireDurableMutation(context) is { } unsupported)
+        {
+            return unsupported;
+        }
+
         var form = await ReadFormOrQueryAsync(context).ConfigureAwait(false);
         var title = form.Get("title");
         if (string.IsNullOrWhiteSpace(title))
@@ -296,6 +301,11 @@ internal static class SharingCommunityEndpoints
             return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to delete a group.");
         }
 
+        if (RequireDurableMutation(context) is { } unsupported)
+        {
+            return unsupported;
+        }
+
         var record = await groupStore.GetAsync(groupId, context.RequestAborted).ConfigureAwait(false);
         if (record is null || !PortalResourceReadAuthorizer.IsGroupTenantVisible(context, record))
         {
@@ -343,6 +353,11 @@ internal static class SharingCommunityEndpoints
         if (caller is null)
         {
             return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to change group membership.");
+        }
+
+        if (RequireDurableMutation(context) is { } unsupported)
+        {
+            return unsupported;
         }
 
         var record = await groupStore.GetAsync(groupId, context.RequestAborted).ConfigureAwait(false);
@@ -409,6 +424,11 @@ internal static class SharingCommunityEndpoints
         if (caller is null)
         {
             return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to change item sharing.");
+        }
+
+        if (RequireDurableMutation(context) is { } unsupported)
+        {
+            return unsupported;
         }
 
         var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
@@ -513,6 +533,12 @@ internal static class SharingCommunityEndpoints
 
         return null;
     }
+
+    private static IResult? RequireDurableMutation(HttpContext context)
+        => context.RequestServices.GetService<IPortalAudienceSnapshotProvider>() is null
+            ? StandardErrorHelpers.CreateNotImplemented(
+                context, "Portal group and item sharing mutations require a durable sharing store.")
+            : null;
 
     private static bool CanSeeGroup(PortalGroupRecord record, ClaimsPrincipal principal)
     {
