@@ -183,12 +183,12 @@ internal sealed partial class FeatureDataAccess
                 layerId, versionId,
                 operation.Feature ?? throw new InvalidOperationException("Ordered update is missing the feature payload."),
                 writeCheck,
-                OwnerEditGuard.Find(ownerGuards, operation.Feature?.Id ?? 0),
+                OwnerEditGuard.Find(ownerGuards, operation.Feature.Value.Id),
                 connection, transaction, updateResults, cancellationToken).ConfigureAwait(false),
             FeatureEditOperationKind.Delete => await TryVersionedDeleteAsync(
                 layerId, versionId,
                 operation.ObjectId ?? throw new InvalidOperationException("Ordered delete is missing the target object id."),
-                OwnerEditGuard.Find(ownerGuards, operation.ObjectId ?? 0),
+                OwnerEditGuard.Find(ownerGuards, operation.ObjectId.Value),
                 connection, transaction, deleteResults, cancellationToken).ConfigureAwait(false),
             _ => throw new InvalidOperationException($"Unsupported ordered edit operation kind '{operation.Kind}'.")
         };
