@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import shutil
@@ -27,6 +28,73 @@ SEED = load("sdk_protocol_seed", "seed-sdk-protocol-fixture.py")
 class SdkProtocolFixtureTests(TestCase):
     def setUp(self) -> None:
         self.manifest = VERIFY.verify_source()
+
+    def copy_fixture(self, root: Path) -> Path:
+        manifest_path = root / "tests/seed/sdk-protocol-v1/manifest.json"
+        paths = [manifest_path.relative_to(root), self.manifest["coreFixture"]["path"],
+                 *(entry["path"] for entry in self.manifest["inputs"])]
+        for relative in paths:
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(VERIFY.ROOT / relative, target)
+        return manifest_path
+
+    def test_each_required_input_cannot_be_removed_from_a_valid_fixture(self) -> None:
+        for entry in self.manifest["inputs"]:
+            with self.subTest(path=entry["path"]), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                manifest_path = self.copy_fixture(root)
+                manifest = json.loads(manifest_path.read_text())
+                manifest["inputs"] = [item for item in manifest["inputs"] if item["path"] != entry["path"]]
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "complete fixture input set"):
+                    VERIFY.verify_source(root)
+
+    def test_extra_byte_bound_input_is_not_an_approved_fixture_input(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = self.copy_fixture(root)
+            manifest = json.loads(manifest_path.read_text())
+            extra = "tests/seed/sdk-protocol-v1/unreviewed-input.txt"
+            data = b"additional input with a valid matching digest\n"
+            (root / extra).write_bytes(data)
+            manifest["inputs"].append({"path": extra, "sha256": hashlib.sha256(data).hexdigest()})
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "complete fixture input set"):
+                VERIFY.verify_source(root)
+
+    def test_core_fixture_cannot_move_to_an_unreviewed_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = self.copy_fixture(root)
+            manifest = json.loads(manifest_path.read_text())
+            extra = "docs/gis/data/unreviewed-client-fixture.json"
+            shutil.copy2(root / manifest["coreFixture"]["path"], root / extra)
+            manifest["coreFixture"]["path"] = extra
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "complete fixture input set"):
+                VERIFY.verify_source(root)
+
+    def test_duplicates_refuse_even_when_all_required_inputs_and_bytes_exist(self) -> None:
+        entries = [self.manifest["coreFixture"], *self.manifest["inputs"]]
+        for entry in entries:
+            with self.subTest(path=entry["path"]), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                manifest_path = self.copy_fixture(root)
+                manifest = json.loads(manifest_path.read_text())
+                manifest["inputs"].append(entry)
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "duplicate fixture input"):
+                    VERIFY.verify_source(root)
+
+    def test_complete_fixture_inputs_can_be_reordered(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = self.copy_fixture(root)
+            manifest = json.loads(manifest_path.read_text())
+            manifest["inputs"].reverse()
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(manifest, VERIFY.verify_source(root))
 
     def test_source_inputs_are_byte_bound_and_core_stays_frozen(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
