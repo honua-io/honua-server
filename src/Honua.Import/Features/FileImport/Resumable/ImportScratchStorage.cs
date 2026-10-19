@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Import.FileImport.Resumable;
 
@@ -16,8 +17,9 @@ internal sealed class ImportScratchStorage
 {
     private readonly string _directory;
     private readonly IImportStorageBudget _budget;
+    private readonly IStorageDomainMutationFence? _domainFence;
 
-    internal ImportScratchStorage(string directory, IImportStorageBudget budget)
+    internal ImportScratchStorage(string directory, IImportStorageBudget budget, IStorageDomainMutationFence? domainFence = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         ArgumentNullException.ThrowIfNull(budget);
@@ -25,7 +27,10 @@ internal sealed class ImportScratchStorage
             throw new ArgumentException("Scratch requires an absolute configured directory.", nameof(directory));
         _directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
         _budget = budget;
+        _domainFence = domainFence;
     }
+
+    internal bool IsBoundToMutationFence(IStorageDomainMutationFence fence) => ReferenceEquals(_domainFence, fence);
 
     internal bool IsBoundToDirectory(string? directory)
     {
@@ -69,23 +74,33 @@ internal sealed class ImportScratchStorage
             throw new InvalidOperationException("The source does not fit the worker scratch allowance.");
         var id = Guid.NewGuid().ToString("N");
         var reservation = new ImportStorageReservation(uploadId, scope, $"imports/resumable/{uploadId}/scratch-{id}", bytes);
-        if (!await _budget.TryReserveAsync(reservation, cancellationToken).ConfigureAwait(false))
-            throw new InvalidOperationException("The import scratch storage budget is exhausted.");
-
-        // An unknown admission/allocation outcome remains charged for reconciliation.
-        // There is deliberately no expiry that could release a still-running writer.
-        cancellationToken.ThrowIfCancellationRequested();
-        Directory.CreateDirectory(_directory);
-        var path = Path.Join(_directory, $"honua-upload-{uploadId}-{id}.tmp");
-        var file = new FileStream(path, new FileStreamOptions
+        var mutationLease = _domainFence is null ? null
+            : await _domainFence.EnterMutationAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            Mode = FileMode.CreateNew,
-            Access = FileAccess.ReadWrite,
-            Share = FileShare.None,
-            Options = FileOptions.Asynchronous,
-            PreallocationSize = bytes
-        });
-        return new ImportScratchLease(file, path, _budget, reservation);
+            if (!await _budget.TryReserveAsync(reservation, cancellationToken).ConfigureAwait(false))
+                throw new InvalidOperationException("The import scratch storage budget is exhausted.");
+
+            // An unknown admission/allocation outcome remains charged for reconciliation.
+            // There is deliberately no expiry that could release a still-running writer.
+            cancellationToken.ThrowIfCancellationRequested();
+            Directory.CreateDirectory(_directory);
+            var path = Path.Join(_directory, $"honua-upload-{uploadId}-{id}.tmp");
+            var file = new FileStream(path, new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.ReadWrite,
+                Share = FileShare.None,
+                Options = FileOptions.Asynchronous,
+                PreallocationSize = bytes
+            });
+            return new ImportScratchLease(file, path, _budget, reservation, _domainFence, mutationLease);
+        }
+        catch
+        {
+            if (mutationLease is not null) await mutationLease.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 }
 
@@ -95,10 +110,12 @@ internal sealed class ImportScratchStorage
 /// cancellation. Failed cleanup remains charged and requires reconciliation.
 /// </summary>
 internal sealed class ImportScratchLease(FileStream content, string path, IImportStorageBudget budget,
-    ImportStorageReservation reservation) : IAsyncDisposable
+    ImportStorageReservation reservation, IStorageDomainMutationFence? domainFence = null,
+    IAsyncDisposable? mutationLease = null) : IAsyncDisposable
 {
     private readonly Lock _gate = new();
     private Task? _cleanup;
+    private IAsyncDisposable? _mutationLease = mutationLease;
 
     // Only bounded canonical materializers write this stream. Import readers keep
     // this same handle; reopening a path after verification is not supported.
@@ -108,14 +125,31 @@ internal sealed class ImportScratchLease(FileStream content, string path, IImpor
     {
         lock (_gate)
         {
-            return new ValueTask(_cleanup ??= CleanupAsync());
+            if (_cleanup is null || _cleanup.IsFaulted || _cleanup.IsCanceled) _cleanup = CleanupAsync();
+            return new ValueTask(_cleanup);
         }
     }
 
     private async Task CleanupAsync()
     {
-        await Content.DisposeAsync().ConfigureAwait(false);
-        File.Delete(path);
-        _ = await budget.ReleaseDeletedAsync(reservation, CancellationToken.None).ConfigureAwait(false);
+        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            if (_mutationLease is null && domainFence is not null)
+                _mutationLease = await domainFence.EnterMutationAsync(cleanup.Token).ConfigureAwait(false);
+            await Content.DisposeAsync().ConfigureAwait(false);
+            File.Delete(path);
+            _ = await budget.ReleaseDeletedAsync(reservation, cleanup.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            // A failed cleanup stays charged but must release its shared lease so
+            // exclusive census can recover it. Retrying reacquires the domain fence.
+            if (_mutationLease is { } lease)
+            {
+                _mutationLease = null;
+                await lease.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 }
