@@ -21,14 +21,19 @@ internal static class JobExecutionLeaseTerminalOutcome
             || artifacts.Concat(committed).Sum(value => (long)value.Length) > 262144
             || job.FileImportOutput is { } output && (output.Schema.Length > 1024 || output.PhysicalTableName.Length > 1024))
             throw new UnauthorizedAccessException("The terminal outcome exceeds the supported observation bound.");
-        var value = new JobTerminalOutcome(job.Status, job.FileImportOutput, artifacts, committed);
+        if (job.CurrentPhase is { Length: > 2048 } || job.CommitRecovery is { } recovery
+            && (recovery.IntentFingerprint.Length > 256 || recovery.WorkerId.Length > 2048 || recovery.FailureMessage is { Length: > 2048 }))
+            throw new UnauthorizedAccessException("The reconciliation metadata exceeds the supported observation bound.");
+        var value = new JobTerminalOutcome(job.Status, job.FileImportOutput, artifacts, committed,
+            job.CommitRecovery, job.ImportExecutionAttemptCount, job.CancellationRequestedAt, job.CurrentPhase);
         return Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value,
             JobTerminalOutcomeJsonContext.Default.JobTerminalOutcome)));
     }
 }
 
 internal sealed record JobTerminalOutcome(ExecutionJobStatus Status, FileImportOutputReceipt? Output,
-    string[] Artifacts, string[] CommittedEffects);
+    string[] Artifacts, string[] CommittedEffects, ExecutionJobCommitRecovery? CommitRecovery,
+    int ExecutionAttemptCount, DateTimeOffset? CancellationRequestedAt, string? Phase);
 
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
 [JsonSerializable(typeof(JobTerminalOutcome))]

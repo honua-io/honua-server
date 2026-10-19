@@ -189,6 +189,25 @@ public sealed class ExecutionJobLeasePolicyTests
         Assert.Empty(fixture.Store.ReceivedCalls());
     }
 
+    [Fact]
+    public async Task PendingImportPolicy_AllowsOnlyMetadataAfterExecutionExpiry()
+    {
+        var fixture = new Fixture();
+        var job = fixture.Job with { Audit = fixture.Job.Audit with { ProposalId = null },
+            Spec = fixture.Job.Spec with { Kind = ExecutionJobKind.FileImport } };
+        var scope = fixture.Scope with { Kind = ExecutionJobKind.FileImport };
+        var decision = await fixture.Policy.AuthorizeIssuanceAsync(fixture.Request(job), scope);
+        job = job with { Status = ExecutionJobStatus.Queued,
+            Audit = job.Audit with { SubmitterSecurityContext = new("actor", null, [])
+                { ExecutionLease = new() { LeaseId = "controlled", JobId = job.OperationId, IssuedAt = fixture.Now,
+                    ExpiresAt = fixture.Now.AddMinutes(1), ProtectedAuthority = "controlled" } } } };
+        job = job with { CommitRecovery = new(JobExecutionLeaseIntentFingerprint.Compute(job), "worker", 1, fixture.Now) };
+        fixture.Clock.UtcNow = fixture.Now.AddDays(1);
+        await fixture.Policy.RequireObservationAsync(job, decision, scope, fixture.Executor, JobExecutionLeaseObservationKind.Status);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Policy.RequireObservationAsync(job, decision,
+            scope, fixture.Executor, JobExecutionLeaseObservationKind.OutputContent));
+    }
+
     private sealed class Fixture
     {
         internal DateTimeOffset Now { get; } = DateTimeOffset.UtcNow;

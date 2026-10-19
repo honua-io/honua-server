@@ -78,7 +78,7 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(provenance);
-        if (!Enum.IsDefined(kind) || job.Status is not (ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled)) throw Denied();
+        if (!JobExecutionLeaseObservationEligibility.AllowsRetainedFact(job, kind)) throw Denied();
         var bound = await LoadAsync(job, cancellationToken).ConfigureAwait(false);
         if (Serialize(Scope(bound)) != Serialize(scope)) throw Denied();
         var actor = CanonicalSecurityActor.Resolve(observer)?.ActorId;

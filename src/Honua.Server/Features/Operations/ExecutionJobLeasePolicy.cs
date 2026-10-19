@@ -79,7 +79,7 @@ internal sealed class ExecutionJobLeasePolicy(IOperationProposalStore proposals,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(observer);
-        if (!Enum.IsDefined(kind) || job.Status is not (ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled)
+        if (!JobExecutionLeaseObservationEligibility.AllowsRetainedFact(job, kind)
             || scope.Kind != job.Spec.Kind || !decision.IsAllowed) throw Denied();
         // This validates retained historical receipt integrity only. Current observer
         // grants/provenance are independently checked by Host and the kind adapter;

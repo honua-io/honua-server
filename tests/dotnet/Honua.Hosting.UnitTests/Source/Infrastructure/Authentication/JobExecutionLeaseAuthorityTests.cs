@@ -79,6 +79,51 @@ public sealed class JobExecutionLeaseAuthorityTests
                 fixture.Stored.ClaimedBy!, fixture.Stored.AttemptCount));
     }
 
+    [Theory]
+    [InlineData("unchanged")]
+    [InlineData("cleared")]
+    [InlineData("disposition")]
+    public async Task PendingCommitMetadata_AfterExpiryIsReadOnlyAndPinsReconciliationState(string change)
+    {
+        var clock = new ObservationClock();
+        using var fixture = await Fixture.CreateAsync(clock, ExecutionJobKind.FileImport);
+        var human = await fixture.Keys.CreateAsync("observer", ["admin:read"], null, null, default);
+        var observer = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(human.Record);
+        var lease = await fixture.Authority.IssueAsync(fixture.Request);
+        var accepted = fixture.Accept(lease);
+        fixture.Stored = accepted with { Status = ExecutionJobStatus.Queued,
+            CommitRecovery = new(JobExecutionLeaseIntentFingerprint.Compute(accepted), "worker", 1, clock.GetUtcNow()) };
+        fixture.Services.GetRequiredService<IOperatorScopeAuthorizer>()
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorResourceType>(), Arg.Any<OperatorOperation>())
+            .Returns(OperatorScopeDecision.Allowed());
+        fixture.Services.GetRequiredService<IOperatorAuthorizationEvaluator>()
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        clock.UtcNow = lease.ExpiresAt.AddSeconds(1);
+        fixture.Services.GetRequiredService<IJobExecutionLeaseObservationPolicy>()
+            .RequireObservationAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<JobExecutionLeaseScope>(),
+                Arg.Any<ClaimsPrincipal>(), Arg.Any<JobExecutionLeaseObservationKind>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (change == "cleared") fixture.Stored = fixture.Stored! with { CommitRecovery = null };
+                if (change == "disposition") fixture.Stored = fixture.Stored! with
+                    { CommitRecovery = fixture.Stored.CommitRecovery! with { RetryAllowed = false } };
+                return Task.CompletedTask;
+            });
+        if (change != "unchanged")
+        {
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.ResolveForObservationAsync(accepted.OperationId,
+                observer, JobExecutionLeaseObservationKind.Status));
+            return;
+        }
+        var observed = await fixture.Authority.ResolveForObservationAsync(accepted.OperationId, observer, JobExecutionLeaseObservationKind.Status);
+        Assert.Equal(lease.LeaseId, observed.LeaseId);
+        Assert.Null(JobSecurityScope.Current);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.ResolveForObservationAsync(accepted.OperationId,
+            observer, JobExecutionLeaseObservationKind.OutputContent));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.RevalidateForExecutionAsync(fixture.Stored));
+    }
+
     [Fact]
     public async Task HistoricalObservation_AfterExecutionExpiryRequiresCurrentIndependentObserverAndExecutorLineage()
     {
@@ -382,7 +427,7 @@ public sealed class JobExecutionLeaseAuthorityTests
             => Request.PreparedJob with { Audit = Request.PreparedJob.Audit with
                 { SubmitterSecurityContext = Request.PreparedJob.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } } };
 
-        internal static async Task<Fixture> CreateAsync(TimeProvider? clock = null)
+        internal static async Task<Fixture> CreateAsync(TimeProvider? clock = null, ExecutionJobKind kind = ExecutionJobKind.Geoprocessing)
         {
             clock ??= TimeProvider.System;
             var keys = new InMemoryAdminApiKeyStore();
@@ -402,7 +447,7 @@ public sealed class JobExecutionLeaseAuthorityTests
             var job = new ExecutionJobRecord
             {
                 OperationId = "job", Status = ExecutionJobStatus.Queued, CreatedAt = now, UpdatedAt = now,
-                Spec = new() { TargetKind = BatchComputeTargetKind.LocalProcess, Backend = "local", Kind = ExecutionJobKind.Geoprocessing, WorkloadName = "constant" },
+                Spec = new() { TargetKind = BatchComputeTargetKind.LocalProcess, Backend = "local", Kind = kind, WorkloadName = "constant" },
                 Audit = new() { RequestedBy = context.OwnerActorId, TenantId = context.TenantId, SubmitterSecurityContext = context }
             };
             var scope = new JobExecutionLeaseScope

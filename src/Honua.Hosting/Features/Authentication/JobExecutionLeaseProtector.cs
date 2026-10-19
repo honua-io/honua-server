@@ -79,13 +79,14 @@ internal sealed class JobExecutionLeaseProtector(IDataProtectionProvider protect
     internal SealedJobExecutionLeaseBinding UnprotectAndMatchAuthoritativeJob(ExecutionJobRecord authoritativeJob)
         => Unprotect(authoritativeJob, historical: false);
 
-    // Historical proof validates a retained terminal receipt, never execution authority.
-    internal SealedJobExecutionLeaseBinding UnprotectHistoricalTerminalJob(ExecutionJobRecord authoritativeJob)
-        => Unprotect(authoritativeJob, historical: true);
+    // Historical proof validates a retained fact (including unresolved metadata), never execution authority.
+    internal SealedJobExecutionLeaseBinding UnprotectHistoricalTerminalJob(ExecutionJobRecord authoritativeJob, bool pendingMetadata = false)
+        => Unprotect(authoritativeJob, historical: true, pendingMetadata);
 
-    private SealedJobExecutionLeaseBinding Unprotect(ExecutionJobRecord authoritativeJob, bool historical)
+    private SealedJobExecutionLeaseBinding Unprotect(ExecutionJobRecord authoritativeJob, bool historical, bool pendingMetadata = false)
     {
-        if (historical && !IsTerminal(authoritativeJob))
+        if (historical && !(IsTerminal(authoritativeJob) || pendingMetadata
+            && JobExecutionLeaseObservationEligibility.AllowsRetainedFact(authoritativeJob, JobExecutionLeaseObservationKind.Status)))
         {
             throw Denied();
         }
@@ -115,7 +116,7 @@ internal sealed class JobExecutionLeaseProtector(IDataProtectionProvider protect
                 throw Denied();
             }
             ValidateScope(binding.Scope, authoritativeJob.Spec.Kind);
-            _validated.Add(binding, new VerifiedPurpose(historical, lease));
+            _validated.Add(binding, new VerifiedPurpose(historical, lease, pendingMetadata));
             return binding;
         }
         catch (Exception exception) when (exception is CryptographicException or FormatException or JsonException)
@@ -146,7 +147,8 @@ internal sealed class JobExecutionLeaseProtector(IDataProtectionProvider protect
 
     internal void RequireVerifiedHistoricalBinding(SealedJobExecutionLeaseBinding binding, ExecutionJobRecord job)
     {
-        if (!_validated.TryGetValue(binding, out var purpose) || !purpose.Historical || !IsTerminal(job)
+        if (!_validated.TryGetValue(binding, out var purpose) || !purpose.Historical || !(IsTerminal(job) || purpose.PendingMetadata
+                && JobExecutionLeaseObservationEligibility.AllowsRetainedFact(job, JobExecutionLeaseObservationKind.Status))
             || job.Audit.SubmitterSecurityContext?.ExecutionLease != purpose.Lease
             || binding.JobId != job.OperationId
             || binding.IntentFingerprint != JobExecutionLeaseIntentFingerprint.Compute(job))
@@ -158,7 +160,7 @@ internal sealed class JobExecutionLeaseProtector(IDataProtectionProvider protect
     private static bool IsTerminal(ExecutionJobRecord job)
         => job.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
 
-    private sealed record VerifiedPurpose(bool Historical, JobExecutionLease Lease);
+    private sealed record VerifiedPurpose(bool Historical, JobExecutionLease Lease, bool PendingMetadata);
 
     private static void ValidateScope(JobExecutionLeaseScope scope, ExecutionJobKind kind)
     {

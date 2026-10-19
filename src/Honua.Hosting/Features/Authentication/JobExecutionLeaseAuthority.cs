@@ -99,7 +99,7 @@ internal sealed class JobExecutionLeaseAuthority(
             throw Denied();
         }
         var candidate = await _jobs.GetAsync(jobId, cancellationToken).ConfigureAwait(false) ?? throw Denied();
-        if (candidate.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled)
+        if (JobExecutionLeaseObservationEligibility.AllowsRetainedFact(candidate, kind))
         {
             return await ResolveHistoricalObservationAsync(candidate, observer, kind, cancellationToken).ConfigureAwait(false);
         }
@@ -159,11 +159,12 @@ internal sealed class JobExecutionLeaseAuthority(
         ClaimsPrincipal observer, JobExecutionLeaseObservationKind kind, CancellationToken cancellationToken)
     {
         var job = await _jobs.GetAsync(jobId, cancellationToken).ConfigureAwait(false) ?? throw Denied();
-        var binding = _protector.UnprotectHistoricalTerminalJob(job);
-        if (JobExecutionLeaseTerminalOutcome.Compute(job) != expectedOutcome
+        var binding = _protector.UnprotectHistoricalTerminalJob(job, pendingMetadata: kind == JobExecutionLeaseObservationKind.Status);
+        if (!JobExecutionLeaseObservationEligibility.AllowsRetainedFact(job, kind)
+            || JobExecutionLeaseTerminalOutcome.Compute(job) != expectedOutcome
             || job.OperationId != jobId || JobExecutionLeaseIntentFingerprint.Compute(expected) != binding.IntentFingerprint
             || expected.Audit.SubmitterSecurityContext?.ExecutionLease != job.Audit.SubmitterSecurityContext?.ExecutionLease
-            || !await AgentCredentialAuthority.IsCurrentAsync(observer, _services, cancellationToken).ConfigureAwait(false))
+            || !await AgentCredentialAuthority.IsCurrentObserverAsync(observer, _services, cancellationToken).ConfigureAwait(false))
         {
             throw Denied();
         }
