@@ -205,7 +205,8 @@ internal sealed partial class Wfs20Handler
                 $"{GetFeatureNamespacePrefix(resourceName)}:{localName}",
                 localName,
                 GetFeatureNamespacePrefix(resourceName),
-                GetFeatureNamespaceUri(resourceName)));
+                GetFeatureNamespaceUri(resourceName),
+                snapshot));
         }
 
         return descriptors.ToImmutable();
