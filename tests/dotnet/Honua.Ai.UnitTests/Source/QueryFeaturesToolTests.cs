@@ -71,6 +71,82 @@ public sealed class QueryFeaturesToolTests
         captured.OutFields!.Value.Should().Contain("name").And.NotContain(HiddenField).And.NotContain("shape");
     }
 
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("[]")]
+    [InlineData("[\"*\"]")]
+    [InlineData("[\"*\",\"name\"]")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_AllVisibleFields_ExpandsWildcardBeforeReader(string outFields)
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        FeatureQuery captured = default;
+        reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                captured = call.Arg<FeatureQuery>();
+                return FeatureWithHiddenValue();
+            });
+
+        var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"outFields":{{outFields}},"returnGeometry":false}""");
+
+        var structured = SuccessfulContent(response);
+        captured.OutFields.Should().NotBeNull();
+        captured.OutFields!.Value.Should().Equal("objectid", "name");
+        var attributes = structured.GetProperty("features")[0].GetProperty("attributes");
+        attributes.GetProperty("name").GetString().Should().Be("Lot 7");
+        attributes.TryGetProperty(HiddenField, out _).Should().BeFalse();
+        structured.GetProperty("geojson").GetProperty("features")[0].GetProperty("properties")
+            .TryGetProperty(HiddenField, out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_ExplicitVisibleField_UsesCanonicalName()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        FeatureQuery captured = default;
+        reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                captured = call.Arg<FeatureQuery>();
+                return FeatureWithHiddenValue();
+            });
+
+        var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"outFields":["NAME"]}""");
+
+        SuccessfulContent(response);
+        captured.OutFields.Should().NotBeNull();
+        captured.OutFields!.Value.Should().Equal("name");
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("[\"*\",\"salary\"]")]
+    [InlineData("[\"*\",\"missing\"]")]
+    [InlineData("[\"missing\"]")]
+    [InlineData("[\"shape\"]")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_UnavailableField_ReturnsInvalidArgumentBeforeReader(string outFields)
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"outFields":{{outFields}}}""");
+
+        AssertInvalidArgument(response);
+        await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_query_features")]
