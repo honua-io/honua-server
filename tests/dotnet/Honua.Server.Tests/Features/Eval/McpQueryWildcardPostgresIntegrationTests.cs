@@ -21,6 +21,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -35,7 +36,7 @@ namespace Honua.Server.Tests.Features.Eval;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpQueryWildcardPostgresIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
+public sealed class McpQueryWildcardPostgresIntegrationTests(DatabaseFixtureAdapter fixture) : IAsyncLifetime
 {
     private string _schema = null!;
 
