@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
@@ -341,6 +342,121 @@ public sealed class MigrationCatalogReconcilerTests
 
         outcome.Findings.Should().NotContain(finding => finding.Code == MigrationCatalogReconciliationCodes.RelationshipMissing);
     }
+
+    [UnitTest]
+    public void Reconcile_WhenPublishedCompositeDropsOwnership_FailsWithoutClearingReview()
+    {
+        var inventory = BuildInventoryResource();
+        var expected = CompositeRelationship(inventory.Id, MigrationManifestRelationshipClassifications.ManualReview);
+        var published = BuildPublishedResource() with
+        {
+            SchemaFields = BuildPublishedResource().SchemaFields.Where(field => field.Name != "TYPE").ToArray(),
+            Relationships =
+            [
+                new MetadataV2Relationship
+                {
+                    Id = "rel-10-0",
+                    Name = "Summary",
+                    RelatedResourceId = "res-layer-11",
+                    Composite = false,
+                    Role = "esriRelRoleOrigin",
+                    Cardinality = "one-to-many",
+                    OriginField = "Join_ID",
+                    DestinationField = "Join_ID"
+                }
+            ]
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(
+            inventory,
+            published,
+            expectedRelationships: [expected]);
+
+        expected.Classification.Should().Be(MigrationManifestRelationshipClassifications.ManualReview);
+        outcome.Findings.Should().Contain(finding => finding.Code == MigrationCatalogReconciliationCodes.FieldMissing);
+        var downgrade = outcome.Findings.Should().ContainSingle(finding =>
+            finding.Code == MigrationCatalogReconciliationCodes.RelationshipCompositeDowngraded).Subject;
+        downgrade.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Fail);
+        downgrade.Actual.Should().Be("simple");
+        downgrade.Summary.Should().Contain("not accepted as a simple relationship");
+    }
+
+    [UnitTest]
+    public void Reconcile_WhenPublishedCompositeKeepsOwnership_DoesNotClearManualReviewOrOtherFindings()
+    {
+        var inventory = BuildInventoryResource();
+        var expected = CompositeRelationship(inventory.Id, MigrationManifestRelationshipClassifications.ManualReview);
+        var published = BuildPublishedResource() with
+        {
+            SchemaFields = BuildPublishedResource().SchemaFields.Where(field => field.Name != "TYPE").ToArray(),
+            Relationships = [PublishedComposite()]
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(
+            inventory,
+            published,
+            expectedRelationships: [expected]);
+
+        expected.Classification.Should().Be(MigrationManifestRelationshipClassifications.ManualReview);
+        expected.RelationshipType.Should().Be("composite");
+        outcome.Findings.Should().Contain(finding => finding.Code == MigrationCatalogReconciliationCodes.FieldMissing && finding.Subject == "TYPE");
+        outcome.Findings.Should().NotContain(finding =>
+            finding.Code == MigrationCatalogReconciliationCodes.RelationshipCompositeDowngraded
+            || finding.Code == MigrationCatalogReconciliationCodes.RelationshipMissing);
+    }
+
+    [UnitTest]
+    public void Reconcile_WhenAssistedCompositeIsMissingOrMismatched_FailsClosed()
+    {
+        var inventory = BuildInventoryResource();
+        var missing = CompositeRelationship(inventory.Id, MigrationManifestRelationshipClassifications.Assisted);
+        var missingOutcome = MigrationCatalogReconciler.ReconcileResource(
+            inventory,
+            BuildPublishedResource(),
+            expectedRelationships: [missing]);
+        missingOutcome.Findings.Should().Contain(finding => finding.Code == MigrationCatalogReconciliationCodes.RelationshipMissing);
+        missing.Classification.Should().Be(MigrationManifestRelationshipClassifications.Assisted);
+
+        var mismatched = CompositeRelationship(inventory.Id, MigrationManifestRelationshipClassifications.Assisted);
+        var mismatchedOutcome = MigrationCatalogReconciler.ReconcileResource(
+            inventory,
+            BuildPublishedResource() with
+            {
+                Relationships = [PublishedComposite() with { OriginField = "Other" }]
+            },
+            expectedRelationships: [mismatched]);
+        mismatchedOutcome.Findings.Should().ContainSingle(finding =>
+            finding.Code == MigrationCatalogReconciliationCodes.RelationshipCompositeDowngraded
+            && finding.Actual == "composite");
+        mismatched.Classification.Should().Be(MigrationManifestRelationshipClassifications.Assisted);
+    }
+
+    private static MigrationManifestRelationshipRecord CompositeRelationship(string sourceResourceId, string classification)
+        => new()
+        {
+            SourceRelationshipId = "rel:0",
+            SourceResourceId = sourceResourceId,
+            Name = "Summary",
+            RelationshipType = "composite",
+            Cardinality = "1:N",
+            Role = "esriRelRoleOrigin",
+            OriginKeyField = "Join_ID",
+            DestinationKeyField = "Join_ID",
+            Classification = classification
+        };
+
+    private static MetadataV2Relationship PublishedComposite()
+        => new()
+        {
+            Id = "rel-10-0",
+            Name = "Summary",
+            RelatedResourceId = "res-layer-11",
+            Composite = true,
+            Role = "esriRelRoleOrigin",
+            Cardinality = "one-to-many",
+            OriginField = "Join_ID",
+            DestinationField = "Join_ID"
+        };
 
     [Trait("Tier", "Fast")]
     [Fact]

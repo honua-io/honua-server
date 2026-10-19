@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
@@ -17,31 +18,5 @@ internal static class EditOwnerSubject
     /// <param name="principal">The caller, or <c>null</c>.</param>
     /// <returns>The owner subject, or <c>null</c> when none is present.</returns>
     public static string? Resolve(ClaimsPrincipal? principal)
-    {
-        if (principal is null)
-        {
-            return null;
-        }
-
-        var subject = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!string.IsNullOrWhiteSpace(subject))
-        {
-            return subject;
-        }
-
-        subject = principal.FindFirst("sub")?.Value;
-        if (!string.IsNullOrWhiteSpace(subject))
-        {
-            return subject;
-        }
-
-        subject = principal.FindFirst("api_key_id")?.Value;
-        if (!string.IsNullOrWhiteSpace(subject))
-        {
-            return subject;
-        }
-
-        subject = principal.Identity?.Name;
-        return string.IsNullOrWhiteSpace(subject) ? null : subject;
-    }
+        => ServiceDataEditorAuthorization.ResolveOwnerSubject(principal);
 }
