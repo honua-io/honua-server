@@ -54,6 +54,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     private const string DataUriPrefix = "data:application/geo+json;base64,";
 
     [IntegrationTest]
+    [Trait("Category", "RemoteSourceExecutionProof")]
     [Operation(Operations.ProcessExecution)]
     [Operation(Operations.Create)]
     [Operation(Operations.Query)]
@@ -224,7 +225,12 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             {
                 resourceResponse.EnsureSuccessStatusCode();
                 using var resource = JsonDocument.Parse(await resourceResponse.Content.ReadAsStringAsync());
-                resource.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+                var hasError = resource.RootElement.TryGetProperty("error", out var error);
+                var errorClass = hasError && error.TryGetProperty("data", out var data)
+                    && data.TryGetProperty("code", out var code)
+                    ? code.GetString()
+                    : "unknown";
+                hasError.Should().BeFalse($"MCP job results returned error class {errorClass}");
                 resource.RootElement.GetProperty("result").GetProperty("contents")[0]
                     .GetProperty("text").GetString().Should().Contain(artifact.ArtifactId);
             }
