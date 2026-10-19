@@ -20,9 +20,10 @@ defines authenticated exact-run private receipt and retention.
 The workflow is **not ready for a live dispatch** until the protected `cert`
 environment contains these reviewed inputs:
 
-- `HONUA_CERT_IAC_READ_TOKEN`: read-only access to the private IaC repository.
-  Checkout is fixed to its current `trunk`; the dispatch SHA must match that
-  exact checkout. The workflow does not select an arbitrary revision.
+- The public `honua-iac` checkout uses the job's default read-only
+  `GITHUB_TOKEN`. Checkout is fixed to its current `trunk`; the dispatch SHA
+  must match that exact checkout. The workflow does not select an arbitrary
+  revision.
 - `HONUA_CERT_REQUEST_JSON`: exact v2 request bytes, SHA256 supplied in the
   dispatch. The request pins candidate, account, backend identity, existing
   state lineage/serial, image digests, secret references, separate backend and

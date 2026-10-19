@@ -68,7 +68,6 @@ jobs:
           repository: honua-io/honua-iac
           ref: trunk
           path: iac
-          token: ${{ secrets.HONUA_CERT_IAC_READ_TOKEN }}
           persist-credentials: false
 
       - name: Install pinned Terraform CLI
