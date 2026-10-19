@@ -157,6 +157,15 @@ def with_backend_token_rotation(entry, token_file, invoke, interval_seconds=60):
     return result
 
 
+def run_backend_terraform(entry, token_file, args, env, timeout=600):
+    """Each Terraform process must start with a fresh backend web identity."""
+    renewed = STAGE / "backend-token-renewed"
+    save(renewed, entry.oidc_token().encode())
+    os.replace(renewed, token_file)
+    return with_backend_token_rotation(
+        entry, token_file, lambda: run_private(args, env=env, timeout=timeout))
+
+
 def fixed_request():
     request = json.loads((STAGE / "request.json").read_bytes())
     lifetime = request["expiresInSeconds"]
@@ -355,12 +364,15 @@ def backend():
     require(terraform is not None, "pinned-terraform-required")
     env = dict(os.environ, TF_CLI_CONFIG_FILE=str(STAGE / "terraform.tfrc"),
                TF_IN_AUTOMATION="1", CHECKPOINT_DISABLE="1")
-    run_private([terraform, "-chdir=" + str(root), "init", "-reconfigure", "-lockfile=readonly",
-                 "-input=false", "-no-color"], env=env, timeout=600)
+    run_backend_terraform(entry, STAGE / "backend-token",
+                          [terraform, "-chdir=" + str(root), "init", "-reconfigure", "-lockfile=readonly",
+                           "-input=false", "-no-color"], env, timeout=600)
     workspace = request["backend"]["workspace"]
     require(re.fullmatch(r"[A-Za-z0-9_-]{1,64}", workspace), "workspace-invalid")
-    run_private([terraform, "-chdir=" + str(root), "workspace", "select", workspace], env=env)
-    state = json.loads(run_private([terraform, "-chdir=" + str(root), "state", "pull"], env=env))
+    run_backend_terraform(entry, STAGE / "backend-token",
+                          [terraform, "-chdir=" + str(root), "workspace", "select", workspace], env)
+    state = json.loads(run_backend_terraform(entry, STAGE / "backend-token",
+                                             [terraform, "-chdir=" + str(root), "state", "pull"], env))
     require(state.get("lineage") == request["stateBefore"]["lineage"]
             and state.get("serial") == request["stateBefore"]["serial"], "existing-state-mismatch")
     bootstrap = json.loads((iac / "release/aws-cert-reviewed-bootstrap.json").read_bytes())

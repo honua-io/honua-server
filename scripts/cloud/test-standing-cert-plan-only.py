@@ -98,6 +98,31 @@ class StandingCertPlanWorkflow(unittest.TestCase):
             with self.subTest(step=step.splitlines()[0]):
                 self.assertTrue(all(name in step for name in required))
 
+    def test_separate_backend_processes_replace_stale_token_before_start(self):
+        stage = self.base / "stage"
+        stage.mkdir(mode=0o700)
+        token = stage / "backend-token"
+        token.write_text("expired")
+        token.chmod(0o600)
+        source = mock.Mock()
+        source.oidc_token.side_effect = ("fresh-init", "fresh-workspace", "fresh-state")
+        observed = []
+
+        def terraform(args, **_):
+            observed.append((args[-1], token.read_text()))
+            token.write_text("expired")
+            token.chmod(0o600)
+            return b"{}"
+
+        with mock.patch.object(hosted, "STAGE", stage), \
+             mock.patch.object(hosted, "run_private", side_effect=terraform):
+            for action in ("init", "workspace", "state"):
+                hosted.run_backend_terraform(source, token, ["terraform", action], {})
+        self.assertEqual(observed, [("init", "fresh-init"),
+                                    ("workspace", "fresh-workspace"),
+                                    ("state", "fresh-state")])
+        self.assertEqual(stat.S_IMODE(token.stat().st_mode), 0o600)
+
     def test_private_packet_receipt_only_and_token_cleanup(self):
         receipt = {key: "fixture" for key in entry.PUBLIC_KEYS}
         receipt["schema"] = "honua.aws-cert-plan-public/v1"
