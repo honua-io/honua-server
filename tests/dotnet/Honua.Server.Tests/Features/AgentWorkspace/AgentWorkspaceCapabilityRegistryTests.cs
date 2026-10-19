@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Capabilities;
 using Honua.Server.Features.AgentWorkspace;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.AgentWorkspace;
 
