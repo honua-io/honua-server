@@ -338,7 +338,7 @@ public sealed class GrpcFeatureServiceTests
         _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(2)]
     [InlineData(4)]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
@@ -359,7 +359,7 @@ public sealed class GrpcFeatureServiceTests
         _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(2, 1L)]
     [InlineData(4, 2L)]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
