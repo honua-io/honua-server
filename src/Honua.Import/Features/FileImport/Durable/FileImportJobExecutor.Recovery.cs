@@ -17,11 +17,20 @@ internal sealed partial class FileImportJobExecutor
 
     public async Task<JobExecutionResult> ExecuteAsync(ExecutionJobRecord job,
         IJobExecutionContext context, CancellationToken cancellationToken)
+        => await ExecuteOrRecoverAsync(job, context, cancellationToken, recoveryOnly: false).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Import execution returned no result.");
+
+    public Task<JobExecutionResult?> TryRecoverCommittedAsync(ExecutionJobRecord job,
+        IJobExecutionContext context, CancellationToken cancellationToken = default)
+        => ExecuteOrRecoverAsync(job, context, cancellationToken, recoveryOnly: true);
+
+    private async Task<JobExecutionResult?> ExecuteOrRecoverAsync(ExecutionJobRecord job,
+        IJobExecutionContext context, CancellationToken cancellationToken, bool recoveryOnly)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(context);
         if (job.Audit.SubmitterSecurityContext is not { AgentCredential: not null, ExecutionLease: not null } submitted)
-            return await ExecuteCoreAsync(job, context, cancellationToken).ConfigureAwait(false);
+            return recoveryOnly ? null : await ExecuteCoreAsync(job, context, cancellationToken).ConfigureAwait(false);
 
         if (context.OperationId != job.OperationId || job.Spec.Kind != ExecutionJobKind.FileImport
             || submitted.ExecutionLease.JobId != job.OperationId
@@ -39,6 +48,8 @@ internal sealed partial class FileImportJobExecutor
         var committed = await ReadCommittedAsync().ConfigureAwait(false);
         if (committed is not null)
             return await CompleteCommittedAsync(committed).ConfigureAwait(false);
+        if (recoveryOnly)
+            return null;
 
         JobExecutionResult? execution = null;
         ExceptionDispatchInfo? fault = null;
@@ -68,7 +79,7 @@ internal sealed partial class FileImportJobExecutor
 
         async Task<ImportResult?> ReadCommittedAsync()
         {
-            using var recovery = new CancellationTokenSource(RecoveryTimeout);
+            using var recovery = CreateRecoveryCancellation();
             RequireSameJob(await jobs.GetAsync(job.OperationId, recovery.Token).ConfigureAwait(false));
             var receipt = await receipts.TryReadAsync(job.OperationId, intent, recovery.Token).ConfigureAwait(false);
             RequireSameJob(await jobs.GetAsync(job.OperationId, recovery.Token).ConfigureAwait(false));
@@ -91,7 +102,7 @@ internal sealed partial class FileImportJobExecutor
 
             // The durable context retains worker/attempt CAS fences, including after a
             // cancellation. Only an actual database receipt can set this completion flag.
-            using var completion = new CancellationTokenSource(RecoveryTimeout);
+            using var completion = CreateRecoveryCancellation();
             await context.RecordCommittedEffectAsync($"honua-import-commit:{job.OperationId}:{intent}",
                 completion.Token).ConfigureAwait(false);
             try
@@ -118,6 +129,16 @@ internal sealed partial class FileImportJobExecutor
                     DetectedSrid = result.DetectedSrid
                 }
             };
+        }
+
+        CancellationTokenSource CreateRecoveryCancellation()
+        {
+            // A direct execution failure may have cancelled its execution token. A
+            // recovery-only caller instead supplies its own bounded reconciliation token.
+            var recovery = CancellationTokenSource.CreateLinkedTokenSource(
+                recoveryOnly ? cancellationToken : CancellationToken.None);
+            recovery.CancelAfter(RecoveryTimeout);
+            return recovery;
         }
     }
 }

@@ -47,6 +47,9 @@ public sealed class StagedImportSourceTests
     [InlineData("missing-receipt")]
     [InlineData("effect-record-refused")]
     [InlineData("retry-after-effect-refusal")]
+    [InlineData("recovery-only-committed")]
+    [InlineData("recovery-only-missing")]
+    [InlineData("recovery-only-no-lease")]
     public async Task Worker_AcceptedLeaseFencesSourceAndImporterButPreservesCommittedTruth(string scenario)
     {
         using var fixture = new Fixture();
@@ -67,14 +70,14 @@ public sealed class StagedImportSourceTests
             OperationId = envelope.JobId, Status = ExecutionJobStatus.Running, CreatedAt = clock.GetUtcNow(), UpdatedAt = clock.GetUtcNow(),
             AcceptanceDeadline = accepted.Acceptance.AcceptBefore,
             Audit = new() { RequestedBy = original.OwnerActorId, TenantId = original.TenantId,
-                SubmitterSecurityContext = original with { ExecutionLease = scenario == "no-lease" ? null : envelope } },
+                SubmitterSecurityContext = original with { ExecutionLease = scenario is "no-lease" or "recovery-only-no-lease" ? null : envelope } },
             Spec = new() { Kind = ExecutionJobKind.FileImport, TargetKind = BatchComputeTargetKind.AwsBatch,
                 Backend = "in-process", WorkloadName = "file-import", Parameters = FileImportJobParameters.Build(accepted, receipt.Bytes) }
         };
-        var recovered = scenario is "recover-expired" or "recover-revoked";
+        var recovered = scenario is "recover-expired" or "recover-revoked" or "recovery-only-committed";
         ImportResult? committed = recovered ? SuccessfulResult() : null;
-        var revoked = scenario == "recover-revoked";
-        if (scenario == "recover-expired") clock.UtcNow = envelope.ExpiresAt.AddSeconds(1);
+        var revoked = scenario is "recover-revoked" or "recovery-only-committed";
+        if (scenario is "recover-expired" or "recovery-only-committed") clock.UtcNow = envelope.ExpiresAt.AddSeconds(1);
         var stored = scenario == "job-changed-before-read" ? job with { Audit = job.Audit with { RequestedBy = "changed" } } : job;
         var jobs = Substitute.For<IExecutionJobStore>();
         jobs.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(_ => stored);
@@ -134,6 +137,29 @@ public sealed class StagedImportSourceTests
             Substitute.For<IUniversalProgressStore>(), NullLogger<FileImportJobExecutor>.Instance);
         var context = Substitute.For<IJobExecutionContext>();
         context.OperationId.Returns(job.OperationId);
+        if (scenario.StartsWith("recovery-only-", StringComparison.Ordinal))
+        {
+            var recovery = await ((IJobCommittedResultRecovery)executor).TryRecoverCommittedAsync(job, context);
+            if (recovered)
+            {
+                recovery.Should().NotBeNull();
+                recovery!.Status.Should().Be(ExecutionJobStatus.Succeeded);
+                recovery.CompletedWithCommittedEffects.Should().BeTrue();
+                recovery.FileImportOutput!.PhysicalTableName.Should().Be("roads");
+                await context.Received(1).RecordCommittedEffectAsync(
+                    $"honua-import-commit:{job.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(job)}", Arg.Any<CancellationToken>());
+            }
+            else
+            {
+                recovery.Should().BeNull();
+                await context.DidNotReceive().RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+            }
+            calls.Should().Be(0);
+            storage.ReceivedCalls().Should().BeEmpty();
+            await importer.DidNotReceive().ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<IProgress<ImportProgress>>(), Arg.Any<CancellationToken>());
+            JobSecurityScope.Current.Should().BeNull();
+            return;
+        }
         var rejectEffect = scenario is "effect-record-refused" or "retry-after-effect-refusal";
         if (rejectEffect) context.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => rejectEffect ? Task.FromException(new InvalidOperationException("Stale attempt.")) : Task.CompletedTask);

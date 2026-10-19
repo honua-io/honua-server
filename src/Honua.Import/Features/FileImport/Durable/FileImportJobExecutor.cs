@@ -29,7 +29,7 @@ internal sealed partial class FileImportJobExecutor(
     IUniversalProgressStore progressStore,
     ILogger<FileImportJobExecutor> logger,
     IInstanceIdentity? instanceIdentity = null,
-    Honua.Core.Features.Licensing.Abstractions.ILicenseOperationPolicy? licensePolicy = null) : IJobExecutor
+    Honua.Core.Features.Licensing.Abstractions.ILicenseOperationPolicy? licensePolicy = null) : IJobExecutor, IJobCommittedResultRecovery
 {
     /// <summary>Set by AWS Batch in every job container; identifies the executing Batch job.</summary>
     internal const string AwsBatchJobIdVariable = "AWS_BATCH_JOB_ID";
