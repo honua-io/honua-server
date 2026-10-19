@@ -23,7 +23,7 @@
       "tests/baselines/client-compat/**/*.cert.json"
     ],
     "prosePair": "docs/gis/CLIENT_CERTIFICATION_ROSTER.md",
-    "driftTests": "tests/dotnet/Honua.Architecture.Tests/ClientCertificationRosterTests.cs"
+    "driftTests": "tests/dotnet/Honua.Architecture.SourceTests/ClientCertificationRosterTests.cs"
   },
   "reconciliationNotes": [
     {
@@ -360,7 +360,7 @@
       "activationState": "awaiting-runtime",
       "rosterOrigin": "artifact",
       "sourceStatus": "Built, unrun",
-      "clientVersionPolicy": "Licensed ArcGIS Pro build recorded per run from the self-hosted Windows runner; evidence is entitlement-bound and content-addressed.",
+      "clientVersionPolicy": "ArcGIS Pro build is the build named on the desktop-arcgis evidence identifier in honua-esri-compat. Evidence is content-addressed.",
       "protocolSurfaces": [
         "featureserver",
         "mapserver",
@@ -402,7 +402,7 @@
       "licensing": {
         "model": "entitlement-bound",
         "requiresSeat": true,
-        "notes": "Licensed evidence must be entitlement-bound and content-addressed at release."
+        "notes": "Desktop entitlement detail stays in honua-esri-compat. This roster does not configure it."
       },
       "runtime": "windows-license",
       "fixtureProjection": {
@@ -422,7 +422,7 @@
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "Lane code exists and records honest skips because no Windows ArcGIS Pro runner is provisioned. The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane, so activation targets 2026.2 via workstream A of #3389."
+      "notes": "The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane. Activation targets 2026.2 via workstream A of #3389. No desktop receipt is linked from this repo."
     },
     {
       "id": "js",

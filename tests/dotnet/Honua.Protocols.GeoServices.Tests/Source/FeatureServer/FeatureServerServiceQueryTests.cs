@@ -71,6 +71,112 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
         targetLayer.GetProperty("features").GetArrayLength().Should().Be(0);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
+    public async Task ServiceQuery_Get_NullLayerDefsEntry_KeepsObjectIdWhere()
+    {
+        var layerId = WebAppFixture.TestLayerId;
+        var where = Uri.EscapeDataString("OBJECTID=1");
+        var whereOnly = await CountLayerFeaturesAsync($"where={where}&f=json");
+        var nullEntry = Uri.EscapeDataString($"{{\"{layerId}\":null}}");
+        var withNull = await CountLayerFeaturesAsync($"where={where}&f=json&layerDefs={nullEntry}");
+        var blankEntry = Uri.EscapeDataString($"{{\"{layerId}\":\"\"}}");
+        var withBlank = await CountLayerFeaturesAsync($"where={where}&f=json&layerDefs={blankEntry}");
+        var all = await CountLayerFeaturesAsync("where=1%3D1&f=json");
+
+        withNull.Should().Be(whereOnly);
+        withBlank.Should().Be(whereOnly);
+        all.Should().BeGreaterThan(0);
+        if (whereOnly < all)
+        {
+            withNull.Should().BeLessThan(all);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
+    public async Task ServiceQuery_Get_LayerDefs_AndCombinesBothPredicates()
+    {
+        var layerId = WebAppFixture.TestLayerId;
+        var ids = await ReadSampleObjectIdsAsync();
+        ids.Count.Should().BeGreaterThan(0);
+        var id = ids[0];
+
+        var whereOnly = await CountLayerFeaturesAsync($"where={Uri.EscapeDataString($"OBJECTID={id}")}&f=json");
+        whereOnly.Should().BeGreaterThan(0);
+
+        var contradictory = Uri.EscapeDataString($"{{\"{layerId}\":\"OBJECTID={id}\"}}");
+        var both = await CountLayerFeaturesAsync(
+            $"where={Uri.EscapeDataString("1=0")}&f=json&layerDefs={contradictory}");
+        both.Should().Be(0);
+
+        if (ids.Count > 1)
+        {
+            var other = ids[1];
+            var otherDefs = Uri.EscapeDataString($"{{\"{layerId}\":\"OBJECTID={other}\"}}");
+            var intersection = await CountLayerFeaturesAsync(
+                $"where={Uri.EscapeDataString($"OBJECTID={id}")}&f=json&layerDefs={otherDefs}");
+            var otherOnly = await CountLayerFeaturesAsync($"where={Uri.EscapeDataString($"OBJECTID={other}")}&f=json");
+
+            intersection.Should().Be(0);
+            otherOnly.Should().BeGreaterThan(0);
+        }
+    }
+
+    private async Task<int> CountLayerFeaturesAsync(string query)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/query?{query}");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "response body was {0}", content);
+
+        using var document = JsonDocument.Parse(content);
+        return document.RootElement
+            .GetProperty("layers")
+            .EnumerateArray()
+            .Single(layer => layer.GetProperty("id").GetInt32() == WebAppFixture.TestLayerId)
+            .GetProperty("features")
+            .GetArrayLength();
+    }
+
+    private async Task<IReadOnlyList<long>> ReadSampleObjectIdsAsync()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/query?where=1%3D1&outFields=objectid&resultRecordCount=2&f=json");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "response body was {0}", content);
+
+        using var document = JsonDocument.Parse(content);
+        var features = document.RootElement
+            .GetProperty("layers")
+            .EnumerateArray()
+            .Single(layer => layer.GetProperty("id").GetInt32() == WebAppFixture.TestLayerId)
+            .GetProperty("features");
+
+        var ids = new List<long>();
+        foreach (var feature in features.EnumerateArray())
+        {
+            if (!feature.TryGetProperty("attributes", out var attributes))
+            {
+                continue;
+            }
+
+            foreach (var property in attributes.EnumerateObject())
+            {
+                if (property.Name.Equals("objectid", StringComparison.OrdinalIgnoreCase)
+                    && property.Value.TryGetInt64(out var id))
+                {
+                    ids.Add(id);
+                    break;
+                }
+            }
+        }
+
+        return ids;
+    }
+
     // honua-server#1825: Esri services accept BOTH GET and POST for the service-level
     // query op; clients POST large layerDefs/layers arrays. Previously POST returned 405.
     [IntegrationTest]

@@ -106,6 +106,13 @@ internal sealed partial class AlertPipeline : IAlertPipeline
 
                 stateByKey.TryGetValue(new AlertStateLookupKey(rule.RuleId, change.LayerId, change.ObjectId), out var currentState);
 
+                // A replayed change at or behind the stored generation must not emit
+                // again. Dwell sweeps do not come through this path (#6190).
+                if (currentState is not null && change.Generation <= currentState.LastGeneration)
+                {
+                    continue;
+                }
+
                 var zone = ResolveZone(rule.ZoneId, zones);
 
                 var evaluation = await _evaluator
@@ -130,6 +137,11 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 {
                     pendingDispatches.Add(new PendingAlertDispatch(alertEvent, GetDeliverableChannels(rule)));
                 }
+            }
+
+            if (pendingStateUpdates.Count == 0 && pendingDispatches.Count == 0)
+            {
+                continue;
             }
 
             await _dispatchWriter.PersistAsync(pendingStateUpdates, pendingDispatches, cancellationToken).ConfigureAwait(false);

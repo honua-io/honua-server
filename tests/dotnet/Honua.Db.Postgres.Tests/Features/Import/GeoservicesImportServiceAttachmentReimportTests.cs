@@ -180,8 +180,17 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
                         cancellation.Cancel();
                     }
                 };
-                Func<Task> interrupted = async () => await service.ImportLayerAsync(ReimportRequest(schema), cancellation.Token);
-                await interrupted.Should().ThrowAsync<OperationCanceledException>();
+                var result = await service.ImportLayerAsync(ReimportRequest(schema), cancellation.Token);
+
+                downloads.Should().Be(2, "cancellation must interrupt the second attachment download");
+                cancellation.IsCancellationRequested.Should().BeTrue();
+                result.Success.Should().BeFalse();
+                result.NeedsReview.Should().BeTrue();
+                result.DataCommitted.Should().BeTrue("attachment copy runs after the feature data commit");
+                result.FeatureCount.Should().Be(2);
+                result.FailedFeatures.Should().Be(0);
+                result.ErrorMessage.Should().Contain("already committed");
+                result.Warnings.Should().Contain(warning => warning.Contains("already committed", StringComparison.Ordinal));
             }
             else
             {
@@ -375,6 +384,62 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
         {
             await fixture.DropSchemaAsync(schema);
         }
+    }
+
+    [Fact]
+    public async Task ImportLayerAsync_ReplaceWithoutRecopying_RemapsStoredAttachmentsOntoNewObjectIds()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("AttachmentRemap");
+        try
+        {
+            var storage = new ImportStorage();
+            var store = await CreatePersistentStoreAsync(schema, storage);
+            var handler = new AttachmentFeatureServerHandler();
+            var service = CreateService(handler, store, new StubLayerPublishingService(42), schema);
+            (await service.ImportLayerAsync(ReimportRequest(schema))).Success.Should().BeTrue();
+            var before = await ReadStoredAsync(schema);
+            var photo = before.Single(attachment => attachment.Filename == "photo2.jpg");
+            var previousPaths = before.Select(attachment => attachment.StoragePath).ToArray();
+
+            handler.FeatureCount = 1;
+            handler.FeaturesJson = """
+                {"features":[{"attributes":{"OBJECTID":2,"Name":"Beta"},"geometry":{"x":-157.2,"y":21.4}}],
+                 "exceededTransferLimit":false,"spatialReference":{"wkid":4326}}
+                """;
+            var result = await service.ImportLayerAsync(ReimportRequest(schema) with { ImportAttachments = false });
+
+            result.Success.Should().BeTrue();
+            result.NeedsReview.Should().BeFalse();
+            result.Warnings.Should().NotContain(warning =>
+                warning.Contains("remapped", StringComparison.OrdinalIgnoreCase)
+                || warning.Contains("publishing did not complete", StringComparison.Ordinal));
+            var betaObjectId = await ReadFeatureObjectIdAsync(schema, "Beta");
+            var current = await ReadStoredAsync(schema);
+            current.Should().HaveCount(3);
+            var rebound = current.Single(attachment => attachment.Filename == "photo2.jpg");
+            rebound.Id.Should().Be(photo.Id);
+            rebound.FeatureId.Should().Be(betaObjectId);
+            rebound.FeatureId.Should().NotBe(photo.FeatureId);
+            current.Where(attachment => attachment.Filename != "photo2.jpg")
+                .Should().OnlyContain(attachment => attachment.FeatureId < 0);
+            current.Select(attachment => attachment.StoragePath).Should().BeEquivalentTo(previousPaths);
+            storage.Files.Keys.Should().BeEquivalentTo(previousPaths);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private async Task<long> ReadFeatureObjectIdAsync(string schema, string name)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            $"SELECT objectid FROM {schema}.attachment_reimport WHERE name = $1", connection);
+        command.Parameters.AddWithValue(name);
+        var result = await command.ExecuteScalarAsync();
+        result.Should().NotBeNull();
+        return (long)result!;
     }
 
     private static GeoservicesImportRequest ReimportRequest(string schema) => new()

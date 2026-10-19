@@ -337,9 +337,17 @@ internal sealed class BedrockChatClientAdapter : IChatClient
     {
         List<Message> converseMessages = [];
         List<SystemContentBlock> system = [];
+        Message? toolResultMessage = null;
 
         foreach (var message in messages)
         {
+            // Only adjacent tool-role messages belong to the same response turn.
+            // Reset before skipped system/empty messages so they remain boundaries.
+            if (message.Role != ChatRole.Tool)
+            {
+                toolResultMessage = null;
+            }
+
             if (message.Role == ChatRole.System)
             {
                 if (!string.IsNullOrEmpty(message.Text))
@@ -362,7 +370,24 @@ internal sealed class BedrockChatClientAdapter : IChatClient
                 ? ConversationRole.Assistant
                 : ConversationRole.User;
 
-            converseMessages.Add(new Message { Role = role, Content = content });
+            if (message.Role == ChatRole.Tool && toolResultMessage is not null)
+            {
+                // Bedrock expects every result for a parallel tool call in one
+                // user message. Claude requires all results before trailing text;
+                // stable ordering preserves the result IDs/payloads and text order.
+                toolResultMessage.Content = toolResultMessage.Content.Concat(content)
+                    .OrderBy(block => block.ToolResult is null).ToList();
+                continue;
+            }
+
+            var mappedMessage = new Message { Role = role, Content = content };
+            converseMessages.Add(mappedMessage);
+            if (message.Role == ChatRole.Tool)
+            {
+                // A single tool-role message may also contain leading text.
+                mappedMessage.Content = content.OrderBy(block => block.ToolResult is null).ToList();
+                toolResultMessage = mappedMessage;
+            }
         }
 
         return (converseMessages, system);
@@ -570,7 +595,12 @@ internal sealed class BedrockChatClientAdapter : IChatClient
             long l => new Document(l),
             double d => new Document(d),
             float f => new Document(f),
-            _ => JsonElementToDocument(JsonSerializer.SerializeToElement(value))
+            // Both incoming proxy history and Bedrock responses contain nested CLR
+            // dictionaries/lists. Traverse their JSON values directly: serializing an
+            // object here requires reflection, which the native AOT server disables.
+            IDictionary<string, object?> map => ArgumentsToDocument(map),
+            IEnumerable<object?> list => new Document(list.Select(ObjectToDocument).ToList()),
+            _ => throw new NotSupportedException("Bedrock tool arguments must contain JSON values.")
         };
     }
 

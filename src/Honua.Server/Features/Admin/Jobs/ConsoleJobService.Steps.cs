@@ -5,17 +5,17 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Geoprocessing.CustomCode;
 
 namespace Honua.Server.Features.Admin.Jobs;
 
 /// <summary>
 /// Sanitized, read-only per-step glass-box projection for the console job detail.
 /// Surfaces the depth the dev CLI shows — the per-step phase timeline, the GDAL
-/// command, and an artifact summary — but over the PRODUCTION HTTP surface, with
-/// every client-visible string routed through <see cref="WorkspacePathSanitizer"/>
-/// (the same redaction the GDAL worker applies to <c>ErrorMessage</c>) so scratch
-/// workspace paths never leak. This is distinct from the dev-only, unsanitized P7
-/// glass-box, which is untouched.
+/// command, and an artifact summary over the production HTTP surface. Phase,
+/// message, command, and metadata values pass through <see cref="WorkspacePathSanitizer"/>.
+/// Artifact labels and metadata keys preserve their stored identities; this is
+/// recognizable credential and path redaction, not a general support-bundle sanitizer.
 /// </summary>
 internal sealed partial class ConsoleJobService
 {
@@ -24,6 +24,7 @@ internal sealed partial class ConsoleJobService
     // Command so the console renders it once the devkit (#2128) begins recording it.
     private static readonly string[] CommandMetadataKeys =
     [
+        "gdal.command",
         "command",
         "commandLine",
         "gdalCommand",
@@ -53,10 +54,10 @@ internal sealed partial class ConsoleJobService
             };
         }
 
-        var entries = (await logStore.GetLogsAsync(job.OperationId, cancellationToken).ConfigureAwait(false))
-            .Where(static e => e is not null)
-            .OrderBy(static e => e.Timestamp)
-            .ToArray();
+        const int stepLimit = 500;
+        var tail = await logStore.TailAsync(job.OperationId, stepLimit, cancellationToken).ConfigureAwait(false);
+        var entries = tail.Items.ToArray();
+        var ordinalOffset = Math.Max(0, tail.TotalCount - entries.Length);
 
         var workspace = await ResolveWorkspaceAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
         var artifactSummary = await BuildStepArtifactSummaryAsync(job, cancellationToken).ConfigureAwait(false);
@@ -68,7 +69,7 @@ internal sealed partial class ConsoleJobService
             // A step's end is bounded by the next entry's timestamp (it ran until the next
             // logged event); the final step's end is the job's terminal time when known.
             var nextTimestamp = isLast ? job.CompletedAt : entries[i + 1].Timestamp;
-            steps[i] = MapStep(job, entries[i], i, workspace, artifactSummary, isLast, nextTimestamp);
+            steps[i] = MapStep(job, entries[i], isLast ? null : entries[i + 1], ordinalOffset + i, workspace, artifactSummary, isLast, nextTimestamp);
         }
 
         return new ConsoleJobStepsResponse
@@ -76,6 +77,9 @@ internal sealed partial class ConsoleJobService
             JobId = job.OperationId,
             CorrelationId = job.Audit.CorrelationId,
             State = "available",
+            TotalCount = tail.TotalCount,
+            Truncated = tail.TotalCount > entries.Length,
+            DroppedCount = tail.DroppedCount,
             Steps = steps
         };
     }
@@ -83,28 +87,35 @@ internal sealed partial class ConsoleJobService
     private static ConsoleJobStep MapStep(
         ExecutionJobRecord job,
         ExecutionLogEntry entry,
+        ExecutionLogEntry? next,
         int ordinal,
         string? workspace,
         ConsoleJobStepArtifact[]? artifactSummary,
         bool isLast,
         DateTimeOffset? completedAt)
     {
-        var duration = completedAt.HasValue && completedAt.Value >= entry.Timestamp
+        // A harness-forwarded event (honua.gp.events/v1) carries the producer's monotonic
+        // clock, so the gap to the next event is a measured duration. Everything else is
+        // inferred from log timestamps and labelled as such.
+        var measured = HarnessEvents.MeasuredDurationMs(entry, next);
+        var duration = measured ?? (completedAt.HasValue && completedAt.Value >= entry.Timestamp
             ? (long?)(completedAt.Value - entry.Timestamp).TotalMilliseconds
-            : null;
+            : null);
 
         return new ConsoleJobStep
         {
             Ordinal = ordinal,
-            Phase = string.IsNullOrWhiteSpace(entry.Phase)
-                ? (string.IsNullOrWhiteSpace(job.CurrentPhase) ? job.Status.ToString() : job.CurrentPhase)
-                : entry.Phase,
+            Phase = WorkspacePathSanitizer.SanitizeForClient(
+                string.IsNullOrWhiteSpace(entry.Phase)
+                    ? (string.IsNullOrWhiteSpace(job.CurrentPhase) ? job.Status.ToString() : job.CurrentPhase)
+                    : entry.Phase, workspace),
             Status = entry.Level == ExecutionLogLevel.Error
                 ? ExecutionJobStatus.Failed.ToString()
                 : entry.Level.ToString(),
             StartedAt = entry.Timestamp,
             CompletedAt = completedAt,
             DurationMs = duration,
+            TimingSource = measured is null ? "inferred" : "measured",
             Message = WorkspacePathSanitizer.SanitizeForClient(entry.Message, workspace),
             Command = ExtractSanitizedCommand(entry, workspace),
             Artifacts = isLast ? artifactSummary : null,

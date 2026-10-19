@@ -18,6 +18,7 @@ public sealed class RegistryGeographicSridClassifierTests
 {
     private const string EpsgUri = "http://www.opengis.net/def/crs/EPSG/0/";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task IsGeographicAsync_WhenRegistryReportsGeographic_ReturnsTrue()
     {
@@ -31,6 +32,7 @@ public sealed class RegistryGeographicSridClassifierTests
         GeographicSridClassifier.IsGeographicSrid(4312).Should().BeFalse("baseline: the static list misses EPSG:4312");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task IsGeographicAsync_WhenRegistryReportsProjected_ReturnsFalse()
     {
@@ -43,6 +45,7 @@ public sealed class RegistryGeographicSridClassifierTests
         result.Should().BeFalse("the registry classifies the geocentric code as projected");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task IsGeographicForMeasurementAsync_WhenRegistryReportsProjectedGeocentric_ReturnsFalse()
     {
@@ -58,6 +61,7 @@ public sealed class RegistryGeographicSridClassifierTests
         viaStatic.Should().BeTrue("baseline: the static range heuristic mis-sweeps EPSG:4964 into the geographic bucket");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task IsGeographicAsync_WhenRegistryHasNoAnswer_FallsBackToStaticList()
     {
@@ -71,6 +75,7 @@ public sealed class RegistryGeographicSridClassifierTests
         (await classifier.IsGeographicAsync(3857)).Should().BeFalse("static fallback: EPSG:3857 is projected");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task IsGeographicForMeasurementAsync_WhenRegistryHasNoAnswer_FallsBackToRangeHeuristic()
     {
@@ -87,6 +92,7 @@ public sealed class RegistryGeographicSridClassifierTests
             "static fallback: EPSG:4978 (WGS 84 geocentric) is excluded from the range heuristic");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Classifier_WithNoRegistry_UsesStaticListsExclusively()
     {
@@ -99,6 +105,7 @@ public sealed class RegistryGeographicSridClassifierTests
         (await classifier.IsGeographicForMeasurementAsync(4301)).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task IsGeographicAsync_WithNonPositiveSrid_DoesNotConsultRegistry()
     {

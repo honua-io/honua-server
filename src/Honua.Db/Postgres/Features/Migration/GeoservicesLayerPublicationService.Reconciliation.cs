@@ -137,9 +137,8 @@ internal sealed partial class GeoservicesLayerPublicationService
         SourceGeometryCensus? sourceGeometry,
         BoundingBox? queriedSourceExtent)
     {
-        var sourceFieldNames = layerInfo.Fields
-            .Where(static field => !field.IsObjectId && !GeoservicesImportService.IsGeometryField(field))
-            .Select(static field => field.Name.SanitizeFieldName())
+        var sourceFieldNames = GeoservicesImportColumns.Map(layerInfo).Columns
+            .Select(static column => column.ColumnName)
             .Where(static name => !string.IsNullOrWhiteSpace(name))
             .ToArray();
 
@@ -167,6 +166,7 @@ internal sealed partial class GeoservicesLayerPublicationService
             // as provenance; it is not re-run against the target (#4826).
             TargetContainsOnlyImportedFeatures = true,
             FilterMirror = string.IsNullOrWhiteSpace(request.WhereClause) ? null : request.WhereClause,
+            FilterFieldMappings = BuildFilterFieldMappings(layerInfo),
             SourceGeometry = sourceGeometry,
             QueriedSourceExtent = queriedSourceExtent
         };
@@ -177,6 +177,38 @@ internal sealed partial class GeoservicesLayerPublicationService
             SourceKind = "arcgis-geoservices-rest",
             Layers = [layerInput]
         };
+    }
+
+    /// <summary>
+    /// Source name to physical column when the import renamed the field. A dedicated target
+    /// does not execute the filter; the map is there for a shared-target compiler. Object ids
+    /// stay unmapped because the target surrogate key is not the source OBJECTID.
+    /// </summary>
+    private static Dictionary<string, string>? BuildFilterFieldMappings(GeoservicesLayerInfo layerInfo)
+    {
+        var map = GeoservicesImportColumns.Map(layerInfo);
+        var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var column in map.Columns)
+        {
+            if (!string.Equals(column.Field.Name, column.ColumnName, StringComparison.Ordinal))
+            {
+                mappings[column.Field.Name] = column.ColumnName;
+            }
+        }
+
+        if (map.Spatial)
+        {
+            foreach (var field in layerInfo.Fields)
+            {
+                if (GeoservicesImportService.IsGeometryField(field) &&
+                    !string.Equals(field.Name, "geom", StringComparison.Ordinal))
+                {
+                    mappings[field.Name] = "geom";
+                }
+            }
+        }
+
+        return mappings.Count == 0 ? null : mappings;
     }
 
     /// <summary>
@@ -253,7 +285,7 @@ internal sealed partial class GeoservicesLayerPublicationService
     /// SRID, attachment advertisement). Coded-value domains that exceeded the capture cap surface
     /// with no captured values so the reconciler's cap guard does not false-fail them.
     /// </summary>
-    private static MigrationInventoryResource BuildInventoryResourceFromLayerInfo(GeoservicesLayerInfo layerInfo)
+    internal static MigrationInventoryResource BuildInventoryResourceFromLayerInfo(GeoservicesLayerInfo layerInfo)
     {
         var srid = layerInfo.SpatialReferenceWkid
             ?? layerInfo.Extent?.SpatialReferenceWkid;
@@ -270,8 +302,13 @@ internal sealed partial class GeoservicesLayerPublicationService
             }
             : [];
 
+        // Import creates the geometry column as geom, independently of its source name (Shape,
+        // for example). Compare that expected physical field without dropping its type checks.
+        // Attribute fields keep their own names, including an ordinary attribute named Shape.
+        var hasGeometryColumn = !string.IsNullOrEmpty(layerInfo.GeometryType);
         var fields = layerInfo.Fields
-            .Select(BuildInventoryField)
+            .Select(field => BuildInventoryField(field,
+                hasGeometryColumn && GeoservicesImportService.IsGeometryField(field) ? "geom" : field.Name))
             .ToArray();
 
         return new MigrationInventoryResource
@@ -293,7 +330,7 @@ internal sealed partial class GeoservicesLayerPublicationService
         };
     }
 
-    private static MigrationInventoryField BuildInventoryField(GeoservicesFieldInfo field)
+    private static MigrationInventoryField BuildInventoryField(GeoservicesFieldInfo field, string targetFieldName)
     {
         var domain = field.Domain;
         string? domainType = domain?.Type;
@@ -316,7 +353,7 @@ internal sealed partial class GeoservicesLayerPublicationService
 
         return new MigrationInventoryField
         {
-            Name = field.Name,
+            Name = targetFieldName,
             Alias = string.Equals(field.Alias, field.Name, StringComparison.Ordinal) ? null : field.Alias,
             FieldType = field.Type,
             Nullable = field.Nullable,

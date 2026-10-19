@@ -77,7 +77,7 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        await EnsureTableAsync(connection, transaction, schema, table, geometryColumn, srid, cancellationToken)
+        await EnsureTableAsync(connection, transaction, schema, table, geometryColumn, srid, request.LoadMode, cancellationToken)
             .ConfigureAwait(false);
         await EnsureReceiptsTableAsync(connection, transaction, schema, cancellationToken).ConfigureAwait(false);
 
@@ -209,18 +209,30 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
         string table,
         string geometryColumn,
         string srid,
+        HonuaLayerLoadMode loadMode,
         CancellationToken cancellationToken)
     {
+        if (await ImportTableOwnership.ExistsAsync(connection, schema, table, cancellationToken).ConfigureAwait(false))
+        {
+            // Append and keyed upsert may write an authorized published table without
+            // adopting it. Only wholesale replacement requires importer ownership.
+            if (loadMode == HonuaLayerLoadMode.Replace)
+            {
+                await ImportTableOwnership.AssertExistingOwnedAsync(connection, schema, table, cancellationToken).ConfigureAwait(false);
+            }
+            return;
+        }
+
         var sql = $"""
             CREATE SCHEMA IF NOT EXISTS "{schema}";
-            CREATE TABLE IF NOT EXISTS "{schema}"."{table}" (
+            CREATE TABLE "{schema}"."{table}" (
                 id          BIGSERIAL PRIMARY KEY,
                 "{geometryColumn}" geometry(Geometry, {srid}),
                 attributes  JSONB NOT NULL
             );
             """;
 
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(sql + ImportTableOwnership.MarkSql(schema, table), connection, transaction);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

@@ -21,6 +21,7 @@ namespace Honua.Geoprocessing.Cli.Tests;
 /// Redis, no job store, no Docker, and no GDAL binary on PATH.
 /// </summary>
 [Collection(GpCliEndToEndTests.CollectionName)]
+[global::Xunit.Trait("Tier", "Integration")]
 public sealed class GpCliEndToEndTests
 {
     internal const string CollectionName = "GpCli console capture";
@@ -28,6 +29,195 @@ public sealed class GpCliEndToEndTests
     // The geometry.buffer inputs mirror samples/gp/geometry-buffer-point/fixture.json:
     // buffer POINT(0 0) by 10 units in EPSG:4326. WKB is the base64 of a 2D point at the origin.
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    [Fact]
+    public async Task RunAsync_ListJson_DistinguishesRegistrationFromDependencyReadiness()
+    {
+        var (exit, stdout, _) = await InvokeAsync("list", "--json");
+        exit.Should().Be(0);
+        using var document = JsonDocument.Parse(stdout.Trim());
+        var processes = document.RootElement.EnumerateArray().ToArray();
+        processes.Should().Contain(process => process.GetProperty("id").GetString() == "geometry.buffer");
+        processes.Should().OnlyContain(process => !process.GetProperty("dependenciesVerified").GetBoolean());
+        processes.First(process => process.GetProperty("id").GetString() == "geometry.buffer")
+            .GetProperty("runtimeProfile").GetString().Should().Be("managed");
+    }
+
+    [Fact]
+    public async Task RunAsync_ListJson_ReportsRunnabilityPerProcess()
+    {
+        var (exit, stdout, _) = await InvokeAsync("list", "--json");
+        exit.Should().Be(0);
+        using var document = JsonDocument.Parse(stdout.Trim());
+        var buffer = document.RootElement.EnumerateArray().First(p => p.GetProperty("id").GetString() == "geometry.buffer");
+        buffer.GetProperty("executionMode").GetString().Should().Be("managed");
+        buffer.GetProperty("runnableHere").GetBoolean().Should().BeTrue();
+        buffer.GetProperty("blockedBy").ValueKind.Should().Be(JsonValueKind.Null);
+        buffer.GetProperty("prerequisites").EnumerateArray().Should().OnlyContain(p => p.GetProperty("status").GetString() == "satisfied");
+        buffer.GetProperty("supportedTargets").EnumerateArray().Select(t => t.GetString()).Should().Contain("local");
+        buffer.GetProperty("parameterExamples").GetProperty("distance").GetString().Should().NotBeNullOrEmpty();
+        document.RootElement.EnumerateArray().All(p => p.TryGetProperty("executionMode", out var mode) && mode.ValueKind == JsonValueKind.String && p.TryGetProperty("runnableHere", out var runnable) && runnable.ValueKind is JsonValueKind.True or JsonValueKind.False).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RunAsync_DescribeJson_IsStableAndCarriesExamples()
+    {
+        var (exit, stdout, _) = await InvokeAsync("describe", "geometry.buffer", "--json");
+        exit.Should().Be(0);
+        using var document = JsonDocument.Parse(stdout.Trim());
+        var names = document.RootElement.EnumerateObject().Select(p => p.Name).ToList();
+        names.Should().ContainInOrder("id", "title", "runtimeProfile", "inputs", "outputs", "example", "executionMode", "prerequisites", "runnableHere", "blockedBy", "supportedTargets", "parameterExamples");
+        var (exit2, stdout2, _) = await InvokeAsync("describe", "geometry.buffer", "--json");
+        exit2.Should().Be(0);
+        stdout2.Should().Be(stdout, "the machine view is deterministic");
+        var (exitText, text, _) = await InvokeAsync("describe", "geometry.buffer");
+        exitText.Should().Be(0);
+        text.Should().Contain("mode        : managed").And.Contain("runnable    : yes").And.Contain("example:");
+    }
+
+    [Fact]
+    public async Task RunAsync_Init_WritesTheTemplateVerbatimPlusDescriptor()
+    {
+        var output = Path.Join(Path.GetTempPath(), $"gp-init-{Guid.NewGuid():N}");
+        try
+        {
+            var (exit, stdout, _) = await InvokeAsync("init", "--language", "python", "--name", "parcel-summary", "--output", output);
+            exit.Should().Be(0);
+            stdout.Should().Contain("created : ");
+            var project = Path.Join(output, "parcel-summary");
+            foreach (var file in new[] { "process/summary_tool.py", "schema/inputs.schema.json", "fixtures/params.json", "fixtures/input.geojson", "expected/golden.json", "expected/summary.json", "tests/test_golden.py", "requirements.lock", ".vscode/launch.json", ".vscode/tasks.json", "docker/compose.debug.yaml", "README.md", "TEMPLATE-MANIFEST.json", "honua-gp.yaml" })
+            {
+                File.Exists(Path.Join(project, file)).Should().BeTrue(file);
+            }
+
+            var manifest = GpProjectManifest.Load(Path.Join(project, "honua-gp.yaml"));
+            manifest.Name.Should().Be("parcel-summary");
+            manifest.Language.Should().Be(GpProjectLanguage.Python);
+            manifest.Entrypoint.Should().Be("summary_tool:execute");
+            manifest.FixtureInputs.Should().ContainKey("features");
+
+            var (again, _, stderr) = await InvokeAsync("init", "--language", "python", "--name", "parcel-summary", "--output", output);
+            again.Should().Be(2);
+            stderr.Should().Contain("never overwrites");
+        }
+        finally
+        {
+            if (Directory.Exists(output))
+            {
+                Directory.Delete(output, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_Init_Dotnet_UsesBundledToolchainWithoutCheckout()
+    {
+        var output = Path.Join(Path.GetTempPath(), $"gp-init-{Guid.NewGuid():N}");
+        try
+        {
+            var (exit, _, _) = await InvokeAsync("init", "--language", "dotnet", "--name", "parcel-summary", "--output", output);
+            exit.Should().Be(0);
+            var project = Path.Join(output, "parcel-summary");
+            File.Exists(Path.Join(project, "process", "SummaryTool.csproj")).Should().BeTrue();
+            File.Exists(Path.Join(project, "process", "packages.lock.json")).Should().BeTrue();
+            File.Exists(Path.Join(project, "tests", "SummaryTool.Tests", "GoldenTests.cs")).Should().BeTrue();
+            var manifest = GpProjectManifest.Load(Path.Join(project, "honua-gp.yaml"));
+            manifest.Build.Should().Be("tests/SummaryTool.Tests/SummaryTool.Tests.csproj");
+            File.Exists(Path.Join(project, ".honua", "toolchain", "docker", "worker-customcode-dotnet", "harness", "src", "Honua.CustomCode.Sdk", "Honua.CustomCode.Sdk.csproj")).Should().BeTrue();
+            manifest.ToolchainVersion.Should().Be(GpBundledToolchain.Version);
+        }
+        finally
+        {
+            if (Directory.Exists(output))
+            {
+                Directory.Delete(output, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_TestProject_Python_RunsTheHarnessAndComparesExpected()
+    {
+        if (!GpCustomProjectTests.PythonAvailable())
+        {
+            return; // python3 is not on PATH; the project test is exercised where it is (CI Linux).
+        }
+
+        var output = Path.Join(Path.GetTempPath(), $"gp-test-{Guid.NewGuid():N}");
+        try
+        {
+            (await InvokeAsync("init", "--language", "python", "--name", "demo-summary", "--output", output)).ExitCode.Should().Be(0);
+            var project = Path.Join(output, "demo-summary");
+
+            var (exit, stdout, stderr) = await InvokeAsync("test", "--project", project);
+            exit.Should().Be(0, stdout + stderr);
+            stdout.Should().Contain("PASS  summary.json").And.Contain("PASS  golden.json").And.Contain("receipt : ").And.Contain("summary : passed");
+
+            // Break the expectation: the first differing value and the receipt path are named.
+            File.WriteAllText(Path.Join(project, "expected", "summary.json"), "{\"count\": 3, \"field\": \"value\", \"mean\": 21.0, \"sum\": 60.0}\n");
+            var (failExit, failOut, _) = await InvokeAsync("test", "--project", project);
+            failExit.Should().Be(1);
+            failOut.Should().Contain("FAIL  summary.json: $.mean: expected 21.0, produced 20.0").And.Contain("receipt : ");
+
+            // --update rewrites the expectation and the golden digest, after which the test passes again.
+            (await InvokeAsync("test", "--project", project, "--update")).ExitCode.Should().Be(0);
+            (await InvokeAsync("test", "--project", project)).ExitCode.Should().Be(0);
+        }
+        finally
+        {
+            if (Directory.Exists(output))
+            {
+                Directory.Delete(output, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_TestProject_Dotnet_RunsWhenOptedIn()
+    {
+        if (Environment.GetEnvironmentVariable("HONUA_GP_DEVKIT_DOTNET_E2E") != "1")
+        {
+            return; // builds the process, the harness and the SDK; opt in with HONUA_GP_DEVKIT_DOTNET_E2E=1.
+        }
+
+        var output = Path.Join(Path.GetTempPath(), $"gp-test-{Guid.NewGuid():N}");
+        try
+        {
+            (await InvokeAsync("init", "--language", "dotnet", "--name", "demo-summary", "--output", output)).ExitCode.Should().Be(0);
+            var (exit, stdout, stderr) = await InvokeAsync("test", "--project", Path.Join(output, "demo-summary"));
+            exit.Should().Be(0, stdout + stderr);
+            stdout.Should().Contain("PASS  summary.json").And.Contain("PASS  golden.json");
+        }
+        finally
+        {
+            if (Directory.Exists(output))
+            {
+                Directory.Delete(output, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_DoctorManagedJson_ExecutesManagedProbeWithoutDocker()
+    {
+        var (exit, stdout, _) = await InvokeAsync("doctor", "--managed-only", "--json");
+
+        exit.Should().Be(0);
+        using var document = JsonDocument.Parse(ExtractJson(stdout));
+        var root = document.RootElement;
+        root.GetProperty("managed").GetString().Should().Be("ready");
+        root.GetProperty("nativeWorker").GetString().Should().Be("notChecked");
+        root.GetProperty("registeredProcessCount").GetInt32().Should().BeGreaterThan(0);
+        root.GetProperty("serviceBacked").GetString().Should().Be("requiresIntegrationStack");
+    }
+
+    [Fact]
+    public async Task RunAsync_DoctorUnknownOption_ReturnsUsageError()
+    {
+        var (exit, _, stderr) = await InvokeAsync("doctor", "--unknown");
+        exit.Should().Be(2);
+        stderr.Should().Contain("Unknown option");
+    }
 
     [Fact]
     public async Task RunAsync_NoArgs_PrintsUsageAndReturnsUsageExit()
@@ -154,6 +344,54 @@ public sealed class GpCliEndToEndTests
         stdout.Should().Contain("process : geometry.buffer");
         stdout.Should().Contain("status  :");
         stdout.Should().Contain("artifact:");
+    }
+
+    [Fact]
+    public async Task RunAsync_Run_WritesReceiptAndV1Events()
+    {
+        var receiptDir = Path.Join(Path.GetTempPath(), $"gp-cli-receipts-{Guid.NewGuid():N}");
+        try
+        {
+            var (exit, stdout, _) = await InvokeAsync(
+                "run", "geometry.buffer",
+                "--in-process",
+                "--param", $"wkb={PointWkbBase64}",
+                "--param", "srid=4326",
+                "--param", "distance=10",
+                "--receipt-dir", receiptDir);
+
+            exit.Should().Be(0);
+            stdout.Should().Contain("receipt : ");
+            var run = Directory.GetDirectories(receiptDir).Should().ContainSingle().Subject;
+            using var receipt = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(Path.Join(run, "receipt.json")));
+            receipt.RootElement.GetProperty("status").GetString().Should().Be("succeeded");
+            receipt.RootElement.GetProperty("processId").GetString().Should().Be("geometry.buffer");
+            receipt.RootElement.GetProperty("eventsSchema").GetString().Should().Be(Honua.Geoprocessing.CustomCode.HarnessEvents.Schema);
+            var events = Honua.Geoprocessing.CustomCode.HarnessEvents.Parse(await File.ReadAllTextAsync(Path.Join(run, "events.jsonl")));
+            events.Should().NotBeEmpty();
+            events.Should().OnlyContain(e => e.Version == 1 && e.Attempt == "devkit");
+            events[^1].Kind.Should().Be("terminal");
+            events[^1].Status.Should().Be("succeeded");
+            events.Should().Contain(e => e.Kind == "artifact");
+        }
+        finally
+        {
+            if (Directory.Exists(receiptDir))
+            {
+                Directory.Delete(receiptDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_Run_NoReceipt_WritesNothing()
+    {
+        var (exit, stdout, _) = await InvokeAsync(
+            "run", "geometry.buffer", "--in-process", "--no-receipt",
+            "--param", $"wkb={PointWkbBase64}", "--param", "srid=4326", "--param", "distance=10");
+
+        exit.Should().Be(0);
+        stdout.Should().NotContain("receipt : ");
     }
 
     [Fact]

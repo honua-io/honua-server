@@ -4,7 +4,7 @@ name: Real-Client Interop Matrix (Nightly)
 # nightly passes are observed across all lanes (#806 design).
 #
 # Exercises Honua against the actual GIS clients customers use (QGIS, GDAL,
-# OpenLayers, Cesium, ArcGIS Pro stub) and the canonical analyst clients
+# OpenLayers, Cesium, arcgis-stub) and the canonical analyst clients
 # (GeoPandas, OWSLib, DuckDB Spatial, R sf/ows4R, pystac-client — #3392)
 # via Docker harnesses under
 # docker/client-compat/. CITE conformance suites prove spec compliance; this
@@ -263,6 +263,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Verify artifact staging controls
+        run: python3 -m unittest discover -s tests/python/unit -p test_client_interop_artifact_staging.py -v
+
       - name: Download all lane artifacts
         uses: actions/download-artifact@v8
         with:
@@ -279,8 +282,10 @@ jobs:
 
       - name: Stage current-run envelopes
         shell: bash
+        env:
+          EXPECTED_LANES: ${{ join(fromJSON(needs.prepare.outputs.lanes), ',') }}
         run: |
-          scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output
+          scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output "$EXPECTED_LANES"
           python3 scripts/client-compat/validate-envelope-source.py docker/client-compat/output "${{ github.sha }}"
 
       - name: Compare against baselines and refresh gap report

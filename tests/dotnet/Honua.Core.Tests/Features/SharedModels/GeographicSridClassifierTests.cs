@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Features.SharedModels;
 /// </summary>
 public sealed class GeographicSridClassifierTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     // Codes present in every prior list.
     [InlineData(4326)]  // WGS 84
@@ -41,6 +42,7 @@ public sealed class GeographicSridClassifierTests
         GeographicSridClassifier.IsGeographicSrid((int?)srid).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(3857)]   // Web Mercator (projected)
     [InlineData(2154)]   // RGF93 / Lambert-93 (projected)
@@ -61,6 +63,7 @@ public sealed class GeographicSridClassifierTests
         GeographicSridClassifier.IsGeographicSrid((int?)null).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(4326)]
     [InlineData(4269)]
@@ -73,6 +76,7 @@ public sealed class GeographicSridClassifierTests
         GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     // Geographic, but intentionally OUTSIDE the geodesic-safe allowlist (#2731): the WGS 84 spheroid
     // distance is not applied directly and the DuckDB provider rejects distance filters on these.
@@ -99,6 +103,7 @@ public sealed class GeographicSridClassifierTests
             .BeSubsetOf(GeographicSridClassifier.GeographicSrids);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     // Broad-list codes are still geographic under the range variant.
     [InlineData(4326)]  // WGS 84
@@ -115,6 +120,7 @@ public sealed class GeographicSridClassifierTests
         GeographicSridClassifier.IsGeographicOrUnlistedGeographicRangeSrid(srid).Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     // Geocentric (X/Y/Z metre) codes in the 4000-4999 block must NOT be treated as lat/lon degrees;
     // measuring them planar in metres is correct.

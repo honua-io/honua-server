@@ -79,7 +79,7 @@ jobs:
         # SDK PR gate. This workflow already wires its own caller-agnostic NuGet cache
         # and GitHub Packages auth in the `Cache NuGet` / `Configure GitHub Packages`
         # steps below, so nothing here is missing.
-        uses: actions/setup-dotnet@v6.0.0
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
 

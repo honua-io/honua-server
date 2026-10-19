@@ -133,6 +133,12 @@ public static class VersionManagementServerEndpoints
             .WithTags(Tag)
             .AllowAnonymous();
 
+        group.MapPost("/delete", HandleDeleteByName)
+            .WithName("DeleteVersionByName")
+            .WithSummary("Delete a branch version by its owner-qualified name")
+            .WithTags(Tag)
+            .AllowAnonymous();
+
         group.MapPost("/versions/{versionGuid}/delete", HandleDelete)
             .WithName("DeleteVersion")
             .WithSummary("Delete a branch version")
@@ -432,6 +438,10 @@ public static class VersionManagementServerEndpoints
                 ex.Message,
                 [$"Version '{ex.VersionName}' already exists. Choose a different name or delete the existing version first."]);
         }
+        catch (ArgumentException)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "versionName is not a valid branch name.");
+        }
     }
 
     private static async Task<IResult> HandleDelete(
@@ -448,6 +458,71 @@ public static class VersionManagementServerEndpoints
             return gate;
         }
 
+        return await DeleteResolvedVersionAsync(versionId, versionGuid, context, versionManager, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleDeleteByName(
+        string serviceId,
+        HttpContext context,
+        [FromServices] IVersionManager versionManager,
+        CancellationToken cancellationToken)
+    {
+        var (gate, values) = await AuthorizeAndReadAsync(serviceId, context, versionManager, cancellationToken)
+            .ConfigureAwait(false);
+        if (gate is not null)
+        {
+            return gate;
+        }
+
+        var versionName = GeoServicesRequestValueHelpers.GetValueString(values!, "versionName")?.Trim();
+        if (string.IsNullOrWhiteSpace(versionName) || versionName.StartsWith('.') || versionName.EndsWith('.'))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "versionName parameter is required and must identify a version.");
+        }
+
+        if (versionName.Equals("DEFAULT", StringComparison.OrdinalIgnoreCase) ||
+            versionName.Equals("sde.DEFAULT", StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateConflict(context, "The DEFAULT version cannot be deleted.");
+        }
+
+        // A bare name is scoped to the actual caller, even for administrators. Only an explicit
+        // owner-qualified name may select another owner's branch.
+        if (!versionName.Contains('.'))
+        {
+            versionName = ResolveOwner(context) + "." + versionName;
+        }
+
+        // Match the exact served identity rather than a bare name: different owners may use the
+        // same branch name, and storage can hold either a bare or already-qualified create input.
+        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var matches = versions.Where(version =>
+            ToWireVersionName(version).Equals(versionName, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (matches.Length == 0)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionName}' was not found.");
+        }
+
+        if (matches.Length != 1)
+        {
+            return StandardErrorHelpers.CreateConflict(context, "versionName identifies more than one branch version.");
+        }
+
+        var versionId = matches[0].VersionId;
+        var ownershipGate = await RequireVersionOwnerOrAdminAsync(
+            context, versionManager, versionId, versionName, cancellationToken).ConfigureAwait(false);
+        return ownershipGate ?? await DeleteResolvedVersionAsync(
+            versionId, versionName, context, versionManager, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> DeleteResolvedVersionAsync(
+        Guid versionId,
+        string versionGuid,
+        HttpContext context,
+        IVersionManager versionManager,
+        CancellationToken cancellationToken)
+    {
         // BH6-002: refuse to delete a version that is mid-reconcile or mid-post.
         // Calling DeleteAsync against a locked version produces undefined behavior in the version
         // store — the in-flight reconcile job may write its result to a deleted record, corrupt the
@@ -493,7 +568,16 @@ public static class VersionManagementServerEndpoints
         VersionAccess? access = string.IsNullOrWhiteSpace(accessRaw) ? null : ParseAccess(accessRaw);
 
         var request = new AlterVersionRequest(versionId, newName, access, description);
-        var altered = await versionManager.AlterAsync(request, cancellationToken).ConfigureAwait(false);
+        GdbVersion? altered;
+        try
+        {
+            altered = await versionManager.AlterAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "versionName is not a valid branch name.");
+        }
+
         if (altered is null)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
@@ -1140,10 +1224,21 @@ public static class VersionManagementServerEndpoints
         _ => "active",
     };
 
+    // Native clients use the versionInfos identity for lifecycle requests, including root delete.
+    // Storage may contain a bare create input or an already-qualified name;
+    // every response must expose the same owner.name identity without qualifying it twice.
+    private static string ToWireVersionName(GdbVersion version)
+    {
+        var ownerPrefix = version.Owner + ".";
+        return version.VersionName.StartsWith(ownerPrefix, StringComparison.OrdinalIgnoreCase)
+            ? version.VersionName
+            : ownerPrefix + version.VersionName;
+    }
+
     private static VersionInfo ToVersionInfo(GdbVersion version) => new()
     {
         VersionGuid = ToWireGuid(version.VersionId),
-        VersionName = version.VersionName,
+        VersionName = ToWireVersionName(version),
         Owner = version.Owner,
         Access = AccessToString(version.Access),
         Status = StatusToString(version.State),

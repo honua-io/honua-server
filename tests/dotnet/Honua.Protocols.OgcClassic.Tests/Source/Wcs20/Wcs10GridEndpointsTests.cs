@@ -41,6 +41,12 @@ public sealed class Wcs10GridEndpointsTests : IAsyncLifetime
     [InlineData("-124,38.5,-123,40", 4, 3, -124, 40, 0.25, -0.5, 4, 1)]
     [InlineData("-125,37.5,-122,41", 12, 7, -125, 41, 0.25, -0.5, 8, 3)]
     [InlineData("-125,37.5,-122,41", 1000, 999, -125, 41, 0.003, -3.5 / 999, 626, 357)]
+    // #5422: BBOX extends past the coverage. Pixel (629, 330) is the requested-grid
+    // cell containing (-123.125, 39.75); clipping then stretching returned the cell
+    // one column west (lon -123.375) at that index.
+    [InlineData("-124.96375,37.78625,-122.03625,40.71375", 1000, 1000, -124.96375, 40.71375, 0.0029275, -0.0029275, 629, 330)]
+    // #5422: BBOX lies inside the source cell holding 4/104. The response is that
+    // cell on the requested 1x1 grid, not the native cell grid filled with NoData.
     [InlineData("-123.126,39.749,-123.124,39.751", 1, 1, -123.126, 39.751, 0.002, -0.002, 1, 1)]
     [Operation(Operations.Render)]
     [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]

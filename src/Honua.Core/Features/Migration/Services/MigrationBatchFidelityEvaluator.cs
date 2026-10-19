@@ -86,10 +86,13 @@ public static class MigrationBatchFidelityEvaluator
 
         // Relationship omissions are classified by the per-layer evaluator so a deferred relationship
         // reads identically whether it surfaced on a single-layer or a service import.
+        // Only relationship omissions belong to the batch fold. The per-layer evaluator also
+        // records an unexecuted data probe when nothing else is supplied, which this call is not asking for.
         differences.AddRange(MigrationFidelityEvaluator.Evaluate(new MigrationFidelityEvaluationInput
         {
             Relationships = input.Relationships
-        }).Differences);
+        }).Differences.Where(static difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.RelationshipOmitted));
 
         return MigrationFidelityEvaluator.Fold(differences);
     }

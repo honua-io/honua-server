@@ -25,6 +25,8 @@ Lookup material for Honua's public surfaces: protocols, the admin API, configura
 | [Data formats](data-formats.md) | Import and export format matrix per surface, with size limits. |
 | [CQL2 and filtering](cql2-and-filtering.md) | CQL2 text/JSON, GeoServices `where`, and OData `$filter`, side by side. |
 | [Geoprocessing operations](geoprocessing-operations.md) | Catalog of built-in processes by family with parameters. |
+| [GP process release descriptor and lock](gp-process-release.md) | `honua-gp.yaml`, the immutable release lock, its canonical digest, and `honua-gp-devkit release`. |
+| [GP harness events](gp-harness-events.v1.md) | The `honua.gp.events/v1` journal every custom-code, local, and devkit run writes: kinds, bounds, truncation, measured vs inferred timing. |
 | [Spec engine](spec-engine.md) | Plan/apply engine: endpoints, cache modes, diagnostics. |
 | [OpenAPI and the explorer](openapi-and-explorer.md) | Runtime OpenAPI endpoints, `/docs`, and the pinned spec bundles. |
 | [Versioning and support](versioning-and-support.md) | Admin API versioning, deprecation lifecycle, protocol and gRPC stability. |

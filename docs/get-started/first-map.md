@@ -7,14 +7,14 @@ description: "You'll turn a published layer into a live MapLibre map using vecto
 
 You'll turn a published layer into a live MapLibre map using vector tiles, TileJSON, and the server's auto-generated style in about 10 minutes.
 
-**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.1.10, `honua-sdk` 0.1.13) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
+**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.1.12, `honua-sdk` 0.1.16) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
 
-> **This page cannot be completed on the current release.** The browser fetches tiles without
-> credentials, so the service has to allow anonymous reads (step 1). A default install has no
-> supported client operation that sets that policy yet: the MCP tool is not advertised, and no SDK
-> method or CLI command covers it
-> ([honua-server#5444](https://github.com/honua-io/honua-server/issues/5444)). Until that is
-> fixed, steps 2–6 return `401` for a service that has not been opened.
+> **Candidate verification is still pending for step 1.** The server now implements the
+> access-policy MCP tool ([honua-server#5741](https://github.com/honua-io/honua-server/pull/5741)).
+> The exact client block below still needs a successful executable-docs replay against the
+> selected release candidate ([honua-server#5737](https://github.com/honua-io/honua-server/issues/5737)).
+> The browser fetches tiles without credentials, so steps 2–6 require anonymous reads to be
+> enabled on the published service. Do not proceed after a refused policy change.
 
 Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/{layerId}/{z}/{x}/{y}.mvt`, described by TileJSON at `/tiles/{layerId}/tile.json`, with a ready-made MapLibre style at `/api/styles/{layerId}.json` — no tile cache to build, no style to author.
 
@@ -26,14 +26,14 @@ The `honua_admin_services_access_policy_set` MCP tool sets a service's access po
 through the server's MCP endpoint (`POST /mcp`) with the official MCP Python client.
 `$HONUA_SERVICE` is the service name the publish step exported.
 
-A default install does not advertise that tool yet, so the call below is refused with
-`Unknown MCP tool`, and no SDK method or CLI command sets the policy either
-([honua-server#5444](https://github.com/honua-io/honua-server/issues/5444)).
+The tool requires the Redis-backed operator workflow capability. A Redis-off deployment
+refuses the operation; it does not enable anonymous access. Use the Redis-backed quickstart
+profile and retain a successful policy-change result before opening the map.
 
-<!-- doc-run: blocked https://github.com/honua-io/honua-server/issues/5444 -->
+<!-- doc-run: blocked https://github.com/honua-io/honua-server/issues/5737 -->
 
 ```bash
-python3 -m pip install 'honua-admin==0.1.10' 'honua-sdk==0.1.13' 'mcp==2.1.1'
+python3 -m pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.16' 'mcp==2.1.1'
 python3 - <<'PY'
 import asyncio
 import os

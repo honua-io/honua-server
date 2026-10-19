@@ -36,6 +36,10 @@ on:
         type: boolean
 
   workflow_call:
+    secrets:
+      RELEASE_RUNNER_READ_TOKEN:
+        description: Read-only organization runner-group and repository Actions metadata; dedicated execution only
+        required: false
     inputs:
       candidate_sha:
         description: Full 40-character honua-server commit SHA to certify (the manifest-pinned candidate)
@@ -67,6 +71,7 @@ permissions:
   id-token: write        # actions/attest-build-provenance
   attestations: write    # actions/attest-build-provenance
   packages: read         # the candidate image build restores Geospatial.Grpc from GitHub Packages
+  actions: read          # live producing-job identity, before any checkout on the dedicated pool
 
 concurrency:
   group: capacity-soak-candidate
@@ -90,11 +95,133 @@ env:
 jobs:
   soak:
     name: Candidate capacity soak
-    runs-on: ubuntu-24.04
+    # Dedicated scheduling must already be restricted by the organization group to this exact
+    # reviewed workflow on protected trunk or explicitly approved full candidate tags. The inline
+    # first step independently refuses missing/broad metadata before checkout or workload.
+    # No dispatch input can supply a runner group or labels; unset configuration stays hosted.
+    runs-on: ${{ github.repository == 'honua-io/honua-server' && github.event_name == 'workflow_dispatch' && github.sha == inputs.candidate_sha && github.workflow_sha == inputs.candidate_sha && (github.ref == 'refs/heads/trunk' && github.ref_protected || github.ref == format('refs/tags/nightly-candidate/{0}', inputs.candidate_sha)) && vars.HONUA_CAPACITY_RUNNER_POOL == 'dedicated' && fromJSON('{"group":"honua-release-heavy","labels":["self-hosted","Linux","X64","honua-release-heavy"]}') || 'ubuntu-24.04' }}
     # One soak is ramp-up + 60 minutes of steady state + ramp-down, on top of an image build and
     # a 40,000-feature seed. Budget generously; the job is dispatch-only.
     timeout-minutes: 300
     steps:
+      - name: Verify producer runner admission before checkout
+        id: admission
+        timeout-minutes: 5
+        env:
+          CAPACITY_POOL: ${{ vars.HONUA_CAPACITY_RUNNER_POOL }}
+          APPROVED_RUNNER_GROUP_ID: ${{ vars.HONUA_CAPACITY_RUNNER_GROUP_ID }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          REF_PROTECTED: ${{ github.ref_protected }}
+          ACTUAL_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          ACTUAL_RUNNER_OS: ${{ runner.os }}
+          ACTUAL_RUNNER_ARCH: ${{ runner.arch }}
+          ACTUAL_RUNNER_NAME: ${{ runner.name }}
+          RUNNER_METADATA_TOKEN: ${{ secrets.RELEASE_RUNNER_READ_TOKEN }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, pathlib, re, urllib.error, urllib.request
+
+          REPO = "honua-io/honua-server"
+          WORKFLOW = ".github/workflows/capacity-soak-candidate.yml"
+          GROUP = "honua-release-heavy"
+          report = {"status": "fail"}
+
+          def require(ok, message):
+              if not ok:
+                  raise ValueError(message)
+
+          def api(path):
+              token = os.environ.get("RUNNER_METADATA_TOKEN", "")
+              require(bool(token), "dedicated runner metadata-read token is unavailable")
+              request = urllib.request.Request("https://api.github.com/" + path,
+                  headers={"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json",
+                           "X-GitHub-Api-Version": "2022-11-28"})
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except (OSError, ValueError):
+                  raise ValueError("live runner metadata lookup failed") from None
+
+          def admit():
+              pool = os.environ.get("CAPACITY_POOL", "") or "hosted"
+              require(pool in ("hosted", "dedicated"), "unknown capacity runner configuration")
+              actual = os.environ.get("ACTUAL_RUNNER_ENVIRONMENT")
+              if pool == "hosted":
+                  require(actual == "github-hosted", "default capacity execution requires a hosted runner")
+                  return {"status": "pass", "pool": "hosted"}
+              require(actual == "self-hosted", "dedicated request did not meet the fixed routing guard")
+              approved_group = os.environ.get("APPROVED_RUNNER_GROUP_ID", "")
+              require(re.fullmatch(r"[1-9][0-9]*", approved_group), "reviewed dedicated group identity is unavailable")
+              source = os.environ.get("CANDIDATE_SHA", "")
+              ref = os.environ.get("GITHUB_REF", "")
+              require(re.fullmatch(r"[0-9a-f]{40}", source) is not None, "candidate source is not a full immutable SHA")
+              require(os.environ.get("GITHUB_REPOSITORY") == REPO
+                      and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+                      and os.environ.get("GITHUB_SHA") == os.environ.get("WORKFLOW_SHA") == source,
+                      "dedicated producer repository, event or source differs")
+              require(ref in ("refs/heads/trunk", "refs/tags/nightly-candidate/" + source),
+                      "dedicated producer ref is not approved")
+              require(ref != "refs/heads/trunk" or os.environ.get("REF_PROTECTED") == "true",
+                      "dedicated trunk ref is not protected")
+              workflow_ref = REPO + "/" + WORKFLOW + "@" + ref
+              require(os.environ.get("WORKFLOW_REF") == workflow_ref, "dedicated workflow identity differs")
+              require(os.environ.get("ACTUAL_RUNNER_OS") == "Linux" and os.environ.get("ACTUAL_RUNNER_ARCH") == "X64",
+                      "dedicated runner architecture differs")
+              run_id, attempt = os.environ.get("GITHUB_RUN_ID", ""), os.environ.get("GITHUB_RUN_ATTEMPT", "")
+              require(re.fullmatch(r"[1-9][0-9]*", run_id) and re.fullmatch(r"[1-9][0-9]*", attempt),
+                      "producing run identity is unavailable")
+              prefix = "repos/" + REPO
+              branch = api(prefix + "/branches/trunk")
+              trunk = branch.get("commit", {}).get("sha", "")
+              require(branch.get("protected") is True and re.fullmatch(r"[0-9a-f]{40}", trunk),
+                      "protected trunk metadata is unavailable")
+              comparison = api(prefix + "/compare/" + source + "..." + trunk)
+              require(comparison.get("status") in ("ahead", "identical")
+                      and comparison.get("merge_base_commit", {}).get("sha") == source,
+                      "candidate producer is not on protected trunk")
+              jobs = api(prefix + "/actions/runs/" + run_id + "/attempts/" + attempt + "/jobs?per_page=100")
+              rows = jobs.get("jobs", [])
+              require(jobs.get("total_count") == 1 and len(rows) == 1, "capacity producer must retain one job")
+              job = rows[0]
+              require(job.get("name") == "Candidate capacity soak" and job.get("run_id") == int(run_id)
+                      and job.get("head_sha") == source and job.get("status") == "in_progress"
+                      and job.get("runner_name") == os.environ.get("ACTUAL_RUNNER_NAME")
+                      and type(job.get("runner_id")) is int and job["runner_id"] > 0
+                      and type(job.get("runner_group_id")) is int and job["runner_group_id"] > 0
+                      and job["runner_group_id"] == int(approved_group)
+                      and job.get("runner_group_name") == GROUP,
+                      "actual producing job or runner group differs")
+              require({"self-hosted", "linux", "x64", GROUP} <= {str(label).lower() for label in job.get("labels", [])},
+                      "actual job did not select the fixed Linux heavy labels")
+              group_path = "orgs/honua-io/actions/runner-groups/" + str(job["runner_group_id"])
+              group = api(group_path)
+              require(group.get("id") == job["runner_group_id"] and group.get("name") == GROUP
+                      and group.get("visibility") == "selected" and group.get("default") is False
+                      and group.get("restricted_to_workflows") is True,
+                      "runner group scheduling is not narrowly restricted")
+              selected = group.get("selected_workflows")
+              allowed = re.compile(re.escape(REPO + "/" + WORKFLOW) + r"@(?:refs/heads/trunk|refs/tags/nightly-candidate/[0-9a-f]{40})")
+              require(isinstance(selected, list) and workflow_ref in selected
+                      and all(isinstance(item, str) and allowed.fullmatch(item) for item in selected),
+                      "runner group admits unapproved workflow refs")
+              repositories = api(group_path + "/repositories?per_page=100")
+              require(repositories.get("total_count") == 1
+                      and [item.get("full_name") for item in repositories.get("repositories", [])] == [REPO],
+                      "runner group repository access is broader than the capacity producer")
+              return {"status": "pass", "pool": "dedicated", "runnerGroupId": job["runner_group_id"],
+                      "runnerId": job["runner_id"], "sourceRevision": source, "workflowRef": workflow_ref}
+
+          try:
+              report = admit()
+          except (ValueError, TypeError, KeyError, AttributeError) as error:
+              report["error"] = str(error) if isinstance(error, ValueError) else "malformed runner admission metadata"
+              raise SystemExit(report["error"])
+          finally:
+              (pathlib.Path(os.environ["RUNNER_TEMP"]) / "capacity-runner-admission.json").write_text(json.dumps(report) + "\n")
+          PYTHON
+
       - name: Check out the producer (this ref)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -150,13 +277,40 @@ jobs:
           # Resolve once: lock, manifest and verifier always come from the same commit.
           release_sha="$(gh api "repos/honua-io/honua-release/commits/$LOCK_REF" --jq .sha)"
           [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]]
+          # Downloaded verifier code executes on the producing runner. A dispatch
+          # input may select only reviewed release trunk history, never PR code.
+          RELEASE_SHA="$release_sha" python3 - <<'TRUSTED_RELEASE'
+          import json, os, re, subprocess
+          repo = "honua-io/honua-release"
+          def api(path):
+              try:
+                  return json.loads(subprocess.check_output(["gh", "api", "repos/" + repo + path], text=True, stderr=subprocess.DEVNULL))
+              except (subprocess.CalledProcessError, OSError, ValueError):
+                  raise SystemExit("release verifier source metadata is unavailable") from None
+          def require(ok, reason):
+              if not ok:
+                  raise SystemExit(reason)
+          source = os.environ["RELEASE_SHA"]
+          require(re.fullmatch(r"[0-9a-f]{40}", source) is not None, "release verifier source must be a full SHA")
+          metadata = api("")
+          require(metadata.get("full_name") == repo and metadata.get("default_branch") == "trunk", "release verifier repository identity differs")
+          trunk = api("/branches/trunk")
+          head = trunk.get("commit", {}).get("sha", "")
+          require(trunk.get("protected") is True and re.fullmatch(r"[0-9a-f]{40}", head) is not None, "release verifier trunk must be protected")
+          require(api("/commits/" + source).get("sha") == source, "resolved release verifier commit differs")
+          comparison = api("/compare/" + source + "..." + head)
+          require(comparison.get("status") in ("ahead", "identical") and comparison.get("base_commit", {}).get("sha") == source
+                  and comparison.get("merge_base_commit", {}).get("sha") == source, "release verifier source is outside protected trunk history")
+          TRUSTED_RELEASE
           root="https://raw.githubusercontent.com/honua-io/honua-release/$release_sha"
           url="$root/$LOCK_PATH"
           curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 "$url" -o lock.json
           mkdir -p "$RUNNER_TEMP/release-tools"
-          for file in check_capacity_soak.py capacity_observations.py extract_capacity_evidence.py; do
+          for file in check_capacity_soak.py capacity_observations.py extract_capacity_evidence.py release_runner_policy.py; do
             curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 "$root/tools/$file" -o "$RUNNER_TEMP/release-tools/$file"
           done
+          mkdir -p "$RUNNER_TEMP/certification"
+          curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 "$root/certification/release-runners.v1.json" -o "$RUNNER_TEMP/certification/release-runners.v1.json"
           curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 "$root/platform-manifest.yaml" -o "$RUNNER_TEMP/platform-manifest.yaml"
           python - <<'PYTHON'
           import os, pathlib, yaml
@@ -296,7 +450,7 @@ jobs:
         run: |
           set -euo pipefail
           SOAK_LICENSE_CONTENT="$(cat "$RUNNER_TEMP/license/license.json")" \
-            docker compose -f docker-compose.soak.yml up -d
+            scripts/soak/capacity-substrate.sh start
           echo "image=$SOAK_SERVER_IMAGE" >> "$GITHUB_OUTPUT"
 
       - name: Wait for the Production startup policy to report ready
@@ -431,13 +585,14 @@ jobs:
             --url-out "$RUNNER_TEMP/receipt-url.txt"
           echo "url=$(cat "$RUNNER_TEMP/receipt-url.txt")" >> "$GITHUB_OUTPUT"
 
-      - name: Verify exact bundle bytes, attestation and recomputed release signals
+      - name: Preflight exact bundle bytes, attestation content and recomputed signals
         id: receipt
         env:
           GH_TOKEN: ${{ github.token }}
           RECEIPT_URL: ${{ steps.publish.outputs.url }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           IMAGE_DIGEST: ${{ steps.pulled.outputs.digest }}
+          SIGNER_WORKFLOW_REF: ${{ steps.signer.outputs.workflow_ref }}
         run: |
           set -euo pipefail
           bundle="$RUNNER_TEMP/capacity-evidence.zip"
@@ -446,14 +601,21 @@ jobs:
             cmp "$bundle" "$RUNNER_TEMP/published.zip"
             bundle="$RUNNER_TEMP/published.zip"
           fi
-          gh attestation verify "$bundle" --repo "$GITHUB_REPOSITORY" --format json > "$RUNNER_TEMP/verified-attestation.json"
+          gh attestation verify "$bundle" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow honua-io/honua-server/.github/workflows/capacity-soak-candidate.yml \
+            --source-digest "$CANDIDATE_SHA" --predicate-type https://slsa.dev/provenance/v1 \
+            --format json > "$RUNNER_TEMP/verified-attestation.json"
           python "$RUNNER_TEMP/release-tools/extract_capacity_evidence.py" --bundle "$bundle" --output "$RUNNER_TEMP/verified-capacity"
-          python "$RUNNER_TEMP/release-tools/check_capacity_soak.py" \
+          # This job is still in progress. Completed-run runner admission belongs to the
+          # independent release consumer after this job finishes; it cannot admit itself.
+          PYTHONPATH="$RUNNER_TEMP/release-tools" python producer/scripts/soak/producer_preflight.py \
             --lock lock.json --receipt "$RUNNER_TEMP/verified-capacity/capacity-soak-receipt.json" \
             --artifact-root "$RUNNER_TEMP/verified-capacity" --expected-revision "$CANDIDATE_SHA" \
             --expected-image-digest "$IMAGE_DIGEST" --bundle "$bundle" \
+            --expected-run-id "$GITHUB_RUN_ID" --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --expected-workflow-ref "$SIGNER_WORKFLOW_REF" \
             --attestation "$RUNNER_TEMP/verified-attestation.json" | tee "$RUNNER_TEMP/gate-verdict.txt"
-          echo "selfcheck=pass" >> "$GITHUB_OUTPUT"
+          echo "selfcheck=producer preflight pass; completed-run release admission pending" >> "$GITHUB_OUTPUT"
 
       - name: Summarise
         if: always()
@@ -475,7 +637,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect server logs
-        if: always()
+        if: ${{ always() && steps.admission.outcome == 'success' }}
         run: |
           # Tail only: this server can emit gigabytes of Information records per hour under the
           # declared subscription load (honua-server#4711), and an artifact nobody can open is not
@@ -494,6 +656,7 @@ jobs:
             ${{ runner.temp }}/verified-attestation.json
             ${{ runner.temp }}/gate-verdict.txt
             ${{ runner.temp }}/topology.json
+            ${{ runner.temp }}/capacity-runner-admission.json
             ${{ runner.temp }}/honua-server.log
             ${{ runner.temp }}/postgres.log
           if-no-files-found: warn
@@ -501,5 +664,11 @@ jobs:
 
       - name: Tear down the substrate
         if: always()
-        working-directory: producer
-        run: docker compose -f docker-compose.soak.yml down -v || true
+        env:
+          PRODUCER_ADMITTED: ${{ steps.admission.outcome == 'success' }}
+        run: |
+          # No checkout or run-owned substrate exists when admission failed. In particular,
+          # do not execute a stale workspace's cleanup script on an unadmitted runner.
+          if [ "$PRODUCER_ADMITTED" != true ]; then exit 0; fi
+          cd producer
+          scripts/soak/capacity-substrate.sh cleanup

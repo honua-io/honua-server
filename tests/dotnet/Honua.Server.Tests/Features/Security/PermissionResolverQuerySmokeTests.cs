@@ -1,8 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Net;
-using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -20,8 +18,8 @@ namespace Honua.Server.Tests.Features.Security;
 /// <summary>
 /// Cross-protocol smoke proving the canonical permission resolver (#1375) is
 /// LIVE on an already-enforced path: the GeoServices FeatureServer layer-query
-/// read seam now consults per-operation RBAC grants and the legacy coarse
-/// <see cref="AccessPolicy"/> only as a fallback.
+/// read seam consults per-operation RBAC grants, and an explicit role list still
+/// denies a matching grant (#6358).
 /// </summary>
 public sealed class PermissionResolverQuerySmokeTests
 {
@@ -34,12 +32,10 @@ public sealed class PermissionResolverQuerySmokeTests
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task Query_PerOperationGrant_OverridesCoarseReadPolicyDeny()
+    public async Task Query_PerOperationGrant_DoesNotSkipRoleList()
     {
-        // Alpha service requires a coarse read role the user does NOT hold, so
-        // the legacy AccessPolicy seam would 403. The user instead holds a role
-        // whose RBAC store grants the "query" operation on service "alpha", which
-        // the resolver must honor → 200.
+        // Alpha service requires a coarse read role the user does NOT hold.
+        // A matching query grant must not skip that list (#6358).
         using var factory = ServiceRbacTestFixture.CreateFactory(
             layerCatalogFactory: static () => new RbacTestLayerCatalog(
                 alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["coarse-only-role"])),
@@ -56,7 +52,7 @@ public sealed class PermissionResolverQuerySmokeTests
 
         var response = await client.GetAsync(QueryUrl);
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]

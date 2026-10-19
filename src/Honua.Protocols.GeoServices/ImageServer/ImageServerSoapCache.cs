@@ -51,12 +51,20 @@ internal static partial class ImageServerSoapEndpoints
                 new XAttribute(xsi + "type", "tns:CacheDescriptionInfo"),
                 BuildTileCacheElement("TileCacheInfo", tileInfo),
                 BuildTileImageElement("TileImageInfo", tileInfo),
-                new XElement("LayerCacheInfos", new XAttribute(xsi + "type", "tns:ArrayOfLayerCacheInfo")),
+                new XElement(
+                    "LayerCacheInfos",
+                    new XAttribute(xsi + "type", "tns:ArrayOfLayerCacheInfo"),
+                    // The service has a fused cache, not an individual image-layer cache.
+                    new XElement(
+                        "LayerCacheInfo",
+                        new XAttribute(xsi + "type", "tns:LayerCacheInfo"),
+                        new XElement("LayerID", 0),
+                        new XElement("HasCache", false))),
                 new XElement(
                     "CacheControlInfo",
                     new XAttribute(xsi + "type", "tns:CacheControlInfo"),
                     new XElement("ClientCachingAllowed", true)),
-                new XElement("ServiceType", "esriCachedMapServiceSingleFused"));
+                new XElement("ServiceType", "esriSingleFusedMapCache"));
         }
 
         return CreateSoapResponse(
@@ -213,8 +221,8 @@ internal static partial class ImageServerSoapEndpoints
                     "LODInfo",
                     new XAttribute(XName.Get("type", XmlSchemaInstanceNamespace), "tns:LODInfo"),
                     new XElement("LevelID", lod.Level),
-                    new XElement("Resolution", FormatDouble(lod.Resolution)),
-                    new XElement("Scale", FormatDouble(lod.Scale))))));
+                    new XElement("Scale", FormatDouble(lod.Scale)),
+                    new XElement("Resolution", FormatDouble(lod.Resolution))))));
     }
 
     private static XElement BuildTileImageElement(string name, TileInfo tileInfo)

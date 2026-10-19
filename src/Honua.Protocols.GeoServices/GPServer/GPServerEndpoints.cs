@@ -8,6 +8,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Helpers;
@@ -210,6 +211,15 @@ internal static partial class GPServerEndpoints
             return formatError;
         }
 
+        // Routing is the provider-level service also published by the portal's
+        // helperServices. It has no feature-service catalog row; its GP root must
+        // describe the same synchronous tools that already answer by name.
+        if (IsRoutingUtilityService(serviceId) &&
+            !await HasRoutingCatalogServiceAsync(context, ct).ConfigureAwait(false))
+        {
+            return await HandleRoutingUtilityServiceInfoAsync(context, ct).ConfigureAwait(false);
+        }
+
         var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
         if (!serviceValidation.IsValid)
         {
@@ -242,7 +252,7 @@ internal static partial class GPServerEndpoints
             contentType: "application/json");
     }
 
-    private static async Task<IResult> HandleTaskInfo(HttpContext context, CancellationToken ct)
+    internal static async Task<IResult> HandleTaskInfo(HttpContext context, CancellationToken ct)
     {
         ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
@@ -261,6 +271,11 @@ internal static partial class GPServerEndpoints
         // need not publish any catalog task of its own.
         if (NAServerMetadata.IsUtilityTask(taskName))
         {
+            var routingError = await ValidateRoutingUtilityTaskAsync(context, taskName, ct).ConfigureAwait(false);
+            if (routingError is not null)
+            {
+                return routingError;
+            }
             return HandleNetworkAnalysisUtilityTaskInfo(context, taskName);
         }
 
@@ -323,11 +338,18 @@ internal static partial class GPServerEndpoints
 
             // Auth must precede parameter reading to guarantee 401/403 before 400
             // on invalid input from unauthenticated callers (see IGeoprocessingJobService contract).
-            await jobService.EnsureCallerAuthorizedAsync(
-                context.User,
-                OperatorResourceType.Process,
-                OperatorOperation.Execute,
-                ct).ConfigureAwait(false);
+            var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
+            var definition = ResolveTaskDefinition(processCatalog, taskName);
+            if (definition is null)
+            {
+                // Preserve auth-before-validation for an unknown task without inventing
+                // a canonical process identity from an untrusted route alias.
+                await jobService.EnsureCallerAuthorizedAsync(context.User,
+                    OperatorResourceType.Process, OperatorOperation.Execute, ct).ConfigureAwait(false);
+                throw new GeoprocessingNotFoundException($"Task '{taskName}' was not found.");
+            }
+            var execution = new GPServerExecutionContext(serviceId, taskName, definition.ProcessId);
+            await jobService.EnsureGPServerExecutionAuthorizedAsync(context.User, execution, ct).ConfigureAwait(false);
 
             var contentTypeError = readSoapParameters is null ? ValidateFormPostContentType(context) : null;
             if (contentTypeError is not null)
@@ -346,25 +368,13 @@ internal static partial class GPServerEndpoints
 
             // Recognized GP environment controls use the same parsing/threading as
             // synchronous execute. env:outSR, env:workspace, and
-            // env:overwriteOutput affect result handling; env:processSR is
-            // validated and preserved for future engine support but is not yet
-            // applied. Any other env:* control yields a clear 400. See #1228.
+            // env:overwriteOutput affect result handling. Processing spatial-reference
+            // overrides are rejected until the engine can honor them; other
+            // unsupported env:* controls also yield a clear 400.
             var envError = TryParseEnvControls(context, logger, parameters, out var envControls);
             if (envError != null)
             {
                 return envError;
-            }
-
-            var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
-            var definition = ResolveTaskDefinition(processCatalog, taskName);
-            if (definition == null)
-            {
-                GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
-                return SetSpanErrorAndReturn(
-                    StandardErrorHelpers.CreateNotFound(
-                        context,
-                        $"Task '{taskName}' on service '{serviceId}' was not found."),
-                    "Task not found");
             }
 
             if (definition.RuntimeProfile == RuntimeProfiles.Native
@@ -374,6 +384,15 @@ internal static partial class GPServerEndpoints
                     StandardErrorHelpers.CreateBadRequest(context,
                         "env:workspace and env:overwriteOutput are not supported by the native GDAL worker runtime."),
                     "Native workspace controls unavailable");
+            }
+
+            if (RoutingProcessDefinitions.Handles(definition.ProcessId))
+            {
+                if (envControls.ProcessSr is not null || envControls.Workspace is not null || envControls.OverwriteOutput is not null)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, "Routing jobs support only output spatial-reference GP environment controls.");
+                }
+                parameters = RoutingAsyncWebTools.Translate(definition, parameters, envControls.OutSr);
             }
 
             var planResult = BuildSubmissionPlan(
@@ -389,13 +408,16 @@ internal static partial class GPServerEndpoints
             }
 
             var plan = planResult.Plan!;
-            var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
+            var workingSrid = RoutingProcessDefinitions.Handles(definition.ProcessId)
+                ? int.Parse(parameters["output_srid"], CultureInfo.InvariantCulture)
+                : ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
             var protocolMetadata = BuildProtocolMetadata(
                 serviceId, taskName, definition, parameters, envControls, workingSrid, planResult.FeatureSchema);
-            var job = await jobService.SubmitJobAsync(
+            var job = await jobService.SubmitGPServerJobAsync(
                 plan,
                 ResolveIdempotencyKey(parameters),
                 context.User,
+                execution,
                 protocolMetadata,
                 ct);
 
@@ -458,11 +480,18 @@ internal static partial class GPServerEndpoints
             }
 
             // Auth must precede parameter reading to guarantee 401/403 before 400.
-            await jobService.EnsureCallerAuthorizedAsync(
-                context.User,
-                OperatorResourceType.Process,
-                OperatorOperation.Execute,
-                ct).ConfigureAwait(false);
+            var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
+            var definition = ResolveTaskDefinition(processCatalog, taskName);
+            if (definition is null)
+            {
+                // Preserve auth-before-validation for an unknown task without inventing
+                // a canonical process identity from an untrusted route alias.
+                await jobService.EnsureCallerAuthorizedAsync(context.User,
+                    OperatorResourceType.Process, OperatorOperation.Execute, ct).ConfigureAwait(false);
+                throw new GeoprocessingNotFoundException($"Task '{taskName}' was not found.");
+            }
+            var execution = new GPServerExecutionContext(serviceId, taskName, definition.ProcessId);
+            await jobService.EnsureGPServerExecutionAuthorizedAsync(context.User, execution, ct).ConfigureAwait(false);
 
             var contentTypeError = readSoapParameters is null ? ValidateFormPostContentType(context) : null;
             if (contentTypeError is not null)
@@ -483,18 +512,6 @@ internal static partial class GPServerEndpoints
             if (envError != null)
             {
                 return envError;
-            }
-
-            var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
-            var definition = ResolveTaskDefinition(processCatalog, taskName);
-            if (definition == null)
-            {
-                GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
-                return SetSpanErrorAndReturn(
-                    StandardErrorHelpers.CreateNotFound(
-                        context,
-                        $"Task '{taskName}' on service '{serviceId}' was not found."),
-                    "Task not found");
             }
 
             if (!GPServerExecutionPolicy.IsJobCallable(definition))
@@ -547,10 +564,11 @@ internal static partial class GPServerEndpoints
             var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
             var protocolMetadata = BuildProtocolMetadata(
                 serviceId, taskName, definition, parameters, envControls, workingSrid, planResult.FeatureSchema);
-            var job = await jobService.SubmitJobAsync(
+            var job = await jobService.SubmitGPServerJobAsync(
                 planResult.Plan!,
                 ResolveIdempotencyKey(parameters),
                 context.User,
+                execution,
                 protocolMetadata,
                 ct);
             submittedJobId = job.OperationId;
@@ -578,7 +596,7 @@ internal static partial class GPServerEndpoints
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Timeout)
             {
                 DispatchOrphanedExecuteJobCancellation(
-                    terminalService, job.OperationId, context.User, logger);
+                    terminalService, job.OperationId, serviceId, taskName, context.User, logger);
                 return SetSpanErrorAndReturn(
                     StandardErrorHelpers.CreateRequestTimeout(context,
                         "Synchronous GP execution did not complete within the request timeout. " +
@@ -589,7 +607,7 @@ internal static partial class GPServerEndpoints
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.ClientDisconnected)
             {
                 DispatchOrphanedExecuteJobCancellation(
-                    terminalService, job.OperationId, context.User, logger);
+                    terminalService, job.OperationId, serviceId, taskName, context.User, logger);
                 return context.RequestAborted.IsCancellationRequested
                     ? Results.StatusCode(499)
                     : SetSpanErrorAndReturn(
@@ -611,7 +629,7 @@ internal static partial class GPServerEndpoints
         }
         catch (TimeoutException)
         {
-            DispatchOrphanedExecuteJobCancellation(terminalService, submittedJobId, context.User, logger);
+            DispatchOrphanedExecuteJobCancellation(terminalService, submittedJobId, serviceId, taskName, context.User, logger);
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateRequestTimeout(context,
                     "Synchronous GP execution did not complete within the request timeout. " +
@@ -622,7 +640,7 @@ internal static partial class GPServerEndpoints
         {
             // Caller disconnected or the limits timeout token tripped while the
             // submitted job was still running; cancel the orphan before mapping.
-            DispatchOrphanedExecuteJobCancellation(terminalService, submittedJobId, context.User, logger);
+            DispatchOrphanedExecuteJobCancellation(terminalService, submittedJobId, serviceId, taskName, context.User, logger);
             return MapExceptionToResult(context, logger, "Execute", ex);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -643,6 +661,8 @@ internal static partial class GPServerEndpoints
     private static void DispatchOrphanedExecuteJobCancellation(
         IGeoprocessingJobTerminalService terminalService,
         string? jobId,
+        string serviceId,
+        string taskName,
         System.Security.Claims.ClaimsPrincipal user,
         ILogger logger)
     {
@@ -652,8 +672,10 @@ internal static partial class GPServerEndpoints
         }
 
         GPServerLog.OrphanedExecuteJobCancelRequested(logger, jobId);
-        terminalService.DispatchOrphanedCancellation(
+        terminalService.DispatchGPServerOrphanedCancellation(
             jobId,
+            serviceId,
+            taskName,
             user,
             TimeSpan.FromSeconds(10));
     }
@@ -1016,7 +1038,7 @@ internal static partial class GPServerEndpoints
                 return serviceValidation.ErrorResult!;
             }
 
-            var job = await jobService.GetJobAsync(jobId, context.User, ct);
+            var job = await jobService.GetGPServerJobAsync(jobId, serviceId, taskName, context.User, ct);
 
             var bindingError = ValidateJobBinding(context, logger, job, serviceId, taskName);
             if (bindingError != null)
@@ -1036,7 +1058,7 @@ internal static partial class GPServerEndpoints
                 results = new Dictionary<string, GPJobResultRef>(StringComparer.OrdinalIgnoreCase);
                 try
                 {
-                    var resultPackage = await jobService.GetJobResultsAsync(jobId, context.User, ct);
+                    var resultPackage = await jobService.GetGPServerJobResultsAsync(jobId, serviceId, taskName, context.User, ct);
                     foreach (var outputName in ResolvePublishedOutputParameterNames(job, resultPackage))
                     {
                         results[outputName] = new GPJobResultRef
@@ -1115,14 +1137,14 @@ internal static partial class GPServerEndpoints
             }
 
             // Validate route binding before accessing results.
-            var job = await jobService.GetJobAsync(jobId, context.User, ct);
+            var job = await jobService.GetGPServerJobAsync(jobId, serviceId, taskName, context.User, ct);
             var bindingError = ValidateJobBinding(context, logger, job, serviceId, taskName);
             if (bindingError != null)
             {
                 return bindingError;
             }
 
-            var results = await jobService.GetJobResultsAsync(jobId, context.User, ct);
+            var results = await jobService.GetGPServerJobResultsAsync(jobId, serviceId, taskName, context.User, ct);
             var artifact = ResolveArtifactByPublishedOutputName(job, results, paramName, out var publishedName);
 
             if (artifact == null)
@@ -1169,8 +1191,9 @@ internal static partial class GPServerEndpoints
             var response = new GPResultResponse
             {
                 ParamName = publishedName,
-                DataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
-                Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, ResolveResultSrid(job, artifact.Kind),
+                DataType = publishedName == "Solve_Succeeded" && IsRoutingJob(job) ? "GPBoolean" : GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
+                Value = publishedName == "Solve_Succeeded" && IsRoutingJob(job) ? RoutingAsyncWebTools.BooleanResult(value)
+                    : GPServerEsriOutputTranslation.Translate(artifact.Kind, value, ResolveResultSrid(job, artifact.Kind),
                     job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema))
             };
 
@@ -1221,15 +1244,17 @@ internal static partial class GPServerEndpoints
             }
 
             // Validate route binding before attempting cancellation.
-            var existing = await jobService.GetJobAsync(jobId, context.User, ct);
+            var existing = await jobService.GetGPServerJobAsync(jobId, serviceId, taskName, context.User, ct);
             var bindingError = ValidateJobBinding(context, logger, existing, serviceId, taskName);
             if (bindingError != null)
             {
                 return bindingError;
             }
 
-            var cancellation = await terminalService.CancelAsync(
+            var cancellation = await terminalService.CancelGPServerAsync(
                 jobId,
+                serviceId,
+                taskName,
                 context.User,
                 TimeSpan.FromSeconds(30),
                 ct);
@@ -1375,8 +1400,8 @@ internal static partial class GPServerEndpoints
 
     /// <summary>
     /// Parsed GP environment controls. <c>env:outSR</c>, <c>env:workspace</c>,
-    /// and <c>env:overwriteOutput</c> are honored. <c>env:processSR</c> is
-    /// validated and preserved but not yet applied by the execution engine. Any
+    /// and <c>env:overwriteOutput</c> are honored. Nonempty <c>env:processSR</c>
+    /// overrides are rejected because the execution engine cannot apply them. Any
     /// other <c>env:*</c> control is unsupported and surfaced for a 400 response.
     /// <c>env:workspace</c> mirrors arcpy's <c>arcpy.env.workspace</c> (default
     /// output location for tool results) and <c>env:overwriteOutput</c> mirrors
@@ -1384,19 +1409,20 @@ internal static partial class GPServerEndpoints
     /// <c>context</c> JSON parameter feeds the same <c>OutSr</c>/<c>ProcessSr</c> slots
     /// (see <see cref="TryApplyContextControls"/>).
     /// </summary>
-    private readonly record struct EnvControls(int? OutSr, int? ProcessSr, string? Workspace, bool? OverwriteOutput);
+    internal readonly record struct EnvControls(int? OutSr, int? ProcessSr, string? Workspace, bool? OverwriteOutput);
 
     /// <summary>
     /// Parses GP environment controls. <c>env:outSR</c>, <c>env:processSR</c>,
     /// <c>env:workspace</c>, and <c>env:overwriteOutput</c> are recognised and
-    /// returned; any other <c>env:*</c> control yields a structured 400. SR
+    /// validated; a processing-SR override or any other unsupported <c>env:*</c>
+    /// control yields a structured 400 before submission. SR
     /// values may be a bare WKID or a spatial-reference JSON object
     /// (<c>{ "wkid": 3857 }</c>). Shared by both the synchronous <c>execute</c>
     /// route and the async <c>submitJob</c> route — both thread the same
     /// recognized controls through <see cref="BuildProtocolMetadata"/> onto the
     /// durable job spec. See #1228.
     /// </summary>
-    private static IResult? TryParseEnvControls(
+    internal static IResult? TryParseEnvControls(
         HttpContext context,
         ILogger logger,
         IReadOnlyDictionary<string, string> allParams,
@@ -1482,6 +1508,15 @@ internal static partial class GPServerEndpoints
         if (contextError != null)
         {
             return contextError;
+        }
+
+        if (processSr is not null)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context,
+                    "Processing spatial-reference overrides (env:processSR / context.processSR) are not supported. " +
+                    "The execution engine cannot apply the requested processing CRS."),
+                "Unsupported GP processing spatial reference");
         }
 
         controls = new EnvControls(outSr, processSr, workspace, overwriteOutput);
@@ -1842,14 +1877,17 @@ internal static partial class GPServerEndpoints
         {
             parameters.Add(new GPParameterInfo
             {
-                Name = GPServerParameterNames.Publish(parameter.Name, parameterPrefix),
+                Name = RoutingProcessDefinitions.Handles(definition.ProcessId) ? RoutingAsyncWebTools.InputName(parameter.Name, definition.ProcessId)
+                    : GPServerParameterNames.Publish(parameter.Name, parameterPrefix),
                 DisplayName = parameter.DisplayName,
                 Description = parameter.Description,
                 DataType = parameter.AcceptsGeoJsonDataUri
                     ? "GPFeatureRecordSetLayer"
                     : GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),
                 Direction = "esriGPParameterDirectionInput",
-                DefaultValue = GPServerParameterTranslation.TranslateDefaultValue(parameter),
+                DefaultValue = RoutingProcessDefinitions.Handles(definition.ProcessId) && parameter.AcceptsGeoJsonDataUri
+                    ? RoutingAsyncWebTools.DefaultFeatureSet(parameter.Name)
+                    : GPServerParameterTranslation.TranslateDefaultValue(parameter),
                 ParameterType = parameter.Required
                     ? "esriGPParameterTypeRequired"
                     : "esriGPParameterTypeOptional",
@@ -1862,13 +1900,14 @@ internal static partial class GPServerEndpoints
         for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
         {
             var kind = definition.OutputArtifactKinds[index];
-            var outputName = BuildOutputParameterName(kind, index, definition.OutputArtifactKinds);
+            var outputName = RoutingProcessDefinitions.Handles(definition.ProcessId) ? RoutingAsyncWebTools.Outputs(definition.ProcessId)[index]
+                : BuildOutputParameterName(kind, index, definition.OutputArtifactKinds);
             parameters.Add(new GPParameterInfo
             {
                 Name = outputName,
                 DisplayName = outputName,
                 Description = $"Output artifact of type {kind}.",
-                DataType = GPServerParameterTranslation.ToEsriDataType(kind),
+                DataType = outputName == "Solve_Succeeded" ? "GPBoolean" : GPServerParameterTranslation.ToEsriDataType(kind),
                 Direction = "esriGPParameterDirectionOutput",
                 // Mutually exclusive outputs must NOT all be advertised as
                 // required: exactly one is produced per run, so a client that
@@ -2013,7 +2052,8 @@ internal static partial class GPServerEndpoints
             Outputs = definition.OutputArtifactKinds
         };
 
-        return new SubmissionPlanResult(plan, CapabilityError: null, derivedSrid, featureSchema);
+        return new SubmissionPlanResult(plan, CapabilityError: null, derivedSrid,
+            RoutingProcessDefinitions.Handles(definition.ProcessId) ? null : featureSchema);
     }
 
     /// <summary>
@@ -2044,6 +2084,10 @@ internal static partial class GPServerEndpoints
 
         return derivedSrid ?? 0;
     }
+
+    private static bool IsRoutingJob(ExecutionJobRecord job)
+        => Honua.Geoprocessing.Execution.GeoprocessingDispatchHelper.ResolveProcessId(job.Spec.Parameters) is { } processId
+            && RoutingProcessDefinitions.Handles(processId);
 
     private static int ResolveResultSrid(ExecutionJobRecord job, ArtifactKind kind)
     {
@@ -2140,10 +2184,8 @@ internal static partial class GPServerEndpoints
 
         for (var index = 0; index < definition.OutputArtifactKinds.Count; index++)
         {
-            var outputName = BuildOutputParameterName(
-                definition.OutputArtifactKinds[index],
-                index,
-                definition.OutputArtifactKinds);
+            var outputName = RoutingProcessDefinitions.Handles(definition.ProcessId) ? RoutingAsyncWebTools.Outputs(definition.ProcessId)[index]
+                : BuildOutputParameterName(definition.OutputArtifactKinds[index], index, definition.OutputArtifactKinds);
             metadata[$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}{index}"] = outputName;
             metadata[$"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}{index}"] = outputName;
         }
@@ -2157,7 +2199,8 @@ internal static partial class GPServerEndpoints
         if (envControls.OutSr is { } outSr)
         {
             metadata[GeoprocessingProtocolMetadataKeys.GPServerOutSr] =
-                outSr.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                (RoutingProcessDefinitions.Handles(definition.ProcessId)
+                    ? SpatialReferenceExtensions.NormalizeWebMercatorSrid(outSr) : outSr).ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
         if (envControls.ProcessSr is { } processSr)

@@ -329,6 +329,13 @@ public sealed class WebAppFixture : IAsyncLifetime
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceSchemaField(this, layerIndex, field);
 
     /// <summary>
+    /// Sets (or clears with <c>null</c>) editor-tracking and GlobalID bindings on the
+    /// resource published at <paramref name="layerIndex"/>.
+    /// </summary>
+    public void UpdateV2ResourceEditing(int layerIndex, MetadataV2ResourceEditing? editing)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceEditing(this, layerIndex, editing);
+
+    /// <summary>
     /// Sets (or clears with <c>null</c>) the Esri subtype set on the resource published
     /// at <paramref name="layerIndex"/>. Delegates to
     /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
@@ -705,14 +712,18 @@ public sealed class WebAppFixture : IAsyncLifetime
     private Task EnsureTestSecureConnectionAsync()
         => Honua.TestKit.Mixins.WebAppFixtureSecureConnectionMixin.EnsureTestSecureConnectionAsync(_serviceScope);
 
-    private Task SeedSchemaAsync(string schemaName)
+    private async Task SeedSchemaAsync(string schemaName)
     {
         if (!string.IsNullOrWhiteSpace(_seedPath))
         {
-            return Postgres.ApplySeedAsync(_seedPath, schemaName, _seedProfile);
+            await Postgres.ApplySeedAsync(_seedPath, schemaName, _seedProfile).ConfigureAwait(false);
+        }
+        else
+        {
+            await ServerTestData.SeedAsync(Postgres, schemaName).ConfigureAwait(false);
         }
 
-        return ServerTestData.SeedAsync(Postgres, schemaName);
+        await ServerTestData.EnsureFixtureAttachmentsAsync(Postgres, schemaName).ConfigureAwait(false);
     }
 
     private static string ResolveSeedPath(string seedPath)

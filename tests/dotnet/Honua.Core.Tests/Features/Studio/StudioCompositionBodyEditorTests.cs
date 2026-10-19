@@ -59,6 +59,7 @@ public sealed class StudioCompositionBodyEditorTests
         Assert.Single(withLayer.Layers);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("{\"interactions\":[null]}")]
     [InlineData("{\"interactions\":[{\"id\":\"i\",\"on\":null,\"do\":{\"ref\":\"map\",\"verb\":\"setViewport\"}}]}")]
@@ -222,6 +223,7 @@ public sealed class StudioCompositionBodyEditorTests
             () => StudioCompositionBodyEditor.RemoveLayer(body, "roads"));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("roads")]
     [InlineData("roads-source")]
@@ -381,6 +383,7 @@ public sealed class StudioCompositionBodyEditorTests
             () => StudioCompositionBodyEditor.RemoveWidget(body, "legend"));
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(StudioPackageFamily.Query)]
     [InlineData(StudioPackageFamily.Report)]
@@ -393,6 +396,7 @@ public sealed class StudioCompositionBodyEditorTests
         => Assert.Throws<StudioCompositionFamilyException>(
             () => StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(family));
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(StudioPackageFamily.Map)]
     [InlineData(StudioPackageFamily.App)]

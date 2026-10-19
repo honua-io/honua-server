@@ -15,7 +15,9 @@
 #   run-foundation-family.sh projects <family>     # csproj paths to build
 #   run-foundation-family.sh list <family>         # human-readable plan
 #   run-foundation-family.sh list-all              # every csproj across families
-#   run-foundation-family.sh build <family>        # one dotnet build for the family
+#   run-foundation-family.sh filter <family> <root.slnf> # reusable restore/build selection
+#   run-foundation-family.sh restore <family> [root.slnf]
+#   run-foundation-family.sh build <family> [root.slnf]
 #   run-foundation-family.sh run <family>          # dotnet test each project
 #
 # Spec record (one per line, `|`-separated):
@@ -59,13 +61,11 @@ tests/dotnet/Honua.Geoprocessing.Testing.Tests/Honua.Geoprocessing.Testing.Tests
 tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj|gp-scaffolder-tests|||
 SPEC
       ;;
-    # #2943's protocol Fast tier: the 8 ADR-0042 protocol-split projects plus
-    # Honua.Ai.Tests. scripts/ci/run-server-test-shard.sh appends `&Tier!=Fast`
-    # to every server-tests shard filter, so these cases run HERE or nowhere.
+    # Retained mixed-assembly Fast cases run here; isolated unit shards include
+    # their own Fast cases. OgcApi's Fast cases all moved to its UnitTests shard.
     protocols)
       cat <<'SPEC'
 tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj|Honua.Protocols.GeoServices-fast-tier|Tier=Fast||
-tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj|Honua.Protocols.OgcApi-fast-tier|Tier=Fast||
 tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj|Honua.Protocols.OgcClassic-fast-tier|Tier=Fast||
 tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj|Honua.Protocols.OData-fast-tier|Tier=Fast||
 tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj|Honua.Protocols.Scene-fast-tier|Tier=Fast||
@@ -75,20 +75,16 @@ tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj|Honua.Ai-fast-tier|Tier=Fast||
 SPEC
       ;;
     # The #2943 orphan-revival provider units, the #2949 advisory Postgres
-    # security suite, the Testcontainers MySQL suite and the #58 SQL/warehouse
-    # unit subsets. All small, and none of them pull the server closure.
+    # security suite and the Testcontainers MySQL suite. Extracted provider units
+    # run in their canonical UnitTests shards; retained SQL/warehouse live tests
+    # keep their existing opt-in lanes. MySQL retains its full HTTP host case.
     providers)
       cat <<'SPEC'
 tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj|Honua.DuckDB-tests|||
 tests/dotnet/Honua.Plugins.Tests/Honua.Plugins.Tests.csproj|Honua.Plugins-tests|||
 tests/dotnet/Honua.GeoServicesRest.Tests/Honua.GeoServicesRest.Tests.csproj|Honua.GeoServicesRest-tests|||
-tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj|Honua.Oracle-tests|||
 tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj|postgres-security-tests|||advisory
 tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj|mysql-tests||HONUA_TEST_MYSQL=1|
-tests/dotnet/Honua.Db.SqlServer.Tests/Honua.SqlServer.Tests.csproj|Honua.SqlServer-unit-tests|FullyQualifiedName!~IntegrationTests||
-tests/dotnet/Honua.Snowflake.Tests/Honua.Snowflake.Tests.csproj|Honua.Snowflake-unit-tests|FullyQualifiedName!~IntegrationTests||
-tests/dotnet/Honua.Db.Redshift.Tests/Honua.Redshift.Tests.csproj|Honua.Redshift-unit-tests|FullyQualifiedName!~IntegrationTests||
-tests/dotnet/Honua.Db.Databricks.Tests/Honua.Databricks.Tests.csproj|Honua.Databricks-unit-tests|FullyQualifiedName!~IntegrationTests||
 SPEC
       ;;
     *)
@@ -117,10 +113,15 @@ foundation_build_projects() {
   foundation_family_specs "$1" | awk -F'|' '$5 !~ /advisory/ { print $1 }'
 }
 
-foundation_build() {
+foundation_filter() {
   local family="$1"
-  local slnf projects
-  mapfile -t projects < <(foundation_build_projects "${family}")
+  local slnf="${2:?filter path required}" projects
+  local specification
+  specification="$(foundation_build_projects "${family}")" || return $?
+  [[ "$(dirname "$(realpath -m "${slnf}")")" == "$PWD" ]] || {
+    echo "::error::Foundation filter must be beside Honua.sln"; return 2;
+  }
+  mapfile -t projects <<< "${specification}"
   # `dotnet build` takes ONE project (MSB1008), so build the family through a
   # generated solution FILTER: MSBuild then walks the family's shared closure
   # once and parallelises across the independent projects, instead of N
@@ -129,7 +130,6 @@ foundation_build() {
   # the `dotnet test --no-build` calls in foundation_run safe.
   # The filter's "path" is resolved relative to the .slnf file, so it has to
   # sit next to Honua.sln at the repository root.
-  slnf="$(mktemp -p . "foundation-${family}-XXXXXX.slnf")"
   {
     printf '{\n  "solution": {\n    "path": "Honua.sln",\n    "projects": [\n'
     local first=1 p
@@ -140,14 +140,32 @@ foundation_build() {
     printf '\n    ]\n  }\n}\n'
   } >"${slnf}"
 
-  echo "::group::dotnet build (${family}: ${#projects[@]} project(s))"
-  local rc=0
-  # The required PR Gate and merge-queue build already run the full solution
-  # with analyzers and warnings-as-errors. Foundation jobs consume that signal
-  # independently, so do not pay to repeat analyzers in this test-only rebuild.
-  dotnet build "${slnf}" --no-restore --configuration "${CONFIGURATION}" -graphBuild /p:RunAnalyzers=false || rc=$?
-  echo "::endgroup::"
-  rm -f "${slnf}"
+}
+
+# An explicit filter is reusable across restore/build. Without one each operation
+# creates and removes its own equivalent filter beside Honua.sln.
+foundation_operation() {
+  local operation="$1" family="$2" slnf="${3:-}" owned=false rc=0
+  if [[ -z "${slnf}" ]]; then
+    slnf="$(mktemp -p . "foundation-${family}-XXXXXX.slnf")"
+    owned=true
+    foundation_filter "${family}" "${slnf}"
+  fi
+  [[ -f "${slnf}" ]] || { echo "::error::Missing foundation filter ${slnf}"; return 2; }
+  local expected
+  expected="$(mktemp -p . "foundation-${family}-verify-XXXXXX.slnf")"
+  foundation_filter "${family}" "${expected}" || { rm -f "${expected}"; return 2; }
+  if ! cmp -s "${slnf}" "${expected}"; then
+    rm -f "${expected}"
+    echo "::error::Foundation filter differs from the selected family"; return 2
+  fi
+  rm -f "${expected}"
+  if [[ "${operation}" == restore ]]; then
+    scripts/ci/dotnet-restore-retry.sh "${slnf}" --property:Configuration="${CONFIGURATION}" || rc=$?
+  else
+    dotnet build "${slnf}" --no-restore --configuration "${CONFIGURATION}" -graphBuild /p:RunAnalyzers=false || rc=$?
+  fi
+  if [[ "${owned}" == true ]]; then rm -f "${slnf}"; fi
   return "${rc}"
 }
 
@@ -181,7 +199,10 @@ foundation_run() {
     if [[ ",${flags}," == *,advisory,* ]]; then
       local build_rc=0
       echo "::group::dotnet build ${csproj} (advisory)"
-      dotnet build "${csproj}" --no-restore --configuration "${CONFIGURATION}" -graphBuild /p:RunAnalyzers=false || build_rc=$?
+      scripts/ci/dotnet-restore-retry.sh "${csproj}" --property:Configuration="${CONFIGURATION}" || build_rc=$?
+      if ((build_rc == 0)); then
+        dotnet build "${csproj}" --no-restore --configuration "${CONFIGURATION}" -graphBuild /p:RunAnalyzers=false || build_rc=$?
+      fi
       echo "::endgroup::"
       if ((build_rc != 0)); then
         echo "::warning::${csproj} failed to BUILD (advisory, non-gating — see #2949); skipping its tests"
@@ -221,7 +242,8 @@ main() {
     expected-trx-count) local f n=0; for f in $(foundation_families); do n=$((n + $(foundation_projects "${f}" | grep -c .))); done; printf '%s\n' "${n}" ;;
     list)       foundation_family_specs "${2:?family required}" ;;
     list-all)   local f; for f in $(foundation_families); do foundation_projects "${f}"; done ;;
-    build)      foundation_build "${2:?family required}" ;;
+    filter)     foundation_filter "${2:?family required}" "${3:?filter path required}" ;;
+    restore|build) foundation_operation "$1" "${2:?family required}" "${3:-}" ;;
     run)        foundation_run "${2:?family required}" ;;
     *)
       echo "usage: $0 {families|projects <family>|build-projects <family>|expected-trx-count|list <family>|list-all|build <family>|run <family>}" >&2

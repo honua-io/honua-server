@@ -22,6 +22,16 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 internal sealed partial class FeatureServerQueryExecutor
 {
     private const int FlushInterval = 64;
+
+    /// <summary>
+    /// Hard ceiling on the object ids a <c>returnIdsOnly</c> query returns from a provider reader that
+    /// cannot stream (federated ArcGIS REST and other <see cref="IFeatureReader"/>-only providers).
+    /// Those readers buffer the whole id list, and a federated reader pays one upstream round trip per
+    /// page, so an anonymous ids-only request is bounded here and reports <c>exceededTransferLimit</c>
+    /// when more ids match (#6113).
+    /// </summary>
+    internal const int MaxNonStreamingObjectIds = 100_000;
+
     private readonly IFeatureReader _featureReader;
     private readonly IStreamingFeatureStore _streamingFeatureStore;
     private readonly StreamingQueryFormatter _streamingFormatter;
@@ -70,6 +80,36 @@ internal sealed partial class FeatureServerQueryExecutor
         FeatureQuery query,
         CancellationToken cancellationToken)
         => await QueryWithValidationAsync(_featureReader, layerId, query, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Id-only read. <c>returnIdsOnly</c> must not materialize geometry or attributes
+    /// (#5615 SRV-GS-001). Callers format the returned object ids directly.
+    /// </summary>
+    public async Task<ImmutableArray<long>> QueryObjectIdsWithValidationAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+        => await QueryObjectIdsWithValidationAsync(_featureReader, layerId, query, cancellationToken).ConfigureAwait(false);
+
+    private static async Task<ImmutableArray<long>> QueryObjectIdsWithValidationAsync(
+        IFeatureReader reader,
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await reader.QueryObjectIdsAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidOperationException("Invalid query.", ex);
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidOperationException("Invalid query format.", ex);
+        }
+    }
 
     private static async Task<QueryResult<Feature>> QueryWithValidationAsync(
         IFeatureReader reader,
@@ -440,28 +480,19 @@ internal sealed partial class FeatureServerQueryExecutor
         string objectIdFieldName,
         HttpContext context,
         CancellationToken cancellationToken)
-        => await StreamIdsAsync(
-            _streamingFeatureStore,
-            layerId,
-            query,
-            objectIdFieldName,
-            context,
-            cancellationToken).ConfigureAwait(false);
+    {
+        var objectIds = await QueryObjectIdsWithValidationAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        await WriteObjectIdsAsync(objectIds, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
+    }
 
-    private static async Task StreamIdsAsync(
-        IStreamingFeatureStore streamingFeatureStore,
-        int layerId,
-        FeatureQuery query,
+    private static async Task WriteObjectIdsAsync(
+        ImmutableArray<long> objectIds,
         string objectIdFieldName,
         HttpContext context,
         CancellationToken cancellationToken)
     {
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = StatusCodes.Status200OK;
-
-        var features = streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken);
-        await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
-        var hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
 
         await using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
         {
@@ -474,20 +505,58 @@ internal sealed partial class FeatureServerQueryExecutor
         writer.WriteStartArray("objectIds");
 
         var idsSinceFlush = 0;
-        while (hasFeature)
+        if (!objectIds.IsDefault)
         {
-            var feature = enumerator.Current;
-            writer.WriteNumberValue(GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
+            foreach (var objectId in objectIds)
+            {
+                writer.WriteNumberValue(objectId);
+                if (++idsSinceFlush >= FlushInterval)
+                {
+                    await writer.FlushAsync(cancellationToken);
+                    idsSinceFlush = 0;
+                }
+            }
+        }
+
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+
+        await writer.FlushAsync(cancellationToken);
+        await context.Response.CompleteAsync();
+    }
+
+    private static async Task WriteObjectIdsAsync(
+        BoundedObjectIds objectIds,
+        string objectIdFieldName,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = StatusCodes.Status200OK;
+
+        await using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
+        {
+            Indented = false,
+            SkipValidation = false
+        });
+
+        writer.WriteStartObject();
+        writer.WriteString("objectIdFieldName", objectIdFieldName);
+        writer.WriteStartArray("objectIds");
+
+        var idsSinceFlush = 0;
+        foreach (var objectId in objectIds.ObjectIds)
+        {
+            writer.WriteNumberValue(objectId);
             if (++idsSinceFlush >= FlushInterval)
             {
                 await writer.FlushAsync(cancellationToken);
                 idsSinceFlush = 0;
             }
-
-            hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
         }
 
         writer.WriteEndArray();
+        writer.WriteBoolean("exceededTransferLimit", objectIds.ExceededTransferLimit);
         writer.WriteEndObject();
 
         await writer.FlushAsync(cancellationToken);
@@ -500,3 +569,11 @@ internal sealed partial class FeatureServerQueryExecutor
     private static long GetLowerBoundTotalCount(int itemCount, bool hasMoreResults)
         => hasMoreResults ? itemCount + 1L : itemCount;
 }
+
+/// <summary>
+/// Object ids read from a non-streaming provider reader under
+/// <see cref="FeatureServerQueryExecutor.MaxNonStreamingObjectIds"/>.
+/// </summary>
+/// <param name="ObjectIds">The object ids, at most the ceiling.</param>
+/// <param name="ExceededTransferLimit">Whether more ids matched than were returned.</param>
+internal readonly record struct BoundedObjectIds(ImmutableArray<long> ObjectIds, bool ExceededTransferLimit);

@@ -29,6 +29,14 @@ description: >
   in this required gate; only its image pull is overlapped with the build.
 
 inputs:
+  phase:
+    description: 'all runs build and verification; build produces pristine outputs; test consumes restored outputs.'
+    required: false
+    default: 'all'
+  projects-file:
+    description: 'Optional JSON producer test roots to union into the affected build filter.'
+    required: false
+    default: ''
   trx-prefix:
     description: 'Prefix for emitted .trx file names so callers do not collide.'
     required: false
@@ -101,12 +109,19 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Validate gate phase
+      shell: bash
+      env:
+        GATE_PHASE: ${{ inputs.phase }}
+      run: |
+        case "${GATE_PHASE}" in all|build|test) ;; *) echo "::error::Invalid gate phase"; exit 1 ;; esac
+
     # Start before restore/build so a cold runner's PostGIS image download
     # overlaps useful gate work. The helper resolves the exact image from the
     # Testcontainers fixture and is best-effort; a failed pull leaves the test's
     # existing on-demand behavior unchanged.
     - name: Pre-pull Testcontainers PostGIS image (background)
-      if: inputs.prepull-postgis == 'true'
+      if: inputs.phase != 'build' && inputs.prepull-postgis == 'true'
       shell: bash
       run: scripts/ci/prepull-testcontainers-postgis.sh
 
@@ -135,10 +150,6 @@ runs:
       shell: bash
       run: python3 scripts/ci/openapi-drift-check.py
 
-    - name: Restore
-      shell: bash
-      run: scripts/ci/dotnet-restore-retry.sh Honua.sln
-
     # Warnings-as-errors build scope. This used to be unconditionally
     # full-solution for BOTH callers. The reasoning split when `PR Gate` became
     # the dominant cost of landing anything (epic #3213):
@@ -156,6 +167,7 @@ runs:
     # the merge train's full-solution build BEFORE it lands. It is fixed forward
     # from the train, and never reaches trunk unverified.
     - name: Compute gate build scope
+      if: inputs.phase != 'test'
       id: build-scope
       shell: bash
       env:
@@ -163,13 +175,48 @@ runs:
         GITHUB_EVENT_NAME: ${{ github.event_name }}
       run: scripts/ci/compute-lean-gate-build-scope.sh
 
-    # Composite-action steps do not support `timeout-minutes`, so each bounded
-    # step wraps its command in coreutils `timeout` (exit 124 => step fails).
-    - name: Build (warnings as errors)
+    - name: Union producer test roots
+      if: inputs.phase != 'test'
+      id: producer-scope
       shell: bash
       env:
         GATE_BUILD_MODE: ${{ steps.build-scope.outputs.mode }}
         GATE_BUILD_FILTER: ${{ steps.build-scope.outputs.filter }}
+        PRODUCER_PROJECTS_FILE: ${{ inputs.projects-file }}
+      run: |
+        if [[ "${GATE_BUILD_MODE}" == affected && -n "${PRODUCER_PROJECTS_FILE}" ]]; then
+          python3 scripts/ci/managed-test-build.py filter \
+            --projects-file "${PRODUCER_PROJECTS_FILE}" \
+            --base-filter "${GATE_BUILD_FILTER}" --output "${GATE_BUILD_FILTER}"
+        fi
+        echo "mode=${GATE_BUILD_MODE}" >> "${GITHUB_OUTPUT}"
+        echo "filter=${GATE_BUILD_FILTER}" >> "${GITHUB_OUTPUT}"
+
+    - name: Restore selected build scope
+      if: inputs.phase != 'test'
+      shell: bash
+      env:
+        GATE_BUILD_MODE: ${{ steps.producer-scope.outputs.mode }}
+        GATE_BUILD_FILTER: ${{ steps.producer-scope.outputs.filter }}
+        GATE_RUN_FORMAT: ${{ inputs.run-format }}
+      run: |
+        # Inline format loads Honua.sln even when --include limits diagnostics.
+        # Keep its complete restore; separate format jobs restore independently.
+        target=Honua.sln
+        if [[ "${GATE_RUN_FORMAT}" != "true" && "${GATE_BUILD_MODE}" == "affected" ]]; then
+          [[ -f "${GATE_BUILD_FILTER}" ]] || { echo "::error::Missing selected build filter"; exit 1; }
+          target="${GATE_BUILD_FILTER}"
+        fi
+        scripts/ci/dotnet-restore-retry.sh "${target}" --property:Configuration=Release
+
+    # Composite-action steps do not support `timeout-minutes`, so each bounded
+    # step wraps its command in coreutils `timeout` (exit 124 => step fails).
+    - name: Build (warnings as errors)
+      if: inputs.phase != 'test'
+      shell: bash
+      env:
+        GATE_BUILD_MODE: ${{ steps.producer-scope.outputs.mode }}
+        GATE_BUILD_FILTER: ${{ steps.producer-scope.outputs.filter }}
       run: |
         if [[ "${GATE_BUILD_MODE}" == "affected" ]]; then
           timeout "${{ inputs.build-timeout-minutes }}m" \
@@ -177,14 +224,18 @@ runs:
               --no-restore \
               --configuration Release \
               -graphBuild \
-              /p:TreatWarningsAsErrors=true
+              /p:TreatWarningsAsErrors=true \
+              /p:RunAnalyzers=true \
+              /p:UseSharedCompilation=false
         else
           timeout "${{ inputs.build-timeout-minutes }}m" \
             dotnet build Honua.sln \
               --no-restore \
               --configuration Release \
               -graphBuild \
-              /p:TreatWarningsAsErrors=true
+              /p:TreatWarningsAsErrors=true \
+              /p:RunAnalyzers=true \
+              /p:UseSharedCompilation=false
         fi
 
     # Format scope. Like the build scope above, this narrows for `PR Gate`
@@ -215,23 +266,39 @@ runs:
     # past its include-file bound instead of truncating: a truncated include
     # list would be a silent coverage hole.
     - name: Format Check
-      if: inputs.run-format == 'true'
+      if: inputs.phase != 'test' && inputs.run-format == 'true'
       uses: ./.github/actions/format-check
       with:
         format-scope: ${{ inputs.format-scope }}
 
     - name: Create Test Results Directory
+      if: inputs.phase != 'build'
       shell: bash
       run: mkdir -p ./tests/TestResults
 
     # Generator failures stay hard. Existing validators consume fresh projections,
     # so stale checked-in bytes cannot redden an otherwise valid PR.
     - name: Regenerate projections and report advisory drift
+      if: inputs.phase != 'build'
       shell: bash
       run: |
+        python3 -m pip install -r scripts/ci/okf-requirements.txt
         timeout "${{ inputs.architecture-timeout-minutes }}m" \
           bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
         bash scripts/ci/report-generated-file-drift.sh
+
+    - name: Run .NET Tests (Architecture Source)
+      if: inputs.phase != 'build'
+      shell: bash
+      run: |
+        timeout "${{ inputs.architecture-timeout-minutes }}m" \
+          dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=${{ inputs.trx-prefix }}-architecture-source.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
 
     # Fast unit smoke. The [UnitTest] tests in Server.Tests use NSubstitute /
     # NullLogger / in-memory caches and do NOT require the PostgreSQL service —
@@ -239,6 +306,7 @@ runs:
     # service-free runner. Coverage-free on purpose (the Coverlet collector adds
     # ~20m of teardown on Honua.Server.dll and would destroy the "cheap" budget).
     - name: Run .NET Tests (Server Fast Tier)
+      if: inputs.phase != 'build'
       shell: bash
       run: |
         timeout "${{ inputs.server-fast-timeout-minutes }}m" \
@@ -251,9 +319,19 @@ runs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
+    # Migrated pure Fast cases retain the required smoke they had in Server.Tests.
+    # Their catalogued projects were included in the one combined build above.
+    - name: Run .NET Tests (Isolated Unit Fast Tier)
+      if: inputs.phase != 'build'
+      shell: bash
+      run: |
+        timeout "${{ inputs.server-fast-timeout-minutes }}m" \
+          python3 scripts/ci/test-projects.py gate-fast
+
     # Keep all architecture and authored-input validators strict against the
     # freshly generated projections, including byte equality/reproducibility.
     - name: Run .NET Tests (Architecture)
+      if: inputs.phase != 'build'
       shell: bash
       run: |
         timeout "${{ inputs.architecture-timeout-minutes }}m" \
@@ -270,10 +348,11 @@ runs:
     # available from the full solution build, so this adds only a no-build test
     # invocation to the required gate (#3198).
     - name: Run .NET Tests (MCP Registry/Taxonomy Drift)
+      if: inputs.phase != 'build'
       shell: bash
       run: |
         timeout "${{ inputs.ai-governance-timeout-minutes }}m" \
-          dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -287,11 +366,12 @@ runs:
     # PostGIS fixture. Keep this step on the required PR Gate path; the
     # pre-pull above only removes the cold image-fetch stall.
     - name: Await Testcontainers PostGIS pre-pull
-      if: inputs.prepull-postgis == 'true'
+      if: inputs.phase != 'build' && inputs.prepull-postgis == 'true'
       shell: bash
       run: scripts/ci/prepull-testcontainers-postgis.sh --await
 
     - name: Run .NET Tests (Server Governance/Drift)
+      if: inputs.phase != 'build'
       shell: bash
       run: |
         timeout "${{ inputs.governance-timeout-minutes }}m" \

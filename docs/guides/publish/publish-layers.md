@@ -107,6 +107,43 @@ honua query default/0 --count
 
 Use the actual service and layer ID from the publish result. The same catalog entry also drives OGC API Features, GeoServices, OData, vector tiles, and the other enabled protocol adapters.
 
+## Large-table publication
+
+Tables above `LayerPublishing:AsyncPublishRowThreshold` (10,000 rows by default)
+return HTTP 202 with a job handle instead of holding the request open for the
+snapshot copy. The response's `data` contains `jobId`, `statusUrl`, `rowsTotal`,
+and `status`. Follow that same-origin relative status URL with the accepting
+tenant's admin credentials. Each poll returns `jobId`, `status`,
+`rowsMaterialized`, `rowsTotal`, `layerId`, and `errorMessage` in `data`.
+`Queued` and `Processing` are pending states; `Completed`, `Failed`, and
+`Cancelled` are terminal. Use the completed `layerId` for subsequent queries.
+Do not treat acceptance as publication completion.
+
+Accepted work uses its own publication budget and survives a disconnected
+request. Small tables retain the HTTP 201 layer response. Lambda needs a
+configured remote durable runner for large tables; without one it returns a
+typed 503 rather than accepting work that cannot finish. See
+[AWS Batch worker configuration](../../operator/geoprocessing-aws-batch.md#large-layer-publishes)
+for the API and worker rollout prerequisites.
+
+Publication and refresh copy every page from one repeatable-read database
+snapshot. Concurrent source changes do not add duplicates or mix newer rows into
+that copy; refresh again when the later source changes should be included.
+
+Polling can recover from an expired progress document using the durable job,
+subject to the same tenant and connection checks. A running recovered job reports
+`rowsMaterialized: 0` as a conservative lower bound when its live page progress is
+unavailable, and `rowsTotal` retains the count at acceptance. Completion replaces
+both with the actual committed counts. A legacy layer-only receipt cannot recover
+lost completion counts and still returns not found if its progress document has
+expired; the server does not invent a completed count.
+
+Admission performs an exact source count with a 30-second command limit before
+returning 202. A slow count can fail before work is accepted; the detached
+publication budget begins only after admission. Increasing that count limit alone
+would not solve a gateway deadline. The bounded release qualification must prove
+its actual source count and 330,000-row publish journey.
+
 ## Troubleshoot
 
 - **401 or 403** — verify the admin key and required connection/layer permissions.

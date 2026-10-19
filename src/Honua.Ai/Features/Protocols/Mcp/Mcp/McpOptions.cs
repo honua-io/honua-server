@@ -84,6 +84,36 @@ internal sealed class McpOptions
         environment?.IsDevelopment() == true;
 
     /// <summary>
+    /// How sessions are kept when no shared session store (Redis) is composed
+    /// (<see cref="McpSessionModeSetting"/>). With a store sessions are always
+    /// shared. <see cref="McpSessionModeSetting.Auto"/> (the default) selects
+    /// stateless signed session ids on a host that runs as several instances that
+    /// cannot share memory (AWS Lambda, Azure Functions, Cloud Run, or
+    /// <c>Deployment:Mode=MultiNode</c>) and in-memory sessions otherwise.
+    /// </summary>
+    public McpSessionModeSetting SessionMode { get; set; } = McpSessionModeSetting.Auto;
+
+    /// <summary>
+    /// Secret every instance of the deployment shares, used to key stateless
+    /// session ids (<see cref="McpSessionMode.Stateless"/>). When unset the
+    /// database connection string (<c>ConnectionStrings:DefaultConnection</c>),
+    /// which every instance already shares, is used as the key input. Without
+    /// either, stateless mode is unavailable and sessions stay in memory.
+    /// </summary>
+    public string? SessionSigningKey { get; set; }
+
+    /// <summary>Default for <see cref="StatelessSessionLifetime"/>: 8 hours.</summary>
+    internal static readonly TimeSpan DefaultStatelessSessionLifetime = TimeSpan.FromHours(8);
+
+    /// <summary>
+    /// Absolute lifetime of a stateless session id, counted from <c>initialize</c>.
+    /// A stateless session cannot slide an idle window across instances, so it
+    /// expires this long after it was minted and the client re-initializes.
+    /// Default 8 hours.
+    /// </summary>
+    public TimeSpan StatelessSessionLifetime { get; set; } = DefaultStatelessSessionLifetime;
+
+    /// <summary>
     /// Maximum number of concurrently tracked sessions. When reached, a new
     /// <c>initialize</c> is handled per <see cref="SessionEvictionPolicy"/>. Bounds
     /// host memory on a public endpoint. Default 10,000.
@@ -115,10 +145,27 @@ internal sealed class McpOptions
     /// Maximum number of concurrently tracked anonymous sessions (SEC-18). Anonymous
     /// sessions form their own pool inside <see cref="MaxSessions"/>: admitting one
     /// only ever evicts another anonymous session, never an authenticated one, and an
-    /// authenticated <c>initialize</c> at capacity evicts anonymous sessions first.
-    /// Clamped to <see cref="MaxSessions"/>. Default 1,000.
+    /// authenticated <c>initialize</c> at capacity evicts anonymous sessions before
+    /// it refuses the new session. Clamped to <see cref="MaxSessions"/>. Default 1,000.
     /// </summary>
     public int MaxAnonymousSessions { get; set; } = 1_000;
+
+    /// <summary>Default for <see cref="MaxSessionsPerPrincipal"/>.</summary>
+    public const int DefaultMaxSessionsPerPrincipal = 32;
+
+    /// <summary>
+    /// Maximum sessions one authenticated principal key may hold (honua-server#5629,
+    /// SRV-AI-003). The key is the session binding, which already includes the
+    /// effective tenant, so one caller cannot spend another identity's or tenant's
+    /// sessions. At this quota, <see cref="SessionEvictionPolicy"/> evicts that
+    /// principal's own least-recently-used session or rejects the new
+    /// <c>initialize</c>. A principal under quota never evicts another principal;
+    /// global pressure evicts anonymous sessions only, then refuses. Values at or
+    /// above <see cref="MaxSessions"/> are clamped to one less than the global cap
+    /// (or 1 when the cap is 1) so one principal cannot occupy every slot.
+    /// Default <see cref="DefaultMaxSessionsPerPrincipal"/>.
+    /// </summary>
+    public int MaxSessionsPerPrincipal { get; set; } = DefaultMaxSessionsPerPrincipal;
 
     /// <summary>
     /// Maximum number of elements in one JSON-RPC batch on <c>POST /mcp</c> (SEC-18).

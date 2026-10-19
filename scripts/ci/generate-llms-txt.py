@@ -31,6 +31,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from okf_frontmatter import split_document
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCS = REPO_ROOT / "docs"
@@ -40,8 +41,6 @@ ANCHORS = REPO_ROOT / "scripts" / "ci" / "code-referenced-anchors.v1.json"
 
 SECTION_RE = re.compile(r"^##\s+(.+?)\s*$")
 LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+?\.md)(?:#[^)]*)?\)")
-FRONTMATTER_RE = re.compile(r"^---\r?\n(.*?)\r?\n---", re.DOTALL)
-SCALAR_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
 
 
 def docs_base_url() -> str:
@@ -76,23 +75,9 @@ def published_url(base: str, rel: str) -> str:
     return f"{base}/{rel}"
 
 
-def frontmatter(path: Path) -> dict[str, str]:
-    match = FRONTMATTER_RE.match(path.read_text(encoding="utf-8"))
-    if not match:
-        return {}
-    fields: dict[str, str] = {}
-    for line in match.group(1).splitlines():
-        m = SCALAR_RE.match(line)
-        if not m:
-            continue
-        value = m.group(2).strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            try:
-                value = json.loads(value) if value[0] == '"' else value[1:-1]
-            except json.JSONDecodeError:
-                value = value[1:-1]
-        fields[m.group(1)] = value
-    return fields
+def frontmatter(path: Path) -> dict:
+    fields, _ = split_document(path.read_text(encoding="utf-8"))
+    return fields or {}
 
 
 def build() -> str:

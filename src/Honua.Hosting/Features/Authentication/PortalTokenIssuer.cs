@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Licensing.Domain;
@@ -118,6 +119,12 @@ internal sealed partial class PortalTokenIssuer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if ((request.ClientType is null && request.BindingValue is not null) ||
+            (request.ClientType is not null && string.IsNullOrWhiteSpace(request.BindingValue)))
+        {
+            return null;
+        }
+
         // The presented token authenticates the exchange, so it passes exactly the checks a
         // request presenting it anywhere else passes, binding included (#5491 review).
         var presented = await RestoreBoundRecordAsync(
@@ -128,6 +135,14 @@ internal sealed partial class PortalTokenIssuer(
         {
             return null;
         }
+
+        // ArcGIS federated-server exchanges may send only token and serverUrl.
+        // In that case the new server token keeps the validated portal token's
+        // binding; never infer a new binding from an unauthenticated request.
+        var clientType = request.ClientType ?? presented.ClientType;
+        var bindingValue = request.ClientType is null
+            ? presented.BindingValue
+            : request.BindingValue!;
 
         // Derive from the stored record, not from a reduced view of it: the persisted roles,
         // their claims-mapping provenance and fallback, the tenant's provenance and the backing
@@ -144,9 +159,9 @@ internal sealed partial class PortalTokenIssuer(
             RolesRequireClaimsMappingEntitlement = presented.RolesRequireClaimsMappingEntitlement,
             RolesWithoutClaimsMapping = presented.RolesWithoutClaimsMapping,
             TenantRequiresClaimsMappingEntitlement = presented.TenantRequiresClaimsMappingEntitlement,
-            ClientType = request.ClientType,
-            BindingValue = NormalizeBindingValue(request.ClientType, request.BindingValue),
-            AcceptMissingReferer = request.ClientType == PortalTokenClientType.Referer && presented.AcceptMissingReferer,
+            ClientType = clientType,
+            BindingValue = NormalizeBindingValue(clientType, bindingValue),
+            AcceptMissingReferer = clientType == PortalTokenClientType.Referer && presented.AcceptMissingReferer,
             ExpiresAt = expiresAt,
             Source = presented.Source,
         };
@@ -161,7 +176,8 @@ internal sealed partial class PortalTokenIssuer(
         return new PortalTokenExchange(
             new PortalTokenIssuance(token, expiresAt),
             presented.PrincipalId,
-            presented.TenantId);
+            presented.TenantId,
+            clientType);
     }
 
     /// <inheritdoc />
@@ -220,7 +236,11 @@ internal sealed partial class PortalTokenIssuer(
         // Removing the cache entry is the single authoritative revocation point: the
         // request-path validator and introspection both resolve to this entry, so a
         // revoked token is rejected on the very next request across every replica.
-        await RemoveAsync(TokenKeyPrefix + tokenReference, cancellationToken).ConfigureAwait(false);
+        // A shared-store delete that cannot be confirmed must fail the revocation;
+        // swallowing it reports success while every replica keeps honouring the token
+        // (honua-server#6164).
+        await RemoveAsync(TokenKeyPrefix + tokenReference, cancellationToken, requireSharedRemoval: true)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -574,7 +594,7 @@ internal sealed partial class PortalTokenIssuer(
         return value;
     }
 
-    private async Task RemoveAsync(string key, CancellationToken cancellationToken)
+    private async Task RemoveAsync(string key, CancellationToken cancellationToken, bool requireSharedRemoval = false)
     {
         _memoryCache.Remove(key);
 
@@ -589,9 +609,33 @@ internal sealed partial class PortalTokenIssuer(
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Intentional: removal is best-effort; the entry's own TTL is the safety net,
-            // and the failure is already logged for diagnosis.
             PortalTokenLog.DistributedCacheRemoveFailed(_logger, LogValueRedactor.Hash(key), ex);
+            if (!requireSharedRemoval)
+            {
+                // Expiry cleanup is best-effort. Revocation is not: the caller must
+                // learn that the authoritative copy may still be live (honua-server#6164).
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                // A direct shared-store miss confirms idempotent revocation. Never
+                // use the memory fallback or interpret a failed read as absence.
+                if (await _distributedCache.GetAsync(key, cancellationToken).ConfigureAwait(false) is null)
+                {
+                    return;
+                }
+            }
+            catch (Exception readException) when (readException is not OutOfMemoryException)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                PortalTokenLog.DistributedCacheReadFailed(
+                    _logger, LogValueRedactor.Hash(key), readException);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new ServiceUnavailableException("The shared portal token could not be revoked.", ex);
         }
     }
 }

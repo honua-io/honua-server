@@ -12,6 +12,7 @@ public class WorkspaceLifecycleTests
 {
     private static readonly DateTimeOffset Now = new(2026, 4, 11, 12, 0, 0, TimeSpan.Zero);
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Workspace_IsExpired_ReturnsTrueAfterExpiresAt()
     {
@@ -20,6 +21,7 @@ public class WorkspaceLifecycleTests
         Assert.True(workspace.IsExpired(Now));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Workspace_IsExpired_ReturnsFalseBeforeExpiresAt()
     {
@@ -28,6 +30,7 @@ public class WorkspaceLifecycleTests
         Assert.False(workspace.IsExpired(Now));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Workspace_IsExpired_ReturnsTrueAtExactExpiration()
     {
@@ -36,6 +39,7 @@ public class WorkspaceLifecycleTests
         Assert.True(workspace.IsExpired(Now));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Workspace_IsExpired_ReturnsFalseWhenNoExpiration()
     {
@@ -44,6 +48,7 @@ public class WorkspaceLifecycleTests
         Assert.False(workspace.IsExpired(Now));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Workspace_ToRef_PreservesFields()
     {
@@ -62,6 +67,7 @@ public class WorkspaceLifecycleTests
         Assert.Equal(workspace.ExpiresAt, @ref.ExpiresAt);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Artifact_ToRef_PreservesFields()
     {
@@ -90,6 +96,7 @@ public class WorkspaceLifecycleTests
         Assert.Equal("value", @ref.Metadata["key"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ArtifactPromotionResult_Success_HasPromotedId()
     {
@@ -100,6 +107,7 @@ public class WorkspaceLifecycleTests
         Assert.Null(result.FailureReason);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ArtifactPromotionResult_Failure_HasReason()
     {
@@ -110,6 +118,7 @@ public class WorkspaceLifecycleTests
         Assert.Equal("not eligible", result.FailureReason);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void CleanupResult_None_IsEmpty()
     {

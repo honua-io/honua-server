@@ -736,6 +736,7 @@ public class DeploymentTests
         linked.Transitions.Count.Should().Be(deployment.Transitions.Count);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(DeploymentStatus.Active)]
@@ -753,6 +754,7 @@ public class DeploymentTests
             .WithMessage($"*from {status}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(DeploymentStatus.Draft)]
@@ -772,6 +774,7 @@ public class DeploymentTests
             .WithMessage($"*from {status}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(DeploymentStatus.Active)]
@@ -789,6 +792,7 @@ public class DeploymentTests
             .WithMessage($"*from {status}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(DeploymentStatus.Cancelled)]
@@ -805,6 +809,7 @@ public class DeploymentTests
             .WithMessage($"*from {status}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(DeploymentStatus.Cancelled)]
@@ -822,6 +827,7 @@ public class DeploymentTests
             .WithMessage($"*from {status}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(DeploymentStatus.Cancelled)]
@@ -838,6 +844,7 @@ public class DeploymentTests
             .WithMessage($"*from {status}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(DeploymentStatus.Cancelled)]

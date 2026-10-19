@@ -34,6 +34,7 @@
     <None Include="..\..\seed\demo-stac-imagery-v1.sql" Link="Seed\demo-stac-imagery-v1.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="../../../src/Honua.Server/Migrations/132_IndexManagedWorkspaceStreamRetention.sql" Link="Migrations/132_IndexManagedWorkspaceStreamRetention.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\src\Honua.Server\Migrations\119_CreateGeoprocessingWorkspaces.sql" Link="Migrations\119_CreateGeoprocessingWorkspaces.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -65,6 +66,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Features/Import/Fixtures/LoadMode/*.geojson">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Features/Import/Fixtures/FileGdb/*.gdb.zip">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

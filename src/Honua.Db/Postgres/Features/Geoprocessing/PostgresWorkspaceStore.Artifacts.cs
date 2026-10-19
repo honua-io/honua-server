@@ -132,6 +132,24 @@ internal sealed partial class PostgresWorkspaceStore
         return rows.Count == 0 ? null : rows[0];
     }
 
+    public async Task<bool> HasRetainedStreamAsync(string objectKey, string storeReference, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connections.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand($"""
+            SELECT EXISTS (
+                SELECT 1 FROM {_artifacts}
+                WHERE metadata ->> 'honua.stream.published' = 'v1'
+                  AND metadata ->> 'honua.stream.objectKey' = @objectKey
+                  AND metadata ->> 'honua.stream.storeReference' = @storeReference
+                  AND state IN (@available, @promoted))
+            """, connection);
+        command.Parameters.AddWithValue("objectKey", objectKey);
+        command.Parameters.AddWithValue("storeReference", storeReference);
+        command.Parameters.AddWithValue("available", (int)ArtifactLifecycleState.Available);
+        command.Parameters.AddWithValue("promoted", (int)ArtifactLifecycleState.Promoted);
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
+    }
+
     public Task<IReadOnlyList<Artifact>> ListByWorkspaceAsync(string workspaceId, CancellationToken cancellationToken = default)
         => ReadArtifactsAsync("workspace_id = @workspace ORDER BY created_at, artifact_id", Text("workspace", workspaceId), cancellationToken);
 

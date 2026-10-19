@@ -1116,10 +1116,10 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     public async Task Request_WithOverlongSessionId_Returns404()
     {
         // The stateless fallback (#3027) bounds the id length (server-minted ids
-        // are 64 hex chars); an overlong id keeps the strict 404.
+        // are 64 hex chars, stateless tokens at most 172); an overlong id keeps the strict 404.
         var response = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
-            sessionId: new string('a', 129));
+            sessionId: new string('a', 257));
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }

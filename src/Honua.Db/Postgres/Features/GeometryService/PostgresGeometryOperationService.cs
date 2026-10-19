@@ -92,10 +92,7 @@ internal sealed class PostgresGeometryOperationService(
         await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var cmd = connection.CreateCommand();
 
-        if (fromSrid == 4326 && IsWebMercatorSrid(toSrid))
-        {
-            wkb = ClampWebMercatorLatitudes(wkb, fromSrid);
-        }
+        wkb = ClampSourceForWebMercator(wkb, fromSrid, toSrid);
 
         cmd.CommandText = "SELECT ST_AsBinary(ST_Transform(ST_SetSRID($1::geometry, $2), $3))";
 
@@ -131,10 +128,7 @@ internal sealed class PostgresGeometryOperationService(
         await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var cmd = connection.CreateCommand();
 
-        if (fromSrid == 4326 && IsWebMercatorSrid(toSrid))
-        {
-            wkb = ClampWebMercatorLatitudes(wkb, fromSrid);
-        }
+        wkb = ClampSourceForWebMercator(wkb, fromSrid, toSrid);
 
         // Honor the explicit (Esri-parity) datum-transformation pipeline through the shared
         // chokepoint that emits ST_TransformPipeline. The pipeline string is
@@ -156,6 +150,21 @@ internal sealed class PostgresGeometryOperationService(
 
     private static bool IsWebMercatorSrid(int srid)
         => SpatialReferenceExtensions.IsWebMercatorSrid(srid);
+
+    /// <summary>
+    /// Clamps geographic latitudes before a Web Mercator projection. Every geographic
+    /// source is clamped, not only EPSG:4326, so polar vertices in NAD83/ETRS89/GDA94
+    /// do not reach an unclamped <c>ST_Transform</c> (#6132).
+    /// </summary>
+    internal static byte[] ClampSourceForWebMercator(byte[] wkb, int fromSrid, int toSrid)
+    {
+        if (!GeographicSridClassifier.IsGeographicSrid(fromSrid) || !IsWebMercatorSrid(toSrid))
+        {
+            return wkb;
+        }
+
+        return ClampWebMercatorLatitudes(wkb, fromSrid);
+    }
 
     private static byte[] ClampWebMercatorLatitudes(byte[] wkb, int srid)
     {

@@ -963,6 +963,10 @@ internal static class McpToolOutputSchemas
             "operationId": { "type": "string", "const": "style.apply-preset" },
             "operationInstanceId": { "type": "string", "minLength": 1 },
             "handleId": { "type": "string", "minLength": 1 },
+            "durable": {
+              "type": "boolean",
+              "description": "Present and false when the operation instance record was not durably persisted (a direct style.apply-preset on a server started without Redis). The ids and audit receipts are real; the handle cannot be polled afterwards."
+            },
             "correlationId": { "type": "string", "minLength": 1 },
             "auditId": { "type": ["string", "null"], "description": "Durable audit identity of the style.apply-preset operation." },
             "createdAt": { "type": "string", "format": "date-time" },
@@ -977,22 +981,6 @@ internal static class McpToolOutputSchemas
             "applied": { "type": "boolean" },
             "dryRun": { "type": "boolean", "description": "True when validation completed without changing metadata." },
             "warning": { "type": ["string", "null"], "description": "Any follow-up needed after the style binding was applied." }
-          }
-        }
-        """);
-
-    /// <summary>Schema for <see cref="Models.McpNotImplementedOutput"/>.</summary>
-    public static readonly JsonElement NotImplementedOutputSchema = Parse(
-        """
-        {
-          "type": "object",
-          "required": ["status", "tool", "blockedBy", "contract", "nextSteps"],
-          "properties": {
-            "status": { "type": "string", "const": "not_implemented" },
-            "tool": { "type": "string" },
-            "blockedBy": { "type": "string" },
-            "contract": { "type": "string" },
-            "nextSteps": { "type": "array", "items": { "type": "string" } }
           }
         }
         """);

@@ -21,6 +21,8 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 
+using Honua.Protocols.GeoServices;
+
 namespace Honua.Protocols.GeoServices.MapServer;
 
 // Asynchronous durable exportTiles (Compact Cache V2 / TPKX) job lifecycle for MapServer (#2706).
@@ -215,7 +217,7 @@ internal static partial class MapServerEndpoints
         }
 
         var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
-        if (!TryParseExportTileLevels(
+        if (!ExportTilesRequestParser.TryParseExportTileLevels(
                 GetValue(values, "levels"),
                 GetValue(values, "minZoom"),
                 GetValue(values, "maxZoom"),

@@ -92,7 +92,11 @@ internal sealed class CheckpointingExecutor(
                 [$"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.schema"] = schema
             };
             var attemptJob = job with { Spec = job.Spec with { Parameters = parameters } };
-            return await _sink.ExecuteAsync(attemptJob, context, cancellationToken).ConfigureAwait(false);
+            // The paused first attempt deliberately ignores cooperative cancellation so
+            // this proof reaches the durable ownership fence even if the heartbeat pump
+            // observes the replacement owner immediately after the process resumes.
+            var sinkCancellation = job.AttemptCount == 1 ? CancellationToken.None : cancellationToken;
+            return await _sink.ExecuteAsync(attemptJob, context, sinkCancellation).ConfigureAwait(false);
         }
         catch (InvalidOperationException)
         {

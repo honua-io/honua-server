@@ -196,7 +196,7 @@ public sealed class StudioAiProxyConfigurationValidator : ConfigurationValidator
             ValidateRequiredString(signing.PrivateKeyReference, "StudioAiProxy:TranscriptSigning:PrivateKeyReference", errors);
             ValidateRange(signing.LifetimeSeconds, 30, 86_400, "StudioAiProxy:TranscriptSigning:LifetimeSeconds", errors);
             if (!string.IsNullOrWhiteSpace(signing.PrivateKeyReference)
-                && !signing.PrivateKeyReference.Contains("://", StringComparison.Ordinal))
+                && !IsTranscriptSigningReference(signing.PrivateKeyReference))
             {
                 errors.Add("StudioAiProxy:TranscriptSigning:PrivateKeyReference must be a secret reference, not inline key material.");
             }
@@ -249,6 +249,22 @@ public sealed class StudioAiProxyConfigurationValidator : ConfigurationValidator
                 errors.Add($"{prefix}:NotBefore must be earlier than NotAfter.");
             }
         }
+    }
+
+    private static bool IsTranscriptSigningReference(string reference)
+    {
+        if (reference.Contains("://", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // The built-in AWS resolver uses provider:service:identifier, not a URI authority.
+        // Runtime provider resolution and key validation still happen in the transcript signer.
+        const string awsPrefix = "aws:secretsmanager:";
+        return reference.StartsWith(awsPrefix, StringComparison.OrdinalIgnoreCase)
+            && reference.Length > awsPrefix.Length
+            && reference[awsPrefix.Length] != '?'
+            && !reference.Any(static character => char.IsWhiteSpace(character) || char.IsControl(character));
     }
 
     private static void ValidateProvider(string name, StudioAiProxyProviderOptions provider, List<string> errors)

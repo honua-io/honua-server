@@ -1,0 +1,12 @@
+{
+  "serverImage": "ghcr.io/honua-io/honua-server:nightly-0e03bdd",
+  "packages": {
+    "honua-admin": "0.1.12",
+    "honua-sdk": "0.1.16",
+    "mcp": "2.1.1",
+    "@honua/sdk-js": "0.1.16",
+    "create-honua-app": "0.1.9",
+    "Honua.Sdk": "1.11.1",
+    "Honua.Sdk.Admin": "1.11.1"
+  }
+}

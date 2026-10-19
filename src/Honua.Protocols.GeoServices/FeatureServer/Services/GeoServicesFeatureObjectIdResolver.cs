@@ -49,9 +49,13 @@ internal static class GeoServicesFeatureObjectIdResolver
             },
             cancellationToken).ConfigureAwait(false);
 
-        return result.Items.SingleOrDefault(feature =>
-            TryReadPublicObjectId(feature, objectIdField.Name, out var resolvedObjectId)
-            && resolvedObjectId == objectId);
+        // Feature is a value type: SingleOrDefault on Feature would turn an
+        // absent row into a non-null default feature at this nullable boundary.
+        return result.Items
+            .Where(feature => TryReadPublicObjectId(feature, objectIdField.Name, out var resolvedObjectId)
+                && resolvedObjectId == objectId)
+            .Select(static feature => (Feature?)feature)
+            .SingleOrDefault();
     }
 
     /// <summary>

@@ -52,7 +52,8 @@ public sealed class PgRoutingProviderIntegrationTests : IClassFixture<PgRoutingF
             new FixtureDatabaseSessionFactory(connectionProvider),
             NullLogger<PgRoutingProvider>.Instance,
             new ProfiledNetworkDatasetResolver(),
-            Options.Create(new RoutingConfiguration()));
+            Options.Create(new RoutingConfiguration()),
+            new RoutingSolveCapacityLimiter());
     }
 
     [RoutingTest(RoutingTestEnv)]
@@ -122,7 +123,8 @@ public sealed class PgRoutingProviderIntegrationTests : IClassFixture<PgRoutingF
 
         var second = result.Polygons[1];
         Assert.Equal(0, second.FacilityId);
-        Assert.Equal(1.0, second.FromBreak);
+        // Cumulative disk out to the break, not a band from the previous break.
+        Assert.Equal(0.0, second.FromBreak);
         Assert.Equal(2.0, second.ToBreak);
         Assert.Contains("Polygon", second.GeometryGeoJson, StringComparison.Ordinal);
     }

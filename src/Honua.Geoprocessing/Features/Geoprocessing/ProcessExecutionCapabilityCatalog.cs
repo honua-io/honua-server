@@ -15,6 +15,9 @@ namespace Honua.Geoprocessing;
 internal static class ProcessExecutionCapabilityCatalog
 {
     private static readonly FrozenSet<string> JobProcessIds = IdSet(
+        "routing.closest-facilities",
+        "routing.od-cost-matrix",
+        "routing.location-allocation",
         "geometry.buffer",
         "geometry.simplify",
         "geometry.project",
@@ -195,7 +198,7 @@ internal static class ProcessExecutionCapabilityCatalog
             _ => ProcessExecutionModes.None
         };
 
-        var configurationDependency = processId == "imagery.classify"
+        var configurationDependency = RoutingProcessDefinitions.Handles(processId) ? "Routing:NetworkDatasetId" : processId == "imagery.classify"
             ? "Geoprocessing:ImageryInference"
             : definition.RuntimeProfile == RuntimeProfiles.Native
                 ? "runtime-profile:native"
@@ -210,6 +213,8 @@ internal static class ProcessExecutionCapabilityCatalog
             ProcessExecutionKind.Unavailable => UnavailableReasons[processId],
             ProcessExecutionKind.Job when processId == "imagery.classify" =>
                 "Requires a configured imagery-inference provider and endpoint.",
+            ProcessExecutionKind.Job when RoutingProcessDefinitions.Handles(processId) =>
+                "Requires a configured routing provider and a network dataset supporting the requested solve.",
             ProcessExecutionKind.Job when definition.RuntimeProfile == RuntimeProfiles.Native =>
                 "Requires a native-worker deployment that serves the native runtime profile.",
             _ => null

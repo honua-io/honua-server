@@ -1,0 +1,13 @@
+# Local debugging only: keep the container alive, then VS Code launches the
+# harness through vsdbg. Override the production ENTRYPOINT explicitly.
+services:
+  gp-dotnet-debug:
+    image: ${HONUA_CUSTOMCODE_DOTNET_IMAGE:-honua-worker-customcode-dotnet:local}
+    container_name: gp-dotnet-debug
+    user: "${GP_DEBUG_UID:-1001}:${GP_DEBUG_GID:-1001}"
+    working_dir: /work/src
+    volumes:
+      - ..:/work/src:ro
+      - ../.honua/container-runs:/work/out
+      - ../.honua/vsdbg:/work/vsdbg
+    entrypoint: ["sleep", "infinity"]

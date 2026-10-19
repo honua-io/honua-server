@@ -22,6 +22,8 @@
     <PackageVersion Include="AWSSDK.Lambda" Version="4.0.14.1" />
     <PackageVersion Include="AWSSDK.LocationService" Version="4.0.3.25" />
     <PackageVersion Include="AWSSDK.S3" Version="4.0.21.2" />
+    <PackageVersion Include="AWSSDK.SecurityToken" Version="4.0.7.8" />
+    <PackageVersion Include="AWSSDK.IdentityManagement" Version="4.0.8.1" />
     <PackageVersion Include="AWSSDK.SecretsManager" Version="4.0.5.6" />
     <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.2.27" />
     <PackageVersion Include="AWSSDK.SQS" Version="4.0.2.25" />
@@ -56,39 +58,38 @@
     <PackageVersion Include="Mapsui" Version="5.0.2" />
     <!-- Transitive of NBomber.Contracts (tests) and Microsoft.AspNetCore.SignalR.StackExchangeRedis (server
          admin realtime backplane, #2554); pinned directly to clear GHSA-hv8m-jj95-wg3x (NU1903). -->
-    <PackageVersion Include="MessagePack" Version="2.5.301" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.6" />
-    <!-- Pin Microsoft.OpenApi to the patched 2.7.5: Microsoft.AspNetCore.OpenApi 10.0.6
-         pulls Microsoft.OpenApi 2.0.0 transitively, which trips the NU1903 audit
-         (GHSA-v5pm-xwqc-g5wc, vulnerable <= 2.7.4, treated as an error). 2.7.5 is the
-         first patched release and stays API-compatible within the 2.x line. -->
-    <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
-    <PackageVersion Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.6" />
+    <PackageVersion Include="MessagePack" Version="2.5.303" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
+    <!-- ASP.NET Core OpenApi 10.0.13 requires Microsoft.OpenApi >= 2.12.2;
+         retain an explicit patched 2.x pin within its supported range. -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.12.2" />
+    <PackageVersion Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.2" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.5.2" />
     <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.2" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Http.Polly" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.ObjectPool" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Polly" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.ObjectPool" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.5.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
@@ -104,6 +105,7 @@
     <PackageVersion Include="NetTopologySuite.IO.Esri.Shapefile" Version="1.2.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON" Version="4.0.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoPackage" Version="2.0.0" />
+    <PackageVersion Include="YamlDotNet" Version="16.3.0" />
     <PackageVersion Include="Npgsql" Version="10.0.1" />
     <PackageVersion Include="Newtonsoft.Json.Schema" Version="4.0.1" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
@@ -139,11 +141,14 @@
          (NU1903, vulnerable <= 2025.1.0). -->
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="StackExchange.Redis" Version="2.12.14" />
-    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.17.0" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
+    <!-- SqlClient and Oracle transitively select vulnerable Pkcs versions; direct references
+         in their consumers select the patched net10.0 asset (CVE-2026-84008 / CVE-2026-70162). -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <!-- Test-only: independent XML-DSig reference implementation used to generate signed SAML
          assertions in tests that validate the AOT-safe in-server verifier (#508). Not referenced
          by any shipped project. -->
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.13" />
     <PackageVersion Include="Testcontainers" Version="4.11.0" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.11.0" />
     <PackageVersion Include="Testcontainers.MySql" Version="4.11.0" />

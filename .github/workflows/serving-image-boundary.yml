@@ -45,6 +45,8 @@ on:
       - 'scripts/docker/restore-dotnet-with-github-packages.sh'
       - 'scripts/ci/verify-serving-image-boundary.py'
       - 'scripts/ci/serving-image-reuse.py'
+      - 'scripts/ci/verify-native-migration-refusal.py'
+      - 'scripts/ci/fixtures/validate-native-migration-refusal.py'
       - 'scripts/ci/fixtures/validate-serving-image-boundary.py'
       - '.github/workflows/serving-image-boundary.yml'
   workflow_dispatch:
@@ -114,7 +116,7 @@ jobs:
           # both and fails closed when they diverge.
           while IFS= read -r path; do
             case "$path" in
-              .dockerignore|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/serving-image-reuse.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
+              .dockerignore|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/serving-image-reuse.py|scripts/ci/verify-native-migration-refusal.py|scripts/ci/fixtures/validate-native-migration-refusal.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
                 generic=true
                 lambda=true
                 functions=true
@@ -218,7 +220,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.MARKER_PATH }}
-          key: honua-serving-image-verification-v2-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
+          key: honua-serving-image-verification-v3-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
           lookup-only: false
 
       - name: Decide content-addressed verification reuse
@@ -263,6 +265,7 @@ jobs:
           platforms: linux/amd64
           load: true
           tags: ${{ matrix.tag }}
+          build-args: HONUA_GIT_SHA=${{ github.sha }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
@@ -304,8 +307,24 @@ jobs:
           docker logs honua-aot-boundary
           exit 1
 
+      - name: Verify native migration refusal shutdown
+        if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
+        run: |
+          python3 scripts/ci/fixtures/validate-native-migration-refusal.py
+          python3 scripts/ci/verify-native-migration-refusal.py \
+            --image '${{ matrix.tag }}' --source-sha '${{ github.sha }}' \
+            --output native-migration-refusal-evidence
+
+      - name: Upload native migration refusal evidence
+        if: always() && env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-migration-refusal-${{ github.sha }}
+          path: native-migration-refusal-evidence/
+          if-no-files-found: error
+
       # The marker is prepared only after every check for this variant has
-      # succeeded. For generic, that includes the HTTP smoke test above.
+      # succeeded. For generic, that includes HTTP smoke and native migration refusal shutdown above.
       - name: Prepare successful verification marker
         if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true'
         run: |
@@ -322,7 +341,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.MARKER_PATH }}
-          key: honua-serving-image-verification-v2-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
+          key: honua-serving-image-verification-v3-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
 
       - name: Clean up serving-image smoke container
         if: always() && env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'

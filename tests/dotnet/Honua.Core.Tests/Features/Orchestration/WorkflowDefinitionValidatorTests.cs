@@ -13,6 +13,7 @@ public sealed class WorkflowDefinitionValidatorTests
     private static readonly string[] DependsOnB = ["b"];
     private static readonly string[] DependsOnMissing = ["missing"];
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_ReturnsNoFailures_ForSimpleDag()
     {
@@ -23,6 +24,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Empty(failures);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_DetectsUnknownDependency()
     {
@@ -33,6 +35,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("unknown step 'missing'", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_DetectsDuplicateStepIds()
     {
@@ -43,6 +46,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("Duplicate step identifier 'a'", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_DetectsDependencyCycle()
     {
@@ -53,6 +57,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("dependency cycle", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RequiresCronExpression_WhenCronTriggerSet()
     {
@@ -66,6 +71,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("Cron trigger requires", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsMalformedCronExpression()
     {
@@ -79,6 +85,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("not a valid 5-field cron expression", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsUnknownTimeZone()
     {
@@ -97,6 +104,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("could not be resolved", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_AcceptsWellFormedCronTrigger()
     {
@@ -115,6 +123,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Empty(failures);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_DetectsMissingBindingSourceStep()
     {
@@ -141,6 +150,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("unknown source step 'missing'", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsBindingSource_NotInDependsOn()
     {
@@ -168,6 +178,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("not declared in DependsOn", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_AcceptsBinding_WhenSourceIsInDependsOn()
     {
@@ -195,6 +206,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Empty(failures);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_DetectsCycleCreatedByBindingDependency()
     {
@@ -226,6 +238,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("dependency cycle", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_AcceptsConditionalBranch_WhenSourceInDependsOn()
     {
@@ -247,6 +260,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Empty(failures);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsCondition_WhenSourceNotInDependsOn()
     {
@@ -268,6 +282,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("condition references source step 'a' which is not declared in DependsOn", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsCondition_WithUnknownSourceStep()
     {
@@ -288,6 +303,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("condition references unknown source step 'ghost'", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_AcceptsChangeFeedTrigger_WithWatchedLayers()
     {
@@ -303,6 +319,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Empty(WorkflowDefinitionValidator.Validate(definition));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsChangeFeedTrigger_WithoutWatchedLayers()
     {
@@ -316,6 +333,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("at least one watched layer", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsChangeFeedTrigger_WithNegativeLayerId()
     {
@@ -333,6 +351,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("non-negative", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_AcceptsObjectStoreTrigger_WithStoreId()
     {
@@ -348,6 +367,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Empty(WorkflowDefinitionValidator.Validate(definition));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsObjectStoreTrigger_WithoutConfig()
     {
@@ -361,6 +381,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("object-store configuration", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsObjectStoreTrigger_WithNonPositivePollInterval()
     {
@@ -382,6 +403,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("poll interval must be positive", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_AcceptsWellFormedForEach()
     {
@@ -402,6 +424,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Empty(failures);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsForEach_WithNoItems()
     {
@@ -422,6 +445,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("ForEach must declare at least one item", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsForEach_ExceedingMaxIterations()
     {
@@ -442,6 +466,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("MaxIterations is 2", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsStepId_ContainingIterationSeparator()
     {
@@ -452,6 +477,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("reserved iteration separator", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Validate_RejectsBinding_FromForEachStep()
     {
@@ -481,6 +507,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("may not read from ForEach step 'a'", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Expand_UnrollsForEachIntoPerItemSteps_WithSubstitution()
     {
@@ -512,6 +539,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Equal("west", expanded.Steps[1].Plan.Steps[0].Inputs["region"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Expand_FansInDependentsOnForEachStep()
     {
@@ -531,6 +559,7 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Equal(new[] { "a::0", "a::1", "a::2" }, b.DependsOn.ToArray());
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Expand_IsDeterministic_AcrossRepeatedCalls()
     {

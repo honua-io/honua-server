@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
@@ -285,7 +286,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
 
         // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
-        // Validation, authz, eventing, and telemetry still run through the shared edit pipeline.
+        // Geometry and attributes go through FeatureMutationValidator before the write (#6193).
 
         FeatureEditBatch editBatch;
         try
@@ -298,6 +299,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
 
         await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
+        editBatch = await ValidateGrpcMutationsAsync(layer.Resource, editBatch, context.CancellationToken)
+            .ConfigureAwait(false);
 
         if (layer.Snapshot is { } snapshot)
         {
@@ -313,11 +316,12 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var idempotencyKey = request.IdempotencyKey?.Trim();
         GrpcApplyEditsIdempotencyStore.Lease? idempotencyLease = null;
+        string? scope = null;
         if (!string.IsNullOrEmpty(idempotencyKey))
         {
             // A stored result is replayed only within the same service, layer, effective
             // tenant and scheme/issuer-qualified actor (SEC-34).
-            var scope = GrpcApplyEditsIdempotencyStore.CreateScope(
+            scope = GrpcApplyEditsIdempotencyStore.CreateScope(
                 context.GetHttpContext(), request.ServiceId, request.LayerId, idempotencyKey)
                 ?? throw new RpcException(new Status(
                     StatusCode.FailedPrecondition,
@@ -325,10 +329,25 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             idempotencyLease = await _idempotencyStore.EnterAsync(scope, context.CancellationToken).ConfigureAwait(false);
         }
         await using var heldIdempotencyLease = idempotencyLease;
+        if (idempotencyLease?.OutcomeUnknown == true)
+        {
+            throw new RpcException(new Status(
+                StatusCode.Aborted,
+                "A previous attempt with this idempotency key may have committed and will not be executed again."));
+        }
+
         if (idempotencyLease?.Response is not null)
         {
             return idempotencyLease.Response;
         }
+
+        // Per-row geometry-change semantics mirror the inline publish path
+        // (PublishFeatureChangeEventsAsync below): a row is considered to have changed
+        // geometry when the request feature carries non-null WKB. Deletes default to
+        // false. Captured before stored geometry is merged into omitted update fields,
+        // or an attribute-only update would over-report as a geometry change.
+        var requestBatch = editBatch;
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(requestBatch);
 
         // RLS / permanent-filter enforcement runs only on the read path; the edit SQL
         // filters by (layer_id, objectid) with no row-level predicate. So every update/delete
@@ -336,18 +355,13 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // row is hidden from the caller — otherwise a caller could mutate or delete a row RLS
         // hides from them by supplying its objectid (#2071). Adds carry no objectid and are
         // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards (#2066).
-        await EnsureEditTargetsVisibleAsync(
+        // The same read supplies stored geometry for a partial update. Omitted attributes
+        // are merged from the locked row by the writer, not from this snapshot.
+        editBatch = await EnsureEditTargetsVisibleAsync(
             layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
 
         var grpcHttpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
-
-        // Per-row geometry-change semantics mirror the inline publish path
-        // (PublishFeatureChangeEventsAsync below): a row is considered to have changed
-        // geometry when the request feature carries non-null WKB. Deletes default to
-        // false. Without these queues an attribute-only update would over-report as a
-        // geometry change because the post-mutation snapshot still carries the prior WKB.
-        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(editBatch);
 
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             grpcHttpContext,
@@ -368,49 +382,227 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // cancelled before that reservation could lapse, so another replica can never begin
         // the same keyed edit while this one may still commit (SEC-36).
         var writeCancellation = context.CancellationToken;
+        var writeDispatched = false;
+        GrpcApplyEditsIdempotencyStore.Lease? dispatchedLease = null;
         if (idempotencyLease is not null)
         {
             writeCancellation = await idempotencyLease.TryBeginWriteAsync(context.CancellationToken).ConfigureAwait(false)
                 ?? throw IdempotencyReservationLost();
+            dispatchedLease = idempotencyLease;
+            writeDispatched = true;
         }
 
         FeatureEditResult result;
+        FeatureEditApplication? keyedApplication = null;
         try
         {
-            result = await _featureWriter.ApplyEditsAsync(
-                layer.StorageLayerId,
-                editBatch,
-                writeCancellation).ConfigureAwait(false);
+            if (idempotencyLease is not null)
+            {
+                keyedApplication = await _featureWriter.ApplyEditsAsync(
+                    layer.StorageLayerId,
+                    editBatch,
+                    new FeatureEditIdempotencyReceipt
+                    {
+                        Scope = scope!,
+                        ExpiresAt = _idempotencyStore.ResponseExpiresAt,
+                        Payload = static staged => GrpcApplyEditsIdempotencyStore.EncodeReceipt(
+                            GrpcConversionHelpers.ToProtoApplyEditsResponse(staged)),
+                    },
+                    writeCancellation).ConfigureAwait(false);
+                result = keyedApplication.Value.Result;
+            }
+            else
+            {
+                result = await _featureWriter.ApplyEditsAsync(
+                    layer.StorageLayerId,
+                    editBatch,
+                    writeCancellation).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (
             idempotencyLease?.OwnershipLost == true && !context.CancellationToken.IsCancellationRequested)
         {
             throw IdempotencyReservationLost();
         }
+        catch (OperationCanceledException) when (writeDispatched)
+        {
+            // The write was dispatched. A cancel here can follow a partial autocommit, so the
+            // key must not become runnable again when the short reservation expires.
+            // writeDispatched is set only after dispatchedLease is assigned. The filter stays
+            // on that flag alone so the null test is not a condition the compiler can see.
+            await dispatchedLease!.RetainAmbiguousAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        // The losing writer rolled its edits back. Replay the receipt that committed, and
+        // do not publish change events for the result that did not.
+        if (keyedApplication?.SupersededByExistingReceipt == true)
+        {
+            return await ReplayCommittedReceiptAsync(scope!, idempotencyLease!).ConfigureAwait(false);
+        }
 
         var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
 
-        // Record the committed result before any later step can fail, so a retry replays it
-        // instead of executing the edit again.
+        // Record a completed receipt before any later step can fail, so a retry replays it
+        // instead of executing the edit again. An unknown commit is not a clean failure:
+        // keep the key so the edit is not run a second time. A database receipt from the
+        // same transaction is stronger than that marker and is replayed instead.
         if (idempotencyLease is not null)
         {
-            await idempotencyLease.CompleteAsync(response).ConfigureAwait(false);
+            if (IsAmbiguousCommit(result))
+            {
+                GrpcApplyEditsIdempotencyStore.DurableEditReceipt durable;
+                try
+                {
+                    durable = await _idempotencyStore.TryReadDurableAsync(scope!, context.CancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    await idempotencyLease.RetainAmbiguousAsync().ConfigureAwait(false);
+                    throw;
+                }
+
+                if (durable.Response is not null)
+                {
+                    await idempotencyLease.ReleaseAsAlreadyRecordedAsync().ConfigureAwait(false);
+                    return durable.Response;
+                }
+
+                await idempotencyLease.RetainAmbiguousAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                await idempotencyLease.CompleteAsync(response).ConfigureAwait(false);
+            }
         }
 
         await PublishFeatureChangeEventsAsync(
             request.ServiceId ?? "unknown",
             request.LayerId,
             layer,
-            editBatch,
+            requestBatch,
             result,
             context).ConfigureAwait(false);
 
         return response;
+
+        async Task<FeatureEditBatch> ValidateGrpcMutationsAsync(
+            MetadataV2Resource resource,
+            FeatureEditBatch batch,
+            CancellationToken cancellationToken)
+        {
+            var geometryValidator = context.GetHttpContext()?.RequestServices.GetService<IGeometryValidator>()
+                ?? new WkbGeometryValidator(
+                    Options.Create(new LimitsOptions()),
+                    new Honua.Core.Features.FeatureStore.ReadOnlyProviders.ReadOnlyGeometryTopologyValidator("gRPC"),
+                    _logger);
+            var mutationValidator = new FeatureMutationValidator(geometryValidator);
+            var creates = await ValidateFeaturesAsync(batch.Creates, isUpdate: false).ConfigureAwait(false);
+            var updates = await ValidateFeaturesAsync(batch.Updates, isUpdate: true).ConfigureAwait(false);
+            return batch with { Creates = creates, Updates = updates };
+
+            async Task<ImmutableArray<Feature>> ValidateFeaturesAsync(ImmutableArray<Feature> features, bool isUpdate)
+            {
+                if (features.IsDefaultOrEmpty)
+                {
+                    return features.IsDefault ? ImmutableArray<Feature>.Empty : features;
+                }
+
+                var validated = ImmutableArray.CreateBuilder<Feature>(features.Length);
+                foreach (var feature in features)
+                {
+                    var geometry = feature.Geometry;
+                    if (geometry is { Length: > 0 })
+                    {
+                        var geometryResult = await mutationValidator
+                            .ValidateGeometryAsync(resource, geometry, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (!geometryResult.IsValid)
+                        {
+                            throw new RpcException(new Status(
+                                StatusCode.InvalidArgument,
+                                BoundEditValidationMessage(geometryResult.ErrorMessage, "Invalid geometry.")));
+                        }
+
+                        geometry = geometryResult.Geometry;
+                    }
+
+                    var attributesResult = mutationValidator.ValidateAttributes(
+                        resource,
+                        feature.Attributes,
+                        ValidationExtensions.AttributeValidationMode.Strict,
+                        isUpdate);
+                    if (!attributesResult.IsValid)
+                    {
+                        throw new RpcException(new Status(
+                            StatusCode.InvalidArgument,
+                            BoundEditValidationMessage(attributesResult.ErrorMessage, "Invalid attributes.")));
+                    }
+
+                    validated.Add(feature with
+                    {
+                        Geometry = geometry,
+                        Attributes = attributesResult.Value ?? feature.Attributes,
+                    });
+                }
+
+                return validated.MoveToImmutable();
+            }
+        }
+
+        static string BoundEditValidationMessage(string? message, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return fallback;
+            }
+
+            var singleLine = message.Replace('\r', ' ').Replace('\n', ' ').Trim();
+            const int maxLength = 240;
+            return singleLine.Length <= maxLength ? singleLine : singleLine[..maxLength];
+        }
+    }
+
+    private async Task<Proto.ApplyEditsResponse> ReplayCommittedReceiptAsync(
+        string scope,
+        GrpcApplyEditsIdempotencyStore.Lease lease)
+    {
+        var durable = await _idempotencyStore.TryReadDurableAsync(scope, CancellationToken.None).ConfigureAwait(false);
+        if (durable.Response is not null)
+        {
+            await lease.ReleaseAsAlreadyRecordedAsync().ConfigureAwait(false);
+            return durable.Response;
+        }
+
+        await lease.RetainAmbiguousAsync().ConfigureAwait(false);
+        throw new RpcException(new Status(
+            StatusCode.Aborted,
+            "A previous attempt with this idempotency key may have committed and will not be executed again."));
     }
 
     private static RpcException IdempotencyReservationLost() => new(new Status(
         StatusCode.Aborted,
         "The edit lost its idempotency reservation before it completed; retry with the same idempotency key."));
+
+    /// <summary>
+    /// True when the writer could not prove the transaction rolled back and reported no
+    /// successful row. A confirmed rollback and a known partial success are receipts.
+    /// </summary>
+    private static bool IsAmbiguousCommit(FeatureEditResult result)
+    {
+        if (result.WasRolledBack || result.CreatedCount + result.UpdatedCount + result.DeletedCount > 0)
+        {
+            return false;
+        }
+
+        return HasUnknownCommit(result.CreateResults)
+            || HasUnknownCommit(result.UpdateResults)
+            || HasUnknownCommit(result.DeleteResults);
+    }
+
+    private static bool HasUnknownCommit(ImmutableArray<EditOperationResult> results)
+        => !results.IsDefaultOrEmpty && results.Any(static result => result.IsCommitOutcomeUnknown);
 
     // The router and graph provider are resolved per request, as the FeatureServer handlers
     // do, so the service stays within the architecture collaborator ceiling.
@@ -445,14 +637,14 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     /// deleting it, because the underlying edit SQL filters only on <c>(layer_id, objectid)</c>
     /// with no RLS predicate (#2071). Adds carry no objectid and are not pre-read.
     /// </summary>
-    private async Task EnsureEditTargetsVisibleAsync(
+    private async Task<FeatureEditBatch> EnsureEditTargetsVisibleAsync(
         int storageLayerId,
         FeatureEditBatch editBatch,
         CancellationToken cancellationToken)
     {
         if (editBatch.Updates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty)
         {
-            return;
+            return editBatch;
         }
 
         // Collect distinct target objectids across updates and deletes; a single hidden/missing
@@ -474,6 +666,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             }
         }
 
+        var storedById = new Dictionary<long, Feature>(targets.Count);
         foreach (var objectId in targets)
         {
             var existing = await _featureReader
@@ -485,8 +678,69 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                     StatusCode.NotFound,
                     $"Feature with objectid {objectId} was not found."));
             }
+
+            storedById[objectId] = existing.Value;
         }
+
+        if (editBatch.Updates.IsDefaultOrEmpty)
+        {
+            return editBatch;
+        }
+
+        var mergedUpdates = ImmutableArray.CreateBuilder<Feature>(editBatch.Updates.Length);
+        var preconditions = ImmutableArray.CreateBuilder<FeatureEditPrecondition>();
+        var guarded = new HashSet<long>();
+        if (!editBatch.Preconditions.IsDefaultOrEmpty)
+        {
+            foreach (var existing in editBatch.Preconditions)
+            {
+                preconditions.Add(existing);
+                guarded.Add(existing.ObjectId);
+            }
+        }
+
+        foreach (var update in editBatch.Updates)
+        {
+            if (!storedById.TryGetValue(update.Id, out var stored))
+            {
+                mergedUpdates.Add(update);
+                continue;
+            }
+
+            mergedUpdates.Add(MergePartialUpdate(update, stored));
+            // Masked reads store the full-row token before fields are removed.
+            // Attach that token so a concurrent writer fails the update. An unmasked
+            // read has no token; hashing the caller-visible snapshot would not match
+            // the row the writer locks.
+            if (stored.ReadStateToken is { Length: > 0 } token && guarded.Add(stored.Id))
+            {
+                preconditions.Add(new FeatureEditPrecondition
+                {
+                    ObjectId = stored.Id,
+                    ExpectedStateToken = token
+                });
+            }
+        }
+
+        return editBatch with
+        {
+            Updates = mergedUpdates.MoveToImmutable(),
+            // Count is not known up front, so this builder cannot use MoveToImmutable.
+            Preconditions = preconditions.ToImmutable()
+        };
     }
+
+    /// <summary>
+    /// Omitted geometry keeps the stored geometry. There is no protobuf signal for
+    /// clearing geometry. Omitted attributes are not copied from this snapshot: the
+    /// writer merges them from the locked row, including fields this caller cannot see.
+    /// </summary>
+    private static Feature MergePartialUpdate(Feature update, Feature stored)
+        => update with
+        {
+            Geometry = update.Geometry ?? stored.Geometry,
+            PreserveOmittedMaskedAttributes = true
+        };
 
     private async Task PublishFeatureChangeEventsAsync(
         string serviceId,
@@ -745,7 +999,10 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             SqlFilter = whereFilter,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
             Offset = pagination.Offset,
-            Limit = streaming && !requestedLimit.HasValue ? null : pagination.Limit
+            // Streaming pages the full result set itself, and ids-only responses carry no
+            // exceeded_transfer_limit signal, so neither may inherit the default page size when the
+            // caller did not ask for one: FeatureServer returnIdsOnly is likewise unbounded (#6112).
+            Limit = (streaming || request.ReturnIdsOnly) && !requestedLimit.HasValue ? null : pagination.Limit
         };
 
         if (query.OrderBy is { } orderBy)

@@ -16,6 +16,7 @@ internal sealed class DegradedStartupContext
     private int _recovered;
     private volatile string? _reason;
     private volatile string? _recoveryFailure;
+    private volatile string? _reasonCode;
 
     /// <summary>
     /// Whether the host entered degraded mode (database unavailable at startup).
@@ -39,6 +40,13 @@ internal sealed class DegradedStartupContext
     /// startup phase and the failure class only, never a connection string or provider message.
     /// </summary>
     public string? Reason => _reason;
+
+    /// <summary>
+    /// Readiness reason code for the degraded start: <c>database-startup-degraded</c> (the database
+    /// could not be reached) or <c>schema-floor</c> (the schema is behind this binary). Null means
+    /// the default, <c>database-startup-degraded</c>.
+    /// </summary>
+    public string? ReasonCode => _reasonCode;
 
     /// <summary>
     /// Sanitized reason the recovery loop stopped retrying, or <see langword="null"/> while it is
@@ -71,17 +79,32 @@ internal sealed class DegradedStartupContext
     /// <param name="migrationsAssembly">The assembly carrying migration scripts.</param>
     /// <param name="reason">Sanitized phase and failure class for readiness.</param>
     /// <param name="schemaGuardPending">Whether the schema guard must run after recovery instead of migrations.</param>
+    /// <param name="reasonCode">Readiness reason code; null for <c>database-startup-degraded</c>.</param>
     public void MarkDegraded(
         bool migrationsPending,
         Assembly? migrationsAssembly,
         string? reason = null,
-        bool schemaGuardPending = false)
+        bool schemaGuardPending = false,
+        string? reasonCode = null)
     {
         MigrationsPending = migrationsPending;
         SchemaGuardPending = schemaGuardPending;
         MigrationsAssembly = migrationsAssembly;
         _reason = reason;
+        _reasonCode = reasonCode;
         Volatile.Write(ref _degraded, 1);
+    }
+
+    /// <summary>
+    /// Updates the readiness reason while the recovery loop is still waiting, for example when the
+    /// database became reachable but a required migration is still not applied.
+    /// </summary>
+    /// <param name="reasonCode">Readiness reason code.</param>
+    /// <param name="reason">Sanitized reason.</param>
+    public void UpdateReason(string reasonCode, string reason)
+    {
+        _reasonCode = reasonCode;
+        _reason = reason;
     }
 
     /// <summary>Records that the recovery loop restored database access.</summary>

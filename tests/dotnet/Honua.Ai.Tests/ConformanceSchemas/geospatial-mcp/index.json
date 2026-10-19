@@ -236,6 +236,22 @@
       "implementationStatus": "implemented",
       "notes": "Honua extension (#2813): caller-scoped geoprocessing job enumeration (status filter + cursor paging) so an agent can find a job to cancel. The bare taxonomy models job lookup as a job-resource read; the reference implementation exposes a discrete listing tool. Pending formalization in the standard; schema marks x-honua-extension."
     },
+    {
+      "standardName": "diagnose_job",
+      "referenceToolName": "honua_diagnose_job",
+      "family": "Results (Honua extension)",
+      "schema": "tools/diagnose_job.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (#6219): Read-only diagnosis of a caller-readable geoprocessing job, separating recorded observations, inferred explanations, and evidence gaps. Pending formalization in the standard; schema marks x-honua-extension."
+    },
+    {
+      "standardName": "job_evidence",
+      "referenceToolName": "honua_job_evidence",
+      "family": "Results (Honua extension)",
+      "schema": "tools/job_evidence.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (#6219): Read-only retrieval of sanitized steps, a bounded event tail, and artifact availability for a caller-readable geoprocessing job. Pending formalization in the standard; schema marks x-honua-extension."
+    },
     {"standardName":"propose_finding","referenceToolName":"honua_propose_finding","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_finding.schema.json","implementationStatus":"implemented"},
     {"standardName":"propose_deploy_plan","referenceToolName":"honua_propose_deploy_plan","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_deploy_plan.schema.json","implementationStatus":"implemented"},
     {"standardName":"propose_deploy_operation","referenceToolName":"honua_propose_deploy_operation","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_deploy_operation.schema.json","implementationStatus":"implemented"},

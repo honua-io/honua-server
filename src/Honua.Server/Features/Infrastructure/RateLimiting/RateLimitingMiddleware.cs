@@ -13,9 +13,16 @@ using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Core.Features.RateLimiting.Domain;
+using Honua.Server.Features.Operations;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.RateLimiting;
+
+// A server-only request feature; never reconstructed from caller headers.
+internal sealed class RateLimitAdmission
+{
+}
 
 /// <summary>
 /// Middleware for enforcing rate limits on incoming requests.
@@ -75,6 +82,7 @@ internal sealed partial class RateLimitingMiddleware
     private readonly IConnectionMultiplexer? _redis;
     private readonly RateLimitingOptions _options;
     private readonly ILogger<RateLimitingMiddleware> _logger;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RateLimitingMiddleware"/> class.
@@ -90,18 +98,21 @@ internal sealed partial class RateLimitingMiddleware
     /// injection; when <see langword="null"/> the middleware falls back to process-local
     /// fixed-window counters.
     /// </param>
+    /// <param name="timeProvider">Clock for quota windows and retry headers; defaults to system UTC.</param>
     public RateLimitingMiddleware(
         RequestDelegate next,
         IRateLimitPolicyStore policyStore,
         IOptions<RateLimitingOptions> options,
         ILogger<RateLimitingMiddleware> logger,
-        IConnectionMultiplexer? redis)
+        IConnectionMultiplexer? redis,
+        TimeProvider? timeProvider = null)
     {
         _next = next;
         _policyStore = policyStore;
         _redis = redis;
         _options = options.Value;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -112,6 +123,19 @@ internal sealed partial class RateLimitingMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         if (!_options.Enabled)
+        {
+            await _next(context);
+            return;
+        }
+
+        // Only the one-use process-local attestation can install this feature.
+        // The original admitted request already paid for its exact URL-import execution.
+        var admittedLoopback = context.Features.Get<OperationLoopbackAdmission>();
+        context.Features.Set<OperationLoopbackAdmission>(null);
+        if (admittedLoopback is not null &&
+            string.Equals(admittedLoopback.TenantId ?? string.Empty,
+                context.RequestServices.GetService<ITenantContext>()?.TenantId ?? string.Empty,
+                StringComparison.Ordinal))
         {
             await _next(context);
             return;
@@ -130,6 +154,7 @@ internal sealed partial class RateLimitingMiddleware
 
         if (rateLimitResult.IsAllowed)
         {
+            context.Features.Set(new RateLimitAdmission());
             // Add rate limit headers
             AddRateLimitHeaders(context, rateLimitResult);
             await _next(context);
@@ -280,7 +305,7 @@ internal sealed partial class RateLimitingMiddleware
             {
                 IsAllowed = true,
                 RequestsRemaining = _options.GlobalRequestsPerMinute,
-                WindowReset = DateTimeOffset.UtcNow.AddMinutes(1)
+                WindowReset = _timeProvider.GetUtcNow().AddMinutes(1)
             };
         }
     }
@@ -340,7 +365,7 @@ internal sealed partial class RateLimitingMiddleware
     private async Task<RateLimitResult> CheckRateLimitRedisAsync(string counterKey, ResolvedRateLimit resolved)
     {
         var database = _redis!.GetDatabase();
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var window = resolved.Window;
         var windowStart = now - window;
 
@@ -398,7 +423,7 @@ internal sealed partial class RateLimitingMiddleware
     /// <returns>Rate limit check result.</returns>
     private RateLimitResult CheckRateLimitMemory(string counterKey, ResolvedRateLimit resolved)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var window = resolved.Window;
 
         // Align the fixed window to epoch-anchored buckets so an arbitrary policy window
@@ -633,10 +658,14 @@ internal sealed partial class RateLimitingMiddleware
     /// </summary>
     private static RateLimitRequestDescriptor BuildRequestDescriptor(HttpContext context)
     {
-        var identity = context.User?.Identity;
-        var apiKey = identity?.IsAuthenticated == true && !string.IsNullOrEmpty(identity.Name)
-            ? identity.Name
-            : null;
+        // Only an API-key principal carries an api-key tier, and the tier key is the stable
+        // api_key_id. Identity.Name is a display name: an OIDC user (or a second key) with the
+        // same name must not inherit another key's quota.
+        var apiKeyIdentity = context.User?.Identities.FirstOrDefault(identity =>
+            identity.IsAuthenticated
+            && string.Equals(identity.AuthenticationType, AuthenticationExtensions.ApiKeyScheme, StringComparison.Ordinal));
+        var apiKeyId = apiKeyIdentity?.FindFirst("api_key_id")?.Value;
+        var apiKey = string.IsNullOrEmpty(apiKeyId) ? null : apiKeyId;
 
         var tenantContext = context.RequestServices?.GetService(typeof(ITenantContext)) as ITenantContext;
         var tenantId = string.IsNullOrEmpty(tenantContext?.TenantId) ? null : tenantContext.TenantId;
@@ -685,7 +714,7 @@ internal sealed partial class RateLimitingMiddleware
 
         // RFC 9110 Retry-After: advise clients how long to wait (in whole seconds, never
         // negative) before retrying. Mirrors the X-RateLimit-Reset window boundary.
-        var retryAfterSeconds = Math.Max(0, (int)Math.Ceiling((result.WindowReset - DateTimeOffset.UtcNow).TotalSeconds));
+        var retryAfterSeconds = Math.Max(0, (int)Math.Ceiling((result.WindowReset - _timeProvider.GetUtcNow()).TotalSeconds));
         await BackpressureResponseWriter.WriteAsync(
             context,
             BackpressureKind.Throttled,
@@ -809,25 +838,4 @@ internal sealed class RateLimitResult
     /// Gets or sets the rate limit value.
     /// </summary>
     public int Limit { get; set; }
-}
-
-/// <summary>
-/// Attribute for specifying endpoint-specific rate limits.
-/// </summary>
-[AttributeUsage(AttributeTargets.Method)]
-internal sealed class RateLimitAttribute : Attribute
-{
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RateLimitAttribute"/> class.
-    /// </summary>
-    /// <param name="requestsPerMinute">Requests per minute for this endpoint.</param>
-    public RateLimitAttribute(int requestsPerMinute)
-    {
-        RequestsPerMinute = requestsPerMinute;
-    }
-
-    /// <summary>
-    /// Gets the requests per minute limit for the endpoint.
-    /// </summary>
-    public int RequestsPerMinute { get; }
 }

@@ -616,6 +616,12 @@ internal sealed partial class ConsoleJobService(
         IArtifactStore? artifactStore,
         CancellationToken cancellationToken)
     {
+        var customArtifact = await MapCustomCodeArtifactAsync(reference, cancellationToken).ConfigureAwait(false);
+        if (customArtifact is not null)
+        {
+            return customArtifact;
+        }
+
         if (artifactStore != null)
         {
             try
@@ -877,8 +883,10 @@ internal sealed partial class ConsoleJobService(
         => string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal);
 
     private static ConsoleJobLinks BuildLinks(HttpContext context, ExecutionJobRecord job)
+        => BuildLinks(context.Request.PathBase.Value ?? string.Empty, job);
+
+    private static ConsoleJobLinks BuildLinks(string pathBase, ExecutionJobRecord job)
     {
-        var pathBase = context.Request.PathBase.Value ?? string.Empty;
         var basePath = $"{pathBase}/api/v1/admin/jobs/{Uri.EscapeDataString(job.OperationId)}";
         var correlation = job.Audit.CorrelationId;
 
@@ -889,6 +897,7 @@ internal sealed partial class ConsoleJobService(
             Artifacts = $"{basePath}/artifacts",
             Actions = $"{basePath}/actions",
             Steps = $"{basePath}/steps",
+            Diagnostics = $"{basePath}/diagnostics",
             Cancel = $"{basePath}/cancel",
             Retry = $"{basePath}/retry",
             EventsByJob = $"{pathBase}/api/v1/admin/observability/events?kind=job&operationId={Uri.EscapeDataString(job.OperationId)}",

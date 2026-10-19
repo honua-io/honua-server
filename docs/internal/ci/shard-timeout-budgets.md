@@ -1227,7 +1227,29 @@ The shard is split on the existing `MvtTile | Replica` filter boundary into
 Neither budget was raised. The two filters exclude each other, so a name that
 contains both substrings matches neither child and must be assigned explicitly.
 Coverage currently finds no such class. The replica-store and replication
-classes stay on `FeatureServer Endpoints Query Services and Replication`.
+classes stay on `FeatureServer Query Services and Replication` after the
+FeatureServer capacity partition below.
+
+### FeatureServer editing and query capacity partition (#6332)
+
+Run `39099807022` at `94f7d6b3` exhausted the combined FeatureServer shard's
+37-minute test cap while it was still producing output. The completed prior
+`fc8139b5` TRX contains 430 passing cases in 30.6 minutes, with low headroom.
+Its dirty-source flag remains recorded in
+`featureserver-shard-capacity-20261018.json`; it is sizing evidence only.
+
+`FeatureServer Editing and Relationships` owns the whole ApplyEdits, mutation,
+relationship, feature-lock, edit-capability and edit-owner class families. The
+complementary `FeatureServer Query Services and Replication` owns every other
+class selected by the unchanged legacy parent. The historical interval unions
+are 12.51 and 15.65 minutes (59 and 371 cases). Fresh child execution remains
+required; these estimates do not qualify the changed source or a candidate.
+
+Both children retain the original project, source/test triggers, tier exclusions,
+parallelism, 37-minute test cap and 47-minute job cap. The canonical parent
+partition and `test-featureserver-capacity-partition.py` reject missing,
+duplicated or foreign tests, changed class ownership, reduced routing and changed
+budgets. The maintained CI router runs these controls on every relevant gate.
 
 ## 2026-10-07: capacity exhaustion during the server drain
 
@@ -1239,3 +1261,168 @@ Trunk run [37694901734](https://github.com/honua-io/honua-server/actions/runs/37
 | WFS | 207 | 1 second | 40 / 50 min | 70 / 80 min |
 
 These observations are censored durations, not measured p90 completion times. The bounded increases restore room to obtain a complete run; they do not establish the 70% utilization target. Test selection and every assertion remain enabled, and each outer job retains the required ten-minute overhead. Reassess headroom from the completed branch verification and subsequent timing receipts; persistent growth requires fixture or shard-capacity work rather than unbounded timeout increases.
+
+## ImageServer rendering capacity split (2026-10-12, #5901)
+
+Full run [38182837651](https://github.com/honua-io/honua-server/actions/runs/38182837651/job/114603431264)
+at `01449eaed054a508e1fae691c768c26f0f2f19fb` exhausted the rendering/support
+shard's 30-minute cap after 1,802 seconds, with output eight seconds before
+termination. Its timing receipt records exit 124 and `capacity_exhausted`;
+there is no completed TRX. That duration is a censored lower bound.
+
+The earlier completed [PR run 38151610217](https://github.com/honua-io/honua-server/actions/runs/38151610217)
+at `a8a3a2a953e6e548dd2c42d915533e6f0a35ccf5` passed 236 cases in 1,456 seconds.
+Its summed class spans / whole span ratio is 1.003, so the workload is nearly
+serial. `ImageServerRawPixelExportTests`, `ImageServerWmtsReprojectionTests`
+and `ImageServerMosaicIntegrationTests` move intact to a new
+`GeoServices ImageServer Raster Rendering` shard. The original
+`GeoServices ImageServer Rendering and Support` keeps every other class.
+
+| Partition | Baseline cases | Measured baseline interval union | Unchanged test / job caps |
+|---|---:|---:|---:|
+| Raster Rendering | 73 | 803.7s | 30 / 40 min |
+| Rendering and Support | 163 | 615.1s | 30 / 40 min |
+
+These are estimates from one completed historical run, not a p90 or fresh
+post-split verdict. Fixed job setup and newer tests still need actual hosted
+measurement. The original failed run remains failed. The
+[bounded evidence record](imageserver-shard-capacity-20261012.json) retains
+source/run/artifact identities, file hashes, class intervals and timing data.
+
+Focused run [38189708636](https://github.com/honua-io/honua-server/actions/runs/38189708636)
+at `a6fafdae55fea39460bcddea12a3d3efdde8a2d7` ran each child twice.
+Raster Rendering passed 73/73 cases in 651 and 460 seconds (63.83% and 74.44%
+measured headroom). Support passed 169/169 in 526 seconds (70.78% headroom),
+then failed 1 of 169 in 501 seconds: the WorldCRS84Quad pipeline test received
+an image but found no raster-store invocation. That failed iteration has no
+passing capacity verdict. Raw TRX/timing/log hashes and the exact failure are
+retained in the evidence record; a green report-mode workflow badge does not
+replace these test verdicts. The later repair and replay below preserve this
+initial failure unchanged.
+
+Concurrent trunk PR5903 temporarily raised the unsplit support test/job caps
+to 43/53 minutes. This measured whole-class split supersedes that increase and
+restores both children to the original 30/40-minute limits. Its independent
+OAuth validation changes remain present after integration.
+
+Both partitions retain the original test project and every source trigger.
+The existing exact-partition contract now checks all three descendants of the
+older Catalog/support split, including Catalog/Tiles. It rejects missing,
+duplicated and foreign methods and requires unchanged time limits. Current
+source inventory contains 772 methods across these descendants: 174 Catalog,
+563 remaining support and 35 moved rendering methods, before tier selection
+and theory expansion. This source count is distinct from the historical 236
+executed cases. Cold-render assertions remain intact; the WMTS fixture now
+owns its file-backed storage and additionally proves an identical warm request
+returns the same bytes with one total raster-store invocation.
+
+
+The integrated source `345dcc2717a510bbec4c97191609c2b723303202` passed all
+four actual executions in [focused run 38194212994](https://github.com/honua-io/honua-server/actions/runs/38194212994).
+Each TRX has total = executed = passed, no missing or skipped results, and
+each timing receipt records exit 0 without timeout.
+
+| Partition | Actual cases in each iteration | Durations | Observed headroom against 1,800s | Artifact |
+|---|---:|---:|---:|---:|
+| Rendering and Support | 169/169 | 716s / 666s | 60.22% / 63.00% | 11723770731 |
+| Raster Rendering | 73/73 | 590s / 451s | 67.22% / 74.94% | 11723252616 |
+
+Normal [PR Gate 38194157299](https://github.com/honua-io/honua-server/actions/runs/38194157299)
+also passed at that exact source. Raw affected-shard outcomes were Support
+169/169 in 655s, Raster 73/73 in 771s, Catalog 124/124 in 421s, and endpoint
+113/113 in 820s. Independent [fixture run 38193435664](https://github.com/honua-io/honua-server/actions/runs/38193435664)
+passed 8/8 WMTS tests twice in 35s per iteration, including the cold-render and
+warm-cache controls. The bounded JSON receipt retains every artifact identity
+and SHA-256 of the raw timing, TRX and log files, including the original failed
+attempt.
+
+These observations justified [PR5904](https://github.com/honua-io/honua-server/pull/5904),
+merged as `19e2007ce1381c337aadae646b2856acb51b5aaf`. Two fresh observations
+per child establish observed headroom, not a p90 distribution. Full-server
+qualification and immutable release-image admission remain separate gates.
+
+## Admin Runtime Operations capacity partition (2026-10-14, #6080)
+
+[Run 38541322272](https://github.com/honua-io/honua-server/actions/runs/38541322272/job/115788121194)
+at `854dd0dca9dcd939e5e414d438eb2440febb57a2` exhausted the unchanged
+27-minute inner budget after 1,624 seconds while still producing output one
+second before termination. Its 107 passing log entries are an incomplete
+prefix, with no complete TRX; the original run remains failed.
+
+The same test workload on `0454d113bf4f1c58217cfa470e8929eb2ea10576`
+completed 116 cases in 757 seconds. Authenticated artifact `11879753603`
+contains the complete TRX. Its summed class spans / whole span ratio is 1.01,
+so the workload is nearly serial. `LayerPublishingIntegrationTests` owns 83
+cases; neighboring application timestamps in the failed log place that class
+alone across approximately 21 minutes. Those timestamps are diagnostic bounds,
+not a replacement for missing TRX intervals. A whole-class move therefore does
+not establish the required headroom on its own.
+
+The existing method-level partition contract splits the workload without
+changing any C# test, theory data, per-test initialization or cleanup,
+`Database` collection, source trigger, or parallelism setting:
+
+| Partition | Historical cases | Historical interval union | Unchanged test / job caps |
+|---|---:|---:|---:|
+| Admin Layer Publishing | 58 | 387.3 seconds | 27 / 37 minutes |
+| Admin Runtime Operations | 58 | 361.8 seconds | 27 / 37 minutes |
+
+The publishing child owns the 48 methods already grouped in
+`LayerPublishingIntegrationTests.cs` and its namespace partial. The runtime
+child retains every other original method, including future methods, by the
+complementary exact-name filter. The sole broader Admin Operations partition
+uses canonical method granularity and names all three active children exactly;
+no child is declared under a second legacy parent. The independent runtime
+regression still verifies the original runtime slice as an exact, disjoint union.
+The source-inventory regression rejects missing, duplicated or foreign methods,
+changed source triggers, changed assemblies, parallelism changes and raised
+budgets.
+
+The static source denominator is 122 methods, before tier selection. The
+historical integration TRX contains 93 methods expanded into 116 cases. The
+remaining 29 methods belong to `LayerPublishJobTests`,
+`LayerPublishRemoteRunnerTests`, `LayerPublishWorkerControlsTests` and
+`LayerPublishWireContractTests`; all carry Fast traits through `UnitTest`,
+`UnitTheory` or the explicit Fast theory trait. The unchanged shard runner
+excludes Fast tests because the foundation lane executes them. Authenticated
+foundation results from run `38541322272` contain all 29 methods expanded into
+53 passing cases. Those are prior-source execution observations, not new
+post-split results or additional integration cases.
+
+The [bounded evidence record](admin-runtime-shard-capacity-20261014.json)
+retains the raw artifact, log and TRX identities plus the historical method
+partition. These one-run timing observations size the change; they are not a
+p90 estimate or fresh post-split proof. Two actual executions per child and
+full exact-source validation remain required before delivery. Candidate
+qualification is separate.
+
+
+## WMS class/complement capacity cut (2026-10-18, #6318)
+
+The original `OGC Classic Maps` run at `3e4222e5923e4663345fa802c6ac616d9639f27f`
+[reached its 1,200-second inner budget](https://github.com/honua-io/honua-server/actions/runs/39082856649/job/117548299539)
+while still producing output. Artifact `12121440421` contains the console log and timing JSON,
+with 1,201 seconds elapsed and four seconds of idle time at exit, but no TRX.
+The 108 passed console records are partial execution, not a completed suite.
+The deliberately throwing exception-mapping provider near the end is not itself an assertion failure.
+
+The matrix now partitions that entire legacy WMS namespace into:
+
+- `OGC Classic Maps Core`: the measured `OgcClassicWmsTests` class family.
+- `OGC Classic Maps Supporting`: the exact complement, retaining temporal, bounds, CRS,
+  hidden-field, capabilities, exception-mapping, authorization, legend, Mapsui and rendered-raster cases.
+
+Both children keep the original assembly, all source triggers, default parallelism and 20-minute
+inner / 30-minute job budgets. The maintained runner still applies the original non-Slow/non-Fast
+Tier filters. No runtime assertion, fixture lifetime or discovery exemption changes.
+`shard_partitions` retains the legacy parent filter; normal router validation checks every discovered
+method appears once across the children and rejects lost, duplicate, foreign, swapped, trigger,
+budget, project and parallelism mutations.
+
+The canonical shard roster grows from 121 to 122. Release consumers load `.github/ci-shards.json`
+from the authenticated exact source revision using their existing dynamic `shardInventory` contract;
+this does not rewrite a historical 121-shard audit or certify any new source automatically.
+The console timing suggests roughly eleven minutes were spent in the largest class, but incomplete
+logs cannot predict either child's final wall time. Actual complete child TRX and timing receipts
+remain necessary; the split alone does not establish qualification or close a capacity incident.
+The retained source/timing description is `wms-shard-capacity-20261018.json` beside this document.

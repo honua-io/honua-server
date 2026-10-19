@@ -33,6 +33,24 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
             LogLevel.Warning,
             new EventId(6404, "AwsEcsCredentialsUriRejected"),
             "Rejected AWS container credentials URI '{Uri}' because it is not a trusted local endpoint.");
+    private static readonly Action<ILogger, string, string, Exception?> _logContainerTokenFileUnusable =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Warning,
+            new EventId(6405, "AwsContainerAuthorizationTokenFileUnusable"),
+            "{Variable} is set but the token file could not be used ({Reason}); skipping the container credentials provider and falling back to the next AWS credential source.");
+    private static readonly Action<ILogger, int, Exception?> _logContainerCredentialsRejected =
+        LoggerMessage.Define<int>(
+            LogLevel.Warning,
+            new EventId(6406, "AwsContainerCredentialsRequestRejected"),
+            "AWS container credentials endpoint returned status code {StatusCode}; falling back to the next AWS credential source. On EKS Pod Identity this usually means AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE is missing or stale.");
+    private static readonly Action<ILogger, Exception?> _logWebIdentityNotSupported =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(6407, "AwsWebIdentityCredentialsNotSupported"),
+            "AWS_WEB_IDENTITY_TOKEN_FILE is set (IRSA) but the built-in AWS Secrets Manager resolver does not support web-identity credentials; falling back to EC2 instance metadata (the node role). Use EKS Pod Identity or explicit credentials for aws:secretsmanager: references.");
+
+    internal const string ContainerAuthorizationTokenVariable = "AWS_CONTAINER_AUTHORIZATION_TOKEN";
+    internal const string ContainerAuthorizationTokenFileVariable = "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE";
 
     private readonly HttpClient _secretsClient;
     private readonly HttpClient _metadataClient;
@@ -541,6 +559,11 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
                 return credentials;
             }
 
+            if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AWS_WEB_IDENTITY_TOKEN_FILE")))
+            {
+                _logWebIdentityNotSupported(_logger, null);
+            }
+
             credentials = await TryGetImdsCredentialsAsync(cancellationToken).ConfigureAwait(false);
             if (credentials != null)
             {
@@ -598,9 +621,16 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
             return null;
         }
 
+        // Resolved on every container-credentials fetch (i.e. on every credential refresh), never
+        // cached: EKS Pod Identity rotates the projected token file underneath the running pod.
+        if (!TryResolveContainerAuthorizationToken(out var authToken, out var tokenProblem))
+        {
+            _logContainerTokenFileUnusable(_logger, ContainerAuthorizationTokenFileVariable, tokenProblem!, null);
+            return null;
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
-        var authToken = Environment.GetEnvironmentVariable("AWS_CONTAINER_AUTHORIZATION_TOKEN");
-        if (!string.IsNullOrWhiteSpace(authToken))
+        if (authToken is not null)
         {
             request.Headers.TryAddWithoutValidation("Authorization", authToken);
         }
@@ -611,11 +641,68 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         using var response = await _metadataClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
+            _logContainerCredentialsRejected(_logger, (int)response.StatusCode, null);
             return null;
         }
 
         var content = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
         return ParseCredentials(content);
+    }
+
+    /// <summary>
+    /// Resolves the <c>Authorization</c> header value for the container credentials endpoint the way
+    /// the AWS SDKs do: <c>AWS_CONTAINER_AUTHORIZATION_TOKEN</c> wins when set (ECS / custom agents);
+    /// otherwise <c>AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE</c> is read (EKS Pod Identity, whose agent at
+    /// <c>http://169.254.170.23/v1/credentials</c> rejects requests without the projected token). The
+    /// file is read fresh on every call because the kubelet rotates it. Returns <see langword="false"/>
+    /// only when the token file is configured but unusable; <paramref name="problem"/> then names the
+    /// failure without ever carrying the token contents.
+    /// </summary>
+    internal static bool TryResolveContainerAuthorizationToken(out string? token, out string? problem)
+    {
+        problem = null;
+        var envToken = Environment.GetEnvironmentVariable(ContainerAuthorizationTokenVariable);
+        if (!string.IsNullOrWhiteSpace(envToken))
+        {
+            token = envToken.Trim();
+            return true;
+        }
+
+        token = null;
+        var tokenFile = Environment.GetEnvironmentVariable(ContainerAuthorizationTokenFileVariable);
+        if (string.IsNullOrWhiteSpace(tokenFile))
+        {
+            return true;
+        }
+
+        string contents;
+        try
+        {
+            contents = File.ReadAllText(tokenFile);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or System.Security.SecurityException)
+        {
+            problem = ex is FileNotFoundException or DirectoryNotFoundException
+                ? "file not found"
+                : $"file unreadable: {ex.GetType().Name}";
+            return false;
+        }
+
+        contents = contents.Trim();
+        if (contents.Length == 0)
+        {
+            problem = "file is empty";
+            return false;
+        }
+
+        if (contents.AsSpan().IndexOfAny('\r', '\n') >= 0)
+        {
+            problem = "file contains more than one line";
+            return false;
+        }
+
+        token = contents;
+        return true;
     }
 
     private Uri? ResolveEcsCredentialsEndpoint(string? relativeUri, string? fullUri)

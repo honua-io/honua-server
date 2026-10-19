@@ -31,6 +31,13 @@ done
 
 mkdir -p /output
 
+# Classifier controls are not candidate cases and cannot be swallowed by the
+# live-suite evidence path below. Keep their failure fatal and output separate.
+if ! python3 -m unittest discover -s tests/python/unit -p test_stac_validation_outcomes.py -v; then
+    echo '::error::STAC validator classification controls failed.' >&2
+    exit 1
+fi
+
 # tests/python/stac_client/conftest.py honors HONUA_STAC_COMPAT_BASE_URL (and
 # HONUA_BASE_URL as the shared fallback), which short-circuits the local
 # PostGIS/server startup chain, and writes both the .cert.json envelope and the
@@ -73,9 +80,10 @@ export HONUA_PYSTAC_SERVER_COMMIT="${HONUA_PYSTAC_SERVER_COMMIT:-}"
 # test_stac_api_validator.py is the pre-existing bespoke lane's hard-failing
 # wrapper around the external validator. This lane runs the same validator from
 # test_cert_common_core.py::test_nb_valid_01_stac_api_validator instead, where
-# its findings are recorded as the NB-STAC-VALID-01 extension result and an
-# unreachable remote schema degrades to a recorded skip rather than crashing the
-# lane.
+# its findings are recorded as the NB-STAC-VALID-01 extension result with full
+# stdout/stderr. Both wrappers share strict failure classification; network
+# words cannot suppress conformance errors. Typed PySTAC schema-fetch outages
+# remain explicit unavailable/nonpass in the separate object-validation check.
 #
 # --override-ini="addopts=" drops the repo-wide `-v --tb=short` default so the
 # lane controls its own reporting.

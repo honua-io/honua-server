@@ -1,0 +1,686 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using FluentAssertions;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
+using Honua.Protocols.GeoServices.ImageServer;
+using Honua.Protocols.GeoServices.ImageServer.Handlers;
+using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
+
+namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
+
+/// <summary>
+/// Tests for ImageServerMetadataHandler functionality.
+/// </summary>
+[Protocol(TestProtocols.ImageServer)]
+public class ImageServerMetadataHandlerTests
+{
+    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
+    private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
+    private readonly IImageServerMultidimensionalInfoBuilder _multidimensionalInfoBuilder =
+        Substitute.For<IImageServerMultidimensionalInfoBuilder>();
+    private readonly ImageServerMetadataHandler _handler;
+
+    public ImageServerMetadataHandlerTests()
+    {
+        _multidimensionalInfoBuilder
+            .BuildAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns((ImageServerMultidimensionalInfo?)null);
+
+        _handler = new ImageServerMetadataHandler(
+            _graphProvider,
+            _rasterStore,
+            _multidimensionalInfoBuilder,
+            NullLogger<ImageServerMetadataHandler>.Instance);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_LayerNotFound_ReturnsNotFound()
+    {
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 99);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_NoRasters_ReturnsNotFound()
+    {
+        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<RasterInfo>());
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_NullExtent_ReturnsServerError()
+    {
+        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
+            .Returns([CreateTestRasterInfo() with { Extent = null }]);
+        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<RasterStatistics>());
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        await AssertGeoServicesErrorAsync(
+            context,
+            result,
+            StatusCodes.Status500InternalServerError,
+            StatusCodes.Status404NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_ValidRequest_ReturnsOk()
+    {
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_ResponseContainsLayerName()
+    {
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.Name.Should().Be("test-layer");
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_ResponseContainsBandCount()
+    {
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.BandCount.Should().Be(3);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_ResponseEmitsNonNullFieldsWithOid()
+    {
+        // The ArcGIS Maps SDK for JavaScript calls fields.find(...) during
+        // ImageryLayer.load(); a null fields array makes it throw. Assert the
+        // metadata emits the standard raster-catalog fields including the OID.
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.Fields.Should().NotBeNullOrEmpty();
+        jsonResult.Value.Fields.Should().Contain(f => f.Type == "esriFieldTypeOID");
+        jsonResult.Value.ObjectIdField.Should().Be("OBJECTID");
+        jsonResult.Value.SupportsStatistics.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_NonMultidimensionalLayer_HasMultidimensionsFalse()
+    {
+        SetupSuccessfulMetadata();
+        // Builder returns null (no multidimensional coverage) by default.
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.HasMultidimensions.Should().BeFalse();
+        jsonResult.Value.MultidimensionalInfo.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_MultidimensionalLayer_HasMultidimensionsTrueWithInfo()
+    {
+        SetupSuccessfulMetadata();
+        _multidimensionalInfoBuilder
+            .BuildAsync(1, Arg.Any<CancellationToken>())
+            .Returns(new ImageServerMultidimensionalInfo
+            {
+                Variables =
+                [
+                    new ImageServerMultidimensionalVariable
+                    {
+                        Name = "temperature",
+                        Unit = "K",
+                        Dimensions =
+                        [
+                            new ImageServerMultidimensionalDimension
+                            {
+                                Name = "StdTime",
+                                Unit = "ISO8601",
+                                DimensionSize = 12
+                            }
+                        ]
+                    }
+                ]
+            });
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.HasMultidimensions.Should().BeTrue();
+        jsonResult.Value.MultidimensionalInfo.Should().NotBeNull();
+        jsonResult.Value.MultidimensionalInfo!.Variables.Should().ContainSingle()
+            .Which.Name.Should().Be("temperature");
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_ResponseDoesNotAdvertiseUnroutedTilemapContract()
+    {
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.Capabilities.Should().NotContain("Tilemap");
+        jsonResult.Value.SingleFusedMapCache.Should().BeFalse();
+        jsonResult.Value.CacheType.Should().BeNull();
+        jsonResult.Value.TileInfo.Should().BeNull();
+        jsonResult.Value.MaxImageWidth.Should().Be(4096);
+        jsonResult.Value.MaxImageHeight.Should().Be(4096);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_ResponseContainsExtent()
+    {
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.Extent.XMin.Should().Be(-180);
+        jsonResult.Value.Extent.YMax.Should().Be(90);
+        jsonResult.Value.Extent.SpatialReference.Wkid.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_DynamicService_MatchesEsriShapeForArcGisRuntime()
+    {
+        // #1456: the native .NET ImageServiceRaster.LoadAsync ALWAYS fetches the
+        // ImageServer config (served at both the root descriptor and conf.json) and
+        // parses it with a strict reader. Verified against a public Esri ImageServer,
+        // a dynamic (non-fused-cache) service:
+        //   * populates fullExtent/initialExtent,
+        //   * OMITS storageInfo and the root blockWidth/blockHeight (those belong to a
+        //     tile cache; emitting them made the runtime reject the config),
+        //   * omits a tile scheme (singleFusedMapCache=false, tileInfo=null), and
+        //   * serializes allowedMosaicMethods as a comma-separated STRING (an array
+        //     trips the runtime with "Invalid configuration file").
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        var info = jsonResult.Value!;
+
+        info.FullExtent.Should().NotBeNull();
+        info.FullExtent!.XMin.Should().Be(-180);
+        info.FullExtent.YMax.Should().Be(90);
+        info.FullExtent.SpatialReference.Wkid.Should().Be(4326);
+
+        info.InitialExtent.Should().NotBeNull();
+        info.InitialExtent!.XMin.Should().Be(-180);
+        info.InitialExtent.YMax.Should().Be(90);
+
+        // Dynamic service: no fused cache, no tile-cache storage block (matches Esri).
+        info.SingleFusedMapCache.Should().BeFalse();
+        info.TileInfo.Should().BeNull();
+        info.StorageInfo.Should().BeNull();
+        info.BlockWidth.Should().BeNull();
+        info.BlockHeight.Should().BeNull();
+
+        // Esri serializes allowedMosaicMethods as a comma-separated string, not an array, using
+        // the unprefixed method vocabulary (#4063).
+        info.AllowedMosaicMethods.Should().BeOfType<string>();
+        info.AllowedMosaicMethods.Should().Be("None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline");
+
+        // renderingRule raster functions execute, so they are allowed; a rule-less request composites
+        // newest acquisition first with the default Newest merge keeping the first raster (#4063).
+        info.AllowRasterFunction.Should().BeTrue();
+        info.DefaultMosaicMethod.Should().Be("ByAttribute");
+        info.SortField.Should().Be("AcquisitionDate");
+        info.MosaicOperator.Should().Be("First");
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_EmptyStatistics_ReturnsOk()
+    {
+        SetupLayerAndRasters();
+        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<RasterStatistics>());
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(CreateTestExtent());
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.MinValues.Should().BeEmpty();
+        jsonResult.Value.MaxValues.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_NullStatisticValues_UsesDefaultZero()
+    {
+        SetupLayerAndRasters();
+        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new[]
+            {
+                new RasterStatistics { Band = 1, MinValue = null, MaxValue = null, MeanValue = null, StandardDeviation = null }
+            });
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(CreateTestExtent());
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.MinValues.Should().Equal(0);
+        jsonResult.Value.MaxValues.Should().Equal(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_PixelSizeCalculated()
+    {
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.PixelSizeX.Should().BeApproximately(1.0, 0.0001);
+        jsonResult.Value.PixelSizeY.Should().BeApproximately(1.0, 0.0001);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_RasterStoreThrows_ReturnsServerError()
+    {
+        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("Database error"));
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_NullSrid_DefaultsToWgs84()
+    {
+        SetupLayerAndRasters(srid: null);
+        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<RasterStatistics>());
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = 0, YMin = 0, XMax = 1, YMax = 1, Srid = null });
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.SpatialReference.Wkid.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_TileMetadataDisabled_OmitsTileInfoAndCache()
+    {
+        // Default (#1456-safe) contract: the ArcGIS Maps SDK for .NET native runtime
+        // reads this same descriptor from conf.json and rejects a service that
+        // advertises a cache. Tiled advertising must stay off unless opted in (#1648).
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.SingleFusedMapCache.Should().BeFalse();
+        jsonResult.Value.TileInfo.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_TileMetadataEnabled_EmitsWebMercatorTileInfo()
+    {
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext(new ImageServerTileMetadataOptions { Enabled = true });
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        var serviceInfo = jsonResult.Value!;
+
+        serviceInfo.SingleFusedMapCache.Should().BeTrue();
+        serviceInfo.TileInfo.Should().NotBeNull();
+
+        var tileInfo = serviceInfo.TileInfo!;
+        tileInfo.Rows.Should().Be(256);
+        tileInfo.Cols.Should().Be(256);
+
+        // WebMercator (Esri 102100 / EPSG 3857) spatial reference.
+        tileInfo.SpatialReference.Wkid.Should().Be(102100);
+        tileInfo.SpatialReference.LatestWkid.Should().Be(3857);
+
+        // WebMercatorQuad tiles originate at the top-left of the world extent.
+        tileInfo.Origin.X.Should().BeApproximately(-20037508.342789244, 1e-6);
+        tileInfo.Origin.Y.Should().BeApproximately(20037508.342789244, 1e-6);
+
+        // Default depth is levels 0..23 inclusive.
+        tileInfo.Lods.Should().HaveCount(24);
+        tileInfo.Lods[0].Level.Should().Be(0);
+        tileInfo.Lods[0].Scale.Should().BeApproximately(591657527.591555, 1e-3);
+        tileInfo.Lods[0].Resolution.Should().BeApproximately(156543.03392804097, 1e-6);
+
+        // Each successive level halves the scale denominator and resolution.
+        tileInfo.Lods[1].Scale.Should().BeApproximately(591657527.591555 / 2.0, 1e-3);
+        tileInfo.Dpi.Should().Be(96);
+        foreach (var lod in tileInfo.Lods)
+        {
+            lod.Scale.Should().BeApproximately(lod.Resolution * tileInfo.Dpi * 39.37, 1e-6);
+        }
+        tileInfo.Lods[23].Level.Should().Be(23);
+        tileInfo.Lods[23].Resolution.Should()
+            .BeApproximately(156543.03392804097 / (1L << 23), 1e-9);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_TileMetadataEnabled_HonorsMaxLevel()
+    {
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext(
+            new ImageServerTileMetadataOptions { Enabled = true, MaxLevel = 18 });
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        var tileInfo = jsonResult.Value!.TileInfo;
+        tileInfo.Should().NotBeNull();
+        tileInfo!.Lods.Should().HaveCount(19);
+        tileInfo.Lods[^1].Level.Should().Be(18);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_RestCatalogFields_MatchSoapGetFieldsAndAllowedFields()
+    {
+        // ArcPy lists and cursors an ImageServer catalog from SOAP GetFields /
+        // AllowedFields; they must describe the same catalog REST advertises.
+        SetupSuccessfulMetadata();
+
+        var result = await _handler.GetServiceInfoAsync(CreateImageServerContext(), 1);
+
+        var restFields = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>()
+            .Which.Value!.Fields!;
+        var soapFields = ImageServerSoapEndpoints.BuildFields(4326)
+            .Descendants("Field")
+            .Select(static field => (
+                Name: field.Element("Name")!.Value,
+                Type: field.Element("Type")!.Value,
+                HasGeometryDef: field.Element("GeometryDef") is not null))
+            .ToArray();
+
+        soapFields.Where(static field => field.Name != "Shape").Select(static field => (field.Name, field.Type))
+            .Should().Equal(restFields.Select(static field => (field.Name, field.Type)));
+        soapFields.Select(static field => field.Name).Take(2).Should().Equal("OBJECTID", "Shape");
+        soapFields.Should().ContainSingle(static field => field.HasGeometryDef)
+            .Which.Should().Be(("Shape", "esriFieldTypeGeometry", true));
+        ImageServerSoapEndpoints.SoapCatalogFieldNames()
+            .Should().Equal(soapFields.Select(static field => field.Name));
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_TemporalHintsAbsentFromCatalog_AreNotAdvertised()
+    {
+        var handler = CreateHandler(new MetadataV2ResourceTemporal
+        {
+            StartTimeField = "timestamp",
+            EndTimeField = "event_date",
+        });
+        SetupSuccessfulMetadata();
+
+        var result = await handler.GetServiceInfoAsync(CreateImageServerContext(), 1);
+
+        result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>()
+            .Which.Value!.TimeInfo.Should().BeNull(
+                "timestamp/event_date are not raster-catalog fields and no raster has an acquisition date");
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_CatalogTemporalHints_AreAdvertisedByCanonicalName()
+    {
+        var handler = CreateHandler(new MetadataV2ResourceTemporal
+        {
+            StartTimeField = "acquisitiondate",
+            EndTimeField = "timestamp",
+        });
+        SetupSuccessfulMetadata();
+
+        var result = await handler.GetServiceInfoAsync(CreateImageServerContext(), 1);
+
+        var timeInfo = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>()
+            .Which.Value!.TimeInfo;
+        timeInfo.Should().NotBeNull();
+        timeInfo!.StartTimeField.Should().Be("AcquisitionDate");
+        timeInfo.EndTimeField.Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData("timestamp", "event_date", null, false, null, null, null)]
+    [InlineData("timestamp", "event_date", null, true, "AcquisitionDate", null, null)]
+    [InlineData("Name", "BandCount", "name", false, null, null, null)]
+    [InlineData("ACQUISITIONDATE", "createdat", "name", false, "AcquisitionDate", "CreatedAt", "Name")]
+    [InlineData(null, null, null, true, "AcquisitionDate", null, null)]
+    [InlineData("created_at", "acquisition_date", null, false, "CreatedAt", null, null)]
+    [InlineData("timestamp", "CreatedAt", "Name", false, null, null, null)]
+    [InlineData("timestamp", "CreatedAt", null, true, "AcquisitionDate", "CreatedAt", null)]
+    [Operation(Operations.GetServiceInfo)]
+    public void CatalogTime_AdvertisesOnlyFieldsPresentInSoapAndRestCatalog(
+        string? startHint,
+        string? endHint,
+        string? trackHint,
+        bool hasAcquisitionDate,
+        string? expectedStart,
+        string? expectedEnd,
+        string? expectedTrack)
+    {
+        // SOAP GetServiceInfo (StartTimeFieldName/EndTimeFieldName) and REST timeInfo
+        // both resolve through ImageServerCatalogTime.
+        var raster = CreateTestRasterInfo() with
+        {
+            AcquisitionDate = hasAcquisitionDate ? DateTimeOffset.UnixEpoch.AddDays(1) : null,
+        };
+
+        var time = ImageServerCatalogTime.Resolve((startHint, endHint, trackHint), [raster]);
+
+        if (expectedStart is null && expectedEnd is null)
+        {
+            time.Should().BeNull();
+            return;
+        }
+
+        time.Should().NotBeNull();
+        time!.StartTimeField.Should().Be(expectedStart);
+        time.EndTimeField.Should().Be(expectedEnd);
+        time.TrackIdField.Should().Be(expectedTrack);
+        var soapFields = ImageServerSoapEndpoints.SoapCatalogFieldNames().ToArray();
+        new[] { time.StartTimeField, time.EndTimeField, time.TrackIdField }
+            .Where(static name => name is not null)
+            .Should().OnlyContain(name => soapFields.Contains(name));
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void SoapCatalogFields_ApplyCallerFieldMasksLikeCatalogQuery()
+    {
+        // ImageServerCatalogQueryHandler drops masked fields from the RecordSet
+        // schema; SOAP GetFields/AllowedFields must not advertise them either.
+        ImmutableArray<string> masked = ["centerx", "AcquisitionDate"];
+
+        var soapNames = ImageServerSoapEndpoints.BuildFields(4326, masked)
+            .Descendants("Field")
+            .Select(static field => field.Element("Name")!.Value)
+            .ToArray();
+
+        soapNames.Should().NotContain(["CenterX", "AcquisitionDate"]);
+        soapNames.Where(static name => name != "Shape").Should().Equal(
+            ImageServerCatalogQueryHandler.BuildCatalogFields(maskedFields: masked).Select(static field => field.Name));
+        ImageServerSoapEndpoints.SoapCatalogFieldNames(masked).Should().Equal(soapNames);
+        ImageServerSoapEndpoints.SoapCatalogFieldNames().Should().Contain(["CenterX", "AcquisitionDate"]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void CatalogTime_MaskedStartField_IsNotAdvertised()
+    {
+        var raster = CreateTestRasterInfo() with { AcquisitionDate = DateTimeOffset.UnixEpoch.AddDays(1) };
+
+        ImageServerCatalogTime.Resolve(("AcquisitionDate", null, null), [raster], ["acquisitiondate"])
+            .Should().BeNull("a masked field is absent from the advertised SOAP catalog fields");
+        var time = ImageServerCatalogTime.Resolve(("AcquisitionDate", "CreatedAt", null), [raster], ["CreatedAt"]);
+        time.Should().NotBeNull();
+        time!.StartTimeField.Should().Be("AcquisitionDate");
+        time.EndTimeField.Should().BeNull("CreatedAt is masked for this caller");
+    }
+
+    private ImageServerMetadataHandler CreateHandler(MetadataV2ResourceTemporal temporal)
+        => new(
+            new TestMetadataV2GraphBuilder()
+                .AddResource("resource-1", "test-layer", MetadataV2ResourceType.RasterDataset, temporal: temporal)
+                .AddService("service-1", "image-svc-1", protocols: [ServiceProtocols.ImageServer])
+                .AddPublication(
+                    "publication-1",
+                    "service-1",
+                    "resource-1",
+                    layerIndex: 1,
+                    serviceLocalId: "test-layer",
+                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                .BuildProvider(),
+            _rasterStore,
+            _multidimensionalInfoBuilder,
+            NullLogger<ImageServerMetadataHandler>.Instance);
+
+    private DefaultHttpContext CreateImageServerContext(
+        ImageServerTileMetadataOptions? tileMetadataOptions = null)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton(_rasterStore);
+        services.AddOptions();
+        services.Configure<ImageServerTileMetadataOptions>(options =>
+        {
+            var source = tileMetadataOptions ?? new ImageServerTileMetadataOptions();
+            options.Enabled = source.Enabled;
+            options.MaxLevel = source.MaxLevel;
+        });
+
+        var context = new DefaultHttpContext();
+        context.RequestServices = services.BuildServiceProvider();
+        context.Request.Path = "/rest/services/1/ImageServer";
+        context.Response.Body = new MemoryStream();
+        return context;
+    }
+
+    private void SetupLayerAndRasters(int? srid = 4326)
+    {
+        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
+            .Returns(new[] { CreateTestRasterInfo(srid: srid) });
+    }
+
+    private void SetupSuccessfulMetadata()
+    {
+        SetupLayerAndRasters();
+        _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new[]
+            {
+                new RasterStatistics { Band = 1, MinValue = 0, MaxValue = 255, MeanValue = 128, StandardDeviation = 45 },
+                new RasterStatistics { Band = 2, MinValue = 0, MaxValue = 255, MeanValue = 100, StandardDeviation = 50 },
+                new RasterStatistics { Band = 3, MinValue = 0, MaxValue = 255, MeanValue = 80, StandardDeviation = 55 }
+            });
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(CreateTestExtent());
+    }
+
+    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
+        => new TestMetadataV2GraphBuilder()
+            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                $"publication-{layerIndex}",
+                $"service-{layerIndex}",
+                $"resource-{layerIndex}",
+                layerIndex: layerIndex,
+                serviceLocalId: "test-layer",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
+
+    private static RasterInfo CreateTestRasterInfo(int? srid = 4326) => new()
+    {
+        Id = 100,
+        LayerId = 1,
+        Name = "test-raster",
+        Width = 1024,
+        Height = 1024,
+        BandCount = 3,
+        PixelType = "8BUI",
+        Srid = srid,
+        GeoTransform = [0, 1, 0, 0, 0, -1],
+        Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
+        CreatedAt = DateTime.UtcNow
+    };
+
+    private static RasterExtent CreateTestExtent() => new()
+    {
+        XMin = -180,
+        YMin = -90,
+        XMax = 180,
+        YMax = 90,
+        Srid = 4326
+    };
+}

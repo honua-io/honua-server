@@ -18,6 +18,10 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         "analytics.content|analysis-content|POST /api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/preview",
         "analytics.content|analysis-content|GET /api/v1/analysis/artifacts/{artifactId}",
         "analytics.density|feature-server|POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity",
+        "analytics.h3|ogc-api-features|GET /ogc/features/collections/{collectionId}/h3",
+        "analytics.h3|feature-server|GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryH3",
+        "analytics.h3|feature-server|POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryH3",
+        "analytics.h3|ogc-api-features|GET /tiles/{layerId}/h3/{z}/{x}/{y}.mvt",
         "analytics.line-of-sight|elevation-query-profile|POST /elevation/{datasetId}/line-of-sight",
         "analytics.slice|elevation-query-profile|POST /elevation/{datasetId}/slice",
         "analytics.spatial-join|feature-server|POST /rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin",
@@ -45,6 +49,11 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         "serve.sensorthings|sensorthings-1.1|GET /sta/v1.1/Things",
         "serve.sensorthings|sensorthings-1.1|POST /sta/v1.1/Observations",
         "serve.wfs|wfs-2.0|POST /wfs",
+        "serve.wps|wps-2.0.2|GET /wps?request=GetCapabilities",
+        "serve.wps|wps-2.0.2|GET /wps?request=DescribeProcess",
+        "serve.wps|wps-2.0.2|POST /wps",
+        "serve.wps|wps-2.0.2|GET /wps?request=GetStatus",
+        "serve.wps|wps-2.0.2|GET /wps?request=GetResult",
         "styling.auto-suggest|control-plane-admin|POST /api/v1/admin/metadata/layers/{layerId}/suggest-style",
         "temporal.extent-discovery|feature-server|GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent",
         "temporal.filtering|feature-server|GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?time={time}",
@@ -70,8 +79,8 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         Assert.Equal("https://github.com/honua-io/honua-server/issues/3388", root.GetProperty("tracking_issue").GetString());
 
         var assignments = root.GetProperty("assignments").EnumerateArray().ToArray();
-        Assert.Equal(42, assignments.Length);
-        Assert.Equal(23, assignments.Select(row => row.GetProperty("capability_key").GetString()).Distinct().Count());
+        Assert.Equal(51, assignments.Length);
+        Assert.Equal(25, assignments.Select(row => row.GetProperty("capability_key").GetString()).Distinct().Count());
 
         using var featureCatalog = JsonDocument.Parse(File.ReadAllText(
             ArchitectureTestHelpers.CombinePath(repositoryRoot, "docs", "gis", "data", "feature-catalog.json")));

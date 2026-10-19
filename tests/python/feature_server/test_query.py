@@ -18,10 +18,9 @@ Tests cover:
 
 import json
 
-import pytest
 import httpx
+import pytest
 from shapely.geometry import shape
-
 from shared.geometry import GeometryGenerator
 from shared.geoservices import assert_geoservices_error
 
@@ -97,152 +96,178 @@ class TestQueryBasic:
         assert_geoservices_error(response, body_codes={400, 404})
 
 
+# Authored independently of query responses: contrast both predicate outcomes,
+# numeric boundaries, NULL versus empty text, and SQL three-valued logic.
+WHERE_ROWS = {'a': {'name': 'test1', 'count': -5, 'description': None},
+ 'b': {'name': 'test2', 'count': 0, 'description': 'present'},
+ 'c': {'name': 'excluded', 'count': 1, 'description': ''},
+ 'd': {'name': 'other', 'count': 100, 'description': 'other'},
+ 'e': {'name': None, 'count': 150, 'description': None},
+ 'f': {'name': 'test99', 'count': 101, 'description': 'present'}}
+
+WHERE_CASES = {'test_query_where_equals': ("name = 'test1'", ('a',)),
+ 'test_query_where_not_equals': ("name <> 'excluded'", ('a', 'b', 'd', 'f')),
+ 'test_query_where_less_than': ('count < 100', ('a', 'b', 'c')),
+ 'test_query_where_greater_than': ('count > 0', ('c', 'd', 'e', 'f')),
+ 'test_query_where_like': ("name LIKE 'test%'", ('a', 'b', 'f')),
+ 'test_query_where_in': ("name IN ('test1', 'test2')", ('a', 'b')),
+ 'test_query_where_between': ('count BETWEEN 1 AND 100', ('c', 'd')),
+ 'test_query_where_is_null': ('description IS NULL', ('a', 'e')),
+ 'test_query_where_and': ('count > 0 AND name IS NOT NULL', ('c', 'd', 'f')),
+ 'test_query_where_or': ("name = 'test1' OR name = 'excluded'", ('a', 'c')),
+ 'test_query_where_not': ("NOT (name = 'excluded')", ('a', 'b', 'd', 'f')),
+ 'test_query_where_parentheses': ("(name = 'test1' OR name = 'excluded') AND count > 0",
+                                  ('c',))}
+
+
+@pytest.fixture
+def where_cohort(test_data, test_layer_id):
+    """Add the small authored cohort to this test's existing worker schema."""
+    cohort = {}
+    try:
+        for key, attributes in WHERE_ROWS.items():
+            [(object_id,)] = test_data.fixture.execute_returning(
+                "INSERT INTO features (layer_id, geometry, attributes) "
+                "VALUES (%s, ST_SetSRID(ST_MakePoint(-122.4, 37.7), 4326), %s::jsonb) "
+                "RETURNING objectid",
+                test_data.schema, (test_layer_id, json.dumps(attributes)),
+            )
+            cohort[key] = {"objectid": object_id, **attributes}
+        yield cohort
+    finally:
+        if cohort:
+            test_data.fixture.execute(
+                "DELETE FROM features WHERE layer_id = %s AND objectid = ANY(%s)",
+                test_data.schema, (test_layer_id, [row["objectid"] for row in cohort.values()]),
+            )
+
+
+def assert_where_probe(http_client, service_id, layer_id, cohort, case_name):
+    """Exercise the real HTTP probe and require the exact independently authored rows."""
+    predicate, expected_keys = WHERE_CASES[case_name]
+    object_ids = ",".join(str(row["objectid"]) for row in cohort.values())
+    response = http_client.get(
+        f"/rest/services/{service_id}/FeatureServer/{layer_id}/query",
+        params={"where": f"objectid IN ({object_ids}) AND ({predicate})", "f": "json",
+                "outFields": "objectid,name,count,description", "returnGeometry": "false"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body, dict) and "error" not in body, body
+    assert body.get("exceededTransferLimit", False) is False, body
+    features = body.get("features")
+    assert isinstance(features, list) and len(features) == len(expected_keys), body
+    actual = {}
+    for feature in features:
+        assert isinstance(feature, dict) and isinstance(feature.get("attributes"), dict), feature
+        attributes = feature["attributes"]
+        object_id = attributes.get("objectid")
+        assert type(object_id) is int and object_id not in actual, attributes
+        assert all(field in attributes for field in ("name", "count", "description")), attributes
+        assert type(attributes["count"]) is int, attributes
+        actual[object_id] = {field: attributes[field] for field in ("objectid", "name", "count", "description")}
+    expected = {cohort[key]["objectid"]: cohort[key] for key in expected_keys}
+    assert actual == expected, {"expected": expected, "actual": actual}
+
+
 class TestQueryWhereClause:
-    """Tests for WHERE clause filtering."""
+    """Exact WHERE results for authored rows, never HTTP status alone."""
 
     @pytest.mark.integration
     @pytest.mark.featureserver
     def test_query_where_equals(
-        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int, where_cohort
     ):
-        """Query with equality comparison."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "name = 'test'", "f": "json"},
-        )
-        assert response.status_code == 200
+        assert_where_probe(http_client, test_service_id, test_layer_id, where_cohort,
+                           "test_query_where_equals")
 
     @pytest.mark.integration
     @pytest.mark.featureserver
     def test_query_where_not_equals(
-        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int, where_cohort
     ):
-        """Query with not-equals comparison."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "name <> 'excluded'", "f": "json"},
-        )
-        assert response.status_code == 200
+        assert_where_probe(http_client, test_service_id, test_layer_id, where_cohort,
+                           "test_query_where_not_equals")
 
     @pytest.mark.integration
     @pytest.mark.featureserver
     def test_query_where_less_than(
-        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int, where_cohort
     ):
-        """Query with less-than comparison."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "count < 100", "f": "json"},
-        )
-        assert response.status_code == 200
+        assert_where_probe(http_client, test_service_id, test_layer_id, where_cohort,
+                           "test_query_where_less_than")
 
     @pytest.mark.integration
     @pytest.mark.featureserver
     def test_query_where_greater_than(
-        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int, where_cohort
     ):
-        """Query with greater-than comparison."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "count > 0", "f": "json"},
-        )
-        assert response.status_code == 200
+        assert_where_probe(http_client, test_service_id, test_layer_id, where_cohort,
+                           "test_query_where_greater_than")
 
     @pytest.mark.integration
     @pytest.mark.featureserver
     def test_query_where_like(
-        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int, where_cohort
     ):
-        """Query with LIKE pattern matching."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "name LIKE 'test%'", "f": "json"},
-        )
-        assert response.status_code == 200
+        assert_where_probe(http_client, test_service_id, test_layer_id, where_cohort,
+                           "test_query_where_like")
 
     @pytest.mark.integration
     @pytest.mark.featureserver
     def test_query_where_in(
-        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int, where_cohort
     ):
-        """Query with IN operator."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "name IN ('test1', 'test2')", "f": "json"},
-        )
-        assert response.status_code == 200
+        assert_where_probe(http_client, test_service_id, test_layer_id, where_cohort,
+                           "test_query_where_in")
 
     @pytest.mark.integration
     @pytest.mark.featureserver
     def test_query_where_between(
-        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int, where_cohort
     ):
-        """Query with BETWEEN operator."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "count BETWEEN 1 AND 100", "f": "json"},
-        )
-        assert response.status_code == 200
+        assert_where_probe(http_client, test_service_id, test_layer_id, where_cohort,
+                           "test_query_where_between")
 
     @pytest.mark.integration
     @pytest.mark.featureserver
     def test_query_where_is_null(
-        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int, where_cohort
     ):
-        """Query with IS NULL."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "description IS NULL", "f": "json"},
-        )
-        assert response.status_code == 200
+        assert_where_probe(http_client, test_service_id, test_layer_id, where_cohort,
+                           "test_query_where_is_null")
 
     @pytest.mark.integration
     @pytest.mark.featureserver
     def test_query_where_and(
-        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int, where_cohort
     ):
-        """Query with AND logical operator."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "count > 0 AND name IS NOT NULL", "f": "json"},
-        )
-        assert response.status_code == 200
+        assert_where_probe(http_client, test_service_id, test_layer_id, where_cohort,
+                           "test_query_where_and")
 
     @pytest.mark.integration
     @pytest.mark.featureserver
     def test_query_where_or(
-        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int, where_cohort
     ):
-        """Query with OR logical operator."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "name = 'a' OR name = 'b'", "f": "json"},
-        )
-        assert response.status_code == 200
+        assert_where_probe(http_client, test_service_id, test_layer_id, where_cohort,
+                           "test_query_where_or")
 
     @pytest.mark.integration
     @pytest.mark.featureserver
     def test_query_where_not(
-        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int, where_cohort
     ):
-        """Query with NOT logical operator."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "NOT (name = 'excluded')", "f": "json"},
-        )
-        assert response.status_code == 200
+        assert_where_probe(http_client, test_service_id, test_layer_id, where_cohort,
+                           "test_query_where_not")
 
     @pytest.mark.integration
     @pytest.mark.featureserver
     def test_query_where_parentheses(
-        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int
+        self, http_client: httpx.Client, test_service_id: str, test_layer_id: int, where_cohort
     ):
-        """Query with nested parentheses."""
-        response = http_client.get(
-            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
-            params={"where": "(name = 'a' OR name = 'b') AND count > 0", "f": "json"},
-        )
-        assert response.status_code == 200
+        assert_where_probe(http_client, test_service_id, test_layer_id, where_cohort,
+                           "test_query_where_parentheses")
 
     @pytest.mark.integration
     @pytest.mark.featureserver

@@ -1,12 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
@@ -54,7 +57,9 @@ internal static class OpsObservabilityEndpoints
             .WithDisplayName("Propose Ops Finding Action")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<OpsFindingProposeResponse>()
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapGet("/autonomy/policies", (Delegate)HandleListAutonomyPolicies)
             .WithDisplayName("List Ops Autonomy Policies")
@@ -145,10 +150,30 @@ internal static class OpsObservabilityEndpoints
 
     private static async Task<IResult> HandleProposeFinding(
         string findingId,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] OpsFindingProposeRequest? request,
         [FromServices] IOpsFindingsService service,
         HttpContext context)
     {
-        var result = await service.ProposeAsync(findingId, context.RequestAborted).ConfigureAwait(false);
+        OpsFindingProposalResult result;
+        try
+        {
+            var root = RootProvisioningOperationIds.Normalize(request?.RootProvisioningOperationId);
+            result = await service.ProposeAsync(findingId, root, context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (ArgumentException ex) when (ex is not ArgumentNullException)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                ex.Message);
+        }
+        catch (ResourceConflictException ex)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
+                ex.Message);
+        }
 
         if (result.Status is OpsFindingProposalStatus.FindingNotFound or OpsFindingProposalStatus.NoRecommendedAction)
         {
@@ -173,17 +198,20 @@ internal static class OpsObservabilityEndpoints
                     ?? "The control-plane operation gateway is unavailable; the recommended action cannot be proposed.");
         }
 
-        var response = new OpsFindingProposeResponse
-        {
-            FindingId = result.FindingId,
-            Status = result.Status.ToString(),
-            ProposalId = result.ProposalId,
-            ExecutionOperationId = result.ExecutionOperationId,
-            Message = result.Message,
-        };
-
-        return Results.Json(response, OpsObservabilityJsonContext.Default.OpsFindingProposeResponse);
+        return Results.Json(
+            ToProposeResponse(result),
+            OpsObservabilityJsonContext.Default.OpsFindingProposeResponse);
     }
+
+    internal static OpsFindingProposeResponse ToProposeResponse(OpsFindingProposalResult result) => new()
+    {
+        FindingId = result.FindingId,
+        Status = result.Status.ToString(),
+        ProposalId = result.ProposalId,
+        ExecutionOperationId = result.ExecutionOperationId,
+        Message = result.Message,
+        RootProvisioningOperationId = result.RootProvisioningOperationId,
+    };
 
     private static async Task<IResult> HandleListAutonomyPolicies(
         [FromServices] IOptionsMonitor<OpsAutonomyOptions> options,

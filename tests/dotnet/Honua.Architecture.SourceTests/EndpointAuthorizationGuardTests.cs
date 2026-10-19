@@ -1,0 +1,315 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using FluentAssertions;
+using Xunit;
+
+namespace Honua.Architecture.Tests;
+
+/// <summary>
+/// Regression guard for the audit finding (#1144): every HTTP mutation
+/// endpoint declared via the minimal-API <c>MapPost/MapPut/MapDelete/MapPatch</c>
+/// surface under <c>src/Honua.Server/Features</c> must opt into an explicit
+/// authorization decision — either a <c>Require*Authorization</c>/<c>RequireAdminApiKey</c>
+/// helper on the route or its parent group, or an explicit
+/// <c>AllowAnonymous()</c> when the surface is intentionally public (read-only
+/// OGC/REST POST mirrors, signed-token issuers, etc.).
+/// </summary>
+[Trait("Category", "Architecture")]
+public sealed class EndpointAuthorizationGuardTests
+{
+    private static readonly string[] FeaturesRelativePaths = ["src/Honua.Server/Features", "src/Honua.Ai/Features"];
+    private const string ProgramRelativePath = "src/Honua.Server/Program.cs";
+
+    private static readonly string[] AuthOptInMarkers =
+    {
+        "RequireAuthorization",
+        "RequireAdminAuthorization",
+        // Narrow operation-approval policy (honua-server#3365): admits only full administrators
+        // or scoped admin API keys carrying the explicit admin:approve grant.
+        "RequireAdminApproveAuthorization",
+        "RequireAdminApiKey",
+        "RequirePermission",
+        "RequireRole",
+        "RequireScope",
+        "AllowAnonymous",
+        // Temporal history (honua-server#1166) auth helpers wrap RequireAuthorization with a distinct
+        // policy per surface (history read, diff read, rollback execute); recognize them explicitly.
+        "RequireTemporalHistoryRead",
+        "RequireTemporalDiffRead",
+        "RequireTemporalRollbackExecute",
+        // Studio lifecycle policy: method-scoped admin grants plus flag-gated end-user ownership
+        // checks performed by StudioEndpointAuthorization in each handler.
+        "RequireStudioLifecycleAuthorization",
+        // Studio AI proxy policy: composes the lifecycle flag gate with the stricter interactive
+        // principal boundary used before any model-provider call.
+        "RequireStudioAiProxyAuthorization",
+        // Read-only ops-reader policy (A12): a method-aware Require*Authorization helper that admits
+        // ops:read/admin for safe reads while still requiring full admin write for mutating routes.
+        "RequireOpsReadAuthorization",
+        // Controlled-conformance mutation policy (honua-server#3038): a narrowly scoped write
+        // credential for the scheduled SDK conformance runner, additionally gated per run by an
+        // ownership token checked inside each handler.
+        "RequireConformanceMutateAuthorization",
+    };
+
+    private static readonly Regex MapMutationRegex = new(
+        @"\.(MapPost|MapPut|MapDelete|MapPatch)\s*\(\s*(?:""(?<route>[^""]*)""|@""(?<route2>[^""]*)"")",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex MapGroupRegex = new(
+        @"\bMapGroup\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly char[] StatementBoundaryChars = { ';', '{', '}' };
+
+    /// <summary>
+    /// Every mutation route — direct or inherited through a parent group — must
+    /// declare its authorization intent explicitly. Routes that should remain
+    /// public must opt in via <c>AllowAnonymous()</c> so reviewers can audit
+    /// the decision; routes that protect data must reference one of the
+    /// <c>Require*</c> helpers. Anything else is treated as an accidental gap.
+    /// </summary>
+    [ArchitectureTest]
+    public void EveryMutationEndpoint_HasExplicitAuthorizationDecision()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var featureRoots = FeaturesRelativePaths.Select(path => ArchitectureTestHelpers.CombinePath(repoRoot, path)).ToArray();
+        foreach (var featuresRoot in featureRoots)
+        {
+            Directory.Exists(featuresRoot).Should().BeTrue($"the audited features directory should exist at {featuresRoot}");
+        }
+
+        var gaps = new List<string>();
+
+        foreach (var file in featureRoots.SelectMany(path => Directory.EnumerateFiles(path, "*Endpoints.cs", SearchOption.AllDirectories)))
+        {
+            var raw = File.ReadAllText(file);
+            var content = StripComments(raw);
+            var groupAuth = CollectGroupAuthFlags(content);
+
+            foreach (Match match in MapMutationRegex.Matches(content))
+            {
+                var route = match.Groups["route"].Success
+                    ? match.Groups["route"].Value
+                    : match.Groups["route2"].Value;
+
+                var receiver = ExtractReceiverBefore(content, match.Index);
+                var assignedVar = ExtractAssignedVarBefore(content, match.Index);
+                var chain = ExtractFluentChain(content, match.Index);
+
+                var hasLocal = AuthOptInMarkers.Any(marker => chain.Contains(marker));
+                var hasGroup = receiver is not null
+                    && groupAuth.TryGetValue(receiver, out var flags)
+                    && flags;
+                var hasPostStatement = assignedVar is not null
+                    && HasPostStatementAuthCall(content, match.Index + chain.Length, assignedVar);
+
+                if (hasLocal || hasGroup || hasPostStatement)
+                {
+                    continue;
+                }
+
+                var lineNumber = raw[..match.Index].Count(c => c == '\n') + 1;
+                gaps.Add($"{Path.GetRelativePath(repoRoot, file)}:{lineNumber} {match.Groups[1].Value} {route}");
+            }
+        }
+
+        gaps.Should().BeEmpty(
+            "every HTTP mutation route under the canonical Server/Ai feature directories must call one of "
+            + string.Join(", ", AuthOptInMarkers)
+            + " on either the route itself or its parent group; intentionally public endpoints "
+            + "must opt in via AllowAnonymous() so the decision is visible to reviewers.");
+    }
+
+    /// <summary>
+    /// The gRPC SpecService is a mutating twin of the admin-only REST Spec surface,
+    /// so its service mapping must carry the same canonical Admin policy metadata.
+    /// </summary>
+    [ArchitectureTest]
+    public void GrpcSpecServiceMapping_RequiresCanonicalAdminAuthorization()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var programPath = ArchitectureTestHelpers.CombinePath(repoRoot, ProgramRelativePath);
+        var program = File.ReadAllText(programPath);
+
+        var authorizedMapping = new Regex(
+            @"MapGrpcService<Honua\.Server\.Features\.Spec\.HonuaSpecService>\s*\(\s*\)\s*\.RequireAdminAuthorization\s*\(\s*\)",
+            RegexOptions.CultureInvariant);
+
+        authorizedMapping.IsMatch(program).Should().BeTrue(
+            "geospatial.v1.SpecService plan/apply/cancel operations must inherit the same "
+            + "Admin authorization policy as their POST-based REST twins before handler execution");
+    }
+
+    /// <summary>
+    /// Sanity check: the audited feature surface is non-empty. Guards against a
+    /// regression where the directory moves and the scan silently passes
+    /// because no files are discovered.
+    /// </summary>
+    [ArchitectureTest]
+    public void AuditedFeaturesDirectory_ContainsEndpointFiles()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var featureRoots = FeaturesRelativePaths.Select(path => ArchitectureTestHelpers.CombinePath(repoRoot, path)).ToArray();
+        foreach (var featuresRoot in featureRoots)
+        {
+            Directory.EnumerateFiles(featuresRoot, "*Endpoints.cs", SearchOption.AllDirectories).Should().NotBeEmpty();
+        }
+
+        var fileCount = featureRoots.Sum(path => Directory.EnumerateFiles(path, "*Endpoints.cs", SearchOption.AllDirectories).Count());
+
+        fileCount.Should().BeGreaterThan(50,
+            "the architecture guard depends on scanning *Endpoints.cs files in src/Honua.Server/Features; "
+            + "a count this low usually means the directory layout changed and the regex needs to follow.");
+    }
+
+    private static string StripComments(string source)
+    {
+        // Strip C# line and block comments so accidental matches inside
+        // documentation comments do not skew the scan.
+        var noBlockComments = Regex.Replace(source, "/\\*.*?\\*/", string.Empty, RegexOptions.Singleline);
+        return Regex.Replace(noBlockComments, "//[^\n]*", string.Empty);
+    }
+
+    private static Dictionary<string, bool> CollectGroupAuthFlags(string content)
+    {
+        // Map "<variable assigned to a MapGroup(...) call>" => "does the group's
+        // fluent chain include any auth-opt-in marker?".
+        var groups = new Dictionary<string, bool>(System.StringComparer.Ordinal);
+
+        foreach (Match match in MapGroupRegex.Matches(content))
+        {
+            var statementStart = FindStatementStart(content, match.Index);
+            var statementEnd = FindStatementEnd(content, match.Index);
+            if (statementEnd <= statementStart)
+            {
+                continue;
+            }
+
+            var statement = content[statementStart..statementEnd];
+            var assignment = Regex.Match(
+                statement,
+                @"(?:var\s+)?(?<var>\w+)\s*=\s*[\w\.]*\s*\.?\s*MapGroup\s*\(",
+                RegexOptions.CultureInvariant);
+            if (!assignment.Success)
+            {
+                continue;
+            }
+
+            var variableName = assignment.Groups["var"].Value;
+            var hasAuth = AuthOptInMarkers.Any(marker => statement.Contains(marker));
+            groups[variableName] = hasAuth;
+        }
+
+        return groups;
+    }
+
+    private static string? ExtractReceiverBefore(string content, int matchIndex)
+    {
+        // The receiver of `.MapPost("/route", ...)` is the identifier
+        // immediately to the left of the dot. That identifier is what binds
+        // the route to a route group (or `endpoints` for the root builder).
+        var slice = content[..matchIndex];
+        var trailing = Regex.Match(slice, @"(?<name>\w+)\s*$", RegexOptions.CultureInvariant);
+        return trailing.Success ? trailing.Groups["name"].Value : null;
+    }
+
+    private static string? ExtractAssignedVarBefore(string content, int matchIndex)
+    {
+        // Recognise `var X = receiver.MapPost(...)` so we can pick up
+        // `X.AllowAnonymous();` that follows the statement.
+        var lineStart = content.LastIndexOfAny(StatementBoundaryChars, matchIndex - 1);
+        if (lineStart < 0)
+        {
+            lineStart = 0;
+        }
+        else
+        {
+            lineStart++;
+        }
+
+        var prefix = content[lineStart..matchIndex];
+        var assignment = Regex.Match(
+            prefix.Replace('\n', ' '),
+            @"(?:var\s+)?(?<var>\w+)\s*=\s*[\w\.]*\s*$",
+            RegexOptions.CultureInvariant);
+        return assignment.Success ? assignment.Groups["var"].Value : null;
+    }
+
+    private static string ExtractFluentChain(string content, int matchIndex)
+    {
+        // Walk forward from the MapPost/MapPut/etc. call until the statement
+        // terminator at parenthesis depth zero. That delimits the full
+        // fluent-builder chain attached to this route.
+        var depth = 0;
+        for (var i = matchIndex; i < content.Length; i++)
+        {
+            var ch = content[i];
+            if (ch == '(')
+            {
+                depth++;
+            }
+            else if (ch == ')')
+            {
+                depth--;
+            }
+            else if (ch == ';' && depth <= 0)
+            {
+                return content[matchIndex..i];
+            }
+        }
+
+        return content[matchIndex..];
+    }
+
+    private static bool HasPostStatementAuthCall(string content, int chainEnd, string assignedVariable)
+    {
+        // Catch the pattern used in some feature files where the route is
+        // captured into a variable and a follow-up statement attaches
+        // authorization, e.g. `var route = endpoints.MapPost(...); route.AllowAnonymous();`.
+        var tail = content[chainEnd..];
+        var pattern = new Regex(
+            @"\b" + Regex.Escape(assignedVariable) + @"\s*\.\s*("
+                + string.Join("|", AuthOptInMarkers.Select(Regex.Escape))
+                + @")\b",
+            RegexOptions.CultureInvariant);
+        return pattern.IsMatch(tail);
+    }
+
+    private static int FindStatementStart(string content, int index)
+    {
+        var i = index;
+        while (i > 0 && content[i - 1] != ';' && content[i - 1] != '{' && content[i - 1] != '}')
+        {
+            i--;
+        }
+        return i;
+    }
+
+    private static int FindStatementEnd(string content, int index)
+    {
+        var depth = 0;
+        for (var i = index; i < content.Length; i++)
+        {
+            var ch = content[i];
+            if (ch == '(')
+            {
+                depth++;
+            }
+            else if (ch == ')')
+            {
+                depth--;
+            }
+            else if (ch == ';' && depth <= 0)
+            {
+                return i;
+            }
+        }
+        return content.Length;
+    }
+}

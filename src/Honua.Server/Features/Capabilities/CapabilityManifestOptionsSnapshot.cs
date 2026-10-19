@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -47,8 +48,13 @@ internal sealed class CapabilityManifestOptionsSnapshot
         DeploymentIdentity deploymentIdentity,
         IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null,
         IExecutionJobStore? executionJobStore = null,
-        IJobQueue? jobQueue = null)
+        IJobQueue? jobQueue = null,
+        Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? backgroundImportRunner = null,
+        IOptions<ImportObjectStoreOptions>? objectStoreOptions = null)
     {
+        BackgroundImportRunner = backgroundImportRunner;
+        ObjectStoreConfigured = objectStoreOptions?.Value.AllowedBuckets?
+            .Any(static bucket => !string.IsNullOrWhiteSpace(bucket)) == true;
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
         ArgumentNullException.ThrowIfNull(eventOptions);
@@ -93,6 +99,15 @@ internal sealed class CapabilityManifestOptionsSnapshot
             EnabledCapabilities = deploymentProfile.EnabledCapabilities.ToArray()
         };
     }
+
+    /// <summary>
+    /// The background-import runner resolved at composition (honua-server#5916); null when no
+    /// import job service is composed.
+    /// </summary>
+    public Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? BackgroundImportRunner { get; }
+
+    /// <summary>True when <c>Import:ObjectStore:AllowedBuckets</c> names at least one bucket.</summary>
+    public bool ObjectStoreConfigured { get; }
 
     public LimitsOptions Limits { get; }
 

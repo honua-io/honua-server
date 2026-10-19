@@ -55,11 +55,40 @@ appearing there is not a statement that it is generally available; `preview` and
 
 ## What is in the bundle
 
+The [GIS domain language](../concepts/domain/README.md) and [workflow contracts](../guides/workflows/README.md) extend this same bundle with common phrases, explicit ambiguities, typed composition, effect boundaries, recovery, and relevant interface links. They are shared human and agent documentation, not a separate test vocabulary. Agent indexes and compact context are generated views of these pages; full explanations remain in Markdown.
+
 Every page in the table of contents is a published concept. Dated evidence,
 status snapshots and build mechanics are kept out of the bundle deliberately, so
 a page you can reach from here is documentation and not a report.
 
 ## Where to go next
+
+### Agent graph and context
+
+Run these commands from the repository root with Python 3.10 or later. First install the YAML reader into your active Python environment with `python -m pip install -r scripts/ci/okf-requirements.txt`. This dependency is shared by graph generation, OKF validation, and `llms.txt` generation; CI installs the same requirements.
+
+The derived [agent graph](domain-graph.v1.json) preserves the published OKF metadata and links each node to its human document. It includes typed workflow dependencies, semantic relations, interface references, and a content digest. Edit the Markdown sources; regenerate this view with `python scripts/ci/generate-okf-graph.py`. The documentation gate checks that the generated file is current.
+
+For a compact local context, run `python scripts/ci/generate-okf-graph.py --query "publish a layer"`. Retrieval returns lexical candidates and their direct semantic neighbors. Alias collisions remain visible: a match is not a decision about which kind of layer or publication the user intends. Read the full linked document when the compact metadata is insufficient.
+
+Interface bindings report their validation level. `documentation_reference_only` establishes a published reference, while `openapi_method_and_path` additionally checks the operation against a local OpenAPI document and records its digest. Neither validates a composed request or proves runtime support. Discover installed schemas, bind actual returned identifiers, and observe outcomes before claiming execution.
+
+Consumers should pin the source repository revision and `bundleDigest` together. Human links point to the current source branch; use the pinned revision when reproducing an earlier interpretation. The graph excludes internal evidence and private test answers, and never grants execution authority.
+
+For reproducible evaluation, also record the generated graph digest and a manifest
+of the document bytes actually made available to the worker. Verify that manifest
+inside the execution boundary before the first task. A source commit alone does
+not establish that the worker received those documents. Resolve document links
+against the pinned revision; do not silently substitute the moving branch or a
+different documentation deployment. Retrieval may select public concepts from
+this bundle, but private scenario mappings and expected outcomes stay outside the
+worker's context.
+
+Keep document-consistency checks, deterministic runtime semantic checks, and
+model goal-completion results separate. Static graph validation still reports
+`executionVerified: false`. A runtime report should bind the installed interface
+schema, candidate revision, source observations and result observations alongside
+the knowledge identity. Missing observations are not successful execution.
 
 | Page | Why |
 | --- | --- |

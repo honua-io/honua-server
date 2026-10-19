@@ -4,14 +4,11 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Internal;
-using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
@@ -28,7 +25,6 @@ namespace Honua.Core.Features.Migration.Services;
 /// </summary>
 public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportService
 {
-    private const string DisallowedNetworkAddressMessage = "OGC API Features URL resolves to a disallowed network address.";
     private const int MaxJsonDocumentRedirects = 5;
     private const int DefaultPageSize = 500;
     private const int DefaultTimeoutSeconds = 300;
@@ -36,6 +32,14 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
     private const int MaxIdentifierLength = 63;
 
     private static readonly AsyncLocal<bool> UnsafeLocalUrlsAllowed = new();
+
+    private static readonly MigrationServiceUrlPolicy ServiceUrlPolicy = new(
+        "OGC API Features URL must be a valid HTTP or HTTPS URL.",
+        "OGC API Features URL must be a valid HTTPS URL.",
+        "OGC API Features URL must not include embedded credentials.",
+        "OGC API Features URL resolves to a disallowed network address.",
+        "Unable to establish a connection to the OGC API Features host.");
+
 
     private readonly HttpClient _httpClient;
     private readonly IOgcApiFeaturesCollectionSink _sink;
@@ -76,7 +80,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             AllowAutoRedirect = false,
             MaxConnectionsPerServer = 16,
             ConnectCallback = (context, cancellationToken) =>
-                ConnectWithPinnedDnsAsync(context, resolver, UnsafeLocalUrlsAllowed.Value, cancellationToken)
+                MigrationPinnedDns.ConnectAsync(context, resolver, UnsafeLocalUrlsAllowed.Value, ServiceUrlPolicy, cancellationToken)
         };
     }
 
@@ -161,7 +165,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         Uri serviceUri;
         try
         {
-            serviceUri = ValidateServiceUri(request.ServiceUrl, request.AllowUnsafeLocalUrls);
+            serviceUri = MigrationPinnedDns.ValidateServiceUri(request.ServiceUrl, request.AllowUnsafeLocalUrls, ServiceUrlPolicy);
         }
         catch (HttpRequestException ex)
         {
@@ -175,11 +179,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
 
         try
         {
-            _ = await ResolveAllowedAddressesAsync(
-                    serviceUri.DnsSafeHost,
-                    _hostAddressResolver,
-                    request.AllowUnsafeLocalUrls,
-                    cancellationToken)
+            _ = await MigrationPinnedDns.ResolveAllowedAddressesAsync(serviceUri.DnsSafeHost, _hostAddressResolver, request.AllowUnsafeLocalUrls, ServiceUrlPolicy, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
@@ -421,6 +421,11 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                 stopwatch.Elapsed,
                 target: $"{schema}.{table}",
                 warnings: warnings);
+        }
+        catch (ImportTableOwnershipException)
+        {
+            return Failure(request, ImportTableOwnershipException.CreateSafeMessage($"{schema}.{table}"),
+                ImportTableOwnershipException.Code, stopwatch.Elapsed, target: $"{schema}.{table}", warnings: warnings);
         }
         catch (Exception ex) when (IsSinkFailure(ex))
         {
@@ -798,8 +803,8 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                     throw new HttpRequestException("OGC API Features endpoint returned too many redirects.");
                 }
 
-                var redirectUri = ResolveRedirectUri(requestUri, response.Headers.Location);
-                if (redirectUri == null || !IsSafeRedirectUri(requestUri, redirectUri))
+                var redirectUri = MigrationPinnedDns.ResolveRedirectUri(requestUri, response.Headers.Location);
+                if (redirectUri == null || !MigrationPinnedDns.IsSafeRedirectUri(requestUri, redirectUri))
                 {
                     throw new HttpRequestException("OGC API Features endpoint returned an unsafe redirect.");
                 }
@@ -976,168 +981,6 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         return builder.Uri;
     }
 
-    private static Uri? ResolveRedirectUri(Uri requestUri, Uri? location)
-    {
-        if (location == null)
-        {
-            return null;
-        }
-
-        return location.IsAbsoluteUri
-            ? location
-            : Uri.TryCreate(requestUri, location, out var redirectUri)
-                ? redirectUri
-                : null;
-    }
-
-    private static bool IsSafeRedirectUri(Uri requestUri, Uri redirectUri)
-    {
-        if (redirectUri.Scheme != Uri.UriSchemeHttp &&
-            redirectUri.Scheme != Uri.UriSchemeHttps)
-        {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(redirectUri.UserInfo) ||
-            !string.Equals(requestUri.DnsSafeHost, redirectUri.DnsSafeHost, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (requestUri.Scheme == Uri.UriSchemeHttps && redirectUri.Scheme != Uri.UriSchemeHttps)
-        {
-            return false;
-        }
-
-        if (requestUri.Scheme == redirectUri.Scheme)
-        {
-            return requestUri.Port == redirectUri.Port;
-        }
-
-        return requestUri.Scheme == Uri.UriSchemeHttp &&
-               redirectUri.Scheme == Uri.UriSchemeHttps &&
-               IsDefaultPort(requestUri) &&
-               IsDefaultPort(redirectUri);
-    }
-
-    private static bool IsDefaultPort(Uri uri)
-    {
-        if (uri.Scheme == Uri.UriSchemeHttp)
-        {
-            return uri.Port == 80;
-        }
-
-        return uri.Scheme == Uri.UriSchemeHttps && uri.Port == 443;
-    }
-
-    private static Uri ValidateServiceUri(string serviceUrl, bool allowUnsafeLocalUrls)
-    {
-        if (!Uri.TryCreate(serviceUrl, UriKind.Absolute, out var uri) ||
-            (allowUnsafeLocalUrls
-                ? uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps
-                : uri.Scheme != Uri.UriSchemeHttps))
-        {
-            throw new HttpRequestException(allowUnsafeLocalUrls
-                ? "OGC API Features URL must be a valid HTTP or HTTPS URL."
-                : "OGC API Features URL must be a valid HTTPS URL.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
-        {
-            throw new HttpRequestException("OGC API Features URL must not include embedded credentials.");
-        }
-
-        if (!allowUnsafeLocalUrls &&
-            (uri.IsLoopback || string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
-             uri.Host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase)))
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        return uri;
-    }
-
-    private static async Task<IPAddress[]> ResolveAllowedAddressesAsync(
-        string host,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        bool allowUnsafeLocalUrls,
-        CancellationToken cancellationToken)
-    {
-        if (IPAddress.TryParse(host, out var literalAddress))
-        {
-            if (!allowUnsafeLocalUrls && OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
-            {
-                throw new HttpRequestException(DisallowedNetworkAddressMessage);
-            }
-
-            return [literalAddress];
-        }
-
-        IPAddress[] addresses;
-        try
-        {
-            addresses = await hostAddressResolver(host, cancellationToken).ConfigureAwait(false);
-        }
-        catch (SocketException)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-        catch (ArgumentException)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        if (addresses.Length == 0)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        if (!allowUnsafeLocalUrls && addresses.Any(static address => OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address)))
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        return addresses;
-    }
-
-    private static async ValueTask<Stream> ConnectWithPinnedDnsAsync(
-        SocketsHttpConnectionContext context,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        bool allowUnsafeLocalUrls,
-        CancellationToken cancellationToken)
-    {
-        var addresses = await ResolveAllowedAddressesAsync(
-                context.DnsEndPoint.Host,
-                hostAddressResolver,
-                allowUnsafeLocalUrls,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        Exception? lastException = null;
-        foreach (var address in addresses)
-        {
-            using var socketOwner = new SocketConnectionOwner(
-                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp));
-
-            try
-            {
-                await socketOwner.Socket
-                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
-                    .ConfigureAwait(false);
-                return socketOwner.TransferToNetworkStream();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
-            {
-                lastException = ex;
-            }
-        }
-
-        throw new HttpRequestException("Unable to establish a connection to the OGC API Features host.", lastException);
-    }
 
     private static string ToSafeSourceUrl(Uri uri)
     {

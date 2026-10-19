@@ -7,12 +7,15 @@ GDAL/OGR interoperability: WFS 2.0 — format export.
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 
 from .conftest import EvidenceCollector, OgrResult
+from .query_oracles import exact_rows, identity, source_subset
 
 
 @pytest.mark.integration
@@ -72,26 +75,38 @@ class TestWfsExport:
 
     def test_export_csv(
         self,
+        http_client: httpx.Client,
         wfs_dsn: str,
         ogr_run,
         wfs_layer_name: str,
         tmp_path: Path,
         evidence_collector: EvidenceCollector,
     ):
-        """Export WFS data to CSV and verify header row."""
+        """Export the qualified WFS type to a safe CSV filename and retain its rows."""
+        baseline = http_client.get("/wfs", params={"SERVICE": "WFS", "REQUEST": "GetFeature", "VERSION": "2.0.0",
+            "TYPENAMES": wfs_layer_name, "OUTPUTFORMAT": "application/geo+json", "COUNT": 100})
+        assert baseline.status_code == 200, baseline.text
+        source = baseline.json()
+        source_subset(source, wfs_layer_name)
+        expected = {identity(row, wfs_layer_name): {"name": row["properties"]["name"]} for row in source["features"]}
         out_dir = tmp_path / "wfs_csv_out"
         result: OgrResult = ogr_run(
             [
                 "ogr2ogr", "-f", "CSV",
                 str(out_dir), wfs_dsn, wfs_layer_name,
+                "-nln", "wfs_export",
             ],
         )
         result.assert_success("WFS CSV export failed")
 
         csv_files = list(out_dir.glob("*.csv"))
-        assert len(csv_files) > 0, "No CSV files created"
-        header = csv_files[0].read_text().splitlines()[0].lower()
-        assert "name" in header, f"Expected 'name' in CSV header: {header}"
+        assert csv_files == [out_dir / "wfs_export.csv"], "expected the exact safe CSV output filename"
+        with csv_files[0].open(newline="", encoding="utf-8") as stream:
+            reader = csv.DictReader(stream)
+            headers = [name.lower() for name in (reader.fieldnames or [])]
+            assert len(headers) == len(set(headers)) and {"objectid", "name"} <= set(headers), "CSV identity/name headers are missing or ambiguous"
+            features = [{"properties": {key.lower(): value for key, value in row.items()}} for row in reader]
+        exact_rows({"type": "FeatureCollection", "features": features}, expected, wfs_layer_name)
         evidence_collector.record(
             "test_export_csv", "wfs", "export_csv", "pass",
         )

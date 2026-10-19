@@ -247,6 +247,21 @@ internal sealed class GeoprocessingStoreUnavailableException : Exception
         };
 
     /// <summary>
+    /// Refusal for a managed job that would be admitted to the in-process queue on a serverless
+    /// host. Same receipt class as the Redis-off refusal (<c>dependency-unavailable</c>,
+    /// capability <c>jobs.runner</c>). The missing dependency is a long-lived host, not Redis:
+    /// a Redis-on Lambda still freezes the loop that would claim the job.
+    /// </summary>
+    public static GeoprocessingStoreUnavailableException ForServerlessManagedHost()
+        => new(
+            CapabilityUnavailableCodes.ServerlessManagedDetail,
+            CapabilityUnavailableCodes.ErrorCode,
+            CapabilityUnavailableCodes.LongLivedHostDependency,
+            missingEntitlement: null,
+            CapabilityUnavailableCodes.ServerlessManagedRemediation,
+            CapabilityUnavailableCodes.ServerlessManagedRemediationRef);
+
+    /// <summary>
     /// Machine-readable error code for this refusal: <c>dependency-unavailable</c> when a
     /// dependency was never composed, <c>license-required</c> when the licence is what blocks it.
     /// Null for the message-only reuse path.

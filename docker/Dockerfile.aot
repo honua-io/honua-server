@@ -13,10 +13,27 @@
 # they cannot load. On Alpine every f=parquet request returned the typed 501, and gcompat +
 # libatomic loaded the library but segfaulted the server on the first request. These are the
 # same Ubuntu-based SDK/runtime-deps digests as docker/Dockerfile.lambda.aot.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c
-ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:9b37bbaf06fc653cb0e757215081139fb493658e1f864a738f6a478620c9196f
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
+ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:da5846024d0008b48259b53a8953d39381fe5b7ec99ef1449ba4ba927f201490
 
 # Build stage with security hardening
+# Extract restore inputs with their directory structure. Ordinary source edits,
+# including JSON content, rerun this inexpensive extraction but leave the
+# downstream restore input tree unchanged.
+FROM ${DOTNET_SDK_IMAGE} AS restore-inputs
+# Bind-mounted context. WORKDIR avoids `cd` (hadolint DL3003) without changing
+# the relative paths `find` and `cp --parents` write under /restore-inputs.
+WORKDIR /context
+RUN --mount=type=bind,target=/context \
+    mkdir -p /restore-inputs && \
+    find . -type d \( -name bin -o -name obj -o -name .git \) -prune -o \
+      -type f \( -name '*.csproj' -o -name '*.fsproj' -o -name '*.vbproj' \
+        -o -name '*.props' -o -name '*.targets' \
+        -o -name '*.sln' -o -name '*.slnx' -o -name '*.slnf' \
+        -o -name '*.config' -o -name '.editorconfig' \
+        -o -name 'global.json' -o -name 'packages.lock.json' -o -name 'dotnet-tools.json' \) \
+      -exec cp --parents -p '{}' /restore-inputs/ \;
+
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
@@ -33,16 +50,17 @@ RUN apt-get update && \
 
 # Copy the full project graph (all .csproj) plus build/config files first so the
 # RID-specific restore below covers every transitive project the publish needs.
-# We copy the whole src/ tree's project files via the source checkout to avoid a
-# hand-maintained csproj copy-list that rots whenever projects are added/split
-# (e.g. the #1236 modularization). The dedicated restore layer keeps caching.
-COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
+# The extraction stage discovers project and package-configuration files only.
+# Ordinary source and JSON content edits do not invalidate this restore-input tree.
+COPY --from=restore-inputs /restore-inputs/ ./
 COPY eng/Honua.BuildProfiles.props eng/
+COPY eng/Honua.ProtocolProfiles.props eng/
+COPY eng/protocol-profiles.v1.json eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
-COPY src/ src/
 
 ARG TARGETARCH
 ARG HONUA_BUILD_PROFILE=full
+ARG HONUA_PROTOCOL_PROFILE=all
 ARG HONUA_INCLUDE_AWS=
 ARG HONUA_INCLUDE_AZURE=
 # Match the other native-AOT images: these providers require the JIT runtime.
@@ -68,7 +86,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    set -- "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" && \
+    set -- "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" "-p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then set -- "$@" "-p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then set -- "$@" "-p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then set -- "$@" "-p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
@@ -107,7 +125,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    set -- "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" && \
+    set -- "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" "-p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then set -- "$@" "-p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then set -- "$@" "-p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then set -- "$@" "-p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \

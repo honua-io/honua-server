@@ -16,6 +16,7 @@ namespace Honua.Core.Tests.Raster.CogParser;
 /// </summary>
 public class CogMetadataExtractorTests
 {
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(4)]
     [InlineData(5)]
@@ -29,6 +30,7 @@ public class CogMetadataExtractorTests
         await read.Should().ThrowAsync<InvalidDataException>().WithMessage("*SampleFormat*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_SharedJpegTables_CarriesTablesOnTheirLevel()
     {
@@ -41,6 +43,7 @@ public class CogMetadataExtractorTests
         metadata.OverviewLevels[0].JpegTables.Should().Equal(0xFF, 0xD8, 0xFF, 0xD9);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0xC0FFD8FFu, (ushort)7)] // SOI then a truncated frame header: not tables-only.
     [InlineData(0xD9FFD9FFu, (ushort)7)] // No SOI.
@@ -76,6 +79,26 @@ public class CogMetadataExtractorTests
         return tiff;
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadMetadataAsync_OverviewPredictor_IsStoredOnThatIfd()
+    {
+        var mismatched = await new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(BuildTwoLevelCog(basePredictor: 2, overviewPredictor: 1)),
+            "fixtures",
+            "mismatch.tif");
+        mismatched.Predictor.Should().Be(TilePixelLayout.PredictorHorizontalDifferencing);
+        mismatched.OverviewLevels.Select(level => level.Predictor).Should().Equal(2, 1);
+
+        var repeated = await new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(BuildTwoLevelCog(basePredictor: 2, overviewPredictor: 2)),
+            "fixtures",
+            "repeated.tif");
+        repeated.Predictor.Should().Be(2);
+        repeated.OverviewLevels.Select(level => level.Predictor).Should().Equal(2, 2);
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_PixelScaleBeforeTiepoint_ComputesCorrectExtent()
     {
@@ -104,6 +127,7 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(45.0, 1e-10);  // 50 - 0.01*500
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_NoGeoTags_FallsBackToUnitExtent()
     {
@@ -125,6 +149,7 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMax.Should().Be(256);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_ReportsCorrectIfdOffset()
     {
@@ -142,6 +167,7 @@ public class CogMetadataExtractorTests
         metadata.OverviewLevels[0].IfdOffset.Should().Be(8);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_BothGeoKeys_PrefersProjectedCrs()
     {
@@ -163,6 +189,7 @@ public class CogMetadataExtractorTests
         metadata.Srid.Should().Be(3857);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_OnlyGeographicGeoKey_ReturnsGeographicSrid()
     {
@@ -181,6 +208,7 @@ public class CogMetadataExtractorTests
         metadata.Srid.Should().Be(4326);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_Float32WithSampleFormat_ReportsFloat32()
     {
@@ -198,6 +226,7 @@ public class CogMetadataExtractorTests
         metadata.PixelType.Should().Be("float32");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_Int16WithSampleFormat_ReportsInt16()
     {
@@ -215,6 +244,7 @@ public class CogMetadataExtractorTests
         metadata.PixelType.Should().Be("int16");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_UInt32WithSampleFormat_ReportsUInt32()
     {
@@ -232,6 +262,7 @@ public class CogMetadataExtractorTests
         metadata.PixelType.Should().Be("uint32");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_InlineShortArrays_UsesFirstArrayElementForPixelMetadata()
     {
@@ -251,6 +282,7 @@ public class CogMetadataExtractorTests
         metadata.PixelType.Should().Be("uint8");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_TiepointTagWithNonDoubleType_ReturnsDefaultOriginWithoutThrowing()
     {
@@ -274,6 +306,7 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(-0.5, 1e-10);  // 0 - 0.01 * 50
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_PixelScaleTagWithNonDoubleType_ReturnsUnitScaleWithoutThrowing()
     {
@@ -297,6 +330,7 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(0.0, 1e-10);   // 50  - 1.0 * 50
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_PixelIsPointAndNonZeroTiepointCoordinates_NormalizesToPixelCorner()
     {
@@ -319,6 +353,7 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(22, 1e-10);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadMetadataAsync_ModelTransformation_ComputesNorthUpExtent()
     {
@@ -339,6 +374,7 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(800, 1e-10);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(1, 0.25)]
     [InlineData(4, 0.25)]
@@ -354,6 +390,34 @@ public class CogMetadataExtractorTests
         var act = () => new CogMetadataExtractor().ReadMetadataAsync(new InMemoryRangeReader(tiff), "bucket", "test.tif");
 
         await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
+    private static byte[] BuildTwoLevelCog(int basePredictor, int overviewPredictor)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write((ushort)0x4949);
+        writer.Write((ushort)42);
+        const int ifdBytes = 2 + (8 * 12) + 4;
+        const uint firstIfd = 8;
+        writer.Write(firstIfd);
+        WriteLevel(writer, 64, 64, basePredictor, firstIfd + ifdBytes);
+        WriteLevel(writer, 32, 32, overviewPredictor, 0);
+        return stream.ToArray();
+
+        static void WriteLevel(BinaryWriter levelWriter, uint width, uint height, int predictor, uint nextIfd)
+        {
+            levelWriter.Write((ushort)8);
+            WriteIfdEntry(levelWriter, 256, 4, 1, width);
+            WriteIfdEntry(levelWriter, 257, 4, 1, height);
+            WriteIfdEntry(levelWriter, 259, 3, 1, 1);
+            WriteIfdEntry(levelWriter, 317, 3, 1, (uint)predictor);
+            WriteIfdEntry(levelWriter, 322, 4, 1, 16);
+            WriteIfdEntry(levelWriter, 323, 4, 1, 16);
+            WriteIfdEntry(levelWriter, 324, 4, 1, 1);
+            WriteIfdEntry(levelWriter, 325, 4, 1, 1);
+            levelWriter.Write(nextIfd);
+        }
     }
 
     /// <summary>
@@ -742,6 +806,7 @@ public class CogMetadataExtractorTests
         return ms.ToArray();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(258, 16)]
     [InlineData(339, 2)]

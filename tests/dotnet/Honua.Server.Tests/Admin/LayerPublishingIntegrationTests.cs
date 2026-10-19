@@ -87,6 +87,60 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
+    [InlineData("", true)]
+    [InlineData(",\"enabled\":true", true)]
+    [InlineData(",\"enabled\":false", false)]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Protocol(TestProtocols.Admin, TestProtocols.OgcApiFeatures)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task PublishLayer_RawEnabledProperty_PreservesDefaultAndActualReadback(
+        string enabledProperty, bool expectedEnabled)
+    {
+        var json = $$"""
+            {
+              "schema": "{{_schema}}",
+              "table": "{{_tableName}}",
+              "layerName": "Layer {{_tableName}}",
+              "serviceName": "{{_serviceName}}",
+              "geometryColumn": "geom",
+              "geometryType": "Point",
+              "srid": 4326,
+              "primaryKey": "id",
+              "fields": ["id", "name", "population"]{{enabledProperty}}
+            }
+            """;
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers", content);
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {payload}");
+        var api = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions);
+        api.Should().NotBeNull();
+        api!.Success.Should().BeTrue();
+        api.Data.Should().NotBeNull();
+        var layer = api.Data!;
+        _layerId = layer.LayerId;
+
+        layer.Enabled.Should().Be(expectedEnabled);
+        layer.ServiceName.Should().Be(_serviceName);
+        (await GetSourceRowCountAsync()).Should().Be(1);
+        if (expectedEnabled)
+        {
+            // The expected row and geometry come from our independent database seed.
+            await AssertPublishedCollectionServesSeedRowOnlyAsync(layer.LayerId);
+        }
+        else
+        {
+            using var itemsResponse = await _client.GetAsync(
+                $"/ogc/features/collections/{layer.LayerId}/items?f=json&limit=10");
+            itemsResponse.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                await itemsResponse.Content.ReadAsStringAsync());
+        }
+    }
+
+    [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
     [Operation(Operations.Create)]
@@ -666,7 +720,9 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         var failedItemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/1");
         failedItemResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
-        await SetPublishedStacStorageLayerIdAsync(storageLayerId);
+        // #5827: a plain TEXT stac_id column is not an item identity by name alone; the
+        // resource must declare it (extensions.stac.idField) for it to win over the key.
+        await SetPublishedStacStorageLayerIdAsync(storageLayerId, declaredStacIdField: "stac_id");
         await PoisonCanonicalFeatureStoreAsync(_layerId.Value);
         await InsertCanonicalIdCollisionAsync();
 
@@ -730,8 +786,10 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
                 .Be(0);
         }
 
+        // #5827: a blank declared id publishes the object id; item_id is no longer a
+        // second-precedence identity.
         var blankCanonicalIdSearchResponse = await _client.GetAsync(
-            $"/stac/search?collections={collectionId}&ids=fallback-item&limit=10");
+            $"/stac/search?collections={collectionId}&ids=901&limit=10");
         var blankCanonicalIdSearchPayload = await blankCanonicalIdSearchResponse.Content.ReadAsStringAsync();
         blankCanonicalIdSearchResponse.StatusCode.Should().Be(
             HttpStatusCode.OK,
@@ -743,11 +801,11 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
                 .EnumerateArray()
                 .Select(feature => feature.GetProperty("id").ToString())
                 .Should()
-                .Equal("fallback-item");
+                .Equal("901");
         }
 
         var multipleIdSearchResponse = await _client.GetAsync(
-            $"/stac/search?collections={collectionId}&ids=123,fallback-item&limit=10");
+            $"/stac/search?collections={collectionId}&ids=123,901&limit=10");
         var multipleIdSearchPayload = await multipleIdSearchResponse.Content.ReadAsStringAsync();
         multipleIdSearchResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {multipleIdSearchPayload}");
         using (var multipleIdSearchDocument = JsonDocument.Parse(multipleIdSearchPayload))
@@ -757,7 +815,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
                 .EnumerateArray()
                 .Select(feature => feature.GetProperty("id").ToString())
                 .Should()
-                .BeEquivalentTo(["123", "fallback-item"]);
+                .BeEquivalentTo(["123", "901"]);
         }
 
         var itemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
@@ -3104,7 +3162,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
     }
 
-    private async Task SetPublishedStacStorageLayerIdAsync(int storageLayerId)
+    private async Task SetPublishedStacStorageLayerIdAsync(int storageLayerId, string? declaredStacIdField = null)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.Single(publication =>
@@ -3123,10 +3181,27 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
                 : candidate)
             .ToArray();
 
+        var resources = snapshot.Graph.Resources;
+        if (declaredStacIdField is not null)
+        {
+            using var stacExtension = JsonDocument.Parse(
+                JsonSerializer.Serialize(new Dictionary<string, string> { ["idField"] = declaredStacIdField }));
+            var stac = stacExtension.RootElement.Clone();
+            resources = resources
+                .Select(candidate => candidate.Metadata.Id == publication.ResourceId
+                    ? candidate with
+                    {
+                        Extensions = new Dictionary<string, JsonElement>(candidate.Extensions) { ["stac"] = stac }
+                    }
+                    : candidate)
+                .ToArray();
+        }
+
         await SaveMetadataGraphAsync(snapshot.Graph with
         {
             Revision = snapshot.Graph.Revision + 1,
             Publications = publications,
+            Resources = resources,
             StorageBindings = bindings
         });
     }

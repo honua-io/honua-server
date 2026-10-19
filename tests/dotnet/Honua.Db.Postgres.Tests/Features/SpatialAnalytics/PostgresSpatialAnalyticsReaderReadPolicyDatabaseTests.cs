@@ -4,7 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.TestKit;
-using static Honua.Db.Postgres.Tests.Features.SpatialAnalytics.PostgresSpatialAnalyticsReaderReadPolicyTests;
+using static Honua.Db.Postgres.Tests.Features.SpatialAnalytics.SpatialAnalyticsReadPolicyTestData;
 
 namespace Honua.Db.Postgres.Tests.Features.SpatialAnalytics;
 

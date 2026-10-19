@@ -825,6 +825,101 @@ public sealed class TemporaryFileServiceTests : IDisposable
         retrieved!.Value.contentType.Should().Be("image/png");
     }
 
+    // honua-server#5826: the shared mapping is a Redis string under its own key. A stale
+    // process-local cache entry, including one stored at the IDistributedCache key, must not
+    // resolve the file. Deleting the shared key makes every replica miss.
+    [UnitTest]
+    public async Task GetTemporaryFileAsync_SharedRedisToken_ResolvesOnAnotherReplicaAfterLocalCacheEviction()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
+        var redis = CreateRedisLeaseMultiplexer();
+        var issuerCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var issuer = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp",
+            },
+            cloudStorage,
+            issuerCache,
+            redis: redis);
+        var reader = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-b"),
+                BaseUrl = "/temp",
+            },
+            cloudStorage,
+            redis: redis);
+
+        var url = await issuer.StoreTemporaryFileAsync([9, 8, 7], "image/png");
+        var fileId = Path.GetFileName(url);
+        var token = Path.GetFileNameWithoutExtension(fileId);
+        await issuerCache.SetStringAsync(
+            "honua:temporary-files:cloud:" + token,
+            "temporary-files/not-the-uploaded-object");
+
+        var fromReader = await reader.GetTemporaryFileAsync(fileId);
+        fromReader.Should().NotBeNull();
+        fromReader!.Value.data.Should().Equal(9, 8, 7);
+        fromReader.Value.contentType.Should().Be("image/png");
+        (await issuer.GetTemporaryFileAsync(fileId))!.Value.data.Should().Equal(9, 8, 7);
+
+        (await redis.GetDatabase().KeyDeleteAsync("honua:temporary-files:cloud:" + token)).Should().BeFalse();
+        (await redis.GetDatabase().KeyDeleteAsync("honua:temporary-files:shared:" + token)).Should().BeTrue();
+        (await issuer.GetTemporaryFileAsync(fileId)).Should().BeNull();
+        (await reader.GetTemporaryFileAsync(fileId)).Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task StoreTemporaryFileAsync_WhenSharedTokenPublishFails_DeletesTheUploadedObject()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
+        var redis = CreateRedisLeaseMultiplexer();
+        redis.GetDatabase().StringSetAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<When>(),
+                Arg.Any<CommandFlags>())
+            .Returns<Task<bool>>(_ => throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "lost"));
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp",
+            },
+            cloudStorage,
+            redis: redis);
+
+        var act = () => service.StoreTemporaryFileAsync([1, 2, 3], "image/png");
+
+        await act.Should().ThrowAsync<RedisConnectionException>();
+        (await cloudStorage.ListFilesAsync("temporary-files")).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task StoreTemporaryFileAsync_WhenRedisDisconnectsBeforeTokenPublish_DoesNotLeaveAnObject()
+    {
+        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
+        var redis = CreateRedisLeaseMultiplexer();
+        redis.IsConnected.Returns(true, false);
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp",
+            },
+            cloudStorage,
+            redis: redis);
+
+        var act = () => service.StoreTemporaryFileAsync([1, 2, 3], "image/png");
+
+        await act.Should().ThrowAsync<TemporaryStorageLimitExceededException>();
+        (await cloudStorage.ListFilesAsync("temporary-files")).Should().BeEmpty();
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_storageDirectory))
@@ -919,6 +1014,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 }
             });
 
+        ConfigureSharedTokenMap(database);
         var redis = Substitute.For<IConnectionMultiplexer>();
         redis.IsConnected.Returns(true);
         redis.GetDatabase().Returns(database);
@@ -974,11 +1070,39 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 }
             });
 
+        ConfigureSharedTokenMap(database);
         var redis = Substitute.For<IConnectionMultiplexer>();
         redis.IsConnected.Returns(true);
         redis.GetDatabase().Returns(database);
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
         return redis;
+    }
+
+    // honua-server#5826: both lease substitutes are connected, so token reads go to Redis.
+    // An unconfigured StringGetAsync returns a null task and the existing store/get tests throw.
+    private static void ConfigureSharedTokenMap(IDatabase database)
+    {
+        var entries = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
+        database.StringSetAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<When>(),
+                Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                entries[callInfo.ArgAt<RedisKey>(0).ToString()] = callInfo.ArgAt<RedisValue>(1).ToString();
+                return Task.FromResult(true);
+            });
+        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var found = entries.TryGetValue(callInfo.ArgAt<RedisKey>(0).ToString(), out var value);
+                return Task.FromResult(found ? (RedisValue)value! : RedisValue.Null);
+            });
+        database.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(callInfo => Task.FromResult(entries.TryRemove(callInfo.ArgAt<RedisKey>(0).ToString(), out _)));
     }
 
     private static ClaimsPrincipal CreatePrincipal(string subject)

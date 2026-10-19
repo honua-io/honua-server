@@ -117,7 +117,16 @@ def main() -> None:
         "Await exact-head review",
         "Free disk space",
     ]
-    build_test_job = pr_gate[pr_gate.index("  pr-gate:\n") : pr_gate.index("  required:\n")]
+    def job(name: str) -> str:
+        match = re.search(r"^  " + re.escape(name) + r":\n(.*?)(?=^  [\w-]+:|\Z)", pr_gate, re.M | re.S)
+        if match is None:
+            raise AssertionError(f"missing required job {name}")
+        return match.group(1)
+
+    build_test_job = job("pr-gate")
+    require(build_test_job, "name: PR Gate / Build and tests", "exact admission job name must remain stable")
+    consumer_job = job("pr-gate-tests")
+    require(consumer_job, "needs: pr-gate", "consumer must depend on producer admission")
     positions = [build_test_job.index(f"- name: {name}") for name in ordered_steps]
     if positions != sorted(positions):
         raise AssertionError("admission receipt/wait must precede every expensive step")
@@ -144,18 +153,23 @@ def main() -> None:
     )
 
     def review_gated(step: str) -> bool:
-        return full_condition in step or docs_gated_condition in step or generated_gated_condition in step
+        return any(condition in step for condition in (
+            full_condition, docs_gated_condition, generated_gated_condition,
+            docs_gated_condition.replace("steps.docs-only", "needs.pr-gate"),
+            generated_gated_condition.replace("steps.generated-only", "needs.pr-gate"),
+            f"if: ({review_clause}) && needs.pr-gate.outputs.skip != 'true'",
+        ))
 
-    # Trunk's fourteen expensive steps (the real remote-source, raster and GDAL CLI
-    # proofs, PostGIS pre-pull and server boot smoke in build/test, plus four in
-    # parallel format), the two production PDAL proof steps, and the docs-only
-    # exit's own gating of each. Buildx stays attempt-2-only and is additionally
-    # generated-only gated; the GHCR login for that cache is too. The secondary
-    # proof-image preparation is also gated. All nineteen conditions
-    # (bare attempt-2-only, docs-gated, and generated-only-gated) must remain
-    # attempt-2-only in review-first enforcement.
-    if pr_gate.count(full_condition) + pr_gate.count(docs_gated_condition) + pr_gate.count(generated_gated_condition) != 19:
-        raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
+    # Pin named expensive steps rather than a global condition count. A producer
+    # failure on enforced attempt 1 also blocks its dependent consumer job.
+    for source, names in [
+        (build_test_job, ["Setup .NET", "Plan managed test producer", "Lean gate (managed build producer)", "Publish pristine managed test outputs"]),
+        (consumer_job, ["Setup .NET", "Plan managed test consumer", "Restore verified managed test outputs", "Build missing managed test outputs"]),
+    ]:
+        for name in names:
+            step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+            if not review_gated(step):
+                raise AssertionError(f"{name} must remain behind exact-head review")
     for name, message in [
         ("Prepare secondary Testcontainers proof images", "secondary proof-image preparation must remain behind exact-head review"),
         ("Prove raster catalog execution with production GDAL", "real raster execution must remain behind exact-head review"),
@@ -164,7 +178,7 @@ def main() -> None:
         ("Build production PDAL native tools", "Build production PDAL native tools must remain behind exact-head review"),
         ("Prove point-cloud execution with production PDAL", "Prove point-cloud execution with production PDAL must remain behind exact-head review"),
     ]:
-        proof_step = build_test_job.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+        proof_step = consumer_job.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
         if not review_gated(proof_step):
             raise AssertionError(message)
 
@@ -172,19 +186,25 @@ def main() -> None:
         "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "
         "'pull_request' && github.run_attempt > 1"
     )
-    if pr_gate.count(revalidation_condition) != 3:
-        raise AssertionError(
-            "attempt 2 must revalidate before build/tests, after build/tests, "
-            "and after both parallel jobs"
-        )
     require(pr_gate, "  statuses: read", "attempt 2 needs bounded read access to Review Gate status")
-    if pr_gate.count("github.rest.repos.listCommitStatusesForRef") != 3:
-        raise AssertionError("all three attempt-2 review checks must read exact-head status")
-    before = pr_gate.index("- name: Revalidate exact-head review before verification")
-    expensive = pr_gate.index("- name: Free disk space")
-    after = pr_gate.index("- name: Revalidate exact-head review before success")
-    if not before < expensive < after:
-        raise AssertionError("review evidence must bracket every expensive verification step")
+    for source, label, expensive_name in [
+        (build_test_job, "producer", "Free disk space"),
+        (consumer_job, "consumer", "Setup .NET"),
+    ]:
+        before_name = "Revalidate exact-head review before verification"
+        after_name = "Revalidate exact-head review before success"
+        before = source.index(f"- name: {before_name}")
+        expensive = source.index(f"- name: {expensive_name}")
+        after = source.index(f"- name: {after_name}")
+        if not before < expensive < after:
+            raise AssertionError(f"review evidence must bracket {label} verification")
+        for name in [before_name, after_name]:
+            step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+            require(step, revalidation_condition, f"{label} {name} must be attempt-2-only")
+            require(step, "github.rest.repos.listCommitStatusesForRef", f"{label} {name} must read exact-head review status")
+    aggregate_check = job("required").split("- name: Revalidate exact-head review before success", 1)[1]
+    require(aggregate_check, revalidation_condition, "aggregate must revalidate exact-head review")
+    require(aggregate_check, "github.rest.repos.listCommitStatusesForRef", "aggregate must read exact-head review status")
 
     require(review_gate, "  actions: write", "trusted review transition needs actions: write")
     require(

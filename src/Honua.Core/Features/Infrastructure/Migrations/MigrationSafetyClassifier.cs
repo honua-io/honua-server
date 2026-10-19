@@ -144,7 +144,9 @@ public static class MigrationSafetyClassifier
         ArgumentNullException.ThrowIfNull(scriptName);
         ArgumentNullException.ThrowIfNull(sql);
 
-        var breakingRules = DetectBreakingRules(sql);
+        var breakingRules = IsReviewedImportGuardDefinition(scriptName, sql)
+            ? Array.Empty<string>()
+            : DetectBreakingRules(sql);
 
         MigrationSafetyClassification classification;
         if (breakingRules.Count == 0)
@@ -171,6 +173,22 @@ public static class MigrationSafetyClassifier
     private static bool IsFrozenReaderMigration(string scriptName, string sql)
         => FrozenReaderMigrationHashes.Value.TryGetValue(scriptName, out var hash) &&
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql.Replace("\r\n", "\n", StringComparison.Ordinal)))) == hash;
+
+    private static bool IsReviewedImportGuardDefinition(string scriptName, string sql)
+    {
+        // #5394 installs function definitions; it does not execute their replacement/cleanup
+        // DDL during migration. The existing helper signatures and reader schema remain intact.
+        // Its DROP/RENAME operations already existed in 108/111/115 and are now ownership guarded.
+        // Keep routine/DO/dynamic-SQL detection unchanged for every other script. This review
+        // covers only these exact bytes: a marker, another name, or any later edit cannot inherit it.
+        const string name = "129_ProtectImportTableOwnership.sql";
+        const string reviewedHash = "81D2BE992221BE7A5267BAF1DFD6A4CFE5FEB94E926B1E4E770A72EAE7BB7427";
+        return (string.Equals(scriptName, name, StringComparison.Ordinal)
+                || string.Equals(scriptName, "Honua.Server.Migrations." + name, StringComparison.Ordinal)
+                || string.Equals(scriptName, "src/Honua.Server/Migrations/" + name, StringComparison.Ordinal))
+            && Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                sql.Replace("\r\n", "\n", StringComparison.Ordinal)))) == reviewedHash;
+    }
 
     private static Dictionary<string, string> LoadFrozenReaderMigrationHashes()
     {

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
@@ -12,6 +13,25 @@ namespace Honua.Server.Features.Admin.Models;
 /// </summary>
 public sealed class PublishLayerRequest
 {
+    /// <summary>
+    /// Creates a publication request with the default serving behavior.
+    /// </summary>
+    public PublishLayerRequest()
+    {
+    }
+
+    /// <summary>
+    /// Creates a request from JSON, preserving the enabled default when omitted.
+    /// </summary>
+    /// <param name="enabled">Whether to enable the published layer; defaults to true.</param>
+    [JsonConstructor]
+    public PublishLayerRequest(bool enabled = true)
+    {
+        // .NET 10 source generation overwrites omitted init-only initializers.
+        // A constructor parameter retains the wire default without losing explicit false.
+        Enabled = enabled;
+    }
+
     /// <summary>
     /// Create an independent editable managed copy. The connection must resolve
     /// to this server's managed database. Source IDs remain in honua_source_id;
@@ -159,6 +179,44 @@ public sealed class PublishLayerRequest
     /// <c>Editing</c> require <c>storageMode</c> <c>managed</c>.
     /// </summary>
     public IReadOnlyList<string>? Capabilities { get; init; }
+}
+
+/// <summary>Accepted large-table publish (honua-server#5948).</summary>
+public sealed class LayerPublishAcceptedResponse
+{
+    /// <summary>Poll id for the publication job.</summary>
+    public required string JobId { get; init; }
+
+    /// <summary>Relative URL that reports rows materialized and, once committed, the layer id.</summary>
+    public required string StatusUrl { get; init; }
+
+    /// <summary>Source rows counted when the publish was accepted.</summary>
+    public required long RowsTotal { get; init; }
+
+    /// <summary>Job status at acceptance. Always <c>Queued</c>.</summary>
+    public required string Status { get; init; }
+}
+
+/// <summary>Poll body for a large-table publish.</summary>
+public sealed class LayerPublishJobStatusResponse
+{
+    /// <summary>Poll id.</summary>
+    public required string JobId { get; init; }
+
+    /// <summary>Queued, Processing, Completed, Failed, or Cancelled.</summary>
+    public required string Status { get; init; }
+
+    /// <summary>Confirmed copied rows; zero is a lower bound if live progress expired before completion.</summary>
+    public required long RowsMaterialized { get; init; }
+
+    /// <summary>Source rows counted when the publish was accepted.</summary>
+    public required long RowsTotal { get; init; }
+
+    /// <summary>Published layer id after the publication transaction commits.</summary>
+    public int? LayerId { get; init; }
+
+    /// <summary>Failure text when the publish did not commit.</summary>
+    public string? ErrorMessage { get; init; }
 }
 
 /// <summary>

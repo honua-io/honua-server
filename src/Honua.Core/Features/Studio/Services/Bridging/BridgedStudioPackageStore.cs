@@ -137,7 +137,10 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         var bridged = await ResolveBridgedPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
         if (bridged is not null)
         {
-            return bridged.Pointers;
+            // honua-server#5825: only an item that actually resolved through the bridge gives up
+            // Studio route ownership. A same-family row that still lives in the inner store
+            // (for example a form saved before the native store existed) keeps the default.
+            return bridged.Pointers with { GovernsStudioRoutes = false };
         }
 
         return await _inner.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);

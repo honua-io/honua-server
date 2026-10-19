@@ -41,6 +41,14 @@ sql:
           extent = EXCLUDED.extent,
           metadata = EXCLUDED.metadata;
 
+  # Authored WMTS/WMS point style: a radius4 blue circle, no stroke. The
+  # independent canonical WMTS oracle checks these bytes at seeded coordinates.
+  # Keep a complete vector source and the browser fixture layer ID: this seed
+  # also drives the MapLibre style, visibility and rendered-feature checks.
+  - |
+      UPDATE honua.layers SET maplibre_style = '{"version":8,"sources":{"layer-2000":{"type":"vector","tiles":["/tiles/2000/{z}/{x}/{y}.mvt"],"minzoom":0,"maxzoom":22}},"layers":[{"id":"layer-2000-circle","type":"circle","source":"layer-2000","paint":{"circle-radius":4,"circle-color":"#2D69A5","circle-opacity":1,"circle-stroke-width":0},"source-layer":"layer"}]}'::jsonb
+      WHERE layer_id = 2000;
+
   # Layer 2001 — LineString (line style)
   - |
       INSERT INTO honua.layers (

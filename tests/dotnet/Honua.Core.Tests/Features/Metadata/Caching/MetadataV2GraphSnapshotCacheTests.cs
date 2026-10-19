@@ -20,6 +20,7 @@ public sealed class MetadataV2GraphSnapshotCacheTests
 {
     private const string Environment = "test-env";
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetCurrentAsync_RepeatedCalls_LoadsBackingStoreOnce()
     {
@@ -36,6 +37,7 @@ public sealed class MetadataV2GraphSnapshotCacheTests
         provider.GetCurrentCalls.Should().Be(1, "the snapshot should be materialized once and reused within the TTL window");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetCurrentAsync_AfterTtlExpires_ReloadsBackingStore()
     {
@@ -56,6 +58,7 @@ public sealed class MetadataV2GraphSnapshotCacheTests
         provider.GetCurrentCalls.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task Invalidate_DropsCachedSnapshot_SoNextReadReloads()
     {
@@ -74,6 +77,7 @@ public sealed class MetadataV2GraphSnapshotCacheTests
         provider.GetCurrentCalls.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task InvalidateAll_DropsEveryEnvironment()
     {
@@ -89,6 +93,7 @@ public sealed class MetadataV2GraphSnapshotCacheTests
         provider.GetCurrentCalls.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetCurrentAsync_WhenCacheDisabled_AlwaysReadsBackingStore()
     {
@@ -103,6 +108,7 @@ public sealed class MetadataV2GraphSnapshotCacheTests
         provider.GetCurrentCalls.Should().Be(3, "a disabled cache must be a transparent pass-through");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetCurrentAsync_WhenTtlIsZero_AlwaysReadsBackingStore()
     {
@@ -116,6 +122,7 @@ public sealed class MetadataV2GraphSnapshotCacheTests
         provider.GetCurrentCalls.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetCurrentAsync_ConcurrentMisses_CoalesceIntoSingleLoad()
     {
@@ -130,6 +137,7 @@ public sealed class MetadataV2GraphSnapshotCacheTests
         provider.GetCurrentCalls.Should().Be(1, "a stampede of concurrent misses must trigger a single backing-store read");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SRV_INF_013_CancellingLeadingCaller_DoesNotCancelSharedLoad()
     {
@@ -157,6 +165,7 @@ public sealed class MetadataV2GraphSnapshotCacheTests
         (await waiting).Revision.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task SRV_INF_013_SharedLoad_RunsInOwnScope_SurvivingInitiatingRequestScope()
     {
@@ -196,6 +205,7 @@ public sealed class MetadataV2GraphSnapshotCacheTests
         gate.LoaderDisposedAfterLoad.Task.IsCompleted.Should().BeTrue("the load-owned scope is disposed once the load finishes");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task GetCurrentAsync_WhenLoadThrows_DoesNotCacheFailure()
     {

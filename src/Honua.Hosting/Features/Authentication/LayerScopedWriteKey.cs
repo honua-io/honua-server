@@ -39,6 +39,13 @@ namespace Honua.Infrastructure.Authentication;
 /// always name their service. Wildcard reads still pass through the same field
 /// mask, row-level and tenant filters as a named <c>read:</c> grant.
 /// </para>
+/// <para>
+/// GPServer execution uses an additional exact grant: <c>execute:{service}/{canonical-process-id}</c>,
+/// for example <c>execute:test/geometry.area</c>. No wildcard, service-wide, read, or write grant
+/// implies execution. GP discovery still requires a separate <c>read:</c> grant. Execution grants
+/// apply only to the named GP task and its owned, service-bound jobs; they confer no generic
+/// operator, OGC Processes, WPS, or MCP authority.
+/// </para>
 /// </remarks>
 internal static class LayerScopedWriteKey
 {
@@ -51,6 +58,20 @@ internal static class LayerScopedWriteKey
     /// Prefix that identifies a scoped read permission grant.
     /// </summary>
     public const string ReadPermissionPrefix = "read:";
+
+    /// <summary>Exact GPServer service/canonical-process execution grant prefix.</summary>
+    public const string ExecutePermissionPrefix = "execute:";
+
+    /// <summary>Checks an exact GP execution grant. Neither service-wide nor wildcard forms exist.</summary>
+    public static bool AllowsGPExecution(ClaimsPrincipal principal, string service, string processId)
+        => IsExactExecutionIdentifier(service) && IsExactExecutionIdentifier(processId)
+            && principal.FindAll("permission").Any(claim =>
+                !IsMalformedResourceGrant(claim.Value)
+                && string.Equals(claim.Value.Trim(), $"{ExecutePermissionPrefix}{service}/{processId}", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsExactExecutionIdentifier(string value)
+        => !string.IsNullOrWhiteSpace(value) && value == value.Trim()
+            && !value.Any(character => character is '*' or '/' or ':' || char.IsWhiteSpace(character));
 
     /// <summary>
     /// Wildcard token accepted in <c>read:</c> grants: <c>read:*</c> (any service)
@@ -185,23 +206,42 @@ internal static class LayerScopedWriteKey
     }
 
     /// <summary>
-    /// Determines whether the principal authenticated as a layer-scoped write key.
+    /// Determines whether writes require explicit grants from a scoped key or job capability.
     /// </summary>
     /// <param name="principal">The request principal.</param>
-    /// <returns><see langword="true"/> when the principal is a scoped write key.</returns>
+    /// <returns><see langword="true"/> when the principal is a scoped key or a frozen job capability.</returns>
     public static bool IsScopedWritePrincipal(ClaimsPrincipal? principal)
         => principal is not null &&
-           principal.HasClaim("auth_type", AuthType);
+           (principal.HasClaim("auth_type", AuthType) ||
+            principal.HasClaim("auth_type", ScopedJobTokenIssuer.AuthTypeClaimValue));
 
     /// <summary>
     /// Determines whether resource access for an API-key principal is governed by
     /// its permission claims rather than by the coarse authenticated-user fallback.
     /// </summary>
+    /// <remarks>
+    /// The API-key handler stamps these markers as <see cref="ClaimTypes.Role"/> claims, but a
+    /// principal restored from a durable job snapshot is built with the configured RBAC role
+    /// claim type (for example OIDC <c>roles</c>), so <see cref="ClaimsPrincipal.IsInRole"/>
+    /// alone would miss a marker held under <see cref="ClaimTypes.Role"/>. Either claim type
+    /// marks the principal as governed: the check only ever narrows access (honua-server#6101).
+    /// </remarks>
     public static bool IsScopeGovernedPrincipal(ClaimsPrincipal? principal)
         => principal is not null &&
-           (IsScopedWritePrincipal(principal) || principal.IsInRole(ScopedKeyRole)
-            || principal.IsInRole(AdminApiKeyPermission.ScopedAdminRole)
-            || principal.IsInRole(AdminApiKeyPermission.ApprovedOperationRole));
+           (IsScopedWritePrincipal(principal)
+            || ScopeGovernanceRoles.Any(role =>
+                principal.IsInRole(role) || principal.HasClaim(ClaimTypes.Role, role)));
+
+    /// <summary>
+    /// Role markers the API-key handler stamps on credentials whose resource access is governed
+    /// by their <c>permission</c> grants rather than by the coarse authenticated-user fallback.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> ScopeGovernanceRoles =
+    [
+        ScopedKeyRole,
+        AdminApiKeyPermission.ScopedAdminRole,
+        AdminApiKeyPermission.ApprovedOperationRole,
+    ];
 
     /// <summary>
     /// Determines whether a scoped API key has a read grant for a resource.
@@ -252,9 +292,10 @@ internal static class LayerScopedWriteKey
         => GrantMatchesResource(grant, WritePermissionPrefix, service, layer, allowWildcard: false);
 
     /// <summary>
-    /// Determines whether a <c>read:</c> or <c>write:</c> grant fails to name a valid
+    /// Determines whether a <c>read:</c>, <c>write:</c>, or <c>execute:</c> grant fails to name a valid
     /// target. Read grants accept <c>read:*</c> and <c>read:{service}/*</c>; write
-    /// grants accept no wildcard. Grants with other prefixes are not resource grants
+    /// grants accept no wildcard. Execute grants require exact service and canonical process identities.
+    /// Grants with other prefixes are not resource grants
     /// and are never reported as malformed.
     /// </summary>
     /// <param name="grant">The permission grant.</param>
@@ -265,6 +306,15 @@ internal static class LayerScopedWriteKey
         if (string.IsNullOrEmpty(trimmed))
         {
             return false;
+        }
+
+        if (trimmed.StartsWith(ExecutePermissionPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var executionScope = trimmed[ExecutePermissionPrefix.Length..];
+            var separator = executionScope.IndexOf('/', StringComparison.Ordinal);
+            return separator < 1
+                || !IsExactExecutionIdentifier(executionScope[..separator])
+                || !IsExactExecutionIdentifier(executionScope[(separator + 1)..]);
         }
 
         bool allowWildcard;

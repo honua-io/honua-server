@@ -13,7 +13,7 @@
 # (/Dockerfile) and Honua.Server.csproj stay GDAL-free; this Dockerfile does not
 # build or modify them.
 
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
 # GDAL base ships gdalwarp / ogr2ogr / gdal_translate / gdalmdiminfo etc.
 # NOTE: must be the `ubuntu-full` variant, not `ubuntu-small` — the small image
 # omits the NetCDF/HDF5 drivers required by the multidimensional coverage
@@ -28,7 +28,7 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291
 ARG GDAL_VERSION=3.13.1
 ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.13.1@sha256:aff1d5515aa0e9b50be34ab11d6c0c2cfabc23cdcb7a2e0bc5748101eedb3e4a
 # Pinned .NET runtime version installed onto the GDAL (Ubuntu) base.
-ARG DOTNET_RUNTIME_VERSION=10.0.11
+ARG DOTNET_RUNTIME_VERSION=10.0.13
 # PDAL is built from its upstream release archive against the SAME GDAL/Ubuntu
 # toolchain as the runtime. Ubuntu 26.04 does not publish PDAL, and cross-release
 # UbuntuGIS packages are intentionally forbidden. Pin both release and upstream
@@ -132,6 +132,11 @@ RUN apt-get update \
  && cmake --install /tmp/pdal-build \
  && test -x /opt/pdal/bin/pdal \
  && rm -rf /tmp/pdal.tar.gz /tmp/pdal-source /tmp/pdal-build /var/lib/apt/lists/*
+
+# Compile the opt-in native-entry constructor against the identical runtime libc.
+COPY docker/worker-gdal/native-entry.c /tmp/honua-native-entry.c
+RUN mkdir -p /opt/honua \
+ && cc -std=c11 -Wall -Wextra -Werror -fPIC -shared /tmp/honua-native-entry.c -o /opt/honua/libhonua_gp_entry.so
 
 # ---------------------------------------------------------------------------
 # Runtime stage: GDAL base + .NET runtime + published worker.
@@ -259,10 +264,16 @@ RUN groupadd --gid 1001 --system honua \
 
 WORKDIR /app
 COPY --from=build --chown=1001:1001 /app .
+# Qualification-only read-only OS/store observer. It refuses execution without
+# an explicit mounted policy; it is invoked by governed ECS Exec, never the job.
+COPY --chown=0:0 --chmod=0444 scripts/qualification/gp_native_observer.py /app/gp_native_observer.py
+COPY --from=pdal-build --chown=0:0 --chmod=0444 /opt/honua/libhonua_gp_entry.so /app/libhonua_gp_entry.so
 
 # Guard: the custom worker steps (e.g. the Euclidean allocation step, #2255) must
 # be published alongside the worker assemblies so the executors can invoke them.
-RUN test -f /app/Scripts/gdal_euclidean_allocation.py
+RUN test -f /app/Scripts/gdal_euclidean_allocation.py \
+ && chown 0:0 /app \
+ && chmod 0555 /app
 
 ENV DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \

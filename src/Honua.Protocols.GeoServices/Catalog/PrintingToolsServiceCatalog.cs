@@ -15,6 +15,8 @@ internal static class PrintingToolsServiceCatalog
     internal const string ProtocolName = "GPServer";
     internal const string ExportTaskName = "Export Web Map Task";
     internal const string LayoutTaskName = "Get Layout Templates Info Task";
+    internal const string ExportSoapTaskName = "ExportWebMapTask";
+    internal const string LayoutSoapTaskName = "GetLayoutTemplatesInfoTask";
     internal const string ExecutionType = "esriExecutionTypeSynchronous";
 
     internal static bool IsFolder(string? name)

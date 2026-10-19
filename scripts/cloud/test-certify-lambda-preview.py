@@ -103,7 +103,7 @@ if service == "secretsmanager":
     if fail == "secret-read-failed":
         print("offline-sensitive-canary", file=sys.stderr)
         bad()
-    emit({"SecretString": "" if fail == "secret-empty" else "offline-sensitive-canary"})
+    emit({"SecretString": "" if fail == "secret-empty" else "offline-sensitive-canary", "VersionId": "1"*32})
 function = arg("--function-name", "")
 if service == "sts": emit("123456789012")
 if service == "ecr":
@@ -697,6 +697,137 @@ class AdminCredentialTests(unittest.TestCase):
                 self.assertNotIn("private diagnostic", str(error.exception))
 
 
+class DeploymentBindingTests(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("lambda_binding_tests", SCRIPT_PATH.with_name("lambda-certification.py"))
+        self.driver = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.driver)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        self.prepared = {"schema": "honua.prepared-deployment-manifest/v1",
+                         "manifest": {"components": {"honua-server": {
+                             "sha": "a"*40, "awsLambdaDigest": "sha256:"+"b"*64,
+                             "awsLambdaArchitecture": "x86_64", "awsLambdaEcrDigest": "pending-ecr-mirror"}}},
+                         "operatingEnvelope": {"path": "docs/2026.1-operating-envelope.md", "sha256": "sha256:"+"c"*64}}
+        self.environment = {"Variables": {"HONUA_ADMIN_PASSWORD": "aws:secretsmanager:private/admin",
+                                           "ConnectionStrings__DefaultConnection": "private-database-credential"}}
+        (self.directory / "environment.json").write_text(json.dumps(self.environment))
+        (self.directory / "vpc.json").write_text('{"SubnetIds":["private-subnet"],"SecurityGroupIds":["private-group"]}')
+        patch = unittest.mock.patch.dict(os.environ, {
+            "HONUA_LAMBDA_PREPARED_MANIFEST": json.dumps(self.prepared),
+            "HONUA_LAMBDA_SERVER_REVISION": "a"*40, "HONUA_LAMBDA_SOURCE_DIGEST": "sha256:"+"b"*64,
+            "HONUA_LAMBDA_ARCHITECTURE": "x86_64", "GITHUB_ACTIONS": "true",
+            "GITHUB_REPOSITORY": "honua-io/honua-server", "GITHUB_SHA": "d"*40,
+            "GITHUB_WORKFLOW_REF": "honua-io/honua-server/.github/workflows/lambda-preview-certification.yml@refs/heads/trunk",
+            "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "2",
+            "HONUA_LAMBDA_PREVIEW_RECEIPT": str(self.directory / "evidence/receipt.json")})
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.standing = {"Configuration": {"Environment": self.environment}}
+
+    def capture(self, version="1"*32):
+        with unittest.mock.patch.object(self.driver, "aws", return_value={"VersionId": version, "SecretString": "private-resolved-secret"}):
+            self.driver.capture_deployment_inputs(self.directory, self.standing, "sha256:"+"b"*64)
+        return json.loads((self.directory / "evidence/deployment-execution-inputs.json").read_text())
+
+    def test_actual_configuration_is_bound_without_publishing_private_values(self):
+        captured = self.capture()
+        binding = json.loads((self.directory / "evidence/deployment-binding.json").read_text())
+        self.assertEqual(self.driver.canonical_digest(captured), binding["executionInputs"]["digest"])
+        self.assertEqual("d"*40, binding["producer"]["sourceRevision"])
+        self.assertEqual(2, binding["producer"]["runAttempt"])
+        self.assertEqual(1024, captured["deployment"]["configuration"]["memoryMiB"])
+        for value in ("private/admin", "private-database-credential", "private-resolved-secret", "private-subnet", "private-group"):
+            self.assertNotIn(value, json.dumps(captured) + json.dumps(binding))
+        env = json.loads((self.directory / "environment.json").read_text())
+        self.assertEqual("aws:secretsmanager:private/admin?versionId="+"1"*32, env["Variables"]["HONUA_ADMIN_PASSWORD"])
+        self.assertFalse((self.directory / "evidence/receipt.json").exists())
+
+    def test_configuration_and_secret_rotation_invalidate_binding(self):
+        with unittest.mock.patch.object(self.driver.secrets, "token_bytes", return_value=b"k" * 32):
+            before = self.capture()
+            changed_vpc = {"SubnetIds": ["changed-subnet"]}
+            (self.directory / "vpc.json").write_text(json.dumps(changed_vpc))
+            after = self.capture()
+            rotated = self.capture("2"*32)
+        before_config = before["deployment"]["configuration"]
+        after_config = after["deployment"]["configuration"]
+        rotated_config = rotated["deployment"]["configuration"]
+        self.assertEqual(self.driver.canonical_digest(changed_vpc), after_config["vpcDigest"])
+        self.assertNotEqual(before_config["vpcDigest"], after_config["vpcDigest"])
+        self.assertEqual(before_config["secretVersions"], after_config["secretVersions"])
+        secret_name = self.driver.fingerprint("HONUA_ADMIN_PASSWORD")
+        self.assertEqual("1"*32, after_config["secretVersions"][secret_name]["versionId"])
+        self.assertEqual("2"*32, rotated_config["secretVersions"][secret_name]["versionId"])
+        self.assertEqual(after_config["vpcDigest"], rotated_config["vpcDigest"])
+        self.assertNotEqual(self.driver.canonical_digest(before), self.driver.canonical_digest(after))
+        self.assertNotEqual(self.driver.canonical_digest(after), self.driver.canonical_digest(rotated))
+
+    def test_private_commitments_are_fresh_field_bound_and_hide_credentials(self):
+        import hashlib
+        import hmac
+        credential = "low-entropy-private-test-credential"
+        key = b"k" * 32
+        with unittest.mock.patch.dict(os.environ, {
+                "HONUA_LAMBDA_CERT_ADMIN_KEY": credential,
+                "HONUA_LAMBDA_CERT_DENIED_KEY": credential}):
+            with unittest.mock.patch.object(self.driver.secrets, "token_bytes", return_value=key) as random:
+                captured = self.capture()
+            random.assert_called_once_with(32)
+            fresh = self.capture()
+        config = captured["deployment"]["configuration"]
+        self.assertEqual("hmac-sha256", config["privateInputCommitmentAlgorithm"])
+        commitments = config["runtimeInputCommitments"]
+        name = "HONUA_LAMBDA_CERT_ADMIN_KEY"
+        encoded = json.dumps({"name": name, "value": credential}, sort_keys=True,
+                             separators=(",", ":")).encode()
+        self.assertEqual("hmac-sha256:" + hmac.new(key, encoded, hashlib.sha256).hexdigest(), commitments[name])
+        self.assertNotEqual(commitments[name], commitments["HONUA_LAMBDA_CERT_DENIED_KEY"])
+        self.assertNotEqual(config["runtimeInputCommitments"], fresh["deployment"]["configuration"]["runtimeInputCommitments"])
+        for field in ("environmentCommitment", "standingConfigurationCommitment"):
+            self.assertTrue(config[field].startswith("hmac-sha256:"))
+        public = json.dumps(captured)
+        for private in (credential, self.driver.fingerprint(credential), key.hex(), key.decode()):
+            self.assertNotIn(private, public)
+
+    def test_private_input_mutation_changes_commitments_under_same_key(self):
+        with unittest.mock.patch.object(self.driver.secrets, "token_bytes", return_value=b"k" * 32):
+            before = self.capture()["deployment"]["configuration"]
+            # The first capture pinned the reference. Repeating those same inputs is stable
+            # under the controlled test key; changing real input bytes must change the binding.
+            repeated = self.capture()["deployment"]["configuration"]
+            self.assertEqual(before, repeated)
+            environment = json.loads((self.directory / "environment.json").read_text())
+            environment["Variables"]["ConnectionStrings__DefaultConnection"] = "changed-private-value"
+            (self.directory / "environment.json").write_text(json.dumps(environment))
+            self.standing["Configuration"]["Environment"] = environment
+            with unittest.mock.patch.dict(os.environ, {"HONUA_LAMBDA_CERT_ADMIN_KEY": "changed-runtime-key"}):
+                changed = self.capture()["deployment"]["configuration"]
+        for field in ("environmentCommitment", "standingConfigurationCommitment", "runtimeInputCommitments"):
+            self.assertNotEqual(before[field], changed[field])
+
+    def test_mismatched_artifact_and_untrusted_producer_refuse_capture(self):
+        for name, value in (("HONUA_LAMBDA_SERVER_REVISION", "e"*40),
+                            ("HONUA_LAMBDA_SOURCE_DIGEST", "sha256:"+"e"*64),
+                            ("HONUA_LAMBDA_ARCHITECTURE", "arm64"),
+                            ("GITHUB_WORKFLOW_REF", "honua-io/honua-server/.github/workflows/lambda-preview-certification.yml@refs/heads/untrusted")):
+            with self.subTest(name=name), unittest.mock.patch.dict(os.environ, {name: value}):
+                with self.assertRaises(RuntimeError):
+                    self.capture()
+                self.assertFalse((self.directory / "evidence/deployment-execution-inputs.json").exists())
+
+    def test_missing_immutable_secret_version_refuses_capture(self):
+        with self.assertRaises(RuntimeError):
+            self.capture("")
+        self.assertFalse((self.directory / "evidence/deployment-execution-inputs.json").exists())
+
+    def test_legacy_invocations_do_not_claim_a_binding(self):
+        with unittest.mock.patch.dict(os.environ, {"HONUA_LAMBDA_PREPARED_MANIFEST": ""}):
+            self.driver.capture_deployment_inputs(self.directory, self.standing, "sha256:"+"b"*64)
+        self.assertFalse((self.directory / "evidence/deployment-execution-inputs.json").exists())
+
+
 class LambdaPreviewLaneContractTests(unittest.TestCase):
     def run_lane(self, failure="", ecr=None, **overrides):
         with tempfile.TemporaryDirectory() as temp:
@@ -722,7 +853,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                    "HONUA_LAMBDA_CERT_DENIED_KEY": "offline-scoped-key", "HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE": "false",
                    "HONUA_LAMBDA_ARCHITECTURE": "x86_64", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
                    "AWS_REGION": "us-east-1", "REALAWS_CERT_LAMBDA_FUNCTION": "honua-cert-cert-server",
-                   "REALAWS_CERT_LAMBDA_ALIAS": "live", "HONUA_LAMBDA_CERT_ADMIN_KEY": "", "GITHUB_ACTIONS": "false",
+                   "REALAWS_CERT_LAMBDA_ALIAS": "live", "HONUA_LAMBDA_CERT_ADMIN_KEY": "", "GITHUB_ACTIONS": "false", "HONUA_LAMBDA_PREPARED_MANIFEST": "",
                    "HONUA_LAMBDA_WRITE_BASE_URL": "https://cert.lambda-url.us-east-1.on.aws",
                    "HONUA_DEMO_BASE_URL": "https://demo.invalid", "HONUA_LAMBDA_PREVIEW_RECEIPT": str(directory / "receipt.json"),
                    "HONUA_LAMBDA_PREVIEW_REPOSITORY": "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-lambda-preview",
@@ -733,13 +864,48 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
             result = subprocess.run(["bash", str(SCRIPT_PATH)], env=env, capture_output=True, text=True, timeout=180)
             receipt_path = directory / "receipt.json"
             receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else {}
-            self.assertNotIn("offline-sensitive-canary", result.stdout + result.stderr + json.dumps(receipt))
-            self.assertNotIn("offline-scoped-key", result.stdout + result.stderr + json.dumps(receipt))
+            # GitHub consumes masking control lines before rendering logs; inspect all
+            # ordinary output and the raw receipt without treating the mask itself as a leak.
+            visible_stdout = "\n".join(line for line in result.stdout.splitlines()
+                                       if not line.startswith("::add-mask::"))
+            self.assertNotIn("offline-sensitive-canary", visible_stdout + result.stderr + json.dumps(receipt))
+            self.assertNotIn("offline-scoped-key", visible_stdout + result.stderr + json.dumps(receipt))
             state = json.loads(state_path.read_text())
+            capture = directory / "deployment-execution-inputs.json"
+            if capture.exists():
+                state["executionInputs"] = json.loads(capture.read_text())
+                self.assertNotIn("offline-sensitive-canary", capture.read_text())
+                self.assertNotIn("offline-scoped-key", capture.read_text())
             # The key the lane mints for itself is a credential too: it never reaches the log or the receipt.
             for key in state["keys"]:
-                self.assertNotIn(key["value"], result.stdout + result.stderr + json.dumps(receipt))
+                self.assertNotIn(key["value"], visible_stdout + result.stderr + json.dumps(receipt))
             return result, receipt, state, original
+
+    def test_bound_run_captures_inputs_before_creation_and_binds_only_success(self):
+        prepared = {"schema": "honua.prepared-deployment-manifest/v1",
+                    "manifest": {"components": {"honua-server": {
+                        "sha": "a"*40, "awsLambdaDigest": "sha256:"+"a"*64,
+                        "awsLambdaArchitecture": "x86_64", "awsLambdaEcrDigest": "pending-ecr-mirror"}}},
+                    "operatingEnvelope": {"path": "docs/2026.1-operating-envelope.md", "sha256": "sha256:"+"c"*64}}
+        settings = {"HONUA_LAMBDA_PREPARED_MANIFEST": json.dumps(prepared),
+                    "GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": "honua-io/honua-server", "GITHUB_SHA": "d"*40,
+                    "GITHUB_WORKFLOW_REF": "honua-io/honua-server/.github/workflows/lambda-preview-certification.yml@refs/heads/trunk"}
+        result, receipt, state, _ = self.run_lane(**settings)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("pass", receipt["result"])
+        canonical = json.dumps(state["executionInputs"], sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        self.assertEqual("sha256:"+hashlib.sha256(canonical).hexdigest(), receipt["executionInputs"]["digest"])
+        create = next(call for call in state["calls"] if call[:3] == ["aws", "lambda", "create-function"])
+        config = state["executionInputs"]["deployment"]["configuration"]
+        self.assertEqual(config["memoryMiB"], int(create[create.index("--memory-size") + 1]))
+        self.assertEqual(config["timeoutSeconds"], int(create[create.index("--timeout") + 1]))
+        self.assertEqual(receipt["artifact"]["ecrDigest"],
+                         state["executionInputs"]["manifest"]["components"]["honua-server"]["awsLambdaEcrDigest"])
+        result, receipt, state, _ = self.run_lane("query", **settings)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("executionInputs", state)
+        self.assertNotIn("executionInputs", receipt)
+        self.assertFalse(state["function"] or state["logs"])
 
     def test_pass_both_manifest_architectures(self):
         for architecture in ("x86_64", "arm64"):

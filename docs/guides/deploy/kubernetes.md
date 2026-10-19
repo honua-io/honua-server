@@ -268,6 +268,24 @@ Apply the same digest-pinned command used for the single-node install. The
 chart fails closed when more than one replica or HPA is combined with
 `SingleInstance`.
 
+### Pod Identity and IRSA
+
+On EKS, prefer EKS Pod Identity for the server's AWS role. The server's AWS
+credential consumers support it: the built-in
+`aws:secretsmanager:` resolver (settings document, security settings, Redis
+connection string, key-ring certificate) reads the projected token named by
+`AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` on each credential refresh and sends it
+to the agent at `AWS_CONTAINER_CREDENTIALS_FULL_URI`, and the S3, Batch, and
+other AWS SDK clients use the SDK's default credential chain. IRSA
+(`AWS_WEB_IDENTITY_TOKEN_FILE` plus `AWS_ROLE_ARN`) works for the AWS SDK
+clients but not for `aws:secretsmanager:` references: the built-in resolver
+has no web-identity provider, logs a warning, and falls back to the node role,
+which is normally denied. Use a Pod Identity association for the server's
+service account instead. If the server log shows
+`AwsContainerCredentialsRequestRejected` or
+`AwsContainerAuthorizationTokenFileUnusable`, the pod-identity association or
+its projected token is missing.
+
 ## Geoprocessing on Kubernetes Jobs
 
 The `honua-kubernetes-job` batch backend runs each asynchronous geoprocessing

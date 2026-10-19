@@ -12,14 +12,28 @@ using Honua.ControlPlane;
 using Honua.Ai.AnalysisContent;
 using Honua.Server.Features.Capabilities;
 using Honua.Infrastructure.Capabilities;
+#if !HONUA_EXCLUDE_SCENE
 using Honua.Infrastructure.Scene;
+#endif
 using Honua.Alerts;
 using Honua.Server.Features.CloudDemo;
 using Honua.Server.Features.DataEnrichment;
 using Honua.Server.Features.Protocols.Cog;
 using Honua.Server.Features.Protocols.Coverages.Multidimensional;
 using Honua.Server.Features.Protocols.Zarr;
+#if !HONUA_EXCLUDE_GEOSERVICES
 using Honua.Protocols.GeoServices.FeatureServer;
+using Honua.Protocols.GeoServices.GeometryService;
+using Honua.Protocols.GeoServices.GPServer;
+using Honua.Protocols.GeoServices.Catalog;
+using Honua.Protocols.GeoServices.ImageServer;
+using Honua.Protocols.GeoServices.MapServer;
+using Honua.Protocols.GeoServices.NAServer;
+using Honua.Protocols.GeoServices.Sharing;
+using Honua.Protocols.GeoServices.VectorTileServer;
+using Honua.Protocols.GeoServices.VersionManagementServer;
+using Honua.Server.Features.PrintingTools;
+#endif
 using Honua.Server.Features.Geocoding;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Forms;
@@ -28,26 +42,20 @@ using Honua.Server.Features.FieldWorkflows;
 using Honua.Server.Features.FieldWorkflows.Export;
 using Honua.Server.Features.FieldWorkflows.Review;
 using Honua.Ai.Grounding.Spec;
-using Honua.Protocols.GeoServices.GeometryService;
 using Honua.Geoprocessing;
-using Honua.Protocols.GeoServices.GPServer;
-using Honua.Protocols.GeoServices.Catalog;
 using Honua.Server.Features.Protocols.Grpc;
-using Honua.Protocols.GeoServices.ImageServer;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.Styling;
-using Honua.Protocols.GeoServices.MapServer;
-using Honua.Protocols.GeoServices.NAServer;
-using Honua.Protocols.GeoServices.Sharing;
-using Honua.Protocols.GeoServices.VectorTileServer;
-using Honua.Protocols.GeoServices.VersionManagementServer;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.NlQuery;
 using Honua.Ai.StudioAiProxy;
 using Honua.Plugins;
 using Honua.Server.Features.Plugins;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+#if !HONUA_EXCLUDE_ODATA
 using Honua.Protocols.OData;
+#endif
+#if !HONUA_EXCLUDE_OGC_API
 using Honua.Protocols.Ogc.Api.Coverages;
 using Honua.Protocols.Ogc.Api.Edr;
 using Honua.Protocols.Ogc.Api.Features;
@@ -56,25 +64,33 @@ using Honua.Protocols.Ogc.Api.Processes;
 using Honua.Protocols.Ogc.Api.Records;
 using Honua.Protocols.Ogc.Api.Styles;
 using Honua.Protocols.Ogc.Api.Tiles;
+#endif
 using Honua.Server.Features.Orchestration;
 using Honua.PackageReview;
-using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Protocols.Tiles;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
+#if !HONUA_EXCLUDE_OGC_CLASSIC
 using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Classic.Wcs20;
+using Honua.Protocols.Ogc.Classic.Wfs20;
+using Honua.Protocols.Ogc.Classic.Wps20;
+#endif
+#if !HONUA_EXCLUDE_SCENE
 using Honua.Protocols.Scene;
 using Honua.Protocols.Scene.I3s;
+#endif
 using Honua.Server.Features.Protocols.SpatialAnalytics;
 using Honua.Server.Features.Protocols.Elevation;
+#if !HONUA_EXCLUDE_SENSORTHINGS
 using Honua.Protocols.SensorThings;
+#endif
+#if !HONUA_EXCLUDE_STAC
 using Honua.Protocols.Stac;
+#endif
 using Honua.Server.Features.Protocols.Terrain;
 using Honua.Server.Features.Reporting;
 using Honua.Server.Features.Spec;
 using Honua.Server.Features.StaticMap;
-using Honua.Protocols.Ogc.Classic.Wfs20;
-using Honua.Protocols.Ogc.Classic.Wps20;
 using Honua.Core.Features.Studio;
 using Honua.Core.Features.Capabilities;
 
@@ -96,8 +112,13 @@ internal static class FeatureRegistrationExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
+#if HONUA_EXCLUDE_OGC_API
+        _ = hostEnvironmentName;
+#endif
 
+#if !HONUA_EXCLUDE_GEOSERVICES
         services.AddFeatureServer();
+#endif
         // Plugin/extension SDK (#347): registers IPluginEditPipeline (a no-op unless the
         // Enterprise plugin.sdk entitlement is active and plugins are compiled in) so the
         // FeatureServer edit path can depend on it unconditionally. Custom builds add plugins
@@ -114,20 +135,32 @@ internal static class FeatureRegistrationExtensions
         services.AddMultidimensionalCoverageServices();
         services.AddZarrServices();
         services.AddTileExportRuntime();
+#if !HONUA_EXCLUDE_GEOSERVICES
         services.AddImageServer(configuration);
         services.AddMapServer(configuration);
+#endif
+#if !HONUA_EXCLUDE_OGC_API
         services.AddOgcCoverages();
         services.AddEdr();
         services.AddOgcFeatures(configuration);
         services.AddOgcMaps();
         services.AddOgcStyles();
         services.AddOgcProcesses(configuration, hostEnvironmentName);
+#endif
+#if !HONUA_EXCLUDE_OGC_CLASSIC
         services.AddWfs20(configuration);
         services.AddWps20(configuration);
         services.AddWcs20();
+#endif
+#if !HONUA_EXCLUDE_ODATA
         services.AddOData(configuration);
+#endif
+#if !HONUA_EXCLUDE_GEOSERVICES
         services.AddGeometryService();
+#endif
+#if !HONUA_EXCLUDE_GRPC
         services.AddHonuaGrpc(configuration);
+#endif
         services.AddObservability(configuration, redisCacheEntitled);
         // Alert health and streaming abstractions are shared by always-on operations
         // surfaces. AlertOptions keeps the workers dormant when alerting is disabled;
@@ -136,13 +169,17 @@ internal static class FeatureRegistrationExtensions
         services.AddFieldCollectionAutomations(configuration);
         services.AddNlQuery(configuration);
         services.AddStudioAiProxy(configuration);
+#if !HONUA_EXCLUDE_STAC
         services.AddStac();
+#endif
+#if !HONUA_EXCLUDE_SENSORTHINGS
         // Preview gate: SensorThings is off by default. Set
         // Capabilities__Experimental__serve.sensorthings__Enabled=true to opt in.
         if (CapabilityFlagOptions.IsExperimentalEnabled(configuration, "serve.sensorthings"))
         {
             services.AddSensorThings();
         }
+#endif
         services.AddStaticMap();
         services.AddTerrain();
         var sceneCatalogEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "scene.catalog");
@@ -150,6 +187,7 @@ internal static class FeatureRegistrationExtensions
         var sceneI3sEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "serve.i3s-scene");
         var sceneBimEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "scene.bim-ingest");
         var scenePointCloudEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "scene.pointcloud-ingest");
+#if !HONUA_EXCLUDE_SCENE
         if (sceneCatalogEnabled || scene3dTilesEnabled || sceneI3sEnabled || sceneBimEnabled || scenePointCloudEnabled)
         {
             services.AddScene(configuration);
@@ -161,9 +199,18 @@ internal static class FeatureRegistrationExtensions
         {
             services.AddSceneAssetHydration();
         }
-        services.AddElevation();
+
         services.AddSceneGeneration(configuration, scene3dTilesEnabled, sceneBimEnabled, scenePointCloudEnabled);
+#else
+        if (sceneCatalogEnabled || scene3dTilesEnabled || sceneI3sEnabled || sceneBimEnabled || scenePointCloudEnabled)
+        {
+            services.AddPostgresSceneRegistry(configuration);
+        }
+#endif
+        services.AddElevation();
+#if !HONUA_EXCLUDE_GEOSERVICES
         services.AddPrintingTools();
+#endif
         services.AddGeoprocessing(configuration);
         // Routing subsystem (#1266): selects pgRouting or the mock provider via
         // Routing:Provider. The GeoServices NAServer adapter consumes IRoutingProvider.
@@ -199,7 +246,9 @@ internal static class FeatureRegistrationExtensions
         // the ICapabilityRegistry registered by AddCapabilityManifest above.
         services.AddCapabilityGatedOpenApi();
         services.AddPackageReview();
+#if !HONUA_EXCLUDE_MCP
         services.AddMcpDataAccessSurface(configuration);
+#endif
         services.AddSpecGrounding();
         services.AddSpatialAnalytics();
         services.AddDataEnrichment(configuration);
@@ -228,6 +277,7 @@ internal static class FeatureRegistrationExtensions
         services.AddOrchestration();
         services.AddPMTilesProxy();
 
+#if !HONUA_EXCLUDE_MCP
         // Hosted-promotion MCP surface (#1951): advertise
         // honua://published-services|deployments|map-packages|app-packages on the
         // deployed server, but ONLY when canonical promotion persistence is wired.
@@ -245,6 +295,7 @@ internal static class FeatureRegistrationExtensions
         {
             services.AddMcpPromotionSurface();
         }
+#endif
 
         return services;
     }
@@ -269,27 +320,38 @@ internal static class FeatureRegistrationExtensions
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+#if !HONUA_EXCLUDE_GEOSERVICES
         endpoints.MapFeatureServerEndpoints();
         endpoints.MapVersionManagementServerEndpoints();
+#endif
         endpoints.MapCloudDemoEndpoints();
+#if !HONUA_EXCLUDE_GEOSERVICES
         endpoints.MapGeocodingEndpoints();
+#endif
         endpoints.MapFormPackageEndpoints();
         endpoints.MapFieldReviewEndpoints();
         endpoints.MapFieldExportEndpoints();
         endpoints.MapCogEndpoints();
         endpoints.MapMultidimensionalCoverageEndpoints();
         endpoints.MapZarrEndpoints();
+#if !HONUA_EXCLUDE_GEOSERVICES
         endpoints.MapGeoservicesCatalogEndpoints();
         endpoints.MapSharingRestEndpoints();
         endpoints.MapArcGisServerAdminEndpoints();
         endpoints.MapImageServerEndpoints();
         endpoints.MapMapServerEndpoints();
         endpoints.MapVectorTileServerEndpoints();
+#endif
+#if !HONUA_EXCLUDE_OGC_CLASSIC
         endpoints.MapOgcClassicEndpoints();
+#endif
+#if !HONUA_EXCLUDE_GEOSERVICES
         endpoints.MapAttachmentEndpoints();
+#endif
         endpoints.MapTileJsonEndpoints();
         endpoints.MapTerrainEndpoints();
         var lifecycleConfiguration = endpoints.ServiceProvider.GetRequiredService<IConfiguration>();
+#if !HONUA_EXCLUDE_SCENE
         if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "scene.catalog"))
         {
             endpoints.MapSceneDiscoveryEndpoints();
@@ -304,6 +366,9 @@ internal static class FeatureRegistrationExtensions
         {
             endpoints.MapI3sSceneServerEndpoints();
         }
+#else
+        _ = lifecycleConfiguration;
+#endif
         endpoints.MapNetworkDatasetAdminEndpoints();
         endpoints.MapNetworkTopologyEditAdminEndpoints();
         Honua.Server.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpoints.MapNetworkTopologyRebuildAdminEndpoints(endpoints);
@@ -311,6 +376,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapElevationEndpoints();
         endpoints.MapSceneAnalysisEndpoints();
         endpoints.MapVisibilityAnalysisEndpoints();
+#if !HONUA_EXCLUDE_SCENE
         if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "scene.bim-ingest"))
         {
             endpoints.MapSceneBimIngestEndpoints();
@@ -319,42 +385,63 @@ internal static class FeatureRegistrationExtensions
         {
             endpoints.MapScenePointCloudIngestEndpoints();
         }
+#endif
         endpoints.MapPMTilesProxyEndpoints();
         Honua.Server.Features.Protocols.Rasters.CogArtifacts.CogArtifactEndpoints.MapCogArtifactEndpoints(endpoints);
         endpoints.MapStyleEndpoints();
+#if !HONUA_EXCLUDE_OGC_API
         endpoints.MapOgcCoveragesEndpoints();
         endpoints.MapEdrEndpoints();
         endpoints.MapOgcFeaturesEndpoints();
         endpoints.MapOgcMapsEndpoints();
         endpoints.MapOgcStylesEndpoints();
+#endif
         endpoints.MapGeoprocessingOutputArtifactEndpoints();
+#if !HONUA_EXCLUDE_OGC_API
         endpoints.MapOgcProcessesEndpoints();
         endpoints.MapOgcRecordsEndpoints();
         endpoints.MapOgcTilesEndpoints();
+#endif
+#if !HONUA_EXCLUDE_OGC_CLASSIC
         endpoints.MapWfs20Endpoints();
         endpoints.MapWcs20Endpoints();
+#endif
+#if !HONUA_EXCLUDE_ODATA
         endpoints.MapODataEndpoints();
+#endif
+#if !HONUA_EXCLUDE_GEOSERVICES
         endpoints.MapGeometryServiceEndpoints();
+#endif
+#if !HONUA_EXCLUDE_STAC
         endpoints.MapStacEndpoints();
+#endif
+#if !HONUA_EXCLUDE_SENSORTHINGS
         // Experimental gate (PA-096/PA-103/PA-116/PA-145): SensorThings is off by default.
         var staConfig = endpoints.ServiceProvider.GetRequiredService<IConfiguration>();
         if (CapabilityFlagOptions.IsExperimentalEnabled(staConfig, "serve.sensorthings"))
         {
             endpoints.MapSensorThingsEndpoints();
         }
+#endif
         endpoints.MapStaticMapEndpoints();
+#if !HONUA_EXCLUDE_GEOSERVICES
         endpoints.MapNAServerEndpoints();
         endpoints.MapPrintingToolsEndpoints();
         endpoints.MapSpatialAnalyticsRestEndpoints();
         endpoints.MapSpatialAnalyticsOgcEndpoints();
+#endif
         endpoints.MapDataEnrichmentEndpoints();
+#if !HONUA_EXCLUDE_GEOSERVICES
         endpoints.MapGPServerEndpoints();
+#endif
         endpoints.MapAnalysisContentEndpoints();
         endpoints.MapTemporalHistoryEndpoints();
         endpoints.MapTemporalHistorySliceEndpoints();
         endpoints.MapAnalysisReporting();
         endpoints.MapCapabilityManifestEndpoints();
+#if !HONUA_EXCLUDE_MCP
         endpoints.MapMcpDataAccessSurface();
+#endif
         endpoints.MapSpecGroundingEndpoints();
         endpoints.MapSpecEndpoints();
         // Plugin-contributed REST routes (ICustomEndpoint, #1562). A no-op unless a custom build
@@ -439,11 +526,21 @@ internal static class FeatureRegistrationExtensions
     // an explicit list keeps the trim analyzer happy and surfaces module-add
     // / module-remove in code review. Protocol-module assemblies extracted in
     // Phase 1 follow-ups will append their new()-able module here.
+    // AddServerFeatures remains the canonical registration. Do not also call
+    // AddDiscoveredProtocolModules from that path.
     private static readonly IReadOnlyList<IHonuaProtocolModule> BuiltInProtocolModules = new IHonuaProtocolModule[]
     {
+#if !HONUA_EXCLUDE_ODATA
         new Modules.ODataProtocolModule(),
+#endif
+#if !HONUA_EXCLUDE_OGC_API
         new Modules.OgcApiProtocolModule(),
+#endif
+#if !HONUA_EXCLUDE_OGC_CLASSIC
         new Modules.OgcClassicProtocolModule(),
+#endif
+#if !HONUA_EXCLUDE_GEOSERVICES
         new Modules.GeoServicesProtocolModule(),
+#endif
     };
 }

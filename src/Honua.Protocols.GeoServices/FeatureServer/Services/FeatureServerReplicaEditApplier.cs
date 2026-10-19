@@ -104,7 +104,7 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
         };
 
         var editResult = await _editsHandler.HandleApplyEditsAsync(
-            serviceId, publicLayerId, request, _editLimits, cancellationToken).ConfigureAwait(false);
+            serviceId, publicLayerId, request, _editLimits, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (editResult is not JsonHttpResult<ApplyEditsResponse> { Value: { } response })
         {

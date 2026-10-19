@@ -49,6 +49,156 @@ public sealed class OperationSecretKeyRingProtectionTests
     }
 
     [UnitTest]
+    public void RequiresDurableChannelCertificate_StaysOffInDevelopmentAndTest()
+    {
+        OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+            isDevelopment: true, isTest: false, redisConnected: true).Should().BeFalse();
+        OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+            isDevelopment: false, isTest: true, redisConnected: true).Should().BeFalse();
+        OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+            isDevelopment: true, isTest: true, redisConnected: true).Should().BeFalse();
+        OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+            isDevelopment: false, isTest: false, redisConnected: false).Should().BeFalse();
+        OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+            isDevelopment: false, isTest: false, redisConnected: true).Should().BeTrue();
+    }
+
+    // The published image is uid 1001. A root-owned 0640 file is readable when its
+    // group is 1001, and a root:root 0640 file is not. Other-read is not required.
+    [UnitTest]
+    public void MountAccess_AcceptsRootOwnedMode0640ForThePublishedContainerGroup()
+    {
+        const UnixFileMode mode = OperationSecretKeyRingProtection.RootOwnedGroupReadMode;
+        const uint root = 0;
+
+        OperationSecretKeyRingProtection.IsRootOwnedMode0640(
+                root,
+                OperationSecretKeyRingProtection.PublishedContainerGroupId,
+                mode,
+                OperationSecretKeyRingProtection.PublishedContainerGroupId)
+            .Should().BeTrue();
+        OperationSecretKeyRingProtection.IsReadable(
+                root,
+                OperationSecretKeyRingProtection.PublishedContainerGroupId,
+                mode,
+                OperationSecretKeyRingProtection.PublishedContainerUserId,
+                OperationSecretKeyRingProtection.PublishedContainerGroupId)
+            .Should().BeTrue();
+
+        OperationSecretKeyRingProtection.IsRootOwnedMode0640(
+                root,
+                group: root,
+                mode,
+                OperationSecretKeyRingProtection.PublishedContainerGroupId)
+            .Should().BeFalse();
+        OperationSecretKeyRingProtection.IsReadable(
+                root,
+                group: root,
+                mode,
+                OperationSecretKeyRingProtection.PublishedContainerUserId,
+                OperationSecretKeyRingProtection.PublishedContainerGroupId)
+            .Should().BeFalse();
+
+        var worldReadable = mode | UnixFileMode.OtherRead;
+        OperationSecretKeyRingProtection.IsRootOwnedMode0640(
+                root,
+                OperationSecretKeyRingProtection.PublishedContainerGroupId,
+                worldReadable,
+                OperationSecretKeyRingProtection.PublishedContainerGroupId)
+            .Should().BeFalse();
+        OperationSecretKeyRingProtection.IsReadable(
+                root,
+                group: root,
+                worldReadable,
+                OperationSecretKeyRingProtection.PublishedContainerUserId,
+                OperationSecretKeyRingProtection.PublishedContainerGroupId)
+            .Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Resolve_WithMode0640_LoadsThePasswordProtectedPkcs12WithoutOtherRead()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var path = Path.Join(Path.GetTempPath(), $"honua-operation-secrets-{Guid.NewGuid():N}.pfx");
+        const string password = "test-password";
+        try
+        {
+            using var source = CreateCertificate();
+            File.WriteAllBytes(path, source.Export(X509ContentType.Pkcs12, password));
+            File.SetUnixFileMode(path, OperationSecretKeyRingProtection.RootOwnedGroupReadMode);
+            File.GetUnixFileMode(path).Should().Be(OperationSecretKeyRingProtection.RootOwnedGroupReadMode);
+            (File.GetUnixFileMode(path) & UnixFileMode.OtherRead).Should().Be(UnixFileMode.None);
+
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [OperationSecretKeyRingProtection.CertificatePathKey] = path,
+                    [OperationSecretKeyRingProtection.CertificatePasswordKey] = password,
+                })
+                .Build();
+
+            using var resolved = OperationSecretKeyRingProtection.Resolve(configuration);
+            resolved.HasPrivateKey.Should().BeTrue();
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                File.Delete(path);
+            }
+        }
+    }
+
+    [UnitTest]
+    public void Resolve_WhenMountIsNotReadable_NamesRootOwned0640AndDoesNotAskForOtherRead()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var path = Path.Join(Path.GetTempPath(), $"honua-operation-secrets-{Guid.NewGuid():N}.pfx");
+        const string password = "do-not-echo-this-password";
+        try
+        {
+            using var source = CreateCertificate();
+            File.WriteAllBytes(path, source.Export(X509ContentType.Pkcs12, password));
+            File.SetUnixFileMode(path, UnixFileMode.None);
+
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [OperationSecretKeyRingProtection.CertificatePathKey] = path,
+                    [OperationSecretKeyRingProtection.CertificatePasswordKey] = password,
+                })
+                .Build();
+
+            var action = () => OperationSecretKeyRingProtection.Resolve(configuration);
+
+            action.Should().Throw<InvalidOperationException>()
+                .WithMessage(
+                    $"*0640*uid {OperationSecretKeyRingProtection.PublishedContainerUserId}, gid {OperationSecretKeyRingProtection.PublishedContainerGroupId}*")
+                .Where(exception =>
+                    exception.Message.Contains("Other-read is not required", StringComparison.Ordinal) &&
+                    !exception.Message.Contains("a+r", StringComparison.Ordinal) &&
+                    !exception.Message.Contains(password, StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                File.Delete(path);
+            }
+        }
+    }
+
+    [UnitTest]
     public void Resolve_WithPkcs12Certificate_ReturnsPrivateKeyCertificate()
     {
         var path = Path.Join(Path.GetTempPath(), $"honua-operation-secrets-{Guid.NewGuid():N}.pfx");

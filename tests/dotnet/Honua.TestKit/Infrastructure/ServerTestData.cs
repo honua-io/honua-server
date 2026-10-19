@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit.Seeding;
 
@@ -11,6 +12,9 @@ namespace Honua.TestKit.Infrastructure;
 /// </summary>
 public static class ServerTestData
 {
+    private static readonly string[] _fixtureAttachmentMigrations =
+        ["002_CreateAttachmentsTable.sql", "125_AddImportedAttachmentIdentity.sql"];
+
     /// <summary>
     /// Seeds the fixture and applies the production cache provenance DDL to its fixed raster schema.
     /// </summary>
@@ -31,6 +35,33 @@ public static class ServerTestData
                 .Replace("$HonuaSchema$", "honua", StringComparison.Ordinal);
             await fixture.ExecuteAsync(ddl).ConfigureAwait(false);
         }).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Provisions the production-owned attachment tables in the fixture schema.
+    /// YAML catalog SQL targets literal honua tables, while feature rows and their
+    /// transactional attachment cleanup belong to the isolated fixture schema.
+    /// </summary>
+    internal static Task EnsureFixtureAttachmentsAsync(PostgresFixture fixture, string schemaName)
+    {
+        var quotedSchema = SchemaSearchPath.ValidateAndQuote(schemaName);
+        return fixture.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            await using var connection = await fixture.GetConnectionAsync(schemaName).ConfigureAwait(false);
+            foreach (var migration in _fixtureAttachmentMigrations)
+            {
+                await using var stream = typeof(PostgresFixture).Assembly.GetManifestResourceStream(
+                    $"Honua.Server.Migrations.{migration}")
+                    ?? throw new InvalidOperationException($"The attachment migration {migration} was not embedded.");
+                using var reader = new StreamReader(stream);
+                var ddl = (await reader.ReadToEndAsync().ConfigureAwait(false))
+                    .Replace("honua.", $"{quotedSchema}.", StringComparison.Ordinal)
+                    .Replace("$HonuaSchema$", quotedSchema, StringComparison.Ordinal);
+                await using var command = connection.CreateCommand();
+                command.CommandText = ddl;
+                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+        });
     }
 
     private static string ResolveSeedPath()

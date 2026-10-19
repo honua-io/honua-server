@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Reflection;
-using System.Xml.Linq;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Architecture.Tests;
@@ -10,7 +9,7 @@ namespace Honua.Architecture.Tests;
 /// <summary>
 /// Shared helpers for architecture test classes.
 /// </summary>
-internal static class ArchitectureTestHelpers
+internal static partial class ArchitectureTestHelpers
 {
     private const BindingFlags TestMemberFlags =
         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
@@ -42,10 +41,9 @@ internal static class ArchitectureTestHelpers
     /// Loads every assembly that may carry integration tests with endpoint /
     /// operation coverage attributes: the monolithic <c>Honua.Server.Tests</c>
     /// plus each extracted per-protocol test project
-    /// (<c>Honua.Protocols.&lt;X&gt;.Tests</c>). They are discovered by globbing
-    /// the test output directory, so a newly extracted protocol test project is
-    /// picked up automatically once Architecture.Tests references it (which puts
-    /// its assembly in the output directory).
+    /// (<c>Honua.Protocols.&lt;X&gt;.Tests</c>). The catalog generates explicit
+    /// project references and a required assembly inventory. Missing assemblies
+    /// fail discovery rather than silently reducing coverage.
     /// </summary>
     /// <remarks>
     /// Coverage scans must union these assemblies: as protocols are physically
@@ -57,42 +55,28 @@ internal static class ArchitectureTestHelpers
     internal static IReadOnlyList<Assembly> IntegrationTestAssemblies()
     {
         var baseDir = AppContext.BaseDirectory;
-        // Honua.Ai.Tests carries the MCP protocol-surface tests (MCP lives in
-        // Honua.Ai, not a standalone Honua.Protocols.Mcp), so it holds endpoint /
-        // operation coverage that the scans must see alongside the Server.Tests
-        // and per-protocol Honua.Protocols.*.Tests assemblies.
-        var patterns = new[]
+        var inventory = Path.Combine(baseDir, "test-coverage-assemblies.txt");
+        if (!File.Exists(inventory))
         {
-            "Honua.Server.Tests.dll",
-            "Honua.Protocols.*.Tests.dll",
-            "Honua.Ai.Tests.dll",
-            "Honua.Worker.Gdal.Tests.dll",
-            // honua-server#2947: provider-http-smoke suite. Named Honua.ProviderSmoke.Tests
-            // (not Honua.Protocols.*.Tests) since it spans multiple protocol families
-            // against multiple provider fixtures, so it needs its own explicit glob entry.
-            "Honua.ProviderSmoke.Tests.dll"
-        };
+            throw new InvalidOperationException("Required test assembly catalog is missing from architecture output.");
+        }
+
+        var names = File.ReadAllLines(inventory).Where(name => !string.IsNullOrWhiteSpace(name)).ToArray();
+        if (names.Length == 0)
+        {
+            throw new InvalidOperationException("Required test assembly catalog is empty.");
+        }
 
         var assemblies = new List<Assembly>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var pattern in patterns)
+        foreach (var name in names)
         {
-            foreach (var path in Directory.EnumerateFiles(baseDir, pattern))
+            var path = Path.Combine(baseDir, name);
+            if (!File.Exists(path))
             {
-                if (!seen.Add(Path.GetFileName(path)))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    assemblies.Add(Assembly.LoadFrom(path));
-                }
-                catch (BadImageFormatException)
-                {
-                    // Native / mixed-mode sidecar that happens to match the glob — skip.
-                }
+                throw new InvalidOperationException($"Required coverage assembly is missing: {name}");
             }
+
+            assemblies.Add(Assembly.LoadFrom(path));
         }
 
         return assemblies;
@@ -138,72 +122,4 @@ internal static class ArchitectureTestHelpers
         => member.CustomAttributes.Any(attribute =>
             ApiCoverageAttributeTypes.Any(type => attribute.AttributeType == type));
 
-    /// <summary>
-    /// Resolves the repository root by walking upward until Honua.sln is found.
-    /// </summary>
-    internal static string ResolveRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(CombinePath(directory.FullName, "Honua.sln")))
-        {
-            directory = directory.Parent;
-        }
-
-        if (directory is null)
-        {
-            throw new FileNotFoundException("Unable to locate repository root.");
-        }
-
-        return directory.FullName;
-    }
-
-    /// <summary>
-    /// Combines path segments like <see cref="Path.Combine(string[])"/>, but throws instead of
-    /// silently discarding the earlier segments if a non-first segment turns out to be rooted
-    /// (absolute). Every call site in this project passes literal or catalog-derived relative
-    /// segments, so this converts the silent-truncation risk CodeQL's <c>cs/path-combine</c>
-    /// check flags into a loud test failure if that invariant is ever violated, instead of
-    /// papering over the check with per-call-site suppression comments.
-    /// </summary>
-    internal static string CombinePath(params string[] segments)
-    {
-        for (var i = 1; i < segments.Length; i++)
-        {
-            if (Path.IsPathRooted(segments[i]))
-            {
-                throw new ArgumentException(
-                    $"Path segment '{segments[i]}' at index {i} must be relative; Path.Combine would otherwise silently discard the preceding segments.",
-                    nameof(segments));
-            }
-        }
-
-        return Path.Join(segments);
-    }
-
-    /// <summary>
-    /// Returns the bare project names (filename without extension) of every direct
-    /// <c>&lt;ProjectReference&gt;</c> declared in the given csproj. Blank includes are
-    /// skipped and Windows path separators are normalized so the result is stable
-    /// across platforms.
-    /// </summary>
-    internal static IReadOnlyList<string> DirectProjectReferenceNames(string csprojPath)
-        => DirectReferenceValues(csprojPath, "ProjectReference")
-            .Select(value => Path.GetFileNameWithoutExtension(value.Replace('\\', '/'))!)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .ToList();
-
-    /// <summary>
-    /// Returns the raw <c>Include</c> values of every direct
-    /// <c>&lt;PackageReference&gt;</c> declared in the given csproj. Blank includes are
-    /// skipped.
-    /// </summary>
-    internal static IReadOnlyList<string> DirectPackageReferenceNames(string csprojPath)
-        => DirectReferenceValues(csprojPath, "PackageReference").ToList();
-
-    private static IEnumerable<string> DirectReferenceValues(string csprojPath, string elementName)
-        => XDocument.Load(csprojPath)
-            .Descendants(elementName)
-            .Select(element => element.Attribute("Include")?.Value)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => value!);
 }

@@ -39,6 +39,12 @@
       "path": "/observability/alerts/{eventId}/acknowledge"
     },
     {
+      "operationId": "activateGpProcessRelease",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/gp/process-releases/bindings/{process}/activate"
+    },
+    {
       "operationId": "addClientCertificateRevocation",
       "catalogOperationId": null,
       "method": "POST",
@@ -729,6 +735,12 @@
       "path": "/jobs/{jobId}/artifacts"
     },
     {
+      "operationId": "getConsoleJobDiagnostics",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/jobs/{jobId}/diagnostics"
+    },
+    {
       "operationId": "getConsoleJobLogs",
       "catalogOperationId": null,
       "method": "GET",
@@ -885,6 +897,18 @@
       "path": "/import/geoservices/jobs/{jobId}"
     },
     {
+      "operationId": "getGpProcessBinding",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/gp/process-releases/bindings/{process}"
+    },
+    {
+      "operationId": "getGpProcessRelease",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/gp/process-releases/{digest}"
+    },
+    {
       "operationId": "getIdentityProviders",
       "catalogOperationId": null,
       "method": "GET",
@@ -925,6 +949,12 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/migration/performance-evidence/latest"
+    },
+    {
+      "operationId": "getLayerPublishJobStatus",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/connections/{id}/layers/jobs/{jobId}"
     },
     {
       "operationId": "getLayerShareTrafficSeries",
@@ -1503,6 +1533,18 @@
       "path": "/import/geoservices/jobs"
     },
     {
+      "operationId": "listGpProcessBindings",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/gp/process-releases/bindings"
+    },
+    {
+      "operationId": "listGpProcessReleases",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/gp/process-releases"
+    },
+    {
       "operationId": "listInvestigations",
       "catalogOperationId": null,
       "method": "GET",
@@ -1777,6 +1819,12 @@
       "catalogOperationId": null,
       "method": "POST",
       "path": "/forms/packages/{formId}/versions/{packageVersion}/publish"
+    },
+    {
+      "operationId": "publishGpProcessRelease",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/gp/process-releases"
     },
     {
       "operationId": "publishLayer",
@@ -2163,6 +2211,12 @@
       "path": "/deploy/operations/{operationId}/submit"
     },
     {
+      "operationId": "submitGpProcessReleaseJob",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/gp/process-releases/bindings/{process}/jobs"
+    },
+    {
       "operationId": "submitNetworkTopologyRebuild",
       "catalogOperationId": null,
       "method": "POST",
@@ -2383,6 +2437,12 @@
       "catalogOperationId": null,
       "method": "POST",
       "path": "/import/upload"
+    },
+    {
+      "operationId": "uploadImportFileFromObjectStore",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/upload-object"
     },
     {
       "operationId": "uploadImportFileFromUrl",

@@ -17,6 +17,38 @@ namespace Honua.Geoprocessing;
 /// </summary>
 internal interface IGeoprocessingJobService
 {
+    /// <summary>Authorizes a resolved GP task without granting generic operator execution.</summary>
+    Task EnsureGPServerExecutionAuthorizedAsync(
+        ClaimsPrincipal principal, GPServerExecutionContext execution, CancellationToken cancellationToken = default)
+        => EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken);
+
+    /// <summary>Submits through the shared gates with an explicit, server-resolved GP identity.</summary>
+    Task<ExecutionJobRecord> SubmitGPServerJobAsync(
+        AnalysisPlan plan, string? idempotencyKey, ClaimsPrincipal principal,
+        GPServerExecutionContext execution, IReadOnlyDictionary<string, string>? protocolMetadata = null,
+        CancellationToken cancellationToken = default)
+        => SubmitJobAsync(plan, idempotencyKey, principal, protocolMetadata, cancellationToken);
+
+    /// <summary>Reads a service-bound GP job, preserving canonical grant and ownership checks.</summary>
+    Task<ExecutionJobRecord> GetGPServerJobAsync(
+        string jobId, string serviceId, string? taskName, ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+        => GetJobAsync(jobId, principal, cancellationToken);
+
+    /// <summary>Resolves results only for an authorized service-bound GP job.</summary>
+    Task<AnalysisResultPackage> GetGPServerJobResultsAsync(
+        string jobId, string serviceId, string taskName, ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+        => GetJobResultsAsync(jobId, principal, cancellationToken);
+
+    /// <summary>Cancels an authorized service-bound GP job through the existing approval gates.</summary>
+    Task CancelGPServerJobAsync(
+        string jobId, string serviceId, string? taskName, ClaimsPrincipal principal,
+        bool isOrphanCleanup = false, CancellationToken cancellationToken = default)
+        => isOrphanCleanup
+            ? CancelAbandonedJobAsync(jobId, principal, cancellationToken)
+            : CancelJobAsync(jobId, principal, cancellationToken);
+
     /// <summary>
     /// Validates that the caller has the required authorization for the specified operation.
     /// Enables adapters to enforce auth before protocol-specific validation.
@@ -26,6 +58,22 @@ internal interface IGeoprocessingJobService
         OperatorResourceType resourceType,
         OperatorOperation operation,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates authorization for a fully described operator request, including workspace
+    /// visibility, owner, and scope when <paramref name="request"/> carries them.
+    /// Implementations that only understand the type/operation pair keep the previous
+    /// check; the production job service forwards the request intact.
+    /// </summary>
+    Task EnsureCallerAuthorizedAsync(
+        ClaimsPrincipal principal,
+        OperatorAuthorizationRequest request,
+        CancellationToken cancellationToken = default)
+        => EnsureCallerAuthorizedAsync(
+            principal,
+            request.ResourceType,
+            request.Operation,
+            cancellationToken);
 
     /// <summary>
     /// Submits a plan on behalf of a principal whose row/field security identity is supplied
@@ -89,21 +137,21 @@ internal interface IGeoprocessingJobService
 
     /// <summary>
     /// Validates a plan for executability and returns the validation result.
-    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync"/> to
+    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync(ClaimsPrincipal, OperatorResourceType, OperatorOperation, CancellationToken)"/> to
     /// guarantee auth-before-validation ordering at the adapter boundary.
     /// </summary>
     PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal);
 
     /// <summary>
     /// Performs a dry run of a plan and returns cost/artifact estimates.
-    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync"/> to
+    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync(ClaimsPrincipal, OperatorResourceType, OperatorOperation, CancellationToken)"/> to
     /// guarantee auth-before-validation ordering at the adapter boundary.
     /// </summary>
     DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal);
 
     /// <summary>
     /// Submits a plan for asynchronous execution and returns the job record.
-    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync"/> to
+    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync(ClaimsPrincipal, OperatorResourceType, OperatorOperation, CancellationToken)"/> to
     /// guarantee auth-before-validation ordering at the adapter boundary.
     /// </summary>
     /// <param name="plan">The analysis plan to execute.</param>

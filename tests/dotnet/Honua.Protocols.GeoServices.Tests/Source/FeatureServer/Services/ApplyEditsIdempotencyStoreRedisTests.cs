@@ -123,7 +123,7 @@ public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
 
         var token = await nodeA.TryReserveAsync(scope);
         token.Should().NotBeNull();
-        await nodeA.SetAsync(scope, ResponseWithObjectId(4406));
+        (await nodeA.SetAsync(scope, token!, ResponseWithObjectId(4406))).Should().BeTrue();
 
         // A stale release arriving after the response landed must not erase the replay value, or a
         // client retry would re-apply an edit that already committed.
@@ -159,8 +159,9 @@ public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
         var nodeB = CreateStore(multiplexer);
         var scope = NewScope();
 
-        await nodeA.TryReserveAsync(scope);
-        await nodeA.SetAsync(scope, ResponseWithObjectId(2250));
+        var token = await nodeA.TryReserveAsync(scope);
+        token.Should().NotBeNull();
+        (await nodeA.SetAsync(scope, token!, ResponseWithObjectId(2250))).Should().BeTrue();
 
         var replayed = await nodeB.TryGetAsync(scope);
 

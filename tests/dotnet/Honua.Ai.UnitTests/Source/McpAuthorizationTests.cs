@@ -1,0 +1,715 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Security.Claims;
+using System.Text.Json;
+using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Grounding.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Geoprocessing;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+
+namespace Honua.Server.Tests.Features.Protocols.Mcp;
+
+/// <summary>
+/// Enforces that every MCP tool and resource terminates unauthenticated
+/// requests with <see cref="GeoprocessingAuthorizationException"/> before any
+/// domain delegation. These tests guard the authentication gate that
+/// <see cref="McpErrorMapper"/> translates into the <c>unauthenticated</c>
+/// error envelope for operators.
+/// </summary>
+[Protocol(TestProtocols.Mcp)]
+public sealed class McpAuthorizationTests
+{
+    private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
+    private readonly IGroundingService _groundingService = Substitute.For<IGroundingService>();
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_validate_plan")]
+    public async Task ValidatePlan_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    {
+        var tool = new ValidatePlanTool(_jobService, NullLogger<ValidatePlanTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpPlanArgument { Plan = McpTestFactory.CreateValidPlanInput() },
+            McpJsonContext.Default.McpPlanArgument);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AnonymousHttpContext(), arguments, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeTrue();
+        _jobService.DidNotReceiveWithAnyArgs().ValidatePlan(default!, default!);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_dry_run_plan")]
+    public async Task DryRunPlan_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    {
+        var tool = new DryRunPlanTool(_jobService, NullLogger<DryRunPlanTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpPlanArgument { Plan = McpTestFactory.CreateValidPlanInput() },
+            McpJsonContext.Default.McpPlanArgument);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AnonymousHttpContext(), arguments, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        _jobService.DidNotReceiveWithAnyArgs().DryRunPlan(default!, default!);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_execute_plan")]
+    public async Task ExecutePlan_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    {
+        var tool = new ExecutePlanTool(_jobService, NullLogger<ExecutePlanTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpExecutePlanArgument { Plan = McpTestFactory.CreateValidPlanInput() },
+            McpJsonContext.Default.McpExecutePlanArgument);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AnonymousHttpContext(), arguments, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _jobService.DidNotReceiveWithAnyArgs().SubmitJobAsync(
+            default!, default, default!, default, default);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_cancel_job")]
+    public async Task CancelJob_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    {
+        var tool = new CancelJobTool(_jobService, NullLogger<CancelJobTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpCancelJobArgument { JobId = "job-1" },
+            McpJsonContext.Default.McpCancelJobArgument);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AnonymousHttpContext(), arguments, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _jobService.DidNotReceiveWithAnyArgs().CancelJobAsync(
+            default!, default!, default);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_plan_analysis")]
+    public async Task PlanAnalysis_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    {
+        var tool = new PlanAnalysisTool(
+            Substitute.For<Honua.Ai.AiBuilder.Planning.IPlanAnalysisService>(),
+            _jobService,
+            NullLogger<PlanAnalysisTool>.Instance);
+
+        JsonElement? arguments = McpTestFactory.ParseJson("""{"intent":"build a dashboard"}""");
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AnonymousHttpContext(), arguments, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_ground_candidates")]
+    public async Task GroundCandidates_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    {
+        var tool = new GroundCandidatesTool(_groundingService, _jobService, NullLogger<GroundCandidatesTool>.Instance);
+
+        JsonElement? arguments = McpTestFactory.ParseJson("""{"goal":"Buffer the parcels"}""");
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AnonymousHttpContext(), arguments, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeTrue();
+        await _groundingService.DidNotReceiveWithAnyArgs().GroundAsync(default!, default!, default);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_clarify_intent")]
+    public async Task ClarifyIntent_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    {
+        var tool = new ClarifyIntentTool(_groundingService, _jobService, NullLogger<ClarifyIntentTool>.Instance);
+
+        JsonElement? arguments = McpTestFactory.ParseJson("""
+            {"intentId":"intent-1","goal":"Buffer the parcels","response":{"answers":{"q1":["a"]}}}
+            """);
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AnonymousHttpContext(), arguments, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeTrue();
+        await _groundingService.DidNotReceiveWithAnyArgs().GroundAsync(default!, default!, default);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://jobs/{jobId}")]
+    public async Task JobStatusResource_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    {
+        var resource = new JobStatusResource(_jobService, NullLogger<JobStatusResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AnonymousHttpContext(), "honua://jobs/job-1", CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _jobService.DidNotReceiveWithAnyArgs().GetJobAsync(default!, default!, default);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://jobs/{jobId}/results")]
+    public async Task JobResultsResource_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    {
+        var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AnonymousHttpContext(), "honua://jobs/job-1/results", CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _jobService.DidNotReceiveWithAnyArgs().GetJobResultsAsync(default!, default!, default);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    {
+        var resource = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AnonymousHttpContext(), "honua://workspaces/ws-1", CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://catalog/processes")]
+    public async Task ProcessCatalogResource_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    {
+        var resource = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AnonymousHttpContext(), "honua://catalog/processes", CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
+    {
+        _jobService
+            .When(s => s.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                OperatorResourceType.Workspace,
+                OperatorOperation.Read,
+                Arg.Any<CancellationToken>()))
+            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
+        var resource = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(), "honua://workspaces/ws-1", CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_NonAdminOwner_ReadsOwnWorkspace()
+    {
+        var lifecycle = WorkspaceLifecycle("ws-owned", "owner-1", scopeId: null);
+        ConfigureWorkspaceAuthorization();
+        var resource = WorkspaceReader(lifecycle);
+
+        var result = await resource.ReadAsync(
+            Principal("owner-1"), "honua://workspaces/ws-owned", CancellationToken.None);
+
+        McpTestFactory.ParseJson(result.Contents[0].Text).GetProperty("workspaceId").GetString()
+            .Should().Be("ws-owned");
+        await _jobService.Received(1).EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<OperatorAuthorizationRequest>(request =>
+                request.ResourceType == OperatorResourceType.Workspace
+                && request.Operation == OperatorOperation.Read
+                && request.ResourceId == "ws-owned"
+                && request.WorkspaceVisibility == WorkspaceVisibility.Personal
+                && request.WorkspaceOwnerId == "owner-1"
+                && request.WorkspaceScopeId == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_OtherNonAdmin_IsNotFoundRatherThanPermissionDenied()
+    {
+        var lifecycle = WorkspaceLifecycle("ws-owned", "owner-1", scopeId: null);
+        ConfigureWorkspaceAuthorization();
+        var resource = WorkspaceReader(lifecycle);
+
+        var act = async () => await resource.ReadAsync(
+            Principal("owner-2"), "honua://workspaces/ws-owned", CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_SharedScopeMember_ReadsWorkspace_OutsiderIsNotFound()
+    {
+        var lifecycle = WorkspaceLifecycle("ws-shared", "owner-1", scopeId: "team-a");
+        ConfigureWorkspaceAuthorization();
+        var resource = WorkspaceReader(lifecycle);
+
+        var allowed = await resource.ReadAsync(
+            Principal("member-1", scope: "team-a", tenantId: "tenant-1"),
+            "honua://workspaces/ws-shared",
+            CancellationToken.None);
+        McpTestFactory.ParseJson(allowed.Contents[0].Text).GetProperty("workspaceId").GetString()
+            .Should().Be("ws-shared");
+        await _jobService.Received().EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<OperatorAuthorizationRequest>(request =>
+                request.WorkspaceVisibility == WorkspaceVisibility.Shared
+                && request.WorkspaceScopeId == "team-a"
+                && request.WorkspaceOwnerId == null),
+            Arg.Any<CancellationToken>());
+
+        var act = async () => await resource.ReadAsync(
+            Principal("outsider", tenantId: "tenant-1"),
+            "honua://workspaces/ws-shared",
+            CancellationToken.None);
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_TenantScopedWorkspace_OwnerReads_GroupEqualToTenantDoesNotShare()
+    {
+        // GeoprocessingDispatchJobExecutor sets ScopeId to the submitter tenant.
+        // That must stay a personal owner check. A groups claim equal to the tenant
+        // id is not the configured workspace-scope claim and must not grant access.
+        var lifecycle = WorkspaceLifecycle("ws-tenant", "owner-1", scopeId: "tenant-a");
+        ConfigureWorkspaceAuthorization();
+        var resource = WorkspaceReader(lifecycle);
+
+        var allowed = await resource.ReadAsync(
+            Principal("owner-1", tenantId: "tenant-a"),
+            "honua://workspaces/ws-tenant",
+            CancellationToken.None);
+        McpTestFactory.ParseJson(allowed.Contents[0].Text).GetProperty("workspaceId").GetString()
+            .Should().Be("ws-tenant");
+        await _jobService.Received().EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Is<OperatorAuthorizationRequest>(request =>
+                request.WorkspaceVisibility == WorkspaceVisibility.Personal
+                && request.WorkspaceOwnerId == "owner-1"
+                && request.WorkspaceScopeId == null),
+            Arg.Any<CancellationToken>());
+
+        var act = async () => await resource.ReadAsync(
+            Principal("outsider", scope: "tenant-a", tenantId: "tenant-a"),
+            "honua://workspaces/ws-tenant",
+            CancellationToken.None);
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_SharedScope_UsesConfiguredClaimNotTenantId()
+    {
+        var lifecycle = WorkspaceLifecycle("ws-shared", "owner-1", scopeId: "team-a");
+        ConfigureWorkspaceAuthorization(scopeClaimType: "team");
+        var resource = WorkspaceReader(lifecycle);
+
+        var allowed = await resource.ReadAsync(
+            Principal("member-1", scope: "team-a", tenantId: "tenant-a", scopeClaimType: "team"),
+            "honua://workspaces/ws-shared",
+            CancellationToken.None);
+        McpTestFactory.ParseJson(allowed.Contents[0].Text).GetProperty("workspaceId").GetString()
+            .Should().Be("ws-shared");
+
+        var groupsInsteadOfConfiguredClaim = async () => await resource.ReadAsync(
+            Principal("member-2", scope: "team-a", tenantId: "tenant-a", scopeClaimType: "groups"),
+            "honua://workspaces/ws-shared",
+            CancellationToken.None);
+        await groupsInsteadOfConfiguredClaim.Should().ThrowAsync<GeoprocessingNotFoundException>();
+
+        var tenantIdAsScope = async () => await resource.ReadAsync(
+            Principal("member-3", scope: "tenant-a", tenantId: "tenant-a", scopeClaimType: "team"),
+            "honua://workspaces/ws-shared",
+            CancellationToken.None);
+        await tenantIdAsScope.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_MissingOrDeleted_IsNotFoundWithoutAuthorization()
+    {
+        var lifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        lifecycle.GetWorkspaceAsync("ws-missing", Arg.Any<CancellationToken>())
+            .Returns((Workspace?)null);
+        lifecycle.GetWorkspaceAsync("ws-deleted", Arg.Any<CancellationToken>())
+            .Returns(new Workspace
+            {
+                WorkspaceId = "ws-deleted",
+                Kind = WorkspaceKind.Scratch,
+                Label = "workspace",
+                OwnerId = "owner-1",
+                State = WorkspaceLifecycleState.Deleted,
+                CreatedAt = DateTimeOffset.UnixEpoch
+            });
+        var resource = WorkspaceReader(lifecycle);
+
+        var missing = async () => await resource.ReadAsync(
+            Principal("owner-1"), "honua://workspaces/ws-missing", CancellationToken.None);
+        var deleted = async () => await resource.ReadAsync(
+            Principal("owner-1"), "honua://workspaces/ws-deleted", CancellationToken.None);
+
+        await missing.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        await deleted.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        await _jobService.DidNotReceive().EnsureCallerAuthorizedAsync(
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Any<OperatorAuthorizationRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_AuthenticationRequired_IsNotRewrittenAsNotFound()
+    {
+        var lifecycle = WorkspaceLifecycle("ws-owned", "owner-1", scopeId: null);
+        _jobService
+            .EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<OperatorAuthorizationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new GeoprocessingAuthorizationException(requiresAuthentication: true)));
+        var resource = WorkspaceReader(lifecycle);
+
+        var act = async () => await resource.ReadAsync(
+            Principal("owner-1"), "honua://workspaces/ws-owned", CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeTrue();
+    }
+
+    private void ConfigureWorkspaceAuthorization(string scopeClaimType = "groups")
+    {
+        var evaluator = ShippedAuthorizer(scopeClaimType);
+        _jobService
+            .EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<OperatorAuthorizationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var decision = evaluator.EvaluateAsync(
+                    call.Arg<ClaimsPrincipal>(),
+                    call.Arg<OperatorAuthorizationRequest>(),
+                    call.Arg<CancellationToken>()).GetAwaiter().GetResult();
+                if (!decision.IsAllowed)
+                {
+                    throw new GeoprocessingAuthorizationException(
+                        decision.RequiresAuthentication,
+                        decision.FailureReason ?? "denied",
+                        OperatorResourceType.Workspace,
+                        OperatorOperation.Read);
+                }
+
+                return Task.CompletedTask;
+            });
+    }
+
+    private static OperatorAuthorizationEvaluator ShippedAuthorizer(string scopeClaimType)
+    {
+        var roleStore = Substitute.For<IRoleStore>();
+        roleStore.GetEffectivePermissionsAsync(
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => new EffectivePermissions
+            {
+                UserId = call.ArgAt<string>(0),
+                Roles = call.ArgAt<IReadOnlyList<string>>(1),
+                Permissions =
+                [
+                    new PermissionGrant { Service = "workspace", Layer = "*", Operation = "read" }
+                ]
+            });
+
+        return new OperatorAuthorizationEvaluator(
+            new RoleStoreScopeFactory(roleStore),
+            Options.Create(new RbacOptions { WorkspaceScopeClaimType = scopeClaimType }),
+            NullLogger<OperatorAuthorizationEvaluator>.Instance);
+    }
+
+    private sealed class RoleStoreScopeFactory(IRoleStore store)
+        : IServiceScopeFactory, IServiceScope, IServiceProvider
+    {
+        public IServiceScope CreateScope() => this;
+
+        public IServiceProvider ServiceProvider => this;
+
+        public object? GetService(Type serviceType)
+            => serviceType == typeof(IRoleStore) ? store : null;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private WorkspaceResource WorkspaceReader(IWorkspaceLifecycleService lifecycle)
+    {
+        var services = new ServiceCollection().AddScoped(_ => lifecycle).BuildServiceProvider();
+        return new WorkspaceResource(
+            _jobService,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<WorkspaceResource>.Instance);
+    }
+
+    private static IWorkspaceLifecycleService WorkspaceLifecycle(string workspaceId, string ownerId, string? scopeId)
+    {
+        var lifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        lifecycle.GetWorkspaceAsync(workspaceId, Arg.Any<CancellationToken>())
+            .Returns(new Workspace
+            {
+                WorkspaceId = workspaceId,
+                Kind = WorkspaceKind.Scratch,
+                Label = "workspace",
+                OwnerId = ownerId,
+                ScopeId = scopeId,
+                State = WorkspaceLifecycleState.Active,
+                CreatedAt = DateTimeOffset.UnixEpoch
+            });
+        return lifecycle;
+    }
+
+    private static DefaultHttpContext Principal(
+        string userId,
+        string? scope = null,
+        string? tenantId = null,
+        string scopeClaimType = "groups")
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId),
+            new(ClaimTypes.Name, userId),
+            new("roles", "operator")
+        };
+        if (scope is not null)
+        {
+            claims.Add(new Claim(scopeClaimType, scope));
+        }
+
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"))
+        };
+        if (tenantId is not null)
+        {
+            var tenant = new RequestTenantContext();
+            tenant.Set(tenantId, TenantContextSource.Claim);
+            context.RequestServices = new ServiceCollection()
+                .AddSingleton<ITenantContext>(tenant)
+                .BuildServiceProvider();
+        }
+
+        return context;
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://catalog/processes")]
+    public async Task ProcessCatalogResource_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
+    {
+        _jobService
+            .When(s => s.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                OperatorResourceType.Catalog,
+                OperatorOperation.Discover,
+                Arg.Any<CancellationToken>()))
+            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
+        var resource = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(), "honua://catalog/processes", CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_ground_candidates")]
+    public async Task GroundCandidates_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
+    {
+        _jobService
+            .When(s => s.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                OperatorResourceType.Catalog,
+                OperatorOperation.Discover,
+                Arg.Any<CancellationToken>()))
+            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
+        var tool = new GroundCandidatesTool(_groundingService, _jobService, NullLogger<GroundCandidatesTool>.Instance);
+        JsonElement? arguments = McpTestFactory.ParseJson("""{"goal":"Buffer the parcels"}""");
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+        await _groundingService.DidNotReceiveWithAnyArgs().GroundAsync(default!, default!, default);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_clarify_intent")]
+    public async Task ClarifyIntent_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
+    {
+        // honua_clarify_intent must gate on the same (Catalog, Discover) pair
+        // as honua_ground_candidates — both tools delegate to
+        // IGroundingService.GroundAsync, so asymmetric permissions would let a
+        // caller start grounding but fail to answer its clarification envelope.
+        _jobService
+            .When(s => s.EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                OperatorResourceType.Catalog,
+                OperatorOperation.Discover,
+                Arg.Any<CancellationToken>()))
+            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
+        var tool = new ClarifyIntentTool(_groundingService, _jobService, NullLogger<ClarifyIntentTool>.Instance);
+        JsonElement? arguments = McpTestFactory.ParseJson("""
+            {"intentId":"intent-1","goal":"Buffer the parcels","response":{"answers":{"q1":["a"]}}}
+            """);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+        await _groundingService.DidNotReceiveWithAnyArgs().GroundAsync(default!, default!, default);
+    }
+
+    // The dispatcher-level auth gate runs before param parsing and tool/resource
+    // lookup, so malformed payloads and unknown names from anonymous callers
+    // still surface the `unauthenticated` reauthentication signal instead of
+    // leaking the protocol-level `invalid_argument`/`not_found` codes.
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call")]
+    public async Task DispatchAsync_AnonymousToolsCall_WithUnknownTool_ReturnsUnauthenticatedIsError()
+    {
+        var surface = BuildSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"u-1\""),
+            Method = "tools/call",
+            Params = McpTestFactory.ParseJson("""{"name":"honua_does_not_exist","arguments":{}}""")
+        };
+
+        var response = await surface.DispatchAsync(
+            McpTestFactory.AnonymousHttpContext(), request, CancellationToken.None);
+
+        response.Should().NotBeNull();
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        result.GetProperty("structuredContent").GetProperty("code").GetString()
+            .Should().Be(McpErrorMapper.Codes.Unauthenticated);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call")]
+    public async Task DispatchAsync_AnonymousToolsCall_WithMalformedParams_ReturnsUnauthenticatedIsError()
+    {
+        var surface = BuildSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"u-2\""),
+            Method = "tools/call",
+            Params = McpTestFactory.ParseJson("[\"not\",\"an\",\"object\"]")
+        };
+
+        var response = await surface.DispatchAsync(
+            McpTestFactory.AnonymousHttpContext(), request, CancellationToken.None);
+
+        response.Should().NotBeNull();
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        result.GetProperty("structuredContent").GetProperty("code").GetString()
+            .Should().Be(McpErrorMapper.Codes.Unauthenticated);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read")]
+    public async Task DispatchAsync_AnonymousResourcesRead_WithUnknownUri_ReturnsUnauthenticatedJsonRpcError()
+    {
+        var surface = BuildSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"u-3\""),
+            Method = "resources/read",
+            Params = McpTestFactory.ParseJson("""{"uri":"honua://unknown/thing"}""")
+        };
+
+        var response = await surface.DispatchAsync(
+            McpTestFactory.AnonymousHttpContext(), request, CancellationToken.None);
+
+        response.Should().NotBeNull();
+        response!.Error.Should().NotBeNull();
+        response.Error!.Data!.Code.Should().Be(McpErrorMapper.Codes.Unauthenticated);
+        response.Error.Data.RequiresReauthentication.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read")]
+    public async Task DispatchAsync_AnonymousResourcesRead_WithMalformedParams_ReturnsUnauthenticatedJsonRpcError()
+    {
+        var surface = BuildSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"u-4\""),
+            Method = "resources/read",
+            Params = McpTestFactory.ParseJson("\"not-an-object\"")
+        };
+
+        var response = await surface.DispatchAsync(
+            McpTestFactory.AnonymousHttpContext(), request, CancellationToken.None);
+
+        response.Should().NotBeNull();
+        response!.Error.Should().NotBeNull();
+        response.Error!.Data!.Code.Should().Be(McpErrorMapper.Codes.Unauthenticated);
+    }
+
+    private McpDataAccessSurface BuildSurface()
+    {
+        var tools = new IMcpTool[]
+        {
+            new ValidatePlanTool(_jobService, NullLogger<ValidatePlanTool>.Instance),
+            new DryRunPlanTool(_jobService, NullLogger<DryRunPlanTool>.Instance),
+            new ExecutePlanTool(_jobService, NullLogger<ExecutePlanTool>.Instance),
+            new CancelJobTool(_jobService, NullLogger<CancelJobTool>.Instance)
+        };
+        var resources = new IMcpResource[]
+        {
+            new JobStatusResource(_jobService, NullLogger<JobStatusResource>.Instance),
+            new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance),
+            new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance),
+            new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance)
+        };
+        return new McpDataAccessSurface(tools, resources, NullLogger<McpDataAccessSurface>.Instance);
+    }
+}

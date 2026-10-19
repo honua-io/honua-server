@@ -9,5 +9,7 @@
     "ogc": "1.0.0",
     "stac": "1.0.0"
   },
-  "schemaVersions": {}
+  "schemaVersions": {
+    "certification-evidence-receipt": "2.0"
+  }
 }

@@ -281,6 +281,17 @@ internal sealed partial class Wfs20Handler
 
         foreach (var actionElement in root.Elements())
         {
+            if (actionElement.Name.LocalName is "Insert" or "Update" or "Delete" or "Replace"
+                && operations.Count >= _editLimits.MaxEditsPerTransaction)
+            {
+                return TransactionPreparationResult.Failure(
+                    Wfs20ErrorResults.CreateBadRequest(
+                        context,
+                        "InvalidParameterValue",
+                        $"Transaction exceeds the maximum of {_editLimits.MaxEditsPerTransaction.ToString(CultureInfo.InvariantCulture)} edits.",
+                        "Transaction"));
+            }
+
             IResult? errorResult = actionElement.Name.LocalName switch
             {
                 "Insert" => await PrepareInsertOperationsAsync(
@@ -499,9 +510,11 @@ internal sealed partial class Wfs20Handler
         var targetIds = await ResolveTransactionTargetObjectIdsAsync(
             descriptor,
             updateElement,
+            TransactionIdProbeLimit(_editLimits, operations.Count, singleTarget: false),
             cancellationToken).ConfigureAwait(false);
 
-        if (targetIds.Length > _editLimits.MaxFeaturesPerEdit)
+        if (targetIds.Length > _editLimits.MaxFeaturesPerEdit
+            || operations.Count + targetIds.Length > _editLimits.MaxEditsPerTransaction)
         {
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
@@ -510,13 +523,13 @@ internal sealed partial class Wfs20Handler
                 "Filter");
         }
 
+        var existingById = await ReadTransactionTargetsAsync(
+            descriptor.StorageLayerId,
+            targetIds,
+            cancellationToken).ConfigureAwait(false);
         foreach (var objectId in targetIds)
         {
-            var existing = await _featureReader.GetAsync(
-                descriptor.StorageLayerId,
-                objectId,
-                cancellationToken).ConfigureAwait(false);
-            if (!existing.HasValue)
+            if (!existingById.TryGetValue(objectId, out var existing))
             {
                 return Wfs20ErrorResults.CreateBadRequest(
                     context,
@@ -526,7 +539,7 @@ internal sealed partial class Wfs20Handler
             }
 
             var updatedFeature = await BuildTransactionUpdatedFeatureAsync(
-                existing.Value,
+                existing,
                 descriptor.Resource,
                 changes,
                 cancellationToken).ConfigureAwait(false);
@@ -593,9 +606,11 @@ internal sealed partial class Wfs20Handler
         var targetIds = await ResolveTransactionTargetObjectIdsAsync(
             descriptor,
             deleteElement,
+            TransactionIdProbeLimit(_editLimits, operations.Count, singleTarget: false),
             cancellationToken).ConfigureAwait(false);
 
-        if (targetIds.Length > _editLimits.MaxFeaturesPerEdit)
+        if (targetIds.Length > _editLimits.MaxFeaturesPerEdit
+            || operations.Count + targetIds.Length > _editLimits.MaxEditsPerTransaction)
         {
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
@@ -604,13 +619,13 @@ internal sealed partial class Wfs20Handler
                 "Filter");
         }
 
+        var existingById = await ReadTransactionTargetsAsync(
+            descriptor.StorageLayerId,
+            targetIds,
+            cancellationToken).ConfigureAwait(false);
         foreach (var objectId in targetIds)
         {
-            var existing = await _featureReader.GetAsync(
-                descriptor.StorageLayerId,
-                objectId,
-                cancellationToken).ConfigureAwait(false);
-            if (!existing.HasValue)
+            if (!existingById.TryGetValue(objectId, out var existing))
             {
                 return Wfs20ErrorResults.CreateBadRequest(
                     context,
@@ -626,7 +641,7 @@ internal sealed partial class Wfs20Handler
                 FeatureEditOperation.Delete(objectId),
                 handle,
                 null,
-                existing.Value)
+                existing)
             {
                 RequestGeometryChanged = false
             });
@@ -678,6 +693,7 @@ internal sealed partial class Wfs20Handler
         var targetIds = await ResolveTransactionTargetObjectIdsAsync(
             descriptor,
             replaceElement,
+            TransactionIdProbeLimit(_editLimits, operations.Count, singleTarget: true),
             cancellationToken).ConfigureAwait(false);
         if (targetIds.Length != 1)
         {
@@ -688,11 +704,11 @@ internal sealed partial class Wfs20Handler
                 "Filter");
         }
 
-        var existing = await _featureReader.GetAsync(
+        var existingById = await ReadTransactionTargetsAsync(
             descriptor.StorageLayerId,
-            targetIds[0],
+            targetIds,
             cancellationToken).ConfigureAwait(false);
-        if (!existing.HasValue)
+        if (!existingById.TryGetValue(targetIds[0], out var existing))
         {
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
@@ -707,7 +723,7 @@ internal sealed partial class Wfs20Handler
             featureElement,
             cancellationToken).ConfigureAwait(false);
         // Compare the stored target snapshot, rather than the new replacement payload.
-        replacement = replacement with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing.Value) };
+        replacement = replacement with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing) };
         // Replace constructs a fresh feature from the request payload (or null when
         // the body omits geometry), and the operation overwrites the existing row.
         // Mark the change when either side has geometry so a body-less Replace that
@@ -725,7 +741,7 @@ internal sealed partial class Wfs20Handler
             null)
         {
             RequestGeometryChanged = replacement.Geometry is { Length: > 0 }
-                || existing.Value.Geometry is { Length: > 0 }
+                || existing.Geometry is { Length: > 0 }
         });
 
         return null;
@@ -745,6 +761,7 @@ internal sealed partial class Wfs20Handler
             objectId: 0,
             payload.Geometry,
             payload.Attributes,
+            geometrySupplied: true,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -763,6 +780,7 @@ internal sealed partial class Wfs20Handler
             objectId,
             payload.Geometry,
             payload.Attributes,
+            geometrySupplied: true,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -787,6 +805,7 @@ internal sealed partial class Wfs20Handler
             existing.Id,
             changes.GeometrySpecified ? changes.Geometry : existing.Geometry,
             mergedAttributes.ToImmutable(),
+            geometrySupplied: changes.GeometrySpecified,
             cancellationToken).ConfigureAwait(false);
         return updated with { ReadStateToken = FeatureStateToken.FromReadSnapshot(existing) };
     }
@@ -797,14 +816,25 @@ internal sealed partial class Wfs20Handler
         long objectId,
         byte[]? geometry,
         ImmutableDictionary<string, object?> attributes,
+        bool geometrySupplied,
         CancellationToken cancellationToken)
     {
+        // Enforce the layer geometry type on every geometry the transaction supplies; an
+        // existing geometry carried through a property-only Update is not re-typed.
         var geometryValidation = await _mutationValidator.ValidateGeometryAsync(
             geometry,
+            geometrySupplied
+                ? FeatureMutationValidator.ResolveLayerGeometryType(resource)
+                : MetadataV2GeometryType.None,
             cancellationToken).ConfigureAwait(false);
         if (!geometryValidation.IsValid)
         {
-            throw new ArgumentException($"Geometry validation failed: {geometryValidation.ErrorMessage}");
+            // The shared mutation validator returns authored validation details. Mark this
+            // boundary explicitly so the untyped exception catch still hides provider errors.
+            throw new WfsTransactionException(
+                "InvalidParameterValue",
+                $"Geometry validation failed: {geometryValidation.ErrorMessage}",
+                "geometry");
         }
 
         var attributesResult = _mutationValidator.ValidateAttributes(
@@ -1008,9 +1038,59 @@ internal sealed partial class Wfs20Handler
     }
 
 
+    /// <summary>
+    /// Object-id probe size for one WFS-T action. Update and delete read one past the
+    /// tighter of the per-action and remaining transaction budgets so an oversized
+    /// match is rejected before feature rows are loaded. Replace identifies one feature
+    /// and probes two so a multi-match fails closed.
+    /// </summary>
+    internal static int TransactionIdProbeLimit(EditLimits limits, int preparedCount, bool singleTarget)
+    {
+        ArgumentNullException.ThrowIfNull(limits);
+        if (singleTarget)
+        {
+            return 2;
+        }
+
+        var remaining = Math.Max(0, limits.MaxEditsPerTransaction - Math.Max(0, preparedCount));
+        var window = Math.Min(limits.MaxFeaturesPerEdit, remaining);
+        return checked(window + 1);
+    }
+
+    private async Task<ImmutableDictionary<long, Feature>> ReadTransactionTargetsAsync(
+        int layerId,
+        ImmutableArray<long> targetIds,
+        CancellationToken cancellationToken)
+    {
+        if (targetIds.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<long, Feature>.Empty;
+        }
+
+        var result = await _featureReader.QueryAsync(
+            layerId,
+            new FeatureQuery
+            {
+                ObjectIds = targetIds,
+                Limit = targetIds.Length,
+            },
+            cancellationToken).ConfigureAwait(false);
+        var features = ImmutableDictionary.CreateBuilder<long, Feature>();
+        if (!result.Items.IsDefaultOrEmpty)
+        {
+            foreach (var feature in result.Items)
+            {
+                features[feature.Id] = feature;
+            }
+        }
+
+        return features.ToImmutable();
+    }
+
     private async Task<ImmutableArray<long>> ResolveTransactionTargetObjectIdsAsync(
         WfsFeatureTypeDescriptor descriptor,
         XElement actionElement,
+        int probeLimit,
         CancellationToken cancellationToken)
     {
         var filterElement = actionElement.Elements()
@@ -1067,6 +1147,7 @@ internal sealed partial class Wfs20Handler
             enforceResourceIdTypeMatch: true,
             requireResourceIdQualifier: false,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+        query = query with { Limit = probeLimit };
 
         var objectIds = await _featureReader.QueryObjectIdsAsync(
             descriptor.StorageLayerId,
@@ -1491,7 +1572,8 @@ internal sealed partial class Wfs20Handler
             "MultiPoint" => ParseTransactionMultiPointGeometry(geometryElement, geometryFactory, axisOrder),
             "LineString" or "Curve" => ParseTransactionLineStringGeometry(geometryElement, geometryFactory, axisOrder),
             "MultiLineString" or "MultiCurve" => ParseTransactionMultiLineStringGeometry(geometryElement, geometryFactory, axisOrder),
-            "Polygon" or "Surface" => ParseTransactionPolygonGeometry(geometryElement, geometryFactory, axisOrder),
+            "Polygon" => ParseTransactionPolygonGeometry(geometryElement, geometryFactory, axisOrder),
+            "Surface" => ParseTransactionSurfaceGeometry(geometryElement, geometryFactory, axisOrder),
             "MultiPolygon" or "MultiSurface" => ParseTransactionMultiPolygonGeometry(geometryElement, geometryFactory, axisOrder),
             _ => throw new NotSupportedException($"Unsupported GML geometry type '{geometryElement.Name.LocalName}'.")
         };
@@ -1536,6 +1618,11 @@ internal sealed partial class Wfs20Handler
         GeometryFactory geometryFactory,
         AxisOrder axisOrder)
     {
+        if (string.Equals(geometryElement.Name.LocalName, "Curve", StringComparison.OrdinalIgnoreCase))
+        {
+            return ParseTransactionCurveGeometry(geometryElement, geometryFactory, axisOrder);
+        }
+
         var coordinates = ParseTransactionCoordinateSequence(geometryElement, axisOrder);
         if (coordinates.Length < 2)
         {
@@ -1543,6 +1630,214 @@ internal sealed partial class Wfs20Handler
         }
 
         return geometryFactory.CreateLineString(coordinates);
+    }
+
+    /// <summary>
+    /// Reads every segment of a gml:Curve. LineStringSegment coordinates are concatenated,
+    /// dropping a joint that repeats the previous vertex. Arc and ArcString control points
+    /// are sampled onto that linestring. Other segment types are rejected instead of stored
+    /// as their raw control points (#6130).
+    /// </summary>
+    private static LineString ParseTransactionCurveGeometry(
+        XElement geometryElement,
+        GeometryFactory geometryFactory,
+        AxisOrder axisOrder)
+    {
+        var segments = geometryElement
+            .Descendants()
+            .Where(element => IsCurveSegment(element.Name.LocalName))
+            .ToArray();
+        if (segments.Length == 0)
+        {
+            throw new ArgumentException("Curve geometry must contain at least one segment.");
+        }
+
+        var coordinates = new List<Coordinate>();
+        foreach (var segment in segments)
+        {
+            var name = segment.Name.LocalName;
+            if (name.Equals("LineStringSegment", StringComparison.OrdinalIgnoreCase))
+            {
+                AppendCurveCoordinates(coordinates, ParseTransactionCoordinateSequence(segment, axisOrder));
+                continue;
+            }
+
+            if (name.Equals("Arc", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("ArcString", StringComparison.OrdinalIgnoreCase))
+            {
+                AppendCurveCoordinates(coordinates, SampleArcString(ParseTransactionCoordinateSequence(segment, axisOrder), name));
+                continue;
+            }
+
+            if (name.Equals("Circle", StringComparison.OrdinalIgnoreCase))
+            {
+                AppendCurveCoordinates(coordinates, SampleCircle(ParseTransactionCoordinateSequence(segment, axisOrder)));
+                continue;
+            }
+
+            throw new ArgumentException($"Unsupported curve segment '{name}'.");
+        }
+
+        if (coordinates.Count < 2)
+        {
+            throw new ArgumentException("Curve geometry must contain at least two positions.");
+        }
+
+        return geometryFactory.CreateLineString(coordinates.ToArray());
+    }
+
+    private static bool IsCurveSegment(string localName)
+        => localName.Equals("LineStringSegment", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("Arc", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("ArcString", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("ArcByBulge", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("ArcByCenterPoint", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("ArcStringByBulge", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("Bezier", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("BSpline", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("Clothoid", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("Circle", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("CircleByCenterPoint", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("CubicSpline", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("Geodesic", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("GeodesicString", StringComparison.OrdinalIgnoreCase)
+            || localName.Equals("OffsetCurve", StringComparison.OrdinalIgnoreCase);
+
+    private static void AppendCurveCoordinates(List<Coordinate> target, Coordinate[] addition)
+    {
+        var start = 0;
+        if (target.Count > 0 && addition.Length > 0 && target[^1].Equals2D(addition[0]))
+        {
+            start = 1;
+        }
+
+        for (var index = start; index < addition.Length; index++)
+        {
+            target.Add(addition[index]);
+        }
+    }
+
+    private static Coordinate[] SampleArcString(Coordinate[] controlPoints, string segmentName)
+    {
+        if (controlPoints.Length < 3 || controlPoints.Length % 2 == 0)
+        {
+            throw new ArgumentException(
+                $"{segmentName} must contain an odd number of positions, at least three.");
+        }
+
+        var sampled = new List<Coordinate>();
+        for (var index = 0; index + 2 < controlPoints.Length; index += 2)
+        {
+            AppendCurveCoordinates(
+                sampled,
+                SampleCircularArc(controlPoints[index], controlPoints[index + 1], controlPoints[index + 2], fullCircle: false));
+        }
+
+        return sampled.ToArray();
+    }
+
+    private static Coordinate[] SampleCircle(Coordinate[] controlPoints)
+    {
+        if (controlPoints.Length < 3)
+        {
+            throw new ArgumentException("Circle must contain at least three positions.");
+        }
+
+        return SampleCircularArc(controlPoints[0], controlPoints[1], controlPoints[2], fullCircle: true);
+    }
+
+    /// <summary>
+    /// Samples the circular arc through <paramref name="start"/>, <paramref name="middle"/>,
+    /// and <paramref name="end"/>. A full circle repeats the start point. Collinear control
+    /// points stay a straight polyline.
+    /// </summary>
+    private static Coordinate[] SampleCircularArc(Coordinate start, Coordinate middle, Coordinate end, bool fullCircle)
+    {
+        var ax = start.X;
+        var ay = start.Y;
+        var bx = middle.X;
+        var by = middle.Y;
+        var cx = end.X;
+        var cy = end.Y;
+        var determinant = 2d * ((ax * (by - cy)) + (bx * (cy - ay)) + (cx * (ay - by)));
+        var scale = Math.Max(
+            Math.Max(Math.Abs(ax), Math.Abs(bx)),
+            Math.Max(Math.Abs(cx), Math.Max(Math.Abs(ay), Math.Max(Math.Abs(by), Math.Abs(cy)))));
+        if (Math.Abs(determinant) <= 1e-9 * Math.Max(1d, scale * scale))
+        {
+            return fullCircle ? [start, middle, end, start] : [start, middle, end];
+        }
+
+        var a2 = (ax * ax) + (ay * ay);
+        var b2 = (bx * bx) + (by * by);
+        var c2 = (cx * cx) + (cy * cy);
+        var centerX = ((a2 * (by - cy)) + (b2 * (cy - ay)) + (c2 * (ay - by))) / determinant;
+        var centerY = ((a2 * (cx - bx)) + (b2 * (ax - cx)) + (c2 * (bx - ax))) / determinant;
+        var startAngle = Math.Atan2(ay - centerY, ax - centerX);
+        var middleAngle = Math.Atan2(by - centerY, bx - centerX);
+        var endAngle = Math.Atan2(cy - centerY, cx - centerX);
+        var ccwToMiddle = CounterClockwiseDelta(startAngle, middleAngle);
+        var ccwToEnd = CounterClockwiseDelta(startAngle, endAngle);
+        var sweep = fullCircle
+            ? Math.PI * 2d
+            : ccwToMiddle <= ccwToEnd ? ccwToEnd : ccwToEnd - (Math.PI * 2d);
+        var steps = Math.Max(2, (int)Math.Ceiling(Math.Abs(sweep) / (Math.PI / 18d)));
+        var radius = Math.Sqrt(((start.X - centerX) * (start.X - centerX)) + ((start.Y - centerY) * (start.Y - centerY)));
+        var hasZ = !double.IsNaN(start.Z) || !double.IsNaN(middle.Z) || !double.IsNaN(end.Z);
+        var sampled = new Coordinate[steps + 1];
+        for (var step = 0; step <= steps; step++)
+        {
+            if (step == 0)
+            {
+                sampled[step] = start;
+                continue;
+            }
+
+            if (step == steps && !fullCircle)
+            {
+                sampled[step] = end;
+                continue;
+            }
+
+            var fraction = step / (double)steps;
+            var angle = startAngle + (sweep * fraction);
+            var x = centerX + (radius * Math.Cos(angle));
+            var y = centerY + (radius * Math.Sin(angle));
+            if (!hasZ)
+            {
+                sampled[step] = new Coordinate(x, y);
+                continue;
+            }
+
+            var z = double.IsNaN(start.Z) || double.IsNaN(end.Z)
+                ? (double.IsNaN(start.Z) ? end.Z : start.Z)
+                : start.Z + ((end.Z - start.Z) * fraction);
+            sampled[step] = new CoordinateZ(x, y, z);
+        }
+
+        if (fullCircle)
+        {
+            sampled[^1] = start;
+        }
+
+        return sampled;
+    }
+
+    private static double CounterClockwiseDelta(double from, double to)
+    {
+        var delta = to - from;
+        var fullTurn = Math.PI * 2d;
+        while (delta < 0d)
+        {
+            delta += fullTurn;
+        }
+
+        while (delta >= fullTurn)
+        {
+            delta -= fullTurn;
+        }
+
+        return delta;
     }
 
 
@@ -1572,16 +1867,47 @@ internal sealed partial class Wfs20Handler
         XElement geometryElement,
         GeometryFactory geometryFactory,
         AxisOrder axisOrder)
+        => ParseTransactionPolygonPatch(geometryElement, geometryFactory, axisOrder);
+
+    /// <summary>
+    /// Unions every PolygonPatch of a gml:Surface. One patch stays a polygon. Several patches
+    /// become their polygonal union, so a disjoint surface is a multipolygon and adjacent
+    /// patches become one polygon (#6130).
+    /// </summary>
+    private static Geometry ParseTransactionSurfaceGeometry(
+        XElement geometryElement,
+        GeometryFactory geometryFactory,
+        AxisOrder axisOrder)
     {
-        XElement? polygonSource = geometryElement;
-        if (string.Equals(geometryElement.Name.LocalName, "Surface", StringComparison.OrdinalIgnoreCase))
+        var patches = geometryElement
+            .Descendants()
+            .Where(element => string.Equals(element.Name.LocalName, "PolygonPatch", StringComparison.OrdinalIgnoreCase))
+            .Select(patch => ParseTransactionPolygonPatch(patch, geometryFactory, axisOrder))
+            .ToArray();
+        if (patches.Length == 0)
         {
-            polygonSource = geometryElement
-                .Descendants()
-                .FirstOrDefault(element => string.Equals(element.Name.LocalName, "PolygonPatch", StringComparison.OrdinalIgnoreCase))
-                ?? throw new ArgumentException("Surface geometry must contain a PolygonPatch element.");
+            throw new ArgumentException("Surface geometry must contain a PolygonPatch element.");
         }
 
+        if (patches.Length == 1)
+        {
+            return patches[0];
+        }
+
+        var union = NetTopologySuite.Operation.Union.UnaryUnionOp.Union(patches, geometryFactory);
+        if (union is Polygon or MultiPolygon)
+        {
+            return union;
+        }
+
+        throw new ArgumentException("Surface patches did not union to a polygonal geometry.");
+    }
+
+    private static Polygon ParseTransactionPolygonPatch(
+        XElement polygonSource,
+        GeometryFactory geometryFactory,
+        AxisOrder axisOrder)
+    {
         var exteriorElement = polygonSource
             .Descendants()
             .FirstOrDefault(element => string.Equals(element.Name.LocalName, "exterior", StringComparison.OrdinalIgnoreCase))
@@ -1603,20 +1929,45 @@ internal sealed partial class Wfs20Handler
         GeometryFactory geometryFactory,
         AxisOrder axisOrder)
     {
-        var polygons = geometryElement
-            .Descendants()
-            .Where(element =>
-                string.Equals(element.Name.LocalName, "Polygon", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(element.Name.LocalName, "Surface", StringComparison.OrdinalIgnoreCase))
-            .Select(polygonElement => ParseTransactionPolygonGeometry(polygonElement, geometryFactory, axisOrder))
-            .ToArray();
+        var polygons = new List<Polygon>();
+        foreach (var polygonElement in geometryElement.Descendants().Where(element =>
+                     string.Equals(element.Name.LocalName, "Polygon", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(element.Name.LocalName, "Surface", StringComparison.OrdinalIgnoreCase)))
+        {
+            var geometry = string.Equals(polygonElement.Name.LocalName, "Surface", StringComparison.OrdinalIgnoreCase)
+                ? ParseTransactionSurfaceGeometry(polygonElement, geometryFactory, axisOrder)
+                : ParseTransactionPolygonPatch(polygonElement, geometryFactory, axisOrder);
+            CollectPolygons(polygons, geometry);
+        }
 
-        if (polygons.Length == 0)
+        if (polygons.Count == 0)
         {
             throw new ArgumentException("MultiPolygon geometry must contain at least one polygon geometry.");
         }
 
-        return geometryFactory.CreateMultiPolygon(polygons);
+        return geometryFactory.CreateMultiPolygon(polygons.ToArray());
+    }
+
+    private static void CollectPolygons(List<Polygon> target, Geometry geometry)
+    {
+        switch (geometry)
+        {
+            case Polygon polygon:
+                target.Add(polygon);
+                break;
+            case MultiPolygon multi:
+                for (var index = 0; index < multi.NumGeometries; index++)
+                {
+                    if (multi.GetGeometryN(index) is Polygon part)
+                    {
+                        target.Add(part);
+                    }
+                }
+
+                break;
+            default:
+                throw new ArgumentException("Surface patches did not union to a polygonal geometry.");
+        }
     }
 
 

@@ -36,7 +36,8 @@ public interface IOgcTileCacheSink
     /// Write a single tile record into the cache. Implementations must be
     /// idempotent: a repeated write for the same (cache, z, x, y) tuple
     /// returns <see cref="OgcTileCacheWriteStatus.AlreadyPresent"/> and does
-    /// not overwrite the existing row.
+    /// not overwrite the existing row. Package re-import uses
+    /// <see cref="ReplaceTileAsync"/> instead.
     /// </summary>
     /// <param name="record">Tile record to persist.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -44,7 +45,44 @@ public interface IOgcTileCacheSink
     Task<OgcTileCacheWriteStatus> WriteTileAsync(
         OgcTileCacheRecord record,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Insert a tile or overwrite the bytes already stored at its coordinate.
+    /// Package re-import uses this so an updated package replaces stale tiles.
+    /// Resumable export must keep using <see cref="WriteTileAsync"/>.
+    /// </summary>
+    /// <param name="record">Tile record to persist.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// <see cref="OgcTileCacheWriteStatus.Inserted"/> or
+    /// <see cref="OgcTileCacheWriteStatus.Replaced"/>.
+    /// </returns>
+    Task<OgcTileCacheWriteStatus> ReplaceTileAsync(
+        OgcTileCacheRecord record,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Delete tiles in <paramref name="tileCacheId"/> whose coordinates are not
+    /// listed in <paramref name="retained"/>. An empty list removes every tile
+    /// in the cache. Package re-import calls this after a full replace so tiles
+    /// dropped from the new package do not stay served.
+    /// </summary>
+    /// <param name="tileCacheId">Target tile-cache identifier.</param>
+    /// <param name="retained">Coordinates that must remain.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task DeleteTilesExceptAsync(
+        string tileCacheId,
+        IReadOnlyList<OgcTileCoordinate> retained,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// One tile coordinate inside a tile cache.
+/// </summary>
+/// <param name="Z">Zoom level.</param>
+/// <param name="X">Tile column.</param>
+/// <param name="Y">Tile row.</param>
+public readonly record struct OgcTileCoordinate(int Z, int X, int Y);
 
 /// <summary>
 /// Stable descriptor for a tile cache.
@@ -122,5 +160,8 @@ public enum OgcTileCacheWriteStatus
     Inserted = 0,
 
     /// <summary>A tile already existed at this coordinate; no write occurred.</summary>
-    AlreadyPresent = 1
+    AlreadyPresent = 1,
+
+    /// <summary>A tile already existed at this coordinate and its bytes were replaced.</summary>
+    Replaced = 2
 }

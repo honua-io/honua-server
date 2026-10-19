@@ -123,11 +123,20 @@ internal static partial class ImportEndpoints
 
         _ = group.MapMethods("/upload-url", [HttpMethods.Post], HandleImportFileFromUrl)
             .WithName($"ImportFileFromUrl{nameSuffix}")
+            .WithMetadata(new UrlImportOperationMetadata())
             .WithSummary("Import geospatial data from a public object URL")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
         _ = group.MapMethods("/upload-url", NonPostMethods, HandlePostMethodNotAllowed)
             .WithName($"ImportFileFromUrl{nameSuffix}MethodNotAllowed")
             .WithSummary("Import geospatial data from a public object URL method not allowed");
+
+        _ = group.MapMethods("/upload-object", [HttpMethods.Post], HandleImportFileFromObjectStore)
+            .WithName($"ImportFileFromObjectStore{nameSuffix}")
+            .WithSummary("Import geospatial data from an allow-listed s3 object using the host identity")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        _ = group.MapMethods("/upload-object", NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName($"ImportFileFromObjectStore{nameSuffix}MethodNotAllowed")
+            .WithSummary("Import geospatial data from an allow-listed s3 object method not allowed");
 
         // Get upload progress
         _ = group.MapMethods("/uploads/{uploadId}/progress", [HttpMethods.Get], HandleGetUploadProgress)
@@ -527,6 +536,17 @@ internal static partial class ImportEndpoints
             return;
         }
 
+        // A forced background import on a host without a runner is refused before the download
+        // (honua-server#5916); a size-triggered one is refused once the size is known.
+        if (request.ForceBackground && !CanAcceptBackgroundImports(context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                BackgroundImportUnavailableMessage,
+                StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
         var maxFileSizeBytes = Math.Max(importService.Limits.BackgroundJobThresholdBytes, importService.Limits.MaxMemoryBytes);
@@ -608,6 +628,18 @@ internal static partial class ImportEndpoints
         return false;
     }
 
+    internal const string BackgroundImportUnavailableMessage =
+        "Background import service not available. File is too large for synchronous import.";
+
+    /// <summary>
+    /// Whether this host accepts a background import: a job service is registered and the
+    /// runner resolved at composition (<see cref="IBackgroundImportRunnerInfo"/>) is not
+    /// <c>unavailable</c>.
+    /// </summary>
+    internal static bool CanAcceptBackgroundImports(IServiceProvider services)
+        => services.GetService<IImportJobService>() is not null
+            && services.GetService<IBackgroundImportRunnerInfo>() is not { AcceptsBackgroundImports: false };
+
     private static async Task ExecuteStagedImportAsync(
         HttpContext context,
         ImportExecutionRequest request,
@@ -621,6 +653,19 @@ internal static partial class ImportEndpoints
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var limits = importService.Limits;
         var shouldQueueBackground = request.ForceBackground || request.File.SizeBytes > limits.BackgroundJobThresholdBytes;
+
+        // honua-server#5916: decide before staging anything whether this host can run a background
+        // import at all. A Lambda host without a durable runner (and any host without a job
+        // service) refuses with the typed 503 instead of accepting work it cannot finish.
+        if (shouldQueueBackground && !CanAcceptBackgroundImports(context.RequestServices))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                BackgroundImportUnavailableMessage,
+                StatusCodes.Status503ServiceUnavailable);
+            return;
+        }
+
         var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
         var deleteLocalFile = true;
         string? cloudFileId = null;
@@ -677,7 +722,7 @@ internal static partial class ImportEndpoints
                 {
                     await AdminResponseWriter.WriteErrorAsync(
                         context,
-                        "Background import service not available. File is too large for synchronous import.",
+                        BackgroundImportUnavailableMessage,
                         StatusCodes.Status503ServiceUnavailable);
                     return;
                 }
@@ -750,10 +795,13 @@ internal static partial class ImportEndpoints
                     context,
                     snapshotSchema,
                     snapshotTable,
-                    cancellationToken);
+                    CancellationToken.None);
             }
 
-            IResult syncResult = Results.Json(importResult, ImportJsonContext.Default.ImportResult);
+            IResult syncResult = Results.Json(importResult, ImportJsonContext.Default.ImportResult,
+                statusCode: !importResult.Success && importResult.ErrorCode == ImportTableOwnershipException.Code
+                    ? StatusCodes.Status409Conflict
+                    : StatusCodes.Status200OK);
             await syncResult.ExecuteAsync(context);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1684,6 +1732,9 @@ internal static partial class ImportEndpoints
         /// <param name="layerCount">Number of published layers whose snapshot was rebuilt.</param>
         [LoggerMessage(EventId = 3306, Level = LogLevel.Information, Message = "Rebuilt published feature snapshot for {LayerCount} layer(s) after importing table {TableName}")]
         public static partial void SnapshotRefreshed(ILogger logger, string tableName, int layerCount);
+
+        [LoggerMessage(EventId = 3307, Level = LogLevel.Warning, Message = "Failed to record the object-store import audit event")]
+        public static partial void AuditRecordFailed(ILogger logger, Exception exception);
     }
 
     private static string? ReadLineageHeader(HttpContext context, string name)
@@ -1751,7 +1802,8 @@ internal sealed record ImportUrlImportRequest
     public required string TableName { get; init; }
     public string? TargetSchema { get; init; }
     public int? SourceSrid { get; init; }
-    public int TargetSrid { get; init; } = 4326;
+    // A setter preserves the initializer when .NET 10 source-generated JSON omits this field.
+    public int TargetSrid { get; set; } = 4326;
     public bool OverwriteExisting { get; init; }
     public bool ForceBackground { get; init; }
     public bool TrackProgress { get; init; }

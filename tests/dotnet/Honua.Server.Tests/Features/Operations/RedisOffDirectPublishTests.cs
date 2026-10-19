@@ -18,8 +18,11 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -157,6 +160,117 @@ public sealed class RedisOffDirectPublishTests
         refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
     }
 
+    [Theory]
+    [InlineData(AdminRole)]
+    [InlineData(ScopedAdminRole)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task RedisOffProduction_PolicyAllowedAdminStylePreset_ExecutesDirectlyWithCanonicalHandle(string role)
+    {
+        // Owner decision 3: a Redis-off cell is a serving + configure + style/render topology, so
+        // terminal-journey stage 4 (style.apply-preset) must execute there. Before this change
+        // honua-release run 38249563601 (aws-ecs, redis-off) refused it with
+        // code=unavailable, missingDependency=redis.
+        var catalog = StyleCatalog();
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        var audit = new CapturingAuditLog();
+        await using var provider = ComposeRedisOffProduction(
+            PublishingService(), audit, AdminAllowPolicy(), catalog, graphSync);
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IOperationInvoker>();
+
+        var handle = await invoker.SubmitAsync(StylePresetRequest(), Caller(role));
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed, handle.Reason);
+        handle.OperationId.Should().Be(StylePresetOperation.OperationId);
+        handle.OperationInstanceId.Should().StartWith("opinst-");
+        handle.HandleId.Should().Be(handle.OperationInstanceId);
+        handle.CorrelationId.Should().StartWith("corr-");
+        handle.AuditId.Should().NotBeNullOrWhiteSpace();
+        handle.PolicyDecision.Should().Be(PolicyDecisionKind.Allow);
+        handle.ProposalId.Should().BeNull("a direct style preset involves no governed proposal");
+        handle.EvidenceRefs.Should().Contain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
+        await catalog.Received(1).AssociateLayerAsync(StyleStorageLayerId, StyleId, 0, Arg.Any<CancellationToken>());
+        await graphSync.Received(1).SyncLayerStylesAsync(StyleStorageLayerId, Arg.Any<CancellationToken>());
+
+        audit.Events.Should().Contain(e =>
+            e.Action == "operation.accepted" &&
+            e.ResourceId == handle.OperationInstanceId &&
+            e.CorrelationId == handle.CorrelationId);
+        audit.Events.Should().Contain(e =>
+            e.Action == "operation.completed" &&
+            e.Outcome == AuditOutcome.Success &&
+            e.ResourceId == handle.OperationInstanceId &&
+            e.Details.Contains("operationId=style.apply-preset", StringComparison.Ordinal) &&
+            e.Details.Contains("instanceRecord=non-durable", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public async Task RedisOffProduction_LayerWriteKeyStylePreset_IsDeniedWithoutApplying()
+    {
+        var catalog = StyleCatalog();
+        await using var provider = ComposeRedisOffProduction(
+            PublishingService(), new CapturingAuditLog(), AdminAllowPolicy(), catalog);
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IOperationInvoker>();
+
+        var handle = await invoker.SubmitAsync(StylePresetRequest(), Caller(LayerWriteKeyRole));
+
+        handle.Status.Should().Be(OperationHandleStatus.Denied, handle.Reason);
+        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+    }
+
+    [UnitTest]
+    public async Task RedisOffProduction_RequireApprovalStylePreset_KeepsTypedRedisRefusal()
+    {
+        var catalog = StyleCatalog();
+        var policy = new Dictionary<string, string?>(AdminAllowPolicy())
+        {
+            ["Operations:Policy:Rules:0:OperationId"] = StylePresetOperation.OperationId,
+            ["Operations:Policy:Rules:0:Role"] = null,
+            ["Operations:Policy:Rules:0:Decision"] = "RequireApproval",
+            ["Operations:Policy:Rules:0:ApprovalLane"] = "operator",
+        };
+        await using var provider = ComposeRedisOffProduction(PublishingService(), new CapturingAuditLog(), policy, catalog);
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IOperationInvoker>();
+
+        var refusal = await Assert.ThrowsAsync<CapabilityUnavailableException>(
+            () => invoker.SubmitAsync(StylePresetRequest(), Caller(AdminRole)));
+
+        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        refusal.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
+        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+    }
+
+    [Theory]
+    [InlineData("control-plane.geoprocess")]
+    [InlineData(StudioDraftOperations.Create)]
+    [InlineData(StudioDraftOperations.CreatePublicationRequest)]
+    [InlineData("admin.layer.style.set")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task RedisOffProduction_PolicyAllowedGovernedOperations_KeepTypedRedisRefusal(string operationId)
+    {
+        // Only the configure (service.publish) and style (style.apply-preset) steps are direct on
+        // a Redis-off host. Geoprocessing, durable compositions, proposals and approvals, and the
+        // governed honua_admin_* catalogs keep the typed refusal (journey stages 5-8).
+        await using var provider = ComposeRedisOffProduction(
+            PublishingService(), new CapturingAuditLog(), AdminAllowPolicy(), StyleCatalog());
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IOperationInvoker>();
+
+        var refusal = await Assert.ThrowsAsync<CapabilityUnavailableException>(() => invoker.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = operationId,
+                Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["layerId"] = "1" },
+            },
+            Caller(AdminRole)));
+
+        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+    }
+
     [UnitTest]
     public async Task NonDurableStore_RoutesOnlyDirectOperations_AndDelegatesEverythingElse()
     {
@@ -187,7 +301,8 @@ public sealed class RedisOffDirectPublishTests
     {
         OperationsServiceCollectionExtensions.ComposeDispatcherInstanceStore(new UnavailableOperationInstanceStore())
             .Should().BeOfType<NonDurableDirectOperationInstanceStore>()
-            .Which.DirectOperationIds.Should().BeEquivalentTo(new[] { ServicePublishOperation.OperationId });
+            .Which.DirectOperationIds.Should().BeEquivalentTo(
+                new[] { ServicePublishOperation.OperationId, StylePresetOperation.OperationId });
         var durable = new VolatileOperationInstanceStore();
         OperationsServiceCollectionExtensions.ComposeDispatcherInstanceStore(durable).Should().BeSameAs(durable);
     }
@@ -205,7 +320,9 @@ public sealed class RedisOffDirectPublishTests
     private static ServiceProvider ComposeRedisOffProduction(
         ILayerPublishingService publishing,
         IAuditLog audit,
-        IReadOnlyDictionary<string, string?> policy)
+        IReadOnlyDictionary<string, string?> policy,
+        IStyleCatalog? styleCatalog = null,
+        IMetadataV2StyleGraphSync? styleGraphSync = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -221,10 +338,19 @@ public sealed class RedisOffDirectPublishTests
         resolver.ResolveConnectionStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns("Host=localhost;Database=test");
         services.AddSingleton(resolver);
-        var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
-        graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(
-            new MetadataV2GraphSnapshot(new MetadataV2Graph { Revision = 7 }, "\"etag\"", DateTimeOffset.UtcNow));
-        services.AddSingleton(graphProvider);
+        if (styleCatalog is null)
+        {
+            var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
+            graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(
+                new MetadataV2GraphSnapshot(new MetadataV2Graph { Revision = 7 }, "\"etag\"", DateTimeOffset.UtcNow));
+            services.AddSingleton(graphProvider);
+        }
+        else
+        {
+            services.AddSingleton<IMetadataV2GraphProvider>(StyleGraph());
+            services.AddSingleton(styleCatalog);
+            services.AddSingleton(styleGraphSync ?? Substitute.For<IMetadataV2StyleGraphSync>());
+        }
 
         // Mirrors the Program.cs no-Redis branch: no IConnectionMultiplexer, fail-closed proposal store.
         services.AddSingleton<IOperationProposalStore, UnavailableOperationProposalStore>();
@@ -275,6 +401,49 @@ public sealed class RedisOffDirectPublishTests
             ["schema"] = "public",
             ["table"] = "parcels",
             ["layerName"] = "Parcels",
+        },
+    };
+
+    private const string StyleServiceId = "svc-parcels";
+    private const int StyleLayerIndex = 0;
+    private const int StyleStorageLayerId = 42;
+    private const string StyleId = "style_flood_depth";
+
+    private static IStyleCatalog StyleCatalog()
+    {
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(StyleId, Arg.Any<CancellationToken>()).Returns(new StyleCatalogRecord
+        {
+            StyleId = StyleId,
+            Title = "Flood depth",
+            MapLibreStyleJson = "{\"version\":8,\"layers\":[]}",
+            StyleVersion = 1,
+        });
+        catalog.AssociateLayerAsync(StyleStorageLayerId, StyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+        return catalog;
+    }
+
+    private static TestMetadataV2GraphProvider StyleGraph()
+        => new TestMetadataV2GraphBuilder()
+            .AddResource("res-parcels", "Parcels Dataset", spatial: new MetadataV2ResourceSpatial
+            {
+                GeometryType = MetadataV2GeometryType.Polygon,
+                SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },
+                Bbox = new MetadataV2Bbox { West = -10, South = -10, East = 10, North = 10 },
+            })
+            .AddStorageBinding("bind-parcels", "res-parcels", "public.parcels", storageLayerId: StyleStorageLayerId)
+            .AddService(StyleServiceId, "Parcels")
+            .AddPublication("pub-parcels", StyleServiceId, "res-parcels", layerIndex: StyleLayerIndex, storageBindingId: "bind-parcels")
+            .BuildProvider();
+
+    private static OperationRequest StylePresetRequest() => new()
+    {
+        OperationId = StylePresetOperation.OperationId,
+        Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["serviceId"] = StyleServiceId,
+            ["layerId"] = StyleLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["styleId"] = StyleId,
         },
     };
 

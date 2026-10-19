@@ -836,7 +836,11 @@ internal sealed class PbfQueryFormatter
         var transform = new ProtobufWriter(64);
 
         // field 1: quantizeOriginPosition (0 = upperLeft, 1 = lowerLeft).
-        if (string.Equals(quantizationTransform?.OriginPosition, QuantizationTransform.LowerLeft, StringComparison.Ordinal))
+        // With no client transform, coordinates are encoded as y = round(Y * 1e6) and
+        // translate 0. Esri decodes upperLeft as translateY - q * scale, which mirrors
+        // that positive Y. Declare lowerLeft so the same encoding decodes unchanged (#6145).
+        if (quantizationTransform is null
+            || string.Equals(quantizationTransform.OriginPosition, QuantizationTransform.LowerLeft, StringComparison.Ordinal))
         {
             transform.WriteEnum(1, 1);
         }

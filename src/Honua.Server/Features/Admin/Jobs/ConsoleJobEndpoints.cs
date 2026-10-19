@@ -55,6 +55,12 @@ internal static class ConsoleJobEndpoints
             .Produces<ConsoleJobStepsResponse>()
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{jobId}/diagnostics", HandleGetDiagnostics)
+            .WithName("GetConsoleJobDiagnostics")
+            .WithSummary("Get the versioned job diagnostics projection: release identity, lifecycle phase, attempt and worker liveness, structured failure, steps, recent events, artifact availability and disclosed evidence gaps")
+            .Produces<ConsoleJobDiagnostics>()
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapPost("/{jobId}/cancel", HandleCancel)
             .WithName("CancelConsoleJob")
             .WithSummary("Cancel a durable execution job")
@@ -269,6 +275,47 @@ internal static class ConsoleJobEndpoints
 
             SetCorrelationHeader(context, response.CorrelationId);
             return Results.Json(response, ConsoleJobJsonContext.Default.ConsoleJobStepsResponse);
+        }
+        catch (ConsoleJobServiceUnavailableException ex)
+        {
+            return Unavailable(ex.Message);
+        }
+    }
+
+    private static async Task<IResult> HandleGetDiagnostics(
+        HttpContext context,
+        string jobId,
+        [FromQuery] int? events,
+        [FromQuery] string? eventCursor,
+        [FromServices] IConsoleJobService service,
+        CancellationToken cancellationToken)
+    {
+        SetNoStore(context);
+        var authResult = await AuthorizeReadAsync(context, jobId).ConfigureAwait(false);
+        if (authResult is not null)
+        {
+            return authResult;
+        }
+
+        if (events is < 1 or > ConsoleJobService.MaxDiagnosticEventLimit)
+        {
+            return BadRequest($"events must be between 1 and {ConsoleJobService.MaxDiagnosticEventLimit}.");
+        }
+
+        try
+        {
+            var response = await service.GetDiagnosticsAsync(context, jobId, events, eventCursor, cancellationToken).ConfigureAwait(false);
+            if (response == null)
+            {
+                return NotFound(jobId);
+            }
+
+            SetCorrelationHeader(context, response.CorrelationId);
+            return Results.Json(response, ConsoleJobJsonContext.Default.ConsoleJobDiagnostics);
+        }
+        catch (ArgumentException)
+        {
+            return BadRequest("Invalid diagnostic event cursor.");
         }
         catch (ConsoleJobServiceUnavailableException ex)
         {

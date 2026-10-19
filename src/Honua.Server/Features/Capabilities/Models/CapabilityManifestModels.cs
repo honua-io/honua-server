@@ -164,11 +164,24 @@ internal sealed record CapabilityManifestCapability
     public string? MessageKey { get; init; }
 
     /// <summary>
-    /// Per-target rollback claims. Present only on <c>deploy.rollback</c>. A global
+    /// Per-target rollback claims. Present only on <c>deploy.rollback</c>, and only for an
+    /// authenticated caller holding <c>deploy.rollback</c> or <c>admin.rbac.write</c>.
+    /// Other callers receive the capability flags without target identifiers. A global
     /// <see cref="Available"/> value does not apply to every target; each entry says
     /// whether that target can execute a rollback and why.
     /// </summary>
     public CapabilityManifestRollbackTarget[]? RollbackTargets { get; init; }
+
+    /// <summary>
+    /// Background-import runner: <c>batch</c>, <c>in-process</c> or <c>unavailable</c>. Present
+    /// only on <c>import.background</c> (honua-server#5916).
+    /// </summary>
+    public string? Runner { get; init; }
+
+    /// <summary>
+    /// Object-store URI schemes this host can import. Present on <c>import.objectStore</c>.
+    /// </summary>
+    public string[]? Schemes { get; init; }
 }
 
 /// <summary>

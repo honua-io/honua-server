@@ -33,7 +33,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var time = Uri.EscapeDataString("2025-01-01T00:00:00Z,2025-01-31T00:00:00Z");
         var layerTimeOptions = Uri.EscapeDataString("{\"0\":{\"useTime\":false}}");
         var response = await Fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&time={time}&layerTimeOptions={layerTimeOptions}&f=json");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&sr=4326&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&time={time}&layerTimeOptions={layerTimeOptions}&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -49,7 +49,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
     public async Task MapServer_Identify_ReturnsResults()
     {
         var response = await Fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&sr=4326&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -97,6 +97,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
                 ["f"] = "json",
                 ["geometry"] = value,
                 ["geometryType"] = "esriGeometryPoint",
+                ["sr"] = "4326",
                 ["layers"] = "all:0",
                 ["tolerance"] = "10",
                 ["mapExtent"] = "-122.52,37.48,-122.48,37.52",
@@ -177,7 +178,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var mapExtent = Uri.EscapeDataString(
             """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
         var response = await Fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent={mapExtent}&imageDisplay=800,600,96&f=json");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&sr=4326&mapExtent={mapExtent}&imageDisplay=800,600,96&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -194,7 +195,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
     public async Task MapServer_Identify_WithDatelineCrossingMapExtent_ReturnsOk()
     {
         var response = await Fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=179.5,0&geometryType=esriGeometryPoint&mapExtent=170,-10,-170,10&imageDisplay=800,600,96&f=json");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=179.5,0&geometryType=esriGeometryPoint&sr=4326&mapExtent=170,-10,-170,10&imageDisplay=800,600,96&f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -210,13 +211,61 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_OmittedSrid_UsesAdvertisedWebMercator(bool usePost)
+    {
+        using var expected = await RequestAsync(includeSrid: true);
+        var expectedResults = expected.RootElement.GetProperty("results");
+        expectedResults.GetArrayLength().Should().BeGreaterThan(0);
+        using var actual = await RequestAsync(includeSrid: false);
+
+        actual.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        actual.RootElement.GetProperty("results").GetRawText().Should().Be(expectedResults.GetRawText(),
+            "omitting sr uses the service's advertised 3857 CRS for both the query and returned geometry");
+        var point = expectedResults[0].GetProperty("geometry");
+        point.GetProperty("x").GetDouble().Should().BeApproximately(-13636637.62, 1);
+        point.GetProperty("y").GetDouble().Should().BeApproximately(4509031.39, 1);
+
+        async Task<JsonDocument> RequestAsync(bool includeSrid)
+        {
+            var parameters = new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["geometry"] = "-13636637.62,4509031.39",
+                ["geometryType"] = "esriGeometryPoint",
+                ["layers"] = "all:0",
+                ["tolerance"] = "10",
+                ["mapExtent"] = "-13700000,4490000,-13600000,4600000",
+                ["imageDisplay"] = "800,600,96"
+            };
+            if (includeSrid)
+            {
+                parameters["sr"] = "3857";
+            }
+
+            using var payload = new FormUrlEncodedContent(parameters);
+            var url = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify";
+            using var response = usePost
+                ? await Fixture.Client.PostAsync(url, payload)
+                : await Fixture.Client.GetAsync(url + "?" + await payload.ReadAsStringAsync());
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            return JsonDocument.Parse(content);
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Identify)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
     public async Task MapServer_Identify_WithGdbVersion_IgnoresParameter()
     {
         var response = await Fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json&gdbVersion=QA");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&sr=4326&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json&gdbVersion=QA");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -236,6 +285,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         [
             new KeyValuePair<string, string>("geometry", "-122.5,37.5"),
             new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
+            new KeyValuePair<string, string>("sr", "4326"),
             new KeyValuePair<string, string>("mapExtent", "-180,-90,180,90"),
             new KeyValuePair<string, string>("imageDisplay", "800,600,96"),
             new KeyValuePair<string, string>("f", "json")

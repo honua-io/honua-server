@@ -3,15 +3,12 @@
 
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Internal;
-using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
@@ -27,13 +24,20 @@ namespace Honua.Core.Features.Migration.Services;
 /// </summary>
 public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationScanner
 {
-    private const string DisallowedNetworkAddressMessage = "OGC service URL resolves to a disallowed network address.";
 
     private readonly HttpClient _httpClient;
     private readonly ICrsRegistry _crsRegistry;
     private readonly ILogger<OgcServiceMigrationScanner> _logger;
     private readonly Func<string, CancellationToken, Task<IPAddress[]>> _hostAddressResolver;
     private static readonly AsyncLocal<bool> UnsafeLocalUrlsAllowed = new();
+
+    private static readonly MigrationServiceUrlPolicy ServiceUrlPolicy = new(
+        "OGC service URL must be a valid HTTP or HTTPS URL.",
+        "OGC service URL must be a valid HTTPS URL.",
+        "OGC service URL must not include embedded credentials.",
+        "OGC service URL resolves to a disallowed network address.",
+        "Unable to establish a connection to the OGC service host.");
+
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OgcServiceMigrationScanner"/> class.
@@ -69,7 +73,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             AllowAutoRedirect = false,
             MaxConnectionsPerServer = 16,
             ConnectCallback = (context, cancellationToken) =>
-                ConnectWithPinnedDnsAsync(context, resolver, UnsafeLocalUrlsAllowed.Value, cancellationToken)
+                MigrationPinnedDns.ConnectAsync(context, resolver, UnsafeLocalUrlsAllowed.Value, ServiceUrlPolicy, cancellationToken)
         };
     }
 
@@ -108,15 +112,11 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
 
         var normalizedServiceType = NormalizeServiceType(request.ServiceType);
         var sourceKind = GetSourceKind(normalizedServiceType);
-        var serviceUri = ValidateServiceUri(request.ServiceUrl, request.AllowUnsafeLocalUrls);
+        var serviceUri = MigrationPinnedDns.ValidateServiceUri(request.ServiceUrl, request.AllowUnsafeLocalUrls, ServiceUrlPolicy);
 
         try
         {
-            _ = await ResolveAllowedAddressesAsync(
-                    serviceUri.DnsSafeHost,
-                    _hostAddressResolver,
-                    request.AllowUnsafeLocalUrls,
-                    cancellationToken)
+            _ = await MigrationPinnedDns.ResolveAllowedAddressesAsync(serviceUri.DnsSafeHost, _hostAddressResolver, request.AllowUnsafeLocalUrls, ServiceUrlPolicy, cancellationToken)
                 .ConfigureAwait(false);
 
             var capabilitiesUrl = BuildCapabilitiesUrl(serviceUri, normalizedServiceType, request.Version);
@@ -1737,114 +1737,6 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             _ => $"ogc-{normalizedServiceType.ToLowerInvariant()}"
         };
 
-    private static Uri ValidateServiceUri(string serviceUrl, bool allowUnsafeLocalUrls)
-    {
-        if (!Uri.TryCreate(serviceUrl, UriKind.Absolute, out var uri) ||
-            (allowUnsafeLocalUrls
-                ? uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps
-                : uri.Scheme != Uri.UriSchemeHttps))
-        {
-            throw new HttpRequestException(allowUnsafeLocalUrls
-                ? "OGC service URL must be a valid HTTP or HTTPS URL."
-                : "OGC service URL must be a valid HTTPS URL.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
-        {
-            throw new HttpRequestException("OGC service URL must not include embedded credentials.");
-        }
-
-        if (!allowUnsafeLocalUrls &&
-            (uri.IsLoopback || string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
-             uri.Host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase)))
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        return uri;
-    }
-
-    private static async Task<IPAddress[]> ResolveAllowedAddressesAsync(
-        string host,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        bool allowUnsafeLocalUrls,
-        CancellationToken cancellationToken)
-    {
-        if (IPAddress.TryParse(host, out var literalAddress))
-        {
-            if (!allowUnsafeLocalUrls && OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
-            {
-                throw new HttpRequestException(DisallowedNetworkAddressMessage);
-            }
-
-            return [literalAddress];
-        }
-
-        IPAddress[] addresses;
-        try
-        {
-            addresses = await hostAddressResolver(host, cancellationToken).ConfigureAwait(false);
-        }
-        catch (SocketException)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-        catch (ArgumentException)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        if (addresses.Length == 0)
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        if (!allowUnsafeLocalUrls && addresses.Any(OutboundHttpUrlValidator.IsPrivateOrReservedAddress))
-        {
-            throw new HttpRequestException(DisallowedNetworkAddressMessage);
-        }
-
-        return addresses;
-    }
-
-    private static async ValueTask<Stream> ConnectWithPinnedDnsAsync(
-        SocketsHttpConnectionContext context,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        bool allowUnsafeLocalUrls,
-        CancellationToken cancellationToken)
-    {
-        var addresses = await ResolveAllowedAddressesAsync(
-                context.DnsEndPoint.Host,
-                hostAddressResolver,
-                allowUnsafeLocalUrls,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        Exception? lastException = null;
-        foreach (var address in addresses)
-        {
-            using var socketOwner = new SocketConnectionOwner(
-                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp));
-
-            try
-            {
-                await socketOwner.Socket
-                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
-                    .ConfigureAwait(false);
-                return socketOwner.TransferToNetworkStream();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
-            {
-                lastException = ex;
-            }
-        }
-
-        throw new HttpRequestException("Unable to establish a connection to the OGC service host.", lastException);
-    }
 
     private static Uri BuildCapabilitiesUrl(Uri serviceUri, string serviceType, string? version)
     {

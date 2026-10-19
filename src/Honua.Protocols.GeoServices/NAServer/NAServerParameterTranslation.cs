@@ -22,6 +22,7 @@ namespace Honua.Protocols.GeoServices.NAServer;
 /// <param name="MaxDestinations">Maximum number of destinations on an OD cost matrix solve.</param>
 /// <param name="MaxLocationAllocationFacilities">Maximum number of candidate facilities on a location-allocation solve.</param>
 /// <param name="MaxDemandPoints">Maximum number of demand points on a location-allocation solve.</param>
+/// <param name="MaxSolvePairs">Maximum ranked pairs on a closest-facility, OD, or location-allocation solve.</param>
 internal readonly record struct NAServerInputCaps(
     int MaxStops,
     int MaxFacilities,
@@ -32,7 +33,8 @@ internal readonly record struct NAServerInputCaps(
     int MaxOrigins = 1000,
     int MaxDestinations = 1000,
     int MaxLocationAllocationFacilities = 1000,
-    int MaxDemandPoints = 1000)
+    int MaxDemandPoints = 1000,
+    int MaxSolvePairs = 10_000)
 {
     /// <summary>
     /// Conservative defaults used when no <see cref="RoutingConfiguration"/> is
@@ -58,7 +60,8 @@ internal readonly record struct NAServerInputCaps(
             configuration.MaxOrigins,
             configuration.MaxDestinations,
             configuration.MaxLocationAllocationFacilities,
-            configuration.MaxDemandPoints);
+            configuration.MaxDemandPoints,
+            configuration.MaxSolvePairs);
     }
 }
 
@@ -138,11 +141,18 @@ internal static class NAServerParameterTranslation
     public static ServiceAreaSolveRequest BuildServiceAreaSolveRequest(
         IReadOnlyDictionary<string, string> parameters,
         NAServerInputCaps caps)
+        => BuildServiceAreaSolveRequest(parameters, caps, defaultInputSrid: null);
+
+    /// <summary>Builds a service-area request with a task-specific default for undeclared input coordinates.</summary>
+    internal static ServiceAreaSolveRequest BuildServiceAreaSolveRequest(
+        IReadOnlyDictionary<string, string> parameters,
+        NAServerInputCaps caps,
+        int? defaultInputSrid)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
         var outSrid = ParseOutSr(parameters);
-        var inSrid = ParseInSr(parameters, outSrid, "facilities");
+        var inSrid = ParseInSr(parameters, defaultInputSrid ?? outSrid, "facilities");
         var facilities = ParsePoints(GetValue(parameters, "facilities"), "facilities");
         if (facilities.Count == 0)
         {
@@ -232,6 +242,16 @@ internal static class NAServerParameterTranslation
         }
 
         var targetCount = ParsePositiveInt(GetValue(parameters, "defaultTargetFacilityCount"), "defaultTargetFacilityCount") ?? 1;
+        if (targetCount > caps.MaxClosestFacilities)
+        {
+            throw new NAServerParameterException(
+                $"'defaultTargetFacilityCount' {targetCount} exceeds the maximum of {caps.MaxClosestFacilities}.");
+        }
+
+        EnsureSolvePairs(
+            RoutingSolveBudget.RankedPairCount(incidents.Count, facilities.Count, targetCount),
+            caps,
+            "Closest facility");
         var cutoff = ParseCutoff(parameters, "defaultCutoff", "cutoff");
         var direction = ParseClosestFacilityTravelDirection(GetValue(parameters, "travelDirection"));
         var barriers = ParseBarriers(parameters, caps);
@@ -306,6 +326,19 @@ internal static class NAServerParameterTranslation
         var cutoff = ParseCutoff(parameters, "defaultCutoff", "cutoff");
         var destinationCount = ParsePositiveInt(
             GetValue(parameters, "defaultTargetDestinationCount"), "defaultTargetDestinationCount");
+        if (destinationCount is > 0 && destinationCount > caps.MaxDestinations)
+        {
+            throw new NAServerParameterException(
+                $"'defaultTargetDestinationCount' {destinationCount} exceeds the maximum of {caps.MaxDestinations}.");
+        }
+
+        var rankedDestinations = destinationCount is > 0
+            ? Math.Min(destinationCount.Value, destinations.Count)
+            : destinations.Count;
+        EnsureSolvePairs(
+            RoutingSolveBudget.RankedPairCount(origins.Count, destinations.Count, rankedDestinations),
+            caps,
+            "OD cost matrix");
         var barriers = ParseBarriers(parameters, caps);
         var travelMode = ParseTravelMode(parameters);
 
@@ -368,6 +401,11 @@ internal static class NAServerParameterTranslation
             throw new NAServerParameterException(
                 $"'demandPoints' count {demandPoints.Count} exceeds the maximum of {caps.MaxDemandPoints}.");
         }
+
+        EnsureSolvePairs(
+            RoutingSolveBudget.RankedPairCount(facilities.Count, demandPoints.Count, null),
+            caps,
+            "Location allocation");
 
         var problemType = ParseLocationAllocationProblemType(GetValue(parameters, "problemType"));
         var facilitiesToFind = ParsePositiveInt(
@@ -609,6 +647,18 @@ internal static class NAServerParameterTranslation
         }
 
         return null;
+    }
+
+    private static void EnsureSolvePairs(int pairCount, NAServerInputCaps caps, string operation)
+    {
+        try
+        {
+            RoutingSolveBudget.Ensure(pairCount, caps.MaxSolvePairs, operation);
+        }
+        catch (RoutingSolveBudgetExceededException ex)
+        {
+            throw new NAServerParameterException(ex.Message);
+        }
     }
 
     private static int? ParsePositiveInt(string? value, string parameterName)
@@ -895,7 +945,7 @@ internal static class NAServerParameterTranslation
     /// Reads the output spatial reference from <c>outSR</c>. Accepts a bare WKID or a
     /// spatial-reference JSON object (<c>{ "wkid": 3857 }</c>). Defaults to 4326.
     /// </summary>
-    private static int ParseOutSr(IReadOnlyDictionary<string, string> parameters)
+    internal static int ParseOutSr(IReadOnlyDictionary<string, string> parameters)
         => ParseSpatialReference(parameters, "outSR") ?? DefaultSrid;
 
     /// <summary>

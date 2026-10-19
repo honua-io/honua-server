@@ -261,4 +261,10 @@ internal static partial class GeoprocessingServiceLog
         ILogger logger,
         string jobId,
         Exception exception);
+
+    [LoggerMessage(8044, LogLevel.Warning, "Local dispatch acknowledgement for queued job {JobId} did not complete; the job stays queued and the active-job sweep repairs the acknowledgement")]
+    public static partial void LocalDispatchAcknowledgementDeferred(
+        ILogger logger,
+        string jobId,
+        Exception exception);
 }

@@ -326,3 +326,13 @@ tests/js/test-results/
 # Generated 3D Tiles scene output (publish/ingest executors)
 scenes-generated/
 scripts/conformance/ogcapi/node_modules/
+
+# honua-gp-devkit run receipts (local development evidence)
+.honua/
+
+# Agent editor scratch left beside source files
+.grok-write-*.tmp
+
+# Shipped project templates include the manifest-listed debugger configuration.
+!src/Honua.Geoprocessing.Cli/Templates/*/.vscode/
+!src/Honua.Geoprocessing.Cli/Templates/*/.vscode/*.json

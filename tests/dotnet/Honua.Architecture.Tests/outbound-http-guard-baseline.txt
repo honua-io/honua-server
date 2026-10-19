@@ -1,0 +1,12 @@
+# Local outbound HTTP guards under src/. Do not add lines.
+# The canonical homes are OutboundHttpUrlValidator and MigrationPinnedDns.
+# Delete a line only when that copy is gone. The architecture test rejects a new line against trunk.
+src/Honua.Core/Features/Migration/Services/ArcGisRestClient.cs
+src/Honua.GeoServicesRest/Features/FeatureStore/Services/ArcGisRestOutboundGuard.cs
+src/Honua.Hosting/Features/Events/FeatureChangeEventModels.cs
+src/Honua.Hosting/Features/Events/WebhookDeliveryHelper.cs
+src/Honua.Hosting/Features/Validation/OutboundHttpUrlValidator.cs
+src/Honua.Import/Features/FileImport/NetworkAddressValidator.cs
+src/Honua.Import/Features/FileImport/PinnedDnsHttpMessageHandler.cs
+src/Honua.Protocols.OgcClassic/Wps20/Wps20ConformanceEcho.cs
+src/Honua.Server/Features/Admin/Services/ExternalServiceDiscoveryService.cs

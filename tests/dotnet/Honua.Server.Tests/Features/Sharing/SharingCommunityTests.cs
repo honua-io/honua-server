@@ -5,12 +5,19 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Server.Features.Portal.Sharing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
@@ -37,18 +44,116 @@ public sealed class SharingCommunityTests : IAsyncLifetime
 
     public SharingCommunityTests()
     {
-        _fixture = new WebAppFixture().ConfigureWebHost(builder =>
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-rivers", "Rivers", protocols: [ServiceProtocols.FeatureServer],
+                accessPolicy: new AccessPolicy { AllowedRoles = ["publisher"] })
+            .AddService("svc-owned", "Owned", protocols: [ServiceProtocols.FeatureServer],
+                accessPolicy: new AccessPolicy { AllowedRoles = ["publisher"] })
+            .AddService("content-a", "First item", protocols: [ServiceProtocols.FeatureServer],
+                accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddService("content-b", "Second item", protocols: [ServiceProtocols.MapServer],
+                accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddService("content-private", "Restricted item", protocols: [ServiceProtocols.FeatureServer],
+                accessPolicy: new AccessPolicy { AllowedRoles = ["parcel-admin"] })
+            .AddResource("private-resource", "Private resource", accessPolicy: new AccessPolicy { AllowedRoles = ["parcel-admin"] })
+            .AddStorageBinding("private-binding", "private-resource", "features", storageLayerId: 0)
+            .AddPublication("private-publication", "content-private", "private-resource", layerIndex: 0,
+                storageBindingId: "private-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+            .Build();
+        graph = graph with
+        {
+            Services = graph.Services.Select(service => service with
+            { Metadata = service.Metadata with { Publisher = "alice" } }).ToArray()
+        };
+        _fixture = new WebAppFixture()
+            .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
+            .ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
         });
+        _fixture.ConfigureServices(services =>
+        {
+            // The Test host skips the production composition root. Bind the
+            // isolated PostgreSQL profile used by the real Portal sharing path.
+            var schema = _fixture.CurrentSchema
+                ?? throw new InvalidOperationException("Portal fixture schema is missing.");
+            services.RemoveAll<IPortalGroupStore>();
+            services.RemoveAll<IPortalItemSharingStore>();
+            services.RemoveAll<IPortalAudienceSnapshotProvider>();
+            services.AddSingleton<IPortalGroupStore>(sp => new PostgresPortalGroupStore(
+                sp.GetRequiredService<NpgsqlDataSource>(), TimeProvider.System, schema));
+            services.AddSingleton<IPortalItemSharingStore>(sp => new PostgresPortalItemSharingStore(
+                sp.GetRequiredService<NpgsqlDataSource>(), sp.GetRequiredService<IHttpContextAccessor>(), schema));
+            services.AddSingleton<IPortalAudienceSnapshotProvider>(sp => new PostgresPortalAudienceSnapshotProvider(
+                sp.GetRequiredService<NpgsqlDataSource>(), schema));
+        });
     }
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        var schema = _fixture.CurrentSchema
+            ?? throw new InvalidOperationException("Portal fixture schema is missing.");
+        await using var stream = typeof(PostgresPortalGroupStore).Assembly.GetManifestResourceStream(
+            "Honua.Server.Migrations.133_CreatePortalSharing.sql")
+            ?? throw new InvalidOperationException("Portal sharing migration resource is missing.");
+        using var reader = new StreamReader(stream);
+        using var builder = new NpgsqlCommandBuilder();
+        var migration = (await reader.ReadToEndAsync())
+            .Replace("$HonuaSchema$", builder.QuoteIdentifier(schema), StringComparison.Ordinal);
+        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+            await using var command = new NpgsqlCommand(migration, connection);
+            await command.ExecuteNonQueryAsync();
+        });
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/community/createGroup")]
+    public async Task MissingDurableSharingBinding_AuthenticatedMutationsReturnProtocolRefusal()
+    {
+        await using var unsupported = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
+            });
+        unsupported.ConfigureServices(services => services.RemoveAll<IPortalAudienceSnapshotProvider>());
+        await unsupported.InitializeAsync();
+        var token = await IssueUserTokenAsync(unsupported, "alice");
+        using var client = unsupported.CreateClient(c => c.DefaultRequestHeaders.Add("Referer", Referer));
+
+        foreach (var path in new[]
+        {
+            "/sharing/rest/community/createGroup",
+            "/sharing/rest/community/groups/absent/delete",
+            "/sharing/rest/community/groups/absent/addUsers",
+            "/sharing/rest/community/groups/absent/removeUsers",
+            "/sharing/rest/content/items/absent/share",
+            "/sharing/rest/content/items/absent/unshare",
+        })
+        {
+            using var response = await PostFormAsync(client, $"{path}?token={token}",
+                ("title", "Crew"), ("users", "bob"), ("groups", "absent"));
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            body.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(501);
+            body.RootElement.TryGetProperty("success", out _).Should().BeFalse();
+        }
+
+        using var discovery = await client.GetAsync($"/sharing/rest/community/groups/absent?token={token}");
+        using var discoveryBody = JsonDocument.Parse(await discovery.Content.ReadAsStringAsync());
+        discoveryBody.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
+    }
 
     [IntegrationTest]
     [Operation(Operations.Security)]
@@ -198,11 +303,11 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         shared.StatusCode.Should().Be(HttpStatusCode.OK);
         var sharedPayload = await ReadAsync<SharingPayload>(shared);
         sharedPayload.ItemId.Should().Be(itemId);
-        sharedPayload.NotSharedWith.Should().Contain(groupId);
+        sharedPayload.NotSharedWith.Should().NotContain(groupId);
         sharedPayload.NotSharedWith.Should().Contain("org");
         sharedPayload.Sharing!.Org.Should().BeFalse();
         sharedPayload.Sharing.Everyone.Should().BeFalse();
-        sharedPayload.Sharing.Groups.Should().BeEmpty();
+        sharedPayload.Sharing.Groups.Should().BeEquivalentTo([groupId]);
 
         using var unshared = await PostFormAsync(client, $"/sharing/rest/content/items/{itemId}/unshare?token={token}",
             ("groups", groupId),
@@ -231,7 +336,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/content/items/{itemId}/share")]
     public async Task ShareItem_ByNonOwnerNonAdmin_Returns403()
     {
-        // Sharing does not record an overlay owner or change item access.
+        // Actual metadata publisher ownership is enforced before any sharing state exists.
         var aliceToken = await IssueUserTokenAsync("alice");
         using var aliceClient = CreateUserClient();
         const string itemId = "svc-owned";
@@ -242,17 +347,12 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         firstPayload.NotSharedWith.Should().Contain("org");
         firstPayload.Sharing!.Org.Should().BeFalse();
 
-        // A second user also cannot apply a share. The response must not claim the
-        // item became public while access is unchanged.
+        // A different user cannot seize the actual item through first-share ownership.
         var malloryToken = await IssueUserTokenAsync("mallory");
         using var malloryClient = CreateUserClient();
         using var response = await PostFormAsync(malloryClient, $"/sharing/rest/content/items/{itemId}/share?token={malloryToken}",
             ("everyone", "true"));
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await ReadAsync<SharingPayload>(response);
-        payload.NotSharedWith.Should().Contain("everyone");
-        payload.Sharing!.Everyone.Should().BeFalse();
-        payload.Sharing.Org.Should().BeFalse();
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -287,6 +387,125 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         await lookup.AssertGeoServicesErrorAsync(404);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /sharing/rest/community/self")]
+    [Endpoint("GET /sharing/rest/community/users/{username}")]
+    public async Task UserGroups_ReturnOnlyOwnedAndMemberGroups_AndKeepForeignUserGuard()
+    {
+        var alice = await IssueUserTokenAsync("alice");
+        var bob = await IssueUserTokenAsync("bob");
+        using var client = CreateUserClient();
+        var owned = await CreateGroupAsync(client, alice, "Owned");
+        var member = await CreateGroupAsync(client, bob, "Member");
+        _ = await CreateGroupAsync(client, bob, "Unrelated");
+        using var add = await PostFormAsync(client, $"/sharing/rest/community/groups/{member}/addUsers?token={bob}", ("users", "alice"));
+        add.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        foreach (var path in new[] { "self", "users/alice" })
+        {
+            using var response = await client.GetAsync($"/sharing/rest/community/{path}?token={alice}&f=json");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            doc.RootElement.GetProperty("username").GetString().Should().Be("alice");
+            doc.RootElement.GetProperty("groups").EnumerateArray()
+                .Select(group => group.GetProperty("id").GetString()).Should().BeEquivalentTo(owned, member);
+        }
+
+        using var foreign = await client.GetAsync($"/sharing/rest/community/users/bob?token={alice}&f=json");
+        await foreign.AssertGeoServicesErrorAsync(404);
+        using var remove = await PostFormAsync(client, $"/sharing/rest/community/groups/{member}/removeUsers?token={bob}", ("users", "alice"));
+        remove.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var after = await client.GetAsync($"/sharing/rest/community/self?token={alice}&f=json");
+        using var afterDoc = JsonDocument.Parse(await after.Content.ReadAsStringAsync());
+        afterDoc.RootElement.GetProperty("groups").EnumerateArray()
+            .Select(group => group.GetProperty("id").GetString()).Should().Equal(owned);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /sharing/rest/content/groups/{groupId}")]
+    public async Task GroupContent_PublicDescriptionDoesNotGrantContentAccess()
+    {
+        var alice = await IssueUserTokenAsync("alice");
+        var bob = await IssueUserTokenAsync("bob");
+        using var client = CreateUserClient();
+        using var create = await PostFormAsync(client, $"/sharing/rest/community/createGroup?token={alice}",
+            ("title", "Public description"), ("access", "public"));
+        var group = (await ReadAsync<GroupOpPayload>(create)).GroupId;
+        using var anonymous = await client.GetAsync($"/sharing/rest/content/groups/{group}?f=json");
+        await anonymous.AssertGeoServicesErrorAsync(401, 499);
+        using var nonmember = await client.GetAsync($"/sharing/rest/content/groups/{group}?token={bob}&f=json");
+        await nonmember.AssertGeoServicesErrorAsync(404);
+        using var absent = await client.GetAsync($"/sharing/rest/content/groups/absent?token={bob}&f=json");
+        await absent.AssertGeoServicesErrorAsync(404);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /sharing/rest/content/groups/{groupId}")]
+    public async Task GroupContent_UnsupportedPublicShare_RemainsEmpty()
+    {
+        var token = await IssueUserTokenAsync("alice");
+        using var client = CreateUserClient();
+        var group = await CreateGroupAsync(client, token, "No fabricated content");
+        using var share = await PostFormAsync(client, $"/sharing/rest/content/items/content-a/share?token={token}", ("everyone", "true"), ("org", "true"));
+        (await ReadAsync<SharingPayload>(share)).NotSharedWith.Should().BeEquivalentTo(["everyone", "org"]);
+        using var response = await client.GetAsync($"/sharing/rest/content/groups/{group}?token={token}&f=json&num=1");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("total").GetInt32().Should().Be(0);
+        doc.RootElement.GetProperty("items").GetArrayLength().Should().Be(0);
+        doc.RootElement.GetProperty("nextStart").GetInt32().Should().Be(-1);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /sharing/rest/content/groups/{groupId}")]
+    public async Task GroupContent_ControlledStoreFixture_PagesAndPreservesUnderlyingRbac()
+    {
+        var token = await IssueUserTokenAsync("alice");
+        using var client = CreateUserClient();
+        var group = await CreateGroupAsync(client, token, "Controlled read-store fixture");
+        var other = await CreateGroupAsync(client, token, "Other group");
+        // Persist each audience through the same HTTP mutation path that the
+        // group-content reader uses on its next request.
+        foreach (var item in new[] { "content-a", "content-b", "content-private" })
+        {
+            using var share = await PostFormAsync(client,
+                $"/sharing/rest/content/items/{item}/share?token={token}", ("groups", group));
+            share.StatusCode.Should().Be(HttpStatusCode.OK);
+            var state = await ReadAsync<SharingPayload>(share);
+            state.ItemId.Should().Be(item);
+            state.Sharing!.Groups.Should().Contain(group);
+        }
+
+        for (var start = 1; start <= 3; start++)
+        {
+            using var response = await client.GetAsync($"/sharing/rest/content/groups/{group}?token={token}&f=json&start={start}&num=1");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
+            root.GetProperty("total").GetInt32().Should().Be(2);
+            root.GetProperty("start").GetInt32().Should().Be(start);
+            root.GetProperty("num").GetInt32().Should().Be(start <= 2 ? 1 : 0);
+            root.GetProperty("nextStart").GetInt32().Should().Be(start == 1 ? 2 : -1);
+            if (start <= 2)
+            {
+                var item = root.GetProperty("items")[0];
+                item.GetProperty("id").GetString().Should().Be(start == 1 ? "content-a" : "content-b");
+                item.GetProperty("groupCategories").GetArrayLength().Should().Be(0);
+            }
+        }
+
+        using var unrelated = await client.GetAsync($"/sharing/rest/content/groups/{other}?token={token}&f=json");
+        using var unrelatedDoc = JsonDocument.Parse(await unrelated.Content.ReadAsStringAsync());
+        unrelatedDoc.RootElement.GetProperty("total").GetInt32().Should().Be(0);
+        using var unshare = await PostFormAsync(client,
+            $"/sharing/rest/content/items/content-a/unshare?token={token}", ("groups", group));
+        unshare.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var after = await client.GetAsync($"/sharing/rest/content/groups/{group}?token={token}&f=json");
+        using var afterDoc = JsonDocument.Parse(await after.Content.ReadAsStringAsync());
+        afterDoc.RootElement.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString()).Should().Equal("content-b");
+    }
+
     private async Task<string> CreateGroupAsync(HttpClient client, string token, string title)
     {
         using var response = await PostFormAsync(client, $"/sharing/rest/community/createGroup?token={token}",
@@ -297,12 +516,14 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         return payload.GroupId;
     }
 
-    private async Task<string> IssueUserTokenAsync(string username)
+    private Task<string> IssueUserTokenAsync(string username) => IssueUserTokenAsync(_fixture, username);
+
+    private static async Task<string> IssueUserTokenAsync(WebAppFixture fixture, string username)
     {
         // A referer-bound portal token authenticates the caller on the AllowAnonymous
         // sharing routes via the portal-token bridge, without the IP binding the
         // in-process TestServer cannot populate.
-        var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
+        var issuer = fixture.Services.GetRequiredService<IPortalTokenIssuer>();
         var issuance = await issuer.IssueAsync(
             new PortalTokenIssueRequest(
                 PrincipalId: username,

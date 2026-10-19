@@ -44,20 +44,19 @@ internal sealed partial class StreamingFileImportService
             connection, targetSchema, request.TableName, cancellationToken);
         var loadMode = request.EffectiveLoadMode;
 
-        // Replace uses one physical staging name per logical target. Hold a session-scoped
-        // advisory lock across the complete read/load/swap so a concurrent request cannot drop
-        // or promote the other request's staging table (#4003).
+        // Every load mode shares one staging name per logical target. Hold the historical
+        // replace advisory lock for append and upsert too, so a concurrent replace cannot drop
+        // an in-flight append's staging table or its live rows (#4003, SRV-IMP-008).
         ImportAdvisoryLock? replaceLock = null;
+        var dataCommitted = false;
+        var appendUsesStaging = false;
         try
         {
-            if (loadMode == ImportLoadMode.Replace)
-            {
-                replaceLock = await AcquireImportLockAsync(
-                    connection,
-                    targetSchema,
-                    allowedTableName,
-                    cancellationToken);
-            }
+            replaceLock = await AcquireImportLockAsync(
+                connection,
+                targetSchema,
+                allowedTableName,
+                cancellationToken);
 
             // The load mode determines which physical table the batches stream into and how
             // the target is prepared:
@@ -66,8 +65,10 @@ internal sealed partial class StreamingFileImportService
             //     rename it over the live table after a fully successful load. This keeps replace
             //     transactional: a failed/cancelled load never leaves a half-dropped target, which
             //     the previous unconditional DROP+CREATE could not guarantee.
-            //   * Append  — create the live table only if missing (never drop) and stream into it,
-            //     so existing rows are retained.
+            //   * Append  — create the live table only if missing (never drop). An importer-owned
+            //     target loads into the same staging sibling and merges with one INSERT...SELECT,
+            //     so a reader failure leaves the live table unchanged. A table the importer does
+            //     not own keeps the direct append path.
             //   * Upsert  — create the live table if missing, ensure a unique key index over the
             //     requested property keys, and stream through honua.upsert_import_feature so
             //     colliding rows UPDATE in place and the rest insert, with no full drop.
@@ -81,7 +82,17 @@ internal sealed partial class StreamingFileImportService
             {
                 case ImportLoadMode.Append:
                     await EnsureTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
-                    loadTableName = allowedTableName;
+                    if (await TargetIsImporterOwnedAsync(connection, targetSchema, allowedTableName, cancellationToken))
+                    {
+                        loadTableName = await CreateStagingTableAsync(
+                            connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
+                        appendUsesStaging = true;
+                    }
+                    else
+                    {
+                        loadTableName = allowedTableName;
+                    }
+
                     break;
                 case ImportLoadMode.Upsert:
                     await EnsureTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
@@ -169,7 +180,12 @@ internal sealed partial class StreamingFileImportService
                         continue;
                     }
 
-                    if (format != SupportedFileFormat.FileGdb && feature.Geometry != null)
+                    // FileGDB included: the resolved/explicit source SRID must win over whatever the
+                    // reader's geometry factory carried (#6114). CSV is the exception: an EWKT/EWKB
+                    // value already carries its own SRID, and stamping the 4326 default here stored
+                    // projected coordinates as degrees (#6171). An explicit SourceSrid still wins.
+                    if (feature.Geometry != null &&
+                        ShouldApplyDetectedSourceSrid(format, request.SourceSrid, feature.Geometry.SRID))
                     {
                         feature.Geometry.SRID = sourceSrid;
                     }
@@ -264,24 +280,49 @@ internal sealed partial class StreamingFileImportService
                 // partial one (#4006). A first-ever replace into a brand-new target has nothing to
                 // protect, so it still promotes imported rows even with dropped rows — that is a
                 // normal partial import, not data loss. A load with no imported rows is discarded.
+                // Append into an owned target uses the same sibling and merges only after the
+                // whole file has loaded, so a failure before that merge leaves the live table as it was.
                 var replacementBlocked = loadMode == ImportLoadMode.Replace && hadExistingTarget && totalFailed > 0;
+                var stagesIntoSibling = loadMode == ImportLoadMode.Replace || appendUsesStaging;
+                if (stagesIntoSibling)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
                 if (loadMode == ImportLoadMode.Replace)
                 {
                     if (replacementBlocked || totalImported == 0)
                     {
-                        await DropStagingTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
+                        await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
                     }
                     else
                     {
-                        await SwapStagingTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
+                        await SwapStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                        dataCommitted = true;
                     }
                 }
-
-                // Skip ANALYZE when the replace was blocked: the live table is unchanged, so its
-                // statistics are already current, and re-analyzing it is pure overhead.
-                if (!replacementBlocked && totalImported > 0)
+                else if (appendUsesStaging)
                 {
-                    await AnalyzeTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
+                    if (totalImported == 0)
+                    {
+                        await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                    }
+                    else
+                    {
+                        await AppendStagingIntoTargetAsync(
+                            connection,
+                            targetSchema,
+                            allowedTableName,
+                            loadTableName,
+                            CancellationToken.None);
+                        dataCommitted = true;
+                    }
+                }
+                else if (totalImported > 0)
+                {
+                    // Direct append and upsert already wrote the live table. Later cancellation
+                    // must not reclassify that write as if it had been rolled back.
+                    dataCommitted = true;
                 }
 
                 // Surface skipped null-geometry rows in the completion progress report
@@ -342,6 +383,28 @@ internal sealed partial class StreamingFileImportService
                     completionWarningsBuilder.Add(string.Format(null, _skippedInvalidGeometryWarningFormat, repairTally.SkippedInvalid));
                 }
 
+                if (dataCommitted)
+                {
+                    try
+                    {
+                        await AnalyzeTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                    }
+                    catch (Exception analyzeException) when (analyzeException is not OutOfMemoryException)
+                    {
+                        // The rows are already committed. An ANALYZE failure must not turn that
+                        // into a failed import or skip the completion record.
+                        ImportLog.AnalyzeAfterCommitFailed(_logger, analyzeException, targetSchema, allowedTableName);
+                        completionWarningsBuilder.Add(
+                            "Table statistics could not be refreshed after the import was committed; the imported rows were kept.");
+                    }
+                }
+
+                if (dataCommitted && cancellationToken.IsCancellationRequested)
+                {
+                    completionWarningsBuilder.Add(
+                        "Import was cancelled after the data was committed. The imported rows were kept.");
+                }
+
                 string[] completionWarnings = [.. completionWarningsBuilder];
 
                 // Report completion
@@ -370,7 +433,7 @@ internal sealed partial class StreamingFileImportService
 
                 return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked);
             }
-            catch when (loadMode == ImportLoadMode.Replace)
+            catch when ((loadMode == ImportLoadMode.Replace || appendUsesStaging) && !dataCommitted)
             {
                 try
                 {
@@ -392,6 +455,26 @@ internal sealed partial class StreamingFileImportService
                 await replaceLock.DisposeAsync();
             }
         }
+    }
+
+    /// <summary>
+    /// Whether the resolved source SRID replaces the geometry's own SRID.
+    /// An explicit request SRID always wins. A CSV geometry that already carries an SRID
+    /// (EWKT/EWKB) keeps it so projected coordinates are not stored as EPSG:4326 (#6171).
+    /// Every other geometry, including CSV values with no embedded SRID and FileGDB
+    /// features left at SRID 0, takes the detected source SRID (#6114).
+    /// </summary>
+    internal static bool ShouldApplyDetectedSourceSrid(
+        SupportedFileFormat format,
+        int? requestedSourceSrid,
+        int featureSrid)
+    {
+        if (requestedSourceSrid.HasValue || featureSrid <= 0)
+        {
+            return true;
+        }
+
+        return format != SupportedFileFormat.Csv;
     }
 
     private void RecordImportMetrics(

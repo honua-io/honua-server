@@ -234,7 +234,21 @@ public enum ExecutionJobKind
     /// the generation from <c>dirty</c> to <c>ready</c> (or <c>failed</c>) without ever
     /// touching the active solve tables.
     /// </summary>
-    NetworkTopologyRebuild
+    NetworkTopologyRebuild,
+
+    /// <summary>
+    /// Background file import (honua-server#5916): the accepting host stages the source in
+    /// file storage and the worker downloads it and runs the streaming import pipeline,
+    /// reporting progress through the import job document.
+    /// </summary>
+    FileImport,
+
+    /// <summary>
+    /// Background layer publish (honua-server#5948): a table above the row threshold is copied
+    /// in batches on the shared execution-job queue and reports rows materialized plus the
+    /// published layer id. Same queue and worker loop as <see cref="FileImport"/>.
+    /// </summary>
+    LayerPublish
 }
 
 /// <summary>
@@ -768,6 +782,13 @@ public sealed record MetadataReleaseContext
     public required string PackageId { get; init; }
 
     /// <summary>
+    /// Verified provisioning root from the DevOps handoff
+    /// (<c>urn:honua:provisioning:</c> plus 32 lowercase hex digits).
+    /// Null when this release is not part of a federated handoff.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
+
+    /// <summary>
     /// Git operation identifier that wrote the release package, if known.
     /// </summary>
     public string? GitOperationId { get; init; }
@@ -1091,6 +1112,13 @@ public sealed record WorkflowOperationRecord
     public MetadataReleaseContext? MetadataRelease { get; init; }
 
     /// <summary>
+    /// Verified provisioning root from the DevOps handoff. This is the canonical field
+    /// on the workflow record. The same value is copied onto <see cref="MetadataRelease"/>
+    /// so a nested read cannot disagree with the record. Null when the operation was not federated.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
+
+    /// <summary>
     /// Coordinated-release context for <see cref="WorkflowOperationKind.CoordinatedRelease"/> operations
     /// that conduct a container rollout, a DB script migration, and a metadata-v2 activation as one op.
     /// </summary>
@@ -1102,6 +1130,12 @@ public sealed record WorkflowOperationRecord
 /// </summary>
 public sealed record ExecutionJobSpec
 {
+    /// <summary>
+    /// Server-owned GPServer binding, stamped after scoped execution authorization.
+    /// Arbitrary protocol parameters cannot create this binding. Null on legacy or other-protocol jobs.
+    /// </summary>
+    public GPServerJobBinding? GPServerBinding { get; init; }
+
     /// <summary>
     /// Stable workload definition identifier resolved through the job-definition registry.
     /// </summary>
@@ -1151,6 +1185,9 @@ public sealed record ExecutionJobSpec
     /// </summary>
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
 }
+
+/// <summary>Durable service, published task, and canonical process identity of a GPServer job.</summary>
+public sealed record GPServerJobBinding(string ServiceId, string TaskName, string ProcessId);
 
 /// <summary>
 /// Stable workload definition used to resolve specialized compute images and runtime settings.
@@ -1585,6 +1622,9 @@ public sealed record BatchComputeSubmissionResult
 /// </summary>
 public sealed record BatchComputeObservation
 {
+    /// <summary>Provider-confirmed submitted attempt recovered after a lost post-submit commit.</summary>
+    public int? RecoveredAttemptCount { get; init; }
+
     /// <summary>
     /// Observed execution status.
     /// </summary>

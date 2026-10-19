@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 496,
+    "operationCount": 506,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 403,
+      "admin-api": 413,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -21,7 +21,7 @@
       "studio-api": 23
     },
     "perCapability": {
-      "admin.control-plane": 284,
+      "admin.control-plane": 293,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
@@ -30,7 +30,7 @@
       "geocoding.forward": 4,
       "identity.mtls-client-certificate": 13,
       "identity.oidc": 6,
-      "import.file": 26,
+      "import.file": 27,
       "import.geoserver": 5,
       "import.geoservices": 10,
       "process.ogc-api-processes": 10,
@@ -659,6 +659,16 @@
     },
     {
       "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/connections/{id}/layers/jobs/{jobId}",
+      "operationId": "getLayerPublishJobStatus",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-connections-id-layers-jobs-jobid"
+    },
+    {
+      "spec": "admin-api",
       "method": "PUT",
       "path": "/api/v1/admin/connections/{id}/layers/{layerId}/enabled",
       "operationId": "setLayerEnabled",
@@ -1130,6 +1140,76 @@
     {
       "spec": "admin-api",
       "method": "GET",
+      "path": "/api/v1/admin/gp/process-releases",
+      "operationId": "listGpProcessReleases",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-gp-process-releases"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/gp/process-releases",
+      "operationId": "publishGpProcessRelease",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-gp-process-releases"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/gp/process-releases/bindings",
+      "operationId": "listGpProcessBindings",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-gp-process-releases-bindings"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/gp/process-releases/bindings/{process}",
+      "operationId": "getGpProcessBinding",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-gp-process-releases-bindings-process"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/gp/process-releases/bindings/{process}/activate",
+      "operationId": "activateGpProcessRelease",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-gp-process-releases-bindings-process-activate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/gp/process-releases/bindings/{process}/jobs",
+      "operationId": "submitGpProcessReleaseJob",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-gp-process-releases-bindings-process-jobs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/gp/process-releases/{digest}",
+      "operationId": "getGpProcessRelease",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-gp-process-releases-digest"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
       "path": "/api/v1/admin/identity/providers",
       "operationId": "getIdentityProviders",
       "capability": "admin.control-plane",
@@ -1520,6 +1600,16 @@
     {
       "spec": "admin-api",
       "method": "POST",
+      "path": "/api/v1/admin/import/upload-object",
+      "operationId": "uploadImportFileFromObjectStore",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-upload-object"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
       "path": "/api/v1/admin/import/upload-url",
       "operationId": "uploadImportFileFromUrl",
       "capability": "import.file",
@@ -1726,6 +1816,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "post-api-v1-admin-jobs-jobid-cancel"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs/{jobId}/diagnostics",
+      "operationId": "getConsoleJobDiagnostics",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-jobs-jobid-diagnostics"
     },
     {
       "spec": "admin-api",

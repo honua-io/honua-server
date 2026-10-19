@@ -351,9 +351,18 @@ internal static class LayerValidationHelpers
         string collectionId,
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
+        bool preferExactPublicationId = false,
+        bool preferAdvertisedCollectionId = false,
         CancellationToken cancellationToken = default)
         => ValidateCollectionWithAccessV2CoreAsync(
-            context, collectionId, false, scope, requiredProtocol, cancellationToken: cancellationToken);
+            context,
+            collectionId,
+            false,
+            scope,
+            requiredProtocol,
+            preferExactPublicationId: preferExactPublicationId,
+            preferAdvertisedCollectionId: preferAdvertisedCollectionId,
+            cancellationToken: cancellationToken);
 
     /// <summary>
     /// Validates a collection using a captured snapshot, optionally preferring its stable publication ID.
@@ -364,6 +373,10 @@ internal static class LayerValidationHelpers
     /// <param name="preferExactPublicationId">Whether a stable publication ID takes precedence over aliases.</param>
     /// <param name="scope">The requested access scope.</param>
     /// <param name="requiredProtocol">The protocol that must be enabled.</param>
+    /// <param name="preferAdvertisedCollectionId">
+    /// Whether the collection id advertised by Features and Tiles
+    /// (service-local id, else path, else resource name) takes precedence over aliases.
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     public static Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2Async(
         HttpContext context,
@@ -372,9 +385,18 @@ internal static class LayerValidationHelpers
         bool preferExactPublicationId = false,
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
+        bool preferAdvertisedCollectionId = false,
         CancellationToken cancellationToken = default)
         => ValidateCollectionWithAccessV2CoreAsync(
-            context, collectionId, false, scope, requiredProtocol, snapshot, preferExactPublicationId, cancellationToken);
+            context,
+            collectionId,
+            false,
+            scope,
+            requiredProtocol,
+            snapshot,
+            preferExactPublicationId,
+            preferAdvertisedCollectionId,
+            cancellationToken);
 
     /// <summary>
     /// Validates numeric collection IDs as storage identities, sharing publication
@@ -389,6 +411,61 @@ internal static class LayerValidationHelpers
         => ValidateCollectionWithAccessV2CoreAsync(
             context, collectionId, true, scope, requiredProtocol, cancellationToken: cancellationToken);
 
+    /// <summary>
+    /// Collection id written into an OGC API Features or Tiles collection document.
+    /// </summary>
+    internal static string? AdvertisedCollectionId(MetadataV2Publication publication, MetadataV2Resource? resource)
+    {
+        var collectionId = publication.ServiceLocalId ?? publication.Path ?? resource?.Metadata.Name;
+        return string.IsNullOrWhiteSpace(collectionId) ? resource?.Metadata.Id : collectionId;
+    }
+
+    /// <summary>
+    /// Picks the tenant-visible publication whose predicate matches the requested collection id.
+    /// Protocol-enabled publications win, then the preferred publication type, then a primary publication.
+    /// When none of the matches enable the protocol, the first visible match is returned so a later
+    /// protocol check can reject it instead of binding a different alias.
+    /// </summary>
+    internal static MetadataV2Publication? SelectMatchingCollectionPublication(
+        IEnumerable<MetadataV2Publication> publications,
+        Func<MetadataV2Publication, bool> matches,
+        Func<MetadataV2Publication, bool> isTenantVisible,
+        Func<MetadataV2Publication, bool> isProtocolEnabled,
+        Func<MetadataV2Publication, bool> isPreferredType)
+    {
+        ArgumentNullException.ThrowIfNull(publications);
+        ArgumentNullException.ThrowIfNull(matches);
+        ArgumentNullException.ThrowIfNull(isTenantVisible);
+        ArgumentNullException.ThrowIfNull(isProtocolEnabled);
+        ArgumentNullException.ThrowIfNull(isPreferredType);
+
+        MetadataV2Publication? firstVisible = null;
+        MetadataV2Publication? bestEnabled = null;
+        var bestRank = int.MinValue;
+        foreach (var publication in publications)
+        {
+            if (!matches(publication) || !isTenantVisible(publication))
+            {
+                continue;
+            }
+
+            firstVisible ??= publication;
+            if (!isProtocolEnabled(publication))
+            {
+                continue;
+            }
+
+            var rank = (isPreferredType(publication) ? 2 : 0) + (publication.IsPrimary ? 1 : 0);
+            if (bestEnabled is null || rank > bestRank)
+            {
+                bestEnabled = publication;
+                bestRank = rank;
+            }
+        }
+
+        return bestEnabled ?? firstVisible;
+    }
+
     private static async Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2CoreAsync(
         HttpContext context,
         string collectionId,
@@ -397,6 +474,7 @@ internal static class LayerValidationHelpers
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
         MetadataV2GraphSnapshot? snapshot = null,
         bool preferExactPublicationId = false,
+        bool preferAdvertisedCollectionId = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(collectionId))
@@ -460,10 +538,30 @@ internal static class LayerValidationHelpers
                 TenantScopeHelpers.IsPublicationVisible(context, p, matchedResource, matchedService);
         }
 
+        // The id written into a Features or Tiles collection document
+        // (service-local id, else path, else resource name) must bind that publication
+        // even when another publication's title or name reuses it. A visible advertised
+        // match does not fall through to an alias. Maps does not set this flag.
+        if (preferAdvertisedCollectionId)
+        {
+            publication = SelectMatchingCollectionPublication(
+                snapshot.Graph.Publications,
+                publication => string.Equals(
+                    AdvertisedCollectionId(publication, snapshot.ResolveResource(publication)),
+                    collectionId,
+                    StringComparison.OrdinalIgnoreCase),
+                IsTenantVisible,
+                publication => string.IsNullOrWhiteSpace(requiredProtocol) ||
+                    (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var serviceForProtocol) &&
+                     MetadataV2ServiceProtocols.IsProtocolEnabled(serviceForProtocol, requiredProtocol)),
+                publication => !string.IsNullOrWhiteSpace(requiredProtocol) &&
+                    MetadataV2ServiceProtocols.IsPreferredPublicationType(requiredProtocol, publication.PublicationType));
+        }
+
         // Stable IDs must remain addressable even when another publication's display
         // alias matches the ID. Access and protocol checks below still apply to the
         // exact publication; a denied exact ID must never fall through to an alias.
-        if (preferExactPublicationId)
+        if (publication is null && preferExactPublicationId)
         {
             publication = snapshot.Graph.Publications.FirstOrDefault(p =>
                 string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase) && IsTenantVisible(p));
@@ -919,7 +1017,7 @@ internal static class LayerValidationHelpers
     }
 
     /// <summary>
-    /// Combines <see cref="ValidateCollectionWithAccessV2Async(HttpContext, string, AccessScope, string, CancellationToken)"/> with the V2 RBAC data-editor
+    /// Combines <see cref="ValidateCollectionWithAccessV2Async(HttpContext, string, AccessScope, string?, bool, bool, CancellationToken)"/> with the V2 RBAC data-editor
     /// helper so OGC API Features CRUD/Transaction handlers can run a single check.
     /// Returns the matched publication + resource + service plus an
     /// <see cref="IResult"/> error when validation or authorization fails.

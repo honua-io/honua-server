@@ -176,6 +176,36 @@ public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
         after.RootElement.GetRawText().Should().Be(before.RootElement.GetRawText());
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Create, Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
+    public async Task Transaction_InsertPointIntoPolygonFeatureType_IsRejectedWithoutChangingSql()
+    {
+        // #6108: WFS-T shares the mutation validator that enforces the declared geometry type.
+        _fixture.UpdateV2ResourceMetadata(0, spatial: new MetadataV2ResourceSpatial
+        {
+            SpatialReference = MetadataV2SpatialReference.Wgs84,
+            GeometryType = MetadataV2GeometryType.Polygon,
+            SupportedCrs = [MetadataV2SpatialReference.Wgs84]
+        });
+        var before = await ReadLayerStateAsync();
+
+        var response = await SendAsync(LegacyTransaction($$"""
+            <Insert><honua:native_rich_edits_wfs>
+              <honua:name>must-not-commit</honua:name><honua:rank>40</honua:rank>
+              <honua:score>1.5</honua:score><honua:active>false</honua:active>
+              <honua:cert_owner>fallback-geometry-regression</honua:cert_owner>
+              <honua:geometry>{{Point("-157.8,21.3")}}</honua:geometry>
+            </honua:native_rich_edits_wfs></Insert>
+            """), HttpStatusCode.BadRequest);
+
+        response.Should().Contain("InvalidParameterValue")
+            .And.Contain("locator=\"geometry\"")
+            .And.Contain("does not match the layer geometry type Polygon");
+        (await ReadLayerStateAsync()).Should().Be(before);
+    }
+
     private async Task<string> SendAsync(string xml, HttpStatusCode expectedStatus)
     {
         using var content = new StringContent(xml, Encoding.UTF8, "text/xml");

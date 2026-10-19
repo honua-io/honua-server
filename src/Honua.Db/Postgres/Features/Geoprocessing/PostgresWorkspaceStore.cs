@@ -11,7 +11,7 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Geoprocessing;
 
-internal sealed partial class PostgresWorkspaceStore : IWorkspaceStore, IArtifactStore, IAtomicWorkspaceStore
+internal sealed partial class PostgresWorkspaceStore : IWorkspaceStore, IArtifactStore, IAtomicWorkspaceStore, IWorkspaceStreamReferenceStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connections;
     private readonly string _workspaces;

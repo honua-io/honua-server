@@ -8,6 +8,7 @@ using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
+using Honua.Core.Features.Studio.Services.Bridging;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -774,6 +775,7 @@ public sealed class StudioPackageLifecycleServiceTests
 
         Assert.False(capabilities.Durable);
         Assert.Equal(10, capabilities.Families.Count);
+        Assert.All(capabilities.Families, family => Assert.True(family.GovernsStudioRoutes));
         Assert.Contains(capabilities.Families, f =>
             f.Family == StudioPackageFamily.Map &&
             f.Format == "honua_map_package.v1" &&
@@ -791,12 +793,15 @@ public sealed class StudioPackageLifecycleServiceTests
         var draftId = Guid.NewGuid();
         var itemId = Guid.NewGuid();
         var versionId = Guid.NewGuid();
-        var stoppedActivities = new ConcurrentQueue<string>();
+        using var activityScope = new Activity(nameof(ReadAndDeleteLifecycleActivities_CoverStoreWork))
+            .SetIdFormat(ActivityIdFormat.W3C)
+            .Start();
+        var stoppedActivities = new ConcurrentQueue<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == StudioPackageLifecycleService.ActivitySourceName,
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activity => stoppedActivities.Enqueue(activity.OperationName),
+            ActivityStopped = stoppedActivities.Enqueue,
         };
         ActivitySource.AddActivityListener(listener);
 
@@ -926,6 +931,116 @@ public sealed class StudioPackageLifecycleServiceTests
         Assert.Null(otherPointers!.PublishedVersionId);
     }
 
+    // honua-server#5825: a form (or analysis) publish goes to the family bridge. A native
+    // Studio item that already owns the route must not reject that request.
+    [UnitTest]
+    public async Task CreatePublicationRequest_BridgedFamily_PublishesDespiteNativeRouteOwner()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var bridge = new SingleItemFamilyBridge(StudioPackageFamily.Form);
+        var service = BuildServiceProvider(
+                store,
+                bridgeCatalog: new StudioFamilyPersistenceBridgeCatalog([bridge]))
+            .GetRequiredService<IStudioPackageLifecycleService>();
+        var capabilities = service.GetCapabilities();
+        Assert.True(capabilities.Families.Single(family => family.Family == StudioPackageFamily.Query).GovernsStudioRoutes);
+        Assert.False(capabilities.Families.Single(family => family.Family == StudioPackageFamily.Form).GovernsStudioRoutes);
+
+        var intent = new StudioPublicationIntent { Route = "/maps/shared", Visibility = "organization" };
+        var owner = await SaveVersionAsync(service, "publication-owner");
+        var native = await service.CreatePublicationRequestAsync(
+            owner.ItemId,
+            owner.VersionId,
+            expectedCurrentVersionId: owner.VersionId,
+            intent,
+            warningAcknowledgement: null,
+            actorId: "tester");
+        Assert.NotNull(native);
+
+        var bridged = bridge.Seed(intent);
+        var published = await service.CreatePublicationRequestAsync(
+            bridged.ItemId,
+            bridged.VersionId,
+            expectedCurrentVersionId: bridged.VersionId,
+            intent,
+            warningAcknowledgement: null,
+            actorId: "tester");
+
+        Assert.NotNull(published);
+        Assert.Equal(bridged.ItemId, published!.ItemId);
+        Assert.Equal(StudioPublicationRequestStatus.Accepted, published.Status);
+        Assert.Null(published.PublicationUrl);
+        Assert.Equal(StudioPublishedRoutes.BuildActiveUrl("/maps/shared"), native!.PublicationUrl);
+        Assert.Equal(published.RequestId, Assert.Single(bridge.Published).RequestId);
+        var governing = await service.GetActivePublicationRequestByRouteAsync("/maps/shared");
+        Assert.NotNull(governing);
+        Assert.Equal(owner.ItemId, governing!.ItemId);
+        Assert.Equal(native.PublicationUrl, governing.PublicationUrl);
+        var ownerPointers = await store.GetPointersAsync(owner.ItemId);
+        Assert.NotNull(ownerPointers);
+        Assert.Equal(owner.VersionId, ownerPointers!.PublishedVersionId);
+        var bridgedPointers = await service.GetPointersAsync(bridged.ItemId);
+        Assert.NotNull(bridgedPointers);
+        Assert.False(bridgedPointers!.GovernsStudioRoutes);
+    }
+
+    // honua-server#5825: a bridge registered for Form does not waive route ownership for a Form
+    // that still lives in the inner Studio store. Approval-gated hosts reject that proposal
+    // here, rather than accepting it and failing when the inner store actuates.
+    [UnitTest]
+    public async Task CreatePublicationRequest_InnerItemOfBridgedFamily_StillRejectsRouteConflict()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var unbridged = BuildServiceProvider(store).GetRequiredService<IStudioPackageLifecycleService>();
+        var legacyDraft = await unbridged.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "legacy-form",
+            WorkspaceId = "studio",
+            OwnerId = "tester",
+            ActorId = "tester",
+            Envelope = BuildEnvelope("1=1", "content.parcels") with
+            {
+                Family = StudioPackageFamily.Form,
+                Format = "studio_form_package.v1",
+            },
+        });
+        var legacy = await unbridged.SaveDraftAsVersionAsync(legacyDraft.DraftId, "saved before the form bridge", "tester");
+        Assert.NotNull(legacy);
+
+        var bridge = new SingleItemFamilyBridge(StudioPackageFamily.Form);
+        var service = BuildServiceProvider(
+                store,
+                bridgeCatalog: new StudioFamilyPersistenceBridgeCatalog([bridge]))
+            .GetRequiredService<IStudioPackageLifecycleService>();
+        var intent = new StudioPublicationIntent { Route = "/maps/shared", Visibility = "organization" };
+        var owner = await SaveVersionAsync(service, "publication-owner");
+        var native = await service.CreatePublicationRequestAsync(
+            owner.ItemId,
+            owner.VersionId,
+            expectedCurrentVersionId: owner.VersionId,
+            intent,
+            warningAcknowledgement: null,
+            actorId: "tester");
+        Assert.NotNull(native);
+
+        var conflict = await Assert.ThrowsAsync<StudioPublicationRouteConflictException>(
+            () => service.CreatePublicationRequestAsync(
+                legacy!.ItemId,
+                legacy.VersionId,
+                expectedCurrentVersionId: legacy.VersionId,
+                intent,
+                warningAcknowledgement: null,
+                actorId: "tester"));
+
+        Assert.Equal("/maps/shared", conflict.Route);
+        Assert.Equal(legacy.ItemId, conflict.ItemId);
+        Assert.Equal(owner.ItemId, conflict.OwningItemId);
+        Assert.Empty(bridge.Published);
+        var legacyPointers = await service.GetPointersAsync(legacy.ItemId);
+        Assert.NotNull(legacyPointers);
+        Assert.True(legacyPointers!.GovernsStudioRoutes);
+    }
+
     private static async Task<StudioContentVersion> SaveVersionAsync(
         IStudioPackageLifecycleService service,
         string packageKey)
@@ -945,7 +1060,8 @@ public sealed class StudioPackageLifecycleServiceTests
 
     private static ServiceProvider BuildServiceProvider(
         IStudioPackageStore? store = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        StudioFamilyPersistenceBridgeCatalog? bridgeCatalog = null)
     {
         var services = new ServiceCollection();
         if (timeProvider is not null)
@@ -958,32 +1074,60 @@ public sealed class StudioPackageLifecycleServiceTests
             services.AddSingleton(store);
         }
 
+        if (bridgeCatalog is not null)
+        {
+            services.AddSingleton(bridgeCatalog);
+        }
+
         services.AddStudioPackageLifecycle();
         return services.BuildServiceProvider();
     }
 
     private static async Task<T> AssertActivityCoversBlockedStoreCallAsync<T>(
         BlockingStudioPackageStore store,
-        ConcurrentQueue<string> stoppedActivities,
+        ConcurrentQueue<Activity> stoppedActivities,
         string storeOperation,
         string activityName,
         Func<Task<T>> action)
     {
-        var stoppedBefore = CountStopped(stoppedActivities, activityName);
+        var parentId = Activity.Current?.Id
+            ?? throw new InvalidOperationException("The lifecycle test requires its own parent activity.");
+        Assert.Equal(0, CountStopped(stoppedActivities, activityName, parentId));
         store.BlockNext(storeOperation);
         var operation = action();
 
-        await store.WaitForBlockedAsync().ConfigureAwait(false);
-        Assert.Equal(stoppedBefore, CountStopped(stoppedActivities, activityName));
+        try
+        {
+            await store.WaitForBlockedAsync().ConfigureAwait(false);
+            Assert.False(operation.IsCompleted);
 
-        store.ReleaseBlocked();
+            // A second real call emits the same operation from the same source while the
+            // first store call stays blocked. It must not affect this parent's assertions.
+            using (var unrelatedScope = new Activity("unrelated-lifecycle-call").Start())
+            {
+                Assert.NotEqual(parentId, unrelatedScope.Id);
+                _ = await action().ConfigureAwait(false);
+                Assert.Equal(1, CountStopped(stoppedActivities, activityName, unrelatedScope.Id!));
+            }
+
+            Assert.False(operation.IsCompleted);
+            Assert.Equal(0, CountStopped(stoppedActivities, activityName, parentId));
+        }
+        finally
+        {
+            store.ReleaseBlocked();
+        }
+
         var result = await operation.ConfigureAwait(false);
-        Assert.True(CountStopped(stoppedActivities, activityName) > stoppedBefore);
+        Assert.Equal(1, CountStopped(stoppedActivities, activityName, parentId));
         return result;
     }
 
-    private static int CountStopped(ConcurrentQueue<string> stoppedActivities, string activityName)
-        => stoppedActivities.Count(name => string.Equals(name, activityName, StringComparison.Ordinal));
+    private static int CountStopped(
+        ConcurrentQueue<Activity> stoppedActivities, string activityName, string parentId)
+        => stoppedActivities.Count(activity =>
+            string.Equals(activity.OperationName, activityName, StringComparison.Ordinal) &&
+            string.Equals(activity.ParentId, parentId, StringComparison.Ordinal));
 
     private static StudioPackageEnvelope BuildEnvelope(string where, string dependencyRef)
         => BuildEnvelope(
@@ -1203,6 +1347,88 @@ public sealed class StudioPackageLifecycleServiceTests
 
             blocked.TrySetResult(true);
             await release.Task.ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// One bridged item. GetVersion and GetPointers resolve it; Publish records the request
+    /// instead of writing the inner Studio store.
+    /// </summary>
+    private sealed class SingleItemFamilyBridge : IStudioFamilyPersistenceBridge
+    {
+        private StudioContentVersion? _version;
+
+        public SingleItemFamilyBridge(StudioPackageFamily family) => Family = family;
+
+        public List<StudioPublicationRequest> Published { get; } = [];
+
+        public StudioPackageFamily Family { get; }
+
+        public string Format => "native-format.v1";
+
+        public bool PublishSupported => true;
+
+        public IReadOnlyList<StudioPackageOperation> SupportedOperations { get; } =
+            [StudioPackageOperation.PublishRequestCreate];
+
+        public IReadOnlyList<string> Limitations { get; } = ["test bridge"];
+
+        public StudioContentVersion Seed(StudioPublicationIntent intent)
+        {
+            var itemId = Guid.NewGuid();
+            var versionId = Guid.NewGuid();
+            _version = new StudioContentVersion
+            {
+                ItemId = itemId,
+                PackageKey = "bridged-form",
+                VersionId = versionId,
+                VersionNumber = 1,
+                ContentHash = "bridged-hash",
+                Envelope = new StudioPackageEnvelope
+                {
+                    Family = Family,
+                    SchemaVersion = "1.0",
+                    Format = Format,
+                    PublicationIntent = intent,
+                },
+                Validation = StudioValidationSummary.NotValidated,
+                CreatedAt = DateTimeOffset.UnixEpoch,
+            };
+            return _version;
+        }
+
+        public Task<IReadOnlyList<StudioContentItemSummary>> ListItemSummariesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<StudioContentItemSummary>>([]);
+
+        public Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_version is { } version && version.ItemId == itemId
+                ? new StudioContentItemPointers
+                {
+                    ItemId = itemId,
+                    CurrentVersionId = version.VersionId,
+                }
+                : null);
+
+        public Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<StudioContentVersion>>(
+                _version is { } version && version.ItemId == itemId ? [version] : []);
+
+        public Task<StudioContentVersion?> GetVersionAsync(Guid itemId, Guid versionId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_version is { } version && version.ItemId == itemId && version.VersionId == versionId
+                ? version
+                : null);
+
+        public Task<StudioContentVersion> SaveVersionAsync(
+            StudioPackageDraft draft,
+            string? changeNote,
+            string? actorId,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioContentVersion>(new NotSupportedException());
+
+        public Task<StudioPublicationRequest> PublishAsync(StudioPublicationRequest request, CancellationToken cancellationToken = default)
+        {
+            Published.Add(request);
+            return Task.FromResult(request);
         }
     }
 }

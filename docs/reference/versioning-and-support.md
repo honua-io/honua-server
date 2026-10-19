@@ -7,9 +7,28 @@ description: "How each public surface of Honua is versioned, what counts as a br
 
 How each public surface of Honua is versioned, what counts as a breaking change, and how deprecations are rolled out. Standards-based protocols are versioned by their specifications; only the admin/control-plane API and the gRPC contract carry Honua-owned version numbers.
 
+## Current release availability
+
+Honua Server currently provides source and nightly **evaluation builds**. A supported
+versioned server release has not yet been published. The API policies below describe
+compatibility commitments for those contracts; an API path named `v1` or a capability
+marked GA does not establish a qualified Stable server release.
+
+Public SDK packages are available, but no general supported SDK/server version window
+is published. For evaluation, record exact client versions and the server image digest
+and source revision. For a supported deployment, use the combination identified by a
+published release manifest, its matching evidence, and its release notes. Conformance,
+client, upgrade, and recovery results apply to the revisions and configurations they
+actually exercised. Historical results do not automatically cover a newer image.
+
+Check [server releases](https://github.com/honua-io/honua-server/releases) for release
+availability, [client compatibility](compatibility/clients.md) for operation scope,
+and [OGC evidence](../cite-status.md) for the dated source-bound conformance snapshot.
+No LTS designation or new support duration is established by this page.
+
 ## Admin API (`/api/v1/admin/*`)
 
-The current and only published major version is `v1`. Within `v1`, all changes are additive and backward compatible:
+The current implemented major API path is `v1`. Within `v1`, the compatibility policy requires additive, backward-compatible changes:
 
 - Allowed without a version bump: new optional request fields, new response fields, new endpoints/resources, new optional authentication alternatives.
 - Breaking (requires a new major path such as `/api/v2/admin/*`, except emergency security fixes): removing an endpoint or HTTP method, removing request/response fields, making optional fields required, removing supported media types or security schemes, changing a field type/enum in a way older clients cannot parse.
@@ -18,7 +37,7 @@ The current and only published major version is `v1`. Within `v1`, all changes a
 
 | Channel | Guarantee |
 | --- | --- |
-| Stable | Backward compatibility for the published major path; all changes additive. This is the currently published channel. |
+| Stable | When a Stable server release is published: backward compatibility for its published major API path; all changes additive. No Stable server release is currently published. |
 | Preview | Opt-in; may change or be removed without a major bump; must graduate or be removed within 3 minor releases. No preview path is currently published. |
 | LTS | When designated: security fixes for at least 12 months from designation; no new features. Designations are published in release notes. |
 

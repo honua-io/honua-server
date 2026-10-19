@@ -11,6 +11,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
@@ -287,23 +288,36 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
             ? EvidencePostureFactory.Complete(sourceId, backendKind, backendId, now, SignalValidity)
             : EvidencePostureFactory.NotConfigured(sourceId, backendKind, backendId);
 
-    public async Task<OpsFindingProposalResult> ProposeAsync(string findingId, CancellationToken cancellationToken = default)
+    public async Task<OpsFindingProposalResult> ProposeAsync(
+        string findingId,
+        string? rootProvisioningOperationId = null,
+        CancellationToken cancellationToken = default)
     {
+        var root = RootProvisioningOperationIds.Normalize(rootProvisioningOperationId);
+        OpsFindingProposalResult WithRoot(OpsFindingProposalResult result)
+            => result with { RootProvisioningOperationId = root };
+
         if (string.IsNullOrWhiteSpace(findingId))
         {
-            return new OpsFindingProposalResult { Status = OpsFindingProposalStatus.FindingNotFound, FindingId = findingId ?? string.Empty };
+            return WithRoot(new OpsFindingProposalResult { Status = OpsFindingProposalStatus.FindingNotFound, FindingId = findingId ?? string.Empty });
         }
 
         var evaluation = await EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false);
         var finding = evaluation.Findings.FirstOrDefault(f => string.Equals(f.Id, findingId, StringComparison.Ordinal));
         if (finding is null)
         {
-            return new OpsFindingProposalResult { Status = OpsFindingProposalStatus.FindingNotFound, FindingId = findingId };
+            return WithRoot(new OpsFindingProposalResult { Status = OpsFindingProposalStatus.FindingNotFound, FindingId = findingId });
+        }
+
+        if (finding.Subject.OperationId is { Length: > 0 } linkedOperationId && _workflowStore is not null)
+        {
+            var linked = await _workflowStore.GetAsync(linkedOperationId, cancellationToken).ConfigureAwait(false);
+            root = RootProvisioningOperationIds.AlignWithRecord(linked?.RootProvisioningOperationId, root);
         }
 
         if (finding.RecommendedAction is null)
         {
-            return new OpsFindingProposalResult { Status = OpsFindingProposalStatus.NoRecommendedAction, FindingId = findingId };
+            return WithRoot(new OpsFindingProposalResult { Status = OpsFindingProposalStatus.NoRecommendedAction, FindingId = findingId });
         }
 
         // Evidence integrity precedes both the deterministic auto-safe policy and gateway lookup, so
@@ -311,12 +325,12 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         // evaluation pass that produced the finding and is derived from the signals the rule read.
         if (!OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out var requiredSources))
         {
-            return new OpsFindingProposalResult
+            return WithRoot(new OpsFindingProposalResult
             {
                 Status = OpsFindingProposalStatus.Blocked,
                 FindingId = findingId,
                 Message = "evidencePostureNotActionable",
-            };
+            });
         }
 
         // Degraded mode: the operation gateway is only wired when the durable control-plane graph is
@@ -325,13 +339,13 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         // clear degraded outcome instead of failing to construct the service at startup (#2511).
         if (_gateway is null)
         {
-            return new OpsFindingProposalResult
+            return WithRoot(new OpsFindingProposalResult
             {
                 Status = OpsFindingProposalStatus.GatewayUnavailable,
                 FindingId = findingId,
                 Message = "The durable control-plane operation gateway is unavailable "
                     + "(it requires the durable backend / Redis); the recommended action cannot be proposed.",
-            };
+            });
         }
 
         var action = finding.RecommendedAction;
@@ -345,6 +359,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
             // Idempotency-keyed on the deterministic finding id so re-proposing the same live
             // condition folds onto the same gateway operation rather than spawning duplicates.
             IdempotencyKey = findingId,
+            RootProvisioningOperationId = root,
             AutonomyContext = new OperationGatewayAutonomyContext
             {
                 FindingId = finding.Id,
@@ -361,14 +376,14 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
 
         var result = await _gateway.RouteAsync(request, cancellationToken).ConfigureAwait(false);
 
-        return new OpsFindingProposalResult
+        return WithRoot(new OpsFindingProposalResult
         {
             Status = MapOutcome(result.Outcome),
             FindingId = findingId,
             ProposalId = result.ProposalId,
             ExecutionOperationId = result.ExecutionOperationId,
             Message = result.Message,
-        };
+        });
     }
 
     private static OpsFindingProposalStatus MapOutcome(OperationGatewayOutcome outcome) => outcome switch

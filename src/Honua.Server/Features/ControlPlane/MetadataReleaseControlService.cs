@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.ControlPlane;
 
@@ -34,14 +35,16 @@ internal sealed partial class MetadataReleaseControlService(
         string? reason,
         string? idempotencyKey,
         string? correlationId,
+        string? rootProvisioningOperationId = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        var root = RootProvisioningOperationIds.Normalize(rootProvisioningOperationId);
         EnsureDurableStoreConfigured();
 
         var now = DateTimeOffset.UtcNow;
         var operationId = CreateOperationId(plan.PackageId, idempotencyKey);
-        var requestFingerprint = CreateRequestFingerprint(plan);
+        var requestFingerprint = CreateRequestFingerprint(plan, root);
 
         var release = new MetadataReleaseContext
         {
@@ -49,7 +52,8 @@ internal sealed partial class MetadataReleaseControlService(
             DesiredRevision = plan.PackageId,
             TargetEnvironment = plan.TargetEnvironment,
             CurrentStage = MetadataReleaseStage.Preflight,
-            ExecutionPlan = plan
+            ExecutionPlan = plan,
+            RootProvisioningOperationId = root,
         };
 
         var operation = new WorkflowOperationRecord
@@ -60,6 +64,7 @@ internal sealed partial class MetadataReleaseControlService(
             CreatedAt = now,
             UpdatedAt = now,
             CurrentPhase = "Submitted additive metadata-release lifecycle; awaiting preflight.",
+            RootProvisioningOperationId = root,
             Audit = new OperationAuditInfo
             {
                 RequestedBy = requestedBy,
@@ -83,9 +88,10 @@ internal sealed partial class MetadataReleaseControlService(
             if (existing != null)
             {
                 // An idempotency key deterministically maps to one operation id. Guard against a
-                // replay that reuses the key for a different package/resource/field: returning the
-                // prior operation in that case would report success while silently dropping the new
-                // request. Compare the request fingerprint and surface a conflict on mismatch.
+                // replay that reuses the key for a different package/resource/field or a different
+                // provisioning root: returning the prior operation in that case would report success
+                // while silently dropping the new request.
+                RootProvisioningOperationIds.RejectRelabel(existing.RootProvisioningOperationId, root);
                 EnsureMatchingIdempotentRequest(existing, requestFingerprint);
                 return existing;
             }
@@ -115,7 +121,7 @@ internal sealed partial class MetadataReleaseControlService(
     /// executable script shape). Mirrors the deploy workflow so a replay that reuses an idempotency
     /// key for a different intent is detected rather than silently skipped.
     /// </summary>
-    private static string CreateRequestFingerprint(MetadataReleaseExecutionPlan plan)
+    private static string CreateRequestFingerprint(MetadataReleaseExecutionPlan plan, string? rootProvisioningOperationId)
     {
         var builder = new StringBuilder();
         builder.Append("package=").Append(plan.PackageId.Trim()).Append('\n');
@@ -125,6 +131,10 @@ internal sealed partial class MetadataReleaseControlService(
         builder.Append("dataPopulate=").Append(plan.DataPopulateWorkloadId?.Trim() ?? string.Empty).Append('\n');
         builder.Append("scriptId=").Append(plan.Script.ScriptId.Trim()).Append('\n');
         builder.Append("scriptReversible=").Append(plan.Script.Reversible ? "1" : "0").Append('\n');
+        if (rootProvisioningOperationId is not null)
+        {
+            builder.Append("root=").Append(rootProvisioningOperationId).Append('\n');
+        }
 
         foreach (var op in plan.Script.ForwardOperations)
         {

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 
@@ -22,6 +23,20 @@ internal static class OperationSecretKeyRingProtection
 {
     internal const string CertificatePathKey = "Operations:SecretChannel:KeyRingCertificatePath";
     internal const string CertificatePasswordKey = "Operations:SecretChannel:KeyRingCertificatePassword";
+
+    /// <summary>Uid of the published image (<c>USER 1001:1001</c>).</summary>
+    internal const uint PublishedContainerUserId = 1001;
+
+    /// <summary>Gid of the published image (<c>USER 1001:1001</c>).</summary>
+    internal const uint PublishedContainerGroupId = 1001;
+
+    /// <summary>
+    /// Root-owned mode 0640: owner read/write, group read, no other bits. The published
+    /// image can read this when the file's group is <see cref="PublishedContainerGroupId"/>.
+    /// Other-read is not required.
+    /// </summary>
+    internal const UnixFileMode RootOwnedGroupReadMode =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead;
 
     /// <summary>
     /// PKCS#12 material for hosts that cannot mount a file. The value is either standard base64
@@ -113,6 +128,54 @@ internal static class OperationSecretKeyRingProtection
         return new MaterializedKeyRing(path, password);
     }
 
+    /// <summary>
+    /// Development and Test may start without a key-ring certificate. Every other
+    /// environment that has connected to Redis composes the durable channel and requires one.
+    /// </summary>
+    /// <param name="isDevelopment">True when the host environment is Development.</param>
+    /// <param name="isTest">True when the host environment is Test.</param>
+    /// <param name="redisConnected">True when a Redis multiplexer was established.</param>
+    /// <returns>True when startup must load the key-ring certificate.</returns>
+    public static bool RequiresDurableChannelCertificate(bool isDevelopment, bool isTest, bool redisConnected)
+        => redisConnected && !isDevelopment && !isTest;
+
+    /// <summary>
+    /// POSIX read check. A root-owned mode <c>0640</c> file is readable by the published
+    /// container user when <paramref name="group"/> is that user's group. Other-read is
+    /// sufficient but not required.
+    /// </summary>
+    /// <param name="owner">File owner uid.</param>
+    /// <param name="group">File group gid.</param>
+    /// <param name="mode">File mode.</param>
+    /// <param name="userId">Process effective uid.</param>
+    /// <param name="groupId">Process effective gid.</param>
+    /// <returns>True when the process can read the file.</returns>
+    internal static bool IsReadable(uint owner, uint group, UnixFileMode mode, uint userId, uint groupId)
+    {
+        if (owner == userId && (mode & UnixFileMode.UserRead) != 0)
+        {
+            return true;
+        }
+
+        if (group == groupId && (mode & UnixFileMode.GroupRead) != 0)
+        {
+            return true;
+        }
+
+        return (mode & UnixFileMode.OtherRead) != 0;
+    }
+
+    /// <summary>
+    /// True for a root-owned mode 0640 file whose group is <paramref name="processGroup"/>.
+    /// </summary>
+    /// <param name="owner">File owner uid.</param>
+    /// <param name="group">File group gid.</param>
+    /// <param name="mode">File mode.</param>
+    /// <param name="processGroup">Group the server process runs as.</param>
+    /// <returns>True when the mount is the supported non-world-readable shape.</returns>
+    internal static bool IsRootOwnedMode0640(uint owner, uint group, UnixFileMode mode, uint processGroup)
+        => owner == 0 && group == processGroup && mode == RootOwnedGroupReadMode;
+
     /// <summary>Loads the configured key-ring certificate.</summary>
     /// <param name="configuration">The server configuration.</param>
     /// <returns>The certificate with its private key.</returns>
@@ -135,9 +198,21 @@ internal static class OperationSecretKeyRingProtection
         }
 
         var password = configuration[CertificatePasswordKey];
-        var certificate = string.IsNullOrEmpty(password)
-            ? X509CertificateLoader.LoadPkcs12FromFile(path, password: null)
-            : X509CertificateLoader.LoadPkcs12FromFile(path, password);
+        X509Certificate2 certificate;
+        try
+        {
+            certificate = string.IsNullOrEmpty(password)
+                ? X509CertificateLoader.LoadPkcs12FromFile(path, password: null)
+                : X509CertificateLoader.LoadPkcs12FromFile(path, password);
+        }
+        catch (Exception exception) when (IsCertificateUnreadable(exception))
+        {
+            // A bind mount keeps the host mode. uid 1001 cannot read a root-owned 0640
+            // file unless the file's group is the process group. Do not ask the operator
+            // to grant other-read; the export password still encrypts the PKCS#12.
+            throw UnreadableMount(path, exception);
+        }
+
         if (!certificate.HasPrivateKey)
         {
             certificate.Dispose();
@@ -146,5 +221,37 @@ internal static class OperationSecretKeyRingProtection
         }
 
         return certificate;
+    }
+
+    private static bool IsCertificateUnreadable(Exception exception)
+        => exception is UnauthorizedAccessException or IOException
+           || exception.InnerException is UnauthorizedAccessException or IOException;
+
+    private static InvalidOperationException UnreadableMount(string path, Exception exception)
+    {
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+        {
+            return new InvalidOperationException(
+                $"'{CertificatePathKey}' is set to '{path}', but this process cannot read it.",
+                exception);
+        }
+
+        var supported = IsRootOwnedMode0640(
+                owner: 0,
+                group: PublishedContainerGroupId,
+                RootOwnedGroupReadMode,
+                PublishedContainerGroupId)
+            && IsReadable(
+                owner: 0,
+                group: PublishedContainerGroupId,
+                RootOwnedGroupReadMode,
+                PublishedContainerUserId,
+                PublishedContainerGroupId);
+        var message = supported
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"'{CertificatePathKey}' is set to '{path}', but this process cannot read it. A root-owned mode 0640 PKCS#12 is accepted when its group is the server group. The published image is uid {PublishedContainerUserId}, gid {PublishedContainerGroupId}. Other-read is not required. The export password still encrypts the PKCS#12. '{CertificateMaterialKey}' is available when a mount is not possible.")
+            : $"'{CertificatePathKey}' is set to '{path}', but this process cannot read it.";
+        return new InvalidOperationException(message, exception);
     }
 }

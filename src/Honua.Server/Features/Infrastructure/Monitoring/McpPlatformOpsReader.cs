@@ -194,9 +194,20 @@ internal sealed class McpPlatformOpsReader(
         var action = finding?.RecommendedAction ?? throw new GeoprocessingNotFoundException($"Finding '{findingId}' was not found or has no recommended action.");
         var candidateId = Clean(argument.CandidateId) ?? throw new GeoprocessingValidationException("'candidateId' is required.");
         ValidateFindingCandidateBinding(action.Kind, action.ExecutionPayload, candidateId);
-        if (!OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out _))
+        if (!OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out var requiredSources))
             return new McpProposeOperationOutput { Outcome = "Blocked", SupportedKinds = ResolveSupportedKinds(), Message = "evidencePostureNotActionable" };
-        return await SealProposalAsync(principal, action.Kind, action.ExecutionPayload, action.Reason, findingId, cancellationToken, action.ActionDiscriminator).ConfigureAwait(false);
+        return await SealProposalAsync(principal, action.Kind, action.ExecutionPayload, action.Reason, findingId,
+            cancellationToken, action.ActionDiscriminator, new OperationGatewayAutonomyContext
+            {
+                FindingId = finding.Id,
+                Rule = finding.Rule,
+                ActionDiscriminator = action.ActionDiscriminator,
+                ActionMarkedAutoSafe = action.AutoSafe,
+                BlastRadius = Math.Max(1, action.BlastRadius),
+                EvidenceRefs = finding.EvidenceRefs.Concat(requiredSources
+                    .OrderBy(source => source.SourceId, StringComparer.Ordinal)
+                    .Select(source => $"evidence:{source.SourceId}:{source.ObservedAt:O}:{source.Completeness}")).ToArray(),
+            }).ConfigureAwait(false);
     }
 
     internal static void ValidateFindingCandidateBinding(
@@ -318,7 +329,7 @@ internal sealed class McpPlatformOpsReader(
             Clean(argument.IdempotencyKey) ?? $"{idempotencyPrefix}:{targetId}:{desiredRevision}", cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<McpProposeOperationOutput> SealProposalAsync(ClaimsPrincipal principal, OperationClass kind, string? payload, string? reason, string idempotencyKey, CancellationToken cancellationToken, string? actionDiscriminator = null)
+    private async Task<McpProposeOperationOutput> SealProposalAsync(ClaimsPrincipal principal, OperationClass kind, string? payload, string? reason, string idempotencyKey, CancellationToken cancellationToken, string? actionDiscriminator = null, OperationGatewayAutonomyContext? autonomyContext = null)
     {
         var gateway = _services.GetService<IOperationGateway>();
         var envelopeFactory = _services.GetService<IOperationEnvelopeFactory>();
@@ -329,19 +340,33 @@ internal sealed class McpPlatformOpsReader(
         var scopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal);
         var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray();
         var authorizationOutcome = scopeGoverned ? "admin-policy-and-oauth-scope-authorized" : "admin-policy-authorized";
-        var evidence = _services.GetService<IHttpContextAccessor>()?.HttpContext?.Items[
-            ProposalEvidenceVerifier.HttpContextItemKey] as OperationProposalEvidence;
-        if (evidence is not null && evidence.OperationId != LegacyOperationIds.For(kind))
-        {
-            throw new GeoprocessingValidationException(
-                "The verified proposal evidence does not match the routed operation descriptor.");
-        }
+        var httpContext = _services.GetService<IHttpContextAccessor>()?.HttpContext;
+        var evidence = httpContext?.Items[ProposalEvidenceVerifier.HttpContextItemKey] as OperationProposalEvidence;
         if (evidence is not null)
         {
+            var invokingTool = httpContext!.Items[ProposalEvidenceVerifier.InvokingToolItemKey] as string;
+            if (!string.Equals(evidence.ToolName, invokingTool, StringComparison.Ordinal))
+            {
+                throw new GeoprocessingValidationException(
+                    "The verified proposal evidence does not match the invoking tool.");
+            }
+
+            if (evidence.OperationId != LegacyOperationIds.For(kind))
+            {
+                throw new GeoprocessingValidationException(
+                    "The verified proposal evidence does not match the routed operation descriptor.");
+            }
+
             if (string.IsNullOrWhiteSpace(payload))
             {
                 throw new GeoprocessingValidationException(
                     "An evidence-bound proposal requires an execution payload.");
+            }
+
+            if (!PayloadTargetMatches(kind, payload, evidence.TargetId))
+            {
+                throw new GeoprocessingValidationException(
+                    "The verified proposal evidence does not match the proposal target.");
             }
 
             await EnsureEvidenceProposerCanBeRevalidatedAsync(actor!, cancellationToken)
@@ -384,6 +409,7 @@ internal sealed class McpPlatformOpsReader(
             OperationId = LegacyOperationIds.For(kind),
             Kind = kind,
             ActionDiscriminator = actionDiscriminator,
+            AutonomyContext = autonomyContext,
             RequestedBy = actor,
             RequestedByAgent = string.IsNullOrWhiteSpace(actor) ? $"{AgentActorPrefix}mcp" : $"{AgentActorPrefix}{actor}",
             Reason = reason,
@@ -403,6 +429,19 @@ internal sealed class McpPlatformOpsReader(
             SupportedKinds = ResolveSupportedKinds(),
             Message = result.Message
         };
+    }
+
+    private static bool PayloadTargetMatches(OperationClass kind, string payload, string evidenceTargetId)
+    {
+        var target = kind switch
+        {
+            OperationClass.Deploy => DeployExecutionPayload.Parse(payload)?.TargetId,
+            OperationClass.MetadataRelease => MetadataReleaseExecutionPayload.ParseAndValidate(payload).Payload?.TargetEnvironment,
+            _ => null,
+        };
+
+        return !string.IsNullOrWhiteSpace(target)
+            && string.Equals(target, evidenceTargetId, StringComparison.Ordinal);
     }
 
     private async Task EnsureEvidenceProposerCanBeRevalidatedAsync(

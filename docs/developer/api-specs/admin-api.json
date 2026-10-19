@@ -1432,7 +1432,7 @@
           "Layers"
         ],
         "summary": "Publish Layer",
-        "description": "Publish a PostGIS table as a layer",
+        "description": "Publish a PostGIS table as a layer. Publications at or under the configured asynchronous row threshold return 201. Larger publications return 202 with a polling URL when a background runner is available; hosts without a compatible runner return a typed 503 refusal.",
         "operationId": "publishLayer",
         "parameters": [
           {
@@ -1480,6 +1480,34 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "202": {
+            "description": "Publication accepted for background execution.",
+            "headers": {
+              "Location": {
+                "description": "Relative URL for polling publication progress.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerPublishAccepted"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The frozen host has no compatible durable remote publication runner. Redis availability alone does not make a worker available. No publication job is accepted.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerPublishUnavailableProblem"
+                }
+              }
+            }
           }
         }
       }
@@ -2396,6 +2424,118 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Importer ownership conflict. Choose a new target or explicitly adopt a verified legacy import.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "errorCode": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/upload-object": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Import a Geospatial File from Object Storage",
+        "description": "Imports one supported object from an allow-listed s3:// bucket using the host identity. The request carries no credentials. Large objects return a background job without an in-request download.",
+        "operationId": "uploadImportFileFromObjectStore",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportFileFromObjectStoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import completed synchronously.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Import accepted for background processing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The object or bucket was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The object changed after the preflight ETag was recorded, or the importer refused the target.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The object exceeds MaxObjectStoreImportBytes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Background import dependencies are unavailable, or this host has no object-store reader.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -2738,7 +2878,26 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "additionalProperties": true,
+                  "properties": {
+                    "runner": {
+                      "type": "string",
+                      "enum": [
+                        "batch",
+                        "in-process"
+                      ],
+                      "description": "Where the background import runs: `batch` (a batch-compute execution worker, AWS Batch on the serverless topology) or `in-process` (a long-lived server process). Absent on records written before 2026.1."
+                    },
+                    "instanceId": {
+                      "type": "string",
+                      "description": "Honua-Instance identity of the process running the import (the AWS Batch job id for `batch`); until a worker claims a durable job, the instance that accepted it."
+                    },
+                    "errorCode": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
+                    }
+                  }
                 }
               }
             }
@@ -2950,6 +3109,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Importer ownership conflict. Choose a new target or explicitly adopt a verified legacy import.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "errorCode": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
+                    }
+                  }
                 }
               }
             }
@@ -5935,7 +6112,7 @@
           "Compliance"
         ],
         "summary": "Advance Compliance Key-Version Posture",
-        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event \u2014 it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {
@@ -6370,7 +6547,7 @@
           "Import"
         ],
         "summary": "List GeoServer Import Jobs",
-        "description": "Returns the GeoServer import jobs that are still active — that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
+        "description": "Returns the GeoServer import jobs that are still active \u2014 that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
         "operationId": "listGeoServerImportJobs",
         "responses": {
           "200": {
@@ -6653,7 +6830,7 @@
           "Import"
         ],
         "summary": "List GeoServices Import Jobs",
-        "description": "Returns the GeoServices import jobs that are still active — that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
+        "description": "Returns the GeoServices import jobs that are still active \u2014 that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
         "operationId": "listGeoservicesImportJobs",
         "responses": {
           "200": {
@@ -6955,6 +7132,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Importer ownership conflict. Choose a new target or explicitly adopt a verified legacy import.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportOgcApiFeaturesResult"
+                }
+              }
+            }
           }
         }
       }
@@ -7131,6 +7318,16 @@
           },
           "502": {
             "description": "The importer reported failure; the body is the same result document with success=false and an errorMessage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportOgcWfsResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Importer ownership conflict. Choose a new target or explicitly adopt a verified legacy import.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8764,7 +8961,7 @@
           "Observability"
         ],
         "summary": "Propose Ops Finding Action",
-        "description": "Route a finding's recommended fix through the operation-approval gateway. The server materializes the execution payload from the finding id, so no request body is accepted. Depending on gateway policy the action is either executed directly or raised as a proposal awaiting approval. Requires admin write access.",
+        "description": "Route a finding's recommended fix through the operation-approval gateway. The server materializes the execution payload from the finding id. An optional body may carry rootProvisioningOperationId from a verified DevOps handoff; an empty body remains valid. Depending on gateway policy the action is either executed directly or raised as a proposal awaiting approval. Requires admin write access.",
         "operationId": "proposeOpsFinding",
         "parameters": [
           {
@@ -8777,6 +8974,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservabilityOpsFindingProposeRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Proposal outcome.",
@@ -8787,6 +8994,9 @@
                 }
               }
             }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -20731,6 +20941,446 @@
           }
         }
       }
+    },
+    "/connections/{id}/layers/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Layers"
+        ],
+        "summary": "Get Layer Publication Job Status",
+        "description": "Returns publication progress visible to the current tenant and connection. Unknown jobs and jobs outside that tenant or connection return 404. A completed job includes its committed layer identifier.",
+        "operationId": "getLayerPublishJobStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Connection identifier used when publication was accepted.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "description": "Publication job identifier returned by the 202 response.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publication job progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerPublishJobStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/diagnostics": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Console Job Diagnostics",
+        "description": "Returns the authorized honua.job-diagnostics/v1 projection, including release provenance, lifecycle, attempts, worker liveness, sanitized failures and steps, bounded events, artifact availability, and explicit missing or truncated evidence. Unknown and unreadable jobs both return 404. Responses use Cache-Control: no-store.",
+        "operationId": "getConsoleJobDiagnostics",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsoleJobId"
+          },
+          {
+            "name": "events",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of recent events. Values outside 1\u2013500 are rejected.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50
+            }
+          },
+          {
+            "name": "eventCursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Omit for a tail. Use start to page the retained stream from its beginning, then the returned nextCursor. Append order; not a frozen snapshot."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Versioned diagnostics for the job.",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Job correlation id when available.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobDiagnostics"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Execution job store is unavailable."
+          },
+          "400": {
+            "description": "Invalid job identifier or event limit."
+          }
+        }
+      }
+    },
+    "/gp/process-releases": {
+      "post": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Publish gp process release",
+        "operationId": "publishGpProcessRelease",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "201": {
+            "description": "Release created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpProcessReleaseLock"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "List gp process releases",
+        "operationId": "listGpProcessReleases",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "name": "process",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/gp/process-releases/{digest}": {
+      "get": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Get gp process release",
+        "operationId": "getGpProcessRelease",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseLock"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "name": "digest",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/gp/process-releases/bindings": {
+      "get": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "List gp process bindings",
+        "operationId": "listGpProcessBindings",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessBindingListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/gp/process-releases/bindings/{process}": {
+      "get": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Get gp process binding",
+        "operationId": "getGpProcessBinding",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessBindingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/gp/process-releases/bindings/{process}/activate": {
+      "post": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Activate gp process release",
+        "operationId": "activateGpProcessRelease",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessBindingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "description": "Activation refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessBindingRefusedResponse"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpProcessBindingActivateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/gp/process-releases/bindings/{process}/jobs": {
+      "post": {
+        "tags": [
+          "Geoprocessing"
+        ],
+        "summary": "Submit a release-bound custom-code job",
+        "operationId": "submitGpProcessReleaseJob",
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "Identical retries return the original job and release pin."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpProcessReleaseJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted; Location identifies the canonical job status route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpProcessReleaseJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "Idempotency key already belongs to different inputs."
+          },
+          "429": {
+            "description": "Admission throttled; Retry-After may be present."
+          },
+          "503": {
+            "description": "Durable jobs or the selected execution backend is unavailable."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -21218,6 +21868,46 @@
             "default": false
           },
           "trackProgress": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "ImportFileFromObjectStoreRequest": {
+        "type": "object",
+        "required": [
+          "sourceUri",
+          "tableName"
+        ],
+        "properties": {
+          "sourceUri": {
+            "type": "string",
+            "description": "s3://bucket/key object to import. Credentials, queries, and fragments are rejected."
+          },
+          "assumeRoleArn": {
+            "type": "string",
+            "description": "Optional allow-listed role ARN. The host assumes it with the configured external id. Omit to use the host identity."
+          },
+          "tableName": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+          },
+          "targetSchema": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "sourceSrid": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "targetSrid": {
+            "type": "integer",
+            "format": "int32",
+            "default": 4326
+          },
+          "overwriteExisting": {
             "type": "boolean",
             "default": false
           }
@@ -28036,6 +28726,11 @@
           "correlationId": {
             "type": "string"
           },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff (urn:honua:provisioning: plus 32 lowercase hex digits). Null when the operation was not federated."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -28065,6 +28760,11 @@
         "properties": {
           "packageId": {
             "type": "string"
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff. Matches the top-level field on the operation."
           },
           "gitOperationId": {
             "type": "string"
@@ -31322,6 +32022,11 @@
             "items": {
               "$ref": "#/components/schemas/ImportMigrationFidelityDifference"
             }
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
           }
         }
       },
@@ -32669,6 +33374,11 @@
           "duration": {
             "type": "string",
             "description": "Serialized as a .NET TimeSpan string."
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "Stable failure code. IMPORT_TARGET_NOT_OWNED means an unmarked target or staging table was refused without modifying that table."
           }
         }
       },
@@ -34583,6 +35293,22 @@
             "type": "string",
             "nullable": true,
             "description": "Operator-facing message describing the outcome, when available."
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff. Null when the proposal was not federated."
+          }
+        }
+      },
+      "ObservabilityOpsFindingProposeRequest": {
+        "type": "object",
+        "description": "Optional body for proposing a finding action. An empty body remains valid.",
+        "properties": {
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff (urn:honua:provisioning: plus 32 lowercase hex digits)."
           }
         }
       },
@@ -35381,6 +36107,11 @@
             "type": "string",
             "nullable": true,
             "description": "Correlation id propagated from upstream systems."
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff (urn:honua:provisioning: plus 32 lowercase hex digits). Omit when the release is not federated."
           }
         }
       },
@@ -35515,6 +36246,11 @@
           "packageId": {
             "type": "string",
             "description": "Release package identifier."
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff. Matches the top-level field on the operation."
           },
           "gitOperationId": {
             "type": "string",
@@ -35691,6 +36427,11 @@
             "type": "string",
             "nullable": true,
             "description": "Upstream correlation identifier."
+          },
+          "rootProvisioningOperationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified provisioning root from the DevOps handoff (urn:honua:provisioning: plus 32 lowercase hex digits). Null when the operation was not federated."
           },
           "createdAt": {
             "type": "string",
@@ -36652,6 +37393,14 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "timingSource": {
+            "type": "string",
+            "enum": [
+              "measured",
+              "inferred"
+            ],
+            "description": "Whether durationMs comes from the harness monotonic clock or is inferred from log timestamps."
           }
         }
       },
@@ -36683,6 +37432,20 @@
             "items": {
               "$ref": "#/components/schemas/ConsoleJobStep"
             }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Total appended log entries, including entries removed by retention bounds."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the returned timeline omits earlier entries."
+          },
+          "droppedCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of earliest entries removed by the retained-log bound."
           }
         }
       },
@@ -48118,6 +48881,1242 @@
           "timestamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "LayerPublishAcceptedResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "statusUrl",
+          "rowsTotal",
+          "status"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "statusUrl": {
+            "type": "string",
+            "description": "Relative URL for polling publication progress."
+          },
+          "rowsTotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Queued"
+            ]
+          }
+        }
+      },
+      "LayerPublishJobStatusResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "status",
+          "rowsMaterialized",
+          "rowsTotal"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Queued",
+              "Processing",
+              "Completed",
+              "Failed",
+              "Cancelled"
+            ]
+          },
+          "rowsMaterialized": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Confirmed materialized rows. If live progress expires before completion, zero is a conservative lower bound rather than a current copy measurement; completion uses the recorded actual count."
+          },
+          "rowsTotal": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Source count, updated to the actual materialization observation when reported by the worker."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "description": "Published layer identifier after the transaction commits."
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ApiResponseLayerPublishAccepted": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerPublishAcceptedResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseLayerPublishJobStatus": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerPublishJobStatusResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LayerPublishUnavailableProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
+          },
+          {
+            "type": "object",
+            "required": [
+              "status",
+              "code",
+              "capability",
+              "missingDependency",
+              "remediation",
+              "remediationRef"
+            ],
+            "properties": {
+              "status": {
+                "type": "integer",
+                "enum": [
+                  503
+                ]
+              },
+              "code": {
+                "type": "string",
+                "enum": [
+                  "durable-runner-required"
+                ]
+              },
+              "capability": {
+                "type": "string",
+                "enum": [
+                  "jobs.runner"
+                ]
+              },
+              "missingDependency": {
+                "type": "string",
+                "enum": [
+                  "layer-publish-runner"
+                ]
+              },
+              "remediation": {
+                "type": "string"
+              },
+              "remediationRef": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          }
+        ]
+      },
+      "ConsoleJobDiagnostics": {
+        "type": "object",
+        "required": [
+          "schema",
+          "jobId",
+          "generatedAt",
+          "view",
+          "identity",
+          "release",
+          "lifecycle",
+          "attempt",
+          "worker",
+          "steps",
+          "events",
+          "artifacts",
+          "evidence",
+          "links"
+        ],
+        "properties": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "honua.job-diagnostics/v1"
+            ]
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string",
+            "nullable": true
+          },
+          "traceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "view": {
+            "type": "string"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticIdentity"
+          },
+          "release": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticRelease"
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticLifecycle"
+          },
+          "attempt": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticAttempt"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticWorker"
+          },
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConsoleJobDiagnosticFailure"
+              }
+            ],
+            "nullable": true
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobStep"
+            }
+          },
+          "events": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticEvents"
+          },
+          "artifacts": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticArtifacts"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticEvidence"
+          },
+          "links": {
+            "$ref": "#/components/schemas/ConsoleJobLinks"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticIdentity": {
+        "type": "object",
+        "required": [
+          "kind",
+          "backend",
+          "targetKind",
+          "workloadName",
+          "priority",
+          "contractVersion",
+          "resourceRefs"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "targetKind": {
+            "type": "string"
+          },
+          "workloadName": {
+            "type": "string"
+          },
+          "workloadId": {
+            "type": "string",
+            "nullable": true
+          },
+          "definitionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "queue": {
+            "type": "string",
+            "nullable": true
+          },
+          "priority": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "providerOperationId": {
+            "type": "string",
+            "nullable": true
+          },
+          "runtimeProfile": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "resourceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ConsoleJobDiagnosticRelease": {
+        "type": "object",
+        "required": [
+          "state",
+          "serverVersion",
+          "processDefinitions",
+          "missing"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "serverVersion": {
+            "type": "string"
+          },
+          "runtime": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceRepository": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "entrypoint": {
+            "type": "string",
+            "nullable": true
+          },
+          "dependencyManifest": {
+            "type": "string",
+            "nullable": true
+          },
+          "planId": {
+            "type": "string",
+            "nullable": true
+          },
+          "processDefinitions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "environment": {
+            "type": "string",
+            "nullable": true
+          },
+          "releaseId": {
+            "type": "string",
+            "nullable": true
+          },
+          "changeSetId": {
+            "type": "string",
+            "nullable": true
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "processRelease": {
+            "type": "string",
+            "nullable": true
+          },
+          "processVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "lockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "bindingVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "workflowVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "dependencyLockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "workerImage": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ConsoleJobDiagnosticLifecycle": {
+        "type": "object",
+        "required": [
+          "status",
+          "phase",
+          "createdAt",
+          "updatedAt",
+          "timingSource"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "currentPhase": {
+            "type": "string",
+            "nullable": true
+          },
+          "percentComplete": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "claimedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancellationRequestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "queueDelayMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "executionMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "durationMs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "timingSource": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticAttempt": {
+        "type": "object",
+        "required": [
+          "number",
+          "maxAttempts",
+          "retry"
+        ],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxAttempts": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nextRetryAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "retry": {
+            "$ref": "#/components/schemas/ConsoleJobDiagnosticRetry"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticRetry": {
+        "type": "object",
+        "required": [
+          "allowed",
+          "requiresApproval",
+          "wouldRepeat"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "disabledReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "requiresApproval": {
+            "type": "boolean"
+          },
+          "wouldRepeat": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticWorker": {
+        "type": "object",
+        "required": [
+          "heartbeatIntervalSeconds",
+          "heartbeatTimeoutSeconds",
+          "liveness",
+          "livenessReason"
+        ],
+        "properties": {
+          "claimedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastHeartbeatAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "heartbeatIntervalSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "heartbeatTimeoutSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "liveness": {
+            "type": "string"
+          },
+          "livenessReason": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticFailure": {
+        "type": "object",
+        "required": [
+          "message",
+          "classification",
+          "recovery"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "classification": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string",
+            "nullable": true
+          },
+          "stepOrdinal": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "nativeExitCode": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "stderrExcerpt": {
+            "type": "string",
+            "nullable": true
+          },
+          "recovery": {
+            "type": "string"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticEvents": {
+        "type": "object",
+        "required": [
+          "state",
+          "items",
+          "totalCount",
+          "limit",
+          "truncated"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobLogEntry"
+            }
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "firstCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "tail",
+              "page"
+            ]
+          }
+        }
+      },
+      "ConsoleJobDiagnosticArtifacts": {
+        "type": "object",
+        "required": [
+          "state",
+          "items",
+          "availableCount",
+          "expiredCount",
+          "unavailableCount"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobArtifact"
+            }
+          },
+          "availableCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "expiredCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unavailableCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ConsoleJobDiagnosticEvidence": {
+        "type": "object",
+        "required": [
+          "missing",
+          "truncated",
+          "notes"
+        ],
+        "properties": {
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "truncated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GpProcessReleaseResponse": {
+        "type": "object",
+        "properties": {
+          "lockDigest": {
+            "type": "string"
+          },
+          "process": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "sourceSha": {
+            "type": "string"
+          },
+          "publishedBy": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "GpProcessReleaseListResponse": {
+        "type": "object",
+        "properties": {
+          "releases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpProcessReleaseResponse"
+            }
+          }
+        }
+      },
+      "GpProcessBindingTargetResponse": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "jobDefinitionArn": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "GpProcessBindingResponse": {
+        "type": "object",
+        "properties": {
+          "process": {
+            "type": "string"
+          },
+          "bindingVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "previousLockDigest": {
+            "type": "string",
+            "nullable": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpProcessBindingTargetResponse"
+            }
+          },
+          "operation": {
+            "type": "string",
+            "nullable": true
+          },
+          "activatedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "activatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "serverContractVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "supportedTargets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scheduleReconciliation": {
+            "type": "string"
+          }
+        }
+      },
+      "GpProcessBindingListResponse": {
+        "type": "object",
+        "properties": {
+          "bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpProcessBindingResponse"
+            }
+          }
+        }
+      },
+      "GpProcessBindingTargetRequest": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "jobDefinitionArn": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "GpProcessBindingActivateRequest": {
+        "type": "object",
+        "properties": {
+          "lockDigest": {
+            "type": "string"
+          },
+          "expectedBindingVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "operation": {
+            "type": "string",
+            "nullable": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpProcessBindingTargetRequest"
+            }
+          }
+        }
+      },
+      "GpProcessBindingRefusedResponse": {
+        "type": "object",
+        "properties": {
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "binding": {
+            "$ref": "#/components/schemas/GpProcessBindingResponse",
+            "nullable": true
+          }
+        }
+      },
+      "GpProcessReleaseLock": {
+        "title": "GP process release lock v1",
+        "description": "Immutable identity of one geoprocessing process release: the exact source, dependency lock, runtime image, workflow version, configuration references, targets, artifacts and validation receipts that a deployment activates. Generated once by `honua-gp-devkit release` (honua-server#6221); promoted and rolled back by digest, never rebuilt.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "process",
+          "source",
+          "dependencyLock",
+          "runtimeImage",
+          "workflowVersion",
+          "configurationReferences",
+          "targets",
+          "compatibility",
+          "artifacts",
+          "validation",
+          "generatedAt"
+        ],
+        "properties": {
+          "schema": {
+            "enum": [
+              "honua.gp-process-release-lock/v1"
+            ],
+            "type": "string"
+          },
+          "process": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "version",
+              "runtime",
+              "entrypoint",
+              "contract"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,62}$"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+              },
+              "runtime": {
+                "enum": [
+                  "python",
+                  "dotnet"
+                ],
+                "type": "string"
+              },
+              "entrypoint": {
+                "type": "string",
+                "minLength": 1
+              },
+              "contract": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "inputSchemaSha256",
+                  "outputSchemaSha256"
+                ],
+                "properties": {
+                  "inputSchemaSha256": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "outputSchemaSha256": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "repository",
+              "sha",
+              "descriptorPath"
+            ],
+            "properties": {
+              "repository": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+              },
+              "sha": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "descriptorPath": {
+                "type": "string",
+                "pattern": "^[^ ]+\\.ya?ml$"
+              }
+            }
+          },
+          "dependencyLock": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          },
+          "runtimeImage": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "reference",
+              "digest"
+            ],
+            "properties": {
+              "reference": {
+                "type": "string",
+                "pattern": "^[a-z0-9.-]+(:[0-9]+)?/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          },
+          "workflowVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          },
+          "configurationReferences": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "reference"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+                },
+                "reference": {
+                  "type": "string",
+                  "description": "A reference, never a value: the worker resolves it at execution time.",
+                  "pattern": "^(aws:secretsmanager:|azure:keyvault:|ref:)[^ ]+$"
+                }
+              }
+            }
+          },
+          "targets": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "workerImageDigest"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "kubernetes-job",
+                    "aws-batch"
+                  ],
+                  "type": "string"
+                },
+                "workerImageDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "chartVersion": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+                },
+                "jobDefinitionName": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                }
+              }
+            }
+          },
+          "compatibility": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "serverContractVersion"
+            ],
+            "properties": {
+              "serverContractVersion": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "minimum",
+                  "maximum"
+                ],
+                "properties": {
+                  "minimum": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maximum": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "sha256",
+                "sizeBytes"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "validation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "receipts"
+            ],
+            "properties": {
+              "receipts": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "sha256",
+                    "status"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "status": {
+                      "enum": [
+                        "pass"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "generatedAt": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+          }
+        }
+      },
+      "GpProcessReleaseJobRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "params"
+        ],
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "declaredScope": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "serviceId"
+              ],
+              "properties": {
+                "serviceId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "layerId": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "access": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "write"
+                  ],
+                  "default": "read"
+                }
+              }
+            }
+          }
+        }
+      },
+      "GpProcessReleaseJobResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "statusUrl",
+          "diagnosticsUrl",
+          "artifactsUrl"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "statusUrl": {
+            "type": "string"
+          },
+          "diagnosticsUrl": {
+            "type": "string"
+          },
+          "artifactsUrl": {
+            "type": "string"
           }
         }
       }

@@ -18,6 +18,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class EsriSubtypeParserTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SubtypeFieldWithSubtypes_ProducesCanonicalSubtypes()
     {
@@ -50,6 +51,7 @@ public sealed class EsriSubtypeParserTests
         residential.FieldOverrides["status"].DefaultValue!.Value.GetString().Should().Be("occupied");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SubtypeWithPerSubtypeDomain_CapturesDomainOverride()
     {
@@ -85,6 +87,7 @@ public sealed class EsriSubtypeParserTests
             .Should().BeEquivalentTo(["Occupied", "Vacant"]);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NoSubtypeField_ReturnsNone()
     {
@@ -95,6 +98,7 @@ public sealed class EsriSubtypeParserTests
         result.Should().Be(EsriSubtypeParseResult.None);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SubtypeFieldWithoutSubtypes_ReturnsNone()
     {
@@ -105,6 +109,7 @@ public sealed class EsriSubtypeParserTests
         result.Should().Be(EsriSubtypeParseResult.None);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_OverCapSubtypeSet_ReportsTruncatedAndOmits()
     {
@@ -129,6 +134,7 @@ public sealed class EsriSubtypeParserTests
         result.Subtypes.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("HazardType", "Flooding")]
     [InlineData("fullclose", "Yes")]
@@ -161,6 +167,7 @@ public sealed class EsriSubtypeParserTests
         type.FieldOverrides["priority"].Domain.Should().BeNull("inherited means keep the field domain");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_FeatureTypesWithNumericCodeAndDomain_PreservesBoth()
     {
@@ -175,6 +182,7 @@ public sealed class EsriSubtypeParserTests
         type.FieldOverrides["status"].Domain!.CodedValues.Single().Code.GetString().Should().Be("new");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_MultipleFeatureTemplates_RejectsAmbiguousReduction()
     {
@@ -196,6 +204,7 @@ public sealed class EsriSubtypeParserTests
         result.UnsupportedDetail.Should().Contain("One").And.Contain("2 editing templates");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ExplicitNullDefault_SurvivesCanonicalJsonRoundTripWithoutChangingLegacyNull()
     {
@@ -214,6 +223,7 @@ public sealed class EsriSubtypeParserTests
         legacy.DefaultValue.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ExplicitDomainClearing_RejectsUnsupportedReduction()
     {
@@ -231,6 +241,7 @@ public sealed class EsriSubtypeParserTests
         result.UnsupportedDetail.Should().Contain("status", "the finding names the field whose domain is cleared");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_FeatureTypeWithoutUsableIdentity_RejectsWithoutThrowing()
     {
@@ -246,6 +257,7 @@ public sealed class EsriSubtypeParserTests
         result.UnsupportedCode.Should().Be(ImportCompatibilityCodes.ArcGisFeatureTypeIdentityUnsupported);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SupportedFeatureTypes_ReportsNoUnsupportedConstruct()
     {

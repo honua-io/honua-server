@@ -1,0 +1,7 @@
+# Blocking task waits under src/. Do not add lines.
+# Delete a line only when that wait is gone. The architecture test rejects a new line against trunk.
+src/Honua.Geoprocessing.Cli/GpCli.cs	available = GdalContainerProbe.IsImageAvailableAsync(image, configuration["GdalContainer:DockerExecutable"]!, timeout.Token).GetAwaiter().GetResult();
+src/Honua.Hosting/Features/Caching/RedisCacheService.cs	DisposeAsync().AsTask().GetAwaiter().GetResult();
+src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerQueryHandler.cs	var extent = extentTask.Result;
+src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerQueryHandler.cs	var extentCount = extentCountTask.Result;
+src/Honua.Worker.Gdal/GdalWorkerServiceCollectionExtensions.cs	var durability = RedisDurabilityAttestor.InspectAsync(redis).GetAwaiter().GetResult();

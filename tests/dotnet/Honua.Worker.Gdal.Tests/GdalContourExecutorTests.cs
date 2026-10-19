@@ -18,8 +18,6 @@ public sealed class GdalContourExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-contour-test";
 
-    private static string Base64(string text) => GdalCli.Base64(text);
-
     [UnitTest]
     public void GdalContourExecutor_DeclaresNativeRuntimeProfile()
     {
@@ -39,7 +37,7 @@ public sealed class GdalContourExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalContourJobExecutor.HandledProcessId,
-                ("source", Base64("fake-dem")),
+                ("source", GdalCli.RasterBase64("fake-dem")),
                 ("interval", "10"),
                 ("base", "5"));
             var context = new RecordingJobExecutionContext(job.OperationId);
@@ -73,7 +71,7 @@ public sealed class GdalContourExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalContourJobExecutor.HandledProcessId,
-                ("source", Base64("fake-dem")));
+                ("source", GdalCli.RasterBase64("fake-dem")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
@@ -96,7 +94,7 @@ public sealed class GdalContourExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalContourJobExecutor.HandledProcessId,
-                ("source", Base64("fake-dem")),
+                ("source", GdalCli.RasterBase64("fake-dem")),
                 ("interval", "0"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);

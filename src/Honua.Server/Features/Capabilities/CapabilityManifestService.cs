@@ -27,9 +27,13 @@ using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Security;
+#if !HONUA_EXCLUDE_GEOSERVICES
 using Honua.Protocols.GeoServices;
+#endif
 using Honua.Protocols.Ogc.Common;
+#if !HONUA_EXCLUDE_STAC
 using Honua.Protocols.Stac.Models;
+#endif
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Startup;
@@ -63,6 +67,10 @@ internal sealed class CapabilityManifestService(
     ICapabilityRegistry capabilityRegistry,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
+    internal const string BackgroundImportCapabilityId = "import.background";
+
+    internal const string ObjectStoreImportCapabilityId = "import.objectStore";
+
     private const string AuthorizationNotice =
         "Manifest availability is informational only; operation endpoints remain the source of truth for authorization, tenant, environment, license, and resource checks.";
 
@@ -112,8 +120,11 @@ internal sealed class CapabilityManifestService(
         var capabilities = options.ManifestFromRegistry
             ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
-        capabilities = StampRollbackTargets(capabilities, operationCapabilities);
+        capabilities = StampRollbackTargets(capabilities, operationCapabilities, policyContext);
+        capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
+        capabilities = [.. capabilities, BuildObjectStoreImportCapability(policyContext)];
         capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
+        capabilities = ApplyCompiledProtocolProfile(capabilities);
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
             : BuildPackages();
@@ -905,6 +916,30 @@ internal sealed class CapabilityManifestService(
         };
     }
 
+    private static CapabilityManifestCapability[] ApplyCompiledProtocolProfile(
+        CapabilityManifestCapability[] capabilities)
+    {
+        for (var i = 0; i < capabilities.Length; i++)
+        {
+            var capability = capabilities[i];
+            if (Honua.Infrastructure.Hosting.ProtocolProfile.IsCapabilityCompiled(capability.Id))
+            {
+                continue;
+            }
+
+            var reason = Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded;
+            capabilities[i] = capability with
+            {
+                Supported = false,
+                Available = false,
+                ReasonCode = reason,
+                MessageKey = $"capabilities.{capability.Id}.{reason}",
+            };
+        }
+
+        return capabilities;
+    }
+
     private CapabilityManifestTransports BuildTransports()
     {
         var clientCertificate = options.ClientCertificate;
@@ -921,18 +956,52 @@ internal sealed class CapabilityManifestService(
                 // version (ADR-0058 / honua-release#32). The version constant is owned by
                 // the protocol assembly that owns the surface, so the manifest cannot drift
                 // from the surface it describes.
+#if HONUA_EXCLUDE_GEOSERVICES
+                Transport("geoservices-rest", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("geoservices-rest", supported: true, available: true,
                     contractVersion: GeoServicesContract.Version),
+#endif
+#if HONUA_EXCLUDE_OGC_API && HONUA_EXCLUDE_OGC_CLASSIC
+                Transport("ogc-http", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("ogc-http", supported: true, available: true,
                     contractVersion: OgcContract.Version),
+#endif
+#if HONUA_EXCLUDE_ODATA
+                Transport("odata", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("odata", supported: true, available: true),
+#endif
+#if HONUA_EXCLUDE_STAC
+                Transport("stac", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("stac", supported: true, available: true,
                     contractVersion: StacContract.Version),
+#endif
                 Transport("tiles", supported: true, available: true),
+#if HONUA_EXCLUDE_GRPC
+                Transport("grpc", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+                Transport("grpc-web", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+                Transport("native-grpc", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("grpc", supported: true, available: true),
                 Transport("grpc-web", supported: true, available: true),
                 Transport("native-grpc", supported: true, available: true),
+#endif
+#if HONUA_EXCLUDE_MCP
+                Transport("mcp", supported: false, available: false,
+                    Core.Features.Capabilities.CapabilityReasonCodes.ProtocolProfileExcluded),
+#else
                 Transport("mcp", supported: true, available: true),
+#endif
                 Transport("qgis", supported: true, available: true),
                 Transport("mtls", supported: true, available: mtlsAvailable,
                     mtlsAvailable ? null : Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled)
@@ -1279,20 +1348,70 @@ internal sealed class CapabilityManifestService(
         return false;
     }
 
+    /// <summary>
+    /// <c>import.background</c> (honua-server#5916): whether this host accepts a background file
+    /// import and which runner executes it (<c>batch</c>, <c>in-process</c> or
+    /// <c>unavailable</c>, with the cause in <c>reasonCode</c>). <c>upload.file</c> covers only
+    /// the synchronous path.
+    /// </summary>
+    private CapabilityManifestCapability BuildBackgroundImportCapability(CapabilityPolicyContext context)
+    {
+        var runner = options.BackgroundImportRunner;
+        var capability = Capability(
+            BackgroundImportCapabilityId,
+            "import",
+            context,
+            configured: runner?.AcceptsBackgroundImports ?? false,
+            unavailableReasonOverride: runner is null
+                ? CapabilityReasonCodes.DependencyUnavailable
+                : runner.UnavailableReason,
+            entitlementKey: "import.file",
+            policyCapability: "metadata.write");
+        return capability with
+        {
+            Runner = runner is { AcceptsBackgroundImports: true }
+                ? runner.Runner
+                : Honua.Core.Features.FileImport.Domain.ImportJobRunners.Unavailable,
+        };
+    }
+
+    /// <summary>
+    /// <c>import.objectStore</c> (honua-server#5888): <c>s3://</c> imports that use the host
+    /// identity. Disabled until at least one bucket is allow-listed. <c>schemes</c> stays
+    /// <c>["s3"]</c> either way so callers can see the supported scheme before it is enabled.
+    /// </summary>
+    private CapabilityManifestCapability BuildObjectStoreImportCapability(CapabilityPolicyContext context)
+    {
+        var capability = Capability(
+            ObjectStoreImportCapabilityId,
+            "import",
+            context,
+            configured: options.ObjectStoreConfigured,
+            entitlementKey: "import.file",
+            policyCapability: "metadata.write");
+        return capability with { Schemes = ["s3"] };
+    }
+
     private static CapabilityManifestCapability[] StampRollbackTargets(
         CapabilityManifestCapability[] capabilities,
-        OperationCapabilitySummary summary)
+        OperationCapabilitySummary summary,
+        CapabilityPolicyContext context)
     {
-        var targets = summary.RollbackTargets
-            .Select(static claim => new CapabilityManifestRollbackTarget
-            {
-                TargetId = claim.TargetId,
-                Backend = claim.Backend,
-                State = claim.State,
-                Executable = claim.Executable,
-                ReasonCode = claim.ReasonCode
-            })
-            .ToArray();
+        var discloseTargets = context.Authenticated
+            && (context.CallerCapabilities.Contains("deploy.rollback")
+                || context.CallerCapabilities.Contains("admin.rbac.write"));
+        var targets = discloseTargets
+            ? summary.RollbackTargets
+                .Select(static claim => new CapabilityManifestRollbackTarget
+                {
+                    TargetId = claim.TargetId,
+                    Backend = claim.Backend,
+                    State = claim.State,
+                    Executable = claim.Executable,
+                    ReasonCode = claim.ReasonCode
+                })
+                .ToArray()
+            : null;
 
         for (var index = 0; index < capabilities.Length; index++)
         {

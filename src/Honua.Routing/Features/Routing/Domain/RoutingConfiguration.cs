@@ -89,6 +89,14 @@ public sealed class RoutingConfiguration
     public int MaxDemandPoints { get; set; } = 1000;
 
     /// <summary>
+    /// Maximum ranked pairs accepted on one closest-facility, OD cost matrix, or
+    /// location-allocation solve. Counts are capped separately; this bounds the
+    /// product (incidents × facilities found, origins × destinations) so two
+    /// 1000-element inputs cannot fan out into a million graph solves.
+    /// </summary>
+    public int MaxSolvePairs { get; set; } = 10_000;
+
+    /// <summary>
     /// Identifier of the active network dataset (Phase 0 of #1882). Selects the
     /// registered edge/vertex topology the routing provider resolves table names
     /// from. Defaults to <c>"default"</c>, which maps to the existing

@@ -38,28 +38,45 @@ internal sealed partial class GeoservicesImportService
         string? firstFailureReason = null;
         var higherDimensionCount = 0;
 
-        // Build insert statement
-        var fields = layerInfo.Fields.Where(f => !f.IsObjectId && !IsGeometryField(f)).ToArray();
+        // Build insert statement. Column names follow the same mapping as CREATE TABLE so a
+        // source OBJECTID/GEOM attribute, or two names that sanitize identically, cannot collide
+        // with the surrogate key or with each other. Attribute values are still read by source name.
+        var columnMap = GeoservicesImportColumns.Map(layerInfo);
+        var fields = columnMap.Columns.Select(column => column.Field).ToArray();
         var hasGeometry = !string.IsNullOrEmpty(layerInfo.GeometryType);
         var sourceObjectIdField = layerInfo.Fields.FirstOrDefault(f => f.IsObjectId)?.Name;
         var objectIdMap = new Dictionary<long, long>(features.Length);
         var absentGeometryTargetIds = new HashSet<long>();
         var unconvertedGeometryTargetIds = new HashSet<long>();
+        var invalidSourceGeometryTargetIds = new HashSet<long>();
 
-        var columnNames = string.Join(", ", fields.Select(f => $"\"{f.Name.SanitizeFieldName()}\""));
+        var columnList = new List<string>(fields.Length + 1);
+        columnList.AddRange(columnMap.Columns.Select(column => $"\"{column.ColumnName}\""));
         if (hasGeometry)
         {
-            columnNames += ", geom";
+            columnList.Add("geom");
         }
+
+        var columnNames = string.Join(", ", columnList);
 
         var parameterPlaceholders = string.Join(", ", fields.Select((_, i) => $"@p{i}"));
         if (hasGeometry)
         {
-            parameterPlaceholders += $", {BuildGeometryInsertExpression(layerInfo.GeometryType, targetSrid)}";
+            // A geometry-only layer has no attribute placeholders. Appending with a comma
+            // would emit VALUES (, geom-expr), which PostgreSQL rejects.
+            var geometryExpression = BuildGeometryInsertExpression(layerInfo.GeometryType, targetSrid);
+            parameterPlaceholders = parameterPlaceholders.Length == 0
+                ? geometryExpression
+                : $"{parameterPlaceholders}, {geometryExpression}";
         }
 
+        // Classify the source WKT, not the geometry stored after ST_MakeValid. A repaired
+        // polygon remains an inherited source defect or an unrepaired rewrite (#4826).
+        var sourceValidity = hasGeometry
+            ? $", CASE WHEN @geom IS NULL THEN NULL ELSE ST_IsValid(ST_GeomFromText(@geom, {targetSrid})) END"
+            : string.Empty;
         var insertSql =
-            $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders}) RETURNING {FieldNames.ObjectId}";
+            $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders}) RETURNING {FieldNames.ObjectId}{sourceValidity}";
 
         // Create the command once, add parameters with placeholder values, and prepare
         await using var cmd = connection.CreateCommand();
@@ -133,12 +150,24 @@ internal sealed partial class GeoservicesImportService
                     cmd.Parameters["geom"].Value = DBNull.Value;
                 }
 
-                var rawInsertedId = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                long? insertedId = null;
+                bool? sourceGeometryValid = null;
+                await using (var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false) && !reader.IsDBNull(0))
+                    {
+                        insertedId = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
+                        if (hasGeometry && !reader.IsDBNull(1))
+                        {
+                            sourceGeometryValid = reader.GetBoolean(1);
+                        }
+                    }
+                }
+
                 inserted++;
 
-                if (rawInsertedId is not null && rawInsertedId is not DBNull)
+                if (insertedId is { } targetFeatureId)
                 {
-                    var targetFeatureId = Convert.ToInt64(rawInsertedId, CultureInfo.InvariantCulture);
                     if (sourceGeometryAbsent)
                     {
                         absentGeometryTargetIds.Add(targetFeatureId);
@@ -146,6 +175,10 @@ internal sealed partial class GeoservicesImportService
                     else if (sourceGeometryUnconverted)
                     {
                         unconvertedGeometryTargetIds.Add(targetFeatureId);
+                    }
+                    else if (sourceGeometryValid == false)
+                    {
+                        invalidSourceGeometryTargetIds.Add(targetFeatureId);
                     }
 
                     if (sourceObjectIdField is not null
@@ -192,7 +225,8 @@ internal sealed partial class GeoservicesImportService
             objectIdMap,
             firstFailureReason,
             absentGeometryTargetIds,
-            unconvertedGeometryTargetIds);
+            unconvertedGeometryTargetIds,
+            invalidSourceGeometryTargetIds);
     }
 
     private static bool TryReadSourceObjectId(
@@ -254,7 +288,8 @@ internal sealed partial class GeoservicesImportService
         Dictionary<long, long> ObjectIdMap,
         string? FirstFailureReason = null,
         HashSet<long>? AbsentGeometryTargetIds = null,
-        HashSet<long>? UnconvertedGeometryTargetIds = null);
+        HashSet<long>? UnconvertedGeometryTargetIds = null,
+        HashSet<long>? InvalidSourceGeometryTargetIds = null);
 
     private static string BuildGeometryInsertExpression(string? geometryType, int targetSrid)
     {

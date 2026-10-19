@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>SummaryTool</AssemblyName>
+    <RootNamespace>Honua.Templates</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!-- The custom-code worker loads this assembly by reflection; local development never needs AOT. -->
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The matching authoring SDK ships inside the installed devkit toolchain. -->
+    <ProjectReference Include="$(HonuaCustomCodeSdkProject)" Condition="'$(HONUA_CUSTOMCODE_SDK_ASSEMBLY)' == ''" />
+    <!-- Remote workers supply the SDK assembly from the pinned worker image. -->
+    <Reference Include="Honua.CustomCode.Sdk" Condition="'$(HONUA_CUSTOMCODE_SDK_ASSEMBLY)' != ''">
+      <HintPath>$(HONUA_CUSTOMCODE_SDK_ASSEMBLY)</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

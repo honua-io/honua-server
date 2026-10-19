@@ -31,16 +31,23 @@ jobs:
           python -m pytest -c /dev/null --rootdir=. --confcutdir=tests/python/unit \
             tests/python/unit/test_capacity_observations.py \
             tests/python/unit/test_capacity_soak_receipt.py \
-            tests/python/unit/test_capacity_soak_keyring.py -q
+            tests/python/unit/test_capacity_soak_keyring.py \
+            tests/python/unit/test_capacity_runner_routing.py \
+            tests/python/unit/test_capacity_producer_preflight.py \
+            tests/python/unit/test_capacity_soak_cleanup.py -q
       - name: Check the emitted ZIP with the independent frozen release verifier
         env:
-          RELEASE_REF: 3970b22f05cc19a49b83703df416b4ecc04a35b4
+          RELEASE_REF: 8213a142cc03c118061dacad5e6384f9d23d66df
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/release-tools"
-          for file in check_capacity_soak.py capacity_observations.py extract_capacity_evidence.py; do
+          for file in check_capacity_soak.py capacity_observations.py extract_capacity_evidence.py release_runner_policy.py; do
             curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 \
               "https://raw.githubusercontent.com/honua-io/honua-release/$RELEASE_REF/tools/$file" \
               -o "$RUNNER_TEMP/release-tools/$file"
           done
+          mkdir -p "$RUNNER_TEMP/certification"
+          curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            "https://raw.githubusercontent.com/honua-io/honua-release/$RELEASE_REF/certification/release-runners.v1.json" \
+            -o "$RUNNER_TEMP/certification/release-runners.v1.json"
           python tests/python/unit/test_capacity_observations.py "$RUNNER_TEMP/release-tools"

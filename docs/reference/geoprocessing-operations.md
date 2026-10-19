@@ -8,19 +8,19 @@ resource: "honua://capability/process.geoprocessing"
 
 Catalog of the built-in geoprocessing processes (process catalog `honua.process_catalog.builtin.v1`). Protocol adapters consume the catalog's execution-capability metadata instead of maintaining their own callable-process lists: OGC API Processes (`/ogc/processes/processes`) projects job processes and honors their advertised synchronous/asynchronous modes, the ArcGIS-compatible GPServer adapter (`/rest/services/{serviceId}/GPServer`) derives synchronous execution from the declared modes, and MCP exposes the complete classification. For a submit/poll/fetch walkthrough see [run geoprocessing](../guides/query-analyze/run-geoprocessing.md); to write your own process, see [author a geoprocessing process](../guides/query-analyze/gp-devkit-authoring.md).
 
-The catalog currently registers **98 processes** across 15 families. A build gate keeps this page in step with the catalog: a registered process id missing here, or a count that drifts, fails the build.
+The catalog currently registers **101 processes** across 16 families. A build gate keeps this page in step with the catalog: a registered process id missing here, or a count that drifts, fails the build.
 
 Execution notes that apply across families:
 
 - **Entry points.** GA is defined per entry point: the whole catalog is GA, and every entry declares which entry points it is callable through. The **Entry points** column on every table below is that declaration, and it is the same value the runtime projects (`ProcessDefinition.SupportedEntryPoints`, surfaced as `entryPoints` on the MCP process catalog resource).
-  - `job` — the shared geoprocessing job runtime: OGC API Processes (`/ogc/processes/processes`), WPS 2.0, the GPServer adapter (`/rest/services/{serviceId}/GPServer`), and the MCP process tools. **82 entries.**
+  - `job` — the shared geoprocessing job runtime: OGC API Processes (`/ogc/processes/processes`), WPS 2.0, the GPServer adapter (`/rest/services/{serviceId}/GPServer`), and the MCP process tools. **85 entries.**
   - `protocol` — the operation's owning synchronous protocol endpoint (FeatureServer edit/maintenance routes, the spatial-analytics routes). **4 entries**, and they are deliberately absent from the job surfaces above.
-  - `workflow` — composition inside a workflow DAG (`process:<processId>` nodes). Every job entry is also workflow-composable, because a workflow node compiles into the same analysis-plan step the job runtime executes. **94 entries.**
+  - `workflow` — composition inside a workflow DAG (`process:<processId>` nodes). Every job entry is also workflow-composable, because a workflow node compiles into the same analysis-plan step the job runtime executes. **97 entries.**
 
   An advertisement surface offers an operation only on the entry points it declares. Nothing is advertised that cannot be called there: there is no advertised-but-unexecutable state.
-- **Execution classification.** Every entry is classified exactly once: **82 Job**, **4 ProtocolOnly**, and **12 WorkflowOnly**. Job entries declare asynchronous execution and may additionally declare synchronous execution. ProtocolOnly entries remain callable only through their owning protocol endpoint; WorkflowOnly sources and sinks compose inside DAGs but cannot be submitted directly.
+- **Execution classification.** Every entry is classified exactly once: **85 Job**, **4 ProtocolOnly**, and **12 WorkflowOnly**. Job entries declare asynchronous execution and may additionally declare synchronous execution. ProtocolOnly entries remain callable only through their owning protocol endpoint; WorkflowOnly sources and sinks compose inside DAGs but cannot be submitted directly.
 - **OGC execution negotiation.** OGC requests run synchronously by default when the selected process advertises `sync-execute`. Send `Prefer: respond-async` to request durable asynchronous admission (`201`, `Location`, and `Preference-Applied: respond-async`). `respond-sync` is not a defined preference. WKB parameters accept the existing base64 WKB string or a GeoJSON Geometry, Feature, or FeatureCollection; GeoJSON is normalized through the shared geometry codec. Catalog requests may use `"response": "raw"` with synchronous or asynchronous execution: one selected output returns its native representation, and multiple outputs return `multipart/related`. Document mode is the default and returns inline qualified values. Qualified inputs and bounded public HTTPS or data-URI `href` references are normalized to the catalog parameter format. The canonical `honua-geoprocessing` plan process requires document mode and retains its artifact document.
-- **Runtime profile.** Processes marked *native* below declare `RuntimeProfile = native` and execute out-of-process in the heavyweight GDAL/PDAL worker image; the lean GDAL-free serving image validates their plans (parameter shape + per-process semantic rules) but never executes them. **A deployment without the GDAL worker cannot run any native process** — all `surface.*`, all `raster.*`, the native `conversion.*` (raster/OGR/point-cloud) idioms, `proximity.euclidean-*`, `source.ogr`, `gdal.*`, and `pcloud.translate`. 30 of the 98 processes are native.
+- **Runtime profile.** Processes marked *native* below declare `RuntimeProfile = native` and execute out-of-process in the heavyweight GDAL/PDAL worker image; the lean GDAL-free serving image validates their plans (parameter shape + per-process semantic rules) but never executes them. **A deployment without the GDAL worker cannot run any native process** — all `surface.*`, all `raster.*`, the native `conversion.*` (raster/OGR/point-cloud) idioms, `proximity.euclidean-*`, `source.ogr`, `gdal.*`, and `pcloud.translate`. 30 of the 101 processes are native.
 - **GP workspace controls.** Managed-profile tasks use the configured PostgreSQL workspace store for `env:workspace` and `env:overwriteOutput`. Named creation enforces the configured per-owner active workspace-count limit atomically across labels and optional scopes. The native GDAL worker has no workspace lifecycle provider: GPServer rejects these two controls for native-profile tasks before submission, and the worker also rejects them on older queued or directly authored jobs. This is an explicit limitation; native-worker workspace output is not supported. `Geoprocessing:Workspace:EnableAutomaticCleanup=false` disables both polling and scheduled automatic sweeps.
 - **Delegated cloud inference.** `imagery.classify` delegates ML inference to a configured cloud endpoint (`Geoprocessing:ImageryInference`) — Honua bundles no model runtime. When no backend is configured the process stays advertised but every execution fails with a clear "no cloud inference backend is configured" message (no silent stub, no fake result).
 - **Raster sourcing.** Native raster/surface processes read the raster as base64-encoded GeoTIFF bytes on the `source` parameter; `layerId`/`rasterId` selectors are declared but layer-resolved sourcing is a follow-on and `source` remains required today.
@@ -249,15 +249,42 @@ Terminate a workflow by writing the input FeatureCollection and emitting a resul
 
 | Process ID | Description | Key parameters | Entry points |
 | --- | --- | --- | --- |
-| `sink.geojson-file` | Write the input FeatureCollection to a GeoJSON file under the configured output root. | `input`, `path` | workflow |
-| `sink.quarantine` | Dead-letter sink: write rejected rows with batch id and reason. | `input`, `path`, `reasonField`, `batchId` | workflow |
+| `sink.geojson-file` | Write an immutable GeoJSON file in the admitted job and attempt namespace. | `input`, `path` | workflow |
+| `sink.quarantine` | Write immutable job-owned rejected rows with batch id and reason. | `input`, `path`, `reasonField`, `batchId` | workflow |
 | `sink.external-postgis` | Load features into a customer-owned PostGIS database via a registered secure connection (never a raw connection string). | `input`, `connectionName`/`connectionId`, `table`, `targetSrid`, `schema`, `geometryColumn`, `batchSize` | workflow |
 | `sink.honua-layer` | Load features into a named layer in the Honua catalog database (append/replace/upsert). Executed by `HonuaLayerSinkExecutor` through the optional `IHonuaLayerSink` capability; **fails closed with a clear "unavailable in this deployment" message in lean, database-free deployments**. | `input`, `layer`, `targetSrid`, `loadMode`, `keyFields`, `schema`, `geometryColumn`, `batchId` | workflow |
 
 Native-format sinks (shapefile, GeoPackage) are deferred to the GDAL worker stream; for those, convert with `gdal.ogr2ogr`.
+
+## Routing (3)
+
+Managed routing jobs use the configured canonical routing provider. They fail explicitly when that provider or the requested capability is unavailable. GeoServices exposes these jobs through both GPServer and NAServer web-tool aliases; submission, polling, and named results use the shared durable job runtime.
+
+| Process ID | Description | Key parameters | Entry points |
+| --- | --- | --- | --- |
+| `routing.closest-facilities` | Find ranked network routes between incidents and facilities. | `incidents`, `facilities`, `facility_count`, `travel_direction`, `cutoff`, `time_units`, `distance_units`, `travel_mode` | job, workflow |
+| `routing.od-cost-matrix` | Compute ranked costs between origins and destinations, optionally with straight output lines. | `origins`, `destinations`, `destination_count`, `line_shape`, `cutoff`, `time_units`, `distance_units`, `travel_mode` | job, workflow |
+| `routing.location-allocation` | Select candidate facilities and allocate weighted demand using facility-to-demand network costs. | `facilities`, `demand_points`, `facility_count`, `problem_type`, `travel_direction`, `cutoff`, `time_units`, `travel_mode` | job, workflow |
 
 ## Related pages
 
 - [Run geoprocessing guide](../guides/query-analyze/run-geoprocessing.md)
 - [OGC APIs reference](protocols/ogc-apis.md)
 - [gRPC ProcessService](protocols/grpc.md)
+
+### File-sink destinations and cancellation
+
+For `sink.geojson-file` and `sink.quarantine`, `path` is a relative file name
+inside a server-owned job and attempt directory. The result receipt's `path`
+identifies its actual location relative to the configured output root;
+`requestedPath` preserves the submitted name. A different owner, tenant, job, or
+retry cannot replace a prior output, and repeating a write within one attempt
+fails rather than overwriting existing bytes. Quarantine's approval exception
+applies to these isolated artifacts, never an existing caller-selected destination.
+
+Both sinks check cancellation and the execution lease immediately before their
+create-only rename. After a successful rename they record committed-effect
+evidence with an uncancelled token. Filesystem rename and the job lease store
+are separate transactions: a lease lost in that final gap cannot be rolled back
+atomically, and a rejected receipt surfaces as an execution error. Attempt isolation
+still prevents that stale write from replacing the next attempt's output.

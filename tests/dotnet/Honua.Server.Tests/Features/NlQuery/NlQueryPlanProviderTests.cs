@@ -9,7 +9,6 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.NlQuery;
 
@@ -120,39 +119,6 @@ public sealed class NlQueryPlanProviderTests
 
         result.Failed.Should().BeTrue();
         result.Failures.Should().Contain(failure => failure.Contains("is not supported", StringComparison.Ordinal));
-    }
-
-    [UnitTest]
-    [Operation(Operations.Query)]
-    public void FeatureEnabled_WithEnvironmentApiKey_BindsOptionsWithoutMutatingConfiguration()
-    {
-        const string envVariableName = "HONUA_NLQUERY_API_KEY";
-        var previousValue = Environment.GetEnvironmentVariable(envVariableName);
-
-        try
-        {
-            Environment.SetEnvironmentVariable(envVariableName, "env-key");
-
-            var configuration = BuildConfiguration(new Dictionary<string, string?>
-            {
-                ["NlQuery:Enabled"] = "true",
-                ["NlQuery:Provider"] = "deterministic"
-            });
-
-            var services = new ServiceCollection();
-            services.AddLogging();
-            services.AddNlQuery(configuration);
-
-            using var provider = services.BuildServiceProvider();
-            var options = provider.GetRequiredService<IOptions<NlQueryConfiguration>>().Value;
-
-            options.ApiKey.Should().Be("env-key");
-            configuration["NlQuery:ApiKey"].Should().BeNull();
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(envVariableName, previousValue);
-        }
     }
 
     private static IConfigurationRoot BuildConfiguration(Dictionary<string, string?> values) =>

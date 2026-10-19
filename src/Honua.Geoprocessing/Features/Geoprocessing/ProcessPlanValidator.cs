@@ -8,6 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Infrastructure.Sql;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Geoprocessing.Execution;
 
@@ -497,8 +498,10 @@ internal static partial class ProcessPlanValidator
             case "source.postgis":
                 // The external-PostGIS source reuses the same secure-connection contract
                 // as the sink: a registered connectionName XOR connectionId, never an
-                // inline connection string.
+                // inline connection string. where is appended into the SELECT, so refuse
+                // a predicate the read-only single-statement check would reject.
                 ValidateExternalPostgisSinkSemantics(step, violations);
+                ValidateExternalPostgisWhere(step, violations);
                 break;
         }
     }
@@ -588,6 +591,30 @@ internal static partial class ProcessPlanValidator
         ValidatePostgisIdentifier(step, "table", violations);
         ValidatePostgisIdentifier(step, "schema", violations);
         ValidatePostgisIdentifier(step, "geometryColumn", violations);
+    }
+
+    private static void ValidateExternalPostgisWhere(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue("where", out var where)
+            || string.IsNullOrWhiteSpace(where))
+        {
+            return;
+        }
+
+        // ExternalPostgisDagSource appends the predicate inside one SELECT.
+        var sql = "SELECT 1 FROM \"t\" WHERE (" + where + ")";
+        try
+        {
+            ReadOnlyDynamicSql.ValidateReadOnlySingleStatement(sql);
+        }
+        catch (ArgumentException)
+        {
+            AddRangeViolationIfNew(step, "where",
+                "expected a single read-only predicate without a statement separator, comment, or mutating SQL",
+                violations);
+        }
     }
 
     private static void ValidatePostgisIdentifier(

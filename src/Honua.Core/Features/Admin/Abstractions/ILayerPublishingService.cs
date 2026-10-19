@@ -47,6 +47,23 @@ public interface ILayerPublishingService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Counts rows in the source table before an accepted publish (honua-server#5948).
+    /// The default returns zero, which callers treat as unknown and publish synchronously.
+    /// Production PostgreSQL publishing counts the live table.
+    /// </summary>
+    /// <param name="connectionString">PostgreSQL connection string.</param>
+    /// <param name="schema">Source schema.</param>
+    /// <param name="table">Source table.</param>
+    /// <param name="cancellationToken">Cancellation token. Honored for this pre-accept count only.</param>
+    /// <returns>The source row count, or zero when the implementation cannot count.</returns>
+    Task<long> CountSourceRowsAsync(
+        string connectionString,
+        string schema,
+        string table,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(0L);
+
+    /// <summary>
     /// Link an existing layer into a service.
     /// </summary>
     /// <param name="connectionString">PostgreSQL connection string.</param>
@@ -266,4 +283,24 @@ public interface ILayerPublishingService
         Guid? connectionId,
         CancellationToken cancellationToken = default)
         => RefreshMaterializedFeaturesForSourceTableAsync(connectionString, schema, table, cancellationToken);
+
+    /// <summary>
+    /// Replaces the published field metadata of an existing layer with the columns of its
+    /// current source table. A replacement import keeps the layer row and swaps the table
+    /// underneath it; without this rewrite the catalog keeps the previous schema.
+    /// </summary>
+    /// <param name="connectionString">PostgreSQL connection string.</param>
+    /// <param name="layerId">Existing published layer identifier.</param>
+    /// <param name="request">Publication request describing the replaced table and captured field metadata.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// The updated summary, or <see langword="null"/> when this publisher cannot rewrite fields
+    /// or the layer does not back the requested table.
+    /// </returns>
+    Task<PublishedLayerSummary?> RewritePublishedLayerFieldsAsync(
+        string connectionString,
+        int layerId,
+        LayerPublishRequest request,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<PublishedLayerSummary?>(null);
 }

@@ -112,6 +112,96 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Calculate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_WithGdbVersion_ReadsAndWritesBranchOnly()
+    {
+        // #6095: calculate must read candidates from the named version and write the
+        // updates there; DEFAULT must stay untouched.
+        var marker = "vcalc_" + Guid.NewGuid().ToString("N")[..8];
+        var seed = await PostFormAsync($"{LayerBase}/applyEdits", ("adds", BuildAddsJson(marker)), ("f", "json"));
+        seed.StatusCode.Should().Be(HttpStatusCode.OK, "seed add; body: {0}", await seed.Content.ReadAsStringAsync());
+        (await CountByMarkerAsync(seed)).Should().Be(1);
+
+        var versionGuid = await CreateVersionAsync("admin." + marker);
+
+        // A branch-only row: visible to a version-aware candidate read, invisible to DEFAULT.
+        var branchAdd = await PostFormAsync($"{LayerBase}/applyEdits",
+            ("adds", BuildAddsJson(marker)), ("gdbVersion", versionGuid), ("f", "json"));
+        (await CountByMarkerAsync(branchAdd)).Should().Be(1, "the branch-only add should commit to the version");
+
+        var calculated = marker + "_calc";
+        var calcExpression = JsonSerializer.Serialize(new[] { new { field = "name", value = calculated } });
+        var response = await PostFormAsync($"{LayerBase}/calculate",
+            ("where", $"name='{marker}'"),
+            ("calcExpression", calcExpression),
+            ("gdbVersion", versionGuid),
+            ("f", "json"));
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "versioned calculate; body: {0}", body);
+        using (var doc = JsonDocument.Parse(body))
+        {
+            doc.RootElement.TryGetProperty("error", out _).Should().BeFalse("calculate must succeed: {0}", body);
+            doc.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(body);
+            doc.RootElement.GetProperty("updatedFeatureCount").GetInt32().Should().Be(2,
+                "candidates must be read from the version (the DEFAULT row plus the branch-only row): {0}", body);
+        }
+
+        (await QueryCountAsync(calculated, versionGuid)).Should().Be(2,
+            "both version rows must carry the calculated value");
+        (await QueryCountAsync(calculated, gdbVersion: null)).Should().Be(0,
+            "calculate with gdbVersion must not write into DEFAULT");
+        (await QueryCountAsync(marker, gdbVersion: null)).Should().Be(1,
+            "the DEFAULT row must keep its original value");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Append)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/append")]
+    public async Task Append_WithGdbVersion_UpsertsWithinBranchOnly()
+    {
+        // #6095: append must match upserts within the named version and write adds and
+        // updates there; DEFAULT must stay untouched.
+        var marker = "vappend_" + Guid.NewGuid().ToString("N")[..8];
+        var versionGuid = await CreateVersionAsync("admin." + marker);
+
+        // A branch-only row that the upsert must match (a DEFAULT read finds nothing).
+        var branchAdd = await PostFormAsync($"{LayerBase}/applyEdits",
+            ("adds", BuildAddsJson(marker)), ("gdbVersion", versionGuid), ("f", "json"));
+        (await CountByMarkerAsync(branchAdd)).Should().Be(1, "the branch-only add should commit to the version");
+
+        var added = marker + "_new";
+        var edits = JsonSerializer.Serialize(new[]
+        {
+            new { attributes = new Dictionary<string, object?> { ["name"] = marker } },
+            new { attributes = new Dictionary<string, object?> { ["name"] = added } }
+        });
+        var response = await PostFormAsync($"{LayerBase}/append",
+            ("edits", edits),
+            ("upsert", "true"),
+            ("upsertMatchingField", "name"),
+            ("gdbVersion", versionGuid),
+            ("f", "json"));
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "versioned append; body: {0}", body);
+        using (var doc = JsonDocument.Parse(body))
+        {
+            doc.RootElement.TryGetProperty("error", out _).Should().BeFalse("append must succeed: {0}", body);
+            doc.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(body);
+            doc.RootElement.GetProperty("numFeaturesAppended").GetInt32().Should().Be(2, body);
+        }
+
+        (await QueryCountAsync(marker, versionGuid)).Should().Be(1,
+            "the upsert must update the branch row it matched, not add a duplicate");
+        (await QueryCountAsync(added, versionGuid)).Should().Be(1,
+            "the unmatched feature must be added to the version");
+        (await QueryCountAsync(marker, gdbVersion: null)).Should().Be(0,
+            "append with gdbVersion must not write the upserted row into DEFAULT");
+        (await QueryCountAsync(added, gdbVersion: null)).Should().Be(0,
+            "append with gdbVersion must not write the added row into DEFAULT");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithoutGdbVersion_IsUnaffectedByVersioning()

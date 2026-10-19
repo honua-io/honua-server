@@ -82,18 +82,33 @@ internal sealed partial class ODataCrudService
         CancellationToken cancellationToken = default)
         => GetFeatureAsync(layerId, objectId, baseUrl, _featureReader, layerId, cancellationToken);
 
-    public async Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
+    public Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
         int layerId,
         long objectId,
         string baseUrl,
         IFeatureReader reader,
         int storageLayerId,
         CancellationToken cancellationToken = default)
+        => GetFeatureAsync(layerId, objectId, baseUrl, reader, storageLayerId, null, cancellationToken);
+
+    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
+    public async Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
+        int layerId,
+        long objectId,
+        string baseUrl,
+        IFeatureReader reader,
+        int storageLayerId,
+        MetadataV2Resource? resolvedResource,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            // Verify layer exists via the V2 graph snapshot.
-            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+            // HTTP callers already resolved and authorized the OData publication. Keep
+            // that exact resource: a generic integer lookup can select a raster sidecar
+            // sharing this layer index and lose the feature schema and access decision.
+            var layerResult = resolvedResource is not null
+                ? ResourceValidationResult.Success(resolvedResource)
+                : await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
@@ -146,17 +161,37 @@ internal sealed partial class ODataCrudService
     /// resolver. Only coincides with <paramref name="layerId"/> when the publication's
     /// identifier was assigned from the storage id.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
+    public Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
         int layerId,
         ParsedFeaturePayload payload,
         string baseUrl,
         int storageLayerId,
         CancellationToken cancellationToken = default)
+        => CreateFeatureAsync(layerId, payload, baseUrl, storageLayerId, null, cancellationToken);
+
+    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
+    /// <param name="layerId">Service-local layer identifier.</param>
+    /// <param name="payload">Parsed feature payload.</param>
+    /// <param name="baseUrl">Base URL used for entity links.</param>
+    /// <param name="storageLayerId">Resolved physical storage-layer handle.</param>
+    /// <param name="resolvedResource">Authorized canonical feature resource, or null for legacy internal callers.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
+        int layerId,
+        ParsedFeaturePayload payload,
+        string baseUrl,
+        int storageLayerId,
+        MetadataV2Resource? resolvedResource,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            // Verify layer exists via the V2 graph snapshot.
-            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+            // HTTP callers already resolved and authorized the OData publication. Keep
+            // that exact resource: a generic integer lookup can select a raster sidecar
+            // sharing this layer index and lose the feature schema and access decision.
+            var layerResult = resolvedResource is not null
+                ? ResourceValidationResult.Success(resolvedResource)
+                : await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
@@ -166,7 +201,7 @@ internal sealed partial class ODataCrudService
             var srid = resource.ReadSrid() ?? 4326;
 
             // Parse and validate geometry if provided
-            var geometryResult = await ProcessGeometryAsync(payload.Geometry, srid, cancellationToken);
+            var geometryResult = await ProcessGeometryAsync(resource, payload.Geometry, srid, cancellationToken);
             if (!geometryResult.IsValid)
             {
                 return ODataCrudResult<Dictionary<string, object?>>.BadRequest(geometryResult.ErrorMessage!);
@@ -207,27 +242,48 @@ internal sealed partial class ODataCrudService
                 return ODataCrudResult<Dictionary<string, object?>>.Error("An error occurred creating the feature");
             }
 
-            var createdFeature = await _featureReader.GetAsync(storageLayerId, createdId.Value, cancellationToken);
-            if (!createdFeature.HasValue)
+            Feature? reloaded = null;
+            var readbackCancelled = false;
+            try
             {
-                return ODataCrudResult<Dictionary<string, object?>>.Error("Created feature could not be reloaded.");
+                reloaded = await _featureReader.GetAsync(storageLayerId, createdId.Value, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                readbackCancelled = true;
             }
 
+            // The insert already committed. A missing row or a cancelled readback still
+            // acknowledges the writer result instead of turning the create into a 500.
+            // Defaults, triggers, and canonicalization can change the stored row, so
+            // that acknowledgement is the new identity only: no representation and no
+            // ETag built from the submitted create (#6079).
+            var locationHeader = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createdId.Value})";
+            var observedReadback = reloaded.HasValue && !readbackCancelled;
+            if (!observedReadback)
+            {
+                var acknowledgement = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["ObjectId"] = createdId.Value,
+                    ["LayerId"] = layerId,
+                };
+                return ODataCrudResult<Dictionary<string, object?>>.Created(acknowledgement, locationHeader: locationHeader);
+            }
+
+            var createdFeature = reloaded!.Value;
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
                 srid,
                 cancellationToken);
             var responseGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                 _geometryService,
-                createdFeature.Value.Geometry,
+                createdFeature.Geometry,
                 srid,
                 axisOrder);
-            var serializedAttributes = ODataAttributeSerializer.Serialize(createdFeature.Value.Attributes);
-            var response = ODataUtilityService.BuildFeaturePayload(layerId, createdFeature.Value, responseGeometry, serializedAttributes);
-            var etag = ComputeFeatureEtag(layerId, createdFeature.Value, responseGeometry, serializedAttributes);
-
-            var locationHeader = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createdFeature.Value.Id})";
-            return ODataCrudResult<Dictionary<string, object?>>.Created(response, etag, locationHeader, createdFeature.Value);
+            var serializedAttributes = ODataAttributeSerializer.Serialize(createdFeature.Attributes);
+            var response = ODataUtilityService.BuildFeaturePayload(layerId, createdFeature, responseGeometry, serializedAttributes);
+            var etag = ComputeFeatureEtag(layerId, createdFeature, responseGeometry, serializedAttributes);
+            return ODataCrudResult<Dictionary<string, object?>>.Created(response, etag, locationHeader, createdFeature);
         }
         catch (ResourceConflictException ex)
         {
@@ -251,7 +307,7 @@ internal sealed partial class ODataCrudService
     /// <summary>
     /// Updates an existing feature with partial update support (PATCH semantics).
     /// </summary>
-    public async Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
+    public Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
         int layerId,
         long objectId,
         ParsedFeaturePayload payload,
@@ -261,11 +317,29 @@ internal sealed partial class ODataCrudService
         int storageLayerId,
         bool replace = false,
         CancellationToken cancellationToken = default)
+        => UpdateFeatureAsync(layerId, objectId, payload, baseUrl, ifMatch, ifNoneMatch, storageLayerId, replace, null, cancellationToken);
+
+    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
+    public async Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
+        int layerId,
+        long objectId,
+        ParsedFeaturePayload payload,
+        string baseUrl,
+        string? ifMatch,
+        string? ifNoneMatch,
+        int storageLayerId,
+        bool replace,
+        MetadataV2Resource? resolvedResource,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            // Verify layer exists via the V2 graph snapshot.
-            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+            // HTTP callers already resolved and authorized the OData publication. Keep
+            // that exact resource: a generic integer lookup can select a raster sidecar
+            // sharing this layer index and lose the feature schema and access decision.
+            var layerResult = resolvedResource is not null
+                ? ResourceValidationResult.Success(resolvedResource)
+                : await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
@@ -321,7 +395,7 @@ internal sealed partial class ODataCrudService
             byte[]? geometryBytes = replace ? null : existingFeatureValue.Geometry;
             if (payload.GeometrySpecified && payload.Geometry != null)
             {
-                var geometryResult = await ProcessGeometryAsync(payload.Geometry, srid, cancellationToken);
+                var geometryResult = await ProcessGeometryAsync(resource, payload.Geometry, srid, cancellationToken);
                 if (!geometryResult.IsValid)
                 {
                     return ODataCrudResult<Dictionary<string, object?>>.BadRequest(geometryResult.ErrorMessage!);
@@ -450,18 +524,33 @@ internal sealed partial class ODataCrudService
     /// <summary>
     /// Deletes a feature with proper validation and error handling.
     /// </summary>
-    public async Task<ODataCrudResult<object>> DeleteFeatureAsync(
+    public Task<ODataCrudResult<object>> DeleteFeatureAsync(
         int layerId,
         long objectId,
         string? ifMatch,
         string? ifNoneMatch,
         int storageLayerId,
         CancellationToken cancellationToken = default)
+        => DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, storageLayerId, null, cancellationToken);
+
+    /// <summary>Executes against the canonical resource resolved and authorized by the protocol handler.</summary>
+    public async Task<ODataCrudResult<object>> DeleteFeatureAsync(
+        int layerId,
+        long objectId,
+        string? ifMatch,
+        string? ifNoneMatch,
+        int storageLayerId,
+        MetadataV2Resource? resolvedResource,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            // Verify layer exists via the V2 graph snapshot.
-            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+            // HTTP callers already resolved and authorized the OData publication. Keep
+            // that exact resource: a generic integer lookup can select a raster sidecar
+            // sharing this layer index and lose the feature schema and access decision.
+            var layerResult = resolvedResource is not null
+                ? ResourceValidationResult.Success(resolvedResource)
+                : await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<object>(layerResult, layerId);
@@ -560,6 +649,7 @@ internal sealed partial class ODataCrudService
     /// Processes and validates geometry data from OData spatial payload.
     /// </summary>
     private async Task<GeometryProcessingResult> ProcessGeometryAsync(
+        MetadataV2Resource resource,
         ODataSpatialGeometry? geometry,
         int defaultSrid,
         CancellationToken cancellationToken)
@@ -589,7 +679,7 @@ internal sealed partial class ODataCrudService
             return GeometryProcessingResult.Valid(null);
         }
 
-        var geometryValidation = await _mutationValidator.ValidateGeometryAsync(conversion.Wkb, cancellationToken);
+        var geometryValidation = await _mutationValidator.ValidateGeometryAsync(resource, conversion.Wkb, cancellationToken);
         if (!geometryValidation.IsValid)
         {
             return GeometryProcessingResult.Invalid($"Invalid geometry: {geometryValidation.ErrorMessage}");

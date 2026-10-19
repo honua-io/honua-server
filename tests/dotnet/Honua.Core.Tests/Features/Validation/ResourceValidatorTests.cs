@@ -262,6 +262,58 @@ public sealed class ResourceValidatorTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public async Task ValidateServiceV2Async_VectorTileServerOnSplitServices_ResolvesFeatureLayerService()
+    {
+        // A name split into per-publication services, all listing VectorTileServer (e.g. after a
+        // by-name protocol update). No EsriVectorTileLayer exists; the feature layer is tileable.
+        var validator = new ResourceValidator(new TestMetadataV2GraphProvider(
+            SplitVectorTileGraph(("service-ogc", MetadataV2PublicationType.OgcCollection),
+                                 ("service-feature", MetadataV2PublicationType.EsriFeatureLayer))));
+
+        var result = await validator.ValidateServiceV2Async("shared", ServiceProtocols.VectorTileServer);
+
+        result.IsValid.Should().BeTrue();
+        result.Resource!.Metadata.Id.Should().Be("service-feature");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateServiceV2Async_VectorTileServerWithTwoFeatureLayerServices_RemainsNotFound()
+    {
+        var validator = new ResourceValidator(new TestMetadataV2GraphProvider(
+            SplitVectorTileGraph(("service-feature-a", MetadataV2PublicationType.EsriFeatureLayer),
+                                 ("service-feature-b", MetadataV2PublicationType.EsriFeatureLayer))));
+
+        var result = await validator.ValidateServiceV2Async("shared", ServiceProtocols.VectorTileServer);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorCode.Should().Be(ResourceValidationError.NotFound);
+    }
+
+    private static MetadataV2Graph SplitVectorTileGraph(
+        params (string ServiceId, MetadataV2PublicationType Type)[] services)
+    {
+        var graph = MixedProtocolPublicationGraph();
+        return graph with
+        {
+            Services = [.. services.Select(service => new MetadataV2Service
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = service.ServiceId, Name = "shared" },
+                Status = ActiveStatus(),
+                Protocols = [ServiceProtocols.FeatureServer, ServiceProtocols.MapServer, ServiceProtocols.VectorTileServer],
+            })],
+            Publications = [.. services.Select((service, index) => graph.Publications[1] with
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "pub-" + service.ServiceId, Name = "7" },
+                ResourceId = index == 0 ? "res-ogc" : "res-feature",
+                ServiceId = service.ServiceId,
+                PublicationType = service.Type,
+            })],
+        };
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public async Task ValidateServiceV2Async_ExactServiceIdWithDisabledProtocol_DoesNotFallThroughToNameMatch()
     {
         var validator = new ResourceValidator(new TestMetadataV2GraphProvider(ExactIdProtocolCollisionGraph()));

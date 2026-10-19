@@ -153,6 +153,7 @@ services:
   # but registers ONLY native-profile executors, so it claims ONLY jobs whose
   # RuntimeProfile is "native" and leaves managed jobs to the in-process loop.
   gdal-worker:
+    image: "${HONUA_GP_WORKER_IMAGE:-honua-worker-etl:gp-local}"
     profiles:
       - gdal-worker
     build:

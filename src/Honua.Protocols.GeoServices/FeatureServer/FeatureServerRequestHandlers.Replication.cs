@@ -357,7 +357,7 @@ internal static partial class FeatureServerEndpoints
             return syncCapabilityError;
         }
 
-        if (string.IsNullOrWhiteSpace(context.User?.Identity?.Name))
+        if (string.IsNullOrWhiteSpace(EditOwnerSubject.Resolve(context.User)))
         {
             return StandardErrorHelpers.CreateForbidden(
                 context,
@@ -1238,7 +1238,7 @@ internal static partial class FeatureServerEndpoints
                 var scope = new ReplicaUploadIdempotencyScope(
                     replica.ServiceId,
                     replicaId,
-                    string.IsNullOrEmpty(context.User?.Identity?.Name) ? "anonymous" : context.User.Identity.Name,
+                    EditOwnerSubject.Resolve(context.User) ?? "anonymous",
                     keylessUpload
                         ? FingerprintUploadKey(uploadFingerprint, replica.UploadBaseGeneration)
                         : "key:" + explicitUploadKey);
@@ -2568,14 +2568,14 @@ internal static partial class FeatureServerEndpoints
     };
 
     private static string ResolveReplicaOwner(HttpContext context)
-        => context.User?.Identity?.Name is { Length: > 0 } name
-            ? name
+        => EditOwnerSubject.Resolve(context.User) is { Length: > 0 } owner
+            ? owner
             : throw new InvalidOperationException("An authenticated identity is required to create a replica.");
 
     private static bool IsReplicaOwnerOrAdmin(HttpContext context, string? ownerId)
         => ReplicaSecurity.CanAccess(
             ownerId,
-            context.User?.Identity?.Name,
+            EditOwnerSubject.Resolve(context.User),
             ServiceDataEditorAuthorization.IsAdminPrincipal(context));
 
     // Per-operation authorization (BH3-001/BH3-014) does NOT cleanly apply to replica write

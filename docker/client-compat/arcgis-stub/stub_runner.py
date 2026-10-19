@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
-"""ArcGIS Pro REST stub runner.
+"""arcgis-stub REST runner.
 
-Mimics the REST request sequence ArcGIS Pro issues when adding a
-FeatureServer / MapServer connection: capabilities, layer metadata,
-schema, sample query, error path. Records pass/fail per CERT-* ID and
-writes one ``.cert.json`` envelope per protocol (``featureserver``,
-``mapserver``) to ``ARCGIS_STUB_OUTPUT_DIR``.
+Records pass/fail per CERT-* ID and writes one ``.cert.json`` envelope per
+protocol (``featureserver``, ``mapserver``) to ``ARCGIS_STUB_OUTPUT_DIR``.
 
-This is a stub — the desktop client itself is not exercised. The gap is
-tracked in ``docs/gis/gap-report.md`` until a licensed Windows runner is
-provisioned. The CERT IDs that fundamentally require running the desktop
-GUI (rendering, project save/reopen) are recorded as ``skip`` with a
-``pending: licensed-arcgis-runner`` note rather than ``pass``.
+This is a REST stub. It does not exercise a desktop client. Render CERT IDs
+are recorded as ``skip`` with note ``evidence id desktop-arcgis`` rather
+than ``pass``.
 """
 from __future__ import annotations
 
@@ -38,13 +33,13 @@ SPATIAL_QUERY_ENVELOPE = "-122.50,37.70,-122.35,37.81"
 PORTAL_ADMIN_USERNAME = os.environ.get("ARCGIS_STUB_ADMIN_USERNAME")
 PORTAL_ADMIN_PASSWORD = os.environ.get("ARCGIS_STUB_ADMIN_PASSWORD")
 
-# CERT-PRTL-* — the ArcGIS Portal/Sharing facade certification slice. These IDs
-# cover the request sequence ArcGIS Pro "Add Portal" and Field Maps issue against
-# a portal: info -> portals/self -> community/self -> search -> content/items,
-# plus token issuance (generateToken success and bad-credential shapes), the RBAC
-# access projection, the named-user token widening discovery and identity
-# documents, and the OAuth2 token endpoint's invalid-grant / invalid-refresh
-# error shapes. Append-only, per the certification matrix ID-stability policy.
+# CERT-PRTL-* — the Portal/Sharing facade certification slice. These IDs cover
+# info, portals/self, community/self, search, and content/items, plus token
+# issuance (generateToken success and bad-credential shapes), the RBAC access
+# projection, named-user token discovery and identity documents, and the OAuth2
+# token endpoint's invalid-grant / invalid-refresh error shapes. Append-only,
+# per the certification matrix ID-stability policy. Desktop evidence id is
+# desktop-arcgis.
 PORTAL_IDS = [
     "CERT-PRTL-INFO-01",
     "CERT-PRTL-SELF-01",
@@ -161,7 +156,7 @@ def _finalize(results: dict[str, dict]) -> dict[str, dict]:
     for cid in DESKTOP_ONLY:
         results.setdefault(cid, _new_result(
             cid, "skip",
-            notes="pending: licensed-arcgis-runner; substantiate via ArcGIS Pro desktop run.",
+            notes="evidence id desktop-arcgis",
         ))
     for cid in CORE_IDS:
         if cid in results:
@@ -177,15 +172,14 @@ def _finalize(results: dict[str, dict]) -> dict[str, dict]:
 
 
 def _exercise_mapserver(client: httpx.Client) -> dict[str, dict]:
-    """Issue the MapServer REST sequence ArcGIS Pro emits when adding a service.
+    """Issue the MapServer REST sequence for the arcgis-stub lane.
 
-    MapServer in ArcGIS REST is a rendering surface (export image + identify)
-    plus a layer-query path. The stub records:
+    The stub records:
       * CONN/AUTH/DISC/SCHM via /MapServer and /MapServer/{layer}
       * QFLT/PAGE/GEOM via /MapServer/{layer}/query
       * ERRH-01 via an unknown layer id; ERRH-02 via a malformed where clause
-    Render-class IDs (CERT-RNDR-*) stay ``skip pending licensed-arcgis-runner``
-    because export image rendering correctness needs a desktop GUI to verify.
+    Render-class IDs (CERT-RNDR-*) stay ``skip`` with note
+    ``evidence id desktop-arcgis``.
     """
     results: dict[str, dict] = {}
 
@@ -416,17 +410,16 @@ def _issue_portal_token(client: httpx.Client) -> str | None:
 
 
 def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
-    """Issue the Portal/Sharing REST sequence packaged Esri clients emit when a
-    user runs ArcGIS Pro "Add Portal" or signs in to Field Maps: discover the
-    portal (info), resolve identity (portals/self, community/self), search for
-    items, open an item, and exchange credentials for a token — including the
-    bad-credential and invalid-refresh error shapes the clients key their
-    sign-in prompts off. Records one CERT-PRTL-* row each.
+    """Issue the Portal/Sharing REST sequence for the arcgis-stub lane.
+
+    Covers info, portals/self, community/self, search, item open, and token
+    exchange, including bad-credential and invalid-refresh error shapes.
+    Records one CERT-PRTL-* row each. Desktop evidence id is desktop-arcgis.
     """
     results: dict[str, dict] = {}
 
     # CERT-PRTL-INFO-01 — /sharing/rest/info advertises token-based security and
-    # the token-issuance endpoint (the first document Pro reads).
+    # the token-issuance endpoint.
     info_ok = False
     try:
         r = client.get("/sharing/rest/info?f=json")
@@ -597,8 +590,7 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
     )
 
     # CERT-PRTL-SELF-02 — a named-user token populates the portals/self `user`
-    # block (ArcGIS Pro reads it right after sign-in to display the signed-in
-    # identity). Anonymous portals/self keeps `user` null, so this is the
+    # block. Anonymous portals/self keeps `user` null, so this is the
     # authenticated identity contract.
     if token is None:
         results["CERT-PRTL-SELF-02"] = _new_result(
@@ -913,8 +905,7 @@ def run() -> int:
     _write_envelope("featureserver", feature_results, run_id)
 
     # MapServer envelope — separate REST sequence; render-class IDs stay
-    # `skip pending licensed-arcgis-runner` per the design (export image and
-    # identify visual correctness need a desktop GUI).
+    # skip. Desktop evidence id is desktop-arcgis.
     with httpx.Client(base_url=BASE_URL, timeout=TIMEOUT, follow_redirects=True) as client:
         map_results = _exercise_mapserver(client)
     map_results = _finalize(map_results)

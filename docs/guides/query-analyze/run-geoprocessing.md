@@ -27,7 +27,7 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
 
    Open `http://localhost:8080/ogc/processes/processes/geometry.buffer` in a browser.
 
-   `geometry.buffer` takes `wkb`, `srid`, `distance`, and an optional `geodesic` flag. Despite the legacy parameter name, the OGC route accepts either base64-encoded WKB or a GeoJSON geometry object. `distance` is expressed in the input CRS units, so project geographic coordinates before requesting a metric buffer.
+   `geometry.buffer` takes `wkb`, `srid`, `distance`, and an optional `geodesic` flag. The current executor performs planar buffering and rejects `geodesic: true`. Despite the legacy parameter name, the OGC route accepts either base64-encoded WKB or a GeoJSON geometry object under its explicit SRID contract. `distance` is expressed in input CRS units. For a metric buffer, use coordinates already expressed in an appropriate projected CRS, or transform geographic input first; changing only the SRID label is not a transformation.
 
 3. Execute it. The request returns `201 Created` with a job status document and a `Location` header pointing at the job:
 
@@ -36,14 +36,14 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
    ```json
    {
      "inputs": {
-       "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA",
-       "srid": 4326,
+       "wkb": "AQEAAAAAAAAAgIQeQQAAAACQBVBB",
+       "srid": 32610,
        "distance": 500
      }
    }
    ```
 
-   The `wkb` value above is `POINT(-122.4194 37.7749)`. Omit `response` or set it to `document` for inline qualified output values. Set `"response": "raw"` to retrieve native output bytes from the results route; multiple selected outputs use `multipart/related`. Both response modes work asynchronously. For a process advertising `sync-execute`, omit `Prefer` to run synchronously with the same response negotiation.
+   The `wkb` value above is `POINT(500000 4200000)` in EPSG:32610 (WGS 84 / UTM zone 10N), whose coordinate unit is meters. This requests a planar 500-meter buffer around that projected point; it does not relabel the coordinates of a geographic input. Choose the analysis CRS according to the region and accuracy needed. Omit `response` or set it to `document` for inline qualified output values. Set `"response": "raw"` to retrieve native output bytes from the results route; multiple selected outputs use `multipart/related`. Both response modes work asynchronously. For a process advertising `sync-execute`, omit `Prefer` to run synchronously with the same response negotiation.
 
 4. Poll the job until `status` reaches `successful` (or `failed`/`dismissed`). Take `JOB` from the `Location` header or the `jobID` field:
 
@@ -61,7 +61,7 @@ The same catalog is exposed Esri-style for ArcGIS clients: `GET /rest/services/{
 
 The standard `submitJob` / `jobs/{jobId}` / `jobs/{jobId}/results/{paramName}` / `jobs/{jobId}/cancel` operations drive the same job runtime. Successful jobs advertise their named result parameters, and the per-parameter result route reads the stored result-package value and Esri data type. A fresh instance ships a default `geoprocessing` service so the facade works out of the box — e.g. `GET /rest/services/geoprocessing/GPServer` — and every published service also exposes GPServer (so `{serviceId}` can be any service you have published). To turn the default service off, set `Geoprocessing:SeedDefaultService=false` (env `HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false`). Deterministic single-geometry tasks (the `geometry.*` family and `conversion.geometry-format`) also accept the synchronous `execute` route (`POST`/`GET /rest/services/{serviceId}/GPServer/geometry.buffer/execute`), which runs the task inline through that same runtime and returns the Esri execute envelope (`results` + `messages`) on the same request. A synchronous run that fails or is cancelled returns the GeoServices error envelope (`{"error":{"code":500,...}}`, with the job id, terminal status, and failure message in `details`) instead of an empty `results` list, so Esri clients see the failure. Async-only tasks reject `execute` with a 400 capability message pointing back at `submitJob`.
 
-Both `execute` and `submitJob` accept the Esri 10.6.1+ `context` parameter as the JSON form of the environment controls: `context.outSR` and `context.processSR` behave exactly like `env:outSR` and `env:processSR` (a WKID or a `{"wkid":...}` object). An empty `extent` is accepted; any other `context` property returns a 400 naming it rather than being ignored, and a `context` spatial reference that disagrees with the matching `env:*` value is rejected.
+Both `execute` and `submitJob` accept the Esri 10.6.1+ `context` parameter as the JSON form of the environment controls: `context.outSR` behaves like `env:outSR` (a WKID or a `{"wkid":...}` object) and changes the output projection. Processing-CRS overrides (`env:processSR`, `context.processSR`, and SOAP `cartographicCoordinateSystem`) are rejected before execution or job submission because the engine cannot apply them. REST returns the GeoServices error envelope with `error.code=400` over HTTP 200; SOAP returns an HTTP 400 fault. A null or blank processing reference requests no override. An empty `extent` is accepted; any other `context` property returns a 400 naming it rather than being ignored, and a `context` spatial reference that disagrees with the matching `env:*` value is rejected.
 
 Layer-scoped task parameters published as `GPFeatureRecordSetLayer`, including the
 `input` and `clip` parameters of `Clip`, accept an Esri FeatureSet JSON object in

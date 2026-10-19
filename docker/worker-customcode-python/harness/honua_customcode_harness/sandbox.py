@@ -1,17 +1,8 @@
-"""Credential-stripping + scoped Honua client construction.
+"""Environment hygiene and job-scoped typed SDK construction.
 
-The harness builds the scoped :class:`HonuaClient` from ``HONUA_JOB_TOKEN`` and
-then SCRUBS the process environment *before* importing/calling user code, so a
-tool cannot:
-
-  * read the raw scoped bearer token (``HONUA_JOB_TOKEN`` is deleted), nor
-  * reach the ECS/Batch task role via the container credential provider or IMDS
-    (``AWS_CONTAINER_CREDENTIALS_*`` / ``ECS_CONTAINER_METADATA_URI*`` deleted).
-
-The only capability the tool keeps to talk to Honua is the pre-authed scoped
-client, whose token is least-privilege and job-bound. AWS SDK calls the user
-makes will then fall back to whatever (if anything) the operator chose to leave
-in place — by default nothing, so user code is denied the task role.
+Same-process user code can inspect the intended job capability. Deleting environment
+entries is not isolation; deployment must be credential-free and the server enforces
+frozen resource scope and the current running attempt.
 """
 
 from __future__ import annotations
@@ -57,7 +48,7 @@ def strip_credential_env(env: MutableMapping[str, str] | None = None) -> tuple[s
     return tuple(sorted(removed))
 
 
-def build_scoped_client(base_url: str, job_token: str, *, client_factory: Any = None) -> Any:
+def build_scoped_client(base_url: str, job_token: str, *, client_factory: Any = None, job_id: str | None = None) -> Any:
     """Construct the scoped :class:`HonuaClient` from the job-bound bearer token.
 
     ``client_factory`` is injectable for tests; in production it defaults to the
@@ -68,20 +59,70 @@ def build_scoped_client(base_url: str, job_token: str, *, client_factory: Any = 
     if not job_token:
         raise ValueError("job_token is required to build the scoped client.")
 
-    if client_factory is None:
-        client_factory = _default_client_factory
+    if client_factory is not None:
+        return client_factory(base_url, job_token)
+    if not job_id:
+        raise ValueError("job_id is required for the production SDK client.")
+    return _default_client_factory(base_url, job_token, job_id)
 
-    return client_factory(base_url, job_token)
 
-
-def _default_client_factory(base_url: str, job_token: str) -> Any:
+def _default_client_factory(base_url: str, job_token: str, job_id: str) -> Any:
     # Imported lazily so the harness package imports without the SDK present
     # (tests inject a fake factory). The image always installs honua-sdk.
     from honua_sdk import HonuaClient
     from honua_sdk.auth import StaticAuthProvider
 
+    import httpx
+    import time
+
+    authority = httpx.URL(base_url)
+
+    class JobContextTransport(httpx.HTTPTransport):
+        _startup = True
+        _startup_deadline: float | None = None
+
+        def handle_request(self, request: httpx.Request) -> httpx.Response:
+            request.headers.pop("X-Honua-Job-Id", None)
+            if (request.url.scheme, request.url.host, request.url.port) == (
+                authority.scheme, authority.host, authority.port
+            ):
+                request.headers["X-Honua-Job-Id"] = job_id
+            # GeoServices returns HTTP 200 error envelopes. Wait for the explicit
+            # credential to authenticate on a plain-status route before any operation;
+            # readiness retries never replay a potentially side-effecting SDK request.
+            if self._startup:
+                if self._startup_deadline is None:
+                    self._startup_deadline = time.monotonic() + 30
+                deadline = self._startup_deadline
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise httpx.TimeoutException("The job capability did not become ready within 30 seconds.")
+                    original_timeouts = request.extensions.get("timeout", {})
+                    timeouts = {
+                        name: min(remaining, original_timeouts[name]) if original_timeouts.get(name) is not None else remaining
+                        for name in ("connect", "read", "write", "pool")
+                    }
+                    readiness = httpx.Request(
+                        "GET", base_url.rstrip("/") + "/healthz/live",
+                        headers={"Authorization": f"Bearer {job_token}", "X-Honua-Job-Id": job_id},
+                        extensions={"timeout": timeouts},
+                    )
+                    response = super().handle_request(readiness)
+                    status = response.status_code
+                    response.close()
+                    if time.monotonic() >= deadline:
+                        raise httpx.TimeoutException("The job capability readiness retry window elapsed.")
+                    if status not in (401, 403):
+                        if not 200 <= status < 300:
+                            raise RuntimeError(f"Job capability readiness failed with HTTP {status}.")
+                        self._startup = False
+                        break
+                    time.sleep(min(1, max(0, deadline - time.monotonic())))
+            return super().handle_request(request)
+
     auth = StaticAuthProvider({"Authorization": f"Bearer {job_token}"})
-    return HonuaClient(base_url, auth_provider=auth)
+    return HonuaClient(base_url, auth_provider=auth, transport=JobContextTransport(), max_retries=0)
 
 
 def assert_credentials_stripped(env: Mapping[str, str] | None = None) -> None:

@@ -22,6 +22,23 @@ def test_gpresult_succeeded_and_failed() -> None:
     assert bad.message == "nope"
 
 
+@pytest.mark.parametrize("name", ["sub\\file.txt", "C:relative.txt", "../out.txt"])
+def test_output_sink_rejects_cross_platform_paths(tmp_path, name) -> None:
+    file = tmp_path / "output.txt"
+    file.write_text("data")
+    with pytest.raises(ValueError):
+        OutputSink(max_total_bytes=100).add_artifact(name, file)
+
+
+def test_output_sink_rejects_duplicate_names_across_platforms(tmp_path) -> None:
+    file = tmp_path / "output.txt"
+    file.write_text("data")
+    sink = OutputSink(max_total_bytes=100)
+    sink.add_artifact("output.txt", file)
+    with pytest.raises(ValueError, match="already registered"):
+        sink.add_artifact("OUTPUT.txt", file)
+
+
 def test_gpresult_failed_requires_message() -> None:
     with pytest.raises(ValueError):
         GpResult.failed("")

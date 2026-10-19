@@ -25,6 +25,7 @@ public sealed class GeocodeServerParityMatrixTests
         { GeocodeProviderNames.Local, true, true, true, true, true },
     };
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [MemberData(nameof(ExpectedMatrix))]
     public void Provider_AdvertisesExpectedCapabilities(

@@ -643,6 +643,110 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// A stale worker that loses its claim must cancel the job token so the
+    /// executor stops, not only stop the heartbeat pump (#6154).
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatPump_CancelsJobCts_WhenOwnershipChanges()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var running = CreateProvisioningJob(claimedBy: "worker-stale") with
+        {
+            Status = ExecutionJobStatus.Running
+        };
+        var reclaimed = running with
+        {
+            ClaimedBy = "worker-new",
+            ClaimedAt = now
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
+            .Returns(reclaimed);
+
+        using var jobCts = new CancellationTokenSource();
+        using var context = new JobExecutionContext(
+            running.OperationId, "worker-stale", jobStore, null,
+            new JobHeartbeatPolicy { Interval = TimeSpan.FromMilliseconds(10), Timeout = TimeSpan.FromSeconds(30) },
+            jobCts, NullLogger.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await context.RunHeartbeatPumpAsync(cts.Token);
+
+        // The pump queues the cancel so it cannot resume the executor on the pump
+        // stack (that deadlocks the terminal-write skip). The token is cancelled
+        // before this assertion settles.
+        var cancelDeadline = DateTime.UtcNow.AddSeconds(2);
+        while (!jobCts.IsCancellationRequested && DateTime.UtcNow < cancelDeadline)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.True(jobCts.IsCancellationRequested);
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Losing the claim during execution must not be recorded as operator cancellation.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_SkipsTerminalWrite_WhenOwnershipChangesDuringExecution()
+    {
+        var provisioning = CreateProvisioningJob(claimedBy: "worker-stale") with
+        {
+            HeartbeatPolicy = new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromMilliseconds(10),
+                Timeout = TimeSpan.FromSeconds(30)
+            }
+        };
+        var reclaimed = provisioning with
+        {
+            Status = ExecutionJobStatus.Running,
+            ClaimedBy = "worker-new",
+            AttemptCount = provisioning.AttemptCount + 1
+        };
+
+        var reads = 0;
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(_ => Interlocked.Increment(ref reads) <= 2 ? provisioning : reclaimed);
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
+                return JobExecutionResult.Succeeded();
+            });
+
+        var service = new JobExecutionService(
+            Substitute.For<IJobQueue>(),
+            jobStore,
+            [executor],
+            new ExecutionJobCancellationTokens(),
+            Array.Empty<IJobTerminalCallback>(),
+            null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job =>
+                job.Status == ExecutionJobStatus.Cancelled || job.Status == ExecutionJobStatus.Failed),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Regression: a stale worker's progress report must be silently
     /// dropped when ownership has moved to another worker.
     /// </summary>

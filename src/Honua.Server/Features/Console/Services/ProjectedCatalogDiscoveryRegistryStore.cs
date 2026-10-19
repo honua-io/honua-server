@@ -7,7 +7,9 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Helpers;
+#if !HONUA_EXCLUDE_GEOSERVICES
 using Honua.Protocols.GeoServices.Catalog;
+#endif
 using Honua.Server.Features.Console.Models;
 using Microsoft.Extensions.Options;
 
@@ -106,7 +108,7 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
 
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var scoped = FilterSnapshot(snapshot, workspace);
-        var entries = await GeoServicesCatalogProjection.ReadFeatureMapAsync(context, scoped).ConfigureAwait(false);
+        var entries = await ReadCatalogEntriesAsync(context, scoped).ConfigureAwait(false);
         return new WorkspaceProjection(workspace, BaseUrlResolver.GetBaseUrl(context), entries);
     }
 
@@ -146,10 +148,26 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
         }).ToArray(),
     };
 
-    private static string ItemId(CatalogDiscoveryWorkspaceOptions workspace, GeoServicesCatalogEntry entry) =>
+    private static async Task<IReadOnlyList<CatalogEntry>> ReadCatalogEntriesAsync(
+        HttpContext context, MetadataV2GraphSnapshot snapshot)
+    {
+#if HONUA_EXCLUDE_GEOSERVICES
+        _ = context;
+        _ = snapshot;
+        await Task.CompletedTask.ConfigureAwait(false);
+        return [];
+#else
+        var projected = await GeoServicesCatalogProjection.ReadFeatureMapAsync(context, snapshot).ConfigureAwait(false);
+        return projected.Select(static entry => new CatalogEntry(entry.Name, entry.Type, entry.Url)).ToArray();
+#endif
+    }
+
+    private static string ItemId(CatalogDiscoveryWorkspaceOptions workspace, CatalogEntry entry) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
             workspace.Id.ToUpperInvariant() + "\0" + workspace.TenantId + "\0" + workspace.Namespace + "\0" + entry.Name + "\0" + entry.Type))).ToLowerInvariant();
 
+    private sealed record CatalogEntry(string Name, string Type, string Url);
+
     private sealed record WorkspaceProjection(
-        CatalogDiscoveryWorkspaceOptions Workspace, string BaseUrl, IReadOnlyList<GeoServicesCatalogEntry> Entries);
+        CatalogDiscoveryWorkspaceOptions Workspace, string BaseUrl, IReadOnlyList<CatalogEntry> Entries);
 }

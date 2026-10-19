@@ -443,7 +443,7 @@ public sealed class GdalWorkerExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReprojectJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("sourceSrs", "EPSG:4326"),
                 ("targetSrs", "3857"));
             var context = new RecordingJobExecutionContext(job.OperationId);
@@ -473,7 +473,7 @@ public sealed class GdalWorkerExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterReprojectJobExecutor.HandledProcessId,
-                ("source", Base64("fake-input-raster")),
+                ("source", GdalCli.RasterBase64("fake-input-raster")),
                 ("targetSrs", "4326; rm -rf /"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);

@@ -179,7 +179,8 @@ internal static class ODataUtilityService
         string? compute = null,
         string? format = null,
         bool trackChanges = false,
-        ODataDeltaService.DeltaQueryState? trackChangesState = null)
+        ODataDeltaService.DeltaQueryState? trackChangesState = null,
+        string? search = null)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(request);
         var queryParams = new List<string>();
@@ -252,6 +253,11 @@ internal static class ODataUtilityService
             {
                 queryParams.Add($"{TrackChangesSnapshotParameter}={Uri.EscapeDataString(ODataDeltaService.Encode(trackChangesState))}");
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            queryParams.Add($"$search={Uri.EscapeDataString(search)}");
         }
 
         return $"{baseUrl}{request.Path}?{string.Join("&", queryParams)}";

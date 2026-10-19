@@ -38,7 +38,9 @@ using Honua.Server.Features.Console.Collaboration;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Infrastructure.Logging;
 using Honua.Io.Export;
+#if !HONUA_EXCLUDE_GEOSERVICES
 using Honua.Server.Features.PrintingTools;
+#endif
 using Honua.Server.Features.Provisioner;
 using Honua.ControlPlane;
 using Honua.FileStorage;
@@ -120,6 +122,7 @@ var builder = WebApplication.CreateBuilder(args);
 // resolution steps so aws:secretsmanager: references inside the document resolve exactly as if
 // they had come from the environment. Precedence: appsettings < document < env vars < command line.
 await SettingsDocumentConfiguration.AddSettingsDocumentAsync(builder.Configuration);
+Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configuration);
 
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute
 // backend launched for one execution job (HONUA_OPERATION_ID et al.) is composed as a single-job
@@ -220,13 +223,16 @@ var clientCertificateMode = builder.Configuration.GetValue<ClientCertificateAuth
     "Authentication:ClientCertificates:Mode");
 if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
 {
-    builder.WebHost.ConfigureKestrel(options =>
-    {
-        options.ConfigureHttpsDefaults(httpsOptions =>
+    builder.Services.AddOptions<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>()
+        .Configure<ILoggerFactory>((options, loggerFactory) =>
         {
-            httpsOptions.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
+            options.ConfigureHttpsDefaults(httpsOptions =>
+            {
+                httpsOptions.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
+                ClientCertificateTlsObservation.Configure(httpsOptions,
+                    loggerFactory.CreateLogger("Honua.ClientCertificateTls"));
+            });
         });
-    });
 }
 // Keep the protector purpose stable across replay nodes. Production deployments must also
 // persist/share the ASP.NET data-protection key ring; otherwise an approved operation whose
@@ -432,8 +438,10 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
 }
 
 if (connectedRedis is not null &&
-    !builder.Environment.IsDevelopment() &&
-    !builder.Environment.IsEnvironment("Test"))
+    OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+        builder.Environment.IsDevelopment(),
+        isTestEnvironment,
+        redisConnected: true))
 {
     // The operation-secret protector is intentionally backed by the same Redis authority
     // as the proposal/instance stores so every replay node shares a rotation-capable key ring.
@@ -678,10 +686,9 @@ if (connectedRedis != null && redisCacheEntitled)
     // that owns the matching background service's idempotent tick body. Handlers are contributed by
     // the owning assemblies (registered alongside each service above). Under TriggerMode=Poll the
     // in-process timers drive the ticks; under Event the timers are not hosted and EventBridge
-    // Scheduler -> the scheduled-tick endpoint drives them through this dispatcher.
-    builder.Services.AddSingleton<
-        Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickDispatcher,
-        Honua.ControlPlane.ScheduledTickDispatcher>();
+    // Scheduler -> the scheduled-tick endpoint drives them through this dispatcher. The dispatcher
+    // itself is registered by AddHonuaControlPlaneReconcilers (AddHonuaControlPlaneLambdaEventTargets)
+    // and again, idempotently, for every host below.
 
     var controlPlaneTriggerMode = builder.Configuration
         .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
@@ -773,6 +780,12 @@ else
         Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore>();
 }
 
+// The control-plane Lambda event route (POST /events) is mapped whenever
+// HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set, Redis or not, so what it resolves is registered on
+// every host. On a Redis-off cell the Redis-independent ticks run and the rest refuse with a typed
+// 503 (missingDependency=redis) instead of a 500 (honua-release run 38242272260).
+builder.Services.AddHonuaControlPlaneLambdaEventTargets();
+
 // Pending-approval notification channel (#1695): emitted from the gateway/store
 // boundary, not per-endpoint. Safe to register regardless of Redis availability.
 builder.Services.TryAddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IProposalNotifier,
@@ -801,6 +814,11 @@ InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configu
 
 // Configure cloud file storage for imports and attachments
 builder.Services.AddCloudFileStorage(builder.Configuration);
+builder.Services.Configure<Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions>(
+    builder.Configuration.GetSection(Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions.SectionName));
+#if !HONUA_EXCLUDE_AWS
+builder.Services.AddAwsImportObjectStore();
+#endif
 
 // Configure file upload security limits
 builder.Services.Configure<FileUploadSecurityOptions>(
@@ -921,6 +939,7 @@ builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeySt
     sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
         ? new Honua.Infrastructure.Authentication.RedisAdminApiKeyStore(redis, sp.GetService<TimeProvider>())
         : new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
+builder.Services.AddHostedService<Honua.Infrastructure.Authentication.RedisAdminApiKeyIndexMaintenance>();
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
 // evaluation, rate accounting, and redacted analytics ingestion. In-memory
 // defaults; durable providers can replace these via TryAdd later.
@@ -968,9 +987,11 @@ builder.Services.AddScoped<Honua.Server.Features.Console.Services.ICatalogDiscov
 // it with durable storage when Postgres is active.
 Honua.Core.Features.Publishing.Content.ContentPublishingServiceCollectionExtensions.AddContentPublishingServices(builder.Services);
 
-// Register shared Infrastructure services
+// Geometry conversion is implemented in Honua.Protocols.GeoServices.
+#if !HONUA_EXCLUDE_GEOSERVICES
 builder.Services.AddScoped<Honua.Infrastructure.Services.IGeometryConverter,
     Honua.Infrastructure.Services.GeometryConverter>();
+#endif
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.IOgcStyleProjection,
     Honua.Server.Features.Styling.OgcStyleProjection>();
@@ -1011,6 +1032,10 @@ builder.Services.AddServerFeatures(
     redisCacheEntitled,
     builder.Environment.EnvironmentName);
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
+// PostgreSQL owns durable GP release bindings. Other providers retain the process-local
+// development store; durable production release deployment is PostgreSQL-only in this slice.
+Honua.Server.Features.Geoprocessing.ProcessRelease.GpProcessReleasePersistenceRegistration.AddGpProcessReleasePersistence(
+    builder.Services, builder.Configuration);
 builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
 builder.Services.AddAdminAccessOperations();
@@ -1020,8 +1045,10 @@ builder.Services.AddAdminAccessOperations();
 // stays opt-in via Mcp:PublishOperations:Enabled=true. Audited secret/session Admin
 // operations never publish. Wired after the operations toolset so the tool source can
 // resolve the canonical IOperationCatalog.
+#if !HONUA_EXCLUDE_MCP
 Honua.Ai.Protocols.Mcp.McpServiceCollectionExtensions.AddMcpPublishedOperationTools(
     builder.Services, builder.Configuration);
+#endif
 builder.Services.AddAdminRealtime(builder.Configuration);
 if (!isTestEnvironment)
 {
@@ -1029,6 +1056,7 @@ if (!isTestEnvironment)
 }
 
 var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "sync.offline");
+#if !HONUA_EXCLUDE_GEOSERVICES
 if (offlineSyncEnabled)
 {
     builder.Services.AddSingleton<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(sp =>
@@ -1036,6 +1064,7 @@ if (offlineSyncEnabled)
             sp.GetService<IDistributedCache>(),
             sp.GetRequiredService<ILogger<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>>()));
 }
+#endif
 // Replica/change-tracking services are provider-specific: Postgres registers concrete
 // implementations; DuckDB and MySQL (both read-only) register no-op stubs via their own
 // AddXxxServices extensions. Skip the Postgres registration for those providers so the
@@ -1096,10 +1125,12 @@ builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVer
     Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
 if (offlineSyncEnabled)
 {
+#if !HONUA_EXCLUDE_GEOSERVICES
     builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
         new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
             sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
             sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
+#endif
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
         Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
 }
@@ -1257,6 +1288,9 @@ if (activeDbConnectionTracker != null)
 // (auth, tenancy, rate limiting, auditing, telemetry, request logging) sees the method the
 // client actually sent. See UseHonuaHeadRequestGetSemantics below for the handler side (#3389).
 app.UseHonuaHeadRequestMethod();
+
+// Data-plane writes stay closed until degraded startup has a database (#6008).
+app.UseDegradedStartupMutationFence();
 
 // Control-plane event-handler Lambdas (reconcile, backstop, scheduled tick) close their pooled
 // database connections at the end of every invocation, because a frozen Lambda instance never
@@ -1576,11 +1610,13 @@ app.Use(async (context, next) =>
 });
 
 // Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
+#if !HONUA_EXCLUDE_GRPC
 app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 
 // Record each gRPC call's grpc-status for the serving-latency sample while the gRPC-Web trailers
 // are still attached; the outer CorrelationIdMiddleware cannot see them (#5473).
 app.UseGrpcServingStatusCapture();
+#endif
 
 // Add CORS middleware before the exception handler so error responses (4xx/5xx) carry
 // Access-Control-Allow-Origin headers; otherwise browsers report every server error as
@@ -1635,6 +1671,19 @@ app.UseAuthentication();
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
 
+// Explicit invalid job capabilities must fail even on anonymous data routes, and
+// cannot fall back to a cookie/API key/portal token. Meter and audit before refusal.
+app.UseWhen(ScopedJobAuthentication.HasFailure, invalidJobCapability =>
+{
+    invalidJobCapability.UseHonuaAuditLog();
+    invalidJobCapability.UseRateLimiting();
+    invalidJobCapability.UseScopedJobAuthenticationRejection();
+});
+
+// Anonymous callers must not keep the multipart import ceiling that limits
+// enforcement granted before authentication could run.
+app.UseAnonymousImportPayloadClamp();
+
 // Required-authentication routes must see every validated credential type. Running
 // this before the portal bridge rejects valid SensorThings subscription tokens.
 app.UseAuthorization();
@@ -1647,7 +1696,9 @@ app.UseOperationLineageAttestation();
 // MCP bearer credentials must be fully validated before tenant context, schema
 // routing, or tenant status observes the request. The endpoint filter remains
 // defense-in-depth for non-standard hosting pipelines.
+#if !HONUA_EXCLUDE_MCP
 Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions.UseMcpBearerAuthentication(app);
+#endif
 
 // Audit enters after the bearer has been validated, so its actor context is the
 // canonical validated principal. Invalid bearer responses are deferred until the
@@ -1657,6 +1708,7 @@ app.UseHonuaAuditLog();
 // Invalid bearer validation attempts use the normal application rate limiter,
 // partitioned by source IP because there is no trusted actor/tenant. The branch
 // terminates before tenant context, schema routing, status checks, or endpoints.
+#if !HONUA_EXCLUDE_MCP
 app.UseWhen(
     static context => Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions
         .HasAuthenticationFailure(context),
@@ -1666,6 +1718,7 @@ app.UseWhen(
         Honua.Ai.Protocols.Mcp.McpBearerAuthenticationEndpointExtensions
             .UseMcpBearerAuthenticationRejection(invalidBearer);
     });
+#endif
 
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal
@@ -1688,9 +1741,17 @@ app.UseHonuaTenantSchemaRouting();
 // unchanged until tenants are provisioned through the admin surface.
 app.UseHonuaTenantStatusEnforcement();
 
+// The canonical service-policy path is synchronous. Hydrate a fresh, tenant-bound
+// PostgreSQL sharing audience once per authenticated request before any handler can
+// evaluate it; revocations take effect on the next request across replicas.
+Honua.Server.Features.Portal.Sharing.PortalAudienceHydrationExtensions.UsePortalAudienceHydration(app);
+
 // Reject invalid Esri portal tokens only after the shared rate limiter has metered the
 // request, so repeated bad credentials cannot bypass the configured source-IP bucket.
 app.UsePortalTokenAuthenticationRejection();
+
+// Bind URL-import retries to the canonical durable operation before any download or queue write.
+app.UseMiddleware<Honua.Server.Features.Operations.UrlImportOperationMiddleware>();
 
 // Map public demo service/layer contract IDs to internal seeded layer IDs and guard demo writes.
 app.UseCloudDemoServiceLayerAliases();
@@ -1775,6 +1836,9 @@ app.MapCoordinatedReleaseControlEndpoints();
 app.MapScheduledTickEndpoints(builder.Configuration);
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
+app.MapGpProcessReleaseEndpoints();
+app.MapGpProcessReleaseJobEndpoints();
+Honua.Server.Features.Geoprocessing.CustomCode.CustomCodeArtifactEndpoints.MapCustomCodeArtifactEndpoints(app);
 
 // Cloud event-driven control-plane surface (TriggerMode=Event only): the EventBridge-invoked
 // reconcile Lambda + EventBridge Scheduler backstop post here. No-op under poll (on-prem).
@@ -1917,6 +1981,7 @@ app.MapCspViolationReportEndpoint();
 // Configure FeatureServer, OGC, and OData endpoints
 app.MapServerFeatureEndpoints();
 
+#if !HONUA_EXCLUDE_GRPC
 // Configure gRPC feature service endpoint (gRPC-Web enabled via middleware)
 app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
@@ -1938,6 +2003,7 @@ if (app.Environment.IsDevelopment())
 {
     app.MapGrpcReflectionService();
 }
+#endif
 
 // Configure file import endpoints
 app.MapImportEndpoints();
@@ -2087,6 +2153,24 @@ async Task RunDatabaseMigrationsAsync()
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            // A cold start before the migration task ran (honua-server#5916): a required migration is
+            // not applied yet, so the schema is behind this binary. Start degraded (readiness 503
+            // schema-floor, event endpoints 503) and re-check in the background instead of exiting.
+            // A schema newer than this binary (DatabaseSchemaCompatibilityException) or one that
+            // contradicts its journal still fails fast below.
+            if (Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService.IsSchemaBehindBinary(ex, out var schemaFloorReason)
+                && !app.Environment.IsDevelopment()
+                && TryArmDegradedStart(
+                    "schema guard",
+                    schemaFloorReason,
+                    migrationsPending: false,
+                    schemaGuardPending: true,
+                    reasonCode: Honua.Core.Features.Infrastructure.Health.ReadinessReasonCodes.SchemaFloor,
+                    reason: schemaFloorReason))
+            {
+                return;
+            }
+
             // The guard could not reach the database (no free slots, timeout): that is an outage,
             // not schema divergence. Degraded start defers the guard to the recovery loop.
             if (ex is not Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException
@@ -2228,7 +2312,13 @@ bool TryEnterDegradedStart(string phase, Exception error, bool migrationsPending
 
 // Arms degraded start for a failure already classified as transient. The reason carries the phase
 // and the sanitized failure class only (never the provider message, which can name hosts).
-bool TryArmDegradedStart(string phase, string failureClass, bool migrationsPending, bool schemaGuardPending)
+bool TryArmDegradedStart(
+    string phase,
+    string failureClass,
+    bool migrationsPending,
+    bool schemaGuardPending,
+    string? reasonCode = null,
+    string? reason = null)
 {
     var resilienceOptions = app.Services.GetRequiredService<Honua.Core.Configuration.StartupResilienceOptions>();
     if (!resilienceOptions.DegradedStartEnabled)
@@ -2236,16 +2326,19 @@ bool TryArmDegradedStart(string phase, string failureClass, bool migrationsPendi
         return false;
     }
 
-    var warning = Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience
-        .BuildDegradedStartWarning(phase, failureClass);
+    var warning = reasonCode == Honua.Core.Features.Infrastructure.Health.ReadinessReasonCodes.SchemaFloor
+        ? Honua.Infrastructure.Monitoring.StartupDatabasePreflight.BuildSchemaFloorWarning(failureClass)
+        : Honua.Core.Features.Infrastructure.Resilience.StartupDatabaseResilience
+            .BuildDegradedStartWarning(phase, failureClass);
     Honua.Infrastructure.Logging.Log.DatabaseStartupDegraded(app.Logger, warning);
 
     var degradedContext = app.Services.GetRequiredService<Honua.Infrastructure.Monitoring.DegradedStartupContext>();
     degradedContext.MarkDegraded(
         migrationsPending,
         Assembly.GetExecutingAssembly(),
-        Honua.Infrastructure.Monitoring.StartupDatabasePreflight.BuildReason(phase, failureClass),
-        schemaGuardPending: schemaGuardPending && !migrationsPending);
+        reason ?? Honua.Infrastructure.Monitoring.StartupDatabasePreflight.BuildReason(phase, failureClass),
+        schemaGuardPending: schemaGuardPending && !migrationsPending,
+        reasonCode: reasonCode);
     return true;
 }
 
@@ -2305,11 +2398,13 @@ async Task RunPostGisPreflightCheckAsync()
     // The database could not be reached (an outage, not an incompatible install): start degraded
     // when enabled — readiness reports 503 with the failure class until the recovery loop succeeds.
     // A genuinely incompatible database (missing PostGIS) is not transient and still fails below.
+    // honua-server#5916: the readiness reason and the log line carry the cause class
+    // (connection-borrow-timeout, connection-refused, auth, connection-unavailable).
     if (result.IsTransientFailure
         && !app.Environment.IsDevelopment()
         && TryArmDegradedStart(
             "PostGIS preflight",
-            result.FailureClass ?? "database unavailable",
+            Honua.Infrastructure.Monitoring.StartupDatabasePreflight.DescribeCause(result),
             migrationsPending: !skipMigrationsConfigured,
             schemaGuardPending: skipMigrationsConfigured))
     {
@@ -2327,7 +2422,10 @@ async Task RunPostGisPreflightCheckAsync()
 
     if (!app.Environment.IsDevelopment())
     {
-        Honua.Infrastructure.Logging.Log.PostGisPreflightCheckFailedCritical(app.Logger, errorMessage);
+        Honua.Infrastructure.Logging.Log.PostGisPreflightCheckFailedCritical(
+            app.Logger,
+            result.CauseClass ?? Honua.Core.Features.Infrastructure.Domain.DatabasePreflightCauseClasses.IncompatibleDatabase,
+            errorMessage);
         throw new InvalidOperationException($"PostGIS preflight check failed: {errorMessage}");
     }
 

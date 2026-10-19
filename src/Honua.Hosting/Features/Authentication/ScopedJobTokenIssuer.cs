@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Logging;
@@ -89,6 +90,7 @@ internal sealed partial class ScopedJobTokenIssuer(
             // re-derived from a callback-supplied value (invariant #2).
             TenantId = request.TenantId,
             JobId = request.JobId.Trim(),
+            Attempt = request.Attempt,
             Roles = claims.Roles.ToArray(),
             Permissions = claims.Permissions.ToArray(),
             ExpiresAt = request.ExpiresAt,
@@ -132,7 +134,7 @@ internal sealed partial class ScopedJobTokenIssuer(
         }
 
         var principal = ProjectPrincipal(record);
-        return new ScopedJobTokenValidation(principal, record.JobId, record.ExpiresAt);
+        return new ScopedJobTokenValidation(principal, record.JobId, record.ExpiresAt) { Attempt = record.Attempt };
     }
 
     /// <inheritdoc />
@@ -143,7 +145,9 @@ internal sealed partial class ScopedJobTokenIssuer(
             return Task.CompletedTask;
         }
 
-        return RemoveAsync(TokenKeyPrefix + token, cancellationToken);
+        // Same contract as portal revocation: a shared-store delete that cannot be
+        // confirmed must not look like success (honua-server#6164).
+        return RemoveAsync(TokenKeyPrefix + token, cancellationToken, requireSharedRemoval: true);
     }
 
     private static string CreateTokenValue()
@@ -284,7 +288,7 @@ internal sealed partial class ScopedJobTokenIssuer(
         return value;
     }
 
-    private async Task RemoveAsync(string key, CancellationToken cancellationToken)
+    private async Task RemoveAsync(string key, CancellationToken cancellationToken, bool requireSharedRemoval = false)
     {
         _memoryCache.Remove(key);
 
@@ -299,9 +303,30 @@ internal sealed partial class ScopedJobTokenIssuer(
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Intentional: removal is best-effort; the entry's own TTL is the safety net,
-            // and the failure is already logged for diagnosis.
             ScopedJobTokenLog.DistributedCacheRemoveFailed(_logger, LogValueRedactor.Hash(key), ex);
+            if (!requireSharedRemoval)
+            {
+                // Expiry cleanup is best-effort. Revocation is not (honua-server#6164).
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (await _distributedCache.GetAsync(key, cancellationToken).ConfigureAwait(false) is null)
+                {
+                    return;
+                }
+            }
+            catch (Exception readException) when (readException is not OutOfMemoryException)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ScopedJobTokenLog.DistributedCacheReadFailed(
+                    _logger, LogValueRedactor.Hash(key), readException);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new ServiceUnavailableException("The shared job token could not be revoked.", ex);
         }
     }
 }
@@ -318,6 +343,8 @@ internal sealed class ScopedJobTokenRecord
     public string? TenantId { get; init; }
 
     public required string JobId { get; init; }
+
+    public int Attempt { get; init; }
 
     public required string[] Roles { get; init; }
 

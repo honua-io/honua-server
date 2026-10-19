@@ -48,7 +48,7 @@ sql:
       FROM features WHERE layer_id = 0
         AND NOT EXISTS (SELECT 1 FROM features WHERE layer_id = 2011);
 
-  # Protected WMS mirror over the anonymous browser point fixture.
+  # Protected WMS/WMTS mirror over the anonymous browser point fixture.
   - |
       INSERT INTO honua.services (
           service_name, description, srid,
@@ -92,6 +92,19 @@ sql:
       SELECT 2010, geometry, attributes, created_at, updated_at
       FROM features WHERE layer_id = 2000
         AND NOT EXISTS (SELECT 1 FROM features WHERE layer_id = 2010);
+
+  # Preserve the authored paint, but bind the mirror to its protected tiles.
+  - |
+      UPDATE honua.layers SET maplibre_style = jsonb_set(
+          jsonb_set(
+              jsonb_set(public_layer.maplibre_style, '{sources}',
+                  jsonb_build_object('layer-2010', jsonb_set(
+                      public_layer.maplibre_style #> '{sources,layer-2000}',
+                      '{tiles}', '["/tiles/2010/{z}/{x}/{y}.mvt"]'::jsonb))),
+              '{layers,0,source}', '"layer-2010"'::jsonb),
+          '{layers,0,id}', '"layer-2010-circle"'::jsonb)
+      FROM honua.layers AS public_layer
+      WHERE honua.layers.layer_id = 2010 AND public_layer.layer_id = 2000;
 
   - |
       SELECT honua.seed_metadata_v2_compat_snapshot();

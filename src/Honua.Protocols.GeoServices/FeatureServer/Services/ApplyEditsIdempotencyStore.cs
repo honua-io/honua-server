@@ -50,11 +50,14 @@ internal interface IApplyEditsIdempotencyStore
 
     /// <summary>
     /// Records the response for an idempotency key so a later retry replays it instead of re-applying
-    /// the edit. Best-effort: a store failure is swallowed so it can never fail an already-applied edit
-    /// (the only consequence is the retry is re-applied rather than deduped).
+    /// the edit. The write lands only when <paramref name="reservationToken"/> still owns the key
+    /// (or the key is empty). A request that outlived its reservation cannot replace another owner's
+    /// reservation or receipt. Best-effort: a store failure is swallowed and reported as not recorded
+    /// so it can never fail an already-applied edit.
     /// </summary>
-    Task SetAsync(
+    Task<bool> SetAsync(
         ApplyEditsIdempotencyScope scope,
+        string reservationToken,
         ApplyEditsResponse response,
         CancellationToken cancellationToken = default);
 
@@ -115,20 +118,33 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
     internal static readonly TimeSpan DedupeWindow = IdempotencyPayloadStore.DedupeWindow;
 
     /// <summary>
-    /// Reservation window: how long a reservation is kept before it expires if the owning
-    /// request never completes.
+    /// Default reservation window: how long a reservation is kept before it expires if the owning
+    /// request never completes. A configured request timeout can stretch it; see
+    /// <see cref="ReservationWindowFor"/>.
     /// </summary>
     internal static readonly TimeSpan ReservationWindow = IdempotencyPayloadStore.ReservationWindow;
 
+    /// <summary>
+    /// Margin added to the request timeout when sizing the reservation, covering work a request
+    /// still finishes after its timeout token fires.
+    /// </summary>
+    private static readonly TimeSpan ReservationGrace = TimeSpan.FromSeconds(30);
+
     private readonly IdempotencyPayloadStore _payloads;
+    private readonly TimeSpan _reservationWindow;
     private readonly ILogger<DistributedApplyEditsIdempotencyStore> _logger;
 
     public DistributedApplyEditsIdempotencyStore(
         IConnectionMultiplexer? multiplexer,
         IDistributedCache? cache,
-        ILogger<DistributedApplyEditsIdempotencyStore> logger)
+        ILogger<DistributedApplyEditsIdempotencyStore> logger,
+        TimeSpan? reservationWindow = null,
+        TimeProvider? timeProvider = null)
     {
-        _payloads = new IdempotencyPayloadStore(multiplexer, cache);
+        _payloads = new IdempotencyPayloadStore(multiplexer, cache, timeProvider);
+        _reservationWindow = reservationWindow is { } window && window > IdempotencyPayloadStore.ReservationWindow
+            ? window
+            : IdempotencyPayloadStore.ReservationWindow;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -149,18 +165,36 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
         return payload is null ? null : Deserialize(payload);
     }
 
+    /// <summary>
+    /// Reservation window for edits bounded by <paramref name="requestTimeout"/>: the timeout plus a
+    /// grace margin, and never shorter than the default window. A reservation that expired while its
+    /// edit was still applying would let a retry run concurrently.
+    /// </summary>
+    internal static TimeSpan ReservationWindowFor(TimeSpan requestTimeout)
+    {
+        var window = requestTimeout + ReservationGrace;
+        return window > IdempotencyPayloadStore.ReservationWindow ? window : IdempotencyPayloadStore.ReservationWindow;
+    }
+
     public Task<string?> TryReserveAsync(
         ApplyEditsIdempotencyScope scope,
         CancellationToken cancellationToken = default)
-        => _payloads.TryReserveAsync(BuildKey(scope), ex => LogUnavailable(scope, ex), cancellationToken);
+        => _payloads.TryReserveAsync(BuildKey(scope), _reservationWindow, ex => LogUnavailable(scope, ex), cancellationToken);
 
-    public Task SetAsync(
+    public Task<bool> SetAsync(
         ApplyEditsIdempotencyScope scope,
+        string reservationToken,
         ApplyEditsResponse response,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(response);
-        return _payloads.SetAsync(BuildKey(scope), Serialize(response), ex => LogUnavailable(scope, ex), cancellationToken);
+        ArgumentException.ThrowIfNullOrEmpty(reservationToken);
+        return _payloads.SetIfAbsentOrOwnedAsync(
+            BuildKey(scope),
+            reservationToken,
+            Serialize(response),
+            ex => LogUnavailable(scope, ex),
+            cancellationToken);
     }
 
     public Task ReleaseAsync(ApplyEditsIdempotencyScope scope, string reservationToken)
@@ -207,6 +241,12 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
 /// <summary>
 /// Reads and validates the <c>Idempotency-Key</c> request header for FeatureServer edits.
 /// </summary>
+/// <summary>
+/// Explicit idempotency key for one applyEdits call. A null <see cref="Key"/> suppresses the
+/// request header. Callers that omit the choice keep the header behavior.
+/// </summary>
+internal readonly record struct ApplyEditsIdempotencyChoice(string? Key);
+
 internal static class ApplyEditsIdempotency
 {
     /// <summary>

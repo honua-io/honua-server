@@ -45,7 +45,8 @@ internal static class ImportExportTileOperationsRegistration
             new UniversalProgressStore(
                 sp.GetService<IDistributedCache>(),
                 sp.GetRequiredService<ILogger<UniversalProgressStore>>(),
-                sp.GetService<IConnectionMultiplexer>()));
+                sp.GetService<IConnectionMultiplexer>(),
+                sp.GetService<Microsoft.Extensions.Options.IOptions<Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions>>()));
 
         services.Configure<FileUploadOptions>(
             configuration.GetSection(FileUploadOptions.SectionName));
@@ -230,6 +231,8 @@ internal static class ImportExportTileOperationsRegistration
             services.TryAddSingleton<ITileCacheJobService, TileCacheJobService>();
         }
 
+        Honua.Server.Features.Import.DurableImportServiceCollectionExtensions.AddDurableBackgroundImports(services);
+        Honua.Server.Features.Admin.LayerPublishServiceCollectionExtensions.AddLayerPublishJobs(services);
         return services;
     }
 }

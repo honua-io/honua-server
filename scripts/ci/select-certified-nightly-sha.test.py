@@ -27,6 +27,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CI = ".github/workflows/ci.yml"
 REPOSITORY = "honua-io/honua-server"
 # honua-release certification/full-matrix-checks.yaml requires exactly these check-run names.
+# Server CI additionally verifies independent full formatting. The shared release
+# lane contract is unchanged; CI Gate still covers this required server lane.
 RESOLVER_LANES = ["Build & Format Check", ".NET Foundation Tests", "Python Integration Tests",
                   "Test Suite Summary", "CI Gate"]
 

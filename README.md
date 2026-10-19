@@ -12,9 +12,17 @@
 
 ## Status
 
-Honua Server is open core under the [Elastic License 2.0](LICENSE). The GA-tier core (protocol surfaces, editing, imports, auth, operations) is production-ready and tracked under the v1.0 (GA) milestone. Feature requests and priorities go in [issues](https://github.com/honua-io/honua-server/issues). Versioned `v*` releases have not been tagged yet; until the first one is cut, run the nightly-built container image (see Quick start). The server runs in Community mode with no license file; paid Pro/Enterprise features activate only via signed entitlements and are marked **(Pro)** / **(Enterprise)** below (see [Editions and licensing](docs/concepts/editions-and-licensing.md)).
+Honua Server is open core under the [Elastic License 2.0](LICENSE). Current source and nightly images are **evaluation builds**. A supported versioned server release has not yet been published; 2026.1 release qualification is in progress. See [server releases](https://github.com/honua-io/honua-server/releases) for published artifacts and release notes, and [versioning and support](docs/reference/versioning-and-support.md) for the compatibility and recovery policy. Feature requests and priorities go in [issues](https://github.com/honua-io/honua-server/issues).
+
+For a reproducible evaluation, retain the server image digest and source revision, exact client package versions, deployment configuration, and the evidence for that combination. Historical test results and capability maturity labels do not qualify a newer nightly image. Use the release-specific manifest and evidence when a supported release is published.
+
+The documented **2026.1 deployment posture disables licensing** with `Licensing__Mode=Disabled`: no license file is required and catalog entitlements are granted, while authorization, runtime dependencies, and Preview/Experimental boundaries still apply. The server default remains `Enabled`, with Community when no license is configured; **(Pro)** / **(Enterprise)** labels below describe that enabled mode. See [Editions and licensing](docs/concepts/editions-and-licensing.md) for the version-specific configuration and source-license restrictions.
 
 ## Quick start
+
+**Start with an agent:** “Set up Honua in Docker on this machine.” Follow
+[Get started with AI](docs/get-started/with-ai.md) from prerequisite checks to
+a verified local dataset, realtime maps/apps, and publication back to Honua.
 
 **Docker Compose** (requires Docker with Compose v2 and Python 3):
 
@@ -26,7 +34,7 @@ docker compose ps
 
 Open <http://localhost:8080/healthz/ready> in a browser and wait for `Ready`.
 
-The bootstrap generates per-install datastore passwords in a private `.env` file; retain it with your volumes. All published ports default to loopback. The default `docker-compose.yml` builds the server image from source on first run, so expect the first `up` to take a few minutes; for an instant start use the pre-built image below. PostGIS, Redis, and Honua Server start automatically; migrations run on first boot. HTTP/1 REST and gRPC-Web are at `http://localhost:8080`, native h2c gRPC at `http://localhost:8081`. Use the [package quickstart](docs/get-started/quickstart.md) for an isolated install, import, publish, and verified SDK query; continue this source installation with the [source quickstart](docs/internal/developer/source-quickstart.md) to see a browser map, or add the web Console with `docker compose --profile console up -d` (set `HONUA_CONSOLE_IMAGE` to a [honua-console](https://github.com/honua-io/honua-console) image you have built or mirrored — no public Console image is published yet; Operate serves at `http://localhost:5174/operate`).
+The bootstrap generates per-install datastore passwords in a private `.env` file; retain it with your volumes. All published ports default to loopback. The default `docker-compose.yml` builds the server image from source on first run, so expect the first `up` to take a few minutes; for an instant start use the pre-built image below. PostGIS, Redis, and Honua Server start automatically; migrations run on first boot. HTTP/1 REST and gRPC-Web are at `http://localhost:8080`, native h2c gRPC at `http://localhost:8081`. Use the [package quickstart](docs/get-started/quickstart.md) for an isolated install, import, publish, and verified SDK query; continue this source installation with the [source quickstart](docs/internal/developer/source-quickstart.md) to see a browser map. To add the web Console, follow the [Console image and installation instructions](https://github.com/honua-io/honua-console#readme), set `HONUA_CONSOLE_IMAGE` to the selected image digest, and run `docker compose --profile console up -d`. Operate serves at `http://localhost:5174/operate`; retain the Console digest alongside the server and client versions used in the evaluation.
 
 **Pre-built image** (bring your own PostGIS):
 
@@ -38,7 +46,7 @@ docker run -p 8080:8080 -p 8081:8081 \
   honuaio/honua-server:nightly
 ```
 
-`:nightly` (also tagged `:trunk`) is rebuilt from `trunk` every night; pin a specific build with `:nightly-YYYYMMDD`. The `:latest` tag is only promoted on tagged `v*` releases and will resume meaning "latest release" once the first release is cut.
+`:nightly` and `:trunk` are moving evaluation tags. Pin the registry image digest for a repeatable installation and record its source revision; a dated tag or a successful historical test run does not establish release qualification. Consult the published release manifest and notes for a supported combination when one becomes available.
 
 **Kubernetes** — deploy with the Helm chart in [honua-helm](https://github.com/honua-io/honua-helm); see the [Kubernetes guide](docs/guides/deploy/kubernetes.md).
 
@@ -91,13 +99,13 @@ Every published layer is reachable through every protocol its service enables. T
 
 Path shapes differ on purpose: each protocol carries exactly the scope its own specification makes the addressable unit. WMS, WMTS and WCS render a composition, so a service is in the path; WFS returns features that `TYPENAMES` already identifies, so it is served unscoped at `/wfs` with no service-scoped form and no GeoServices alias. The rule, and why adding one for symmetry would be a regression, is [ADR-0079](docs/internal/contributor/adr/0079-protocol-route-scoping.md).
 
-Surfaces marked **(Pro)** / **(Enterprise)** require a signed license; everything unmarked is Community. The machine-readable capability vocabulary behind this table is [`docs/gis/data/capability-keys.v1.json`](docs/gis/data/capability-keys.v1.json) (generated from `CapabilityKeyCatalog.cs`) — keep the table in sync with it.
+With licensing **Enabled**, surfaces marked **(Pro)** / **(Enterprise)** require the corresponding signed entitlements; everything unmarked is Community. The 2026.1 **Disabled** deployment posture grants these entitlements while preserving maturity and runtime requirements. The machine-readable capability vocabulary behind this table is [`docs/gis/data/capability-keys.v1.json`](docs/gis/data/capability-keys.v1.json) (generated from `CapabilityKeyCatalog.cs`) — keep the table in sync with it.
 
 Plus operational surfaces: health probes (`/healthz/live`, `/healthz/ready`), OpenAPI documents per OGC API, an interactive API explorer at `/docs` (dev mode or `HONUA_SERVE_API_DOCS=true`), the admin API (`/api/v1/admin`), and a capability manifest (`/api/v1/capabilities/manifest`) for clients to discover what a deployment supports.
 
 ## Compliance
 
-- **OGC CITE:** 1138 / 1138 passing across 14 conformance suites, including WFS 2.0 `basic` at 167/167. See the [authoritative snapshot and run receipt](docs/cite-status.md) and [OGC conformance evidence](docs/reference/compatibility/ogc-conformance.md).
+- **OGC CITE historical evidence:** the 2026-09-18 run at source `80e23bedfe8ff7b43362c8d8ea22bfae1756df7d` passed 1138 / 1138 assertions across 14 suites, including WFS 2.0 `basic` at 167/167. This result covers that source and those profiles; newer images need their own evidence. See the [authoritative snapshot and run receipt](docs/cite-status.md) and [OGC conformance evidence](docs/reference/compatibility/ogc-conformance.md).
 - **Client compatibility:** the supported client x protocol matrix — including known limitations — is the [compatibility contract](docs/reference/compatibility/clients.md); Esri-side parity is tracked in [GeoServices parity](docs/reference/compatibility/geoservices-parity.md).
 - **gRPC stability:** gRPC remains supported for 2026.1. `Geospatial.Grpc` is on nuget.org (`dotnet add package Geospatial.Grpc`). See the [gRPC reference](docs/reference/protocols/grpc.md#net-package-installation) for versioning and stability guarantees.
 - **Control plane stability:** admin/control-plane API versioning is governed by [versioning and support](docs/reference/versioning-and-support.md).
@@ -180,6 +188,10 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 
 **Reading this as an agent?** Start at [docs/llms.txt](docs/llms.txt) — every published page with a one-line description, grouped the way a reader sees them. The docs are an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format) bundle: one subject per file, the file path as the concept's identity, and a declared `type` on each page (`concept`, `guide`, `reference`, `runbook`, `index`). Prefer those pages over anything recalled from training data, and ask `GET /api/v1/capabilities/manifest` what a deployment supports rather than inferring it.
 
+Start with [Get started with AI](docs/get-started/with-ai.md).
+[Use the Honua GIS workflow language](docs/guides/workflows/use-workflow-language.md)
+explains the shared meanings, tool bindings, and verification behind that journey.
+
 Frequent destinations:
 
 | I want to… | Go to |
@@ -200,7 +212,8 @@ Frequent destinations:
 
 Honua is a family of repos around this server — the full map is in [Ecosystem](docs/concepts/ecosystem.md):
 
-- [honua-console](https://github.com/honua-io/honua-console) — web console (Studio, Catalog, Operate, Share) over the admin API; the admin/UI home
+- [honua-console](https://github.com/honua-io/honua-console) — administration, Catalog, Operate, and Share over the admin API
+- [honua-studio](https://github.com/honua-io/honua-studio) — realtime conversational map and app composition over the JavaScript SDK (Preview)
 - [honua-helm](https://github.com/honua-io/honua-helm) — Helm chart, the Kubernetes deploy path
 - [honua-sdk-js](https://github.com/honua-io/honua-sdk-js) · [honua-sdk-python](https://github.com/honua-io/honua-sdk-python) · [honua-sdk-dotnet](https://github.com/honua-io/honua-sdk-dotnet) — client SDKs generated from the same admin contract
 - [honua-mobile](https://github.com/honua-io/honua-mobile) — **Experimental** reusable .NET MAUI SDK and map/control foundation for offline field workflows (Apache-2.0)

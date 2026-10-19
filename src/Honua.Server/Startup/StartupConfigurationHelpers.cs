@@ -72,6 +72,7 @@ internal static class StartupConfigurationHelpers
         ResolveEnvironmentSecretReference(configuration, "HONUA_ADMIN_PASSWORD");
         ResolveEnvironmentSecretReference(configuration, "Security:ConnectionEncryption:MasterKey");
         ResolveEnvironmentSecretReference(configuration, AuditChainKeyConfigurationKey);
+        ResolveEnvironmentSecretReference(configuration, OidcSigningKeyConfigurationKey);
     }
 
     /// <summary>
@@ -79,6 +80,8 @@ internal static class StartupConfigurationHelpers
     /// (<c>AuditChainKeySnapshot</c>), so a secret reference must be resolved before then.
     /// </summary>
     internal const string AuditChainKeyConfigurationKey = "AuditLog:ChainVerification:Key";
+
+    internal const string OidcSigningKeyConfigurationKey = "Oidc:TokenValidation:SymmetricSigningKey";
 
     /// <summary>
     /// Security values the AWS serverless module may inject as <c>aws:secretsmanager:</c>
@@ -88,7 +91,8 @@ internal static class StartupConfigurationHelpers
     [
         "HONUA_ADMIN_PASSWORD",
         "Security:ConnectionEncryption:MasterKey",
-        AuditChainKeyConfigurationKey
+        AuditChainKeyConfigurationKey,
+        OidcSigningKeyConfigurationKey
     ];
 
     /// <summary>
@@ -96,7 +100,8 @@ internal static class StartupConfigurationHelpers
     /// serverless module deliberately injects the admin password, connection-encryption master key
     /// and audit-chain key as Secrets Manager references. Authentication retains its reference for
     /// per-request refresh, while connection encryption and the audit chain require a stable
-    /// process-lifetime key snapshot.
+    /// process-lifetime key snapshot. Static OIDC signing keys must also resolve before bearer
+    /// options are bound; a secret reference must never become literal HMAC key material.
     /// </summary>
     public static async Task ResolveSecuritySecretReferencesAsync(
         ConfigurationManager configuration,
@@ -157,12 +162,22 @@ internal static class StartupConfigurationHelpers
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (string.Equals(key, OidcSigningKeyConfigurationKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Provider exceptions may contain the secret reference or material. The host
+                    // prints startup exceptions, so keep this authentication failure value-free.
+                    throw new InvalidOperationException(
+                        $"Failed to resolve the security setting '{key}' from AWS Secrets Manager.");
+                }
+
                 throw new InvalidOperationException(
                     $"Failed to resolve the security setting '{key}' from AWS Secrets Manager.",
                     ex);
             }
 
-            if (string.IsNullOrEmpty(resolved))
+            if (string.IsNullOrEmpty(resolved) ||
+                (string.Equals(key, OidcSigningKeyConfigurationKey, StringComparison.OrdinalIgnoreCase) &&
+                 string.IsNullOrWhiteSpace(resolved)))
             {
                 throw new InvalidOperationException(
                     $"AWS Secrets Manager returned an empty value for the security setting '{key}'.");
@@ -174,6 +189,7 @@ internal static class StartupConfigurationHelpers
             // master key is different: changing it while a process is live would make existing
             // ciphertext unreadable, so that key remains a process-lifetime snapshot. The audit-chain
             // key is a snapshot for the same reason: a mid-process change breaks chain verification.
+            // OIDC static keys are captured by bearer options at startup and require a restart to rotate.
             if (string.Equals(key, "HONUA_ADMIN_PASSWORD", StringComparison.OrdinalIgnoreCase))
             {
                 if (isProduction)
@@ -191,7 +207,19 @@ internal static class StartupConfigurationHelpers
     private static void ResolveEnvironmentSecretReference(ConfigurationManager configuration, string key)
     {
         var value = configuration[key];
-        var resolved = SecretReferenceResolver.ResolveEnvironmentReference(value, key);
+        string? resolved;
+        try
+        {
+            resolved = SecretReferenceResolver.ResolveEnvironmentReference(value, key);
+        }
+        catch (InvalidOperationException) when (string.Equals(key, OidcSigningKeyConfigurationKey, StringComparison.OrdinalIgnoreCase))
+        {
+            // Startup exceptions are logged. Keep the signing-key reference out of the
+            // diagnostic and its inner exceptions, as with AWS resolution failures.
+            throw new InvalidOperationException(
+                $"Failed to resolve the security setting '{key}' from the environment.");
+        }
+
         if (!string.Equals(value, resolved, StringComparison.Ordinal))
         {
             SetResolvedSecretValue(configuration, key, resolved);

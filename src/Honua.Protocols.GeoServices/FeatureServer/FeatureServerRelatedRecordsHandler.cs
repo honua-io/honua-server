@@ -296,6 +296,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                 SpatialReference = grouped.SpatialReference,
                 HasZ = grouped.HasZ,
                 HasM = grouped.HasM,
+                ExceededTransferLimit = result.HasMoreResults,
                 RelatedRecordGroups = relatedRecordGroups
             };
 

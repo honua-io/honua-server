@@ -64,9 +64,8 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
         using var factory = CreateFactory(new RbacTestLayerCatalog(
             alphaServiceMetadata: restricted, betaServiceMetadata: restricted,
             alphaLayerMetadata: restricted, betaLayerMetadata: restricted));
-        foreach (var role in new[] { "admin", "catalog-reader" })
+        using (var client = ServiceRbacTestFixture.CreateClient(factory, "catalog-reader"))
         {
-            using var client = ServiceRbacTestFixture.CreateClient(factory, role);
             await AssertCatalogParityAsync(client, [ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.BetaService]);
             foreach (var (service, layer) in new[]
             {
@@ -92,6 +91,9 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
                 }
             }
         }
+        using var admin = ServiceRbacTestFixture.CreateClient(factory, "admin");
+        await AssertDeniedParityAsync(admin, HttpStatusCode.Forbidden);
+        await AssertDeniedChildMetadataAsync(admin, HttpStatusCode.Forbidden);
         using var wrongRole = ServiceRbacTestFixture.CreateClient(factory, "other-role");
         await AssertDeniedParityAsync(wrongRole, HttpStatusCode.Forbidden);
         await AssertDeniedChildMetadataAsync(wrongRole, HttpStatusCode.Forbidden);
@@ -102,9 +104,9 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
 
     /// <summary>
     /// honua-server#4783: the catalog handoff must hold past metadata. A caller the catalog
-    /// lists a role-restricted service to (admin through its built-in wildcard grant, or the
-    /// role the policy names) must not be refused by the FeatureServer and MapServer
-    /// operations a client runs next, while a wrong role and anonymous stay refused.
+    /// lists a role-restricted service to (the role the policy names) must not be refused by
+    /// the FeatureServer and MapServer operations a client runs next. Admin's built-in
+    /// wildcard grant does not skip that list (#6358); a wrong role and anonymous stay refused.
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -137,14 +139,17 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
                 services.AddSingleton(Substitute.For<ILayerStyleCatalog>());
             });
 
-        foreach (var role in new[] { "admin", "catalog-reader" })
+        using (var client = ServiceRbacTestFixture.CreateClient(factory, "catalog-reader"))
         {
-            using var client = ServiceRbacTestFixture.CreateClient(factory, role);
             await AssertCatalogParityAsync(client, [ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.BetaService]);
             var outcomes = await ReadOperationHandoffOutcomesAsync(client);
             outcomes.Where(outcome => outcome.Value != 0)
-                .Should().BeEmpty($"the catalog lists both services to '{role}'");
+                .Should().BeEmpty("the catalog lists both services to 'catalog-reader'");
         }
+
+        using var admin = ServiceRbacTestFixture.CreateClient(factory, "admin");
+        await AssertDeniedParityAsync(admin, HttpStatusCode.Forbidden);
+        (await ReadOperationHandoffOutcomesAsync(admin)).Should().OnlyContain(outcome => outcome.Value == 403);
 
         using var wrongRole = ServiceRbacTestFixture.CreateClient(factory, "other-role");
         await AssertDeniedParityAsync(wrongRole, HttpStatusCode.Forbidden);

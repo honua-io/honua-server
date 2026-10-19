@@ -107,6 +107,9 @@ public sealed class StudioPackageFamilyRegistry : IStudioPackageFamilyRegistry
                 MaxPackageBytes = DefaultMaxPackageBytes,
                 PreviewSupported = true,
                 PublishSupported = bridge.PublishSupported,
+                // Native stores own these publications. They do not take a Studio route
+                // away from a query, map, or other family that the inner store serves.
+                GovernsStudioRoutes = false,
             };
         }
         var supportLevel = durable

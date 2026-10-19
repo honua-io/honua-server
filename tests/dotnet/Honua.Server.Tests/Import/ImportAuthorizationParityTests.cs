@@ -280,6 +280,9 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
 
     [Theory]
     [InlineData("POST", "/api/v1/admin/import/preview")]
+    [InlineData("POST", "/api/v1/admin/import/upload")]
+    [InlineData("POST", "/api/v1/admin/import/ogc-wfs/start")]
+    [InlineData("POST", "/api/v1/admin/import/ogc-api-features/collection")]
     [InlineData("GET", "/api/v1/admin/services/test/layers/0/export")]
     [InlineData("POST", "/api/v1/admin/tile-operations/jobs")]
     [InlineData("GET", "/api/v1/admin/tile-operations/jobs")]
@@ -300,6 +303,9 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/tile-operations/jobs/{jobId}/retry")]
     [Endpoint("POST /api/v1/admin/tile-operations/evict")]
     [Endpoint("GET /api/v1/admin/tile-operations/cache/inventory")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    [Endpoint("POST /api/v1/admin/import/ogc-wfs/start")]
+    [Endpoint("POST /api/v1/admin/import/ogc-api-features/collection")]
     public async Task AdminImportExportAndTiles_AnonymousAndUnprivilegedPrincipalsAreDenied(string method, string path)
     {
         foreach (var profile in new[] { PrincipalProfile.Anonymous, PrincipalProfile.AuthenticatedNoGrant, PrincipalProfile.WorkspaceCreate })

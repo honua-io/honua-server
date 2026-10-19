@@ -87,6 +87,11 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     public int[]? LayerIds => _layerIds;
 
     /// <summary>
+    /// Subscriber row and field policies, refreshed in place by the session manager.
+    /// </summary>
+    internal StreamSubscriberSecurity? SubscriberSecurity => _subscriberSecurity;
+
+    /// <summary>
     /// True when membership depends on a feature's VALUE (bbox, attributes, or time) rather
     /// than on where it lives.
     /// </summary>

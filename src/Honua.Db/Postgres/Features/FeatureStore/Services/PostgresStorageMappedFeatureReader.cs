@@ -226,12 +226,30 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return await CountCoreAsync(query, isAssociatedFeatureRead: false, cancellationToken).ConfigureAwait(false);
     }
 
+    private SqlBuilder BuildCountSql(FeatureQuery query)
+    {
+        var sql = new SqlBuilder();
+        if (!query.Distinct)
+        {
+            sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*)::bigint FROM {BuildFeatureSource(query, sql)}");
+            AppendFilter(sql, query);
+            return sql;
+        }
+
+        // Match the distinct select: attribute parameters are bound before the source,
+        // and DISTINCT compares the text form of the jsonb projection.
+        var attributesSelect = $"{BuildAttributesJsonbExpression(query, sql)}::text";
+        sql.Append(CultureInfo.InvariantCulture,
+            $"SELECT COUNT(*)::bigint FROM (SELECT DISTINCT {attributesSelect} AS attributes FROM {BuildFeatureSource(query, sql)}");
+        AppendFilter(sql, query);
+        sql.Append(CultureInfo.InvariantCulture, ") AS distinct_values");
+        return sql;
+    }
+
     private async Task<long> CountCoreAsync(
         FeatureQuery query, bool isAssociatedFeatureRead, CancellationToken cancellationToken)
     {
-        var sql = new SqlBuilder();
-        sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*)::bigint FROM {BuildFeatureSource(query, sql)}");
-        AppendFilter(sql, query);
+        var sql = BuildCountSql(query);
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         // A caller-owned transaction would retain SET LOCAL beyond this count.
@@ -988,7 +1006,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 HavingComparisonOperator.LessThanOrEqual => "<=",
                 _ => throw new ArgumentOutOfRangeException(nameof(query))
             };
-            clauses.Add($"{aggregate} {comparison} {sql.AddParameter(condition.Value)}");
+            clauses.Add($"{aggregate} {comparison} {sql.AddParameter(condition.BoundValue())}");
         }
 
         sql.Append(CultureInfo.InvariantCulture, $" HAVING {string.Join(" AND ", clauses)}");

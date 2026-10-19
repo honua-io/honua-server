@@ -400,6 +400,182 @@ public sealed class GrpcFeatureServiceTests
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_PointIntoPolygonLayer_IsRejected()
+    {
+        var polygon = CreateResource() with
+        {
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                GeometryType = MetadataV2GeometryType.Polygon,
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+            },
+        };
+        _resourceValidator
+            .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(_testService, polygon)));
+
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "point" } },
+            Geometry = new Proto.Geometry
+            {
+                Point = new Proto.PointGeometry { X = -157.85, Y = 21.30 },
+            },
+        });
+
+        var act = () => _sut.ApplyEdits(request, CreateCallContext());
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        exception.Which.Status.Detail.Should().Contain("Polygon");
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_UnknownOrInvalidAttribute_IsRejected()
+    {
+        var unknown = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        unknown.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["not_a_field"] = new Proto.AttributeValue { StringValue = "nope" } },
+        });
+
+        var unknownAct = () => _sut.ApplyEdits(unknown, CreateCallContext());
+        var unknownException = await unknownAct.Should().ThrowAsync<RpcException>();
+        unknownException.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        unknownException.Which.Status.Detail.Should().Contain("not_a_field");
+
+        var invalid = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        invalid.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { Int32Value = 7 } },
+        });
+
+        var invalidAct = () => _sut.ApplyEdits(invalid, CreateCallContext());
+        var invalidException = await invalidAct.Should().ThrowAsync<RpcException>();
+        invalidException.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        invalidException.Which.Status.Detail.Should().Contain("name");
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_PartialUpdate_KeepsStoredGeometryAndOmittedAttributes()
+    {
+        var storedGeometry = new byte[] { 1, 2, 3, 4 };
+        var stored = Feature.Create(
+            11,
+            storedGeometry,
+            ImmutableDictionary<string, object?>.Empty
+                .Add("name", "original")
+                .Add("code", "kept"));
+        _featureReader
+            .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<Feature?>(
+                call.ArgAt<long>(1) == 11
+                    ? stored
+                    : Feature.Create(call.ArgAt<long>(1), geometry: null)));
+
+        FeatureEditBatch? captured = null;
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(call =>
+            {
+                captured = call.ArgAt<FeatureEditBatch>(1);
+                return Task.FromResult(FeatureEditResult.Success(
+                    createdCount: 0,
+                    updatedCount: 1,
+                    deletedCount: 0,
+                    updateResults: ImmutableArray.Create(EditOperationResult.Success(11))));
+            });
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Updates.Add(new Proto.Feature
+        {
+            Id = 11,
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "renamed" } }
+        });
+
+        var response = await _sut.ApplyEdits(request, CreateCallContext());
+
+        response.UpdateResults.Should().ContainSingle().Which.Success.Should().BeTrue();
+        captured.Should().NotBeNull();
+        var update = captured!.Value.Updates.Should().ContainSingle().Subject;
+        update.Geometry.Should().Equal(storedGeometry);
+        update.Attributes["name"].Should().Be("renamed");
+        // Omitted keys stay out of the payload. The writer merges them from the
+        // locked row when this flag is set, including fields the caller cannot see.
+        update.Attributes.ContainsKey("code").Should().BeFalse();
+        update.PreserveOmittedMaskedAttributes.Should().BeTrue();
+        captured.Value.Preconditions.IsDefaultOrEmpty.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_PartialUpdate_UsesTheFullRowTokenAsAPrecondition()
+    {
+        var stored = Feature.Create(
+            11,
+            new byte[] { 9 },
+            ImmutableDictionary<string, object?>.Empty.Add("name", "visible")) with
+        {
+            ReadStateToken = "full-row-token"
+        };
+        _featureReader
+            .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Feature?>(stored));
+
+        FeatureEditBatch? captured = null;
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(call =>
+            {
+                captured = call.ArgAt<FeatureEditBatch>(1);
+                return Task.FromResult(FeatureEditResult.Success(
+                    createdCount: 0,
+                    updatedCount: 1,
+                    deletedCount: 0,
+                    updateResults: ImmutableArray.Create(EditOperationResult.Success(11))));
+            });
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Updates.Add(new Proto.Feature
+        {
+            Id = 11,
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "renamed" } }
+        });
+
+        var response = await _sut.ApplyEdits(request, CreateCallContext());
+
+        response.UpdateResults.Should().ContainSingle().Which.Success.Should().BeTrue();
+        var update = captured!.Value.Updates.Should().ContainSingle().Subject;
+        update.PreserveOmittedMaskedAttributes.Should().BeTrue();
+        update.Attributes.ContainsKey("name").Should().BeTrue();
+        var precondition = captured.Value.Preconditions.Should().ContainSingle().Subject;
+        precondition.ObjectId.Should().Be(11);
+        precondition.ExpectedStateToken.Should().Be("full-row-token");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_WhenDeleteTargetHiddenByRls_ThrowsNotFoundAndDoesNotWrite()
     {
         // RLS / permanent filters are enforced only on the read path; the edit SQL filters by
@@ -940,6 +1116,52 @@ public sealed class GrpcFeatureServiceTests
         response.Features.Should().BeEmpty();
         await _featureReader.Received(1).QueryObjectIdsAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
         _ = _featureReader.DidNotReceive().QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_IdsOnly_WithoutRecordCount_DoesNotTruncateAtDefaultPageSize()
+    {
+        FeatureQuery? captured = null;
+        var allIds = Enumerable.Range(1, 1500).Select(i => (long)i).ToImmutableArray();
+        _featureReader.QueryObjectIdsAsync(0, Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var limit = call.ArgAt<FeatureQuery>(1).Limit;
+                return limit.HasValue ? allIds.Take(limit.Value).ToImmutableArray() : allIds;
+            });
+
+        var response = await _sut.QueryFeatures(new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ReturnIdsOnly = true
+        }, CreateCallContext());
+
+        captured.Should().NotBeNull();
+        captured!.Value.Limit.Should().BeNull("ids-only has no exceeded_transfer_limit signal, so it must match FeatureServer returnIdsOnly and stay unbounded");
+        response.ObjectIds.Should().HaveCount(1500);
+        response.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_IdsOnly_WithRecordCount_KeepsRequestedLimit()
+    {
+        FeatureQuery? captured = null;
+        _featureReader.QueryObjectIdsAsync(0, Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create<long>(1, 2));
+
+        await _sut.QueryFeatures(new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ReturnIdsOnly = true,
+            ResultRecordCountLong = 2
+        }, CreateCallContext());
+
+        captured.Should().NotBeNull();
+        captured!.Value.Limit.Should().Be(2);
     }
 
     [UnitTest]
@@ -1624,11 +1846,9 @@ public sealed class GrpcFeatureServiceTests
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     [Operation(Operations.Query)]
-    public async Task QueryFeatures_PerOperationQueryGrant_OverridesCoarseDeny()
+    public async Task QueryFeatures_PerOperationQueryGrant_DoesNotSkipRoleList()
     {
-        // Coarse policy requires a role the user lacks (would deny), but the
-        // principal's role carries a per-operation "query" grant on the service,
-        // which the resolver must honor across the gRPC read seam (#1376).
+        // Coarse policy requires a role the user lacks. A query grant must not skip it (#6358).
         var protectedService = CreateService(
             "protected",
             accessPolicy: new AccessPolicy { AllowedRoles = ["coarse-only"] });
@@ -1636,18 +1856,16 @@ public sealed class GrpcFeatureServiceTests
         _resourceValidator
             .ValidateServiceLayerV2Async("protected", 0, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(CreateTriple(protectedService, _testResource)));
-        _featureReader
-            .QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty));
 
         var request = new Proto.QueryFeaturesRequest { ServiceId = "protected", LayerId = 0 };
 
         var grant = new PermissionGrant { Service = "protected", Layer = "*", Operation = "query" };
-        var response = await _sut.QueryFeatures(
+        var act = async () => await _sut.QueryFeatures(
             request,
             CreateCallContext(CreateAuthenticatedUser("granted-role"), grant));
 
-        response.Should().NotBeNull();
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
     }
 
     [UnitTest]

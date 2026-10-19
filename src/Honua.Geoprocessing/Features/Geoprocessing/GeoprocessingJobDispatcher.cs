@@ -73,6 +73,12 @@ internal sealed class GeoprocessingJobDispatcher
     private readonly ExecutionAdmissionCoordinator _admissionCoordinator;
 
     /// <summary>
+    /// Whether this process freezes between requests. Not a constructor collaborator:
+    /// production reads the process environment, and tests replace the probe.
+    /// </summary>
+    internal IGeoprocessingHostRuntime HostRuntime { get; init; } = ProcessEnvironmentHostRuntime.Instance;
+
+    /// <summary>
     /// Creates the dispatcher over the admission evaluator, workload registry, queue,
     /// batch compute backends, and approval-lane operation gateway, falling back to
     /// null-object/empty semantics when any are absent. Without a composed
@@ -249,15 +255,36 @@ internal sealed class GeoprocessingJobDispatcher
     }
 
     /// <summary>
-    /// Resolves the execution workload (job definition) a submission should run under, routing
-    /// custom-code jobs to the custom-code runtime profile and preferring a configured remote
-    /// geoprocessing workload over the always-present local baseline. Returns <c>null</c> when
-    /// no workload registry is configured.
+    /// Resolves the execution workload (job definition) a submission should run under.
+    /// Custom-code jobs select the custom-code profile. Managed jobs stay on the local
+    /// backend when one is registered, because the API process is the managed worker and a
+    /// native image will not claim them. Native jobs prefer a workload that declares the
+    /// native profile, then the unprofiled local queue. Returns <c>null</c> when no workload
+    /// registry is configured. When the current workloads cannot run
+    /// <paramref name="requiredRuntimeProfile"/>, <paramref name="confirmKeyedReplay"/> reports
+    /// whether an already-accepted keyed job exists; a confirmed replay returns <c>null</c>
+    /// instead of rejecting the submission (#6069).
+    /// On a serverless host, a managed job is not admitted to the local queue: that loop
+    /// stops when the invocation ends. A remote workload that declares the managed profile
+    /// can still be selected. Otherwise the submission is refused with
+    /// <see cref="GeoprocessingStoreUnavailableException"/> before a job id exists, unless
+    /// <paramref name="confirmKeyedReplay"/> reports an already-accepted job. An operation
+    /// that finishes inside the request never reaches this admission.
     /// </summary>
-    public async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(bool isCustomCode, CancellationToken cancellationToken)
+    public async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(
+        bool isCustomCode,
+        string? requiredRuntimeProfile,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task<bool>>? confirmKeyedReplay = null)
     {
         if (_workloadRegistry == null)
         {
+            if (RefusesServerlessManagedLoop(isCustomCode, requiredRuntimeProfile, selected: null)
+                && !await ConfirmKeyedReplayAsync(confirmKeyedReplay, cancellationToken).ConfigureAwait(false))
+            {
+                throw GeoprocessingStoreUnavailableException.ForServerlessManagedHost();
+            }
+
             return null;
         }
 
@@ -283,17 +310,108 @@ internal sealed class GeoprocessingJobDispatcher
                         !string.Equals(d.RuntimeProfile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal))
             .ToArray();
 
-        // When the operator has supplied a remote (e.g. AWS Batch) GP workload
-        // alongside the always-present local/Kubernetes baseline, prefer the remote
-        // one so a fully-configured substrate routes GP execution off-box. The
-        // registry already drops remote workloads that are missing their required
-        // ARNs (see ExecutionWorkloadGate), so a surviving non-local workload is one
-        // the operator deliberately activated. Falling back to FirstOrDefault keeps
-        // the local-only default behavior when no remote workload is configured.
-        return geoprocessingWorkloads.FirstOrDefault(d =>
-                   !string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
-               ?? geoprocessingWorkloads.FirstOrDefault();
+        // A remote image must explicitly support the required runtime. The local
+        // baseline uses the shared queue, whose managed/native consumers apply the
+        // runtime claim fence, so an unprofiled local workload can serve either.
+        // Managed work stays on that local worker when it exists. Preferring any
+        // remote image sent geometry.buffer to a native or placeholder Batch
+        // definition that never claims it. Native work prefers the workload that
+        // declares the native profile, which is the GDAL worker image.
+        var profile = RuntimeProfiles.Normalize(requiredRuntimeProfile);
+        var compatible = geoprocessingWorkloads.Where(d =>
+            (string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                && string.IsNullOrWhiteSpace(d.RuntimeProfile))
+            || string.Equals(RuntimeProfiles.Normalize(d.RuntimeProfile), profile, StringComparison.Ordinal))
+            .ToArray();
+        var nativeProfile = string.Equals(profile, RuntimeProfiles.Native, StringComparison.Ordinal);
+        var serverlessManaged = !nativeProfile && HostRuntime.IsServerless;
+        // On a long-lived host the API process is the managed worker, so local wins.
+        // On a serverless host that process is frozen after the response, so local is
+        // not a placement: only a remote workload that declares the managed profile
+        // qualifies, and anything else is refused below rather than queued.
+        ExecutionJobDefinition? selected;
+        if (nativeProfile)
+        {
+            selected = compatible.FirstOrDefault(d =>
+                    !string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                    && string.Equals(RuntimeProfiles.Normalize(d.RuntimeProfile), RuntimeProfiles.Native, StringComparison.Ordinal))
+                ?? compatible.FirstOrDefault(d =>
+                    string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal));
+        }
+        else if (serverlessManaged)
+        {
+            selected = compatible.FirstOrDefault(d =>
+                !string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                && string.Equals(RuntimeProfiles.Normalize(d.RuntimeProfile), profile, StringComparison.Ordinal));
+        }
+        else
+        {
+            selected = compatible.FirstOrDefault(d =>
+                    string.Equals(d.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+                ?? compatible.FirstOrDefault();
+        }
+        if (selected is null && geoprocessingWorkloads.Length > 0)
+        {
+            // An exact retry of a job accepted under the previous workload set does not
+            // need a compatible image selected again (#6069).
+            if (await ConfirmKeyedReplayAsync(confirmKeyedReplay, cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            if (serverlessManaged)
+            {
+                throw GeoprocessingStoreUnavailableException.ForServerlessManagedHost();
+            }
+
+            throw new GeoprocessingValidationException(
+                $"No geoprocessing workload supports runtime profile '{profile}'. Configure a compatible worker image and runtime profile.");
+        }
+
+        if (selected is null
+            && RefusesServerlessManagedLoop(isCustomCode, requiredRuntimeProfile, selected)
+            && !await ConfirmKeyedReplayAsync(confirmKeyedReplay, cancellationToken).ConfigureAwait(false))
+        {
+            throw GeoprocessingStoreUnavailableException.ForServerlessManagedHost();
+        }
+
+        return selected;
     }
+
+    /// <summary>
+    /// True when admitting <paramref name="selected"/> would leave a managed job on the
+    /// in-process queue of a host that freezes between invocations. A remote managed
+    /// workload is a real placement and is not refused. Native and custom-code routing
+    /// are unchanged. An operation that finishes on the request thread does not call
+    /// this path.
+    /// </summary>
+    private bool RefusesServerlessManagedLoop(
+        bool isCustomCode,
+        string? requiredRuntimeProfile,
+        ExecutionJobDefinition? selected)
+    {
+        if (isCustomCode || !HostRuntime.IsServerless)
+        {
+            return false;
+        }
+
+        var profile = RuntimeProfiles.Normalize(requiredRuntimeProfile);
+        if (string.Equals(profile, RuntimeProfiles.Native, StringComparison.Ordinal)
+            || string.Equals(profile, CustomCodeJobContract.RuntimeProfile, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return selected is null
+            || string.Equals(selected.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal);
+    }
+
+    private static Task<bool> ConfirmKeyedReplayAsync(
+        Func<CancellationToken, Task<bool>>? confirmKeyedReplay,
+        CancellationToken cancellationToken)
+        => confirmKeyedReplay == null
+            ? Task.FromResult(false)
+            : confirmKeyedReplay(cancellationToken);
 
     /// <summary>
     /// Enqueues the job on the local in-process queue when a queue is configured and the job
@@ -343,24 +461,35 @@ internal sealed class GeoprocessingJobDispatcher
         // independently of request cancellation; missing acknowledgements remain
         // recoverable through the idempotent queue and active-job sweep.
         using var completion = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        for (var attempt = 0; attempt < 3; attempt++)
+        try
         {
-            var accepted = current with
+            for (var attempt = 0; attempt < 3; attempt++)
             {
-                CurrentPhase = ExecutionJobSubmissionHelper.LocalDispatchAcceptedPhase,
-                UpdatedAt = DateTimeOffset.UtcNow
-            };
-            if (await jobStore.TrySetAsync(accepted, cancellationToken: completion.Token).ConfigureAwait(false))
-            {
-                return await jobStore.GetAsync(job.OperationId, completion.Token).ConfigureAwait(false) ?? accepted;
+                var accepted = current with
+                {
+                    CurrentPhase = ExecutionJobSubmissionHelper.LocalDispatchAcceptedPhase,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                };
+                if (await jobStore.TrySetAsync(accepted, cancellationToken: completion.Token).ConfigureAwait(false))
+                {
+                    return await jobStore.GetAsync(job.OperationId, completion.Token).ConfigureAwait(false) ?? accepted;
+                }
+                var latest = await jobStore.GetAsync(job.OperationId, completion.Token).ConfigureAwait(false);
+                if (latest == null || !ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(latest)
+                    || latest.CurrentPhase == ExecutionJobSubmissionHelper.LocalDispatchAcceptedPhase)
+                {
+                    return latest ?? current;
+                }
+                current = latest;
             }
-            var latest = await jobStore.GetAsync(job.OperationId, completion.Token).ConfigureAwait(false);
-            if (latest == null || !ExecutionJobSubmissionHelper.NeedsLocalDispatchRepair(latest)
-                || latest.CurrentPhase == ExecutionJobSubmissionHelper.LocalDispatchAcceptedPhase)
-            {
-                return latest ?? current;
-            }
-            current = latest;
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
+        {
+            // The delivery is already on the queue, so a slow or stalled store must not turn an
+            // accepted submission into a failure: the caller would roll the record back and
+            // answer 408 while a worker claims and runs the job. The record is still initial
+            // local Queued dispatch intent, which the active-job sweep repairs.
+            GeoprocessingServiceLog.LocalDispatchAcknowledgementDeferred(_logger, current.OperationId, ex);
         }
         return current;
     }

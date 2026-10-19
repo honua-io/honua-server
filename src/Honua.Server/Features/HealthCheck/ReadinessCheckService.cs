@@ -90,10 +90,22 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
             // class until the background recovery loop restores access.
             if (_degradedStartup is { IsAwaitingDatabase: true } degraded)
             {
+                // honua-server#5916: a schema behind this binary (migrations not applied yet) is its
+                // own reason, so a cold start before the migration task ran reads as schema-floor.
+                var schemaFloor = string.Equals(
+                    degraded.ReasonCode, ReadinessReasonCodes.SchemaFloor, StringComparison.Ordinal);
+                var condition = schemaFloor
+                    ? "Database schema is behind this build"
+                    : "Database unavailable at startup";
+                var waiting = schemaFloor
+                    ? "re-checking until the migrations are applied"
+                    : "retrying in the background";
                 var reason = degraded.RecoveryFailure is { } stopped
-                    ? $"Database unavailable at startup ({degraded.Reason ?? "unknown"}); background recovery stopped: {stopped}"
-                    : $"Database unavailable at startup ({degraded.Reason ?? "unknown"}); retrying in the background";
-                return ReadinessResult.NotReady(reason, ReadinessReasonCodes.DatabaseStartupDegraded);
+                    ? $"{condition} ({degraded.Reason ?? "unknown"}); background recovery stopped: {stopped}"
+                    : $"{condition} ({degraded.Reason ?? "unknown"}); {waiting}";
+                return ReadinessResult.NotReady(
+                    reason,
+                    schemaFloor ? ReadinessReasonCodes.SchemaFloor : ReadinessReasonCodes.DatabaseStartupDegraded);
             }
 
             if (_migrationState.IsFailed)

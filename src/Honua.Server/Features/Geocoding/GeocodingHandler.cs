@@ -133,6 +133,16 @@ internal sealed class GeocodingHandler(
                 "singleLine is required, or provide structured fields: address, city, region, postal, countryCode.");
         }
 
+        try
+        {
+            // Cap length and distinct tokens before any provider builds a predicate per token.
+            GeocodeQueryLimits.EnsureBounded(query, "singleLine");
+        }
+        catch (GeocodeRequestException ex)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+        }
+
         // The forward category filter narrows candidates by their provider-supplied address type.
         // A magicKey's encoded category is honored when the request itself carries no explicit one.
         var requestedCategories = GeocodeCategoryFilter.ParseCategories(GetValue(values, "category"))
@@ -767,6 +777,17 @@ internal sealed class GeocodingHandler(
             {
                 if (!string.IsNullOrWhiteSpace(address))
                 {
+                    try
+                    {
+                        GeocodeQueryLimits.EnsureBounded(address, "records");
+                    }
+                    catch (GeocodeRequestException ex)
+                    {
+                        queries = null;
+                        error = ex.Message;
+                        return false;
+                    }
+
                     queries.Add(address);
                 }
                 else
@@ -1035,28 +1056,25 @@ internal sealed class GeocodingHandler(
     // metadata is fidelity-accurate per provider (#2147): SuggestedBatchSize reflects the provider's
     // MaxBatchSize, and batch-specific properties are advertised only when the provider supports
     // batch (an unsupported capability is absent/false rather than falsely advertised).
-    private Dictionary<string, string> BuildLocatorProperties(
+    private GeocodeLocatorProperties BuildLocatorProperties(
         string providerName,
         Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderCapabilities capabilities)
     {
-        var properties = new Dictionary<string, string>(StringComparer.Ordinal)
+        // The handler enforces this same provider limit. Both batch properties are JSON
+        // numbers in the Esri service contract; omit them when batch is unavailable.
+        int? batchSize = capabilities.SupportsBatch
+            ? (capabilities.MaxBatchSize > 0 ? capabilities.MaxBatchSize : 100)
+            : null;
+        return new GeocodeLocatorProperties
         {
-            ["LocatorName"] = _options.LocatorName,
-            ["Provider"] = providerName,
-            ["SupportsSuggest"] = capabilities.SupportsSuggest ? "true" : "false",
-            ["SupportsBatch"] = capabilities.SupportsBatch ? "true" : "false",
-            ["MaxResultsPerRequest"] = capabilities.MaxResultsPerRequest.ToString(CultureInfo.InvariantCulture)
+            LocatorName = _options.LocatorName,
+            Provider = providerName,
+            SupportsSuggest = capabilities.SupportsSuggest ? "true" : "false",
+            SupportsBatch = capabilities.SupportsBatch ? "true" : "false",
+            MaxResultsPerRequest = capabilities.MaxResultsPerRequest.ToString(CultureInfo.InvariantCulture),
+            MaxBatchSize = batchSize,
+            SuggestedBatchSize = batchSize
         };
-
-        // SuggestedBatchSize is the batch-call sizing hint ArcGIS clients read before chunking a
-        // geocodeAddresses request. Advertise it only when the active provider actually supports
-        // batch, and derive it from that provider's MaxBatchSize rather than a hard-coded constant.
-        if (capabilities.SupportsBatch && capabilities.MaxBatchSize > 0)
-        {
-            properties["SuggestedBatchSize"] = capabilities.MaxBatchSize.ToString(CultureInfo.InvariantCulture);
-        }
-
-        return properties;
     }
 
     private static bool IsSupportedFormat(string? format)

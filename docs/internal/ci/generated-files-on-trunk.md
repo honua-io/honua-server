@@ -19,6 +19,7 @@ inputs still fail. Generator implementation and serialization are unchanged.
 | `docs/gis/data/geoservices-rest-parity.json` | `scripts/generate-geoservices-parity.sh` → `GeoServicesParityEmitter` / `GeoServicesParityGenerator` | Nightly / on demand |
 | `docs/gis/data/capability-matrix.v1.json` | `scripts/ci/generate-capability-matrix.py` (after catalog and parity) | Nightly / on demand |
 | `docs/okf/capabilities` | `scripts/ci/generate-capability-concepts.py` (after the capability matrix) | Nightly / on demand |
+| `docs/okf/domain-graph.v1.json` | `scripts/ci/generate-okf-graph.py` (after all generated capability pages) | Nightly / on demand |
 | `examples/manifest.json` | `scripts/examples/generate-manifest.py` | Nightly / on demand |
 | `src/Honua.Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json` | `scripts/geoparquet/generate-projjson-catalog.py` | Explicit CRS/PROJ dependency update; depends on external pyproj/PROJ data, not trunk evidence |
 | `docs/gis/gap-report.md`, `docs/internal/compatibility/cross-server-consume-gap-report.md` | `scripts/client-compat/diff-baselines.py`, `scripts/ci/generate-cross-server-gap-report.sh` | Evidence-run snapshots; require measured results, external checkouts or live servers |
@@ -51,7 +52,12 @@ and validation stay intact.
 ## Execution and write contract
 
 The single allowlist is `scripts/ci/generated-files.sh`. Regeneration uses the
-existing emitters in dependency order. Like the existing trailing foundation
+existing emitters in dependency order. Generated-workflow, lean-gate and
+foundation call sites install the canonical YAML reader from
+`scripts/ci/okf-requirements.txt` before graph generation. The shared router
+bootstraps the same requirement using its resolved Python interpreter before
+its controls, covering direct/local, batch CI and PR callers.
+Like the existing trailing foundation
 build, the trunk writer skips the duplicate analyzer pass with
 `/p:RunAnalyzers=false`; PR Gate still enforces analyzers and warnings-as-errors.
 Compiler errors, generator execution, and authored-input tests remain strict.
@@ -128,6 +134,7 @@ needed for that case, unlike the direct-push design it replaces.
 Run from an isolated worktree (the generators overwrite the seven projections):
 
 ```bash
+python3 -m pip install -r scripts/ci/okf-requirements.txt
 python3 scripts/ci/fixtures/validate-generated-files.py
 bash scripts/ci/validate-ci-router.sh
 UseSharedCompilation=true bash scripts/ci/regenerate-generated-files.sh --configuration Release /p:RunAnalyzers=false

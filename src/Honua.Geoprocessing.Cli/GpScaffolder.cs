@@ -283,35 +283,37 @@ public static class GpScaffolder
         var ns = kind == GpProcessKind.Gdal ? "Honua.Worker.Gdal.Execution" : "Honua.Geoprocessing.Execution";
         var nativeProfile = kind == GpProcessKind.Gdal;
 
-        // Geometry kind emits a vector GeoJSON FeatureCollection (geometry comparator);
+        // Geometry kind emits a vector GeoJSON Feature (geometry comparator);
         // GDAL kind emits a scalar JSON document (scalar/structural comparator). Both build
         // the data URI inline with System.Text.Json so the template has zero dependence on
         // internal helpers and compiles as soon as it is written.
-        var (mediaType, trivialPayload) = nativeProfile
-            ? ("application/json",
-                "var payload = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object?>\n"
-                + "        {\n"
-                + $"            [\"processId\"] = HandledProcessId,\n"
-                + "            [\"status\"] = \"scaffolded\",\n"
-                + "            [\"echo\"] = echo,\n"
-                + "        });")
-            : ("application/geo+json",
-                "var feature = new Dictionary<string, object?>\n"
-                + "        {\n"
-                + "            [\"type\"] = \"Feature\",\n"
-                + "            [\"geometry\"] = new Dictionary<string, object?>\n"
-                + "            {\n"
-                + "                [\"type\"] = \"Point\",\n"
-                + "                [\"coordinates\"] = new[] { 0.0, 0.0 },\n"
-                + "            },\n"
-                + "            [\"properties\"] = new Dictionary<string, object?>\n"
-                + "            {\n"
-                + $"                [\"processId\"] = HandledProcessId,\n"
-                + "                [\"status\"] = \"scaffolded\",\n"
-                + "                [\"echo\"] = echo,\n"
-                + "            },\n"
-                + "        };\n"
-                + "        var payload = JsonSerializer.SerializeToUtf8Bytes(feature);");
+        var mediaType = nativeProfile ? "application/json" : "application/geo+json";
+        var trivialPayload = "using var buffer = new MemoryStream();\n"
+            + "        using (var writer = new Utf8JsonWriter(buffer))\n"
+            + "        {\n"
+            + "            writer.WriteStartObject();\n";
+        if (!nativeProfile)
+        {
+            trivialPayload += "            writer.WriteString(\"type\", \"Feature\");\n"
+                + "            writer.WriteStartObject(\"geometry\");\n"
+                + "            writer.WriteString(\"type\", \"Point\");\n"
+                + "            writer.WriteStartArray(\"coordinates\");\n"
+                + "            writer.WriteNumberValue(0.0);\n"
+                + "            writer.WriteNumberValue(0.0);\n"
+                + "            writer.WriteEndArray();\n"
+                + "            writer.WriteEndObject();\n"
+                + "            writer.WriteStartObject(\"properties\");\n";
+        }
+        trivialPayload += "            writer.WriteString(\"processId\", HandledProcessId);\n"
+            + "            writer.WriteString(\"status\", \"scaffolded\");\n"
+            + "            writer.WriteString(\"echo\", echo);\n";
+        if (!nativeProfile)
+        {
+            trivialPayload += "            writer.WriteEndObject();\n";
+        }
+        trivialPayload += "            writer.WriteEndObject();\n"
+            + "        }\n"
+            + "        var payload = buffer.ToArray();\n";
 
         var profileMember = nativeProfile
             ? "\n    private static readonly IReadOnlySet<string> NativeProfileSet =\n"

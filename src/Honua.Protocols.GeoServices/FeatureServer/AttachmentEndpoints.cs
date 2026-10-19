@@ -298,7 +298,8 @@ internal static partial class AttachmentEndpoints
             logger,
             context,
             cancellationToken,
-            visibleByPublic);
+            visibleByPublic,
+            resource.Value.PublicLayerId);
 
         await result.ExecuteAsync(context);
     }
@@ -841,6 +842,20 @@ internal static partial class AttachmentEndpoints
             return null;
         }
 
+        // Resolving a custom object id reads through the row query, which can still see a
+        // stale default-store row. Apply the same published-source visibility check as
+        // queryAttachments so a parent removed from the bound table stays hidden.
+        if (feature is not null &&
+            (await FilterVisibleAttachmentParentsAsync(
+                featureReader,
+                storageLayerId,
+                [feature.Value.Id],
+                validatedDefinitionExpression: null,
+                cancellationToken).ConfigureAwait(false)).Length == 0)
+        {
+            feature = null;
+        }
+
         if (feature is null)
         {
             await StandardErrorHelpers.CreateNotFound(context, $"Feature {publicObjectId} not found")
@@ -890,13 +905,15 @@ internal static partial class AttachmentEndpoints
 
     /// <summary>
     /// Resolved V2 attachment-access context: the canonical resource, the publishing service,
-    /// and the integer storage-layer handle the attachment store expects.
+    /// the integer storage-layer handle the attachment store expects, and the public route
+    /// layer id clients use in URLs.
     /// </summary>
     internal readonly record struct AttachmentAccessContext(
         MetadataV2Service Service,
         MetadataV2Resource Resource,
         int StorageLayerId,
-        IFeatureReader Reader);
+        IFeatureReader Reader,
+        int PublicLayerId);
 
     private static async Task<bool> AuthorizeAttachmentOwnerEditAsync(
         HttpContext context,
@@ -927,7 +944,7 @@ internal static partial class AttachmentEndpoints
 
         var principal = context.User?.Identity?.IsAuthenticated == true
             ? new EditPrincipal(
-                context.User.Identity.Name,
+                EditOwnerSubject.Resolve(context.User),
                 IsAuthenticated: true,
                 IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(context))
             : EditPrincipal.Anonymous;
@@ -952,6 +969,44 @@ internal static partial class AttachmentEndpoints
             .ExecuteAsync(context)
             .ConfigureAwait(false);
         return false;
+    }
+
+    /// <summary>
+    /// Returns a client-safe refusal when the layer does not support attachments, or when a
+    /// write asks for an edit capability the publication does not declare. A read of an
+    /// attachment-capable layer is allowed. Null means the request may proceed.
+    /// </summary>
+    internal static string? DescribeDeniedAttachmentAccess(
+        MetadataV2Service service,
+        MetadataV2Publication? publication,
+        MetadataV2Resource resource,
+        AccessScope scope,
+        AuthorizationOperation? writeOperation)
+    {
+        if (!FeatureServerEndpoints.ResourceSupportsAttachmentsV2(resource))
+        {
+            return "Attachments are not supported for this layer.";
+        }
+
+        if (scope != AccessScope.Write)
+        {
+            return null;
+        }
+
+        var operation = writeOperation switch
+        {
+            AuthorizationOperation.Insert => "Create",
+            AuthorizationOperation.Update => "Update",
+            AuthorizationOperation.Delete => "Delete",
+            _ => null
+        };
+        if (operation is not null &&
+            !FeatureServerEndpoints.ServiceSupportsOperationV2(service, operation, publication))
+        {
+            return $"{operation} edits are not enabled for this service";
+        }
+
+        return null;
     }
 
     private static async Task<AttachmentAccessContext?> TryValidateLayerAccessAsync(
@@ -1037,6 +1092,17 @@ internal static partial class AttachmentEndpoints
             }
         }
 
+        // After RBAC, so an unauthenticated caller still receives 401/403. Declared edit
+        // capabilities use the same resolver as applyEdits: silence is Query-only.
+        var attachmentDenial = DescribeDeniedAttachmentAccess(service, publication, resource, scope, writeOperation);
+        if (attachmentDenial is not null)
+        {
+            await StandardErrorHelpers.CreateBadRequest(context, attachmentDenial)
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
+            return null;
+        }
+
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var storageLayerId = snapshot.ResolveStorageLayerId(publication);
@@ -1054,7 +1120,7 @@ internal static partial class AttachmentEndpoints
                 .ResolveReaderAsync(snapshot, service, resource, publication, storageLayerId.Value,
                     FeatureProviderReadOperation.Query, context.RequestAborted).ConfigureAwait(false);
 
-        return new AttachmentAccessContext(service, resource, storageLayerId.Value, reader);
+        return new AttachmentAccessContext(service, resource, storageLayerId.Value, reader, layerId);
     }
 
     private static bool TryParseObjectIds(

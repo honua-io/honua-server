@@ -340,6 +340,19 @@ internal static partial class FeatureServerEndpoints
                     extrusionValidationErrors);
             }
 
+            var allPairs = GetRoutableFeaturePublicationsV2(service, snapshot);
+            var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
+                context, allPairs.Select(pair => pair.Resource), service,
+                AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
+            var accessibleResources = FilterAccessibleLayersV2(access, snapshot, allPairs)
+                .Select(pair => pair.Resource.Metadata.Id)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var metadataResource = resource with
+            {
+                Relationships = [.. resource.Relationships.Where(relationship =>
+                    accessibleResources.Contains(relationship.RelatedResourceId))]
+            };
+
             LayerResponse response = MapLayerToResponseV2(
                 service,
                 resource,
@@ -354,7 +367,8 @@ internal static partial class FeatureServerEndpoints
                 supportsAttachmentUploads: supportsAttachmentUploads,
                 branchVersioningEnabled: await IsPublicationBranchVersioningAvailableAsync(
                     context, service, resource, publication, snapshot, cancellationToken).ConfigureAwait(false),
-                offlineSyncEnabled: offlineSyncEnabled);
+                offlineSyncEnabled: offlineSyncEnabled,
+                authorizedRelationships: BuildRelationshipResponseV2(metadataResource, snapshot, service));
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, resolvedLayerId, resource.Metadata.Name);
 

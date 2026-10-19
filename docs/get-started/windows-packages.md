@@ -21,25 +21,29 @@ this journey uses a small synchronous import and does not require durable jobs.
 
 ## Artifact identity and qualification
 
-The commands use the anonymously published 2026.1 release channel image
-`ghcr.io/honua-io/honua-server:rc` (`ghcr.io/honua-io/honua-server:ga` once 2026.1
-is generally available; only release promotion moves that tag) with Docker Desktop
-Linux containers; this journey selects `linux/amd64`. The exact digest for a release is `server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json).
-The `rc` tag is published by the release bundle when the first certified lock (`2026.1-rc.3`) is promoted; until then pull the server by the digest in the public [customer install manifest](https://honua.io/data/customer-install-manifest.json).
-Set `$Image` to that digest to pin an installation exactly; `docker pull` below
+For local evaluation, use the published preview image
+`ghcr.io/honua-io/honua-server:nightly-0e03bdd`, matching the
+[quickstart](quickstart.md). Its source and immutable identity are recorded in the
+[preview artifact receipt](../reference/local-preview-artifact.md). This is a
+preview build; the receipt does not claim a clean Windows qualification.
+
+After release promotion, use `ghcr.io/honua-io/honua-server:2026.1-rc`
+(`ghcr.io/honua-io/honua-server:2026.1` at GA). The exact digest is in the
+release's `customer-install-manifest.json` (`server.image`). Those release
+artifacts must exist before selecting that path.
+
+Docker Desktop runs Linux containers; this journey selects `linux/amd64`.
+To pin the installation exactly, use the digest in the preview artifact receipt
+for `$Image` and `HONUA_IMAGE`; `docker pull` below
 resolves the tag, and the support step records the digest that ran. The control-plane package is
-[honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/); the data-plane
-package is [honua-sdk 0.1.13](https://pypi.org/project/honua-sdk/0.1.13/).
+[honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/); the data-plane
+package is [honua-sdk 0.1.16](https://pypi.org/project/honua-sdk/0.1.16/).
 The import step invokes Honua's `honua_ingest_dataset` MCP tool using the
 published [MCP transport client 2.1.1](https://pypi.org/project/mcp/2.1.1/).
 
-Download the [customer install manifest](https://honua.io/data/customer-install-manifest.json)
-for all image and client identities, wheel hashes and direct downloads. Its Honua
-client pins come from the release manifest; the server pin comes from the linked
-successful pre-cut rehearsal. The [publication record](https://honua.io/data/customer-install-publication.json)
-identifies the immutable release-repository source and SHA-256 of the public copy.
-The GHCR manifest URL uses the OCI registry protocol; Docker handles its anonymous
-bearer-token exchange. It does not require a GitHub account.
+The preview does not require the currently unavailable customer install manifest
+or its publication record. Docker handles the public registry's anonymous
+authentication; a GitHub account is not required.
 
 ## 1. Create a private, isolated installation
 
@@ -74,12 +78,12 @@ function New-InstallSecret {
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
 }
-$Image = 'ghcr.io/honua-io/honua-server:rc'
+$Image = 'ghcr.io/honua-io/honua-server:nightly-0e03bdd'
 $Port = 18080
 $KeyringPassword = New-InstallSecret
 @"
 COMPOSE_PROJECT_NAME=$Project
-HONUA_IMAGE=$Image
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-0e03bdd
 HONUA_HTTP_PORT=$Port
 POSTGRES_PASSWORD=$(New-InstallSecret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-InstallSecret)
@@ -196,7 +200,7 @@ needed. Do not substitute `git+https` installs or local source packages.
 python -m venv .venv
 if ($LASTEXITCODE -ne 0) { throw 'Python virtual environment creation failed' }
 $Python = Join-Path $Install '.venv\Scripts\python.exe'
-& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.10' 'honua-sdk==0.1.13' 'mcp==2.1.1'
+& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.12' 'honua-sdk==0.1.16' 'mcp==2.1.1'
 if ($LASTEXITCODE -ne 0) { throw 'Registry package installation failed' }
 & $Python -m pip freeze | Set-Content -LiteralPath installed-packages.txt -Encoding Ascii
 $values = @{}

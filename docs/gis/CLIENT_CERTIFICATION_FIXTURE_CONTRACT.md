@@ -4,7 +4,7 @@ This is the prose half of the frozen 2026.1 client-certification fixture, server
 and auth-policy contract. Its machine-readable half is
 [`docs/gis/data/client-certification-fixture.v1.json`](data/client-certification-fixture.v1.json),
 and the two are paired 1:1: `CanonicalFixtureManifestTests` in
-`tests/dotnet/Honua.Architecture.Tests/CanonicalFixtureManifestTests.cs` fails the build if this
+`tests/dotnet/Honua.Architecture.SourceTests/CanonicalFixtureManifestTests.cs` fails the build if this
 document and that manifest disagree about the case-id set, the auth-profile set, or the published
 revisions.
 
@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:a58bef19c3c1c38b24a3a00de53b9210c6d80fe3b08972e3ebca073a7fdee599` |
+| `fixtureRevision` | `sha256:c6266e3f5a8d9730a0d8ae346dea65eae3d2a5504aef0bb58dd1aa25d0b3638d` |
 | `serverConfigRevision` | `sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
@@ -47,7 +47,7 @@ $ LC_ALL=C sha256sum docker/client-compat/seed/publish-attachments.py \
     tests/seed/browser-compat.yaml tests/seed/client-compat-auth-wave1.yaml \
     tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum
-a58bef19c3c1c38b24a3a00de53b9210c6d80fe3b08972e3ebca073a7fdee599  -
+c6266e3f5a8d9730a0d8ae346dea65eae3d2a5504aef0bb58dd1aa25d0b3638d  -
 $ LC_ALL=C sha256sum tests/config/client-compat-server-v1.json | sha256sum
 d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a  -
 ```
@@ -204,8 +204,9 @@ principal in this fixture, which is what makes the private tier the denial arm o
   same applier. Additive only — it may pin the image digest and enable TLS and may not change any
   seeded identity, count, extent, or access policy. All three revisions carry through unchanged; a
   different value is drift, not an overlay. `CERT-CONN-02` becomes applicable.
-- **licensed** (release): the entitlement-bound overlay for ArcGIS Pro/arcpy, Excel, Power BI, and
-  Tableau. It binds the same identities and the same auth policy plus an entitlement; it may not
+- **licensed** (release): entitlement-bound overlay named for ArcGIS Pro/arcpy, Excel, Power BI, and
+  Tableau. Seat and licence configuration stay in the owning evidence repository. The overlay
+  binds the same identities and the same auth policy; it may not
   substitute its own seed for the canonical fixture.
 
 ## 6. Case and scenario-facet identities
@@ -225,8 +226,9 @@ rendering and style `CERT-RNDR-01`, `CERT-RNDR-02`, `CERT-RNDR-SYM-01`, `CERT-RN
 `CERT-PRTL-TOKN-02`, `CERT-PRTL-AUTH-01`, `CERT-PRTL-OAUTH-01`, `CERT-PRTL-OAUTH-02`,
 `CERT-PRTL-COMM-01`, `CERT-PRTL-COMM-02`.
 
-**Lane extensions (23).** JavaScript: `JS-EXT-01`, `JS-EXT-02`, `JS-EXT-OL-COLL-01`,
+**Lane extensions (24).** JavaScript: `JS-EXT-01`, `JS-EXT-02`, `JS-EXT-OL-COLL-01`,
 `JS-EXT-OL-ITEMTYPE-01`, `JS-EXT-OL-ITEMS-01`, `JS-EXT-OL-GEOJSON-01`, `JS-EXT-OL-GEOJSON-02`,
+`JS-EXT-OL-WFS-GETFEATURE-01` (unfiltered parsing only; no core filtering credit),
 `JS-EXT-TILES-DISC-01`, `JS-EXT-TILES-DISC-02`, `JS-EXT-TILES-SCHM-01`, `JS-EXT-OGC-MAPS-01`.
 Cesium: `JS-CES-IMG-01`, `JS-CES-TILE-01`. Esri Leaflet: `EL-EXT-01`, `EL-EXT-02`, `EL-EXT-03`,
 `EL-EXT-04`. Desktop: `DSK-EXT-01`, `DSK-EXT-02`. CLI: `CLI-EXT-01`, `CLI-EXT-02`. BI:
@@ -564,7 +566,7 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | `NB-STAC-ITEM-06` | `SF-EXT-CLIENT-IDIOM` | Catalog: validated against the published STAC JSON Schemas; Collection: validated against the published STAC JSON Schemas; Item: validated against the published STAC JSON Schemas. |
 | `NB-STAC-PAGE-01` | `SF-PAGE-LIMIT` | pages() walked to exhaustion in page sizes [3, 3, 3, 1], collecting all 10 seeded items with no duplicates and terminating without a next link. |
 | `NB-STAC-PAGE-02` | `SF-PAGE-LIMIT` | ItemSearch.matched()=10 agrees with numberMatched=10 and numberReturned=3 equals the actual feature count on the page. |
-| `NB-STAC-PAGE-03` | `SF-PAGE-LIMIT` | GET next uses a token query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page. |
+| `NB-STAC-PAGE-03` | `SF-PAGE-LIMIT` | GET next uses a next cursor query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page. |
 | `NB-STAC-PAGE-04` | `SF-PAGE-LIMIT` | limit=1000000 clamped to the server maximum and still answered 200; limit=0 was rejected with status=400 title='Bad Request' detail='limit must be greater than or equal to 1.'. Raw httpx.... |
 | `NB-STAC-PAGE-05` | `SF-PAGE-LIMIT` | A token past the end returned an empty FeatureCollection with no next link; a malformed token was rejected with status=400 title='Bad Request' detail='Invalid pagination token.'. |
 | `NB-STAC-SEARCH-01` | `SF-QFLT-SPATIAL` | intersects(Polygon) and the equivalent bbox both returned ['1', '2', '3']. |

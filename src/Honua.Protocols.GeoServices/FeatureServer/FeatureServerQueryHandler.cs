@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
@@ -764,13 +765,20 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                var count = await _queryExecutor.CountAsync(
+                var (count, countError) = await ResolveReturnCountAsync(
                     queryLayer.Service,
                     queryLayer.Resource,
                     queryLayer.Publication,
                     queryLayer.StorageLayerId,
                     query,
+                    validatedParams,
+                    queryLimits.MaxRecordCount,
                     cancellationToken).ConfigureAwait(false);
+                if (countError is not null)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, countError);
+                }
+
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "count", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
                 var safeCount = (int)Math.Min(count, int.MaxValue);
@@ -880,19 +888,38 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
+                long[] objectIds;
+                var idsExceededTransferLimit = false;
+
+                // A provider reader that cannot stream (federated ArcGIS REST) answers ids from
+                // QueryObjectIdsAsync under a hard ceiling instead of materialising every full
+                // feature with geometry (#6113). Other readers also use their ids-only path.
+                var boundedIds = await _queryExecutor.TryQueryNonStreamingObjectIdsAsync(
                     queryLayer.Service,
                     queryLayer.Resource,
                     queryLayer.Publication,
                     queryLayer.StorageLayerId,
                     query,
                     cancellationToken).ConfigureAwait(false);
+                if (boundedIds is { } bounded)
+                {
+                    objectIds = bounded.ObjectIds.ToArray();
+                    idsExceededTransferLimit = bounded.ExceededTransferLimit;
+                }
+                else
+                {
+                    var result = await _queryExecutor.QueryObjectIdsWithValidationAsync(
+                        queryLayer.Service,
+                        queryLayer.Resource,
+                        queryLayer.Publication,
+                        queryLayer.StorageLayerId,
+                        query,
+                        cancellationToken).ConfigureAwait(false);
+                    objectIds = result.IsDefault ? [] : result.ToArray();
+                }
+
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "ids", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
-
-                var objectIds = result.Items
-                    .Select(feature => GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
-                    .ToArray();
                 HonuaTelemetry.SetSuccess(featureActivity, objectIds.Length);
 
                 if (idsIsPbf)
@@ -905,6 +932,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 {
                     ObjectIdFieldName = objectIdFieldName,
                     ObjectIds = objectIds,
+                    ExceededTransferLimit = idsExceededTransferLimit,
                     Features = null
                 };
 
@@ -1104,15 +1132,23 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
 
                 // Providers that advertise distinct-before-pagination receive a one-row
-                // probe after the requested page. Other providers use a complete
-                // materialized fallback so OFFSET is never applied before de-duplication.
-                var providerAppliesDistinct = shouldApplyDistinct && _queryExecutor.SupportsDistinctValues;
+                // probe after the requested page. Other providers scan a bounded window
+                // and de-duplicate in memory. A scan that hits the cap is a client error,
+                // not an open-ended HasMoreResults loop.
+                var providerAppliesDistinct = shouldApplyDistinct && await _queryExecutor.SupportsDistinctValuesAsync(
+                    queryLayer.Service,
+                    queryLayer.Resource,
+                    queryLayer.Publication,
+                    queryLayer.StorageLayerId,
+                    cancellationToken).ConfigureAwait(false);
                 var distinctScanLimit = checked((query.Limit ?? queryLimits.MaxRecordCount) + 1);
-                var queryForExecution = shouldApplyDistinct
-                    ? providerAppliesDistinct
-                        ? query with { Limit = distinctScanLimit }
-                        : query with { Distinct = false, Limit = null, Offset = null }
-                    : query;
+                var distinctFallbackCap = DistinctFallbackScanCap(queryLimits.MaxRecordCount);
+                var queryForExecution = BuildDistinctExecutionQuery(
+                    query,
+                    shouldApplyDistinct,
+                    providerAppliesDistinct,
+                    distinctScanLimit,
+                    distinctFallbackCap);
                 var queryStopwatch = Stopwatch.StartNew();
                 // Pass the authenticated caller so plugin computed-field providers (#1562) can
                 // scope derived values per-actor. Projection inside the executor is a no-op unless
@@ -1131,6 +1167,11 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 if (shouldApplyDistinct)
                 {
+                    if (!providerAppliesDistinct && result.Items.Length > distinctFallbackCap)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(context, DistinctScanExceededMessage);
+                    }
+
                     var distinctScanTruncated = providerAppliesDistinct && result.Items.Length >= distinctScanLimit;
                     result = ApplyDistinctValues(result, outFields!);
                     result = ApplyPaginationWindow(
@@ -1207,6 +1248,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 validatedParams,
                 outputSrid,
                 context,
+                format,
                 cancellationToken);
 
             HonuaTelemetry.SetSuccess(featureActivity);
@@ -1413,14 +1455,27 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         var inputSrid = await _queryServices.ResolveSridAsync(validatedParams.InSr, parsedGeometry?.SpatialReference, cancellationToken).ConfigureAwait(false);
-        if (validatedParams.InSrSpecified && !inputSrid.HasValue)
+        var inputSridDecision = DecideMissingInputSrid(
+            validatedParams.InSrSpecified,
+            inputSrid,
+            parsedGeometry?.SpatialReference);
+        if (inputSridDecision == MissingInputSridDecision.RejectInSr)
         {
             return (null, null, StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid input spatial reference",
                 [CreateSpatialReferenceErrorMessage("inSR", validatedParams.InSr)]));
         }
 
-        if (parsedGeometry != null && !inputSrid.HasValue)
+        if (inputSridDecision == MissingInputSridDecision.RejectGeometrySpatialReference)
+        {
+            return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid input spatial reference",
+                [CreateSpatialReferenceErrorMessage(
+                    "geometry.spatialReference",
+                    DescribeUnresolvableGeometrySpatialReference(parsedGeometry?.SpatialReference))]));
+        }
+
+        if (parsedGeometry != null && inputSridDecision == MissingInputSridDecision.FallBackToLayer)
         {
             inputSrid = mapSpatialReference ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         }
@@ -2013,13 +2068,20 @@ internal sealed partial class FeatureServerQueryHandler(
         if (validatedParams.ReturnCountOnly)
         {
             var stopwatch = Stopwatch.StartNew();
-            var count = await _queryExecutor.CountAsync(
+            var (count, countError) = await ResolveReturnCountAsync(
                 queryLayer.Service,
                 queryLayer.Resource,
                 queryLayer.Publication,
                 queryLayer.StorageLayerId,
                 query,
+                validatedParams,
+                queryLimits.MaxRecordCount,
                 cancellationToken).ConfigureAwait(false);
+            if (countError is not null)
+            {
+                throw new ArgumentException(countError);
+            }
+
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "count", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
             return new QueryResponse
@@ -2109,13 +2171,20 @@ internal sealed partial class FeatureServerQueryHandler(
         // Providers that advertise distinct-before-pagination receive a one-row probe
         // after the requested page. Other providers use a complete materialized fallback
         // so OFFSET is never applied before de-duplication.
-        var providerAppliesDistinct = shouldApplyDistinct && _queryExecutor.SupportsDistinctValues;
+        var providerAppliesDistinct = shouldApplyDistinct && await _queryExecutor.SupportsDistinctValuesAsync(
+            queryLayer.Service,
+            queryLayer.Resource,
+            queryLayer.Publication,
+            queryLayer.StorageLayerId,
+            cancellationToken).ConfigureAwait(false);
         var distinctScanLimit = checked((query.Limit ?? queryLimits.MaxRecordCount) + 1);
-        var queryForExecution = shouldApplyDistinct
-            ? providerAppliesDistinct
-                ? query with { Limit = distinctScanLimit }
-                : query with { Distinct = false, Limit = null, Offset = null }
-            : query;
+        var distinctFallbackCap = DistinctFallbackScanCap(queryLimits.MaxRecordCount);
+        var queryForExecution = BuildDistinctExecutionQuery(
+            query,
+            shouldApplyDistinct,
+            providerAppliesDistinct,
+            distinctScanLimit,
+            distinctFallbackCap);
         var queryStopwatch = Stopwatch.StartNew();
         QueryResult<Feature> queryResult = await _queryExecutor.QueryWithValidationAsync(
             queryLayer.Service,
@@ -2129,6 +2198,11 @@ internal sealed partial class FeatureServerQueryHandler(
 
         if (shouldApplyDistinct)
         {
+            if (!providerAppliesDistinct && queryResult.Items.Length > distinctFallbackCap)
+            {
+                throw new ArgumentException(DistinctScanExceededMessage);
+            }
+
             var distinctScanTruncated = providerAppliesDistinct && queryResult.Items.Length >= distinctScanLimit;
             queryResult = ApplyDistinctValues(queryResult, outFields!);
             queryResult = ApplyPaginationWindow(
@@ -2559,6 +2633,80 @@ internal sealed partial class FeatureServerQueryHandler(
             ? $"{parameterName} must not be empty."
             : $"Unsupported {parameterName} value: {rawValue}";
 
+    /// <summary>
+    /// How a query treats an unresolved input spatial reference.
+    /// </summary>
+    internal enum MissingInputSridDecision
+    {
+        /// <summary>The resolver produced a supported SRID.</summary>
+        UseResolved,
+
+        /// <summary>The caller supplied inSR and it could not be resolved.</summary>
+        RejectInSr,
+
+        /// <summary>The geometry carried a spatial reference and it could not be resolved.</summary>
+        RejectGeometrySpatialReference,
+
+        /// <summary>No input spatial reference was supplied, so the layer SR may apply.</summary>
+        FallBackToLayer,
+    }
+
+    /// <summary>
+    /// Chooses whether an unresolved input SR is a client error or a layer-SR fallback.
+    /// A geometry spatial reference counts as supplied when wkid, latestWkid, or WKT is present.
+    /// </summary>
+    internal static MissingInputSridDecision DecideMissingInputSrid(
+        bool inSrSpecified,
+        int? resolvedSrid,
+        GeoServicesSpatialReference? geometrySpatialReference)
+    {
+        if (resolvedSrid.HasValue)
+        {
+            return MissingInputSridDecision.UseResolved;
+        }
+
+        if (inSrSpecified)
+        {
+            return MissingInputSridDecision.RejectInSr;
+        }
+
+        if (GeometryCarriesSpatialReference(geometrySpatialReference))
+        {
+            return MissingInputSridDecision.RejectGeometrySpatialReference;
+        }
+
+        return MissingInputSridDecision.FallBackToLayer;
+    }
+
+    /// <summary>
+    /// True when the geometry object included a horizontal spatial reference.
+    /// A missing object, an empty object, or wkid 0 is treated as absent.
+    /// </summary>
+    internal static bool GeometryCarriesSpatialReference(GeoServicesSpatialReference? spatialReference)
+        => spatialReference is { Wkid: > 0 }
+            || spatialReference?.LatestWkid is > 0
+            || !string.IsNullOrWhiteSpace(spatialReference?.Wkt);
+
+    internal static string DescribeUnresolvableGeometrySpatialReference(GeoServicesSpatialReference? spatialReference)
+    {
+        if (!string.IsNullOrWhiteSpace(spatialReference?.Wkt))
+        {
+            return spatialReference.Wkt;
+        }
+
+        if (spatialReference?.Wkid is > 0)
+        {
+            return spatialReference.Wkid.Value.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (spatialReference?.LatestWkid is > 0)
+        {
+            return spatialReference.LatestWkid.Value.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return string.Empty;
+    }
+
     private static SpatialReference ResolveAreaLimitSpatialReference(
         MetadataV2Resource resource,
         GeoServicesGeometry geometry,
@@ -2969,12 +3117,13 @@ internal sealed partial class FeatureServerQueryHandler(
     }
 
     // Parses a GeoServices `having` expression into structured aggregate
-    // conditions. The grammar is deliberately narrow — `AGG(field) OP number`
+    // conditions. The grammar is deliberately narrow — `AGG(field) OP value`
     // terms joined by AND — so the provider can rebuild a fully parameterized
     // HAVING clause without ever concatenating client text into SQL. Each
-    // aggregate must already be declared in outStatistics, mirroring the Esri
-    // contract and reusing the same field-type hints as the SELECT aggregates.
-    private static bool TryParseHavingConditions(
+    // aggregate must already be declared in outStatistics. Count and the numeric
+    // aggregates compare a number. Min/max compare a literal of the statistic
+    // field's type, so a string or date is not sent to the provider as a double.
+    internal static bool TryParseHavingConditions(
         string having,
         ImmutableArray<StatisticDefinition> statistics,
         MetadataV2Resource resource,
@@ -2990,7 +3139,7 @@ internal sealed partial class FeatureServerQueryHandler(
             fieldTypes[field.Name] = field.Type;
         }
 
-        var terms = HavingConjunctionRegex().Split(having);
+        var terms = SplitHavingConjunctions(having);
         var parsed = new List<HavingCondition>();
 
         foreach (var term in terms.Select(rawTerm => rawTerm.Trim()))
@@ -3004,7 +3153,7 @@ internal sealed partial class FeatureServerQueryHandler(
             var match = HavingTermRegex().Match(term);
             if (!match.Success)
             {
-                error = $"Unsupported having condition: '{term}'. Expected 'AGG(field) <op> number' where AGG is one of count, sum, min, max, avg, stddev, var.";
+                error = $"Unsupported having condition: '{term}'. Expected 'AGG(field) <op> value' where AGG is one of count, sum, min, max, avg, stddev, var.";
                 return false;
             }
 
@@ -3040,22 +3189,30 @@ internal sealed partial class FeatureServerQueryHandler(
                 return false;
             }
 
-            if (!double.TryParse(match.Groups["value"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+            var fieldType = matchingStat.FieldType
+                ?? (fieldTypes.TryGetValue(field, out var resolvedType) ? resolvedType : (MetadataV2FieldType?)null);
+            if (!TryParseHavingValue(
+                    match.Groups["value"].Value,
+                    statisticType,
+                    fieldType,
+                    field,
+                    term,
+                    out var parsedValue,
+                    out error))
             {
-                error = $"Invalid numeric value in having condition: '{term}'.";
                 return false;
             }
-
-            var fieldType = fieldTypes.TryGetValue(field, out var resolvedType)
-                ? resolvedType
-                : (MetadataV2FieldType?)null;
 
             parsed.Add(new HavingCondition
             {
                 StatisticType = statisticType,
                 OnStatisticField = field,
                 Operator = op,
-                Value = value,
+                Value = parsedValue.Numeric,
+                TextValue = parsedValue.Text,
+                TimestampValue = parsedValue.Timestamp,
+                DateValue = parsedValue.Date,
+                TimeValue = parsedValue.Time,
                 FieldType = fieldType
             });
         }
@@ -3067,6 +3224,137 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         conditions = parsed.ToImmutableArray();
+        return true;
+    }
+
+    private readonly record struct ParsedHavingValue(
+        double Numeric,
+        string? Text,
+        DateTimeOffset? Timestamp,
+        DateOnly? Date,
+        TimeOnly? Time);
+
+    // Count/sum/avg/stddev/var are numeric even when the source field is not.
+    // Min/max keep the field type: a number against a string or date is a client
+    // error, and a typed literal is bound as that type rather than as a double.
+    private static bool TryParseHavingValue(
+        string raw,
+        StatisticType statisticType,
+        MetadataV2FieldType? fieldType,
+        string field,
+        string term,
+        out ParsedHavingValue parsed,
+        out string? error)
+    {
+        parsed = default;
+        error = null;
+        if (statisticType is not (StatisticType.Min or StatisticType.Max)
+            || fieldType is null
+            || IsNumericFieldType(fieldType.Value))
+        {
+            if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+                || !double.IsFinite(number))
+            {
+                error = $"Invalid numeric value in having condition: '{term}'.";
+                return false;
+            }
+
+            parsed = new ParsedHavingValue(number, null, null, null, null);
+            return true;
+        }
+
+        switch (fieldType.Value)
+        {
+            case MetadataV2FieldType.String:
+                if (raw.Length == 0 || raw[0] != '\'' || !TryReadQuotedHavingLiteral(raw, out var text))
+                {
+                    error = $"having value for string field '{field}' must be a quoted string.";
+                    return false;
+                }
+
+                parsed = new ParsedHavingValue(0, text, null, null, null);
+                return true;
+            case MetadataV2FieldType.DateTime:
+                if (!TryParseHavingTimestamp(raw, out var timestamp))
+                {
+                    error = $"having value for datetime field '{field}' must be an epoch-millisecond integer or a timestamp literal.";
+                    return false;
+                }
+
+                parsed = new ParsedHavingValue(0, null, timestamp, null, null);
+                return true;
+            case MetadataV2FieldType.Date:
+                if (!TryParseHavingDate(raw, out var date))
+                {
+                    error = $"having value for date field '{field}' must be an epoch-millisecond integer or a date literal.";
+                    return false;
+                }
+
+                parsed = new ParsedHavingValue(0, null, null, date, null);
+                return true;
+            case MetadataV2FieldType.Time:
+                if (!TryReadQuotedHavingLiteral(raw, out var timeText)
+                    || !TimeOnly.TryParse(timeText, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
+                {
+                    error = $"having value for time field '{field}' must be a time literal.";
+                    return false;
+                }
+
+                parsed = new ParsedHavingValue(0, null, null, null, time);
+                return true;
+            default:
+                error = $"having comparison is not supported for field '{field}' ({fieldType.Value}).";
+                return false;
+        }
+    }
+
+    private static bool TryParseHavingTimestamp(string raw, out DateTimeOffset timestamp)
+    {
+        timestamp = default;
+        if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var epochMs))
+        {
+            try
+            {
+                timestamp = DateTimeOffset.FromUnixTimeMilliseconds(epochMs);
+                return true;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return false;
+            }
+        }
+
+        return TryReadQuotedHavingLiteral(raw, out var text)
+            && DateTimeOffset.TryParse(
+                text,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out timestamp);
+    }
+
+    private static bool TryParseHavingDate(string raw, out DateOnly date)
+    {
+        date = default;
+        if (TryParseHavingTimestamp(raw, out var timestamp))
+        {
+            date = DateOnly.FromDateTime(timestamp.UtcDateTime);
+            return true;
+        }
+
+        return TryReadQuotedHavingLiteral(raw, out var text)
+            && DateOnly.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+    }
+
+    private static bool TryReadQuotedHavingLiteral(string raw, out string text)
+    {
+        text = string.Empty;
+        var quoteAt = raw.IndexOf('\'', StringComparison.Ordinal);
+        if (quoteAt < 0 || raw[^1] != '\'')
+        {
+            return false;
+        }
+
+        text = raw[(quoteAt + 1)..^1].Replace("''", "'", StringComparison.Ordinal);
         return true;
     }
 
@@ -3239,6 +3527,94 @@ internal sealed partial class FeatureServerQueryHandler(
             || exception.Message.Contains("does not support", StringComparison.OrdinalIgnoreCase);
     }
 
+    private const string DistinctScanExceededMessage =
+        "returnDistinctValues exceeds the bounded scan for this layer. Narrow the query and retry.";
+
+    private const string DistinctCountRequiresOutFieldsMessage =
+        "returnDistinctValues with returnCountOnly requires outFields for this layer.";
+
+    private static int DistinctFallbackScanCap(int maxRecordCount)
+        => checked(Math.Max(1, maxRecordCount) * 10);
+
+    private static FeatureQuery BuildDistinctExecutionQuery(
+        FeatureQuery query,
+        bool shouldApplyDistinct,
+        bool providerAppliesDistinct,
+        int distinctScanLimit,
+        int distinctFallbackCap)
+    {
+        if (!shouldApplyDistinct)
+        {
+            return query;
+        }
+
+        return providerAppliesDistinct
+            ? query with { Limit = distinctScanLimit }
+            : query with { Distinct = false, Limit = distinctFallbackCap + 1, Offset = null };
+    }
+
+    private async Task<(long Count, string? Error)> ResolveReturnCountAsync(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        FeatureQuery query,
+        QueryParameters validatedParams,
+        int maxRecordCount,
+        CancellationToken cancellationToken)
+    {
+        if (!validatedParams.ReturnDistinctValues)
+        {
+            var rawCount = await _queryExecutor.CountAsync(
+                service, resource, publication, storageLayerId, query, cancellationToken).ConfigureAwait(false);
+            return (rawCount, null);
+        }
+
+        if (await _queryExecutor.SupportsDistinctValuesAsync(
+                service, resource, publication, storageLayerId, cancellationToken).ConfigureAwait(false))
+        {
+            var distinctCount = await _queryExecutor.CountAsync(
+                service, resource, publication, storageLayerId, query, cancellationToken).ConfigureAwait(false);
+            return (distinctCount, null);
+        }
+
+        var outFields = ParseQueryOutFields(validatedParams.OutFields);
+        if (outFields is not { Length: > 0 })
+        {
+            return (0, DistinctCountRequiresOutFieldsMessage);
+        }
+
+        var scanCap = DistinctFallbackScanCap(maxRecordCount);
+        var scan = await _queryExecutor.QueryWithValidationAsync(
+            service,
+            resource,
+            publication,
+            storageLayerId,
+            query with { Distinct = false, Limit = scanCap + 1, Offset = null },
+            cancellationToken).ConfigureAwait(false);
+        if (scan.Items.Length > scanCap)
+        {
+            return (0, DistinctScanExceededMessage);
+        }
+
+        return (ApplyDistinctValues(scan, outFields).Items.Length, null);
+    }
+
+    private static string[]? ParseQueryOutFields(string? outFields)
+    {
+        if (string.IsNullOrEmpty(outFields))
+        {
+            return null;
+        }
+
+        var parsed = outFields
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(field => field.Trim())
+            .Where(field => field.Length > 0)
+            .ToArray();
+        return parsed.Length == 0 ? null : parsed;
+    }
+
     private static QueryResult<Feature> ApplyDistinctValues(QueryResult<Feature> result, string[] outFields)
     {
         if (result.Items.IsDefaultOrEmpty)
@@ -3306,7 +3682,19 @@ internal sealed partial class FeatureServerQueryHandler(
         for (var i = 0; i < outFields.Length; i++)
         {
             var fieldName = outFields[i];
-            parts[i] = feature.Attributes.TryGetValue(fieldName, out var value) && value != null
+            if (!feature.Attributes.TryGetValue(fieldName, out var value))
+            {
+                foreach (var (name, candidate) in feature.Attributes)
+                {
+                    if (name.Equals(fieldName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        value = candidate;
+                        break;
+                    }
+                }
+            }
+
+            parts[i] = value != null
                 ? value switch
                 {
                     IConvertible convertible => convertible.ToString(CultureInfo.InvariantCulture),
@@ -3320,16 +3708,78 @@ internal sealed partial class FeatureServerQueryHandler(
     }
 
     // Splits a having expression on the boolean AND conjunction (case-insensitive,
-    // word-bounded). OR is intentionally unsupported; aggregate group filters are
-    // conjunctive in the Esri contract.
-    [GeneratedRegex(@"\s+AND\s+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex HavingConjunctionRegex();
+    // with whitespace on both sides). Quoted literals stay intact, including a
+    // doubled quote escape and the letters AND inside the literal. OR is
+    // intentionally unsupported; aggregate group filters are conjunctive in the
+    // Esri contract.
+    private static List<string> SplitHavingConjunctions(string having)
+    {
+        var parts = new List<string>();
+        var current = new StringBuilder();
+        var inQuotes = false;
+        for (var i = 0; i < having.Length; i++)
+        {
+            var c = having[i];
+            if (c == '\'')
+            {
+                current.Append(c);
+                if (inQuotes && i + 1 < having.Length && having[i + 1] == '\'')
+                {
+                    current.Append('\'');
+                    i++;
+                    continue;
+                }
 
-    // Matches a single 'AGG(field) <op> number' term. The field token is a bare
-    // SQL identifier and the value is a plain decimal literal, so no client text
-    // can reach the SQL string beyond the validated aggregate/field/operator.
+                inQuotes = !inQuotes;
+                continue;
+            }
+
+            if (!inQuotes && IsHavingAndAt(having, i))
+            {
+                parts.Add(current.ToString());
+                current.Clear();
+                i += 3;
+                while (i < having.Length && char.IsWhiteSpace(having[i]))
+                {
+                    i++;
+                }
+
+                i--;
+                continue;
+            }
+
+            current.Append(c);
+        }
+
+        if (current.Length > 0)
+        {
+            parts.Add(current.ToString());
+        }
+
+        return parts;
+    }
+
+    private static bool IsHavingAndAt(string text, int index)
+    {
+        if (index == 0 || !char.IsWhiteSpace(text[index - 1]))
+        {
+            return false;
+        }
+
+        if (index + 4 > text.Length)
+        {
+            return false;
+        }
+
+        return text.AsSpan(index, 3).Equals("AND", StringComparison.OrdinalIgnoreCase)
+            && char.IsWhiteSpace(text[index + 3]);
+    }
+
+    // Matches one 'AGG(field) <op> value' term. The value is a number, a quoted
+    // string, or a date/time literal. It is validated against the statistic type
+    // and bound as a parameter; none of the token is concatenated into SQL.
     [GeneratedRegex(
-        @"^(?<agg>count|sum|min|max|avg|stddev|var)\s*\(\s*(?<field>[A-Za-z_][A-Za-z0-9_]*)\s*\)\s*(?<op>!=|<>|<=|>=|=|<|>)\s*(?<value>-?\d+(?:\.\d+)?)$",
+        @"^(?<agg>count|sum|min|max|avg|stddev|var)\s*\(\s*(?<field>[A-Za-z_][A-Za-z0-9_]*)\s*\)\s*(?<op>!=|<>|<=|>=|=|<|>)\s*(?<value>-?\d+(?:\.\d+)?|'(?:''|[^'])*'|(?:timestamp|date|time)\s+'(?:''|[^'])*')$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex HavingTermRegex();
 }

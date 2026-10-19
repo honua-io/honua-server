@@ -24,7 +24,8 @@ internal sealed class MySqlFeatureStore :
     IFeatureReader,
     IBindableFeatureDataProvider,
     IPagedFeatureReader,
-    IStreamingFeatureStore
+    IStreamingFeatureStore,
+    IDistinctFeatureReader
 {
     private const int DefaultStreamingPageSize = 1000;
 

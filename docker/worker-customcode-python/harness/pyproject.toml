@@ -16,7 +16,7 @@ authors = [{ name = "Honua", email = "mike@honua.io" }]
 # honua-sdk is pinned here so a standalone install matches the image, but the
 # image installs it as a baked layer rather than as a transitive resolve.
 dependencies = [
-  "honua-sdk==0.1.4",
+  "honua-sdk==0.1.16",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +29,7 @@ test = [
 
 [project.scripts]
 honua-customcode-harness = "honua_customcode_harness.harness:main"
+honua-gp-python = "honua_customcode_harness.local:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["honua_customcode_harness"]

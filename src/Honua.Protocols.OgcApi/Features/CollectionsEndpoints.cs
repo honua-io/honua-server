@@ -326,6 +326,8 @@ internal static class CollectionsEndpoints
                 context,
                 collectionId,
                 requiredProtocol: OgcFeaturesProtocolName,
+                preferExactPublicationId: true,
+                preferAdvertisedCollectionId: true,
                 cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
@@ -452,6 +454,8 @@ internal static class CollectionsEndpoints
                 context,
                 collectionId,
                 requiredProtocol: OgcFeaturesProtocolName,
+                preferExactPublicationId: true,
+                preferAdvertisedCollectionId: true,
                 cancellationToken: effectiveToken);
             if (!validation.IsValid)
             {

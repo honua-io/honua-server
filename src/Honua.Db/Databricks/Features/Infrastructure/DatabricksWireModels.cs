@@ -24,6 +24,9 @@ internal sealed record DatabricksStatementRequest
     [JsonPropertyName("wait_timeout")]
     public string? WaitTimeout { get; init; }
 
+    [JsonPropertyName("on_wait_timeout")]
+    public string? OnWaitTimeout { get; init; }
+
     [JsonPropertyName("disposition")]
     public string Disposition { get; init; } = "INLINE";
 

@@ -694,6 +694,24 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/query")]
+    public async Task MapServer_ServiceQuery_GetWithLayerDefs_ExcludesFeatures()
+    {
+        var layerDefs = Uri.EscapeDataString($"{{\"{WebAppFixture.TestLayerId}\":\"1=0\"}}");
+        var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/query?layerId={WebAppFixture.TestLayerId}&where=1%3D1&layerDefs={layerDefs}&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features!.Length.Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/MapServer/query")]
     public async Task MapServer_ServiceQuery_PostWithLayerId_ReturnsFeatures()
     {

@@ -54,8 +54,10 @@ public sealed class RbacRoleClaimEntitlementTests
     }
 
     [UnitTest]
-    public async Task AccessPolicyGrant_CustomRoleClaim_FollowsLiveEntitlement()
+    public async Task AccessPolicyGrant_CustomRoleClaim_DoesNotSkipRoleList()
     {
+        // The mapped role's query grant must not skip AllowedRoles (#6358), including
+        // when an Enterprise snapshot admits the custom claim.
         var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Community);
         using var provider = BuildServices(entitlements);
         var context = CreateContext(provider, CreatePrincipal(CustomRoleClaimType, MappedRole));
@@ -74,7 +76,7 @@ public sealed class RbacRoleClaimEntitlementTests
 
         entitlements.Apply(HonuaEdition.Enterprise);
         (await AccessPolicyHelpers.IsResourceAccessibleAsync(
-            context, resource, service, AuthorizationOperation.Query)).Should().BeTrue();
+            context, resource, service, AuthorizationOperation.Query)).Should().BeFalse();
 
         entitlements.Expire();
         (await AccessPolicyHelpers.IsResourceAccessibleAsync(

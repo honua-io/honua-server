@@ -159,7 +159,7 @@ internal sealed class CoordinatedMetadataStepExecutor(
                 $"Coordinated release {operation.OperationId} DB schema + metadata activation.",
                 idempotencyKey: $"{operation.OperationId}-metadata",
                 correlationId: operation.Audit.CorrelationId,
-                cancellationToken)
+                cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         return new CoordinatedStepResult

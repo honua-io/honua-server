@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
@@ -33,6 +34,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\Honua.Geometry\Honua.Geometry.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.SqlServer.UnitTests" />
   </ItemGroup>
 
 </Project>

@@ -9,7 +9,6 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
@@ -83,46 +82,21 @@ internal sealed partial class EdrHandler
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-
-        var byResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.Ordinal);
-        foreach (var publication in snapshot.Graph.Publications)
-        {
-            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
-                !IsProtocolEnabled(service, CoveragesProtocol))
-            {
-                continue;
-            }
-
-            var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication) ||
-                !AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
-            {
-                continue;
-            }
-
-            if (!byResource.TryGetValue(resource!.Metadata.Id, out var existing) ||
-                (publication.IsPrimary && !existing.Publication.IsPrimary))
-            {
-                byResource[resource.Metadata.Id] = (publication, service, resource!);
-            }
-        }
+        var byCollection = await LayerValidationHelpers.ResolveStorageCollectionsWithAccessV2Async(
+            context, snapshot, CoveragesProtocol, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var collections = ImmutableArray.CreateBuilder<EdrCollection>();
-        foreach (var entry in byResource.Values.OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue))
+        foreach (var entry in byCollection.Where(static pair => pair.Value.IsValid).OrderBy(static pair => pair.Key))
         {
-            var storageLayerId = snapshot.ResolveStorageLayerId(entry.Publication);
-            if (!storageLayerId.HasValue)
-            {
-                continue;
-            }
-
-            var raster = await GetRasterAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+            var storageLayerId = entry.Key;
+            var raster = await GetRasterAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
             if (raster is null)
             {
                 continue;
             }
 
-            collections.Add(await BuildCollectionAsync(entry.Resource, storageLayerId.Value, raster.Value, baseUrl, cancellationToken)
+            collections.Add(await BuildCollectionAsync(
+                    entry.Value.Resource!, storageLayerId, raster.Value, baseUrl, cancellationToken)
                 .ConfigureAwait(false));
         }
 
@@ -384,14 +358,15 @@ internal sealed partial class EdrHandler
 
     private async Task<EdrResolution> ResolveAsync(HttpContext context, string collectionId, CancellationToken cancellationToken)
     {
-        var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+        var validation = await LayerValidationHelpers.ValidateStorageCollectionWithAccessV2Async(
             context, collectionId, requiredProtocol: CoveragesProtocol, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!validation.IsValid)
         {
             return new EdrResolution(null, 0, default, validation.ErrorResult);
         }
 
-        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = validation.Snapshot
+            ?? await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var storageLayerId = snapshot.ResolveStorageLayerId(validation.Publication!);
         if (!storageLayerId.HasValue)
         {
@@ -931,9 +906,6 @@ internal sealed partial class EdrHandler
     // so an advertised time round-trips exactly through the datetime parameter (#4151).
     private static string Iso(DateTimeOffset value) =>
         value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture);
-
-    private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol) =>
-        service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
     // CoverageJSON puts the t-axis values (ISO strings) on the domain alongside numeric
     // x/y axes; the source-gen NdArray axis dictionary is numeric-only, so the time axis is

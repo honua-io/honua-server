@@ -1,0 +1,369 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Linq;
+using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
+using Honua.TestKit.Attributes;
+using Xunit;
+
+namespace Honua.Server.Tests.Features.Protocols.Mcp;
+
+/// <summary>
+/// Unit tests for the MCP Streamable-HTTP session registry (honua-server#1954).
+/// These run without Docker/PostGIS so the session-id issuance and validation
+/// invariants are covered even when the full integration harness is unavailable.
+/// </summary>
+public sealed class McpSessionManagerTests
+{
+    [UnitTest]
+    public void CreateSession_IssuesUniqueVisibleAsciiIds()
+    {
+        var manager = new McpSessionManager();
+
+        var ids = Enumerable.Range(0, 100).Select(_ => manager.CreateSession()).ToArray();
+
+        ids.Should().OnlyContain(id => !string.IsNullOrWhiteSpace(id));
+        ids.Distinct().Should().HaveCount(ids.Length, "session ids must be globally unique");
+        // The spec requires session ids to contain only visible ASCII (0x21-0x7E).
+        ids.Should().OnlyContain(id => id.All(c => c >= '!' && c <= '~'));
+    }
+
+    [UnitTest]
+    public void IsValid_ReturnsTrueForIssuedSession_AndFalseOtherwise()
+    {
+        var manager = new McpSessionManager();
+        var id = manager.CreateSession();
+
+        manager.IsValid(id).Should().BeTrue();
+        manager.IsValid("never-issued").Should().BeFalse();
+        manager.IsValid(string.Empty).Should().BeFalse();
+        manager.IsValid(null!).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void SupportsElicitation_ReflectsCapabilityRecordedAtCreation()
+    {
+        // honua-server#2484: the elicitation capability advertised at initialize is
+        // bound to the session and read back by clarification-emitting tools.
+        var manager = new McpSessionManager();
+        manager.TryCreateSession("sub:alice", elicitationSupported: true, out var elicit)
+            .Should().BeTrue();
+        manager.TryCreateSession("sub:bob", elicitationSupported: false, out var plain)
+            .Should().BeTrue();
+
+        manager.SupportsElicitation(elicit).Should().BeTrue();
+        manager.SupportsElicitation(plain).Should().BeFalse();
+        // The default two-arg overload never advertises elicitation.
+        manager.SupportsElicitation(manager.CreateSession()).Should().BeFalse();
+        manager.SupportsElicitation("never-issued").Should().BeFalse();
+        manager.SupportsElicitation(string.Empty).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void SupportsElicitation_ReturnsFalseAfterTermination()
+    {
+        var manager = new McpSessionManager();
+        manager.TryCreateSession("sub:alice", elicitationSupported: true, out var id)
+            .Should().BeTrue();
+        manager.SupportsElicitation(id).Should().BeTrue();
+
+        manager.Terminate(id).Should().BeTrue();
+        manager.SupportsElicitation(id).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Terminate_RemovesSession_AndIsIdempotent()
+    {
+        var manager = new McpSessionManager();
+        var id = manager.CreateSession();
+
+        manager.Terminate(id).Should().BeTrue();
+        manager.IsValid(id).Should().BeFalse();
+        // A second termination of the same id reports no active session removed.
+        manager.Terminate(id).Should().BeFalse();
+        manager.Terminate("never-issued").Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Terminate_DropsJobAssociations_WhileLiveSessionStillResolves()
+    {
+        var manager = new McpSessionManager();
+        var live = manager.CreateSession();
+        var ending = manager.CreateSession();
+        manager.AssociateJob(live, "job-live");
+        manager.AssociateJob(ending, "job-ending");
+        manager.AssociateJob(ending, "job-ending-2");
+
+        manager.TryGetJobSession("job-live", out var liveResolved).Should().BeTrue();
+        liveResolved.Should().Be(live);
+        manager.TryGetJobSession("job-ending", out var endingResolved).Should().BeTrue();
+        endingResolved.Should().Be(ending);
+
+        manager.Terminate(ending).Should().BeTrue();
+
+        manager.TryGetJobSession("job-ending", out _).Should().BeFalse();
+        manager.TryGetJobSession("job-ending-2", out _).Should().BeFalse();
+        manager.TryGetJobSession("job-live", out liveResolved).Should().BeTrue();
+        liveResolved.Should().Be(live);
+    }
+
+    [UnitTest]
+    public void Evict_DropsJobAssociationsForTheEvictedSession()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var manager = new McpSessionManager(
+            maxSessions: 10,
+            idleTimeout: TimeSpan.FromHours(1),
+            evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
+            timeProvider: time,
+            maxAnonymousSessions: 1);
+
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var evicted).Should().BeTrue();
+        manager.AssociateJob(evicted, "job-evicted");
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var kept).Should().BeTrue();
+        manager.AssociateJob(kept, "job-kept");
+
+        manager.IsValid(evicted).Should().BeFalse();
+        manager.TryGetJobSession("job-evicted", out _).Should().BeFalse();
+        manager.TryGetJobSession("job-kept", out var resolved).Should().BeTrue();
+        resolved.Should().Be(kept);
+    }
+
+    [UnitTest]
+    public void ValidateAccess_BindsToPrincipal_AndRejectsDifferentPrincipal()
+    {
+        var manager = new McpSessionManager();
+        manager.TryCreateSession("JwtBearer:sub:alice", out var id).Should().BeTrue();
+
+        manager.ValidateAccess(id, "JwtBearer:sub:alice").Should().Be(McpSessionValidation.Valid);
+        // Anonymous caller cannot ride a session bound to an authenticated principal.
+        manager.ValidateAccess(id, McpSessionManager.AnonymousPrincipalKey)
+            .Should().Be(McpSessionValidation.PrincipalMismatch);
+        // A different authenticated identity is likewise rejected.
+        manager.ValidateAccess(id, "JwtBearer:sub:bob").Should().Be(McpSessionValidation.PrincipalMismatch);
+        // Same subject under a different auth scheme is also rejected.
+        manager.ValidateAccess(id, "ApiKey:name:alice").Should().Be(McpSessionValidation.PrincipalMismatch);
+        // An unknown id is unknown regardless of principal.
+        manager.ValidateAccess("never-issued", "JwtBearer:sub:alice").Should().Be(McpSessionValidation.Unknown);
+    }
+
+    [UnitTest]
+    public void ValidateAccess_AnonymousSession_AcceptsAnonymousCaller()
+    {
+        var manager = new McpSessionManager();
+        var id = manager.CreateSession(); // anonymous binding
+
+        manager.ValidateAccess(id, McpSessionManager.AnonymousPrincipalKey)
+            .Should().Be(McpSessionValidation.Valid);
+        manager.ValidateAccess(id, "sub:alice").Should().Be(McpSessionValidation.PrincipalMismatch);
+    }
+
+    [UnitTest]
+    public void ValidateAccess_AfterIdleTimeout_ExpiresSession()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var manager = new McpSessionManager(
+            maxSessions: 100,
+            idleTimeout: TimeSpan.FromMinutes(30),
+            timeProvider: time);
+        manager.TryCreateSession("sub:alice", out var id).Should().BeTrue();
+
+        // Within the window the session is valid and the access slides the window.
+        time.Advance(TimeSpan.FromMinutes(29));
+        manager.ValidateAccess(id, "sub:alice").Should().Be(McpSessionValidation.Valid);
+
+        // 29 more minutes from the refreshed access is still under 30.
+        time.Advance(TimeSpan.FromMinutes(29));
+        manager.ValidateAccess(id, "sub:alice").Should().Be(McpSessionValidation.Valid);
+
+        // Past the idle timeout with no access, the session expires (→ 404).
+        time.Advance(TimeSpan.FromMinutes(31));
+        manager.ValidateAccess(id, "sub:alice").Should().Be(McpSessionValidation.Unknown);
+        manager.IsValid(id).Should().BeFalse("an expired session is swept");
+    }
+
+    [UnitTest]
+    public void TryCreateSession_AtCapacityWithRejectPolicy_RefusesNewSession()
+    {
+        var manager = new McpSessionManager(
+            maxSessions: 2,
+            evictionPolicy: McpSessionEvictionPolicy.RejectNew);
+
+        manager.TryCreateSession("sub:a", out var first).Should().BeTrue();
+        manager.TryCreateSession("sub:b", out _).Should().BeTrue();
+
+        manager.TryCreateSession("sub:c", out var rejected).Should().BeFalse();
+        rejected.Should().BeEmpty();
+        // Existing sessions are untouched under the reject policy.
+        manager.IsValid(first).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryCreateSession_AtPrincipalQuota_EvictsOnlyThatPrincipalsLeastRecentlyUsed()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var manager = new McpSessionManager(
+            maxSessions: 10,
+            idleTimeout: TimeSpan.FromHours(1),
+            evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
+            timeProvider: time,
+            maxSessionsPerPrincipal: 2);
+
+        manager.TryCreateSession("sub:a", out var oldest).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession("sub:b", out var otherPrincipal).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession("sub:a", out var middle).Should().BeTrue();
+
+        // Touch the oldest so the principal's own middle session is the LRU victim.
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.ValidateAccess(oldest, "sub:a").Should().Be(McpSessionValidation.Valid);
+
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession("sub:a", out var newest).Should().BeTrue();
+
+        manager.IsValid(middle).Should().BeFalse("the principal's own least-recently-used session is evicted");
+        manager.IsValid(oldest).Should().BeTrue();
+        manager.IsValid(otherPrincipal).Should().BeTrue("another principal is not a victim of this quota");
+        manager.IsValid(newest).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryCreateSession_AtGlobalCapacity_DoesNotEvictAnotherPrincipal()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var manager = new McpSessionManager(
+            maxSessions: 3,
+            idleTimeout: TimeSpan.FromHours(1),
+            evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
+            timeProvider: time,
+            maxSessionsPerPrincipal: 2);
+
+        manager.TryCreateSession("sub:a", out var first).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession("sub:a", out var second).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession("sub:b", out var other).Should().BeTrue();
+
+        // The table is full and sub:c is under its own quota. Anonymous sessions are
+        // the only cross-principal victims, and there are none, so the new session
+        // is refused and both existing principals keep their sessions.
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession("sub:c", out var rejected).Should().BeFalse();
+        rejected.Should().BeEmpty();
+        manager.IsValid(first).Should().BeTrue();
+        manager.IsValid(second).Should().BeTrue();
+        manager.IsValid(other).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryCreateSession_AtPrincipalQuotaWithRejectPolicy_RefusesOnlyThatPrincipal()
+    {
+        var manager = new McpSessionManager(
+            maxSessions: 10,
+            evictionPolicy: McpSessionEvictionPolicy.RejectNew,
+            maxSessionsPerPrincipal: 1);
+
+        manager.TryCreateSession("sub:a", out var kept).Should().BeTrue();
+        manager.TryCreateSession("sub:a", out var rejected).Should().BeFalse();
+        rejected.Should().BeEmpty();
+        manager.TryCreateSession("sub:b", out var other).Should().BeTrue();
+        manager.IsValid(kept).Should().BeTrue();
+        manager.IsValid(other).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryCreateSession_PerPrincipalQuotaCannotOccupyEverySlot()
+    {
+        var manager = new McpSessionManager(maxSessions: 2, maxSessionsPerPrincipal: 32);
+
+        manager.TryCreateSession("sub:a", out var first).Should().BeTrue();
+        manager.TryCreateSession("sub:a", out var second).Should().BeTrue();
+
+        manager.IsValid(first).Should().BeFalse("a quota at or above the global cap is clamped to one less");
+        manager.IsValid(second).Should().BeTrue();
+        manager.TryCreateSession("sub:b", out var other).Should().BeTrue();
+        manager.IsValid(other).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryCreateSession_AnonymousAtAnonymousCap_EvictsOnlyAnonymousSessions()
+    {
+        // SEC-18: anonymous sessions live in their own bounded pool, so admitting
+        // another anonymous session displaces the oldest anonymous one and never an
+        // authenticated session.
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var manager = new McpSessionManager(
+            maxSessions: 10,
+            idleTimeout: TimeSpan.FromHours(1),
+            evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
+            timeProvider: time,
+            maxAnonymousSessions: 2);
+
+        manager.TryCreateSession("sub:a", out var authenticated).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var firstAnonymous).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var secondAnonymous).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var thirdAnonymous).Should().BeTrue();
+
+        manager.IsValid(authenticated).Should().BeTrue("the authenticated session is the LRU but is outside the anonymous pool");
+        manager.IsValid(firstAnonymous).Should().BeFalse();
+        manager.IsValid(secondAnonymous).Should().BeTrue();
+        manager.IsValid(thirdAnonymous).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryCreateSession_AnonymousWhenTableHoldsOnlyAuthenticatedSessions_IsRefused()
+    {
+        var manager = new McpSessionManager(
+            maxSessions: 2,
+            evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
+            maxAnonymousSessions: 2);
+
+        manager.TryCreateSession("sub:a", out var first).Should().BeTrue();
+        manager.TryCreateSession("sub:b", out var second).Should().BeTrue();
+
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var rejected).Should().BeFalse();
+        rejected.Should().BeEmpty();
+        manager.IsValid(first).Should().BeTrue();
+        manager.IsValid(second).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryCreateSession_AuthenticatedAtCapacity_EvictsAnonymousBeforeAuthenticated()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var manager = new McpSessionManager(
+            maxSessions: 2,
+            idleTimeout: TimeSpan.FromHours(1),
+            evictionPolicy: McpSessionEvictionPolicy.EvictLeastRecentlyUsed,
+            timeProvider: time);
+
+        manager.TryCreateSession("sub:a", out var authenticated).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession(McpSessionManager.AnonymousPrincipalKey, out var anonymous).Should().BeTrue();
+        time.Advance(TimeSpan.FromMinutes(1));
+        manager.TryCreateSession("sub:b", out var newest).Should().BeTrue();
+
+        manager.IsValid(anonymous).Should().BeFalse("anonymous sessions are evicted before authenticated ones");
+        manager.IsValid(authenticated).Should().BeTrue();
+        manager.IsValid(newest).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Test <see cref="TimeProvider"/> whose UTC clock only advances when the test
+    /// asks, so idle-TTL and LRU behavior are deterministic without real waits.
+    /// </summary>
+    private sealed class MutableTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        private DateTimeOffset _now = start;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan delta) => _now += delta;
+    }
+}

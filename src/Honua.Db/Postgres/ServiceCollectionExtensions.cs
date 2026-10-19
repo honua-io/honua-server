@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Net.Http;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -77,6 +78,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using StackExchange.Redis;
 
@@ -301,16 +303,24 @@ internal static class ServiceCollectionExtensions
         // outlived its row. TryAdd so a host can substitute a durable ledger.
         services.TryAddSingleton<IAttachmentOrphanLedger, LoggingAttachmentOrphanLedger>();
 
-        // Register attachment store implementation (metadata tables live in the honua schema)
-        services.AddScoped<IAttachmentStore>(serviceProvider =>
+        // Register attachment store implementation (metadata tables live in the honua schema).
+        // Feature deletes resolve IFeatureAttachmentCleanup from this same instance so attachment
+        // rows share the feature transaction (#6137). Object storage stays optional here:
+        // a host that registered ICloudFileStorage wins, and a database-only host can still
+        // resolve the feature store. Blob operations require storage when they run.
+        services.AddScoped(serviceProvider =>
             new PostgresAttachmentStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                serviceProvider.GetRequiredService<ICloudFileStorage>(),
+                serviceProvider.GetService<ICloudFileStorage>(),
                 serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
                 schemaName: string.IsNullOrWhiteSpace(configuration["Attachments:Schema"])
                     ? "honua"
                     : configuration["Attachments:Schema"],
-                orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>()));
+                orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
+                attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
+                    ?? new AttachmentLimits()));
+        services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
 
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();
 
@@ -498,6 +508,12 @@ internal static class ServiceCollectionExtensions
             .Validate(
                 static options => LayerPublishingOptions.IsValidMaterializationTimeout(options.MaterializationTimeoutSeconds),
                 $"{LayerPublishingOptions.SectionName}:MaterializationTimeoutSeconds must be between 1 and {LayerPublishingOptions.MaximumMaterializationTimeoutSeconds}.")
+            .Validate(
+                static options => LayerPublishingOptions.IsValidAsyncPublishRowThreshold(options.AsyncPublishRowThreshold),
+                $"{LayerPublishingOptions.SectionName}:AsyncPublishRowThreshold must be zero or greater.")
+            .Validate(
+                static options => LayerPublishingOptions.IsValidMaterializationBatchSize(options.MaterializationBatchSize),
+                $"{LayerPublishingOptions.SectionName}:MaterializationBatchSize must be at least 1.")
             .ValidateOnStart();
         services.AddScoped<ILayerPublishingService>(serviceProvider =>
             new PostgreSqlLayerPublishingService(
@@ -656,6 +672,9 @@ internal static class ServiceCollectionExtensions
                     BackgroundJobThresholdBytes = ParsePositiveLongOrDefault(
                         section["BackgroundJobThresholdBytes"],
                         limits.BackgroundJobThresholdBytes),
+                    MaxObjectStoreImportBytes = ParsePositiveLongOrDefault(
+                        section["MaxObjectStoreImportBytes"],
+                        limits.MaxObjectStoreImportBytes),
                     MaxPreviewSizeBytes = ParsePositiveLongOrDefault(section["MaxPreviewSizeBytes"], limits.MaxPreviewSizeBytes),
                     MaxPreviewFeatures = ParsePositiveIntOrDefault(section["MaxPreviewFeatures"], limits.MaxPreviewFeatures),
                     MaxPreviewCountScan = ParsePositiveIntOrDefault(section["MaxPreviewCountScan"], limits.MaxPreviewCountScan),
@@ -742,7 +761,8 @@ internal static class ServiceCollectionExtensions
             var logger = serviceProvider.GetRequiredService<ILogger<UniversalImportJobService>>();
             return new UniversalImportJobService(scopeFactory, progressStore, performanceMonitor, logger,
                 serviceProvider.GetService<Honua.Core.Features.Licensing.Abstractions.ILicenseOperationPolicy>(),
-                serviceProvider.GetRequiredService<Core.Features.Import.Domain.ImportLimits>());
+                serviceProvider.GetRequiredService<Core.Features.Import.Domain.ImportLimits>(),
+                serviceProvider.GetService<Honua.Core.Features.Infrastructure.Abstractions.IInstanceIdentity>()?.InstanceId);
         });
 
         // Register ArcGIS REST client for Geoservices service imports with resilience

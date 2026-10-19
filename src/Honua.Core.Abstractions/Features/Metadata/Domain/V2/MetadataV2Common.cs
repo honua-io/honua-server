@@ -221,13 +221,18 @@ public sealed record MetadataV2ObjectMetadata
 /// <summary>
 /// Lifecycle and observed status shared by Metadata v2 graph entities.
 /// </summary>
+[JsonConverter(typeof(MetadataV2StatusJsonConverter))]
 public sealed record MetadataV2Status
 {
     /// <summary>
     /// Desired or declared lifecycle state.
+    /// When a caller omits <c>status</c> or <c>status.lifecycle</c>, this defaults to
+    /// <see cref="MetadataV2LifecycleStatus.Active"/> so the entity stays on serving
+    /// routes. <see cref="MetadataV2LifecycleStatus.Draft"/> hides the entity only
+    /// when the caller sets it explicitly.
     /// </summary>
     [JsonPropertyName("lifecycle")]
-    public MetadataV2LifecycleStatus Lifecycle { get; init; } = MetadataV2LifecycleStatus.Draft;
+    public MetadataV2LifecycleStatus Lifecycle { get; init; } = MetadataV2LifecycleStatus.Active;
 
     /// <summary>
     /// Observed operational state.

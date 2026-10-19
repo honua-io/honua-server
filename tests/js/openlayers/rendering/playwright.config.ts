@@ -4,7 +4,8 @@ export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
   timeout: 60_000,
-  retries: 1,
+  retries: 0,
+  workers: 1,
   globalSetup: './global-setup.ts',
   use: {
     headless: true,

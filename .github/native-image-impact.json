@@ -28,6 +28,8 @@
     ".dockerignore",
     "scripts/ci/verify-serving-image-boundary.py",
     "scripts/ci/serving-image-reuse.py",
+    "scripts/ci/verify-native-migration-refusal.py",
+    "scripts/ci/fixtures/validate-native-migration-refusal.py",
     ".github/workflows/serving-image-boundary.yml",
     ".github/workflows/release-bundle.yml",
     ".github/workflows/deploy.yml",
@@ -47,6 +49,9 @@
     ]
   },
   "worker_native_patterns": [
+    "scripts/qualification/gp_native_observer.py",
+    "scripts/qualification/verify_native_entry_image.py",
+    "tests/dotnet/Honua.Worker.Gdal.Tests/NativeEntryQualificationTests.cs",
     ".dockerignore",
     "docker/worker-gdal/**",
     "scripts/ci/verify-serving-image-boundary.py",
@@ -64,6 +69,8 @@
       "scripts/docker/restore-dotnet-with-github-packages.sh",
       "scripts/ci/verify-serving-image-boundary.py",
       "scripts/ci/serving-image-reuse.py",
+      "scripts/ci/verify-native-migration-refusal.py",
+      "scripts/ci/fixtures/validate-native-migration-refusal.py",
       "scripts/ci/fixtures/validate-serving-image-boundary.py",
       ".github/workflows/serving-image-boundary.yml"
     ],
@@ -88,6 +95,8 @@
       "scripts/docker/restore-dotnet-with-github-packages.sh",
       "scripts/ci/verify-serving-image-boundary.py",
       "scripts/ci/serving-image-reuse.py",
+      "scripts/ci/verify-native-migration-refusal.py",
+      "scripts/ci/fixtures/validate-native-migration-refusal.py",
       "scripts/ci/fixtures/validate-serving-image-boundary.py",
       ".github/workflows/serving-image-boundary.yml"
     ],
@@ -98,6 +107,9 @@
       ".dockerignore",
       "scripts/docker/restore-dotnet-with-github-packages.sh",
       "scripts/ci/verify-serving-image-boundary.py",
+      "scripts/qualification/gp_native_observer.py",
+      "scripts/qualification/verify_native_entry_image.py",
+      "tests/dotnet/Honua.Worker.Gdal.Tests/NativeEntryQualificationTests.cs",
       "tests/dotnet/Honua.Worker.Gdal.Tests/ProductionWorkerContainerHandoffTests.cs",
       "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/NativeWorkerPublicApiTests.cs",
       "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",

@@ -9,6 +9,8 @@ using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console;
@@ -302,6 +304,12 @@ internal static class ProposalEndpoints
             return Results.NotFound();
         }
 
+        var scopeDenied = EnsureProposalScope(context, proposal);
+        if (scopeDenied != null)
+        {
+            return scopeDenied;
+        }
+
         try
         {
             var resolved = await gateway.RejectProposalAsync(id, actor!, request.Reason, context.RequestAborted)
@@ -336,6 +344,12 @@ internal static class ProposalEndpoints
             return Results.NotFound();
         }
 
+        var scopeDenied = EnsureProposalScope(context, proposal);
+        if (scopeDenied != null)
+        {
+            return scopeDenied;
+        }
+
         // Separation of duties: the proposer cannot approve their own proposal, whichever
         // identity encoding the proposal's writer recorded (#4901).
         if (!string.IsNullOrWhiteSpace(proposal.RequestedBy) &&
@@ -347,6 +361,41 @@ internal static class ProposalEndpoints
         }
 
         return null;
+    }
+
+    private static IResult? EnsureProposalScope(HttpContext context, OperationProposal proposal)
+    {
+        if (!OperatorScopeCatalog.IsScopeGoverned(context.User))
+        {
+            return null;
+        }
+
+        // A decision may release the proposer's authority into an actuator. Require
+        // the deciding bearer to possess the same canonical operation-family scope;
+        // read-only approval must not bypass the original submission's scope ceiling.
+        var legacyId = proposal.Kind is OperationClass.Deploy or OperationClass.Seed
+            or OperationClass.AdminConfigChange or OperationClass.MetadataRelease
+            or OperationClass.Geoprocess or OperationClass.ServicePublish
+            ? LegacyOperationIds.For(proposal.Kind)
+            : null;
+        var operationId = proposal.OperationId ?? legacyId ?? string.Empty;
+        var request = new OperationRequest
+        {
+            OperationId = operationId,
+            GatewayRequest = legacyId is not null && string.Equals(operationId, legacyId, StringComparison.Ordinal)
+                ? new OperationGatewayRequest
+                {
+                    Kind = proposal.Kind,
+                    ActionDiscriminator = proposal.ActionDiscriminator ?? proposal.AutonomyMetadata?.ActionDiscriminator,
+                }
+                : null,
+        };
+        return OperationScopeMapping.TryResolve(request, out var operation) &&
+            OperatorScopeCatalog.PermitsOperation(OperatorScopeCatalog.CollectRecognizedScopes(context.User), operation)
+            ? null
+            : Results.Problem(
+                detail: "The bearer scope does not authorize a decision on this operation proposal.",
+                statusCode: StatusCodes.Status403Forbidden);
     }
 
     /// <summary>

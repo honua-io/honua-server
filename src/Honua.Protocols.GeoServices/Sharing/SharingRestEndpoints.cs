@@ -272,7 +272,7 @@ public static class SharingRestEndpoints
         return Results.Content(document.ToString(SaveOptions.DisableFormatting), "application/xml", Encoding.UTF8);
     }
 
-    private static async Task<IResult> HandleGenerateTokenAsync(
+    internal static async Task<IResult> HandleGenerateTokenAsync(
         HttpContext context,
         [FromServices] IPortalTokenIssuer tokenIssuer,
         [FromServices] IPortalCredentialVerifier credentialVerifier,
@@ -296,8 +296,9 @@ public static class SharingRestEndpoints
             return entitlementFailure;
         }
 
-        var (username, password, portalToken, serverUrl, clientType, refererInput, expirationMinutes, _, formatValid) =
+        var (username, password, portalToken, serverUrl, requestedClientType, refererInput, expirationMinutes, _, formatValid) =
             await ReadParametersAsync(context).ConfigureAwait(false);
+        var clientType = requestedClientType ?? PortalTokenClientType.Referer;
 
         // Detect whether credentials arrived via query string (GET or non-form POST). This is
         // used both for the HTTPS enforcement message and for the per-request audit log entry.
@@ -361,8 +362,15 @@ public static class SharingRestEndpoints
                 "Username and password are required.");
         }
 
-        var binding = ResolveBinding(context, clientType, refererInput);
-        if (binding is null)
+        // A federated exchange inherits the validated portal token's stored binding
+        // only when both client and referer are absent. A supplied referer with no
+        // client is the referer binding (the default client type), not a request to
+        // keep the old referer or to pass a binding value without a binding type.
+        var inheritBinding = exchangeRequested
+            && requestedClientType is null
+            && string.IsNullOrWhiteSpace(refererInput);
+        var binding = inheritBinding ? null : ResolveBinding(context, clientType, refererInput);
+        if (!inheritBinding && binding is null)
         {
             PortalTokenLog.TokenIssuanceRejected(logger, "missing binding");
             return StandardErrorHelpers.CreateBadRequest(
@@ -386,7 +394,7 @@ public static class SharingRestEndpoints
                     PresentedBinding: new PortalTokenBinding(
                         Referer: context.Request.Headers.Referer.FirstOrDefault(),
                         ClientIp: context.Connection.RemoteIpAddress?.ToString()),
-                    ClientType: clientType,
+                    ClientType: inheritBinding ? null : clientType,
                     BindingValue: binding,
                     ExpiresAt: expiresAt),
                 context.RequestAborted).ConfigureAwait(false);
@@ -401,7 +409,7 @@ public static class SharingRestEndpoints
                 logger,
                 exchange.PrincipalId,
                 exchange.TenantId,
-                clientType,
+                exchange.ClientType,
                 exchange.Issuance);
         }
 
@@ -423,7 +431,7 @@ public static class SharingRestEndpoints
                 TenantId: verified.TenantId ?? tenantContext.TenantId,
                 Roles: verified.Roles,
                 ClientType: clientType,
-                BindingValue: binding,
+                BindingValue: binding!,
                 ExpiresAt: expiresAt,
                 // Carry the verifier's provenance so the issued token's roles are revalidated
                 // against the live claims-mapping entitlement on every restore, rather than
@@ -491,7 +499,7 @@ public static class SharingRestEndpoints
             return gate;
         }
 
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        var baseUrl = GeoServicesPortalUrlResolver.GetBaseUrl(context);
         var response = new SharingInfoResponse
         {
             OwningSystemUrl = baseUrl.TrimEnd('/'),
@@ -569,9 +577,10 @@ public static class SharingRestEndpoints
         };
     }
 
-    private static IResult HandleCommunitySelfAsync(
+    private static async Task<IResult> HandleCommunitySelfAsync(
         HttpContext context,
         string? f,
+        [FromServices] IPortalGroupStore groupStore,
         [FromServices] ILogger<SharingRestLog> logger)
     {
         var gate = GateReadSurface(context, f, logger);
@@ -595,12 +604,13 @@ public static class SharingRestEndpoints
             Id = ResolveUsername(principal),
             Username = ResolveUsername(principal),
             FullName = ResolveDisplayName(principal),
+            Groups = await SharingCommunityEndpoints.GetUserGroupsAsync(context, groupStore, ResolveUsername(principal), context.RequestAborted).ConfigureAwait(false),
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
     }
 
-    private static IResult HandleCommunityUserAsync(HttpContext context, string username, string? f, ILogger<SharingRestLog> logger)
+    private static async Task<IResult> HandleCommunityUserAsync(HttpContext context, string username, string? f, IPortalGroupStore groupStore, ILogger<SharingRestLog> logger)
     {
         var gate = GateReadSurface(context, f, logger);
         if (gate is not null)
@@ -619,7 +629,8 @@ public static class SharingRestEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "User does not exist or is inaccessible.");
         }
 
-        return Results.Json(new CommunitySelfResponse { Id = current, Username = current, FullName = ResolveDisplayName(context.User) }, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
+        var groups = await SharingCommunityEndpoints.GetUserGroupsAsync(context, groupStore, current, context.RequestAborted).ConfigureAwait(false);
+        return Results.Json(new CommunitySelfResponse { Id = current, Username = current, FullName = ResolveDisplayName(context.User), Groups = groups }, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
     }
 
     private static async Task<IResult> HandleContentUserAsync(
@@ -779,7 +790,7 @@ public static class SharingRestEndpoints
         return null;
     }
 
-    private static (int Start, int Num) ResolvePaging(IQueryCollection query)
+    internal static (int Start, int Num) ResolvePaging(IQueryCollection query)
     {
         var start = 1;
         if (int.TryParse(ReadFirst(query["start"]), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedStart) &&
@@ -804,17 +815,51 @@ public static class SharingRestEndpoints
 
     /// <summary>
     /// Applies a coarse, case-insensitive Portal <c>q</c> filter over the projected
-    /// items. Supports the common <c>type:</c>, <c>owner:</c>, and <c>tags:</c>
-    /// field qualifiers plus free-text matching against title/snippet/tags; any
-    /// other qualifier degrades to free-text so unsupported syntax never errors.
+    /// items. Top-level <c>OR</c> is a disjunction and <c>AND</c> or whitespace is a
+    /// conjunction, respecting quotes and parentheses. Supports the common
+    /// <c>type:</c>, <c>owner:</c>, and <c>tags:</c> field qualifiers plus free-text
+    /// matching against title/snippet/tags; any other qualifier degrades to free-text
+    /// so unsupported syntax never errors.
     /// </summary>
-    private static List<PortalItem> ApplyQuery(IReadOnlyList<PortalItem> items, string query, HashSet<string> unmappedOwnerIds)
+    internal static List<PortalItem> ApplyQuery(IReadOnlyList<PortalItem> items, string query, HashSet<string> unmappedOwnerIds)
     {
         if (string.IsNullOrWhiteSpace(query) || query.Trim() == "*")
         {
             return items.ToList();
         }
 
+        return items.Where(item => MatchesExpression(item, query, unmappedOwnerIds)).ToList();
+    }
+
+    private static bool MatchesExpression(PortalItem item, string expression, HashSet<string> unmappedOwnerIds)
+    {
+        var orParts = SplitTopLevelKeyword(expression, "OR");
+        if (orParts.Count == 0)
+        {
+            return false;
+        }
+
+        if (orParts.Count > 1)
+        {
+            return orParts.Any(part => MatchesExpression(item, part, unmappedOwnerIds));
+        }
+
+        if (TryUnwrapParentheses(orParts[0], out var inner))
+        {
+            return MatchesExpression(item, inner, unmappedOwnerIds);
+        }
+
+        var andParts = SplitTopLevelKeyword(orParts[0], "AND");
+        if (andParts.Count > 1)
+        {
+            return andParts.All(part => MatchesExpression(item, part, unmappedOwnerIds));
+        }
+
+        return MatchesLeaf(item, orParts[0], unmappedOwnerIds);
+    }
+
+    private static bool MatchesLeaf(PortalItem item, string query, HashSet<string> unmappedOwnerIds)
+    {
         const string qualifiedTermPattern = """(?<negative>-)?(?<field>[A-Za-z]+):\s*(?:\((?<group>[^)]*)\)|"(?<quoted>[^"]*)"|(?<value>[^\s()]+))""";
         var terms = Regex.Matches(query, qualifiedTermPattern)
             .Select(match => new SearchTerm(
@@ -824,23 +869,150 @@ public static class SharingRestEndpoints
             .ToList();
         if (terms.Count == 0)
         {
-            var unqualifiedTerms = TokenizeQuery(query);
-            return items.Where(item => unqualifiedTerms.All(term => MatchesTerm(item, term))).ToList();
+            var unqualifiedTerms = TokenizeQuery(query)
+                .Where(static term => !IsBooleanKeyword(term))
+                .ToList();
+            return unqualifiedTerms.Count > 0 && unqualifiedTerms.All(term => MatchesTerm(item, term));
         }
 
         var freeTextTerms = TokenizeQuery(Regex.Replace(query, qualifiedTermPattern, " "))
             .Select(term => term.Trim('(', ')'))
-            .Where(term => term.Length > 0 && !string.Equals(term, "AND", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(term, "OR", StringComparison.OrdinalIgnoreCase)).ToList();
+            .Where(static term => term.Length > 0 && !IsBooleanKeyword(term))
+            .ToList();
 
         // The projector's fallback owner is a display value, not a username mapping.
         // Omit owner predicates for unmapped services; visibility was already checked
         // by the shared RBAC projector, including for user-content listing.
-        return items.Where(item => terms.All(term =>
+        return terms.All(term =>
                 (unmappedOwnerIds.Contains(item.Id) && string.Equals(term.Field, "owner", StringComparison.OrdinalIgnoreCase)) ||
                 term.Negative != MatchesQualifiedTerm(item, term.Field, term.Value)) &&
-            freeTextTerms.All(term => MatchesTerm(item, term))).ToList();
+            freeTextTerms.All(term => MatchesTerm(item, term));
     }
+
+    private static List<string> SplitTopLevelKeyword(string expression, string keyword)
+    {
+        var parts = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var depth = 0;
+        var inQuotes = false;
+        for (var i = 0; i < expression.Length;)
+        {
+            var ch = expression[i];
+            if (ch == '"')
+            {
+                inQuotes = !inQuotes;
+                current.Append(ch);
+                i++;
+                continue;
+            }
+
+            if (!inQuotes && ch == '(')
+            {
+                depth++;
+                current.Append(ch);
+                i++;
+                continue;
+            }
+
+            if (!inQuotes && ch == ')')
+            {
+                if (depth > 0)
+                {
+                    depth--;
+                }
+
+                current.Append(ch);
+                i++;
+                continue;
+            }
+
+            if (!inQuotes && depth == 0 && IsKeywordAt(expression, i, keyword))
+            {
+                parts.Add(current.ToString());
+                current.Clear();
+                i += keyword.Length;
+                continue;
+            }
+
+            current.Append(ch);
+            i++;
+        }
+
+        parts.Add(current.ToString());
+        return parts
+            .Select(static part => part.Trim())
+            .Where(static part => part.Length > 0)
+            .ToList();
+    }
+
+    private static bool IsKeywordAt(string expression, int index, string keyword)
+    {
+        if (index + keyword.Length > expression.Length ||
+            !expression.AsSpan(index, keyword.Length).Equals(keyword, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (index > 0 && !char.IsWhiteSpace(expression[index - 1]))
+        {
+            return false;
+        }
+
+        var end = index + keyword.Length;
+        return end >= expression.Length || char.IsWhiteSpace(expression[end]);
+    }
+
+    private static bool TryUnwrapParentheses(string expression, out string inner)
+    {
+        inner = expression;
+        var trimmed = expression.Trim();
+        if (trimmed.Length < 2 || trimmed[0] != '(')
+        {
+            return false;
+        }
+
+        var depth = 0;
+        var inQuotes = false;
+        for (var i = 0; i < trimmed.Length; i++)
+        {
+            var ch = trimmed[i];
+            if (ch == '"')
+            {
+                inQuotes = !inQuotes;
+                continue;
+            }
+
+            if (inQuotes)
+            {
+                continue;
+            }
+
+            if (ch == '(')
+            {
+                depth++;
+            }
+            else if (ch == ')')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    if (i != trimmed.Length - 1)
+                    {
+                        return false;
+                    }
+
+                    inner = trimmed[1..^1];
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsBooleanKeyword(string term)
+        => string.Equals(term, "AND", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(term, "OR", StringComparison.OrdinalIgnoreCase);
 
     private readonly record struct SearchTerm(string Field, string Value, bool Negative);
 
@@ -1022,7 +1194,7 @@ public static class SharingRestEndpoints
             format = ReadFirst(context.Request.Query["f"]);
         }
 
-        var clientType = ParseClientType(clientRaw);
+        PortalTokenClientType? clientType = clientRaw is null ? null : ParseClientType(clientRaw);
 
         int? expirationMinutes = null;
         if (!string.IsNullOrWhiteSpace(expirationRaw) &&
@@ -1132,7 +1304,7 @@ public static class SharingRestEndpoints
         string? Password,
         string? PortalToken,
         string? ServerUrl,
-        PortalTokenClientType ClientType,
+        PortalTokenClientType? ClientType,
         string? RefererInput,
         int? ExpirationMinutes,
         string? Format,

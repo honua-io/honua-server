@@ -512,9 +512,18 @@ internal sealed partial class FeatureDataAccess
         var maxx = reader.GetDouble(2);
         var maxy = reader.GetDouble(3);
 
-        var spatialReference = featureQuery.OutputSrid
-            ?? featureQuery.SpatialReferenceSrid
-            ?? SpatialReference.WGS84.Wkid;
+        // ST_Extent returns a box without CRS metadata. Read the actual CRS of the
+        // same nonempty, filtered and optionally transformed rows, never a caller
+        // hint or a WGS84 default that could relabel projected coordinates.
+        if (reader.IsDBNull(4) || reader.IsDBNull(5))
+        {
+            throw new InvalidOperationException("The feature extent has no observed coordinate reference system.");
+        }
+        var spatialReference = reader.GetInt32(4);
+        if (spatialReference <= 0 || spatialReference != reader.GetInt32(5))
+        {
+            throw new InvalidOperationException("The feature extent requires one known coordinate reference system.");
+        }
 
         return FeatureExtent.Create(minx, miny, maxx, maxy, spatialReference);
     }

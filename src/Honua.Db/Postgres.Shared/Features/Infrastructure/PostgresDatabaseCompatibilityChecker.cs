@@ -100,14 +100,18 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         // (permissions, unexpected catalog shape) stays Incompatible.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            if (PostgresPreflightFailureClassifier.IsTransient(ex))
+            // honua-server#5916: name the cause class. Only incompatible-database is fatal; a
+            // connection that could not be borrowed, a refused endpoint, rejected credentials or any
+            // other availability failure degrades startup instead of reporting an incompatible database.
+            var causeClass = PostgresPreflightFailureClassifier.Classify(ex);
+            if (DatabasePreflightCauseClasses.IsDegradable(causeClass))
             {
                 var failureClass = PostgresPreflightFailureClassifier.Describe(ex);
-                LogCompatibilityCheckUnavailable(_logger, failureClass, ex);
-                return DatabaseCompatibilityResult.Unavailable(failureClass, ex);
+                LogCompatibilityCheckUnavailable(_logger, causeClass, failureClass, ex);
+                return DatabaseCompatibilityResult.Unavailable(failureClass, ex, causeClass);
             }
 
-            const string errorMessage = "Database compatibility check failed.";
+            const string errorMessage = "Database compatibility check failed (incompatible-database).";
             LogCompatibilityCheckFailed(_logger, ex.Message, ex);
             return DatabaseCompatibilityResult.Incompatible(errorMessage, error: ex);
         }
@@ -178,6 +182,6 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
     [LoggerMessage(
         EventId = 7916,
         Level = LogLevel.Warning,
-        Message = "Database compatibility check could not reach the database (transient: {FailureClass}).")]
-    private static partial void LogCompatibilityCheckUnavailable(ILogger logger, string failureClass, Exception ex);
+        Message = "Database compatibility check could not obtain a usable connection ({CauseClass}: {FailureClass}).")]
+    private static partial void LogCompatibilityCheckUnavailable(ILogger logger, string causeClass, string failureClass, Exception ex);
 }

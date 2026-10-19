@@ -13,8 +13,8 @@ namespace Honua.Core.Features.Operations.Services;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A Redis-off cell is a serving + configure + style/render topology, and publishing a service is
-/// configuration. A direct, policy-allowed execution of one of the
+/// A Redis-off cell is a serving + configure + style/render topology: publishing a service is
+/// configuration and applying a style preset is styling. A direct, policy-allowed execution of one of the
 /// <see cref="DirectOperationIds"/> involves no governed proposal, so it must not be refused just
 /// because the durable instance store is absent. Accepting such an operation records its envelope
 /// in this store's private, process-local map instead: the operation still receives an

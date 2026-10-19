@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
@@ -148,12 +149,12 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Calculate is exposed as GET for GeoServices compatibility but performs a bulk update.
-    /// HEAD must therefore stop before the handler instead of inheriting its GET semantics.
+    /// Calculate performs a bulk update and is POST-only (#6100), so HEAD (like GET) must be
+    /// refused by routing before the handler runs.
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task Head_CalculateRoute_Returns405MethodNotAllowed()
+    public async Task Head_CalculateRoute_MatchesGetMethodRefusalWithoutBody()
     {
         var client = _fixture.CreateClient();
         var path = $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/calculate";
@@ -161,8 +162,13 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
         using var request = new HttpRequestMessage(HttpMethod.Head, path);
         using var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
-        response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "POST"]);
+        using var getResponse = await client.GetAsync(path);
+        await getResponse.AssertGeoServicesErrorAsync(405);
+        getResponse.Content.Headers.Allow.Should().BeEquivalentTo(["POST"]);
+        response.StatusCode.Should().Be(getResponse.StatusCode,
+            "HEAD preserves the GeoServices GET transport status while suppressing its error envelope");
+        response.Content.Headers.Allow.Should().BeEquivalentTo(["POST"]);
+        (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
     }
 
     private static readonly (string Path, string[] AllowedMethods)[] MutatingGetRoutes =

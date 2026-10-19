@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -90,7 +91,7 @@ internal static partial class ImageServerSoapEndpoints
         {
             "ExportImage" or "GetImage" or "GetImageTile" => AuthorizationOperation.Export,
             "GetCatalogItemCount" or "GetCatalogItemIDs" or "GetCatalogItems" => AuthorizationOperation.Query,
-            "GetVersion" or "IsFixedScaleImage" or "GetServiceInfo" or "GetFields"
+            "GetVersion" or "IsFixedScaleImage" or "GetServiceInfo" or "GetView" or "GetFields"
                 or "GetKeyProperties" or "GetKeyPropertiesX" or "GetRasterKeyProperties"
                 or "GetMetadata" or "GetMultidimensionalInfo" or "ComputeHistograms"
                 or "GetCacheDescriptionInfo" or "GetTileCacheInfo" or "GetTileImageInfo"
@@ -113,7 +114,7 @@ internal static partial class ImageServerSoapEndpoints
         scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId)
             .WithTag(HonuaTelemetry.Tags.Operation, operationName);
 
-        var requirePrimaryRaster = operationName is "GetServiceInfo" or "ExportImage" or "GetImage";
+        var requirePrimaryRaster = operationName is "GetServiceInfo" or "GetView" or "ExportImage" or "GetImage";
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         try
         {
@@ -158,11 +159,17 @@ internal static partial class ImageServerSoapEndpoints
                     layerResolver,
                     rasterStore,
                     cancellationToken).ConfigureAwait(false),
-                "GetFields" => CreateSoapResponse(
-                    soapNamespace,
-                    operationNamespace,
-                    "GetFieldsResponse",
-                    BuildFields()),
+                "GetView" => await HandleGetViewAsync(
+                    operation,
+                    rasterRequest,
+                    layerResolver,
+                    rasterStore,
+                    cancellationToken).ConfigureAwait(false),
+                "GetFields" => await HandleGetFieldsAsync(
+                    rasterRequest,
+                    layerResolver,
+                    rasterStore,
+                    cancellationToken).ConfigureAwait(false),
                 "GetKeyProperties" => await HandleGetKeyPropertiesAsync(
                     operation,
                     rasterRequest,
@@ -294,8 +301,8 @@ internal static partial class ImageServerSoapEndpoints
         return result;
     }
 
-    private static async Task<IResult> HandleGetServiceInfoAsync(
-        string serviceId,
+    private static async Task<(ImageServerLayerResolution Resolution, RasterInfo[] Rasters,
+        RasterExtent? Extent, IResult? ErrorResult)> ReadServiceRastersAsync(
         SoapRasterRequestContext request,
         IImageServerLayerResolver layerResolver,
         IRasterStore rasterStore,
@@ -310,7 +317,7 @@ internal static partial class ImageServerSoapEndpoints
             cancellationToken).ConfigureAwait(false);
         if (revalidation.ErrorResult is not null)
         {
-            return revalidation.ErrorResult;
+            return (revalidation.Resolution, [], null, revalidation.ErrorResult);
         }
 
         var rasters = await rasterStore.ListRastersAsync(
@@ -318,37 +325,124 @@ internal static partial class ImageServerSoapEndpoints
             cancellationToken).ConfigureAwait(false);
         if (rasters.Length == 0)
         {
-            return CreateSoapFault(
+            return (revalidation.Resolution, rasters, null, CreateSoapFault(
                 "Image service has no rasters.",
                 StatusCodes.Status404NotFound,
-                request.SoapNamespace);
+                request.SoapNamespace));
         }
 
         var extent = ImageServerMosaicHelpers.ComputeAggregateExtent(rasters);
         if (extent is null)
         {
-            return CreateSoapFault(
+            return (revalidation.Resolution, rasters, null, CreateSoapFault(
                 "Image service extent is unavailable.",
                 StatusCodes.Status500InternalServerError,
-                request.SoapNamespace);
+                request.SoapNamespace));
         }
 
+        return (revalidation.Resolution, rasters, extent, null);
+    }
+
+    private static async Task<IResult> HandleGetFieldsAsync(
+        SoapRasterRequestContext request,
+        IImageServerLayerResolver layerResolver,
+        IRasterStore rasterStore,
+        CancellationToken cancellationToken)
+    {
+        var service = await ReadServiceRastersAsync(
+            request, layerResolver, rasterStore, cancellationToken).ConfigureAwait(false);
+        if (service.ErrorResult is not null)
+        {
+            return service.ErrorResult;
+        }
+
+        var srid = service.Extent!.Value.Srid ?? SpatialConstants.DefaultSrid;
+        var maskedFields = await ReadCatalogMasksAsync(
+            request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
+        return CreateSoapResponse(
+            request.SoapNamespace,
+            request.OperationNamespace,
+            "GetFieldsResponse",
+            BuildFields(srid, maskedFields));
+    }
+
+    private static async Task<IResult> HandleGetViewAsync(
+        XElement operation,
+        SoapRasterRequestContext request,
+        IImageServerLayerResolver layerResolver,
+        IRasterStore rasterStore,
+        CancellationToken cancellationToken)
+    {
+        // Stock Pro requests an empty VID during service discovery. Honua has no
+        // persisted named views: expose only the authorized service's default
+        // raster view, never silently substitute it for an unknown named view.
+        // ImageView's optional fields and order follow the ArcGIS SOAP XSD.
+        var viewId = operation.Elements().FirstOrDefault(element => element.Name.LocalName == "VID")?.Value;
+        if (!string.IsNullOrEmpty(viewId))
+        {
+            return CreateSoapFault("Image view was not found.", StatusCodes.Status404NotFound, request.SoapNamespace);
+        }
+
+        var service = await ReadServiceRastersAsync(
+            request, layerResolver, rasterStore, cancellationToken).ConfigureAwait(false);
+        if (service.ErrorResult is not null)
+        {
+            return service.ErrorResult;
+        }
+
+        var raster = SelectReferenceRaster(service.Rasters);
+        var (pixelSizeX, pixelSizeY) = ImageServerKeyPropertiesHandler.ComputePixelSizes(raster);
+        XNamespace xsi = XmlSchemaInstanceNamespace;
+        return CreateSoapResponse(
+            request.SoapNamespace,
+            request.OperationNamespace,
+            "GetViewResponse",
+            new XElement("Result",
+                new XAttribute(xsi + "type", "tns:ImageView"),
+                new XElement("VID", string.Empty),
+                new XElement("Description", string.Empty),
+                BuildEnvelope(service.Extent!.Value),
+                new XElement("PixelSizeX", FormatDouble(pixelSizeX)),
+                new XElement("PixelSizeY", FormatDouble(pixelSizeY)),
+                new XElement("BandCount", raster.BandCount),
+                new XElement("PixelType", MapPixelType(raster.PixelType))));
+    }
+
+    private static async Task<IResult> HandleGetServiceInfoAsync(
+        string serviceId,
+        SoapRasterRequestContext request,
+        IImageServerLayerResolver layerResolver,
+        IRasterStore rasterStore,
+        CancellationToken cancellationToken)
+    {
+        var service = await ReadServiceRastersAsync(
+            request, layerResolver, rasterStore, cancellationToken).ConfigureAwait(false);
+        if (service.ErrorResult is not null)
+        {
+            return service.ErrorResult;
+        }
+
+        var rasters = service.Rasters;
+        var extent = service.Extent!.Value;
         var referenceRaster = SelectReferenceRaster(rasters);
         var statistics = await ReadServiceStatisticsAsync(
             request.HttpContext,
-            revalidation.Resolution.LayerId,
+            service.Resolution.LayerId,
             rasters,
-            revalidation.Resolution.MergeStrategy,
+            service.Resolution.MergeStrategy,
             cancellationToken).ConfigureAwait(false);
 
         var (pixelSizeX, pixelSizeY) = ImageServerKeyPropertiesHandler.ComputePixelSizes(referenceRaster);
         XNamespace xsi = XmlSchemaInstanceNamespace;
+        var maskedFields = await ReadCatalogMasksAsync(
+            request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
         var extras = await BuildServiceInfoExtrasAsync(
             request.HttpContext,
-            revalidation.Resolution.LayerId,
+            service.Resolution.LayerId,
             rasters,
-            revalidation.Resolution.MergeStrategy,
+            service.Resolution.MergeStrategy,
             request.SoapNamespace,
+            maskedFields,
             cancellationToken).ConfigureAwait(false);
         if (extras.Error is not null)
         {
@@ -360,7 +454,7 @@ internal static partial class ImageServerSoapEndpoints
             new XAttribute(xsi + "type", "tns:ImageServiceInfo"),
             new XElement("Name", serviceId),
             new XElement("Description", $"Image service for {serviceId}"),
-            BuildEnvelope(extent.Value),
+            BuildEnvelope(extent),
             new XElement("PixelSizeX", FormatDouble(pixelSizeX)),
             new XElement("PixelSizeY", FormatDouble(pixelSizeY)),
             new XElement("BandCount", referenceRaster.BandCount),
@@ -378,7 +472,7 @@ internal static partial class ImageServerSoapEndpoints
             new XElement("MaxNCols", MaxImageDimension),
             new XElement("MaxNRows", MaxImageDimension),
             new XElement("ServiceSourceType", "esriImageServiceSourceTypeMosaicDataset"),
-            new XElement("AllowedFields", "OBJECTID,Shape,Name"),
+            new XElement("AllowedFields", string.Join(',', SoapCatalogFieldNames(maskedFields))),
             new XElement("AllowedCompressions", "None"),
             new XElement("AllowedMosaicMethods", ImageServerMosaicRule.AllowedMosaicMethods),
             new XElement("MaxRecordCount", 1000),
@@ -1155,7 +1249,32 @@ internal static partial class ImageServerSoapEndpoints
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    private static XElement BuildFields()
+    /// <summary>
+    /// SOAP catalog field names: the neutral catalog schema
+    /// (<see cref="ImageServerCatalogFields.Schema"/>) that REST metadata and query
+    /// also project, minus the caller's field masks, with the footprint <c>Shape</c>
+    /// geometry field after the OID, as Esri mosaic catalogs list it.
+    /// GetFields, AllowedFields and QueryRasterCatalog therefore describe one schema.
+    /// </summary>
+    internal static IEnumerable<string> SoapCatalogFieldNames(ImmutableArray<string> maskedFields = default)
+        => SoapCatalogFields(maskedFields).Select(static field => field.Name);
+
+    private static IEnumerable<Field> SoapCatalogFields(ImmutableArray<string> maskedFields)
+    {
+        var catalog = ImageServerCatalogFields.Schema(maskedFields);
+        foreach (var field in catalog.Where(static field => field.Type == "esriFieldTypeOID"))
+        {
+            yield return field;
+        }
+
+        yield return new Field { Name = "Shape", Type = "esriFieldTypeGeometry", Alias = "Shape", Nullable = true };
+        foreach (var field in catalog.Where(static field => field.Type != "esriFieldTypeOID"))
+        {
+            yield return field;
+        }
+    }
+
+    internal static XElement BuildFields(int srid, ImmutableArray<string> maskedFields = default)
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
         return new XElement(
@@ -1164,45 +1283,9 @@ internal static partial class ImageServerSoapEndpoints
             new XElement(
                 "FieldArray",
                 new XAttribute(xsi + "type", "tns:ArrayOfField"),
-                BuildField("OBJECTID", "esriFieldTypeOID", false, 4, required: true),
-                BuildField("Shape", "esriFieldTypeGeometry", true, 0, required: true),
-                BuildField("Name", "esriFieldTypeString", true, 255, required: false)));
-    }
-
-    private static XElement BuildField(
-        string name,
-        string type,
-        bool nullable,
-        int length,
-        bool required)
-    {
-        XNamespace xsi = XmlSchemaInstanceNamespace;
-        var field = new XElement(
-            "Field",
-            new XAttribute(xsi + "type", "tns:Field"),
-            new XElement("Name", name),
-            new XElement("Type", type),
-            new XElement("IsNullable", nullable),
-            new XElement("Length", length),
-            new XElement("Precision", 0),
-            new XElement("Scale", 0),
-            new XElement("Required", required),
-            new XElement("Editable", false));
-
-        if (string.Equals(type, "esriFieldTypeGeometry", StringComparison.Ordinal))
-        {
-            field.Add(
-                new XElement(
-                    "GeometryDef",
-                    new XAttribute(xsi + "type", "tns:GeometryDef"),
-                    new XElement("AvgNumPoints", 0),
-                    new XElement("GeometryType", "esriGeometryPolygon"),
-                    new XElement("HasM", false),
-                    new XElement("HasZ", false)));
-        }
-
-        field.Add(new XElement("AliasName", name), new XElement("ModelName", name));
-        return field;
+                SoapCatalogFields(maskedFields).Select(field => BuildCatalogField(
+                    field,
+                    field.Type == "esriFieldTypeGeometry" ? BuildGeometryDef(srid, srid) : null))));
     }
 
     private static XElement? BuildDoubleArray(string name, IEnumerable<double> values)

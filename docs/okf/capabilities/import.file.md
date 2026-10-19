@@ -16,13 +16,14 @@ Import geospatial data from file uploads (GeoJSON, Shapefile, GeoPackage).
 | Capability key | `import.file` |
 | Category | Import |
 | Edition | Community |
-| Surface maturity | 74 implemented |
-| Registry entries | 74 |
-| Proving tests | 246 |
+| Surface maturity | 79 implemented |
+| Registry entries | 79 |
+| Proving tests | 261 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
 ## Documented in
 
 - [Import data from files](../../guides/publish/import-files.md)
+- [Import a layer from object storage](../../guides/publish/import-from-object-storage.md)
 - [Imports and jobs](../../reference/admin-api/imports-and-jobs.md)

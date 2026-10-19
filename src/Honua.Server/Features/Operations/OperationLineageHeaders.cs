@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using Honua.Core.Features.Operations.Domain;
 using Microsoft.Extensions.Primitives;
 
@@ -17,13 +18,14 @@ internal static class OperationLineageHeaders
     internal static void Apply(
         HttpRequestMessage message,
         OperationPolicyContext context,
-        OperationLineageAttestationStore attestationStore)
+        OperationLineageAttestationStore attestationStore,
+        OperationLoopbackAdmission? admission = null)
     {
         Add(message, OperationInstanceId, context.OperationInstanceId);
         Add(message, CorrelationId, context.CorrelationId);
         Add(message, AuditId, context.AuditId);
         Add(message, ProposalId, context.ProposalId ?? context.ApprovedProposalId);
-        Add(message, Attestation, attestationStore.Issue(context));
+        Add(message, Attestation, attestationStore.Issue(context, admission));
     }
 
     private static void Add(HttpRequestMessage message, string name, string? value)
@@ -41,7 +43,7 @@ internal sealed class OperationLineageAttestationStore(TimeProvider clock)
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Entry> _pending =
         new(StringComparer.Ordinal);
 
-    internal string Issue(OperationPolicyContext context)
+    internal string Issue(OperationPolicyContext context, OperationLoopbackAdmission? admission = null)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -50,6 +52,7 @@ internal sealed class OperationLineageAttestationStore(TimeProvider clock)
             context.OperationInstanceId,
             context.AuditId,
             context.ProposalId ?? context.ApprovedProposalId,
+            admission,
             clock.GetUtcNow().Add(Lifetime));
         return token;
     }
@@ -67,7 +70,8 @@ internal sealed class OperationLineageAttestationStore(TimeProvider clock)
         value = new OperationLineageAttestation(
             entry.OperationInstanceId,
             entry.AuditId,
-            entry.ProposalId);
+            entry.ProposalId,
+            entry.Admission);
         return true;
     }
 
@@ -75,19 +79,34 @@ internal sealed class OperationLineageAttestationStore(TimeProvider clock)
         string? OperationInstanceId,
         string? AuditId,
         string? ProposalId,
+        OperationLoopbackAdmission? Admission,
         DateTimeOffset ExpiresAt);
 }
 
 internal readonly record struct OperationLineageAttestation(
     string? OperationInstanceId,
     string? AuditId,
-    string? ProposalId);
+    string? ProposalId,
+    OperationLoopbackAdmission? Admission);
+
+internal sealed record OperationLoopbackAdmission(
+    Guid CredentialId, string Method, string Path, string? TenantId)
+{
+    internal bool Matches(HttpContext context)
+        => context.Connection.RemoteIpAddress is { } remote && IPAddress.IsLoopback(remote) &&
+           context.User.Identity?.IsAuthenticated == true &&
+           Guid.TryParse(context.User.FindFirst("api_key_id")?.Value, out var credential) &&
+           credential == CredentialId &&
+           string.Equals(context.Request.Method, Method, StringComparison.Ordinal) &&
+           string.Equals(context.Request.Path.Value, Path, StringComparison.Ordinal);
+}
 
 internal sealed class OperationLineageAttestationMiddleware(RequestDelegate next)
 {
     public async Task InvokeAsync(HttpContext context, OperationLineageAttestationStore store)
     {
         var token = context.Request.Headers[OperationLineageHeaders.Attestation].ToString();
+        context.Features.Set<OperationLoopbackAdmission>(null);
 
         context.Request.Headers.Remove(OperationLineageHeaders.Attestation);
         context.Request.Headers.Remove(OperationLineageHeaders.OperationInstanceId);
@@ -99,6 +118,10 @@ internal sealed class OperationLineageAttestationMiddleware(RequestDelegate next
             Add(context, OperationLineageHeaders.OperationInstanceId, lineage.OperationInstanceId);
             Add(context, OperationLineageHeaders.AuditId, lineage.AuditId);
             Add(context, OperationLineageHeaders.ProposalId, lineage.ProposalId);
+            if (lineage.Admission is { } admission && admission.Matches(context))
+            {
+                context.Features.Set(admission);
+            }
         }
 
         await next(context).ConfigureAwait(false);

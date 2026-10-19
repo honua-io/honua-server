@@ -166,7 +166,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var processes = json.RootElement.GetProperty("processes").EnumerateArray().ToArray();
-        processes.Should().HaveCount(83, "the canonical plan process plus all 82 catalog Job processes are projected once");
+        processes.Should().HaveCount(86, "the canonical plan process plus all 85 catalog Job processes are projected once");
 
         var first = processes[0];
         first.GetProperty("id").GetString().Should().Be("honua-geoprocessing");
@@ -185,6 +185,13 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             "statistics.summarize",
             "raster.interpolate-kriging",
             "transform.reproject"]);
+        foreach (var processId in new[] { "routing.closest-facilities", "routing.od-cost-matrix", "routing.location-allocation" })
+        {
+            var routingProcess = processes.Single(process => process.GetProperty("id").GetString() == processId);
+            routingProcess.GetProperty("jobControlOptions").EnumerateArray()
+                .Select(option => option.GetString()).Should().Equal("async-execute");
+        }
+
         ids.Should().NotContain([
             "analytics.cluster",
             "analytics.density",

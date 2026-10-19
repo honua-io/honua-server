@@ -12,7 +12,9 @@ SCRIPT = ROOT / "scripts/ci/prepare-testcontainer-images.sh"
 PIN16 = "mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5"
 RYUK = "mirror.gcr.io/testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0"
 workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-assert workflow.count("image: " + PIN16) == 8
+assert workflow.count("image: " + PIN16) == 7
+conditional_postgis = "image: ${{ toJSON(matrix.needs_postgres) != 'false' && '" + PIN16 + "' || '' }}"
+assert workflow.count(conditional_postgis) == 1
 assert "image: ${{ matrix.pg_service_image }}" in workflow
 assert "name: Postgres Compatibility (${{ matrix.pg_image }})" in workflow
 assert "PG_IMAGE: ${{ matrix.pg_image }}" in workflow

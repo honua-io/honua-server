@@ -1,0 +1,13 @@
+{
+  "plan": {
+    "planId": "gp-local-buffer-500m",
+    "steps": [{
+      "stepId": "buffer-point",
+      "kind": "Geoprocess",
+      "processId": "geometry.buffer",
+      "inputs": {"wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA", "srid": "3857", "distance": "500", "geodesic": "false"},
+      "dependsOn": []
+    }],
+    "outputs": ["FeatureLayer"]
+  }
+}

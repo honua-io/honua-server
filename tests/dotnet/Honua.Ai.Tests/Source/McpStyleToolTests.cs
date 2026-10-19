@@ -524,6 +524,43 @@ public sealed class McpStyleToolTests
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
+    [UnitTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ApplyStylePreset_RedisOffDirectExecution_AppliesWithNonDurableHandle()
+    {
+        // Owner decisions 3 and 20: a Redis-off host composes the dispatcher over the
+        // non-durable direct store, so a policy-allowed preset applies and the tool answers
+        // with the canonical handle marked durable=false (honua-release run 38249563601).
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
+        catalog.AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        var instanceStore = OperationsServiceCollectionExtensions.ComposeDispatcherInstanceStore(
+            new UnavailableOperationInstanceStore());
+
+        var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            catalog: catalog, graphSync: graphSync, instanceStore: instanceStore);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse(result.ToString());
+        var output = result.GetProperty("structuredContent");
+        output.GetProperty("status").GetString().Should().Be(nameof(OperationHandleStatus.Completed));
+        output.GetProperty("operationId").GetString().Should().Be(StylePresetOperation.OperationId);
+        output.GetProperty("operationInstanceId").GetString().Should().StartWith("opinst-");
+        output.GetProperty("correlationId").GetString().Should().NotBeNullOrWhiteSpace();
+        output.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace();
+        output.GetProperty("applied").GetBoolean().Should().BeTrue();
+        output.GetProperty("styleId").GetString().Should().Be(PresetStyleId);
+        output.GetProperty("durable").GetBoolean().Should().BeFalse();
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.ApplyStylePresetOutputSchema);
+        await catalog.Received(1).AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>());
+        await graphSync.Received(1).SyncLayerStylesAsync(StorageLayerId, Arg.Any<CancellationToken>());
+    }
+
     [Theory]
     [InlineData("unchanged")]
     [InlineData("publication")]

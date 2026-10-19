@@ -90,14 +90,8 @@ internal sealed partial class Wfs20Handler
             var unknownTypes = GetUnknownRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (unknownTypes.Length > 0)
             {
-                var allPublishedTypes = await GetPublishedFeatureTypesAsync(
-                    context,
-                    cancellationToken,
-                    enforceAccess: false);
-                var protectedTypes = unknownTypes
-                    .Where(name => GetUnknownRequestedFeatureTypes(allPublishedTypes, [name]).Length == 0)
-                    .ToArray();
-                if (protectedTypes.Length > 0 && context.User.Identity?.IsAuthenticated != true)
+                if (await RequiresAuthenticationForWithheldTypesAsync(context, unknownTypes, cancellationToken)
+                    .ConfigureAwait(false))
                 {
                     AccessPolicyHelpers.AppendAuthenticationChallenge(context);
                     return Wfs20ErrorResults.CreateUnauthorized(
@@ -162,37 +156,45 @@ internal sealed partial class Wfs20Handler
                     : CreateEmptyFeatureCollectionResult(normalizedFormat);
             }
 
-            if (ShouldUsePagedGetFeatureFastPath(selectedTypes, normalizedFormat, isHitsRequest, maxFeatures))
+            if (CanAttemptPagedGetFeatureFastPath(selectedTypes, isHitsRequest, maxFeatures))
             {
                 var descriptor = selectedTypes[0];
-                var query = (await BuildFeatureQueryAsync(
-                    descriptor,
-                    propertyName,
-                    sortBy,
-                    bbox,
-                    filter,
-                    resourceId,
-                    srsName,
-                    enforceResourceIdTypeMatch: true,
-                    requireResourceIdQualifier: selectedTypes.Length > 1,
-                    cancellationToken: cancellationToken).ConfigureAwait(false)) with
+                // The publication may be bound to a provider that does not page, even when
+                // the injected reader does. Decide from the reader this request will use.
+                var resolvedReader = await ResolveQueryReaderAsync(descriptor, cancellationToken)
+                    .ConfigureAwait(false);
+                if (ReaderSupportsPagedGetFeatureFastPath(resolvedReader, normalizedFormat))
                 {
-                    Offset = offset,
-                    Limit = maxFeatures
-                };
+                    var query = (await BuildFeatureQueryAsync(
+                        descriptor,
+                        propertyName,
+                        sortBy,
+                        bbox,
+                        filter,
+                        resourceId,
+                        srsName,
+                        enforceResourceIdTypeMatch: true,
+                        requireResourceIdQualifier: selectedTypes.Length > 1,
+                        cancellationToken: cancellationToken).ConfigureAwait(false)) with
+                    {
+                        Offset = offset,
+                        Limit = maxFeatures
+                    };
 
-                var pagedResult = await BuildPagedGetFeatureResultAsync(
-                    descriptor,
-                    query,
-                    normalizedFormat,
-                    cancellationToken);
+                    var pagedResult = await BuildPagedGetFeatureResultAsync(
+                        descriptor,
+                        query,
+                        normalizedFormat,
+                        resolvedReader,
+                        cancellationToken);
 
-                Wfs20Log.GetFeatureReturned(
-                    _logger,
-                    pagedResult.ReturnedCount,
-                    pagedResult.NumberMatchedSummary);
+                    Wfs20Log.GetFeatureReturned(
+                        _logger,
+                        pagedResult.ReturnedCount,
+                        pagedResult.NumberMatchedSummary);
 
-                return pagedResult.Result;
+                    return pagedResult.Result;
+                }
             }
 
             var planSet = await BuildLayerQueryPlansAsync(
@@ -503,7 +505,9 @@ internal sealed partial class Wfs20Handler
                     requireResourceIdQualifier: selectedTypes.Length > 1,
                     cancellationToken: cancellationToken);
 
-                var layerMatched = await _featureReader.CountAsync(featureType.StorageLayerId, query, cancellationToken);
+                var reader = await ResolveQueryReaderAsync(featureType, cancellationToken).ConfigureAwait(false);
+                var layerMatched = await reader.CountAsync(featureType.StorageLayerId, query, cancellationToken)
+                    .ConfigureAwait(false);
                 totalMatched += layerMatched;
 
                 if (layerMatched == 0)
@@ -536,7 +540,8 @@ internal sealed partial class Wfs20Handler
                     featureType,
                     query with { Offset = layerOffset, Limit = layerLimit },
                     layerMatched,
-                    xmlQuery.SrsName ?? fallbackSrsName));
+                    xmlQuery.SrsName ?? fallbackSrsName,
+                    reader));
 
                 remainingCount -= layerLimit;
             }

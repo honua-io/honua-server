@@ -60,10 +60,11 @@ public static class RateLimitingMiddlewareExtensions
         var options = services.GetRequiredService<IOptions<RateLimitingOptions>>();
         var logger = services.GetRequiredService<ILogger<RateLimitingMiddleware>>();
         var redis = services.GetService<IConnectionMultiplexer>();
+        var timeProvider = services.GetService<TimeProvider>() ?? TimeProvider.System;
 
         return app.Use(next =>
         {
-            var middleware = new RateLimitingMiddleware(next, policyStore, options, logger, redis);
+            var middleware = new RateLimitingMiddleware(next, policyStore, options, logger, redis, timeProvider);
             return middleware.InvokeAsync;
         });
     }

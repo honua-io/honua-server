@@ -68,6 +68,8 @@ internal sealed class FeatureServerEditsHandler(
         int layerId,
         ApplyEditsRequest request,
         Honua.Core.Configuration.EditLimits editLimits,
+        ApplyEditsIdempotencyChoice? idempotencyOverride = null,
+        AmbientFeatureEditTransaction? ambientTransaction = null,
         CancellationToken cancellationToken = default)
     {
         var httpContext = _httpContextAccessor.HttpContext!;
@@ -85,7 +87,13 @@ internal sealed class FeatureServerEditsHandler(
 
         // Server-side at-most-once (#2250): validate the optional Idempotency-Key header up front so a
         // malformed header fails fast with a 400 before any edit work, rather than being silently ignored.
-        if (!ApplyEditsIdempotency.TryResolveKey(httpContext, out var idempotencyKey, out var idempotencyError))
+        // An explicit override (calculate batches) does not re-read the shared header.
+        string? idempotencyKey;
+        if (idempotencyOverride is { } idempotencyChoice)
+        {
+            idempotencyKey = idempotencyChoice.Key;
+        }
+        else if (!ApplyEditsIdempotency.TryResolveKey(httpContext, out idempotencyKey, out var idempotencyError))
         {
             return StandardErrorHelpers.CreateBadRequest(httpContext, idempotencyError!);
         }
@@ -306,6 +314,10 @@ internal sealed class FeatureServerEditsHandler(
 
                 heldReservation = replayScope;
                 heldReservationToken = reservationToken;
+                // The caller commits or rolls back. Keep the reservation on the ambient
+                // transaction so a later batch failure can release it instead of replaying
+                // a write that never committed.
+                ambientTransaction?.HeldReservations.Add((replayScope, reservationToken));
             }
 
             // Partial updates are assembled from a read snapshot. Guard ordinary single-row
@@ -328,7 +340,15 @@ internal sealed class FeatureServerEditsHandler(
             FeatureEditResult editResult;
             for (var attempt = 0; ; attempt++)
             {
-                editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, editPrincipal, lockScope, cancellationToken);
+                editContext = await ProcessEditOperationsAsync(
+                    request,
+                    resource,
+                    storageLayerId.Value,
+                    editPrincipal,
+                    lockScope,
+                    retryStaleUpdate,
+                    versionContext,
+                    cancellationToken);
                 editContext.GuardUpdateSnapshot = retryStaleUpdate;
                 await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
                     .ConfigureAwait(false);
@@ -337,7 +357,16 @@ internal sealed class FeatureServerEditsHandler(
                     return CreateRollbackResponse(editContext, serviceId, layerId);
                 }
 
-                editResult = await ExecuteEdits(storageLayerId.Value, resource, editContext, request, serviceId, versionContext, writeOutcome, cancellationToken);
+                editResult = await ExecuteEdits(
+                    storageLayerId.Value,
+                    resource,
+                    editContext,
+                    request,
+                    serviceId,
+                    versionContext,
+                    writeOutcome,
+                    cancellationToken,
+                    ambientTransaction?.Transaction);
                 writeOutcome.MayHaveCommitted = editResult.MayHaveCommitted;
                 if (!retryStaleUpdate || attempt >= 15 || editResult.MayHaveCommitted ||
                     editResult.UpdateResults is not { Length: 1 } ||
@@ -356,20 +385,17 @@ internal sealed class FeatureServerEditsHandler(
             // provider's explicit commit-outcome signal as well as successful counts.
             writeOutcome.MayHaveCommitted = editResult.MayHaveCommitted;
 
-            if (editCommittedRows)
+            if (editCommittedRows && ambientTransaction is null)
             {
-                using var postCommitCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                try
-                {
-                    await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, postCommitCts.Token);
-                    await PublishFeatureChangeEventsAsync(serviceId, layerId, editContext, postCommitCts.Token);
-                    await RunPluginAfterHooksAsync(serviceId, layerId, resource, editContext, postCommitCts.Token)
-                        .ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (postCommitCts.IsCancellationRequested)
-                {
-                    FeatureServerLog.PostCommitSideEffectsTimedOut(_logger, serviceId, layerId);
-                }
+                await RunPostCommitSideEffectsAsync(
+                    serviceId, layerId, resource, editContext, cancellationToken).ConfigureAwait(false);
+            }
+            else if (editCommittedRows)
+            {
+                var committedContext = editContext;
+                var committedResource = resource;
+                ambientTransaction!.AfterCommit.Add(ct =>
+                    RunPostCommitSideEffectsAsync(serviceId, layerId, committedResource, committedContext, ct));
             }
 
             // Build and return final response
@@ -387,13 +413,23 @@ internal sealed class FeatureServerEditsHandler(
             // Record the response for at-most-once replay (#2250) only when the edit actually committed
             // rows. A fully-failed/no-op request is intentionally not recorded so a genuine retry is
             // re-attempted rather than replaying a no-op failure. Best-effort: the store swallows errors.
-            if (idempotencyScope is { } recordScope && editCommittedRows)
+            if (idempotencyScope is { } recordScope && heldReservationToken is { } recordToken && editCommittedRows)
             {
                 // The reservation is replaced by the recorded response rather than released: a
                 // successful key stays occupied for the whole dedupe window so a duplicate retry
                 // replays this response instead of re-applying the edit (#2250). The finally block
                 // below skips the release for exactly this reason (writeOutcome.MayHaveCommitted).
-                await _idempotencyStore.SetAsync(recordScope, finalResponse, CancellationToken.None).ConfigureAwait(false);
+                // The response is stored only while this request still owns the reservation.
+                // An ambient calculate transaction has not committed yet. Recording now would make
+                // a rolled-back batch replay as success and skip the write on retry (#6359).
+                if (ambientTransaction is null)
+                {
+                    await _idempotencyStore.SetAsync(recordScope, recordToken, finalResponse, CancellationToken.None).ConfigureAwait(false);
+                }
+                else
+                {
+                    ambientTransaction.Recorded.Add((recordScope, recordToken, finalResponse));
+                }
             }
 
             return Results.Json(finalResponse, FeatureServerJsonContext.Default.ApplyEditsResponse,
@@ -402,6 +438,18 @@ internal sealed class FeatureServerEditsHandler(
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (EditBatchValidationException ex)
+        {
+            // A batch-level validation failure is a client error. Mapping it to 500 made one
+            // bad add fail the whole request, including rows that rollbackOnFailure=false
+            // should have kept (#6133). Per-slot failures are reported on the edit result
+            // instead; this is the leftover that never reached a slot.
+            FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
+            scope.RecordException(ex);
+            return StandardErrorHelpers.CreateBadRequest(
+                httpContext,
+                SanitizeEditErrorMessage(ex.Message, "Invalid edit request."));
         }
         // A read/query-only provider's writer (ReadOnlyFeatureWriter for DuckDB and
         // MySQL/MariaDB) rejects every write with NotSupportedException. That is the
@@ -444,7 +492,10 @@ internal sealed class FeatureServerEditsHandler(
             // covers in-process failures only: a process crash between reserve and release still
             // leaves the reservation behind, which is what the store's ReservationWindow TTL
             // exists to bound.
-            if (heldReservation is { } releaseScope && heldReservationToken is { } releaseToken && !writeOutcome.MayHaveCommitted)
+            if (ambientTransaction is null &&
+                heldReservation is { } releaseScope &&
+                heldReservationToken is { } releaseToken &&
+                !writeOutcome.MayHaveCommitted)
             {
                 await _idempotencyStore.ReleaseAsync(releaseScope, releaseToken).ConfigureAwait(false);
             }
@@ -495,6 +546,8 @@ internal sealed class FeatureServerEditsHandler(
         int storageLayerId,
         EditPrincipal principal,
         EditLockScope? lockScope,
+        bool guardUpdateSnapshot,
+        VersionContext? versionContext,
         CancellationToken cancellationToken)
     {
         var context = new EditOperationContext
@@ -506,8 +559,16 @@ internal sealed class FeatureServerEditsHandler(
         };
 
         await ProcessAddOperationsAsync(request, context, resource, principal, cancellationToken);
-        await ProcessUpdateOperationsAsync(request, context, resource, storageLayerId, principal, cancellationToken);
-        await ProcessDeleteOperationsAsync(request, resource, storageLayerId, context, principal, cancellationToken);
+        await ProcessUpdateOperationsAsync(
+            request,
+            context,
+            resource,
+            storageLayerId,
+            principal,
+            guardUpdateSnapshot,
+            versionContext,
+            cancellationToken);
+        await ProcessDeleteOperationsAsync(request, resource, storageLayerId, context, principal, versionContext, cancellationToken);
 
         return context;
     }
@@ -526,7 +587,7 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         return new EditPrincipal(
-            httpContext.User!.Identity!.Name,
+            EditOwnerSubject.Resolve(httpContext.User),
             IsAuthenticated: true,
             IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(httpContext));
     }
@@ -553,7 +614,20 @@ internal sealed class FeatureServerEditsHandler(
                 // request's, but using request.Adds[i].Geometry directly keeps the rule
                 // identical to the update path.
                 var requestHasGeometry = request.Adds[i].Geometry != null;
-                var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, resource, AttributeRuleEditEvent.Insert, principal, cancellationToken);
+                var newFeature = await BuildFeatureFromGeoServicesAsync(
+                    request.Adds[i],
+                    0,
+                    resource,
+                    AttributeRuleEditEvent.Insert,
+                    principal,
+                    cancellationToken,
+                    useGlobalIds: request.UseGlobalIds);
+                var createRejection = EditProcessor.DescribeCreateAttributeRejection(resource, newFeature.Attributes);
+                if (createRejection is not null)
+                {
+                    throw new ArgumentException(createRejection);
+                }
+
                 context.CreateFeatures.Add(newFeature);
                 context.CreateIndexes.Add(i);
                 context.CreateGeometryChanged.Add(requestHasGeometry);
@@ -591,12 +665,14 @@ internal sealed class FeatureServerEditsHandler(
     /// <summary>
     /// Processes update operations and tracks features to update
     /// </summary>
-    private async Task ProcessUpdateOperationsAsync(
+    internal async Task ProcessUpdateOperationsAsync(
         ApplyEditsRequest request,
         EditOperationContext context,
         MetadataV2Resource resource,
         int storageLayerId,
         EditPrincipal principal,
+        bool guardUpdateSnapshot,
+        VersionContext? versionContext,
         CancellationToken cancellationToken)
     {
         if (request.Updates == null)
@@ -607,12 +683,16 @@ internal sealed class FeatureServerEditsHandler(
         var slotObjectIds = new long?[request.Updates.Length];
         for (var i = 0; i < request.Updates.Length; i++)
         {
-            if (!TryGetObjectId(request.Updates[i].Attributes, resource, out var parsedObjectId))
+            var hasObjectId = TryGetObjectId(request.Updates[i].Attributes, resource, out var parsedObjectId);
+            if (!hasObjectId || parsedObjectId <= 0)
             {
                 context.HasValidationErrors = true;
                 context.UpdateResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.InvalidObjectId,
-                    description: "ObjectId is required for update operations");
+                    description: hasObjectId
+                        ? "Invalid Object ID for update operation"
+                        : "ObjectId is required for update operations",
+                    objectId: hasObjectId ? parsedObjectId : null);
                 continue;
             }
 
@@ -626,6 +706,7 @@ internal sealed class FeatureServerEditsHandler(
                 resource,
                 storageLayerId,
                 slotObjectIds,
+                versionContext,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (ArgumentException ex)
@@ -653,7 +734,8 @@ internal sealed class FeatureServerEditsHandler(
             storageLayerId,
             existingFeatures.Values,
             principal,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            versionContext).ConfigureAwait(false);
 
         for (var i = 0; i < request.Updates.Length; i++)
         {
@@ -703,11 +785,27 @@ internal sealed class FeatureServerEditsHandler(
 
                 var internalObjectId = existingFeature.Value.Id;
                 context.InternalObjectIdsByPublicObjectId[objectId] = internalObjectId;
-                context.UpdateSnapshotPreconditions[internalObjectId] = new FeatureEditPrecondition
+                if (guardUpdateSnapshot)
                 {
-                    ObjectId = internalObjectId,
-                    ExpectedStateToken = FeatureStateToken.Compute(existingFeature.Value)
-                };
+                    // QueryAsync masks in SQL and does not stamp ReadStateToken. GetAsync
+                    // hashes the full row first, then strips masked keys before returning.
+                    var precondition = await TryCreateGuardedUpdatePreconditionAsync(
+                        _featureReader,
+                        storageLayerId,
+                        internalObjectId,
+                        cancellationToken).ConfigureAwait(false);
+                    if (precondition is not { } guarded)
+                    {
+                        context.HasValidationErrors = true;
+                        context.UpdateResults![i] = CreateFailureResult(
+                            code: GeoServicesEditErrorCodes.NotFound,
+                            description: "Feature not found",
+                            objectId: objectId);
+                        continue;
+                    }
+
+                    context.UpdateSnapshotPreconditions[internalObjectId] = guarded;
+                }
                 // Capture request intent BEFORE BuildFeatureFromGeoServicesAsync runs;
                 // that helper preserves existingFeature.Geometry when update.Geometry is
                 // null, so the post-merge feature's WKB cannot distinguish an attribute-
@@ -721,8 +819,16 @@ internal sealed class FeatureServerEditsHandler(
                     principal,
                     cancellationToken,
                     existingFeature,
-                    ownerSnapshots).ConfigureAwait(false);
+                    ownerSnapshots,
+                    request.UseGlobalIds).ConfigureAwait(false);
                 context.UpdateFeatures.Add(updateFeature);
+                // The full merged row above serves rules, validation, hooks and events. The
+                // DEFAULT writer receives only what this request changes, so the row it locks
+                // supplies every other field and the omitted geometry (#6094). The versioned
+                // overlay writer persists the payload verbatim and keeps the merged row.
+                context.UpdateWriteFeatures.Add(versionContext is { IsDefault: false }
+                    ? updateFeature
+                    : CreatePartialUpdateWritePayload(updateFeature, existingFeature.Value, update, requestHasGeometry, resource));
                 context.UpdateIndexes.Add(i);
                 context.UpdateObjectIds.Add(objectId);
                 context.UpdateGeometryChanged.Add(requestHasGeometry);
@@ -760,12 +866,13 @@ internal sealed class FeatureServerEditsHandler(
     /// <summary>
     /// Processes delete operations and tracks features to delete
     /// </summary>
-    private async Task ProcessDeleteOperationsAsync(
+    internal async Task ProcessDeleteOperationsAsync(
         ApplyEditsRequest request,
         MetadataV2Resource resource,
         int storageLayerId,
         EditOperationContext context,
         EditPrincipal principal,
+        VersionContext? versionContext,
         CancellationToken cancellationToken)
     {
         if (request.Deletes == null)
@@ -776,12 +883,14 @@ internal sealed class FeatureServerEditsHandler(
         var slotObjectIds = new long?[request.Deletes.Length];
         for (var i = 0; i < request.Deletes.Length; i++)
         {
-            if (!FeatureServerValueParser.TryConvertToLong(request.Deletes[i], out var parsedObjectId))
+            if (!FeatureServerValueParser.TryConvertToLong(request.Deletes[i], out var parsedObjectId) ||
+                parsedObjectId <= 0)
             {
                 context.HasValidationErrors = true;
                 context.DeleteResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.InvalidObjectId,
-                    description: "Invalid ObjectId for delete operation");
+                    description: "Invalid Object ID for delete operation",
+                    objectId: parsedObjectId > 0 ? parsedObjectId : null);
                 continue;
             }
 
@@ -795,6 +904,7 @@ internal sealed class FeatureServerEditsHandler(
                 resource,
                 storageLayerId,
                 slotObjectIds,
+                versionContext,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (ArgumentException ex)
@@ -829,7 +939,8 @@ internal sealed class FeatureServerEditsHandler(
             storageLayerId,
             existingFeatures.Values,
             principal,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            versionContext).ConfigureAwait(false);
 
         for (var i = 0; i < request.Deletes.Length; i++)
         {
@@ -930,7 +1041,8 @@ internal sealed class FeatureServerEditsHandler(
         string serviceId,
         VersionContext? versionContext,
         EditWriteOutcome writeOutcome,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IFeatureWriterTransaction? writerTransaction = null)
     {
         if (context.CreateFeatures.Count == 0 && context.UpdateFeatures.Count == 0 && context.DeleteIds.Count == 0)
         {
@@ -941,7 +1053,7 @@ internal sealed class FeatureServerEditsHandler(
             new GeoServicesEditRequest
             {
                 Creates = context.CreateFeatures.ToImmutableArray(),
-                Updates = context.UpdateFeatures.ToImmutableArray(),
+                Updates = context.UpdateWriteFeatures.ToImmutableArray(),
                 Deletes = context.DeleteIds.ToImmutableArray(),
                 RollbackOnFailure = request.RollbackOnFailure,
                 UseGlobalIds = request.UseGlobalIds
@@ -950,14 +1062,14 @@ internal sealed class FeatureServerEditsHandler(
             cancellationToken);
         if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
         {
-            throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
+            throw new EditBatchValidationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
         }
 
         var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, resource);
         var editValidation = _editProcessor.ValidateEdit(optimizedEdit, resource);
         if (!editValidation.IsValid)
         {
-            throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
+            throw new EditBatchValidationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
@@ -1022,11 +1134,20 @@ internal sealed class FeatureServerEditsHandler(
         // with rows already committed and no result to inspect. Raise the flag BEFORE dispatching so
         // the handler's finally keeps the idempotency reservation in exactly that case (#3052); the
         // caller lowers it again only when the returned result proves nothing landed.
-        writeOutcome.MayHaveCommitted = true;
+        // An ambient transaction commits only after every calculate batch succeeds. Raising
+        // the flag here would treat a staged batch as durable and pin its idempotency key
+        // across a later rollback (#6359).
+        if (writerTransaction is null)
+        {
+            writeOutcome.MayHaveCommitted = true;
+        }
+
         FeatureEditResult editResult;
         try
         {
-            editResult = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+            editResult = writerTransaction is null
+                ? await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false)
+                : await writerTransaction.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (editBatch.RollbackOnFailure && cancellationToken.IsCancellationRequested)
         {
@@ -1407,6 +1528,11 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         context.UpdateFeatures.RemoveAt(k);
+        if (k < context.UpdateWriteFeatures.Count)
+        {
+            context.UpdateWriteFeatures.RemoveAt(k);
+        }
+
         context.UpdateIndexes.RemoveAt(k);
         if (k < context.UpdateObjectIds.Count)
         {
@@ -1470,7 +1596,7 @@ internal sealed class FeatureServerEditsHandler(
     /// <summary>
     /// Context object to track edit operations state
     /// </summary>
-    private sealed class EditOperationContext
+    internal sealed class EditOperationContext
     {
         public EditResult?[]? AddResults { get; init; }
         public EditResult?[]? UpdateResults { get; init; }
@@ -1486,6 +1612,12 @@ internal sealed class FeatureServerEditsHandler(
         /// </summary>
         public List<bool> CreateGeometryChanged { get; } = new();
         public List<Feature> UpdateFeatures { get; } = new();
+        /// <summary>
+        /// Per-update payload sent to the writer, parallel to <see cref="UpdateFeatures"/>. A
+        /// partial update carries only the attributes this request changes and defers omitted
+        /// fields and geometry to the writer's locked read (#6094).
+        /// </summary>
+        public List<Feature> UpdateWriteFeatures { get; } = new();
         public bool GuardUpdateSnapshot { get; set; }
         public Dictionary<long, FeatureEditPrecondition> UpdateSnapshotPreconditions { get; } = new();
         public List<int> UpdateIndexes { get; } = new();
@@ -1517,7 +1649,7 @@ internal sealed class FeatureServerEditsHandler(
     /// service/layer the targeted features belong to in the lease namespace, and the
     /// holder identity the caller is editing under (#4402).
     /// </summary>
-    private sealed record EditLockScope(string ServiceName, int LayerId, LockHolder? Holder);
+    internal sealed record EditLockScope(string ServiceName, int LayerId, LockHolder? Holder);
 
     /// <summary>
     /// Builds the lock scope for a request, or returns <see langword="null"/> when the
@@ -1584,6 +1716,7 @@ internal sealed class FeatureServerEditsHandler(
         MetadataV2Resource resource,
         int storageLayerId,
         long?[] slotObjectIds,
+        VersionContext? versionContext,
         CancellationToken cancellationToken)
     {
         var objectIds = new List<long>(slotObjectIds.Length);
@@ -1605,7 +1738,8 @@ internal sealed class FeatureServerEditsHandler(
                 new FeatureQuery
                 {
                     ObjectIds = objectIds.ToImmutableArray(),
-                    Limit = objectIds.Count
+                    Limit = objectIds.Count,
+                    VersionContext = versionContext is { IsDefault: false } ? versionContext : null
                 },
                 cancellationToken).ConfigureAwait(false);
 
@@ -1640,7 +1774,8 @@ internal sealed class FeatureServerEditsHandler(
             new FeatureQuery
             {
                 SqlFilter = translation.SqlFilter,
-                Limit = objectIds.Count
+                Limit = objectIds.Count,
+                VersionContext = versionContext is { IsDefault: false } ? versionContext : null
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -1665,7 +1800,7 @@ internal sealed class FeatureServerEditsHandler(
             FieldNames.ObjectId,
             StringComparison.OrdinalIgnoreCase) != false;
 
-    private async Task<Feature> BuildFeatureFromGeoServicesAsync(
+    internal async Task<Feature> BuildFeatureFromGeoServicesAsync(
         GeoServicesFeature feature,
         long objectId,
         MetadataV2Resource resource,
@@ -1673,7 +1808,9 @@ internal sealed class FeatureServerEditsHandler(
         EditPrincipal principal,
         CancellationToken cancellationToken,
         Feature? existingFeature = null,
-        IReadOnlyDictionary<long, OwnerFieldSnapshot>? ownerSnapshots = null)
+        IReadOnlyDictionary<long, OwnerFieldSnapshot>? ownerSnapshots = null,
+        bool useGlobalIds = false,
+        TimeProvider? timeProvider = null)
     {
         byte[]? geometry = existingFeature?.Geometry;
         if (feature.ClearGeometry)
@@ -1740,7 +1877,7 @@ internal sealed class FeatureServerEditsHandler(
                     ex);
             }
 
-            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometry, cancellationToken);
+            var geometryValidation = await _mutationValidator.ValidateGeometryAsync(resource, geometry, cancellationToken);
             if (!geometryValidation.IsValid)
             {
                 var safeError = SanitizeEditErrorMessage(
@@ -1781,6 +1918,14 @@ internal sealed class FeatureServerEditsHandler(
                 .Where(entry => !entry.Key.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
                 .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
         }
+
+        // Drop client GlobalID, editor-tracking, and (on insert) other non-editable
+        // values before validation. Stamp replaces them after rules run (#6134).
+        attributesToValidate = ServerMaintainedEditFields.OmitClientValues(
+            resource,
+            attributesToValidate,
+            isUpdate: existingFeature is not null,
+            useGlobalIds);
 
         var attributesResult = _mutationValidator.ValidateAttributes(
             resource,
@@ -1871,7 +2016,34 @@ internal sealed class FeatureServerEditsHandler(
             {
                 attributes[ownerPolicy.OwnerField] = principal.Name;
             }
+            else if (editEvent != AttributeRuleEditEvent.Insert && !principal.IsAdmin)
+            {
+                var ownerAttribute = attributes.FirstOrDefault(pair =>
+                    pair.Key.Equals(ownerPolicy.OwnerField, StringComparison.OrdinalIgnoreCase));
+                if ((ownerAttribute.Key is not null || feature.ReplaceAttributes) &&
+                    !string.Equals(
+                        Convert.ToString(ownerAttribute.Value, CultureInfo.InvariantCulture),
+                        Convert.ToString(updateSnapshot?.Owner, CultureInfo.InvariantCulture),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    // Reject reassignment without turning a full replacement into a partial update
+                    // or copying the unmasked owner snapshot into the response attribute bag.
+                    throw new EditNotPermittedException("Only an administrator can change the feature owner.");
+                }
+            }
         }
+
+        var clock = timeProvider
+            ?? _httpContextAccessor.HttpContext?.RequestServices.GetService<TimeProvider>()
+            ?? TimeProvider.System;
+        ServerMaintainedEditFields.Stamp(
+            resource,
+            attributes,
+            isInsert: editEvent == AttributeRuleEditEvent.Insert,
+            principal,
+            clock.GetUtcNow(),
+            useGlobalIds,
+            existingFeature?.Attributes);
 
         // Contingent-value enforcement (#2133): the effective merged attribute row (existing
         // values + this edit) must satisfy the resource's restrictive contingent-value groups.
@@ -1884,15 +2056,115 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         var edited = Feature.Create(objectId, geometry, attributes.ToImmutable());
-        if (OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(
+        var isPartialUpdate = existingFeature is not null && !feature.ReplaceAttributes;
+        edited = MarkPartialGeoServicesUpdate(edited, isPartialUpdate);
+        if (!edited.PreserveOmittedMaskedAttributes &&
+            OwnerEditPolicyFieldAccess.ShouldPreserveStoredOwner(
                 resource.OwnerEditPolicy,
-                existingFeature is not null && !feature.ReplaceAttributes,
+                isPartialUpdate,
                 attributes.Keys))
         {
             edited = edited with { PreserveOmittedMaskedAttributes = true };
         }
 
         return edited;
+    }
+
+    /// <summary>
+    /// Marks a partial update so the writer keeps omitted attributes, including masked ones.
+    /// A full attribute replacement leaves the flag unset.
+    /// </summary>
+    internal static Feature MarkPartialGeoServicesUpdate(Feature edited, bool isPartialUpdate)
+        => isPartialUpdate
+            ? edited with { PreserveOmittedMaskedAttributes = true }
+            : edited;
+
+    /// <summary>
+    /// Builds the writer payload for a partial GeoServices update (#6094). The merged feature
+    /// starts from an unlocked pre-read, so writing it whole would revert any field or geometry
+    /// another editor committed after that read. The payload keeps the caller-supplied
+    /// attributes plus every value this request changed relative to the pre-read (attribute
+    /// rule outputs, owner handling), names attributes the request removed, and asks the
+    /// writer to take omitted geometry from the row it locks. Full replacements and updates
+    /// that do not preserve omitted attributes are returned unchanged.
+    /// </summary>
+    internal static Feature CreatePartialUpdateWritePayload(
+        Feature merged,
+        Feature snapshot,
+        GeoServicesFeature request,
+        bool requestHasGeometry,
+        MetadataV2Resource resource)
+    {
+        if (request.ReplaceAttributes || !merged.PreserveOmittedMaskedAttributes)
+        {
+            return merged;
+        }
+
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        var supplied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in request.Attributes.Keys)
+        {
+            if (!request.InheritedNonEditableAttributes.Contains(key) &&
+                !key.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                supplied.Add(key);
+            }
+        }
+
+        var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in merged.Attributes)
+        {
+            if (supplied.Contains(name) ||
+                !snapshot.Attributes.TryGetValue(name, out var previous) ||
+                !Equals(previous, value))
+            {
+                attributes[name] = value;
+            }
+        }
+
+        var removals = merged.ExplicitAttributeRemovals.IsDefault
+            ? ImmutableArray.CreateBuilder<string>()
+            : merged.ExplicitAttributeRemovals.ToBuilder();
+        foreach (var name in snapshot.Attributes.Keys)
+        {
+            if (!merged.Attributes.ContainsKey(name) &&
+                !name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
+                !name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                removals.Add(name);
+            }
+        }
+
+        return merged with
+        {
+            Attributes = attributes.ToImmutable(),
+            ExplicitAttributeRemovals = removals.ToImmutable(),
+            PreserveOmittedGeometry = !requestHasGeometry
+        };
+    }
+
+    /// <summary>
+    /// Loads the single-update edit snapshot and returns its full-row state token.
+    /// Returns null when the row is gone. Does not attach a precondition for multi-row batches.
+    /// </summary>
+    internal static async Task<FeatureEditPrecondition?> TryCreateGuardedUpdatePreconditionAsync(
+        IFeatureReader reader,
+        int storageLayerId,
+        long storageFeatureId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        if (await reader.GetAsync(storageLayerId, storageFeatureId, cancellationToken).ConfigureAwait(false)
+            is not { } editSnapshot)
+        {
+            return null;
+        }
+
+        return new FeatureEditPrecondition
+        {
+            ObjectId = editSnapshot.Id,
+            ExpectedStateToken = FeatureStateToken.FromReadSnapshot(editSnapshot)
+        };
     }
 
     /// <summary>
@@ -1904,7 +2176,8 @@ internal sealed class FeatureServerEditsHandler(
         int storageLayerId,
         IEnumerable<Feature> existingFeatures,
         EditPrincipal principal,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        VersionContext? versionContext = null)
     {
         if (!OwnerEditPolicyFieldAccess.RequiresStoredOwner(resource.OwnerEditPolicy, principal))
         {
@@ -1922,6 +2195,7 @@ internal sealed class FeatureServerEditsHandler(
             storageLayerId,
             ids,
             resource.OwnerEditPolicy!.OwnerField,
+            versionContext,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -2254,4 +2528,169 @@ internal sealed class FeatureServerEditsHandler(
     private sealed class EditNotPermittedException(string message) : Exception(message)
     {
     }
+
+    /// <summary>
+    /// Batch-level edit validation that must surface as a client error rather than a 500
+    /// (honua-server#6133). Per-feature failures use <see cref="ArgumentException"/> inside
+    /// the slot loop instead.
+    /// </summary>
+    private sealed class EditBatchValidationException(string message) : Exception(message)
+    {
+    }
+
+    /// <summary>
+    /// Opens one writer transaction for every calculate batch in a single request.
+    /// </summary>
+    internal Task<IFeatureWriterTransaction> BeginSharedEditTransactionAsync(CancellationToken cancellationToken)
+        => _featureWriter.BeginTransactionAsync(cancellationToken: cancellationToken);
+
+    /// <summary>
+    /// Rolls back a calculate transaction and releases idempotency reservations for batches
+    /// that were only staged.
+    /// </summary>
+    internal async Task RollbackAmbientEditTransactionAsync(AmbientFeatureEditTransaction ambient)
+    {
+        ArgumentNullException.ThrowIfNull(ambient);
+        try
+        {
+            await ambient.Transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            await ReleaseAmbientReservationsAsync(ambient).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Commits a calculate transaction, then records idempotency responses and runs the
+    /// post-commit hooks that were deferred while the batches were only staged.
+    /// </summary>
+    /// <returns><see langword="false"/> when the commit acknowledgement was lost. Reservations
+    /// stay held so a retry cannot apply the same rows again. A confirmed commit is durable
+    /// before any receipt or hook await: a failure there keeps the reservation and still
+    /// returns <see langword="true"/>.</returns>
+    internal async Task<bool> CommitAmbientEditTransactionAsync(
+        AmbientFeatureEditTransaction ambient,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(ambient);
+        var outcome = await ambient.Transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        if (outcome != FeatureWriterTransactionCommitOutcome.Committed)
+        {
+            return false;
+        }
+
+        // The caller's finally rolls this transaction back and releases reservations while
+        // PreserveReservations is false. Set it before the receipt and hook awaits so a throw
+        // cannot turn a durable calculate into a second apply on retry (#6359).
+        ambient.PreserveReservations = true;
+
+        var recordedTokens = new HashSet<string>(ambient.Recorded.Count, StringComparer.Ordinal);
+        var failedReceiptTokens = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (scope, token, response) in ambient.Recorded)
+        {
+            try
+            {
+                await _idempotencyStore.SetAsync(scope, token, response, CancellationToken.None).ConfigureAwait(false);
+                recordedTokens.Add(token);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // The rows are already durable. Leave this reservation held so the retry
+                // conflicts instead of applying the same calculate again.
+                failedReceiptTokens.Add(token);
+                FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(
+                    _logger, scope.ServiceId, scope.LayerId, ex);
+            }
+        }
+
+        foreach (var (scope, token) in ambient.HeldReservations)
+        {
+            if (recordedTokens.Contains(token) || failedReceiptTokens.Contains(token))
+            {
+                continue;
+            }
+
+            try
+            {
+                await _idempotencyStore.ReleaseAsync(scope, token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(
+                    _logger, scope.ServiceId, scope.LayerId, ex);
+            }
+        }
+
+        ambient.HeldReservations.Clear();
+        foreach (var action in ambient.AfterCommit)
+        {
+            try
+            {
+                await action(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                FeatureServerLog.CalculatePostCommitHookFailed(_logger, ex);
+            }
+        }
+
+        ambient.AfterCommit.Clear();
+        return true;
+    }
+
+    private async Task ReleaseAmbientReservationsAsync(AmbientFeatureEditTransaction ambient)
+    {
+        foreach (var (scope, token) in ambient.HeldReservations)
+        {
+            await _idempotencyStore.ReleaseAsync(scope, token).ConfigureAwait(false);
+        }
+
+        ambient.HeldReservations.Clear();
+        ambient.Recorded.Clear();
+        ambient.AfterCommit.Clear();
+    }
+
+    private async Task RunPostCommitSideEffectsAsync(
+        string serviceId,
+        int layerId,
+        MetadataV2Resource resource,
+        EditOperationContext context,
+        CancellationToken cancellationToken = default)
+    {
+        using var postCommitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        postCommitCts.CancelAfter(TimeSpan.FromSeconds(10));
+        try
+        {
+            await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, postCommitCts.Token);
+            await PublishFeatureChangeEventsAsync(serviceId, layerId, context, postCommitCts.Token);
+            await RunPluginAfterHooksAsync(serviceId, layerId, resource, context, postCommitCts.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (postCommitCts.IsCancellationRequested)
+        {
+            FeatureServerLog.PostCommitSideEffectsTimedOut(_logger, serviceId, layerId);
+        }
+    }
+}
+
+/// <summary>
+/// One feature-writer transaction shared by every batch of a single calculate request.
+/// Batches stage writes here and commit only after the last batch succeeds (#6359).
+/// </summary>
+internal sealed class AmbientFeatureEditTransaction
+{
+    public required IFeatureWriterTransaction Transaction { get; init; }
+
+    internal List<(ApplyEditsIdempotencyScope Scope, string Token)> HeldReservations { get; } = [];
+
+    internal List<(ApplyEditsIdempotencyScope Scope, string Token, ApplyEditsResponse Response)> Recorded { get; } = [];
+
+    internal List<Func<CancellationToken, Task>> AfterCommit { get; } = [];
+
+    /// <summary>
+    /// When <see langword="true"/>, disposal must not roll the transaction back or release
+    /// reservations. Set after a commit whose acknowledgement was lost.
+    /// </summary>
+    internal bool PreserveReservations { get; set; }
 }

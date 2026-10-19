@@ -183,9 +183,14 @@ internal static class StandardErrorResponseFormatter
     private static IResult FormatWfsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
-        var exceptionCode = string.IsNullOrWhiteSpace(options.WfsExceptionCode)
-            ? MapWfsCode(errorResponse)
-            : options.WfsExceptionCode;
+        // Authentication/authorization failures use the AccessDenied code the WFS handler
+        // emits for its own access checks, so a rejected credential (missing, invalid or
+        // expired token) is recognisable whichever layer refused it.
+        var exceptionCode = !string.IsNullOrWhiteSpace(options.WfsExceptionCode)
+            ? options.WfsExceptionCode
+            : IsAuthenticationFailure(errorResponse)
+                ? AccessDeniedExceptionCode
+                : MapWfsCode(errorResponse);
         var locatorAttribute = string.IsNullOrWhiteSpace(options.WfsExceptionLocator)
             ? string.Empty
             : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
@@ -279,9 +284,13 @@ internal static class StandardErrorResponseFormatter
     private static IResult FormatWmtsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
-        var exceptionCode = string.IsNullOrWhiteSpace(options.WmtsExceptionCode)
-            ? MapWfsCode(errorResponse)
-            : options.WmtsExceptionCode;
+        // Middleware and resource-policy refusals retain a typed auth code,
+        // just as WFS does; explicit protocol codes still take precedence.
+        var exceptionCode = !string.IsNullOrWhiteSpace(options.WmtsExceptionCode)
+            ? options.WmtsExceptionCode
+            : IsAuthenticationFailure(errorResponse)
+                ? AccessDeniedExceptionCode
+                : MapWfsCode(errorResponse);
         var locatorAttribute = string.IsNullOrWhiteSpace(options.WfsExceptionLocator)
             ? string.Empty
             : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
@@ -307,11 +316,24 @@ internal static class StandardErrorResponseFormatter
     /// <summary>
     /// Formats infrastructure errors on WMS alias paths (/ogc/services/{id}/wms,
     /// /rest/services/{id}/MapServer/wms) as a WMS ServiceExceptionReport with HTTP 200,
-    /// matching the WMS 1.3.0 § 7.3.3.4 requirement.
+    /// matching the WMS 1.3.0 § 7.3.3.4 requirement. Authentication and authorization
+    /// failures without an explicit protocol code are the exception: they reproduce the WMS
+    /// handler's own AccessDenied response (HTTP 401/403, WMS 1.1.1 DTD or 1.3.0 envelope
+    /// and media type per the request), so an invalid or expired token rejected by
+    /// middleware is indistinguishable from the handler's missing-credential refusal.
     /// </summary>
     private static IResult FormatWmsAliasError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
+        if (string.IsNullOrWhiteSpace(options.WmsExceptionCode) && IsAuthenticationFailure(errorResponse))
+        {
+            return WmsServiceExceptionReport.CreateXmlResult(
+                context,
+                AccessDeniedExceptionCode,
+                BuildDetailWithExtras(errorResponse, options),
+                errorResponse.StatusCode);
+        }
+
         var exceptionCode = string.IsNullOrWhiteSpace(options.WmsExceptionCode)
             ? MapWmsAliasCode(errorResponse)
             : options.WmsExceptionCode;
@@ -332,7 +354,7 @@ internal static class StandardErrorResponseFormatter
         return errorResponse.StatusCode switch
         {
             StatusCodes.Status404NotFound => "LayerNotDefined",
-            StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden => "InvalidParameterValue",
+            StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden => AccessDeniedExceptionCode,
             StatusCodes.Status413PayloadTooLarge => "NoApplicableCode",
             StatusCodes.Status400BadRequest => "InvalidParameterValue",
             _ => "NoApplicableCode"
@@ -501,6 +523,11 @@ internal static class StandardErrorResponseFormatter
 
         return detailParts.Count > 0 ? string.Join(" ", detailParts) : errorResponse.Title;
     }
+
+    private const string AccessDeniedExceptionCode = "AccessDenied";
+
+    private static bool IsAuthenticationFailure(StandardErrorResponse errorResponse)
+        => errorResponse.StatusCode is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden;
 
     private static string MapWfsCode(StandardErrorResponse errorResponse)
     {

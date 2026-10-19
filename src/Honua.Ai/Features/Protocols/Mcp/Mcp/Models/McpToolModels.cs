@@ -42,6 +42,36 @@ internal sealed class McpCancelJobArgument
 }
 
 /// <summary>
+/// Arguments for <c>honua_diagnose_job</c> (honua-server#6219).
+/// </summary>
+internal sealed class McpDiagnoseJobArgument
+{
+    [JsonPropertyName("jobId")]
+    public string? JobId { get; set; }
+
+    [JsonPropertyName("events")]
+    public int? Events { get; set; }
+
+    [JsonPropertyName("eventCursor")]
+    public string? EventCursor { get; set; }
+}
+
+/// <summary>
+/// Arguments for <c>honua_job_evidence</c> (honua-server#6219).
+/// </summary>
+internal sealed class McpJobEvidenceArgument
+{
+    [JsonPropertyName("jobId")]
+    public string? JobId { get; set; }
+
+    [JsonPropertyName("events")]
+    public int? Events { get; set; }
+
+    [JsonPropertyName("eventCursor")]
+    public string? EventCursor { get; set; }
+}
+
+/// <summary>
 /// Arguments for <c>honua_ops_findings</c>: list active deterministic ops
 /// findings, or fetch a single finding by its stable identifier.
 /// </summary>
@@ -1066,28 +1096,6 @@ internal sealed class McpCancelJobOutput
 
     [JsonPropertyName("cancellationRequested")]
     public bool CancellationRequested { get; set; }
-}
-
-/// <summary>
-/// Envelope for stub tools returning <c>not_implemented</c> with enough
-/// information for operators to understand the contract and the unblock path.
-/// </summary>
-internal sealed class McpNotImplementedOutput
-{
-    [JsonPropertyName("status")]
-    public string Status { get; set; } = "not_implemented";
-
-    [JsonPropertyName("tool")]
-    public string Tool { get; set; } = string.Empty;
-
-    [JsonPropertyName("blockedBy")]
-    public string BlockedBy { get; set; } = string.Empty;
-
-    [JsonPropertyName("contract")]
-    public string Contract { get; set; } = string.Empty;
-
-    [JsonPropertyName("nextSteps")]
-    public IReadOnlyList<string> NextSteps { get; set; } = [];
 }
 
 /// <summary>

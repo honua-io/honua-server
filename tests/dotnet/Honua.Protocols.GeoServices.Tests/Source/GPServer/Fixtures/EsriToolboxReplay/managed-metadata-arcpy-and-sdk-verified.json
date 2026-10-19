@@ -3,7 +3,6 @@
   "source": "working-tree-managed-diagnostic",
   "image": "sha256:2a30896675fa3f3af9b764c26c9b1711774db4755b7a16956e73fd5801b83ef2",
   "tls_verified": true,
-  "licensing_mode": "Disabled",
   "evidence_kind": "installed-sdk-observations",
   "desktop_ui_exercised": false,
   "requested_clients": [

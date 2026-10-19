@@ -188,12 +188,14 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         string tableName,
         CancellationToken cancellationToken)
     {
+        var targetExists = await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, tableName, cancellationToken);
+        await ImportTableOwnership.AssertExistingOwnedAsync(connection, schemaName, stagingTable, cancellationToken);
         var schema = QuoteIdentifier(schemaName);
         var target = QuoteIdentifier(tableName);
         await using (var swap = connection.CreateCommand())
         {
             swap.CommandText =
-                $"DROP TABLE {schema}.{target} CASCADE; "
+                (targetExists ? $"DROP TABLE {schema}.{target} CASCADE; " : string.Empty)
                 + $"ALTER TABLE {schema}.{QuoteIdentifier(stagingTable)} RENAME TO {target};";
             await swap.ExecuteNonQueryAsync(cancellationToken);
         }

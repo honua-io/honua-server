@@ -67,6 +67,7 @@ public sealed class Fes20ParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("And")]
     [InlineData("Or")]

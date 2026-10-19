@@ -3,10 +3,12 @@
 import base64
 from datetime import datetime, timedelta, timezone
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
 import re
+import secrets
 import signal
 import subprocess
 import sys
@@ -134,6 +136,97 @@ def prepare(directory):
     write_json(directory / "environment.json", {"Variables": variables})
     write_json(directory / "vpc.json", {k: cfg["VpcConfig"][k] for k in ("SubnetIds", "SecurityGroupIds")})
     write_json(directory / "standing.json", current)
+
+
+
+def canonical_digest(value):
+    data = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False, allow_nan=False).encode("utf-8")
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def capture_deployment_inputs(directory, standing, ecr_digest):
+    """Capture actual configuration before create; legacy runs stay explicitly unbound."""
+    supplied = os.environ.get("HONUA_LAMBDA_PREPARED_MANIFEST", "")
+    if not supplied:
+        return
+    prepared = json.loads(supplied)
+    require(prepared.get("schema") == "honua.prepared-deployment-manifest/v1",
+            "Unsupported prepared deployment manifest")
+    manifest = prepared["manifest"]
+    server = manifest["components"]["honua-server"]
+    require(re.fullmatch(r"sha256:[0-9a-f]{64}", ecr_digest), "Measured ECR digest is missing")
+    if server.get("awsLambdaEcrDigest") == "pending-ecr-mirror":
+        server["awsLambdaEcrDigest"] = ecr_digest
+    require(server.get("awsLambdaEcrDigest") == ecr_digest, "Prepared ECR image mismatch")
+    for key, variable in (("sha", "HONUA_LAMBDA_SERVER_REVISION"),
+                          ("awsLambdaDigest", "HONUA_LAMBDA_SOURCE_DIGEST"),
+                          ("awsLambdaArchitecture", "HONUA_LAMBDA_ARCHITECTURE")):
+        require(server.get(key) == os.environ[variable], "Prepared Lambda artifact mismatch")
+    policy = prepared.get("operatingEnvelope", {})
+    require(policy.get("path") == "docs/2026.1-operating-envelope.md"
+            and re.fullmatch(r"sha256:[0-9a-f]{64}", policy.get("sha256", "")),
+            "Prepared operating envelope binding is missing")
+    revision = os.environ.get("GITHUB_SHA", "")
+    require(os.environ.get("GITHUB_ACTIONS") == "true"
+            and os.environ.get("GITHUB_REPOSITORY") == "honua-io/honua-server"
+            and re.fullmatch(r"[0-9a-f]{40}", revision), "Actual Actions producer identity is required")
+    require(os.environ.get("GITHUB_WORKFLOW_REF", "") ==
+            "honua-io/honua-server/.github/workflows/lambda-preview-certification.yml@refs/heads/trunk",
+            "Bound qualification must run the trusted trunk workflow")
+    environment = json.loads((directory / "environment.json").read_text())
+    versions = {}
+    # Pin the candidate's references to the version actually observed during preparation.
+    # No secret value, identifier or environment value is published, even for non-secret flags.
+    for name, value in environment["Variables"].items():
+        if isinstance(value, str) and value.lower().startswith(SECRET_REFERENCE_PREFIX):
+            secret_id, args = secret_reference(value)
+            resolved = aws("secretsmanager", "get-secret-value", *args)
+            version = resolved.get("VersionId", "")
+            require(re.fullmatch(r"[A-Za-z0-9-]{32,64}", version), "Immutable secret version is missing")
+            environment["Variables"][name] = SECRET_REFERENCE_PREFIX + secret_id + "?versionId=" + version
+            versions[fingerprint(name)] = {"referenceFingerprint": fingerprint(secret_id), "versionId": version}
+    write_json(directory / "environment.json", environment)
+    # Never publish a plain password verifier. This private key is discarded after the
+    # capture and is not included in the artifact; verification authenticates the capture.
+    commitment_key = secrets.token_bytes(32)
+
+    def commitment(name, value):
+        data = json.dumps({"name": name, "value": value}, sort_keys=True,
+                          separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
+        return "hmac-sha256:" + hmac.new(commitment_key, data, hashlib.sha256).hexdigest()
+
+    configuration = {
+        "privateInputCommitmentAlgorithm": "hmac-sha256",
+        "environmentCommitment": commitment("environment", environment),
+        "vpcDigest": canonical_digest(json.loads((directory / "vpc.json").read_text())),
+        "standingConfigurationCommitment": commitment("standingConfiguration", standing["Configuration"]),
+        "secretVersions": versions,
+        "memoryMiB": 1024, "timeoutSeconds": 60, "packageType": "Image",
+        "fixtureSha256": "sha256:" + hashlib.sha256(FIXTURE.read_bytes()).hexdigest(),
+        "runtimeInputCommitments": {name: commitment(name, os.environ.get(name, "")) for name in (
+            "AWS_REGION", "REALAWS_CERT_LAMBDA_FUNCTION", "REALAWS_CERT_LAMBDA_ALIAS",
+            "HONUA_LAMBDA_WRITE_BASE_URL", "HONUA_DEMO_BASE_URL", "HONUA_LAMBDA_SOURCE_IMAGE",
+            "HONUA_LAMBDA_PREVIEW_REPOSITORY", "HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN",
+            "HONUA_LAMBDA_CERT_ADMIN_KEY", "HONUA_LAMBDA_CERT_DENIED_KEY",
+            "HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE")},
+    }
+    producer = {"repository": "honua-io/honua-server", "sourceRevision": revision,
+                "workflow": ".github/workflows/lambda-preview-certification.yml"}
+    capture = {"schema": "honua.deployment-execution-inputs/v1", "manifest": manifest,
+               "deployment": {"target": "awsLambda", "component": "honua-server",
+                              "architecture": os.environ["HONUA_LAMBDA_ARCHITECTURE"],
+                              "producer": producer, "configuration": configuration,
+                              "operatingEnvelope": policy}}
+    output = Path(os.environ["HONUA_LAMBDA_PREVIEW_RECEIPT"]).parent
+    output.mkdir(parents=True, exist_ok=True)
+    write_json(output / "deployment-execution-inputs.json", capture)
+    producer = dict(producer, runId=os.environ["GITHUB_RUN_ID"],
+                    runAttempt=int(os.environ["GITHUB_RUN_ATTEMPT"]),
+                    runUrl="https://github.com/honua-io/honua-server/actions/runs/" + os.environ["GITHUB_RUN_ID"])
+    write_json(output / "deployment-binding.json", {
+        "executionInputs": {"schema": capture["schema"], "digest": canonical_digest(capture)},
+        "producer": producer})
 
 
 def secret_reference(reference):
@@ -1044,6 +1137,9 @@ if __name__ == "__main__":
                                   sys.argv[6])
         elif sys.argv[1] == "prepare":
             prepare(Path(sys.argv[2]))
+        elif sys.argv[1] == "capture":
+            directory = Path(sys.argv[2])
+            capture_deployment_inputs(directory, json.loads((directory / "standing.json").read_text()), sys.argv[3])
         elif sys.argv[1] == "certify":
             certify(Path(sys.argv[2]), sys.argv[3], sys.argv[4])
         else:

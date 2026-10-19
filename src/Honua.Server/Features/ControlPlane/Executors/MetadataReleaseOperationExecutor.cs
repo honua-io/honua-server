@@ -7,6 +7,7 @@ using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.ControlPlane.Executors;
 
@@ -85,12 +86,16 @@ internal sealed class MetadataReleaseOperationExecutor(MetadataReleaseControlSer
             throw new InvalidOperationException(error ?? "Metadata release execution payload is missing or malformed.");
         }
 
+        var root = RootProvisioningOperationIds.PreferCanonical(
+            request.RootProvisioningOperationId,
+            payload.RootProvisioningOperationId);
         var operation = await controlService.CreateAsync(
                 payload.ToExecutionPlan(),
                 request.RequestedBy,
                 request.Reason,
                 request.IdempotencyKey,
                 request.CorrelationId,
+                root,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -160,6 +165,12 @@ internal sealed record MetadataReleaseExecutionPayload
 
     /// <summary>Stable script identifier for the additive change.</summary>
     public string? ScriptId { get; init; }
+
+    /// <summary>
+    /// Verified provisioning root from the DevOps handoff. The gateway request field wins when
+    /// both are present; a disagreement is rejected.
+    /// </summary>
+    public string? RootProvisioningOperationId { get; init; }
 
     /// <summary>Parses and validates a serialized payload, returning a descriptive error on failure.</summary>
     public static (MetadataReleaseExecutionPayload? Payload, string? Error) ParseAndValidate(string? json)

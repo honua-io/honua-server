@@ -83,6 +83,7 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         // Built-in process catalog (ticket #735)
         services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExecutionJobRetryGuard, CustomCodeArtifactRetryGuard>());
 
         // Exposes the canonical plan validator's presence-based (including conditional)
         // input requirements so translation/migration tooling cannot certify a mapping
@@ -160,6 +161,12 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<GeoprocessingLayerAccessGuard>();
         services.TryAddSingleton<GeoprocessingJobDispatcher>();
         services.TryAddSingleton<CustomCodeJobSubmissionGate>();
+        services.TryAddSingleton<ICustomCodeArtifactIngestor, CustomCodeArtifactIngestor>();
+        // Process release bindings (honua-server#6221): in-process store unless the host registers
+        // the durable one; the admission resolver and environment facts bind to whichever is live.
+        services.TryAddSingleton<ProcessRelease.IGpProcessReleaseStore, ProcessRelease.InMemoryGpProcessReleaseStore>();
+        services.TryAddSingleton<ProcessRelease.GpProcessReleaseAdmission>();
+        services.TryAddSingleton<ProcessRelease.GpProcessReleaseEnvironmentResolver>();
         services.TryAddSingleton<GeoprocessingJobArtifactService>();
 
         // Referenced raster outputs (#3089): opt-in staged output store, the
@@ -189,6 +196,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         // Shared geoprocessing job service (#723) — consumed by gRPC and REST adapters
         services.TryAddSingleton<IGeoprocessingJobService, GeoprocessingJobService>();
         services.TryAddSingleton<IGeoprocessingJobTerminalService, GeoprocessingJobTerminalService>();
+        services.TryAddSingleton<IGeoprocessingFeatureStreamReader, GeoprocessingFeatureStreamReader>();
 
         // Workflow orchestration substrate (#724) — exposes geoprocessing as the
         // canonical job executor consumed by the orchestration engine.
@@ -342,6 +350,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<GeometryIntersectJobExecutor>(services);
         Register<GeometryProjectJobExecutor>(services);
         Register<GeometryAreaJobExecutor>(services);
+        Register<RoutingJobExecutor>(services);
         Register<GeometryUnionJobExecutor>(services);
         Register<GeometryCentroidJobExecutor>(services);
         Register<GeometryLengthJobExecutor>(services);

@@ -14,6 +14,7 @@ Examples use `http://localhost:8080`, the repository Compose default. A quicksta
 | I want to… | Guide |
 |---|---|
 | Import GeoJSON, Shapefile, GeoPackage, FileGDB, and other files | [Import files](publish/import-files.md) |
+| Import a private `s3://` object with the host identity | [Import from object storage](publish/import-from-object-storage.md) |
 | Pull layers from a live ArcGIS service | [Import from ArcGIS services](publish/import-from-arcgis-services.md) |
 | Serve tables already in my PostGIS / SQL Server / Oracle database | [Serve existing databases](publish/serve-existing-databases.md) |
 | Publish a table as a layer on every protocol | [Publish layers](publish/publish-layers.md) |

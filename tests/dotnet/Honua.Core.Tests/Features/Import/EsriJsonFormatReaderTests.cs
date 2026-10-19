@@ -23,6 +23,7 @@ public sealed class EsriJsonFormatReaderTests
         return features;
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_PointFeatureSet_ReturnsPointsWithAttributes()
     {
@@ -46,6 +47,7 @@ public sealed class EsriJsonFormatReaderTests
         features[1].Attributes["zone_code"].Should().Be("500");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     // ArcGIS commonly emits a legacy Esri-only wkid with no latestWkid; these must map to the
     // EPSG code (3857) rather than pass through verbatim and fail import SRID validation.
@@ -65,6 +67,7 @@ public sealed class EsriJsonFormatReaderTests
         srid.Should().Be(expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_PolygonRings_ReturnsPolygon()
     {
@@ -81,6 +84,7 @@ public sealed class EsriJsonFormatReaderTests
         features[0].Attributes["id"].Should().Be(1L);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ReadStreamingAsync_PolylinePaths_ReturnsLineString()
     {

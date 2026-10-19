@@ -148,8 +148,11 @@ These settings bind from the `Mcp` section. See [Harden the MCP endpoint](../../
 | --- | --- | --- |
 | `Mcp__SessionIdleTimeout` | `00:30:00` | Sliding idle TTL for an MCP session. With Redis connected, this is also the TTL of the shared session record. |
 | `Mcp__StatelessSessionFallback` | `true` in Development, `false` elsewhere | Development convenience. Serves a well-formed but unknown `Mcp-Session-Id` without a session instead of returning `404`. |
+| `Mcp__SessionMode` | `Auto` | Session mode when Redis is not connected: `Auto` (stateless on a multi-instance host such as Lambda, in-memory otherwise), `InMemory`, or `Stateless`. |
+| `Mcp__SessionSigningKey` | — | Secret, shared by every instance, that keys stateless session ids. When unset, `ConnectionStrings__DefaultConnection` is used. |
+| `Mcp__StatelessSessionLifetime` | `08:00:00` | Absolute lifetime of a stateless session id, counted from `initialize`. |
 
-When `ConnectionStrings__Redis` is set, MCP session records are shared through Redis (`mcp:session:<id>`). A session negotiated on any instance is then honoured by every instance. Without Redis, sessions are per instance. Connect Redis for any multi-instance deployment, including AWS Lambda.
+When `ConnectionStrings__Redis` is set, MCP session records are shared through Redis (`mcp:session:<id>`). A session negotiated on any instance is then honoured by every instance. Without Redis, a single instance keeps sessions in memory, and a multi-instance host (AWS Lambda, `Deployment__Mode=MultiNode`) issues signed stateless session ids that any instance can validate. The `initialize` result reports the mode in `_meta["honua.io/session-mode"]`.
 
 ## File storage
 
@@ -169,6 +172,13 @@ When `ConnectionStrings__Redis` is set, MCP session records are shared through R
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `Import__ObjectStore__AllowedBuckets__N` | — (empty denies every bucket) | Bucket names the host may import with `s3://`. An entry ending in `*` matches that prefix. Matching is case-insensitive. |
+| `Import__ObjectStore__AssumeRoles__N__RoleArn` | — | IAM role ARN the request may ask the host to assume. |
+| `Import__ObjectStore__AssumeRoles__N__ExternalId` | — | External id for that role's trust policy. Never accepted from the import request, logged, or written to the audit record. |
+| `Import__ObjectStore__Region` | SDK default | Optional region for the customer-bucket client. |
+| `Import__ObjectStore__ServiceUrl` | — | Optional endpoint override for a VPC endpoint or a development emulator. Production imports leave this unset. |
+| `Import__ObjectStore__ForcePathStyle` | `false` (on when `ServiceUrl` is set) | Path-style addressing for the customer-bucket client. |
+| `Import__Limits__MaxObjectStoreImportBytes` | 50 GiB | Largest `s3://` object the import will accept. Published as `maxObjectStoreImportBytes` on `GET /api/v1/admin/import/limits`. An object above this size is refused before any byte is read. |
 | `Limits__Imports__MaxPreviewSize` | `10485760` (10 MiB) | Max file size for import preview. |
 | `Limits__Imports__MaxSyncImportSize` | `52428800` (50 MiB) | Max file size for general synchronous imports; direct PostGIS raster uploads use the lower of this value and the fixed 50 MiB serving-process ceiling. |
 | `Limits__Imports__MaxImportSize` | `524288000` (500 MiB) | Max file size for any import. |
@@ -186,6 +196,7 @@ When `ConnectionStrings__Redis` is set, MCP session records are shared through R
 | `Limits__Query__MaxOffset` | `1000000` | Max pagination offset. |
 | `Limits__Query__QueryTimeout` | `00:00:30` | Per-query timeout. |
 | `Limits__Query__MaxBboxAreaSqKm` | `100000` | Max bounding-box query area. |
+| `Limits__Query__MaxMapLayersPerRequest` | `50` | Max layer tokens in one WMS GetMap/GetFeatureInfo `LAYERS` or `QUERY_LAYERS` list; larger lists are rejected with `InvalidParameterValue`. |
 | `Limits__Replica__MaxChangesPerLayer` | `50000` | Max adds, updates, or deletes per layer in one offline replica response. Larger backlogs are delivered in consecutive generation windows (`exceededTransferLimit: true`), never rejected. |
 | `Limits__Geometry__MaxVerticesPerGeometry` | `50000` | Max vertices accepted per geometry. |
 | `Limits__Geometry__MaxGeometrySize` | `5242880` (5 MiB) | Max geometry payload size. |

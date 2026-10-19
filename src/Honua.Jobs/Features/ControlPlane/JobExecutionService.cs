@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization;
@@ -571,6 +572,16 @@ internal sealed partial class JobExecutionService(
             }
 
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            if (context.LeaseLost)
+            {
+                // The heartbeat pump or a progress fence observed that this attempt no longer
+                // owns the record. Skip terminal writes so a stale executor cannot cancel or
+                // fail the attempt a new worker already claimed (#6154).
+                activity?.SetStatus(ActivityStatusCode.Error, "Execution lease lost.");
+                Log.ExecutionLeaseLost(logger, operationId);
+                return;
+            }
+
             licenseCancellation.ThrowIfCancellationRequested();
 
             // Executors are expected to observe cancellation, but a late cancellation can race a
@@ -674,6 +685,12 @@ internal sealed partial class JobExecutionService(
                 await AbandonJobAsync(running, workerId, failureReason,
                     CancellationToken.None, result.Warnings, allowRetry: result.IsRetryable).ConfigureAwait(false);
             }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && context.LeaseLost)
+        {
+            await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            activity?.SetStatus(ActivityStatusCode.Error, "Execution lease lost.");
+            Log.ExecutionLeaseLost(logger, operationId);
         }
         catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
         {
@@ -1510,6 +1527,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9077, LogLevel.Information, "Finalize honoured durable cancellation signal for job {OperationId}: success result finalized as Cancelled")]
         public static partial void FinalizeHonouredDurableCancellation(ILogger logger, string operationId);
+
+        [LoggerMessage(9088, LogLevel.Warning, "Execution lease lost for job {OperationId}; stale attempt will not write a terminal state")]
+        public static partial void ExecutionLeaseLost(ILogger logger, string operationId);
     }
 }
 
@@ -1537,8 +1557,15 @@ internal sealed partial class JobExecutionContext(
     CancellationToken licenseCancellation = default) : IJobExecutionContext, IDisposable
 {
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private int _leaseLost;
 
     public string OperationId => operationId;
+
+    /// <summary>
+    /// True after this attempt observed that the durable record is no longer owned by
+    /// this worker and attempt. The execution service uses it to skip terminal writes.
+    /// </summary>
+    internal bool LeaseLost => Volatile.Read(ref _leaseLost) != 0;
 
     public async Task ReportProgressAsync(
         double? percentComplete,
@@ -1549,7 +1576,7 @@ internal sealed partial class JobExecutionContext(
         try
         {
             var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (job == null || !IsOwnedBy(job))
+            if (!TryObserveLease(job))
             {
                 return;
             }
@@ -1582,7 +1609,7 @@ internal sealed partial class JobExecutionContext(
         try
         {
             var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (job == null || !IsOwnedBy(job))
+            if (!TryObserveLease(job))
             {
                 return;
             }
@@ -1642,15 +1669,8 @@ internal sealed partial class JobExecutionContext(
             {
                 licenseCancellation.ThrowIfCancellationRequested();
                 var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-                if (job == null || !IsOwnedBy(job))
+                if (!TryObserveLease(job))
                 {
-                    return false;
-                }
-
-                if (claimedAttempt > 0 && job.AttemptCount != claimedAttempt)
-                {
-                    // A stale attempt must never publish into a newer attempt's record.
-                    Log.ArtifactPublishFencedStaleAttempt(logger, operationId, claimedAttempt, job.AttemptCount);
                     return false;
                 }
 
@@ -1714,9 +1734,7 @@ internal sealed partial class JobExecutionContext(
         try
         {
             var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (job == null || !IsOwnedBy(job)
-                || (claimedAttempt > 0 && job.AttemptCount != claimedAttempt)
-                || job.CancellationRequestedAt.HasValue)
+            if (!TryObserveLease(job) || job!.CancellationRequestedAt.HasValue)
             {
                 throw new InvalidOperationException(
                     $"Execution lease for job '{operationId}' is no longer owned by worker '{workerId}'.");
@@ -1808,9 +1826,10 @@ internal sealed partial class JobExecutionContext(
                         break;
                     }
 
-                    // Stop pumping if the reconciler already marked this job terminal
-                    // or ownership has moved to another worker.
-                    if (!IsOwnedBy(job))
+                    // Ownership or attempt moved (reconciler requeued, or another worker
+                    // claimed). Cancel the executor before breaking so the stale attempt
+                    // stops instead of running beside the new one (#6154).
+                    if (!TryObserveLease(job))
                     {
                         break;
                     }
@@ -1858,13 +1877,67 @@ internal sealed partial class JobExecutionContext(
         => job.Status is ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running
            && job.ClaimedBy == workerId;
 
+    /// <summary>
+    /// Returns <see langword="false"/> when <paramref name="job"/> is missing or no longer
+    /// this worker's attempt. A present, unowned record cancels the job token so the
+    /// executor stops; a missing record does not, because a transient read miss is not
+    /// proof the lease moved.
+    /// </summary>
+    private bool TryObserveLease([NotNullWhen(true)] ExecutionJobRecord? job)
+    {
+        if (job == null)
+        {
+            return false;
+        }
+
+        if (IsOwnedBy(job) && (claimedAttempt <= 0 || job.AttemptCount == claimedAttempt))
+        {
+            return true;
+        }
+
+        SignalLeaseLost();
+        return false;
+    }
+
+    private void SignalLeaseLost()
+    {
+        if (Interlocked.Exchange(ref _leaseLost, 1) != 0)
+        {
+            return;
+        }
+
+        Log.ExecutionLeaseLost(logger, operationId, workerId);
+        var cts = durableCancellationCts;
+        if (cts == null)
+        {
+            return;
+        }
+
+        // The pump calls this while holding the write lock. Cancel runs callbacks
+        // inline, and those can resume the executor on this stack, which then waits
+        // for the pump to leave the lock. Queue the cancel so the lock is released first.
+        ThreadPool.UnsafeQueueUserWorkItem(static state => CancelLease((CancellationTokenSource)state!), cts);
+    }
+
+    private static void CancelLease(CancellationTokenSource cts)
+    {
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The execution task completed and disposed the CTS. The attempt is already done.
+        }
+    }
+
     private static partial class Log
     {
         [LoggerMessage(9064, LogLevel.Warning, "Heartbeat write failed for job {OperationId}; pump will retry on next interval")]
         public static partial void HeartbeatWriteFailed(ILogger logger, string operationId, Exception exception);
 
-        [LoggerMessage(9075, LogLevel.Warning, "Artifact publish fenced for job {OperationId}: claimed attempt {ClaimedAttempt} is stale (record attempt {RecordAttempt})")]
-        public static partial void ArtifactPublishFencedStaleAttempt(ILogger logger, string operationId, int claimedAttempt, int recordAttempt);
+        [LoggerMessage(9085, LogLevel.Warning, "Execution lease lost for job {OperationId} on worker {WorkerId}; cancelling the stale attempt")]
+        public static partial void ExecutionLeaseLost(ILogger logger, string operationId, string workerId);
 
         [LoggerMessage(9076, LogLevel.Information, "Artifact publish fenced for job {OperationId}: durable cancellation requested")]
         public static partial void ArtifactPublishFencedCancellation(ILogger logger, string operationId);

@@ -8,7 +8,7 @@
   "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
-  "fixtureRevision": "sha256:a58bef19c3c1c38b24a3a00de53b9210c6d80fe3b08972e3ebca073a7fdee599",
+  "fixtureRevision": "sha256:c6266e3f5a8d9730a0d8ae346dea65eae3d2a5504aef0bb58dd1aa25d0b3638d",
   "serverConfigRevision": "sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a",
   "authPolicyRevision": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
   "digestAlgorithms": {
@@ -47,7 +47,7 @@
     {
       "path": "tests/seed/browser-compat.yaml",
       "role": "fixture",
-      "sha256": "sha256:28f3d5a8eb38a459ccc00c1ee1d98e9b0bc35ca20a425fcaeb9775539d5a9777",
+      "sha256": "sha256:c904b93b41a23460fb41eed96a6b3d66f4cdf297bdbf2da90faa391f866b9bc1",
       "purpose": "Render/raster seed: service browser_compat with Point/LineString/Polygon layers 2000/2001/2002 and one deterministic 64x64 single-band raster on layer 2000."
     },
     {
@@ -59,7 +59,7 @@
     {
       "path": "tests/seed/client-compat-auth-wave1.yaml",
       "role": "fixture",
-      "sha256": "sha256:efe72bb4d3f0fd568d0dcdd41dbc230786e0f750959ab3ecc09a859482a4146f",
+      "sha256": "sha256:2881eff49b2e90d385ff70406bdf3a195fd2543555570eb093e8de19b5067bc4",
       "purpose": "Certification auth breadth seed: protected vector and WMS mirrors used for API-key and OIDC bearer parity against the anonymous baselines."
     },
     {
@@ -71,7 +71,7 @@
     {
       "path": "docker/client-compat/seed/run.sh",
       "role": "fixture",
-      "sha256": "sha256:08cb95a1cacd5f71f60c24e235843db2dcbf8bca1d510dafbe78130a9886d72c",
+      "sha256": "sha256:1601a1a8b9913d5bc25cdea6f3756be52302aadc78751f26802219160bdffb5b",
       "purpose": "Definition of which seed files are applied, and in which order, for the client-compat matrix. Adding or removing a fixture input changes this file and therefore fixtureRevision."
     },
     {
@@ -1195,6 +1195,11 @@
       "description": "itemType field present in collection metadata."
     },
     {
+      "id": "JS-EXT-OL-WFS-GETFEATURE-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OpenLayers WFS parses a populated unfiltered GetFeature response; this does not prove core query filtering."
+    },
+    {
       "id": "JS-EXT-TILES-DISC-01",
       "scenarioFacetId": "SF-DISC-CATALOG",
       "description": "OGC API Tiles landing page."
@@ -2297,7 +2302,7 @@
     {
       "id": "NB-STAC-PAGE-03",
       "scenarioFacetId": "SF-PAGE-LIMIT",
-      "description": "GET next uses a token query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page."
+      "description": "GET next uses a next cursor query parameter; POST next is a body-bearing method=POST merge=true link whose token advanced the cursor to a disjoint page."
     },
     {
       "id": "NB-STAC-PAGE-04",
@@ -2490,6 +2495,9 @@
               "CERT-CONN-02"
             ]
           },
+          "extensionCases": [
+            "JS-EXT-OL-WFS-GETFEATURE-01"
+          ],
           "notes": "The OpenLayers WFS suite reads the bare /wfs capabilities document and picks the first feature type that returns features; it binds no pinned identity."
         },
         {

@@ -1,0 +1,27 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "GP: build",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "tests/SummaryTool.Tests/SummaryTool.Tests.csproj",
+        "-m:2"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "GP: golden tests",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "test",
+        "tests/SummaryTool.Tests/SummaryTool.Tests.csproj",
+        "-m:2"
+      ],
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}

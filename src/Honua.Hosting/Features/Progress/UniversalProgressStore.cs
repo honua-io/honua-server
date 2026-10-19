@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Abstractions;
@@ -22,6 +23,7 @@ using Honua.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using StackExchange.Redis;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Migration;
 
@@ -32,6 +34,7 @@ namespace Honua.Migration;
 internal sealed partial class UniversalProgressStore : IUniversalProgressStore, IProgressStoreRecovery
 {
     private readonly IDistributedCache? _cache;
+    private readonly string _cacheInstanceName;
     private readonly IConnectionMultiplexer? _redis;
     private readonly ILogger<UniversalProgressStore> _logger;
     private const string KeyPrefix = "universal:progress:";
@@ -63,9 +66,11 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
     public UniversalProgressStore(
         IDistributedCache? cache,
         ILogger<UniversalProgressStore> logger,
-        IConnectionMultiplexer? redis = null)
+        IConnectionMultiplexer? redis = null,
+        IOptions<RedisCacheOptions>? cacheOptions = null)
     {
         _cache = cache;
+        _cacheInstanceName = cacheOptions?.Value.InstanceName ?? string.Empty;
         _logger = logger;
         _redis = redis;
         _isUsingFallback = cache == null;
@@ -157,6 +162,112 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         {
             await ReleaseConditionalWriteLockAsync(operationId, lockToken).ConfigureAwait(false);
         }
+    }
+
+    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(
+        string operationId,
+        IOperationProgress progress,
+        IOperationProgress expectedProgress,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+        ArgumentNullException.ThrowIfNull(expectedProgress);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (progress.Type != expectedProgress.Type)
+        {
+            throw new ArgumentException("A progress update cannot change the operation type.", nameof(progress));
+        }
+
+        var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
+        RedisValue persisted = RedisValue.Null;
+        IOperationProgress? current;
+        var key = (RedisKey)$"{_cacheInstanceName}{KeyPrefix}{operationId}";
+        if (AllowsLocalFallback)
+        {
+            current = await GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            if (!CanUseRedisBackplane)
+            {
+                throw CreateDistributedStateUnavailableException("atomically replace progress");
+            }
+            persisted = await _redis!.GetDatabase().HashGetAsync(key, "data").ConfigureAwait(false);
+            current = persisted.HasValue ? DeserializeProgress(persisted.ToString()) : null;
+        }
+        if (current is null)
+        {
+            return ProgressCompareAndSetResult.NotFound;
+        }
+
+        if (!SameProgressSnapshot(current, expectedProgress))
+        {
+            return ProgressCompareAndSetResult.StatusMismatch(current);
+        }
+
+        if (AllowsLocalFallback)
+        {
+            if (_fallbackStore.TryUpdate($"{KeyPrefix}{operationId}", progress, current))
+            {
+                _fallbackExpiry[$"{KeyPrefix}{operationId}"] = DateTime.UtcNow.Add(effectiveTtl);
+                return ProgressCompareAndSetResult.Updated;
+            }
+        }
+        else
+        {
+            if (!CanUseRedisBackplane)
+            {
+                throw CreateDistributedStateUnavailableException("atomically replace progress");
+            }
+
+            // RedisCache stores payload and expiration metadata in this hash. Compare and update
+            // inside one Redis transaction, including expiry, so lock loss/expiry and unguarded
+            // progress writers cannot turn an old heartbeat snapshot into an accepted write.
+            var transaction = _redis!.GetDatabase().CreateTransaction();
+            transaction.AddCondition(Condition.HashEqual(key, "data", persisted));
+            _ = transaction.HashSetAsync(key,
+            [
+                new HashEntry("data", SerializeProgress(progress)),
+                new HashEntry("absexp", DateTimeOffset.UtcNow.Add(effectiveTtl).Ticks),
+                new HashEntry("sldexp", -1)
+            ]);
+            _ = transaction.KeyExpireAsync(key, effectiveTtl);
+            if (await transaction.ExecuteAsync().ConfigureAwait(false))
+            {
+                return ProgressCompareAndSetResult.Updated;
+            }
+        }
+
+        current = await GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
+        return current is null ? ProgressCompareAndSetResult.NotFound : ProgressCompareAndSetResult.StatusMismatch(current);
+    }
+
+    private static bool SameProgressSnapshot(IOperationProgress current, IOperationProgress expected)
+    {
+        if (current.GetType() != expected.GetType())
+        {
+            return false;
+        }
+
+        // Duration is a computed wall-clock view, never a state/version field. Compare every
+        // persisted state field, but use the original Redis bytes as the atomic transaction token
+        // so legacy payloads (including their old computed Duration) remain compatible.
+        var currentData = SerializeProgressData(current);
+        var expectedData = SerializeProgressData(expected);
+        foreach (var property in expectedData.EnumerateObject())
+        {
+            if (property.NameEquals("Duration"))
+            {
+                continue;
+            }
+            if (!currentData.TryGetProperty(property.Name, out var value) ||
+                !string.Equals(value.GetRawText(), property.Value.GetRawText(), StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private async Task SetProgressUnguardedAsync(string operationId, IOperationProgress progress, TimeSpan effectiveTtl, CancellationToken cancellationToken)
@@ -375,6 +486,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             nameof(WorkflowProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.WorkflowProgress),
             nameof(DeploymentProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.DeploymentProgress),
             nameof(TemporalCorrectiveJobProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.TemporalCorrectiveJobProgress),
+            nameof(LayerPublishJobProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.LayerPublishJobProgress),
             _ => null
         };
     }
@@ -396,6 +508,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             WorkflowProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.WorkflowProgress),
             DeploymentProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.DeploymentProgress),
             TemporalCorrectiveJobProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.TemporalCorrectiveJobProgress),
+            LayerPublishJobProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.LayerPublishJobProgress),
             _ => throw new NotSupportedException($"Unsupported progress type '{progress.GetType().FullName}'.")
         };
 
@@ -870,6 +983,7 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
             nameof(PrintProgress) => OperationType.Print,
             nameof(GeoprocessingProgress) => OperationType.Geoprocessing,
             nameof(PublishingProgress) => OperationType.Publishing,
+            nameof(LayerPublishJobProgress) => OperationType.Publishing,
             nameof(WorkflowProgress) => OperationType.Orchestration,
             nameof(DeploymentProgress) => OperationType.Deployment,
             _ => null
@@ -917,6 +1031,7 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(DeploymentStatus))]
 [JsonSerializable(typeof(RolloutState))]
 [JsonSerializable(typeof(TemporalCorrectiveJobProgress))]
+[JsonSerializable(typeof(LayerPublishJobProgress))]
 [JsonSerializable(typeof(OperationType))]
 [JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(ImportStatus))]

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Linq;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.OData;
@@ -35,6 +36,7 @@ public class ODataFilterParserTests
         ((Literal)arithmetic.Right).Value.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("properties/site/name")]
     [InlineData("Datastreams/Observations/FeatureOfInterest/id")]
@@ -45,6 +47,7 @@ public class ODataFilterParserTests
         ((PropertyReference)expression.Operand).PropertyName.Should().Be(path);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("properties//name eq 1")]
     [InlineData("properties/ eq 1")]
@@ -55,6 +58,7 @@ public class ODataFilterParserTests
         parse.Should().Throw<ODataFilterParseException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_SubstringOf_SearchesFirstArgumentInsideSecond()
     {
@@ -67,6 +71,7 @@ public class ODataFilterParserTests
 
     #region Not Operator Precedence
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotPrecedence_BindsTighterThanOr()
     {
@@ -90,6 +95,7 @@ public class ODataFilterParserTests
         ((Literal)comparison.Right).Value.Should().Be(1);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotPrecedence_BindsTighterThanAnd()
     {
@@ -110,6 +116,7 @@ public class ODataFilterParserTests
         notExpr.Operand.Should().BeOfType<PropertyReference>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_DoubleNot_ParsesCorrectly()
     {
@@ -132,21 +139,20 @@ public class ODataFilterParserTests
         ((Literal)comparison.Right).Value.Should().Be(true);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotWithParentheses_AppliesToComparisonExpression()
     {
         var result = _parser.Parse("not (A eq 1)");
 
-        result.Should().BeOfType<UnaryExpression>();
-        var notExpr = (UnaryExpression)result;
-        notExpr.Operator.Should().Be(UnaryOperator.Not);
-        notExpr.Operand.Should().BeOfType<BinaryExpression>();
+        result.Should().Be(_parser.Parse("A ne 1"));
     }
 
     #endregion
 
     #region In Operator
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_InOperator_WithStrings_ProducesBinaryExpressionWithValueList()
     {
@@ -166,6 +172,7 @@ public class ODataFilterParserTests
         ((Literal)values.Values[1]).Value.Should().Be("pending");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_InOperator_WithIntegers_ProducesValueList()
     {
@@ -182,6 +189,7 @@ public class ODataFilterParserTests
         ((Literal)values.Values[2]).Value.Should().Be(3);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_InOperator_EmptyList_ProducesEmptyValueList()
     {
@@ -195,6 +203,7 @@ public class ODataFilterParserTests
         values.Values.Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_InOperator_CombinedWithAnd_ParsesCorrectly()
     {
@@ -213,6 +222,7 @@ public class ODataFilterParserTests
 
     #region Unary Negation
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_UnaryNegation_Property_ProducesNegateExpression()
     {
@@ -229,6 +239,7 @@ public class ODataFilterParserTests
         ((PropertyReference)negate.Operand).PropertyName.Should().Be("population");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_UnaryNegation_InArithmetic_ParsesCorrectly()
     {
@@ -248,6 +259,7 @@ public class ODataFilterParserTests
         ((PropertyReference)negate.Operand).PropertyName.Should().Be("discount");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeometryLiteral_WithTooManyVertices_ThrowsODataFilterParseException()
     {
@@ -260,6 +272,7 @@ public class ODataFilterParserTests
             .WithMessage("*maximum geometry complexity*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeographyLiteralLongerThanStringLiteralLimit_Parses()
     {
@@ -272,6 +285,7 @@ public class ODataFilterParserTests
         result.Should().BeOfType<SpatialPredicate>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_TextLiteralBeyondStringLiteralLimit_ThrowsODataFilterParseException()
     {
@@ -283,6 +297,7 @@ public class ODataFilterParserTests
             .WithMessage($"*maximum string literal length of {FilterParserGuard.MaxStringLiteralLength}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_QuotedLiteralBeyondGeometryTextLimit_ThrowsWhileLexing()
     {
@@ -294,6 +309,7 @@ public class ODataFilterParserTests
             .WithMessage($"*Quoted literal exceeds the maximum length of {FilterParserGuard.MaxGeometryTextBytes} characters*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_WithNestedParenthesesBeyondLimit_ThrowsODataFilterParseException()
     {
@@ -307,6 +323,7 @@ public class ODataFilterParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("and")]
     [InlineData("or")]
@@ -320,6 +337,7 @@ public class ODataFilterParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_FlatLogicalSequenceWithinDepthLimit_ReturnsLeftDeepChain()
     {
@@ -331,6 +349,7 @@ public class ODataFilterParserTests
         result.Should().BeOfType<BinaryExpression>().Which.Operator.Should().Be(BinaryOperator.And);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_FlatArithmeticSequenceBeyondDepthLimit_ThrowsODataFilterParseException()
     {
@@ -342,14 +361,15 @@ public class ODataFilterParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NestedNullSafeComparisonsBeyondNodeLimit_ThrowsODataFilterParseException()
     {
         // Each null-safe 'ne' between two nullable operands references its left operand
-        // three times, so twelve nested comparisons expand to 3^12 visited nodes while
-        // staying inside the nesting-depth limit.
+        // four times, so eight nested comparisons exceed the visited-node limit while
+        // their depth of 41 remains inside the nesting-depth limit.
         var filter = "A";
-        for (var i = 0; i < 12; i++)
+        for (var i = 0; i < 8; i++)
         {
             filter = $"({filter} ne B)";
         }
@@ -360,6 +380,7 @@ public class ODataFilterParserTests
             .WithMessage($"*maximum size of {FilterParserGuard.MaxExpressionNodes} nodes*");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NestedNullSafeComparisonsWithinNodeLimit_Parses()
     {
@@ -372,6 +393,7 @@ public class ODataFilterParserTests
 
     #region Integer vs Double Literals
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_IntegerLiteral_StoredAsInt()
     {
@@ -384,6 +406,7 @@ public class ODataFilterParserTests
         literal.Type.Should().Be(LiteralType.Number);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_DecimalLiteral_StoredAsDecimal()
     {
@@ -398,6 +421,7 @@ public class ODataFilterParserTests
         literal.Type.Should().Be(LiteralType.Number);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ScientificNotation_StoredAsDouble()
     {
@@ -409,6 +433,7 @@ public class ODataFilterParserTests
         literal.Value.Should().Be(100000.0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_LargeInteger_StoredAsLong()
     {
@@ -420,6 +445,7 @@ public class ODataFilterParserTests
         literal.Value.Should().Be(3000000000L);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_ZeroInteger_StoredAsInt()
     {
@@ -431,6 +457,7 @@ public class ODataFilterParserTests
         literal.Value.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NegativeNumberLiteral_StoredAsInt()
     {
@@ -447,6 +474,7 @@ public class ODataFilterParserTests
 
     #region Null Comparisons
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NullOnRight_ProducesIsNullExpression()
     {
@@ -459,6 +487,7 @@ public class ODataFilterParserTests
         ((PropertyReference)unary.Operand).PropertyName.Should().Be("name");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NullOnLeft_ProducesIsNullOnProperty()
     {
@@ -472,6 +501,7 @@ public class ODataFilterParserTests
         ((PropertyReference)unary.Operand).PropertyName.Should().Be("name");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_LiteralEqNull_ProducesIsNullOnLiteral()
     {
@@ -486,6 +516,7 @@ public class ODataFilterParserTests
         literal.Value.Should().Be("hello");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NullNeProperty_ProducesIsNotNull()
     {
@@ -501,6 +532,7 @@ public class ODataFilterParserTests
 
     #region OData 2VL eq/ne Rewrites
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotEqualStringLiteral_RewritesToNullSafeComparison()
     {
@@ -526,6 +558,7 @@ public class ODataFilterParserTests
         ((PropertyReference)isNull.Operand).PropertyName.Should().Be("state");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotEqualLiteralOnLeft_RewritesIsNullOnProperty()
     {
@@ -542,10 +575,12 @@ public class ODataFilterParserTests
         ((PropertyReference)isNull.Operand).PropertyName.Should().Be("state");
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NotEqualTwoProperties_RewritesToIsDistinctFromExpansion()
     {
-        // ((state <> country) OR (state IS NULL AND country IS NOT NULL))
+        // ((state <> country AND state IS NOT NULL AND country IS NOT NULL)
+        //   OR (state IS NULL AND country IS NOT NULL))
         //   OR (state IS NOT NULL AND country IS NULL)
         var result = _parser.Parse("state ne country");
 
@@ -555,7 +590,13 @@ public class ODataFilterParserTests
 
         var innerOr = (BinaryExpression)outerOr.Left;
         innerOr.Operator.Should().Be(BinaryOperator.Or);
-        ((BinaryExpression)innerOr.Left).Operator.Should().Be(BinaryOperator.NotEqual);
+        var nonNullArm = (BinaryExpression)innerOr.Left;
+        nonNullArm.Operator.Should().Be(BinaryOperator.And);
+        ((BinaryExpression)nonNullArm.Left).Operator.Should().Be(BinaryOperator.NotEqual);
+        var bothNonNull = (BinaryExpression)nonNullArm.Right;
+        bothNonNull.Operator.Should().Be(BinaryOperator.And);
+        ((UnaryExpression)bothNonNull.Left).Operator.Should().Be(UnaryOperator.IsNotNull);
+        ((UnaryExpression)bothNonNull.Right).Operator.Should().Be(UnaryOperator.IsNotNull);
 
         var leftNullArm = (BinaryExpression)innerOr.Right;
         leftNullArm.Operator.Should().Be(BinaryOperator.And);
@@ -568,6 +609,7 @@ public class ODataFilterParserTests
         ((UnaryExpression)rightNullArm.Right).Operator.Should().Be(UnaryOperator.IsNull);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_EqualNonNullLiteral_KeepsPlainEquality()
     {
@@ -582,6 +624,7 @@ public class ODataFilterParserTests
         binary.Right.Should().BeOfType<Literal>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_EqualTwoProperties_RewritesToNullSafeEquality()
     {
@@ -600,10 +643,186 @@ public class ODataFilterParserTests
         ((UnaryExpression)bothNull.Right).Operator.Should().Be(UnaryOperator.IsNull);
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_NotEq_MatchesBareNeIncludingNullAttribute()
+    {
+        _parser.Parse("not (state eq 'California')")
+            .Should().Be(_parser.Parse("state ne 'California'"));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_NotEqTwoProperties_MatchesBareNeIncludingNulls()
+    {
+        _parser.Parse("not (state eq country)")
+            .Should().Be(_parser.Parse("state ne country"));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("eq")]
+    [InlineData("gt")]
+    [InlineData("ge")]
+    [InlineData("lt")]
+    [InlineData("le")]
+    public void Parse_NotComparison_KeepsNullAttribute(string op)
+    {
+        var result = _parser.Parse($"not (state {op} 'California')");
+
+        ContainsIsNull(result, "state").Should().BeTrue();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_NotIn_KeepsNullAttribute()
+    {
+        var result = _parser.Parse("not (state in ('California', 'Nevada'))");
+
+        ContainsIsNull(result, "state").Should().BeTrue();
+        result.Should().BeOfType<BinaryExpression>();
+        ((BinaryExpression)result).Operator.Should().Be(BinaryOperator.And);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_NotEmptyIn_StaysBooleanNegation()
+    {
+        var result = _parser.Parse("not (status in ())");
+
+        result.Should().BeOfType<UnaryExpression>();
+        ((UnaryExpression)result).Operator.Should().Be(UnaryOperator.Not);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("ge", null, null, false)]
+    [InlineData("le", null, null, false)]
+    [InlineData("ge", null, 1, true)]
+    [InlineData("le", null, 1, true)]
+    [InlineData("ge", 1, null, true)]
+    [InlineData("le", 1, null, true)]
+    [InlineData("ge", 1, 1, false)]
+    [InlineData("le", 1, 1, false)]
+    [InlineData("ge", 1, 2, true)]
+    [InlineData("le", 1, 2, false)]
+    [InlineData("ge", 2, 1, false)]
+    [InlineData("le", 2, 1, true)]
+    [InlineData("gt", null, null, true)]
+    [InlineData("lt", null, null, true)]
+    public void Parse_NegatedRelationalComparison_EvaluatesODataNullTruthTable(
+        string op, int? left, int? right, bool expected)
+    {
+        var properties = new Dictionary<string, JsonElement>
+        {
+            ["A"] = JsonSerializer.SerializeToElement(left),
+            ["B"] = JsonSerializer.SerializeToElement(right)
+        };
+
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not (A {op} B)"), properties)
+            .Should().Be(expected);
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not (not (A {op} B))"), properties)
+            .Should().Be(!expected);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("ge", true)]
+    [InlineData("le", true)]
+    [InlineData("gt", false)]
+    [InlineData("lt", false)]
+    public void Parse_RelationalComparisonWithLiteralNull_EvaluatesODataTruthTable(
+        string op, bool bothNullMatches)
+    {
+        foreach (int? value in new int?[] { null, 1 })
+        {
+            var properties = new Dictionary<string, JsonElement>
+            {
+                ["A"] = JsonSerializer.SerializeToElement(value)
+            };
+            var expected = value is null && bothNullMatches;
+            foreach (var filter in new[] { $"A {op} null", $"null {op} A" })
+            {
+                InMemoryFilterEvaluator.Evaluate(_parser.Parse(filter), properties)
+                    .Should().Be(expected, filter);
+                InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not ({filter})"), properties)
+                    .Should().Be(!expected, filter);
+            }
+        }
+
+        var empty = new Dictionary<string, JsonElement>();
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"null {op} null"), empty)
+            .Should().Be(bothNullMatches);
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not (null {op} null)"), empty)
+            .Should().Be(!bothNullMatches);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("eq", null, null, true)]
+    [InlineData("ne", null, null, false)]
+    [InlineData("eq", null, 1, false)]
+    [InlineData("ne", null, 1, true)]
+    [InlineData("eq", 1, null, false)]
+    [InlineData("ne", 1, null, true)]
+    [InlineData("eq", 1, 1, true)]
+    [InlineData("ne", 1, 1, false)]
+    [InlineData("eq", 1, 2, false)]
+    [InlineData("ne", 1, 2, true)]
+    public void Parse_NestedEqualityNegation_EvaluatesODataNullTruthTable(
+        string op, int? left, int? right, bool expected)
+    {
+        var properties = new Dictionary<string, JsonElement>
+        {
+            ["A"] = JsonSerializer.SerializeToElement(left),
+            ["B"] = JsonSerializer.SerializeToElement(right)
+        };
+
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"A {op} B"), properties)
+            .Should().Be(expected);
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not (A {op} B)"), properties)
+            .Should().Be(!expected);
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse($"not (not (A {op} B))"), properties)
+            .Should().Be(expected);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(null, null, true)]
+    [InlineData(null, 1, false)]
+    [InlineData(1, null, false)]
+    [InlineData(1, 1, true)]
+    [InlineData(1, 2, false)]
+    public void Parse_NestedMembershipNegation_UsesNullSafeEquality(
+        int? left, int? right, bool expected)
+    {
+        var properties = new Dictionary<string, JsonElement>
+        {
+            ["A"] = JsonSerializer.SerializeToElement(left),
+            ["B"] = JsonSerializer.SerializeToElement(right)
+        };
+
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse("not (A in (B))"), properties)
+            .Should().Be(!expected);
+        InMemoryFilterEvaluator.Evaluate(_parser.Parse("not (not (A in (B)))"), properties)
+            .Should().Be(expected);
+    }
+
+    private static bool ContainsIsNull(FilterExpression expression, string property)
+        => expression switch
+        {
+            UnaryExpression { Operator: UnaryOperator.IsNull, Operand: PropertyReference { PropertyName: var name } }
+                => name == property,
+            UnaryExpression unary => ContainsIsNull(unary.Operand, property),
+            BinaryExpression binary => ContainsIsNull(binary.Left, property) || ContainsIsNull(binary.Right, property),
+            _ => false
+        };
+
     #endregion
 
     #region Geo Functions
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeoLength_MapsToGeoLengthFunction()
     {
@@ -620,6 +839,7 @@ public class ODataFilterParserTests
         function.Arguments[0].Should().BeOfType<PropertyReference>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeoLength_WrongArgumentCount_Throws()
     {
@@ -628,6 +848,7 @@ public class ODataFilterParserTests
         act.Should().Throw<ArgumentException>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeoIntersects_MarksPredicateGeodesic()
     {
@@ -643,6 +864,7 @@ public class ODataFilterParserTests
         spatial.Right.Should().BeOfType<GeometryLiteral>();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeoIntersectsWholeWorldEnvelope_FallsBackToPlanar()
     {
@@ -656,6 +878,7 @@ public class ODataFilterParserTests
         ((SpatialPredicate)result).Geodesic.Should().BeFalse();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_GeoIntersectsAntimeridianPolygon_StaysGeodesic()
     {

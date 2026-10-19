@@ -34,12 +34,23 @@ internal static partial class SqlServerFeatureQueryBuilder
         var sb = new StringBuilder();
         var parameters = new List<object>();
 
-        sb.Append("SELECT ").Append(mapping.QuotedPrimaryKeyColumn).Append(" AS [__objectid]");
+        var projectedAttributes = ResolveProjectedAttributeColumns(query, attributeColumns);
+        if (query.Distinct)
+        {
+            // Distinct values are attribute tuples. A real primary key or geometry would
+            // make every row unique, so the reader still sees a non-null id (literal 0)
+            // and a null geometry while DISTINCT applies only to the projected attributes.
+            sb.Append("SELECT DISTINCT 0 AS [__objectid], CAST(NULL AS varbinary(max)) AS [__geometry]");
+            AppendQuotedAttributeColumns(sb, projectedAttributes);
+        }
+        else
+        {
+            sb.Append("SELECT ").Append(mapping.QuotedPrimaryKeyColumn).Append(" AS [__objectid]");
 
-        var geometryExpr = BuildGeometryWkbExpression(mapping);
-        sb.Append(", ").Append(geometryExpr).Append(" AS [__geometry]");
-
-        AppendAttributeColumns(sb, query, attributeColumns);
+            var geometryExpr = BuildGeometryWkbExpression(mapping);
+            sb.Append(", ").Append(geometryExpr).Append(" AS [__geometry]");
+            AppendQuotedAttributeColumns(sb, projectedAttributes);
+        }
 
         sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
@@ -47,8 +58,19 @@ internal static partial class SqlServerFeatureQueryBuilder
         AppendWhereClause(sb, query, parameters);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
-        AppendOrderByClause(sb, query);
-        AppendPagination(sb, mapping, query, parameters);
+        if (query.Distinct)
+        {
+            if (IsPaging(query))
+            {
+                AppendDistinctOrderBy(sb, query, projectedAttributes);
+            }
+        }
+        else
+        {
+            AppendOrderByClause(sb, query);
+        }
+
+        AppendPagination(sb, mapping, query, parameters, suppressPrimaryKeyTiebreaker: query.Distinct);
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
@@ -57,6 +79,16 @@ internal static partial class SqlServerFeatureQueryBuilder
     /// Builds a SELECT COUNT(*) for the same query envelope as <see cref="BuildSelectQuery"/>.
     /// </summary>
     public static ParameterizedQuery BuildCountQuery(SqlServerLayerMapping mapping, FeatureQuery query)
+        => BuildCountQuery(mapping, query, attributeColumns: null);
+
+    /// <summary>
+    /// Builds a count for <paramref name="query"/>. When <see cref="FeatureQuery.Distinct"/> is set,
+    /// the count is the number of distinct projected attribute tuples, not the raw row count.
+    /// </summary>
+    public static ParameterizedQuery BuildCountQuery(
+        SqlServerLayerMapping mapping,
+        FeatureQuery query,
+        IReadOnlyList<string>? attributeColumns)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
@@ -65,12 +97,38 @@ internal static partial class SqlServerFeatureQueryBuilder
         var sb = new StringBuilder();
         var parameters = new List<object>();
 
-        sb.Append("SELECT COUNT_BIG(*) FROM ").Append(mapping.QuotedTableReference);
+        if (!query.Distinct)
+        {
+            sb.Append("SELECT COUNT_BIG(*) FROM ").Append(mapping.QuotedTableReference);
+            sb.Append(" WHERE 1=1");
+
+            AppendWhereClause(sb, query, parameters);
+            AppendObjectIdsFilter(sb, mapping, query, parameters);
+            AppendSpatialFilter(sb, mapping, query, parameters);
+
+            return new ParameterizedQuery(sb.ToString(), parameters);
+        }
+
+        var projectedAttributes = attributeColumns is null
+            ? []
+            : ResolveProjectedAttributeColumns(query, attributeColumns);
+        sb.Append("SELECT COUNT_BIG(*) FROM (SELECT DISTINCT ");
+        if (projectedAttributes.Count == 0)
+        {
+            sb.Append('1');
+        }
+        else
+        {
+            sb.Append(string.Join(", ", projectedAttributes.Select(SqlServerIdentifier.QuoteAttribute)));
+        }
+
+        sb.Append(" FROM ").Append(mapping.QuotedTableReference);
         sb.Append(" WHERE 1=1");
 
         AppendWhereClause(sb, query, parameters);
         AppendObjectIdsFilter(sb, mapping, query, parameters);
         AppendSpatialFilter(sb, mapping, query, parameters);
+        sb.Append(") AS distinct_values");
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
@@ -194,11 +252,11 @@ internal static partial class SqlServerFeatureQueryBuilder
         return $"{mapping.QuotedGeometryColumn}.STAsBinary()";
     }
 
-    private static void AppendAttributeColumns(StringBuilder sb, FeatureQuery query, IReadOnlyList<string> attributeColumns)
+    private static List<string> ResolveProjectedAttributeColumns(FeatureQuery query, IReadOnlyList<string> attributeColumns)
     {
         if (query.ExcludeAttributes || attributeColumns.Count == 0)
         {
-            return;
+            return [];
         }
 
         // Null/default OutFields projects every column. An explicit empty array projects
@@ -209,14 +267,19 @@ internal static partial class SqlServerFeatureQueryBuilder
             var requestedOutFields = query.OutFields.Value;
             if (requestedOutFields.IsEmpty)
             {
-                return;
+                return [];
             }
 
             var requested = new HashSet<string>(requestedOutFields, StringComparer.OrdinalIgnoreCase);
             columns = attributeColumns.Where(c => requested.Contains(c));
         }
 
-        foreach (var column in columns)
+        return columns.ToList();
+    }
+
+    private static void AppendQuotedAttributeColumns(StringBuilder sb, IReadOnlyList<string> projectedAttributes)
+    {
+        foreach (var column in projectedAttributes)
         {
             sb.Append(", ").Append(SqlServerIdentifier.QuoteAttribute(column));
         }
@@ -281,6 +344,19 @@ internal static partial class SqlServerFeatureQueryBuilder
         }
 
         var ids = query.ObjectIds.Value;
+        // SQL Server rejects statements with more than 2100 parameters. Keep a short IN list
+        // and bind a longer id set as one JSON array.
+        if (ids.Length > 2000 || parameters.Count + ids.Length > 2000)
+        {
+            var placeholder = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+            parameters.Add(FormatObjectIdJsonArray(ids));
+            sb.Append(" AND ").Append(mapping.QuotedPrimaryKeyColumn)
+                .Append(" IN (SELECT CAST([value] AS bigint) FROM OPENJSON(")
+                .Append(placeholder)
+                .Append("))");
+            return;
+        }
+
         var placeholders = new string[ids.Length];
         for (var i = 0; i < ids.Length; i++)
         {
@@ -289,6 +365,24 @@ internal static partial class SqlServerFeatureQueryBuilder
         }
 
         sb.Append(" AND ").Append(mapping.QuotedPrimaryKeyColumn).Append(" IN (").Append(string.Join(", ", placeholders)).Append(')');
+    }
+
+    private static string FormatObjectIdJsonArray(ImmutableArray<long> ids)
+    {
+        var json = new StringBuilder(ids.Length * 4);
+        json.Append('[');
+        for (var i = 0; i < ids.Length; i++)
+        {
+            if (i > 0)
+            {
+                json.Append(',');
+            }
+
+            json.Append(ids[i].ToString(CultureInfo.InvariantCulture));
+        }
+
+        json.Append(']');
+        return json.ToString();
     }
 
     private static void AppendSpatialFilter(StringBuilder sb, SqlServerLayerMapping mapping, FeatureQuery query, List<object> parameters)
@@ -421,17 +515,62 @@ internal static partial class SqlServerFeatureQueryBuilder
         sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));
     }
 
-    private static void AppendPagination(StringBuilder sb, SqlServerLayerMapping mapping, FeatureQuery query, List<object> parameters)
+    private static bool IsPaging(FeatureQuery query)
+        => query.Limit.HasValue || query.Offset is > 0;
+
+    /// <summary>
+    /// Orders a DISTINCT projection by columns that appear in the select list. SQL Server
+    /// rejects ORDER BY expressions that are not projected, and the primary key is not part
+    /// of a distinct-values tuple.
+    /// </summary>
+    private static void AppendDistinctOrderBy(StringBuilder sb, FeatureQuery query, IReadOnlyList<string> projectedAttributes)
     {
-        if (!query.Limit.HasValue && (!query.Offset.HasValue || query.Offset.Value <= 0))
+        var clauses = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (query.OrderBy.HasValue && !query.OrderBy.Value.IsDefaultOrEmpty)
+        {
+            foreach (var orderBy in query.OrderBy.Value)
+            {
+                var match = projectedAttributes.FirstOrDefault(column =>
+                    string.Equals(column, orderBy.Field, StringComparison.OrdinalIgnoreCase));
+                if (match is null || !seen.Add(match))
+                {
+                    continue;
+                }
+
+                var direction = orderBy.Ascending ? "ASC" : "DESC";
+                clauses.Add($"{SqlServerIdentifier.QuoteAttribute(match)} {direction}");
+            }
+        }
+
+        foreach (var column in projectedAttributes.Where(seen.Add))
+        {
+            clauses.Add($"{SqlServerIdentifier.QuoteAttribute(column)} ASC");
+        }
+
+        sb.Append(" ORDER BY ");
+        sb.Append(clauses.Count == 0 ? "[__objectid]" : string.Join(", ", clauses));
+    }
+
+    private static void AppendPagination(
+        StringBuilder sb,
+        SqlServerLayerMapping mapping,
+        FeatureQuery query,
+        List<object> parameters,
+        bool suppressPrimaryKeyTiebreaker = false)
+    {
+        if (!IsPaging(query))
         {
             return;
         }
 
-        // SQL Server requires ORDER BY before OFFSET / FETCH NEXT. When the caller did not supply
-        // one, fall back to the primary key so paging is deterministic — ORDER BY (SELECT 1) leaves
-        // row order undefined and can skip or duplicate rows across pages.
-        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+        // SQL Server requires ORDER BY before OFFSET / FETCH NEXT. When the caller did not
+        // supply one, fall back to the primary key. A caller ORDER BY is left unchanged:
+        // appending the key would change tie-breaking the caller did not request.
+        // Distinct projections order their selected columns and suppress this fallback
+        // because the key is not in that select list.
+        if (!suppressPrimaryKeyTiebreaker
+            && (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty))
         {
             sb.Append(" ORDER BY ").Append(mapping.QuotedPrimaryKeyColumn);
         }
@@ -449,7 +588,7 @@ internal static partial class SqlServerFeatureQueryBuilder
 
     private static string ParseAndParameterizeWhereClause(string whereClause, List<object> parameters)
     {
-        var expressions = SplitOnAnd(whereClause);
+        var expressions = WhereClauseSplitter.SplitOnAnd(whereClause);
         if (expressions.Count == 0)
         {
             throw new ArgumentException("WHERE clause format not supported.");
@@ -519,63 +658,6 @@ internal static partial class SqlServerFeatureQueryBuilder
         return string.Join(" AND ", rendered);
     }
 
-    private static List<string> SplitOnAnd(string whereClause)
-    {
-        var parts = new List<string>();
-        var current = new StringBuilder();
-        var inQuotes = false;
-
-        for (var i = 0; i < whereClause.Length; i++)
-        {
-            var c = whereClause[i];
-            if (!inQuotes && c == '\'')
-            {
-                inQuotes = true;
-                current.Append(c);
-            }
-            else if (inQuotes && c == '\'')
-            {
-                if (i + 1 < whereClause.Length && whereClause[i + 1] == '\'')
-                {
-                    current.Append("''");
-                    i++;
-                }
-                else
-                {
-                    inQuotes = false;
-                    current.Append(c);
-                }
-            }
-            else if (!inQuotes && i + 3 <= whereClause.Length &&
-                     whereClause.Substring(i, 3).Equals("AND", StringComparison.OrdinalIgnoreCase) &&
-                     (i == 0 || !IsIdentifierChar(whereClause[i - 1])) &&
-                     (i + 3 >= whereClause.Length || !IsIdentifierChar(whereClause[i + 3])))
-            {
-                parts.Add(current.ToString());
-                current.Clear();
-                i += 2;
-            }
-            else
-            {
-                current.Append(c);
-            }
-        }
-
-        if (current.Length > 0)
-        {
-            parts.Add(current.ToString());
-        }
-
-        return parts;
-    }
-
-    // Identifier-boundary helper used by SplitOnAnd. Mirrors the regex character class
-    // [a-zA-Z0-9_] used by ComparisonRegex / NullCheckRegex so column names that contain
-    // or begin with "and" (e.g. start_and_end, and_flag) are not falsely split as
-    // logical AND boundaries. Underscore is a legal T-SQL identifier character and must
-    // not separate tokens.
-    private static bool IsIdentifierChar(char c)
-        => char.IsLetterOrDigit(c) || c == '_';
 
     private static string NormalizeOperator(string op) => op.Trim().ToUpperInvariant() switch
     {

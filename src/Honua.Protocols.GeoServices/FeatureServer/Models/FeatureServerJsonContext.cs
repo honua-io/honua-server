@@ -153,6 +153,8 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(QueryRelationshipsResponse))]
 [JsonSerializable(typeof(ServiceRelationshipInfo))]
 [JsonSerializable(typeof(ServiceRelationshipInfo[]))]
+[JsonSerializable(typeof(ServiceRelationshipSummary))]
+[JsonSerializable(typeof(ServiceRelationshipSummary[]))]
 [JsonSerializable(typeof(DomainInfo))]
 [JsonSerializable(typeof(DomainInfo[]))]
 [JsonSerializable(typeof(DomainCodedValueInfo))]

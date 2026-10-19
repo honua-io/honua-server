@@ -39,6 +39,25 @@ internal interface IConsoleJobService
         string jobId,
         CancellationToken cancellationToken);
 
+    Task<ConsoleJobDiagnostics?> GetDiagnosticsAsync(
+        HttpContext context,
+        string jobId,
+        int? eventLimit,
+        string? eventCursor,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The same projection for a principal without an HTTP request (MCP tools). <paramref name="pathBase"/>
+    /// prefixes the links; pass an empty string for root-mounted hosts.
+    /// </summary>
+    Task<ConsoleJobDiagnostics?> GetDiagnosticsAsync(
+        System.Security.Claims.ClaimsPrincipal user,
+        string pathBase,
+        string jobId,
+        int? eventLimit,
+        string? eventCursor,
+        CancellationToken cancellationToken);
+
     Task<ConsoleJobControlResponse?> CancelAsync(
         HttpContext context,
         string jobId,

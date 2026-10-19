@@ -78,7 +78,7 @@ internal sealed partial class OpsFindingsAutonomyEvaluationService(
                     continue;
                 }
 
-                await findingsService.ProposeAsync(finding.Id, cancellationToken).ConfigureAwait(false);
+                await findingsService.ProposeAsync(finding.Id, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
         }
         finally

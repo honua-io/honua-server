@@ -70,8 +70,10 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
             result.NeedsReview.Should().BeTrue();
             result.PublishedLayerId.Should().BeNull();
             result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
-            result.FidelityDifferences.Should().ContainSingle()
-                .Which.Code.Should().Be(MigrationFidelityDifferenceCodes.PublishNotCompleted);
+            result.FidelityDifferences.Should().Contain(difference =>
+                difference.Code == MigrationFidelityDifferenceCodes.PublishNotCompleted);
+            result.FidelityDifferences.Should().Contain(difference =>
+                difference.Code == MigrationFidelityDifferenceCodes.DataReconciliationNotExecuted);
 
             await using var connection = await fixture.GetConnectionAsync();
             await using var command = connection.CreateCommand();
@@ -180,6 +182,27 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
                 "every required check ran and passed; differences: {0}",
                 string.Join("; ", result.FidelityDifferences.Select(d => $"{d.Code}:{d.Summary}")));
             result.FidelityDifferences.Should().BeEmpty();
+
+            // The source declares Shape, while the actual import/publish path uses geom.
+            // A passing catalog comparison must still correspond to a real stored geometry.
+            result.CatalogReconciliationReport.Should().NotBeNull();
+            result.CatalogReconciliationReport!.Summary.PassResourceCount.Should().Be(1);
+            var snapshot = await graphStore.TryGetPersistedCurrentAsync();
+            snapshot.Should().NotBeNull();
+            var published = snapshot!.Graph.Resources.Single(resource =>
+                resource.Metadata.Id == $"res-layer-{result.PublishedLayerId}");
+            published.SchemaFields.Should().Contain(field => field.Name == "geom");
+            published.Spatial!.PrimaryGeometryField.Should().Be("geom");
+
+            await using var connection = await fixture.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT ST_X(geom), ST_Y(geom), ST_SRID(geom) FROM \"{schemaName}\".\"{tableName}\"";
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetDouble(0).Should().BeApproximately(-157.1, 1e-9);
+            reader.GetDouble(1).Should().BeApproximately(21.3, 1e-9);
+            reader.GetInt32(2).Should().Be(4326);
+            (await reader.ReadAsync()).Should().BeFalse();
         }
         finally
         {
@@ -375,6 +398,7 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
                       ],
                       "fields": [
                         { "name": "OBJECTID", "type": "esriFieldTypeOID", "nullable": false },
+                        { "name": "Shape", "type": "esriFieldTypeGeometry", "nullable": true },
                         { "name": "assetclass", "type": "esriFieldTypeInteger", "nullable": true },
                         { "name": "label", "type": "esriFieldTypeString", "nullable": true }
                       ]

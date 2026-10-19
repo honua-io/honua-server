@@ -8,13 +8,18 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests;
 
@@ -34,15 +39,101 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        // The default test graph declares no edit capabilities. applyEdits treats that as
+        // Query-only, and attachment writes now use the same resolver (#6135).
+        _fixture.EnableV2ServiceEditingCapabilities(
+            TestServiceId,
+            ["Query", "Create", "Update", "Delete"]);
         var storage = _fixture.GetService<ICloudFileStorage>();
-        await AttachmentTestData.SeedAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId);
+        await AttachmentTestData.SeedAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId, _fixture.CurrentSchema!);
     }
 
     public async Task DisposeAsync()
     {
         var storage = _fixture.GetService<ICloudFileStorage>();
-        await AttachmentTestData.CleanupAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId);
+        await AttachmentTestData.CleanupAsync(_fixture.Postgres, storage, TestLayerId, TestFeatureId, _fixture.CurrentSchema!);
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Delete)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task FeatureDelete_CleansOnlyItsFixtureAttachmentsAfterCommit(bool isolatedHost)
+    {
+        var target = new WebAppFixture();
+        var license = new TestLicenseEntitlementService(HonuaEdition.Pro);
+        target.ReplaceRequestService<ILicenseEntitlementService>(license)
+            .ReplaceRequestService<ILicenseStatusProvider>(license);
+        if (isolatedHost)
+        {
+            target.ConfigureServices(_ => { });
+        }
+
+        await target.InitializeAsync();
+        var storage = target.GetService<ICloudFileStorage>();
+        try
+        {
+            target.EnableV2ServiceEditingCapabilities(TestServiceId, ["Query", "Create", "Update", "Delete"]);
+            await AttachmentTestData.SeedAsync(target.Postgres, storage, TestLayerId, TestFeatureId, target.CurrentSchema!);
+            var targetPath = await GetStoragePathAsync(target, 1);
+            var otherPath = await GetStoragePathAsync(1);
+            targetPath.Should().NotBe(otherPath);
+
+            // A later missing feature rolls the whole delete back, including attachment
+            // metadata. The backing objects must remain available until a confirmed commit.
+            using var failedForm = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["deletes"] = $"{TestFeatureId},999999",
+                ["rollbackOnFailure"] = "true",
+                ["f"] = "json"
+            });
+            using var failed = await target.Client.PostAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", failedForm);
+            failed.BeSuccessful();
+            var failedBody = await failed.Content.ReadAsStringAsync();
+            using var failedJson = JsonDocument.Parse(failedBody);
+            failedJson.RootElement.TryGetProperty("deleteResults", out var failedDeletes).Should()
+                .BeTrue("response should contain deleteResults; body: {0}", failedBody);
+            failedDeletes.EnumerateArray()
+                .Should().Contain(result => !result.GetProperty("success").GetBoolean());
+            (await GetStoragePathAsync(target, 1)).Should().Be(targetPath);
+            (await storage.ExistsAsync(targetPath)).Should().BeTrue();
+
+            using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["deletes"] = TestFeatureId.ToString(CultureInfo.InvariantCulture),
+                ["rollbackOnFailure"] = "true",
+                ["f"] = "json"
+            });
+            using var deleted = await target.Client.PostAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", form);
+            deleted.BeSuccessful();
+            var deletedBody = await deleted.Content.ReadAsStringAsync();
+            using var deletedJson = JsonDocument.Parse(deletedBody);
+            deletedJson.RootElement.TryGetProperty("deleteResults", out var deletedResults).Should()
+                .BeTrue("response should contain deleteResults; body: {0}", deletedBody);
+            deletedResults[0].GetProperty("success").GetBoolean().Should().BeTrue();
+
+            await using var connection = await target.Postgres.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT count(*) FROM {QuoteSchema(target.CurrentSchema!)}.attachments WHERE layer_id = @layer AND feature_id = @feature";
+            command.Parameters.AddWithValue("layer", TestLayerId);
+            command.Parameters.AddWithValue("feature", TestFeatureId);
+            (await command.ExecuteScalarAsync()).Should().Be(0L);
+            (await storage.ExistsAsync(targetPath)).Should().BeFalse();
+
+            // The other fixture owns the same layer/feature/attachment identifiers.
+            // Its row and exact bytes must survive this fixture's committed delete.
+            (await GetStoragePathAsync(1)).Should().Be(otherPath);
+            (await DownloadAttachmentBytesAsync(1)).Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
+        }
+        finally
+        {
+            await AttachmentTestData.CleanupAsync(target.Postgres, storage, TestLayerId, TestFeatureId, target.CurrentSchema!);
+            await target.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -210,6 +301,46 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         // Read the bytes back through the public download route.
         var downloaded = await DownloadAttachmentBytesAsync(result.AddAttachmentResult.ObjectId);
         downloaded.Should().Equal(fileContent);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_WhenOnlyQueryIsDeclared_DoesNotStore()
+    {
+        _fixture.EnableV2ServiceEditingCapabilities(TestServiceId, ["Query"]);
+        try
+        {
+            var before = await CountStoredAttachmentsAsync();
+            using var response = await PostPdfAttachmentAsync("query-only.pdf");
+            await response.AssertGeoServicesErrorAsync(400);
+            (await CountStoredAttachmentsAsync()).Should().Be(before);
+        }
+        finally
+        {
+            _fixture.EnableV2ServiceEditingCapabilities(
+                TestServiceId,
+                ["Query", "Create", "Update", "Delete"]);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_WhenLayerDoesNotSupportAttachments_DoesNotStore()
+    {
+        SetLayerEditing(new MetadataV2ResourceEditing { SupportsAttachments = false });
+        try
+        {
+            var before = await CountStoredAttachmentsAsync();
+            using var response = await PostPdfAttachmentAsync("unsupported.pdf");
+            await response.AssertGeoServicesErrorAsync(400);
+            (await CountStoredAttachmentsAsync()).Should().Be(before);
+        }
+        finally
+        {
+            SetLayerEditing(null);
+        }
     }
 
     [IntegrationTest]
@@ -535,6 +666,11 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result.DeleteAttachmentResults.Should().OnlyContain(r => r.Success);
         result.DeleteAttachmentResults.Should().Contain(r => r.ObjectId == 1);
         result.DeleteAttachmentResults.Should().Contain(r => r.ObjectId == 2);
+        using var document = JsonDocument.Parse(content);
+        foreach (var item in document.RootElement.GetProperty("deleteAttachmentResults").EnumerateArray())
+        {
+            item.TryGetProperty("error", out _).Should().BeFalse();
+        }
     }
 
     [IntegrationTest]
@@ -605,6 +741,31 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         deleteResult.Error.Should().NotBeNull();
         deleteResult.Error!.Code.Should().Be(1000);
         deleteResult.Error.Description.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DeleteAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
+    public async Task DeleteAttachments_WithSuccessfulAndMissingIds_EmitsErrorOnlyForFailure()
+    {
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent("1,999"), "attachmentIds" }
+        };
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", form);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var results = document.RootElement.GetProperty("deleteAttachmentResults");
+        results.GetArrayLength().Should().Be(2);
+        results[0].GetProperty("objectId").GetInt64().Should().Be(1);
+        results[0].GetProperty("success").GetBoolean().Should().BeTrue();
+        results[0].TryGetProperty("error", out _).Should().BeFalse();
+        results[1].GetProperty("objectId").GetInt64().Should().Be(999);
+        results[1].GetProperty("success").GetBoolean().Should().BeFalse();
+        results[1].GetProperty("error").GetProperty("code").GetInt32().Should().Be(1000);
+        results[1].GetProperty("error").GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
     [IntegrationTest]
@@ -1031,7 +1192,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         try
         {
             var storage = fixture.GetService<ICloudFileStorage>();
-            await AttachmentTestData.SeedAsync(fixture.Postgres, storage, TestLayerId, TestFeatureId);
+            await AttachmentTestData.SeedAsync(fixture.Postgres, storage, TestLayerId, TestFeatureId, fixture.CurrentSchema!);
 
             try
             {
@@ -1058,7 +1219,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             }
             finally
             {
-                await AttachmentTestData.CleanupAsync(fixture.Postgres, storage, TestLayerId, TestFeatureId);
+                await AttachmentTestData.CleanupAsync(fixture.Postgres, storage, TestLayerId, TestFeatureId, fixture.CurrentSchema!);
             }
         }
         finally
@@ -1123,6 +1284,51 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         return payload;
     }
 
+    private async Task<HttpResponseMessage> PostPdfAttachmentAsync(string filename)
+    {
+        var byteContent = new ByteArrayContent("refused"u8.ToArray());
+        byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { byteContent, "attachment", filename }
+        };
+        return await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment",
+            form);
+    }
+
+    private async Task<long> CountStoredAttachmentsAsync()
+    {
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT COUNT(*)
+            FROM {QuoteSchema(_fixture.CurrentSchema!)}.attachments
+            WHERE layer_id = @layerId AND feature_id = @featureId
+            """;
+        command.Parameters.AddWithValue("layerId", TestLayerId);
+        command.Parameters.AddWithValue("featureId", TestFeatureId);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+    }
+
+    private void SetLayerEditing(MetadataV2ResourceEditing? editing)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+            candidate.LayerIndex == TestLayerId);
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = snapshot.Graph.Resources.Select(resource =>
+                resource.Metadata.Id == publication.ResourceId
+                    ? resource with { Editing = editing }
+                    : resource).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
+    }
+
     private async Task<long> AddAttachmentAsync(byte[] payload, string filename, string contentType)
     {
         var body = new ByteArrayContent(payload);
@@ -1177,11 +1383,20 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     /// Reads the storage identifier of an attachment straight from the metadata table, so a
     /// test can assert on the object after the row that names it has been deleted.
     /// </summary>
-    private async Task<string> GetStoragePathAsync(long attachmentId)
+    private static string QuoteSchema(string schema)
     {
-        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        using var builder = new Npgsql.NpgsqlCommandBuilder();
+        return builder.QuoteIdentifier(schema);
+    }
+
+    private Task<string> GetStoragePathAsync(long attachmentId)
+        => GetStoragePathAsync(_fixture, attachmentId);
+
+    private static async Task<string> GetStoragePathAsync(WebAppFixture fixture, long attachmentId)
+    {
+        await using var connection = await fixture.Postgres.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT storage_path FROM honua.attachments WHERE id = @id";
+        command.CommandText = $"SELECT storage_path FROM {QuoteSchema(fixture.CurrentSchema!)}.attachments WHERE id = @id";
         command.Parameters.AddWithValue("id", attachmentId);
         var value = await command.ExecuteScalarAsync();
         value.Should().BeOfType<string>("attachment {0} must have a storage path", attachmentId);

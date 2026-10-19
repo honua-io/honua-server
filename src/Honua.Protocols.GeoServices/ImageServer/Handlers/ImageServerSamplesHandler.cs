@@ -138,8 +138,20 @@ internal sealed class ImageServerSamplesHandler
                 return editionError;
             }
 
+            // Same mosaicRule contract as exportImage and identify: lock to the requested
+            // rasters, honour ordering, and reject an unsupported where or method.
+            if (!ImageServerMosaicRule.TryParse(GetString(values, "mosaicRule"), out var mosaicRule, out var mosaicRuleError, out var mosaicRuleNotImplemented))
+            {
+                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, mosaicRuleError);
+                return mosaicRuleNotImplemented
+                    ? StandardErrorHelpers.CreateNotImplemented(context, mosaicRuleError)
+                    : StandardErrorHelpers.CreateBadRequest(context, mosaicRuleError);
+            }
+
             var requestSrid = ImageServerGeometryHelpers.TryParseSrid(GetString(values, "sr"));
-            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetString(values, "mosaicRule"));
+            var mergeStrategy = mosaicRule.Operation
+                ?? ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
+            var isLockRaster = mosaicRule.Method == MosaicMethod.LockRaster;
 
             var samples = new List<SampleEntry>(Math.Min(samplePoints.Count, maxSampleCount));
             var processedPoints = 0;
@@ -158,25 +170,36 @@ internal sealed class ImageServerSamplesHandler
                 {
                     Geometry = ImageServerMosaicHelpers.CreatePointGeometry(point.X, point.Y),
                     GeometrySrid = srid,
-                    Timestamp = timestamp,
-                    TimeStart = timeStart,
+                    Timestamp = isLockRaster ? null : timestamp,
+                    TimeStart = isLockRaster ? null : timeStart,
                 };
 
-                var selectedRasters = await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
+                var selectedRasters = mosaicRule.RestrictToLockedRasters(
+                    await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken));
                 if (selectedRasters.Length == 0)
                 {
                     continue;
+                }
+
+                if (mosaicRule.Method == MosaicMethod.Unsupported && selectedRasters.Length > 1)
+                {
+                    const string unsupportedMessage = "mosaicRule mosaicMethod is not implemented on this service.";
+                    ImageServerLog.InvalidIdentifyParameters(_logger, layerId, unsupportedMessage);
+                    return StandardErrorHelpers.CreateNotImplemented(context, unsupportedMessage);
                 }
 
                 var pixelResult = selectedRasters.Length == 1
                     ? await _rasterStore.IdentifyAsync(layerId, selectedRasters[0].Id, point.X, point.Y, srid, cancellationToken: cancellationToken)
                     : await _rasterStore.IdentifyMosaicAsync(
                         layerId,
-                        selectedRasters.Select(r => r.Id).ToArray(),
+                        selectedRasters.Select(static raster => raster.Id).ToArray(),
                         mergeStrategy,
                         point.X,
                         point.Y,
                         srid,
+                        rendering: null,
+                        ordering: mosaicRule.ToOrdering(),
+                        attributeSort: mosaicRule.ToAttributeSort(),
                         cancellationToken: cancellationToken);
 
                 samples.Add(new SampleEntry

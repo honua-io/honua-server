@@ -192,9 +192,15 @@ public sealed partial class LayerPublishingIntegrationTests
             Srid = 4326,
             PrimaryKey = "id",
             ServiceName = _serviceName,
+            SupportsAttachments = true,
             Enabled = true
         });
         _layerId = published.LayerId;
+        // Source publications advertise Query and Extract. Attachment writes require the
+        // declared Create/Update/Delete capabilities (#6135).
+        _fixture.EnableV2ServiceEditingCapabilities(
+            _serviceName,
+            ["Query", "Extract", "Create", "Update", "Delete"]);
         return published.LayerId;
     }
 

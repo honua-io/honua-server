@@ -207,7 +207,8 @@ internal static partial class AdminApiKeyEndpoints
         {
             validationMessage =
                 "Validation failed: resource grants must be 'write:{service}', 'write:{service}/{layer}', " +
-                "'read:{service}', 'read:{service}/{layer}', 'read:{service}/*' or 'read:*'";
+                "'read:{service}', 'read:{service}/{layer}', 'read:{service}/*', 'read:*' or " +
+                "'execute:{service}/{canonical-process-id}' (no execution wildcards)";
             return false;
         }
 

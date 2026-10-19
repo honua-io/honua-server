@@ -148,6 +148,9 @@ public sealed record ExecutionLogQuery
 /// </summary>
 public sealed record ExecutionLogPage
 {
+    /// <summary>Number of earliest records discarded by the durable storage cap.</summary>
+    public int DroppedCount { get; init; }
+
     /// <summary>
     /// Log entries returned in append order.
     /// </summary>
@@ -157,6 +160,11 @@ public sealed record ExecutionLogPage
     /// Opaque cursor for the next page, or null when no more entries are available.
     /// </summary>
     public string? NextCursor { get; init; }
+
+    /// <summary>
+    /// Entries in the log stream at the same observation as <see cref="Items"/>.
+    /// </summary>
+    public int TotalCount { get; init; }
 }
 
 /// <summary>
@@ -164,6 +172,9 @@ public sealed record ExecutionLogPage
 /// </summary>
 public sealed record ExecutionLogTail
 {
+    /// <summary>Number of earliest records discarded by the durable storage cap.</summary>
+    public int DroppedCount { get; init; }
+
     /// <summary>
     /// Tail log entries returned in append order.
     /// </summary>

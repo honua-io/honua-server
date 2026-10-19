@@ -20,6 +20,7 @@ public sealed class StudioCompositionViewBoundsTests
         Assert.Empty(error);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(0d, 0d)]
     [InlineData(24d, 85d)]
@@ -31,6 +32,7 @@ public sealed class StudioCompositionViewBoundsTests
         Assert.True(StudioCompositionViewBounds.TryValidate(view, out var error), error);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(24.5d)]
     [InlineData(25d)]
@@ -44,6 +46,7 @@ public sealed class StudioCompositionViewBoundsTests
         Assert.Contains("zoom", error, StringComparison.Ordinal);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(85.5d)]
     [InlineData(90d)]

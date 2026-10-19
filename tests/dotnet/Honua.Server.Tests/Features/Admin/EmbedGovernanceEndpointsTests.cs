@@ -281,9 +281,16 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         Assert.Equal(0L, report.Data.Total);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(nameof(EmbedAnalyticsEventDto.EventType))]
+    [InlineData(nameof(EmbedAnalyticsEventDto.IntegrationId))]
+    [InlineData(nameof(EmbedAnalyticsEventDto.TenantId))]
+    [InlineData(nameof(EmbedAnalyticsEventDto.Origin))]
+    [InlineData(nameof(EmbedAnalyticsEventDto.ServiceId))]
+    [InlineData(nameof(EmbedAnalyticsEventDto.LayerId))]
+    [InlineData(nameof(EmbedAnalyticsEventDto.DenyReason))]
     [Endpoint("POST /api/v1/embed/analytics")]
-    public async Task IngestAnalytics_WithRawKeyInPayload_ReturnsBadRequest()
+    public async Task IngestAnalytics_WithRawKeyInPayload_ReturnsBadRequest(string field)
     {
         var created = await CreateKeyAsync("analytics-redaction-key", ["https://app.example.com"]);
 
@@ -291,7 +298,16 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         {
             Events =
             [
-                new EmbedAnalyticsEventDto { EventType = "view", IntegrationId = created.Key },
+                new EmbedAnalyticsEventDto
+                {
+                    EventType = field == nameof(EmbedAnalyticsEventDto.EventType) ? created.Key : "view",
+                    IntegrationId = field == nameof(EmbedAnalyticsEventDto.IntegrationId) ? created.Key : null,
+                    TenantId = field == nameof(EmbedAnalyticsEventDto.TenantId) ? created.Key : null,
+                    Origin = field == nameof(EmbedAnalyticsEventDto.Origin) ? created.Key : null,
+                    ServiceId = field == nameof(EmbedAnalyticsEventDto.ServiceId) ? created.Key : null,
+                    LayerId = field == nameof(EmbedAnalyticsEventDto.LayerId) ? created.Key : null,
+                    DenyReason = field == nameof(EmbedAnalyticsEventDto.DenyReason) ? created.Key : null,
+                },
             ],
         };
 
@@ -300,6 +316,60 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("raw embed key", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(created.Key, body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/embed/analytics")]
+    [Endpoint("GET /api/v1/admin/embed/usage")]
+    public async Task IngestAnalytics_DisallowedOriginSpoofedIntegrationAndOverCap_AreRejected()
+    {
+        var created = await CreateKeyAsync("analytics-bound-key", ["https://app.example.com"], integrationId: "site-owner");
+
+        var spoofed = new IngestEmbedAnalyticsRequest
+        {
+            Events =
+            [
+                new EmbedAnalyticsEventDto
+                {
+                    EventType = "view",
+                    IntegrationId = "victim",
+                    OccurredAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                },
+            ],
+        };
+
+        var denied = await PostAnalyticsAsync(created.Key, spoofed, origin: "https://evil.example");
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        var deniedBody = await denied.Content.ReadAsStringAsync();
+        Assert.Contains("OriginNotAllowed", deniedBody, StringComparison.Ordinal);
+
+        var spoofedFromAllowedOrigin = await PostAnalyticsAsync(created.Key, spoofed, origin: "https://app.example.com");
+        Assert.Equal(HttpStatusCode.OK, spoofedFromAllowedOrigin.StatusCode);
+
+        var victimUsage = await _client.GetAsync("/api/v1/admin/embed/usage?groupBy=integration&integrationId=victim");
+        Assert.Equal(HttpStatusCode.OK, victimUsage.StatusCode);
+        var victimReport = JsonSerializer.Deserialize<ApiResponse<EmbedUsageResponse>>(
+            await victimUsage.Content.ReadAsStringAsync(), _jsonOptions);
+        Assert.NotNull(victimReport);
+        var victimData = victimReport.Data;
+        Assert.NotNull(victimData);
+        Assert.Equal(0L, victimData.Total);
+
+        var ownerBeforeOverCap = await UsageTotalAsync("site-owner");
+        Assert.True(ownerBeforeOverCap >= 1);
+
+        var overCap = new IngestEmbedAnalyticsRequest
+        {
+            Events = Enumerable.Range(0, 101)
+                .Select(_ => new EmbedAnalyticsEventDto { EventType = "view", IntegrationId = "victim" })
+                .ToArray(),
+        };
+        var rejected = await PostAnalyticsAsync(created.Key, overCap, origin: "https://app.example.com");
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+
+        Assert.Equal(ownerBeforeOverCap, await UsageTotalAsync("site-owner"));
+        Assert.Equal(0L, await UsageTotalAsync("victim"));
     }
 
     private async Task<EmbedKeySecretResponse> CreateKeyAsync(
@@ -338,7 +408,10 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         return await anonymous.SendAsync(request);
     }
 
-    private async Task<HttpResponseMessage> PostAnalyticsAsync(string embedKey, IngestEmbedAnalyticsRequest payload)
+    private async Task<HttpResponseMessage> PostAnalyticsAsync(
+        string embedKey,
+        IngestEmbedAnalyticsRequest payload,
+        string? origin = "https://app.example.com")
     {
         var json = JsonSerializer.Serialize(payload, _jsonOptions);
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/embed/analytics")
@@ -346,7 +419,25 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
             Content = new StringContent(json, Encoding.UTF8, "application/json"),
         };
         request.Headers.Add(EmbedKeyHeader, embedKey);
+        if (!string.IsNullOrWhiteSpace(origin))
+        {
+            request.Headers.Add("Origin", origin);
+        }
+
         using var anonymous = _fixture.CreateClient();
         return await anonymous.SendAsync(request);
+    }
+
+    private async Task<long> UsageTotalAsync(string integrationId)
+    {
+        var usage = await _client.GetAsync(
+            $"/api/v1/admin/embed/usage?groupBy=integration&integrationId={integrationId}");
+        Assert.Equal(HttpStatusCode.OK, usage.StatusCode);
+        var report = JsonSerializer.Deserialize<ApiResponse<EmbedUsageResponse>>(
+            await usage.Content.ReadAsStringAsync(), _jsonOptions);
+        Assert.NotNull(report);
+        var data = report.Data;
+        Assert.NotNull(data);
+        return data.Total;
     }
 }

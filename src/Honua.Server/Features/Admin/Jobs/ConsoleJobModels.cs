@@ -95,6 +95,7 @@ internal sealed record ConsoleJobLinks
     public required string Artifacts { get; init; }
     public required string Actions { get; init; }
     public required string Steps { get; init; }
+    public string? Diagnostics { get; init; }
     public string? Cancel { get; init; }
     public string? Retry { get; init; }
     public string? EventsByJob { get; init; }
@@ -126,6 +127,10 @@ internal sealed record ConsoleJobStage
 
 internal sealed record ConsoleJobStepsResponse
 {
+    public int TotalCount { get; init; }
+    public bool Truncated { get; init; }
+    public int DroppedCount { get; init; }
+
     public required string JobId { get; init; }
     public string? CorrelationId { get; init; }
     public required string State { get; init; }
@@ -140,6 +145,7 @@ internal sealed record ConsoleJobStep
     public required DateTimeOffset StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public long? DurationMs { get; init; }
+    public string TimingSource { get; init; } = "inferred";
     public required string Message { get; init; }
     public string? Command { get; init; }
     public ConsoleJobStepArtifact[]? Artifacts { get; init; }

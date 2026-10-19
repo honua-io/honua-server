@@ -8,6 +8,7 @@ namespace Honua.Core.Tests.Features.Admin;
 
 public sealed class LayerSourceGovernanceTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ToMetadataLinks_WithStandaloneSpdxLicense_DerivesCanonicalLicenseUrl()
     {
@@ -31,6 +32,7 @@ public sealed class LayerSourceGovernanceTests
         link.ManagedBy.Should().Be(LayerSourceGovernance.LinkManager);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void ToMetadataLinks_WithSpdxExpressionWithoutUrl_DoesNotInventLicenseUrl()
     {
@@ -49,6 +51,7 @@ public sealed class LayerSourceGovernanceTests
         governance.ToMetadataLinks().Should().BeEmpty();
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("+")]
     [InlineData(":")]
@@ -92,6 +95,7 @@ public sealed class LayerSourceGovernanceTests
         error.Should().Be("license must be a syntactically valid SPDX expression or the literal 'proprietary'.");
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("MIT")]
     [InlineData("GPL-2.0+")]
@@ -119,6 +123,7 @@ public sealed class LayerSourceGovernanceTests
         error.Should().BeNull();
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TryCreate_WithUrlExpandedBeyondLimitByNormalization_RejectsUrl()
     {

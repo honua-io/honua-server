@@ -92,9 +92,14 @@ public sealed class GeoServicesDocumentationTruthTests
         parity.Should().Contain("`Route/solve` accepts GET query parameters or POST form parameters");
         judgment.Should().NotContain("All five NAServer solve operations accept GET");
         protocol.Should().Contain("Experimental and off by default; routes return 404 until `versioning.branch` is enabled.");
-        guide.Should().Contain("`context.outSR` and `context.processSR` behave exactly like `env:outSR` and `env:processSR`");
+        guide.Should().Contain("`context.outSR` behaves like `env:outSR`");
+        guide.Should().Contain("Processing-CRS overrides (`env:processSR`, `context.processSR`, and SOAP `cartographicCoordinateSystem`) are rejected before execution or job submission");
+        guide.Should().Contain("`error.code=400` over HTTP 200; SOAP returns an HTTP 400 fault");
         guide.Should().Contain("returns the GeoServices error envelope");
-        judgment.Should().Contain("context.outSR/context.processSR are applied as their env:* equivalents (#4030)");
+        judgment.Should().Contain("context.outSR maps to env:outSR");
+        judgment.Should().Contain("nonempty env:processSR or context.processSR are rejected before execution or job submission (GeoServices error.code=400 over HTTP 200)");
+        judgment.Should().NotContain("env:processSR is accepted and preserved");
+        judgment.Should().NotContain("env:processSR is validated and preserved");
         judgment.Should().Contain("instead of an empty results list (#4034)");
     }
 

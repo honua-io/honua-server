@@ -515,8 +515,15 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             : StudioPublicationRequestStatus.Accepted;
         var effectiveIntent = intent ?? version.Envelope.PublicationIntent;
         var effectiveRoute = effectiveIntent?.Route;
+        // honua-server#5825: skip the Studio route check only when this item resolved through a
+        // family bridge. A bridge registered for the family is not enough — an item that still
+        // lives in the inner store is enforced by that store and must be rejected here too, or
+        // an approval-gated deployment accepts the proposal and fails at actuation.
+        var governsStudioRoutes = await ItemGovernsStudioRoutesAsync(itemId, cancellationToken)
+            .ConfigureAwait(false);
         if (status == StudioPublicationRequestStatus.Accepted &&
-            !string.IsNullOrWhiteSpace(effectiveRoute))
+            !string.IsNullOrWhiteSpace(effectiveRoute) &&
+            governsStudioRoutes)
         {
             var governing = await _store.GetActivePublicationRequestByRouteAsync(
                 effectiveRoute,
@@ -538,6 +545,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             WarningAcknowledgement = NormalizeOptional(warningAcknowledgement),
             RequestedBy = actorId,
             CreatedAt = _timeProvider.GetUtcNow(),
+            GovernsStudioRoutes = governsStudioRoutes,
         };
 
         // honua-server#3980: the store applies expectedCurrentVersionId as a compare-and-set on the
@@ -695,6 +703,16 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             Dependencies = envelope.Dependencies ?? Array.Empty<StudioPackageDependency>(),
             Provenance = envelope.Provenance ?? Array.Empty<StudioProvenanceRef>(),
         };
+    }
+
+    /// <summary>
+    /// True unless this item's pointers resolved through a family bridge. Missing pointers
+    /// keep the check: the inner store is the authority for anything it still owns.
+    /// </summary>
+    private async Task<bool> ItemGovernsStudioRoutesAsync(Guid itemId, CancellationToken cancellationToken)
+    {
+        var pointers = await _store.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
+        return pointers?.GovernsStudioRoutes ?? true;
     }
 
     private static string FormatValidationFailure(

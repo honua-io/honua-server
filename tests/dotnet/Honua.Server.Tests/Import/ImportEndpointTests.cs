@@ -211,6 +211,66 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload-object")]
+    public async Task ImportFileFromObjectStore_WithUnsupportedScheme_ReturnsTypedProblem()
+    {
+        using var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/import/upload-object",
+            new { sourceUri = "https://example.com/parcels.geojson", tableName = "parcels" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("import.source_unsupported_scheme");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload-object")]
+    public async Task ImportFileFromObjectStore_WithBucketOutsideAllowList_ReturnsForbidden()
+    {
+        using var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/import/upload-object",
+            new { sourceUri = "s3://not-allow-listed/parcels.geojson", tableName = "parcels" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("import.source_forbidden");
+        body.Should().Contain("not-allow-listed");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task CapabilityManifest_ObjectStore_IsDisabledUntilABucketIsAllowListed()
+    {
+        using var response = await _client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var capability = document.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "import.objectStore");
+        capability.GetProperty("available").GetBoolean().Should().BeFalse();
+        capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
+        capability.GetProperty("schemes").EnumerateArray().Select(item => item.GetString())
+            .Should().Equal("s3");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/import/upload-object")]
+    [Endpoint("PUT /api/v1/admin/import/upload-object")]
+    [Endpoint("DELETE /api/v1/admin/import/upload-object")]
+    [Endpoint("PATCH /api/v1/admin/import/upload-object")]
+    public async Task ImportFileFromObjectStore_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
+        {
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/upload-object");
+            using var response = await _client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("POST");
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/import/upload-url")]
     [Endpoint("PUT /api/v1/admin/import/upload-url")]
     [Endpoint("DELETE /api/v1/admin/import/upload-url")]
@@ -840,6 +900,79 @@ public class ImportEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("Table name is required");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Integration")]
+    [Trait("Tier", "Integration")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    [Endpoint("GET /api/v1/admin/import/jobs/{jobId}")]
+    public async Task ImportFile_UnownedTarget_ReportsConflictAndPreservesRows(bool background)
+    {
+        var tableName = $"guard_{Guid.NewGuid():N}"[..25];
+        var physical = $"imported_{tableName}";
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using (var create = new NpgsqlCommand($"CREATE TABLE honua_data.\"{physical}\" (sentinel text); INSERT INTO honua_data.\"{physical}\" VALUES ('keep me')", connection))
+        {
+            await create.ExecuteNonQueryAsync();
+        }
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            content.Add(new StringContent("""{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"replacement"}}]}""", Encoding.UTF8, "application/json"), "File", "replacement.geojson");
+            content.Add(new StringContent(tableName), "TableName");
+            content.Add(new StringContent("true"), "OverwriteExisting");
+            content.Add(new StringContent(background ? "true" : "false"), "ForceBackground");
+
+            using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(background ? HttpStatusCode.Accepted : HttpStatusCode.Conflict, body);
+            if (background)
+            {
+                using var accepted = JsonDocument.Parse(body);
+                var jobId = accepted.RootElement.GetProperty("jobId").GetString();
+                ImportProgress? terminal = null;
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+                var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+                while (DateTimeOffset.UtcNow < deadline)
+                {
+                    using var status = await _client.GetAsync($"/api/v1/admin/import/jobs/{jobId}");
+                    status.StatusCode.Should().Be(HttpStatusCode.OK);
+                    terminal = JsonSerializer.Deserialize<ImportProgress>(await status.Content.ReadAsStringAsync(), options);
+                    if (terminal?.Status is ImportStatus.Failed or ImportStatus.Completed or ImportStatus.Cancelled)
+                    {
+                        break;
+                    }
+                    await Task.Delay(100);
+                }
+                terminal.Should().NotBeNull();
+                terminal!.Status.Should().Be(ImportStatus.Failed);
+                terminal.ErrorCode.Should().Be(ImportTableOwnershipException.Code);
+                terminal.ErrorMessage.Should().Contain(tableName);
+                terminal.CompletedAt.Should().NotBeNull();
+            }
+            else
+            {
+                using var result = JsonDocument.Parse(body);
+                result.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
+                result.RootElement.GetProperty("errorCode").GetString().Should().Be(ImportTableOwnershipException.Code);
+                result.RootElement.GetProperty("errorMessage").GetString().Should().Contain(tableName);
+            }
+            await using var verify = new NpgsqlCommand($"SELECT sentinel, obj_description('honua_data.\"{physical}\"'::regclass, 'pg_class') FROM honua_data.\"{physical}\"", connection);
+            await using var reader = await verify.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().Be("keep me");
+            reader.IsDBNull(1).Should().BeTrue();
+            (await reader.ReadAsync()).Should().BeFalse();
+        }
+        finally
+        {
+            await using var cleanup = new NpgsqlCommand($"DROP TABLE IF EXISTS honua_data.\"{physical}\"", connection);
+            await cleanup.ExecuteNonQueryAsync();
+        }
     }
 
     [IntegrationTest]

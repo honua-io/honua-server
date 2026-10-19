@@ -44,6 +44,9 @@ internal static class StandardErrorHelpers
     /// Creates the Esri GeoServices invalid-token envelope. The HTTP response remains
     /// 200 per the GeoServices wire convention while the body carries code 498, which
     /// distinguishes a supplied-but-invalid token from a missing credential (499).
+    /// The GeoServices body code applies only to GeoServices requests: OGC protocol
+    /// requests (WMS/WFS/WCS/WMTS aliases, OGC API) keep HTTP 401 and receive the same
+    /// protocol- and version-specific auth exception as a missing credential.
     /// </summary>
     internal static IResult CreateInvalidToken(HttpContext context, string detail = "Invalid token.")
     {

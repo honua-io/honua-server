@@ -263,23 +263,43 @@ internal sealed class McpDataAccessSurface
         httpContext.Items[McpWorkflowViewNegotiation.HttpContextItemKey] = requestedView;
 
         var negotiatedVersion = NegotiateProtocolVersion(parameters.ProtocolVersion);
+        // list_changed is delivered only on the optional GET /mcp stream. Advertising
+        // it while that stream is off (the default) tells clients a notification
+        // channel exists that this transport can never send (honua-server#5629).
+        var listChanged = httpContext.RequestServices?.GetService<IOptions<McpOptions>>()
+            ?.Value.ServerInitiatedStreamEnabled == true;
         var result = new McpInitializeResult
         {
             ProtocolVersion = negotiatedVersion,
-            // honua-server#1954: the server now emits notifications/tools/list_changed
-            // and notifications/resources/list_changed over the session SSE stream
-            // (e.g. when a publish mutates the catalog), so advertise the listChanged
-            // capability instead of leaving the flags inert. The prompt catalog stays
-            // static, so prompts.listChanged remains false.
+            // honua-server#1954: when the stream is enabled the server emits
+            // notifications/tools/list_changed and notifications/resources/list_changed.
+            // The prompt catalog stays static, so prompts.listChanged remains false.
             Capabilities = new McpServerCapabilities
             {
-                Tools = new McpCapabilityFlag { ListChanged = true },
-                Resources = new McpCapabilityFlag { ListChanged = true },
+                Tools = new McpCapabilityFlag { ListChanged = listChanged },
+                Resources = new McpCapabilityFlag { ListChanged = listChanged },
                 Prompts = new McpCapabilityFlag { ListChanged = false }
-            }
+            },
+
+            // State how the issued session is kept so a client or harness can record
+            // the topology that answered it (shared, stateless, or in-memory).
+            Meta = httpContext.RequestServices?.GetService<McpSessionManager>() is { } sessions
+                ? new McpInitializeResultMeta { SessionMode = SessionModeName(sessions.Mode) }
+                : null
         };
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpInitializeResult);
     }
+
+    /// <summary>
+    /// Wire name of a <see cref="McpSessionMode"/> for
+    /// <c>_meta["honua.io/session-mode"]</c>.
+    /// </summary>
+    internal static string SessionModeName(McpSessionMode mode) => mode switch
+    {
+        McpSessionMode.Shared => "shared",
+        McpSessionMode.Stateless => "stateless",
+        _ => "in-memory"
+    };
 
     /// <summary>
     /// Returns <c>true</c> when the client's <c>initialize</c> capabilities object
@@ -558,6 +578,12 @@ internal sealed class McpDataAccessSurface
         McpJsonRpcRequest request,
         CancellationToken cancellationToken)
     {
+        // A JSON-RPC batch reuses one HttpContext. Drop any evidence left by an
+        // earlier element before this call resolves a tool, and again in the
+        // invoke finally so the next element cannot seal it.
+        httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
+        httpContext.Items.Remove(ProposalEvidenceVerifier.InvokingToolItemKey);
+
         // Per docs/developer/MCP_SERVER.md the authenticated principal gate
         // precedes any protocol-level param or tool-name validation so an
         // anonymous caller sees the `unauthenticated` reauthentication signal
@@ -648,6 +674,8 @@ internal sealed class McpDataAccessSurface
         McpToolsCallResult result;
         try
         {
+            httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
+            httpContext.Items[ProposalEvidenceVerifier.InvokingToolItemKey] = tool.Name;
             if (tool is IEvidenceBoundProposalTool)
             {
                 var tenant = httpContext.RequestServices.GetService<ITenantContext>();
@@ -686,12 +714,7 @@ internal sealed class McpDataAccessSurface
             result = await tool
                 .InvokeAsync(httpContext, parameters.Arguments, cancellationToken)
                 .ConfigureAwait(false);
-            // Contract-first stubs return a structured `not_implemented` payload.
-            // Tag telemetry with that status so dashboards can distinguish stubs
-            // from functional tools without inspecting response bodies.
-            var completionStatus = tool is IStubMcpTool
-                ? McpTelemetry.Status.NotImplemented
-                : McpTelemetry.Status.Ok;
+            var completionStatus = McpTelemetry.Status.Ok;
             McpTelemetry.ToolCallCount.Add(
                 1,
                 new KeyValuePair<string, object?>("tool_name", tool.Name),
@@ -724,6 +747,11 @@ internal sealed class McpDataAccessSurface
             {
                 McpLog.ToolFailedUnexpected(_logger, tool.Name, ex);
             }
+        }
+        finally
+        {
+            httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
+            httpContext.Items.Remove(ProposalEvidenceVerifier.InvokingToolItemKey);
         }
 
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
@@ -926,12 +954,7 @@ internal sealed class McpDataAccessSurface
                 return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
             }
 
-            // Contract-first stub resources return `not_implemented` envelopes.
-            // Tag the counter accordingly so dashboards can separate stub reads
-            // from functional reads.
-            var completionStatus = handler is IStubMcpResource
-                ? McpTelemetry.Status.NotImplemented
-                : McpTelemetry.Status.Ok;
+            var completionStatus = McpTelemetry.Status.Ok;
             McpTelemetry.ResourceReadCount.Add(
                 1,
                 new KeyValuePair<string, object?>("resource_family", resourceFamily),

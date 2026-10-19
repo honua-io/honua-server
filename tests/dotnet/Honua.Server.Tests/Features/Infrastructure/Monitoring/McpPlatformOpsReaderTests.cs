@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
@@ -16,6 +18,7 @@ using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Operations.Abstractions;
@@ -176,6 +179,7 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
         };
         verifiedToolName.Should().Be(tool.Name);
         context.Items[ProposalEvidenceVerifier.HttpContextItemKey] = proposalEvidence;
+        context.Items[ProposalEvidenceVerifier.InvokingToolItemKey] = tool.Name;
         httpContextAccessor.HttpContext = context;
 
         var result = await tool.InvokeAsync(context, verifiedCall.ToolArguments, CancellationToken.None);
@@ -455,6 +459,7 @@ public sealed class McpPlatformOpsReaderTests
         gateway.LastRequest.RequestedByAgent.Should().Be("agent:test:subject:-:ops-agent");
         gateway.LastRequest.Reason.Should().Be("rollback bad release");
         gateway.LastRequest.IdempotencyKey.Should().Be("rollback-key");
+        gateway.LastRequest.AutonomyContext.Should().BeNull("direct rollback has no originating finding");
         await services.GetRequiredService<IOperationEnvelopeFactory>().Received(1).CreateAcceptedAsync(
             "control-plane.deploy",
             Arg.Is<OperationPolicyContext>(context =>
@@ -727,6 +732,17 @@ public sealed class McpPlatformOpsReaderTests
         // Authentication scheme + subject kind + absent issuer + subject ID.
         gateway.LastRequest!.RequestedBy.Should().Be("test:subject:-:ops-agent");
         gateway.LastRequest.IdempotencyKey.Should().Be("deployment-fixture");
+        var provenance = gateway.LastRequest.AutonomyContext;
+        provenance.Should().NotBeNull("the CLI and durable audit must retain the source finding");
+        provenance!.FindingId.Should().Be("deployment-fixture");
+        provenance.Rule.Should().Be(OpsFindingsService.RuleDeployManualIntervention);
+        provenance.ActionDiscriminator.Should().Be("deploy.converge");
+        provenance.ActionMarkedAutoSafe.Should().BeFalse();
+        provenance.BlastRadius.Should().Be(2);
+        provenance.EvidenceRefs.Should().Contain("workflow-operation:deploy-fixture");
+        provenance.EvidenceRefs.Should().Contain(reference => reference.StartsWith(
+            "evidence:" + EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations + ":",
+            StringComparison.Ordinal));
         var payload = DeployExecutionPayload.Parse(gateway.LastRequest.ExecutionPayload!);
         payload!.TargetId.Should().Be("serving-us-west");
         payload.DesiredRevision.Should().Be("rev-2");
@@ -777,6 +793,9 @@ public sealed class McpPlatformOpsReaderTests
                 {
                     Kind = OperationClass.Deploy,
                     Summary = "Converge deployment",
+                    ActionDiscriminator = "deploy.converge",
+                    AutoSafe = false,
+                    BlastRadius = 2,
                     Reason = "Apply the declared revision",
                     ExecutionPayload = new DeployExecutionPayload
                     { TargetId = "serving-us-west", CurrentRevision = "rev-1", DesiredRevision = "rev-2" }.Serialize(),
@@ -784,6 +803,192 @@ public sealed class McpPlatformOpsReaderTests
             }],
         };
     }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task BatchRollback_StaleDeployEvidence_SealsProposalWithoutEvidence()
+    {
+        var store = new RecordingWorkflowOperationStore(
+            BuildDeployOperation(
+                "op-prod",
+                targetId: "prod",
+                desiredRevision: "rev-2",
+                currentRevision: "rev-1",
+                status: WorkflowOperationStatus.Succeeded));
+        var gateway = ProposalGateway();
+        var accessor = new HttpContextAccessor();
+        using var services = CreateServices(gateway, accessor: accessor);
+        var reader = CreateReader(store: store, services: services);
+        using var toolServices = new ServiceCollection()
+            .AddSingleton<IMcpPlatformOpsReader>(reader)
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = toolServices,
+            User = CreatePrincipal(),
+        };
+        accessor.HttpContext = context;
+        context.Items[ProposalEvidenceVerifier.HttpContextItemKey] = SampleEvidence(targetId: "staging");
+
+        var surface = new McpDataAccessSurface(
+            [new ProposeRollbackTool(NullLogger<ProposeRollbackTool>.Instance)],
+            [],
+            NullLogger<McpDataAccessSurface>.Instance);
+        using var parameters = JsonDocument.Parse(
+            """{"name":"honua_propose_rollback","arguments":{"targetId":"prod","toRevision":"rev-1"}}""");
+        using var id = JsonDocument.Parse("2");
+        var response = await surface.DispatchAsync(
+            context,
+            new McpJsonRpcRequest
+            {
+                JsonRpc = "2.0",
+                Id = id.RootElement.Clone(),
+                Method = "tools/call",
+                Params = parameters.RootElement.Clone(),
+            },
+            CancellationToken.None);
+
+        response.Should().NotBeNull();
+        response!.Error.Should().BeNull();
+        gateway.ProposalCalls.Should().Be(1);
+        gateway.LastRequest.Should().NotBeNull();
+        gateway.LastRequest!.Evidence.Should().BeNull();
+        DeployExecutionPayload.Parse(gateway.LastRequest.ExecutionPayload)!.TargetId.Should().Be("prod");
+        context.Items.ContainsKey(ProposalEvidenceVerifier.HttpContextItemKey).Should().BeFalse();
+        context.Items.ContainsKey(ProposalEvidenceVerifier.InvokingToolItemKey).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task SealProposal_MismatchedEvidenceTarget_IsRejected()
+    {
+        var gateway = ProposalGateway();
+        var apiKeys = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var proposer = await apiKeys.CreateAsync(
+            "proposal-evidence-proposer",
+            ["admin:*"],
+            DateTimeOffset.UtcNow.AddHours(1),
+            "test",
+            CancellationToken.None);
+        var accessor = new HttpContextAccessor();
+        using var services = CreateServices(gateway, accessor: accessor, apiKeys: apiKeys);
+        var reader = CreateReader(services: services);
+        var context = new DefaultHttpContext();
+        accessor.HttpContext = context;
+        context.Items[ProposalEvidenceVerifier.HttpContextItemKey] = SampleEvidence(targetId: "staging");
+        context.Items[ProposalEvidenceVerifier.InvokingToolItemKey] = ProposeDeployOperationTool.ToolName;
+
+        var act = () => reader.ProposeDeployOperationAsync(
+            CreateApiKeyPrincipal(proposer.Record.Id),
+            new McpDeployMutationArgument { TargetId = "prod", DesiredRevision = "rev-9" },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingValidationException>()
+            .WithMessage("*does not match the proposal target*");
+        gateway.ProposalCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ValidateApprovalAsync_MismatchedDeployTarget_Throws()
+    {
+        var execution = new DeployExecutionPayload
+        {
+            TargetId = "prod",
+            DesiredRevision = "rev-2",
+        }.Serialize();
+        var canonicalPayload = StudioAiTranscriptSigner.Canonicalize(Encoding.UTF8.GetBytes(execution));
+        var canonicalRequest = StudioAiTranscriptSigner.Canonicalize("{\"targetId\":\"staging\"}"u8);
+        var apiKeys = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var proposer = await apiKeys.CreateAsync(
+            "proposal-evidence-proposer",
+            ["admin:*"],
+            DateTimeOffset.UtcNow.AddHours(1),
+            "test",
+            CancellationToken.None);
+        var services = new ServiceCollection()
+            .AddSingleton<IMcpTool>(new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance))
+            .AddSingleton<IAdminApiKeyStore>(apiKeys)
+            .BuildServiceProvider();
+        var validator = new OperationProposalEvidenceValidator(
+            new ProposalEvidenceVerifier(
+                new StudioAiTranscriptSigner(Options.Create(new StudioAiProxyConfiguration()), TimeProvider.System),
+                TimeProvider.System),
+            services,
+            Substitute.For<IGuardrailLadder>(),
+            apiKeys,
+            TimeProvider.System);
+        var evidence = SampleEvidence(targetId: "staging") with
+        {
+            RequestDigest = Convert.ToHexStringLower(SHA256.HashData(canonicalRequest)),
+            CanonicalRequest = Convert.ToBase64String(canonicalRequest),
+            PayloadDigest = Convert.ToHexStringLower(SHA256.HashData(canonicalPayload)),
+            CanonicalPayload = Convert.ToBase64String(canonicalPayload),
+            AuthorizationDecision = "admin-policy-authorized",
+        };
+        var proposal = new OperationProposal
+        {
+            ProposalId = "proposal-forged",
+            Kind = OperationClass.Deploy,
+            Status = OperationProposalStatus.AwaitingApproval,
+            OperationId = "control-plane.deploy",
+            RequestedBy = $"apikey:api-key:{proposer.Record.Id:D}",
+            TenantId = "tenant-a",
+            Plan = new OperationProposalPlan { ExecutionPayload = execution },
+            Evidence = evidence,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+
+        var act = () => validator.ValidateApprovalAsync(
+            proposal,
+            new OperationProposalApprovalContext { ApprovedBy = "approver-1", TenantId = "tenant-a" },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*does not match its evidence seal*");
+    }
+
+    private static RecordingGateway ProposalGateway()
+        => new(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.ProposalCreated,
+            Decision = new GuardrailDecision(
+                GuardrailTier.RequiresApproval,
+                OperationClass.Deploy,
+                HonuaEdition.Pro,
+                "test"),
+            ProposalId = "proposal-1",
+            Message = "queued for approval",
+        });
+
+    private static OperationProposalEvidence SampleEvidence(string targetId)
+        => new()
+        {
+            ToolName = ProposeDeployOperationTool.ToolName,
+            OperationId = "control-plane.deploy",
+            CandidateId = targetId,
+            TenantId = "tenant-a",
+            TargetId = targetId,
+            DescriptorRevision = "descriptor",
+            PolicyRevision = ProposalEvidenceVerifier.PolicyRevision,
+            AuthorizationDecision = "pending-call-authorization",
+            RequestDigest = "aa",
+            CanonicalRequest = Convert.ToBase64String("{}"u8),
+            PayloadDigest = "bb",
+            CanonicalPayload = Convert.ToBase64String("{}"u8),
+            TranscriptDigest = "cc",
+            TranscriptKeyId = "candidate-key",
+            CanonicalTranscript = Convert.ToBase64String("{}"u8),
+            TranscriptSignature = Convert.ToBase64String(new byte[64]),
+            ReleaseId = "2026.1",
+            ActionId = "governed-mutation",
+            RunNonce = "nonce-1",
+            McpSessionId = "session-1",
+            McpCallId = "1",
+            IssuedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+        };
 
     internal static McpPlatformOpsReader CreateReader(
         ControlPlaneOptions? options = null,

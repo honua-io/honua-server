@@ -25,16 +25,17 @@
     // Expose state for Playwright assertions
     window.__RENDER_COMPLETE = false;
     window.__FEATURE_COUNT = 0;
+    window.__GEOMETRY_TYPES = [];
     window.__ERROR = null;
 
     try {
       // Style: visible blue fill with dark stroke
       const style = new ol.style.Style({
-        fill: new ol.style.Fill({ color: 'rgba(30, 100, 200, 0.6)' }),
-        stroke: new ol.style.Stroke({ color: '#1a1a2e', width: 1.5 }),
+        fill: new ol.style.Fill({ color: 'rgb(40, 180, 90)' }),
+        stroke: new ol.style.Stroke({ color: 'rgb(200, 30, 80)', width: 3 }),
         image: new ol.style.Circle({
           radius: 5,
-          fill: new ol.style.Fill({ color: 'rgba(30, 100, 200, 0.8)' }),
+          fill: new ol.style.Fill({ color: 'rgb(30, 100, 200)' }),
           stroke: new ol.style.Stroke({ color: '#1a1a2e', width: 1 }),
         }),
       });
@@ -57,6 +58,7 @@
         if (tile && typeof tile.getFeatures === 'function') {
           const features = tile.getFeatures();
           window.__FEATURE_COUNT += features.length;
+          window.__GEOMETRY_TYPES.push(...features.map(feature => feature.getType()));
         }
       });
 
@@ -64,8 +66,8 @@
         target: 'map',
         layers: [vectorTileLayer],
         view: new ol.View({
-          center: ol.proj.fromLonLat([-122.4, 37.8]),
-          zoom: 10,
+          center: ol.proj.fromLonLat([-122.4194, 37.7749]),
+          zoom: 13,
         }),
       });
 

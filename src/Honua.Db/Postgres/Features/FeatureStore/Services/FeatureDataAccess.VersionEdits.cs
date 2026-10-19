@@ -6,6 +6,7 @@ using System.Data;
 using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -29,7 +30,7 @@ internal sealed partial class FeatureDataAccess
     /// <summary>
     /// Applies an edit batch against a branch version overlay. Always transactional so the GUC
     /// (<c>SET LOCAL honua.gdb_version</c>) and the overlay upserts commit atomically. DEFAULT batches do
-    /// not reach here (see <see cref="ApplyEditsAsync"/>).
+    /// not reach here (see <see cref="ApplyEditsAsync(int, FeatureEditBatch, CancellationToken)"/>).
     /// </summary>
     private async Task<FeatureEditResult> ApplyVersionedEditsAsync(
         int layerId,
@@ -64,7 +65,7 @@ internal sealed partial class FeatureDataAccess
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var ok = await ApplyVersionedOperationAsync(
-                        layerId, versionId, operation, connection, transaction,
+                        layerId, versionId, operation, editBatch.RowSecurityWriteCheck, connection, transaction,
                         createdIds, createResults, updateResults, deleteResults, cancellationToken).ConfigureAwait(false);
                     if (!ok)
                     {
@@ -81,7 +82,7 @@ internal sealed partial class FeatureDataAccess
                 foreach (var feature in editBatch.Creates)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (!await TryVersionedCreateAsync(layerId, versionId, feature, connection, transaction, createdIds, createResults, cancellationToken).ConfigureAwait(false))
+                    if (!await TryVersionedCreateAsync(layerId, versionId, feature, editBatch.RowSecurityWriteCheck, connection, transaction, createdIds, createResults, cancellationToken).ConfigureAwait(false))
                     {
                         failed = true;
                         if (editBatch.RollbackOnFailure) break;
@@ -93,7 +94,7 @@ internal sealed partial class FeatureDataAccess
                     foreach (var feature in editBatch.Updates)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        if (!await TryVersionedUpdateAsync(layerId, versionId, feature, connection, transaction, updateResults, cancellationToken).ConfigureAwait(false))
+                        if (!await TryVersionedUpdateAsync(layerId, versionId, feature, editBatch.RowSecurityWriteCheck, connection, transaction, updateResults, cancellationToken).ConfigureAwait(false))
                         {
                             failed = true;
                             if (editBatch.RollbackOnFailure) break;
@@ -122,13 +123,10 @@ internal sealed partial class FeatureDataAccess
                     createResults.ToImmutable(), updateResults.ToImmutable(), deleteResults.ToImmutable());
             }
 
-            await CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
-
             var immutableCreateResults = createResults.ToImmutable();
             var immutableUpdateResults = updateResults.ToImmutable();
             var immutableDeleteResults = deleteResults.ToImmutable();
-
-            return FeatureEditResult.Success(
+            var versionedResult = FeatureEditResult.Success(
                 immutableCreateResults.Count(static r => r.IsSuccess),
                 immutableUpdateResults.Count(static r => r.IsSuccess),
                 immutableDeleteResults.Count(static r => r.IsSuccess),
@@ -137,6 +135,8 @@ internal sealed partial class FeatureDataAccess
                 immutableUpdateResults,
                 immutableDeleteResults,
                 wasRolledBack: false);
+            return await CommitStagedResultAsync(connection, transaction, versionedResult, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -164,6 +164,7 @@ internal sealed partial class FeatureDataAccess
         int layerId,
         Guid versionId,
         FeatureEditOperation operation,
+        SqlFragment? writeCheck,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         ImmutableArray<long>.Builder createdIds,
@@ -176,11 +177,11 @@ internal sealed partial class FeatureDataAccess
             FeatureEditOperationKind.Create => await TryVersionedCreateAsync(
                 layerId, versionId,
                 operation.Feature ?? throw new InvalidOperationException("Ordered create is missing the feature payload."),
-                connection, transaction, createdIds, createResults, cancellationToken).ConfigureAwait(false),
+                writeCheck, connection, transaction, createdIds, createResults, cancellationToken).ConfigureAwait(false),
             FeatureEditOperationKind.Update => await TryVersionedUpdateAsync(
                 layerId, versionId,
                 operation.Feature ?? throw new InvalidOperationException("Ordered update is missing the feature payload."),
-                connection, transaction, updateResults, cancellationToken).ConfigureAwait(false),
+                writeCheck, connection, transaction, updateResults, cancellationToken).ConfigureAwait(false),
             FeatureEditOperationKind.Delete => await TryVersionedDeleteAsync(
                 layerId, versionId,
                 operation.ObjectId ?? throw new InvalidOperationException("Ordered delete is missing the target object id."),
@@ -209,6 +210,7 @@ internal sealed partial class FeatureDataAccess
         int layerId,
         Guid versionId,
         Feature feature,
+        SqlFragment? writeCheck,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         ImmutableArray<long>.Builder createdIds,
@@ -241,11 +243,28 @@ internal sealed partial class FeatureDataAccess
             command.Parameters.Add(new NpgsqlParameter { Value = feature.Geometry ?? (object)DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bytea });
             command.Parameters.Add(new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlDbType.Jsonb });
 
-            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            var newId = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+            var newId = await RunRowSecurityCheckedWriteAsync(
+                writeCheck,
+                connection,
+                transaction,
+                VersionEditsTableName,
+                layerId,
+                versionId,
+                async () =>
+                {
+                    var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                    var id = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+                    return (id, id);
+                },
+                cancellationToken).ConfigureAwait(false);
             createdIds.Add(newId);
             createResults.Add(EditOperationResult.Success(newId, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             return true;
+        }
+        catch (RowSecurityWriteCheckFailedException ex)
+        {
+            createResults.Add(CreateFailedOperationResult(ex, "Create"));
+            return false;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -260,6 +279,7 @@ internal sealed partial class FeatureDataAccess
         int layerId,
         Guid versionId,
         Feature feature,
+        SqlFragment? writeCheck,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         ImmutableArray<EditOperationResult>.Builder updateResults,
@@ -271,18 +291,41 @@ internal sealed partial class FeatureDataAccess
             var layerSrid = await _cacheManager.GetLayerSridAsync(layerId, cancellationToken).ConfigureAwait(false);
             ValidateGeometrySrid(feature.Geometry, layerSrid);
 
-            var rowsAffected = await UpsertOverlayRowAsync(
-                layerId, versionId, feature.Id, operation: 2, feature.Geometry, feature.Attributes,
-                geometryStorageType, layerSrid, isDelete: false, connection, transaction, cancellationToken).ConfigureAwait(false);
+            // A no-op upsert (no DEFAULT row and no overlay row) means the feature does not exist
+            // for the version; it surfaces as not-found before any row-level security re-select.
+            await RunRowSecurityCheckedWriteAsync(
+                writeCheck,
+                connection,
+                transaction,
+                VersionEditsTableName,
+                layerId,
+                versionId,
+                async () =>
+                {
+                    var affected = await UpsertOverlayRowAsync(
+                        layerId, versionId, feature.Id, operation: 2, feature.Geometry, feature.Attributes,
+                        geometryStorageType, layerSrid, isDelete: false, connection, transaction, cancellationToken).ConfigureAwait(false);
+                    if (affected == 0)
+                    {
+                        throw new ResourceNotFoundException($"Feature {feature.Id} not found");
+                    }
 
-            if (rowsAffected == 0)
-            {
-                updateResults.Add(EditOperationResult.Failure($"Feature {feature.Id} not found", objectId: feature.Id));
-                return false;
-            }
+                    return (feature.Id, affected);
+                },
+                cancellationToken).ConfigureAwait(false);
 
             updateResults.Add(EditOperationResult.Success(feature.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             return true;
+        }
+        catch (RowSecurityWriteCheckFailedException ex)
+        {
+            updateResults.Add(CreateFailedOperationResult(ex, "Update", feature.Id));
+            return false;
+        }
+        catch (ResourceNotFoundException)
+        {
+            updateResults.Add(EditOperationResult.Failure($"Feature {feature.Id} not found", objectId: feature.Id));
+            return false;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

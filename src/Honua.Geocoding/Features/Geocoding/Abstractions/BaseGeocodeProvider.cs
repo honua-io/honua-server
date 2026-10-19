@@ -136,6 +136,15 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if (Capabilities.MaxBatchSize > 0 && request.Queries.Count > Capabilities.MaxBatchSize)
+        {
+            throw new GeocodeRequestException(
+                $"Batch size {request.Queries.Count} exceeds the maximum allowed batch size of {Capabilities.MaxBatchSize} for geocoding provider '{Name}'.")
+            {
+                ParameterName = "records",
+            };
+        }
+
         var results = new List<GeocodeCandidate>(request.Queries.Count);
 
         for (var index = 0; index < request.Queries.Count; index++)

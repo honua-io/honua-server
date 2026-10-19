@@ -14,7 +14,7 @@ SHARDS="${REPO_ROOT}/.github/ci-shards.json"
 echo "Validating server-test artifact project registry..."
 jq -e '
   .contract_version == 1 and
-  (.projects | length == 10) and
+  (.projects | type == "array" and length > 0) and
   (all(.projects[];
     (.artifact_suffix | type == "string" and test("^[a-z0-9-]+$")) and
     (.csproj | type == "string" and endswith(".csproj")) and
@@ -24,9 +24,9 @@ jq -e '
 ' "${REGISTRY}" >/dev/null
 
 registered="$(jq -c '[.projects[].csproj] | sort' "${REGISTRY}")"
-owned="$(jq -c '[.shards[] | if ((.csproj // "") == "") then "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" else .csproj end] | unique | sort' "${SHARDS}")"
+owned="$(python3 "${SCRIPT_DIR}/managed-test-build.py" inventory | jq -c 'sort')"
 if [[ "${registered}" != "${owned}" ]]; then
-  echo "::error::Artifact project registry must exactly equal the unique ci-shards project set." >&2
+  echo "::error::Artifact project registry must exactly equal the scheduled managed-test consumer set." >&2
   diff -u <(jq -r '.[]' <<<"${owned}") <(jq -r '.[]' <<<"${registered}") || true
   exit 1
 fi
@@ -253,4 +253,131 @@ if swa_package >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Server-test binary artifact contract validation passed (10 projects + fixture integrity + static web asset content roots)."
+project_count="$(jq ' .projects | length ' "${REGISTRY}")"
+echo "Server-test binary artifact contract validation passed (${project_count} projects + fixture integrity + static web asset content roots)."
+
+# Same-workflow strict build-once identity, without invoking dotnet.
+export HONUA_SERVER_TEST_ARTIFACT_WORKFLOW_RUN_ID=12345
+export HONUA_SERVER_TEST_ARTIFACT_BUILD_PROPERTIES='TreatWarningsAsErrors=true;RunAnalyzers=true;UseSharedCompilation=false'
+export HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK=10.0.100
+export HONUA_SERVER_TEST_ARTIFACT_REGISTRY="${fixture_repo}/.github/server-test-artifact-projects.json"
+export HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH=1001
+# Earlier cases deliberately alter the fixture; restore the original valid payload.
+mkdir -p "${fixture_repo}/tests/dotnet/Fixture.Tests/bin/Release/net10.0"
+for file in Fixture.Tests.dll Fixture.Tests.pdb Fixture.Tests.deps.json Fixture.Tests.runtimeconfig.json; do
+  printf 'strict-%s\n' "${file}" > "${fixture_repo}/tests/dotnet/Fixture.Tests/bin/Release/net10.0/${file}"
+done
+# Remove static manifests used by individual negative fixtures; their independent
+# missing-root assertions above remain authoritative.
+find "${fixture_repo}/tests/dotnet/Fixture.Tests/bin" -name '*.staticwebassets.runtime.json' -delete
+HONUA_SERVER_TEST_ARTIFACT_REPO_ROOT="${fixture_repo}" \
+  "${SCRIPT_DIR}/package-server-test-binaries.sh" --project "${project}" --output "${fixture}/strict" --source-sha "${source_sha}"
+strict_manifest="${fixture}/strict/server-test-binaries-fixture.manifest.json"
+strict_restore() {
+  "${SCRIPT_DIR}/restore-server-test-binaries.sh" --manifest "${strict_manifest}" \
+    --destination "${fixture}/strict-restored" --project "${project}" --source-sha "${source_sha}"
+}
+strict_restore
+cp "${strict_manifest}" "${strict_manifest}.valid"
+for field in workflow_run_id build_properties configuration os architecture registry_sha256; do
+  jq --arg field "${field}" '.build_identity[$field]="mismatch"' "${strict_manifest}.valid" > "${strict_manifest}"
+  if strict_restore >/dev/null 2>&1; then echo "::error::Strict mismatch accepted: ${field}"; exit 1; fi
+  [[ "$(cat "${fixture}/strict-restored/tests/dotnet/Fixture.Tests/bin/Release/net10.0/Fixture.Tests.dll")" == strict-Fixture.Tests.dll ]]
+done
+cp "${strict_manifest}.valid" "${strict_manifest}"
+if HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK=invalid strict_restore >/dev/null 2>&1; then
+  echo '::error::Invalid SDK accepted'; exit 1
+fi
+if HONUA_SERVER_TEST_ARTIFACT_WORKFLOW_RUN_ID=0 strict_restore >/dev/null 2>&1; then
+  echo '::error::Invalid run ID accepted'; exit 1
+fi
+# A valid archive with missing declared static content must not install even its
+# otherwise valid binaries, nor replace an existing destination sentinel.
+jq '.static_web_asset_content_roots.payload += ["src/Missing/bin/Release"]' "${strict_manifest}.valid" > "${strict_manifest}"
+if strict_restore >/dev/null 2>&1; then echo '::error::Missing static payload accepted'; exit 1; fi
+[[ "$(cat "${fixture}/strict-restored/tests/dotnet/Fixture.Tests/bin/Release/net10.0/Fixture.Tests.dll")" == strict-Fixture.Tests.dll ]]
+[[ ! -e "${fixture}/strict-restored/src/Missing/bin/Release" ]]
+echo 'Strict same-run identity and transactional rejection fixtures passed.'
+# Force failure after the first root replacement and prove rollback restores old
+# bytes. The second destination is a symlink, which must never be followed.
+transaction_stage="${fixture}/transaction-stage"
+transaction_destination="${fixture}/transaction-destination"
+mkdir -p "${transaction_stage}/a/bin/Release" "${transaction_stage}/a/obj" "${transaction_destination}/a/bin/Release" "${fixture}/foreign"
+printf new > "${transaction_stage}/a/bin/Release/proof"
+printf old > "${transaction_destination}/a/bin/Release/proof"
+ln -s "${fixture}/foreign" "${transaction_destination}/a/obj"
+printf '{"static_web_asset_content_roots":{"payload":[]}}' > "${fixture}/transaction.json"
+# obj sorts before bin/Release by depth; add an initial shallower root so the
+# fixture exercises rollback after a successful replacement, rather than precheck.
+mkdir -p "${transaction_stage}/first" "${transaction_destination}/first"
+printf new > "${transaction_stage}/first/proof"
+printf old > "${transaction_destination}/first/proof"
+printf '{"static_web_asset_content_roots":{"payload":["first"]}}' > "${fixture}/transaction.json"
+if python3 "${SCRIPT_DIR}/install-server-test-artifact.py" "${transaction_stage}" "${transaction_destination}" \
+  "${fixture}/transaction.json" a Release >/dev/null 2>&1; then
+  echo '::error::Unsafe destination accepted'; exit 1
+fi
+[[ "$(cat "${transaction_destination}/first/proof")" == old ]]
+[[ "$(cat "${transaction_destination}/a/bin/Release/proof")" == old ]]
+[[ -L "${transaction_destination}/a/obj" ]]
+echo 'Mid-install failure rollback fixture passed.'
+cp "${strict_manifest}.valid" "${strict_manifest}"
+if HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK=10.0.101 strict_restore >/dev/null 2>&1; then
+  echo '::error::Different SDK accepted'; exit 1
+fi
+jq '.contract="honua.server-test-binaries.v1"' "${strict_manifest}.valid" > "${strict_manifest}"
+if strict_restore >/dev/null 2>&1; then echo '::error::Strict consumer accepted legacy v1'; exit 1; fi
+echo 'Strict SDK mismatch and downgrade fixtures passed.'
+
+# Strict Server.Tests carries its copied test runtime, not a second full host.
+boot_project='tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
+boot_test_dir="${fixture_repo}/$(dirname "${boot_project}")"
+mkdir -p "${boot_test_dir}/bin/Release/net10.0" "${boot_test_dir}/obj"
+printf '<Project />' > "${fixture_repo}/${boot_project}"
+cp "${fixture_repo}/tests/dotnet/Fixture.Tests/obj/project.assets.json" "${boot_test_dir}/obj/project.assets.json"
+for file in Honua.Server.Tests.dll Honua.Server.Tests.pdb Honua.Server.Tests.deps.json Honua.Server.Tests.runtimeconfig.json \
+  Honua.Server.dll Honua.Server.deps.json Honua.Server.runtimeconfig.json Honua.Dependency.dll; do
+  printf 'test-runtime-%s\n' "${file}" > "${boot_test_dir}/bin/Release/net10.0/${file}"
+done
+jq --arg project "${boot_project}" '.projects += [{csproj:$project,artifact_suffix:"boot",proof_filter:"FullyQualifiedName~Fixture"}]' \
+  "${fixture_repo}/.github/server-test-artifact-projects.json" > "${fixture}/boot-registry.json"
+export HONUA_SERVER_TEST_ARTIFACT_REGISTRY="${fixture}/boot-registry.json"
+boot_package() {
+  HONUA_SERVER_TEST_ARTIFACT_REPO_ROOT="${fixture_repo}" \
+    "${SCRIPT_DIR}/package-server-test-binaries.sh" --project "${boot_project}" \
+      --output "${fixture}/boot-artifact" --source-sha "${source_sha}"
+}
+# Publication succeeds even when canonical source bin is absent.
+boot_package
+boot_manifest="${fixture}/boot-artifact/server-test-binaries-boot.manifest.json"
+boot_archive="${fixture}/boot-artifact/server-test-binaries-boot.tar.gz"
+cp "${boot_archive}" "${boot_archive}.without-host"
+# A canonical host exceeding this fixture's bound must remain producer-local.
+boot_host="${fixture_repo}/src/Honua.Server/bin/Release/net10.0"
+mkdir -p "${boot_host}"
+python3 - "${boot_host}/Honua.Server.dll" <<'SIZEPY'
+import pathlib, sys
+pathlib.Path(sys.argv[1]).write_bytes(b'x' * 100000)
+SIZEPY
+HONUA_SERVER_TEST_ARTIFACT_MAX_UNPACKED_BYTES=50000 boot_package
+cmp "${boot_archive}.without-host" "${boot_archive}"
+if tar -tzf "${boot_archive}" | grep -q 'src/Honua.Server/bin'; then
+  echo '::error::Duplicated canonical host in managed test payload'; exit 1
+fi
+boot_restore() {
+  "${SCRIPT_DIR}/restore-server-test-binaries.sh" --manifest "${boot_manifest}" \
+    --destination "${fixture}/boot-restored" --project "${boot_project}" --source-sha "${source_sha}"
+}
+boot_restore
+for file in Honua.Server.dll Honua.Server.deps.json Honua.Server.runtimeconfig.json Honua.Dependency.dll; do
+  [[ "$(cat "${fixture}/boot-restored/tests/dotnet/Honua.Server.Tests/bin/Release/net10.0/${file}")" == "test-runtime-${file}" ]]
+done
+[[ ! -e "${fixture}/boot-restored/src/Honua.Server/bin" ]]
+# Reject an old strict payload requesting the removed host duplication; preserve
+# the already installed test runtime on this identity/layout mismatch.
+cp "${boot_manifest}" "${boot_manifest}.valid"
+jq '.required_dependency_output_roots=["src/Honua.Server/bin/Release"] | .host_output_contract="honua.server-boot-output.v1"' \
+  "${boot_manifest}.valid" > "${boot_manifest}"
+if boot_restore >/dev/null 2>&1; then echo '::error::Accepted obsolete duplicated-host payload contract'; exit 1; fi
+[[ "$(cat "${fixture}/boot-restored/tests/dotnet/Honua.Server.Tests/bin/Release/net10.0/Honua.Server.dll")" == test-runtime-Honua.Server.dll ]]
+echo 'Strict Server.Tests test-runtime-only packaging and transactional old-layout rejection fixtures passed.'

@@ -1,0 +1,89 @@
+name: Publish trusted native tools
+on:
+  push:
+    branches: [trunk]
+    paths:
+      - docker/worker-gdal/Dockerfile
+      - docker/worker-gdal/Dockerfile.dockerignore
+      - .dockerignore
+      - scripts/ci/native-tools-image.py
+      - .github/workflows/native-tools-publish.yml
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-tools-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'honua-io/honua-server' && github.ref == 'refs/heads/trunk'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compute complete production native inputs
+        id: inputs
+        run: python3 scripts/ci/native-tools-image.py identity --output "${RUNNER_TEMP}/native-tools-inputs.json" --github-output "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish production native-tools target
+        id: image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        timeout-minutes: 40
+        with:
+          context: .
+          file: docker/worker-gdal/Dockerfile
+          target: native-tools
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.inputs.outputs.image }}
+          build-args: ${{ steps.inputs.outputs.build_args }}
+          labels: |
+            io.honua.native-tools.identity=${{ steps.inputs.outputs.identity }}
+            io.honua.native-tools.contract=honua.native-tools.inputs.v1
+            org.opencontainers.image.revision=${{ steps.inputs.outputs.source_sha }}
+            org.opencontainers.image.source=https://github.com/honua-io/honua-server
+          cache-from: |
+            type=registry,ref=ghcr.io/honua-io/honua-server-native-tools-cache:linux-amd64
+            type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-worker-gdal-amd64
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server-native-tools-cache:linux-amd64,mode=max
+          no-cache-filters: native-tools
+          provenance: mode=max
+      - name: Attest trusted trunk publisher and immutable subject
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/honua-io/honua-server-native-tools
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - name: Record immutable publication receipt
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, re
+          receipt = pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-tools-inputs.json'
+          data = json.loads(receipt.read_text())
+          image_digest = os.environ['IMAGE_DIGEST']
+          if not re.fullmatch(r'sha256:[0-9a-f]{64}', image_digest):
+              raise SystemExit('Publisher returned no immutable digest')
+          data['published_image'] = 'ghcr.io/honua-io/honua-server-native-tools@' + image_digest
+          receipt.write_text(json.dumps(data, indent=2, sort_keys=True) + '\n')
+          PY
+      - name: Retain input and immutable digest evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-tools-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-tools-inputs.json
+          if-no-files-found: error
+          retention-days: 30

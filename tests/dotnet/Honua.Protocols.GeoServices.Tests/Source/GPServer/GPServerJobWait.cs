@@ -40,11 +40,13 @@ internal static class GPServerJobWait
         HttpClient client,
         string statusUrl,
         string jobId,
-        IExecutionJobStore? jobStore = null)
+        IExecutionJobStore? jobStore = null,
+        TimeSpan? jobBudget = null)
     {
+        var budget = jobBudget ?? JobBudget;
         var elapsed = Stopwatch.StartNew();
         string? lastObserved = null;
-        while (elapsed.Elapsed < JobBudget)
+        while (elapsed.Elapsed < budget)
         {
             using var response = await client.GetAsync(statusUrl);
             var body = await response.Content.ReadAsStringAsync();
@@ -62,7 +64,7 @@ internal static class GPServerJobWait
             await Task.Delay(PollDelay);
         }
 
-        throw await TimedOutAsync(jobId, lastObserved, jobStore);
+        throw await TimedOutAsync(jobId, lastObserved, jobStore, budget);
     }
 
     /// <summary>
@@ -109,7 +111,7 @@ internal static class GPServerJobWait
     private static bool IsTerminal(string? status)
         => status is "esriJobSucceeded" or "esriJobFailed" or "esriJobCancelled" or "esriJobTimedOut";
 
-    private static async Task<TimeoutException> TimedOutAsync(string jobId, string? lastObserved, IExecutionJobStore? jobStore)
+    private static async Task<TimeoutException> TimedOutAsync(string jobId, string? lastObserved, IExecutionJobStore? jobStore, TimeSpan? jobBudget = null)
     {
         var durable = "not inspected";
         if (jobStore is not null)
@@ -124,7 +126,7 @@ internal static class GPServerJobWait
         }
 
         return new TimeoutException(
-            $"GPServer job '{jobId}' did not reach a terminal status within {JobBudget.TotalSeconds:F0} s. " +
+            $"GPServer job '{jobId}' did not reach a terminal status within {(jobBudget ?? JobBudget).TotalSeconds:F0} s. " +
             $"Last status observed: {lastObserved ?? "none"}. Durable record: {durable}.");
     }
 }

@@ -2,11 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -19,29 +21,42 @@ namespace Honua.Db.Postgres.Features.Attachments;
 /// Marked as internal to prevent exposure of database-specific implementations
 /// outside the Infrastructure layer (Clean Architecture principle).
 /// </remarks>
-internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImportedAttachmentStore
+internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImportedAttachmentStore, IFeatureAttachmentCleanup
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
-    private readonly ICloudFileStorage _fileStorage;
+    private readonly ICloudFileStorage? _fileStorage;
     private readonly ILogger<PostgresAttachmentStore> _logger;
     private readonly IAttachmentOrphanLedger? _orphanLedger;
+    private readonly AttachmentLimits? _attachmentLimits;
     private readonly string _tableName;
     private readonly string _importCleanupTableName;
 
     public PostgresAttachmentStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
-        ICloudFileStorage fileStorage,
+        ICloudFileStorage? fileStorage,
         ILogger<PostgresAttachmentStore> logger,
         string? schemaName = null,
-        IAttachmentOrphanLedger? orphanLedger = null)
+        IAttachmentOrphanLedger? orphanLedger = null,
+        AttachmentLimits? attachmentLimits = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
-        _fileStorage = fileStorage ?? throw new ArgumentNullException(nameof(fileStorage));
+        // Null is a database-only host. Feature-store resolution includes this store for
+        // row cleanup (#6137) and must not require object storage that the host never registered.
+        _fileStorage = fileStorage;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _orphanLedger = orphanLedger;
+        _attachmentLimits = attachmentLimits;
         _tableName = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
         _importCleanupTableName = Infrastructure.SchemaSearchPath.QualifyTable("import_attachment_cleanup", schemaName);
     }
+
+    /// <summary>
+    /// Returns the configured object store. Blob reads and writes call this; a missing
+    /// store becomes an orphan record when the metadata change has already committed.
+    /// </summary>
+    private ICloudFileStorage RequireFileStorage()
+        => _fileStorage ?? throw new InvalidOperationException(
+            "Object storage is not configured. Register ICloudFileStorage before using attachment blobs.");
 
     /// <summary>
     /// Records a storage object that outlived its metadata row, so the divergence is
@@ -126,29 +141,9 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
 
     public async Task<Attachment> CreateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default)
     {
-        var sql = $@"
-            INSERT INTO {_tableName} (feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords, attachment_origin)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'honua')
-            RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
-
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue(featureId);
-        command.Parameters.AddWithValue(layerId);
-        command.Parameters.AddWithValue(attachment.Filename);
-        command.Parameters.AddWithValue(attachment.ContentType);
-        command.Parameters.AddWithValue(attachment.Size);
-        command.Parameters.AddWithValue(attachment.CreatedAt);
-        command.Parameters.AddWithValue(attachment.StoragePath);
-        command.Parameters.AddWithValue(attachment.Keywords ?? (object)DBNull.Value);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            throw new InvalidOperationException("Failed to create attachment");
-        }
-
-        return ReadAttachment(reader);
+        return await InsertAttachmentAsync(connection, transaction: null, layerId, featureId, attachment, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task<Attachment> UpdateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default)
@@ -229,7 +224,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         var folder = BuildAttachmentFolder(layerId, featureId);
         var sizeBytes = content.CanSeek ? content.Length : (long?)null;
 
-        var uploadResult = await _fileStorage.UploadAsync(new FileUploadRequest
+        var uploadResult = await RequireFileStorage().UploadAsync(new FileUploadRequest
         {
             Content = content,
             FileName = sanitizedFilename,
@@ -264,7 +259,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             {
                 try
                 {
-                    var deleted = await _fileStorage.DeleteAsync(existing.StoragePath, cancellationToken).ConfigureAwait(false);
+                    var deleted = await RequireFileStorage().DeleteAsync(existing.StoragePath, cancellationToken).ConfigureAwait(false);
                     if (!deleted)
                     {
                         // ICloudFileStorage.DeleteAsync defines false as "file was not found",
@@ -306,7 +301,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             {
                 // A false result means the object was not found, so the upload left nothing
                 // behind and the compensation is complete; only a failure leaks an object.
-                await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken).ConfigureAwait(false);
+                await RequireFileStorage().DeleteAsync(uploadResult.File.FileId, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -344,7 +339,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
 
         try
         {
-            var deleted = await _fileStorage.DeleteAsync(storagePath, cancellationToken);
+            var deleted = await RequireFileStorage().DeleteAsync(storagePath, cancellationToken);
             if (!deleted)
             {
                 // ICloudFileStorage.DeleteAsync defines false as "file was not found". The row
@@ -388,7 +383,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         var folder = BuildAttachmentFolder(layerId, featureId);
         var sizeBytes = content.CanSeek ? content.Length : (long?)null;
 
-        var uploadResult = await _fileStorage.UploadAsync(new FileUploadRequest
+        var uploadResult = await RequireFileStorage().UploadAsync(new FileUploadRequest
         {
             Content = content,
             FileName = sanitizedFilename,
@@ -417,7 +412,12 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
 
         try
         {
-            return await CreateAsync(layerId, featureId, attachment, cancellationToken);
+            if (_attachmentLimits is null)
+            {
+                return await CreateAsync(layerId, featureId, attachment, cancellationToken).ConfigureAwait(false);
+            }
+
+            return await InsertWithinQuotaAsync(layerId, featureId, attachment, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception insertException)
         {
@@ -427,7 +427,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
                 // insert failed; a cleanup failure must not mask the original exception being rethrown.
                 // A false result means the object was not found, so nothing survived the failed
                 // insert; only a throwing cleanup leaves an object with no row.
-                await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken);
+                await RequireFileStorage().DeleteAsync(uploadResult.File.FileId, cancellationToken);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -454,7 +454,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             return null;
         }
 
-        var fileStream = await _fileStorage.DownloadAsync(attachment.Value.StoragePath, cancellationToken);
+        var fileStream = await RequireFileStorage().DownloadAsync(attachment.Value.StoragePath, cancellationToken);
         if (fileStream == null)
         {
             return null;
@@ -512,6 +512,104 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             "attachments",
             layerId.ToString(CultureInfo.InvariantCulture),
             featureId.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Holds a transaction advisory lock for this feature, recounts its attachments, and
+    /// inserts only when the configured count and size limits still hold. A refusal throws
+    /// <see cref="ValidationException"/> so the caller can delete the blob it already stored.
+    /// </summary>
+    private async Task<Attachment> InsertWithinQuotaAsync(
+        int layerId,
+        long featureId,
+        Attachment attachment,
+        CancellationToken cancellationToken)
+    {
+        var limits = _attachmentLimits ?? throw new InvalidOperationException("Attachment limits are not configured.");
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // hashtextextended keeps the lock in the bigint form. Feature ids do not fit the
+        // two-int overload, and the prefix does not share the feature-edit lock key.
+        await using (var lease = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended('attachment:' || $1::text || ':' || $2::text, 0))",
+            connection,
+            transaction))
+        {
+            lease.Parameters.AddWithValue(layerId);
+            lease.Parameters.AddWithValue(featureId);
+            await lease.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        long count;
+        long totalSize;
+        await using (var countCommand = new NpgsqlCommand($"""
+            SELECT COUNT(*)::bigint, COALESCE(SUM(size), 0)::bigint
+            FROM {_tableName}
+            WHERE layer_id = $1 AND feature_id = $2
+            """, connection, transaction))
+        {
+            countCommand.Parameters.AddWithValue(layerId);
+            countCommand.Parameters.AddWithValue(featureId);
+            await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("Failed to count attachments");
+            }
+
+            count = reader.GetInt64(0);
+            totalSize = reader.GetInt64(1);
+        }
+
+        if (count >= limits.MaxAttachmentsPerFeature)
+        {
+            throw new ValidationException(
+                $"Feature already has the maximum number of attachments ({limits.MaxAttachmentsPerFeature})");
+        }
+
+        if (attachment.Size > limits.MaxTotalAttachmentSize ||
+            totalSize > limits.MaxTotalAttachmentSize - attachment.Size)
+        {
+            throw new ValidationException(
+                $"Total attachment size would exceed maximum allowed ({limits.MaxTotalAttachmentSize:N0} bytes)");
+        }
+
+        var created = await InsertAttachmentAsync(connection, transaction, layerId, featureId, attachment, cancellationToken)
+            .ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        return created;
+    }
+
+    private async Task<Attachment> InsertAttachmentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        int layerId,
+        long featureId,
+        Attachment attachment,
+        CancellationToken cancellationToken)
+    {
+        var sql = $@"
+            INSERT INTO {_tableName} (feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords, attachment_origin)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'honua')
+            RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue(featureId);
+        command.Parameters.AddWithValue(layerId);
+        command.Parameters.AddWithValue(attachment.Filename);
+        command.Parameters.AddWithValue(attachment.ContentType);
+        command.Parameters.AddWithValue(attachment.Size);
+        command.Parameters.AddWithValue(attachment.CreatedAt);
+        command.Parameters.AddWithValue(attachment.StoragePath);
+        command.Parameters.AddWithValue(attachment.Keywords ?? (object)DBNull.Value);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("Failed to create attachment");
+        }
+
+        return ReadAttachment(reader);
     }
 
     private static Attachment ReadAttachment(NpgsqlDataReader reader)

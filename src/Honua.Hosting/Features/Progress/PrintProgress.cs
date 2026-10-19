@@ -27,6 +27,12 @@ internal sealed record PrintProgress : IOperationProgress, ICancellableOperation
     public IReadOnlyList<string> Warnings { get; init; } = [];
     public string? CurrentPhase { get; init; }
 
+    /// <summary>Process that accepted the job. Null on records written before owner stamping.</summary>
+    public string? OwnerInstanceId { get; init; }
+
+    /// <summary>Last proof the owner was still executing the job. Null falls back to <see cref="StartedAt"/>.</summary>
+    public DateTimeOffset? HeartbeatAt { get; init; }
+
     // Print rendering is atomic (single ExecuteAsync call), so ProcessedElements
     // jumps from 0 to TotalElements on completion.  Return null (indeterminate)
     // while ProcessedElements is still 0; CurrentPhase provides the status signal.

@@ -199,13 +199,14 @@ public static class PortalTokenAuthenticationExtensions
                 : new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
         services.TryAddSingleton<IOAuthScopeCatalogue, InMemoryOAuthScopeCatalogue>();
 
-        // Portal community-group + item-sharing surface (#1868). In-memory singletons
-        // mirror the OAuth client-registry / Admin API-key pattern: no parallel
-        // durable store (ADR-0049). They compose the shared identity/role model for
-        // authorization rather than introducing a separate RBAC model.
+        // Process-local defaults for non-Postgres providers. The server's Postgres
+        // composition registers durable stores first, so TryAdd preserves them.
+        // Both profiles compose the shared identity/role model.
         services.TryAddSingleton<IPortalGroupStore>(
             sp => new InMemoryPortalGroupStore(sp.GetService<TimeProvider>()));
         services.TryAddSingleton<IPortalItemSharingStore, InMemoryPortalItemSharingStore>();
+        services.AddHttpContextAccessor();
+        services.TryAddSingleton<Honua.Core.Features.Security.Abstractions.IPortalResourceReadAuthorizer, PortalResourceReadAuthorizer>();
 
         // Optional JWT access-token format + RFC 7662 introspection (ADR-0068, #1890)
         // and pluggable IdP/OIDC federation for client_credentials (ADR-0053
@@ -272,7 +273,7 @@ internal sealed class PortalTokenAuthenticationMiddleware(
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (_options.CurrentValue.Enabled &&
+        if (!ScopedJobAuthentication.HasCandidate(context) && _options.CurrentValue.Enabled &&
             !IsAuthenticated(context) &&
             CarriesPortalTokenIndicator(context))
         {

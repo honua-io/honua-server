@@ -12,6 +12,20 @@ namespace Honua.Core.Tests.Features.Geoprocessing;
 /// </summary>
 public sealed class WorkspacePathSanitizerTests
 {
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("gdal --config AWS_SECRET_ACCESS_KEY secret-value", "secret-value")]
+    [InlineData("PG:host=db password='two words'", "two words")]
+    [InlineData("request Authorization: Bearer opaque-token", "opaque-token")]
+    [InlineData("--api-key=opaque-value", "opaque-value")]
+    public void SanitizeForClient_RedactsRecognizableCredentials(string text, string secret)
+    {
+        var sanitized = WorkspacePathSanitizer.SanitizeForClient(text, null);
+        Assert.DoesNotContain(secret, sanitized);
+        Assert.Contains("[REDACTED]", sanitized);
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sanitize_ReplacesWorkspacePath_WithStablePlaceholder()
     {
@@ -26,6 +40,7 @@ public sealed class WorkspacePathSanitizerTests
         Assert.Contains("No such file or directory", sanitized);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sanitize_HandlesEmptyAndBlankText_WithoutThrowing()
     {
@@ -33,12 +48,14 @@ public sealed class WorkspacePathSanitizerTests
         Assert.Equal(string.Empty, WorkspacePathSanitizer.Sanitize("   \n", "/scratch"));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sanitize_PassesThrough_WhenWorkspaceIsAbsent()
     {
         Assert.Equal("ERROR 1: bad input", WorkspacePathSanitizer.Sanitize("ERROR 1: bad input", ""));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Sanitize_TruncatesVeryLongText_WithEllipsis()
     {
@@ -48,6 +65,7 @@ public sealed class WorkspacePathSanitizerTests
         Assert.EndsWith("…", sanitized);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SanitizeForClient_RedactsKnownWorkspaceAndResidualAbsolutePaths()
     {
@@ -65,6 +83,7 @@ public sealed class WorkspacePathSanitizerTests
         Assert.Contains("gdalwarp", sanitized);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SanitizeForClient_RedactsAbsolutePath_WhenWorkspaceUnknown()
     {
@@ -78,6 +97,7 @@ public sealed class WorkspacePathSanitizerTests
         Assert.Contains("failed", sanitized);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void SanitizeForClient_RedactsWindowsAbsolutePath()
     {
@@ -90,6 +110,7 @@ public sealed class WorkspacePathSanitizerTests
         Assert.Contains("<path>", sanitized);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void TruncateForLog_PreservesPaths_OnlyLengthCaps()
     {
@@ -100,4 +121,32 @@ public sealed class WorkspacePathSanitizerTests
         // Operator log intentionally KEEPS the scratch path for diagnosis.
         Assert.Equal(message, truncated);
     }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("{\"password\":\"prefix\\\"secret-value\",\"status\":\"running\"}")]
+    [InlineData("{\"token\":\"secret-value\",\"status\":\"running\"}")]
+    [InlineData("{'api-key':'secret-value','status':'running'}")]
+    public void SanitizeForClient_RedactsQuotedCredentialKeys(string message)
+    {
+        var sanitized = WorkspacePathSanitizer.SanitizeForClient(message, workspace: null);
+
+        Assert.DoesNotContain("secret-value", sanitized);
+        Assert.Contains("[REDACTED]", sanitized);
+        Assert.Contains("running", sanitized);
+    }
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("password=\"secret-suffix")]
+    [InlineData("password=\"prefix\\\"secret-suffix")]
+    [InlineData("password=\"secret-suffix\\")]
+    [InlineData("token='secret-suffix")]
+    public void SanitizeForClient_RedactsTruncatedQuotedCredentials(string message)
+    {
+        var sanitized = WorkspacePathSanitizer.SanitizeForClient(message, workspace: null);
+
+        Assert.DoesNotContain("secret-suffix", sanitized);
+        Assert.Contains("[REDACTED]", sanitized);
+    }
+
 }

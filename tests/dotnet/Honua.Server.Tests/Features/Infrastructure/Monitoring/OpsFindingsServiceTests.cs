@@ -1,10 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Alerts;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -15,6 +18,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Monitoring;
+using Honua.Server.Features.Admin;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
@@ -943,6 +947,98 @@ public sealed class OpsFindingsServiceTests
         var result = await service.ProposeAsync("does-not-exist");
 
         Assert.Equal(OpsFindingProposalStatus.FindingNotFound, result.Status);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_Lineage_UnknownFinding_EchoesTheVerifiedRootOnTheShippedResponse()
+    {
+        const string root = "urn:honua:provisioning:0123456789abcdef0123456789abcdef";
+        var service = CreateService();
+
+        var result = await service.ProposeAsync("does-not-exist", root);
+
+        Assert.Equal(OpsFindingProposalStatus.FindingNotFound, result.Status);
+        Assert.Equal(root, result.RootProvisioningOperationId);
+        var json = JsonSerializer.Serialize(
+            OpsObservabilityEndpoints.ToProposeResponse(result),
+            OpsObservabilityJsonContext.Default.OpsFindingProposeResponse);
+        Assert.Contains($"\"rootProvisioningOperationId\":\"{root}\"", json, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_Lineage_MalformedRoot_IsRejected()
+    {
+        var service = CreateService();
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.ProposeAsync("does-not-exist", "not-a-root"));
+
+        Assert.Contains("rootProvisioningOperationId", exception.Message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_Lineage_MismatchedLinkedRoot_RejectsWithoutCallingTheGateway()
+    {
+        const string recorded = "urn:honua:provisioning:0123456789abcdef0123456789abcdef";
+        const string supplied = "urn:honua:provisioning:ffffffffffffffffffffffffffffffff";
+        var operation = BuildDeployOperation(
+            "op-lineage",
+            WorkflowOperationStatus.ManualInterventionRequired,
+            currentRevision: "rev-1",
+            desiredRevision: "rev-2") with
+        {
+            RootProvisioningOperationId = recorded,
+        };
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        StubStuckDeploys(workflowStore, operation);
+        workflowStore.GetAsync(operation.OperationId, Arg.Any<CancellationToken>()).Returns(operation);
+        var gateway = Substitute.For<IOperationGateway>();
+        var service = CreateService(workflowStore: workflowStore, gateway: gateway);
+        var finding = (await service.EvaluateAsync()).Single(f => f.Rule == OpsFindingsService.RuleDeployManualIntervention);
+
+        var exception = await Assert.ThrowsAsync<ResourceConflictException>(() =>
+            service.ProposeAsync(finding.Id, supplied));
+
+        Assert.Contains("provisioning root", exception.Message, StringComparison.Ordinal);
+        await gateway.DidNotReceive().RouteAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_Lineage_MatchingRoot_StampsTheGatewayRequestAndTheResult()
+    {
+        const string root = "urn:honua:provisioning:0123456789abcdef0123456789abcdef";
+        var operation = BuildDeployOperation(
+            "op-lineage-match",
+            WorkflowOperationStatus.ManualInterventionRequired,
+            currentRevision: "rev-1",
+            desiredRevision: "rev-2") with
+        {
+            RootProvisioningOperationId = root,
+        };
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        StubStuckDeploys(workflowStore, operation);
+        workflowStore.GetAsync(operation.OperationId, Arg.Any<CancellationToken>()).Returns(operation);
+        var gateway = Substitute.For<IOperationGateway>();
+        gateway.RouteAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new OperationGatewayResult
+            {
+                Outcome = OperationGatewayOutcome.ProposalCreated,
+                Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"),
+                ProposalId = "proposal-lineage",
+            });
+        var service = CreateService(workflowStore: workflowStore, gateway: gateway);
+        var finding = (await service.EvaluateAsync()).Single(f => f.Rule == OpsFindingsService.RuleDeployManualIntervention);
+
+        var result = await service.ProposeAsync(finding.Id, root);
+
+        Assert.Equal(root, result.RootProvisioningOperationId);
+        await gateway.Received(1).RouteAsync(
+            Arg.Is<OperationGatewayRequest>(request => request.RootProvisioningOperationId == root),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

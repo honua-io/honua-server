@@ -31,7 +31,7 @@ public sealed partial class GPServerSoapEndpointsTests
     public async Task GetJobStatus_ProgressHint_PreservesScalarStatusAndSeparateMessages(string progressHint)
     {
         var jobs = Substitute.For<IGeoprocessingJobService>();
-        jobs.GetJobAsync("soap-job", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+        jobs.GetGPServerJobAsync("soap-job", "alpha", null, Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(SoapJob() with { Status = ExecutionJobStatus.Succeeded, CurrentPhase = "Completed" });
         using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
         {
@@ -54,7 +54,7 @@ public sealed partial class GPServerSoapEndpointsTests
         messages.StatusCode.Should().Be(HttpStatusCode.OK);
         XDocument.Parse(await messages.Content.ReadAsStringAsync()).Descendants("MessageDesc")
             .Should().ContainSingle().Which.Value.Should().Be("Completed");
-        await jobs.DidNotReceiveWithAnyArgs().GetJobResultsAsync(default!, default!, default);
+        await jobs.DidNotReceiveWithAnyArgs().GetGPServerJobResultsAsync(default!, default!, default!, default!, default);
     }
 
     [IntegrationTheory]
@@ -81,7 +81,7 @@ public sealed partial class GPServerSoapEndpointsTests
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
         XDocument.Parse(body).Descendants(XName.Get("Fault", Soap11)).Should().ContainSingle();
-        await jobs.DidNotReceiveWithAnyArgs().GetJobAsync(default!, default!, default);
+        await jobs.DidNotReceiveWithAnyArgs().GetGPServerJobAsync(default!, default!, default!, default!, default);
     }
 
     [IntegrationTheory]

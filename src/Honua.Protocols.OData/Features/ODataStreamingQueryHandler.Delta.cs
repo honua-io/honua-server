@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -58,7 +59,8 @@ internal sealed partial class ODataStreamingQueryHandler
         }
         var snapshot = JsonSerializer.Deserialize(payload, ODataQuerySnapshotJsonContext.Default.ODataQuerySnapshot);
         if (snapshot is null || snapshot.Id != id || snapshot.CreatedAt > DateTimeOffset.UtcNow + SnapshotClockSkew
-            || snapshot.CreatedAt + SnapshotRetention + SnapshotClockSkew <= DateTimeOffset.UtcNow || offset > snapshot.Changes.Length)
+            || snapshot.CreatedAt + SnapshotRetention + SnapshotClockSkew <= DateTimeOffset.UtcNow
+            || offset > SnapshotRows(snapshot).Length)
         {
             return (null, DeltaRecovery(context, "DeltaTokenExpired", "Delta state cannot be continued; obtain a tracked baseline.", 410));
         }
@@ -152,11 +154,27 @@ internal sealed partial class ODataStreamingQueryHandler
                 return DeltaRecovery(context, "DeltaScopeChanged", "The query authorization scope changed; retry the baseline.", 410);
             }
             var current = items.ToArray();
-            var changes = continuation is null ? current : ComputeDeltaChanges(continuation.Snapshot.Items, current, query.LayerId);
+            // Baselines page from Items. Persisting the same array again as Changes
+            // doubled every anonymous receipt (#5615 SRV-OGC-011).
+            var changes = continuation is null
+                ? []
+                : ComputeDeltaChanges(continuation.Snapshot.Items, current, query.LayerId);
             snapshot = new ODataQuerySnapshot(Guid.NewGuid(), DateTimeOffset.UtcNow, query, binding, pageSize, current, changes,
                 IsDelta: continuation is not null);
             var payload = JsonSerializer.SerializeToUtf8Bytes(snapshot, ODataQuerySnapshotJsonContext.Default.ODataQuerySnapshot);
-            await store.SaveAsync(snapshot.Id, payload, snapshot.CreatedAt + SnapshotRetention, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                QuerySnapshotQuota.Ensure(0, 0, payload.Length);
+                await store.SaveAsync(snapshot.Id, payload, snapshot.CreatedAt + SnapshotRetention, cancellationToken).ConfigureAwait(false);
+            }
+            catch (QuerySnapshotQuotaExceededException)
+            {
+                return DeltaRecovery(
+                    context,
+                    "DeltaQueryTooLarge",
+                    "The tracked-query snapshot quota is exhausted; retry after existing receipts expire.",
+                    413);
+            }
         }
 
         using var response = new MemoryStream();
@@ -168,13 +186,14 @@ internal sealed partial class ODataStreamingQueryHandler
             {
                 writer.WriteString("@odata.context", $"{baseUrl}/odata/$metadata#Features" + (snapshot.IsDelta ? "/$delta" : ""));
             }
-            if (query.Count == true) { writer.WriteNumber("@odata.count", snapshot.Changes.Length); }
+            var page = SnapshotRows(snapshot);
+            if (query.Count == true) { writer.WriteNumber("@odata.count", page.Length); }
             writer.WritePropertyName("value");
             writer.WriteStartArray();
-            var end = Math.Min((long)offset + pageSize, snapshot.Changes.Length);
-            for (var index = offset; index < end; index++) { snapshot.Changes[index].WriteTo(writer); }
+            var end = Math.Min((long)offset + pageSize, page.Length);
+            for (var index = offset; index < end; index++) { page[index].WriteTo(writer); }
             writer.WriteEndArray();
-            var hasMore = end < snapshot.Changes.Length;
+            var hasMore = end < page.Length;
             var token = $"v2.{snapshot.Id:N}.{(hasMore ? end : 0).ToString(CultureInfo.InvariantCulture)}.{(hasMore ? "p" : "t")}";
             writer.WriteString(hasMore ? "@odata.nextLink" : "@odata.deltaLink", $"{baseUrl}{context.Request.Path}?$deltatoken={token}");
             writer.WriteEndObject();
@@ -182,9 +201,17 @@ internal sealed partial class ODataStreamingQueryHandler
         }
         ODataUtilityService.SetODataHeaders(context);
         ODataUtilityService.ApplyTrackChangesPreference(context);
-        HonuaTelemetry.SetSuccess(Activity.Current, (int)Math.Min(pageSize, snapshot.Changes.Length - offset));
+        HonuaTelemetry.SetSuccess(Activity.Current, (int)Math.Min(pageSize, SnapshotRows(snapshot).Length - offset));
         return Results.Bytes(response.ToArray(), ODataUtilityService.GetODataContentType(context.Request, query.Format));
     }
+
+    /// <summary>
+    /// Rows a snapshot pages. Deltas page <see cref="ODataQuerySnapshot.Changes"/>;
+    /// baselines page <see cref="ODataQuerySnapshot.Items"/>, including older receipts
+    /// that also copied items into Changes.
+    /// </summary>
+    internal static JsonElement[] SnapshotRows(ODataQuerySnapshot snapshot)
+        => snapshot.IsDelta ? snapshot.Changes : snapshot.Items;
 
     internal static JsonElement[] ComputeDeltaChanges(JsonElement[] previous, JsonElement[] current, int layerId)
     {

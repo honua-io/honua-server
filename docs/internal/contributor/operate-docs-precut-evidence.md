@@ -214,7 +214,103 @@ Still unmet on the current pin: replaying the installed observation, staging
 and approval harnesses; a joined finding, proposal, typed deployment actuator
 and observation-window transcript; and installed CLI/DevOps plus Local Docker
 and ECS-small placement replay. Those are not waived by the site merge or by
-source ancestry.
+source ancestry. The October 11 replay below supersedes this list.
+
+## October 11 accepted-pin replay
+
+Read on 2026-10-11 from honua-release trunk `8aa2bf63cfe9be4458542d5a0086346091a50dc6`.
+Its `platform-manifest.yaml` (SHA-256
+`bf2a63e6c0d6ef09720bde11cac6cdfdd6e211271706d5098921b9111f753fd7`) pins honua-server
+`93cad86ec4fb28fba3ff0b9358059d86aa55dde5`, image
+`ghcr.io/honua-io/honua-server@sha256:785de2ae7f72e6277ce62aa1ece4f08ee0425970b71c47f9f4843c0baae2c8db`
+(`nightly-93cad86`). `87966c3` and `80e23be` are ancestors of it. Each run below
+pulled that digest and checked its RepoDigest and OCI revision label before boot.
+Every run used Docker Desktop on Windows and removed its containers and network
+afterwards.
+
+The three installed harnesses are unchanged since September 15 (`metadata-release-installed.py`
+`64825397…`, `operate-read-observation.py` `32e959a2…`, `prove-admin-approve-candidate.py`
+`df7947ab…`), and the manifest file was passed unmodified:
+
+- [Staging](../../guides/operate/evidence/3302-accepted-93cad86-staging.json):
+  passes all five scenarios with fixture `83eb29ac…`. The two recovery scenarios
+  end `RolledBack` with six EPSG:4326 rows, verified coordinates and values, no
+  new field and anonymous admin denied. The three rejected preparations fail with
+  `metadata-release-resource-missing`, `metadata-release-etl-unproven-compensation`
+  and `metadata-release-etl-failed`.
+- [Read observation](../../guides/operate/evidence/3302-accepted-93cad86-read-observation.json):
+  `--accepted-manifest`, `qualificationStatus=accepted-pin-observation`, status
+  `passed`. Five REST reads, the MCP calls, the fixture assertions and the status
+  `1.1` contract pass. The full view holds 129 descriptors in 11 pages (124 on
+  `548b7a5`). All five scenario tools are present, `honua_propose_operation` is
+  absent, and `findingId`/`candidateId` are required. The version response still
+  omits `sourceRevision`.
+- [Approval](../../guides/operate/evidence/3302-accepted-93cad86-approval.json):
+  passes the same five server API checks, joining proposal, operation-instance
+  and draft IDs for one approval and one rejection.
+
+The [Local Docker protected-recovery replay](../../guides/operate/evidence/3302-accepted-93cad86-protected-recovery.json)
+is the first deployment-actuator evidence on an accepted pin. It reuses the
+honua-devops#191 live harness (`certification/protected-recovery` at honua-devops
+`28a6419f`), which certified `80e23be` on 2026-09-19. 510 commits separate that
+image from `93cad86`, including the rollback data-plane gate
+([#3892](https://github.com/honua-io/honua-server/issues/3892)) and rollback
+state-machine changes, so the earlier receipt does not transfer. The target is a
+`SelfHostedRolling` deploy target on `honua-yarp-rolling`. The server launches the
+workload replicas through the host container runtime, swaps its embedded proxy,
+keeps the prior replica through the observation window, and runs the telemetry,
+golden-query and recovery-fence gates. The harness injects faults and records
+operations, replicas and what the proxy serves.
+
+- **The pinned image ships no `docker` or `podman`.** Like the 80e23be run, the
+  harness mounts a Linux Docker CLI and the socket into the server container
+  and runs it as root. This is a Local Docker placement with operator-supplied
+  container access, not the image's default Compose install.
+- **The first run failed every recovery cell, and that exposed a documentation gap.** Since #3892 a rollback reports
+  `RolledBack` only after a functional query proves the restored replica. The
+  harness, and the customer documentation, set no functional query. Each cell
+  detected its fault, swapped traffic back to the prior replica and then stayed
+  `RollbackRequested` with `rollback.awaiting_data_plane` and
+  `functionalQuery=NotProven`. Without intervention it settles
+  `ManualInterventionRequired` (`rollback.functional_query_unproven`) after 300 seconds. The
+  `rollback.functional_query.*` keys were documented nowhere. This change adds
+  [Rollback completion proof](../../guides/deploy/upgrade-and-rollback.md#rollback-completion-proof)
+  and links it from the scenario's rollback table and the Operate rollback taxonomy.
+- **With `rollback.functional_query.path=/golden` and an expected prior-revision
+  marker, 10 of the 11 original cells pass.** Eight recovery cells settle
+  `RolledBack`: fenced, platform-admin cross-tenant, tenant-bound, error-rate,
+  latency, missing telemetry, stale telemetry and controller crash. The twenty
+  fence refusals in the 80e23be receipt recur with the same HTTP status and code.
+  One response differs: replaying the settled declared recovery now returns
+  409 `recovery_fence_protection_window_absent` instead of an idempotent 200,
+  because [#4989](https://github.com/honua-io/honua-server/issues/4989) clears
+  the window when a rollback settles. No second compensation is issued and the
+  prior replica keeps serving.
+  `failed-recovery` settles `ManualInterventionRequired` with
+  `protection.phase=unavailable` and `rollback-failed`, with the rejected
+  candidate still serving. `newer-intent` passes.
+- **`wrong-body-regression` fails as written.** The candidate is refused before
+  cutover, and the server attributes that to the golden-query gate. But the cell
+  sets `telemetry.golden_query.expected_contains` and `forbidden_contains` to the
+  same marker, and those keys also bind the restored-replica proof. No answer can
+  satisfy that, so the operation settled `Failed` (`rollback.functional_query_failed`)
+  once the window closed. This is the documented rule, not a server defect. The
+  added cell `wrong-body-regression-satisfiable` expects the prior-revision marker,
+  which the stand-in candidate answer lacks. It passes: refused before cutover,
+  attributed to the golden-query verdict, `RolledBack`, prior still serving.
+- **DevOps client:** all five `ProtectedRecoveryLiveJourneyTests` pass against the
+  same server. They cover injected regression folded into desired intent, a fenced declared recovery with
+  four refused scopes, failed recovery quarantined without claiming restoration,
+  an older recovery refused after newer approved intent, and the generic rollback
+  tool staying gated. Each transcript records the `93cad86` revision and digest.
+
+The receipt lists every adaptation: the Linux CLI path, a Python restart that
+reproduces `boot.sh start_server`, the two functional-query parameters, and the
+added cell. It also records upstream and replayed script hashes and the SHA-256 of
+each raw transcript. It joins operation, protection-grant, policy-digest,
+replica and proxy observations for each cell. It is not finding-driven: deploys
+are created through `POST /api/v1/admin/deploy/operations` by the admin
+principal, not proposed from a finding and approved by a separate principal.
 
 ## Acceptance disposition
 
@@ -223,8 +319,8 @@ source ancestry.
 | Cross-surface deployment/readiness scenario | Documented REST reads, MCP calls, proposal polling, separate Admin CLI approval, optional Console inspection, protected-update progress, observation-window verification and backend rollback truth. |
 | Freshness, completeness, backend identity and coverage | Documented source envelopes and failure behavior. #3475's executed Windows outage receipt is linked below. The deployment adapter fixtures cover stale, partial, unavailable, unverified and not-configured envelopes; live deployment-source collection remains a distinct evidence obligation. |
 | Generic model proposal-only boundary and negative authorization | Source references below; #3411, #3430, #3431 and #3474 are closed as checked September 5. Their old open-blocker claims were removed. |
-| One joined deployment actuator receipt and convergence window | **Unmet.** The approval receipt below exercises a real Studio draft operation; it does not prove deployment convergence or recovery. |
-| Exact Local Docker and ECS-small route/tool/CLI/rollback replay | **Partly met.** The September 15 receipts pass observation, service staging/recovery and server API approval on `548b7a5`. Named REST routes and MCP tools are present in source at the current pin `87966c3` and at trunk `b817f60d8`. The installed harnesses were not replayed on `87966c3`. The installed CLI/DevOps client, the ECS-small placement and deployment rollback have not been replayed on either pin. |
+| One joined deployment actuator receipt and convergence window | **Partly met.** On `93cad86` the [Local Docker protected-recovery replay](#october-11-accepted-pin-replay) records the typed `honua-yarp-rolling` actuator for each cell. Each cell joins operation, protection grant, policy digest, prior and candidate revisions, replicas and the served revision through the observation window, with recovery verified by the completion proof. It is not joined to a finding, a sealed proposal or a separate approver: deploys were created directly by the admin principal. The [approval receipt](#executed-approval-slice) covers separate approval of a Studio draft operation, not a deployment. |
+| Exact Local Docker and ECS-small route/tool/CLI/rollback replay | **Partly met.** On the accepted pin `93cad86` the installed observation, staging/recovery and server API approval harnesses pass. Local Docker deployment rollback passes on `honua-yarp-rolling`, and the honua-devops client's five live recovery scenarios pass against the same server. Both need the documented functional-query parameters. The Admin CLI has only the September syntax receipt, not an authenticated execution. ECS-small has not been replayed on any pin; live AWS qualification of the deployment safety profile is [honua-iac#196](https://github.com/honua-io/honua-iac/issues/196), now a 2026.2 follow-on. |
 | GitBook/docs validation | On 2026-09-26, `python3 scripts/ci/check-doc-links.py` passed (2499 relative targets, 12 allowlisted warnings, 13 code-referenced anchors). `check-doc-links.test.py` passed 26 tests. `check-doc-example-surfaces.py` and `check-okf-bundle.py` passed (263 concepts). `generate-llms-txt.py --check` and `generate-capability-concepts.py --check` were current. `scripts/ci/pre-pr-check.sh` took the CI-shell-only path and passed. Hosted GitBook preview is reported by the PR checks, not by this local run. |
 | honua-site #185 links without broadening claims | **Met for publication.** [Site PR #275](https://github.com/honua-io/honua-site/pull/275) merged as `3417237a320a87e22d695599dcc2c256452103e0` on 2026-09-25. See [September 26 publication and current pin](#september-26-publication-and-current-pin). The live paragraph does not add #3300, EKS, Azure or hosted-model operation as prerequisites, and it still says exact-candidate receipts are required. |
 
@@ -233,8 +329,11 @@ quality contract, extended by [protected rollout #319](https://github.com/honua-
 checked changes, contained failures and verified recovery. This disposition preserves
 the must-fix-before-cut ruling. The September 12 ruling requires the manifest-pinned
 image even before final cut; the older candidate-absence release is superseded.
-Site publication is met. The joined deployment transcript and a replay on the
-current pin `87966c3` remain unmet.
+Site publication is met. The October 11 replay meets the installed harnesses and
+the Local Docker deployment rollback on the current pin `93cad86`. It also found
+the undocumented rollback completion proof, now documented. A finding-driven
+deployment transcript, an authenticated Admin CLI execution and the ECS-small
+placement remain unmet.
 
 ## Authorization and freshness proof map
 
@@ -284,7 +383,9 @@ The September 12 receipts used the previous pin, `7ba4226`
 (`sha256:dd50cd81…`). The accepted pin on September 26 is `87966c3`
 (`sha256:069f196b…`); see
 [September 26 publication and current pin](#september-26-publication-and-current-pin).
-Do not treat the September 15 receipts as evidence for that later digest.
+Do not treat the September 15 receipts as evidence for that later digest. The
+accepted pin on October 11 is `93cad86` (`sha256:785de2ae…`); its receipts are
+listed in [October 11 accepted-pin replay](#october-11-accepted-pin-replay).
 
 ### Executed approval slice
 

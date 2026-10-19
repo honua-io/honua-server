@@ -206,10 +206,15 @@ internal static partial class FeatureServerEndpoints
                 [outSrError ?? "outSR must be a WKID or spatialReference object."]);
         }
 
-        // Build query from common parameters
-        var query = new FeatureQuery
+        // Translate where through the shared filter pipeline, then overlay the
+        // top-features parameters. A raw Where string skips SqlFilter translation.
+        if (!TryBuildAnalyticsFeatureQuery(context, resource, GetValueString(values, "where"), out var query, out var whereError))
         {
-            Where = GetValueString(values, "where"),
+            return whereError!;
+        }
+
+        query = query with
+        {
             TopFilter = topFilter,
             SpatialReferenceSrid = resource.ReadSrid(),
             OutputSrid = outputSrid,
@@ -235,8 +240,19 @@ internal static partial class FeatureServerEndpoints
 
         query = filteredQuery;
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var result = await featureReader.QueryTopFeaturesAsync(storageLayerId.Value, query, cancellationToken);
+        QueryResult<Feature> result;
+        try
+        {
+            var featureReader = await ResolveAnalyticsFeatureReaderAsync(
+                context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+            result = await featureReader.QueryTopFeaturesAsync(storageLayerId.Value, query, cancellationToken);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "queryTopFeatures is not supported by the configured feature provider for this layer.");
+        }
 
         // returnIdsOnly: return the objectId-set payload, mirroring the normal query
         // operation. pbf returns the ObjectIdsResult arm; JSON returns

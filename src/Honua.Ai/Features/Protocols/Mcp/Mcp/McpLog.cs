@@ -107,6 +107,20 @@ internal static partial class McpLog
     public static partial void SessionServedStateless(ILogger logger, string sessionIdPrefix);
 
     /// <summary>
+    /// The MCP session mode chosen for this host at startup (honua-server#5629).
+    /// </summary>
+    [LoggerMessage(8225, LogLevel.Information, "MCP session mode selected: Mode={Mode}, Reason={Reason}")]
+    public static partial void SessionModeSelected(ILogger logger, string mode, string reason);
+
+    /// <summary>
+    /// The host runs as several instances with no shared session store and no
+    /// signing secret, so sessions stay in memory and another instance answers a
+    /// session id with HTTP 404 (honua-server#5629).
+    /// </summary>
+    [LoggerMessage(8226, LogLevel.Warning, "MCP sessions are in-memory on a multi-instance host; another instance will answer a session id with 404. Set Mcp:SessionSigningKey or connect Redis. Reason={Reason}")]
+    public static partial void SessionModeDegraded(ILogger logger, string reason);
+
+    /// <summary>
     /// The shared MCP session store (Redis) failed an operation. A session held
     /// locally keeps being served; an id this instance does not hold answers 404.
     /// </summary>

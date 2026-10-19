@@ -211,7 +211,7 @@ prior revision and protection policy.
 | Backend family | `rollbackSupported` | What a rollback request means |
 |---|---:|---|
 | Kubernetes/ECS/Azure Container Apps GitOps hand-off | `false` | Honua cannot revert the workload. The operation becomes `ManualInterventionRequired`; revert the pinned revision in the GitOps repository and verify it out of band. |
-| Argo Rollouts, YARP rolling replace, Azure revision/slot/alias, and direct cloud adapters that implement revert | `true` when registered/configured | Honua calls the backend rollback operation and records the observed provider outcome. Support remains operation- and prior-revision-dependent. |
+| Argo Rollouts, YARP rolling replace, Azure revision/slot/alias, and direct cloud adapters that implement revert | `true` when registered/configured | Honua calls the backend rollback operation and records the observed provider outcome. It reports `RolledBack` only after the prior revision is serving, healthy and passes a configured functional query ([completion proof](../deploy/upgrade-and-rollback.md#rollback-completion-proof)). Support remains operation- and prior-revision-dependent. |
 | Missing/unregistered backend or no prior revision | unavailable | No automatic rollback is claimed; plan/findings surfaces must direct the operator to manual recovery. |
 
 Platform version rollback moves compute back to a known revision. During a

@@ -3,6 +3,7 @@
 
 using System.Collections.Frozen;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Geoprocessing.ProcessRelease;
 
 namespace Honua.Geoprocessing;
 
@@ -62,6 +63,8 @@ internal static class GeoprocessingReservedParameterPolicy
         CustomCodeJobContract.DepsManifestParam,
         CustomCodeJobContract.ParamsJsonParam,
         CustomCodeJobContract.DeclaredScopeParam,
+        // Logical process whose live release binding admits the job (honua-server#6221).
+        GpProcessReleaseAdmission.ProcessParam,
         // Legacy declared scope; validated to be within the submitter's own reach.
         CustomCodeOwnerScopeCapture.DeclaredScopeMetadataKey,
         // Typed per-job sizing request; parsed field-by-field by GpResourceProfile.

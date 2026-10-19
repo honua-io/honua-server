@@ -245,6 +245,30 @@ internal sealed class McpInitializeResult
 
     [JsonPropertyName("serverInfo")]
     public McpServerInfo ServerInfo { get; set; } = new();
+
+    /// <summary>
+    /// Honua metadata on the <c>initialize</c> result. Omitted when the transport
+    /// has no session registry (in-process callers).
+    /// </summary>
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public McpInitializeResultMeta? Meta { get; set; }
+}
+
+/// <summary>
+/// <c>_meta</c> on the <c>initialize</c> result.
+/// </summary>
+internal sealed class McpInitializeResultMeta
+{
+    /// <summary>
+    /// How the server keeps the session it issues on this response:
+    /// <c>shared</c> (a shared store; any instance honours and can terminate it),
+    /// <c>stateless</c> (a signed self-describing id any instance honours; not
+    /// revocable, bounded by an absolute lifetime), or <c>in-memory</c> (this
+    /// instance only).
+    /// </summary>
+    [JsonPropertyName("honua.io/session-mode")]
+    public string SessionMode { get; set; } = string.Empty;
 }
 
 internal sealed class McpServerCapabilities

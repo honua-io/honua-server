@@ -506,7 +506,7 @@ internal static partial class FeatureServerEndpoints
             layerId,
             request,
             editLimits,
-            cancellationToken);
+            cancellationToken: cancellationToken);
         return StampEditMoment(context, request, result);
     }
 
@@ -753,7 +753,7 @@ internal static partial class FeatureServerEndpoints
                 entry.Id,
                 request,
                 editLimits,
-                cancellationToken);
+                cancellationToken: cancellationToken);
 
             // Extract the ApplyEditsResponse from the IResult
             if (layerResult is Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult)
@@ -1130,7 +1130,7 @@ internal static partial class FeatureServerEndpoints
             layerId,
             request,
             editLimits,
-            cancellationToken);
+            cancellationToken: cancellationToken);
         return StampEditMoment(context, request, result);
     }
 

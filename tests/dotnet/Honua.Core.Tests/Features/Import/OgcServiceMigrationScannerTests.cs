@@ -19,6 +19,7 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class OgcServiceMigrationScannerTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_Wfs20Capabilities_ProducesFeatureInventory()
     {
@@ -76,6 +77,7 @@ public sealed class OgcServiceMigrationScannerTests
         handler.Authorizations.Should().OnlyContain(value => value == "Basic " + expected);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_CapabilitiesFailure_ReturnsSanitizedFailureArtifact()
     {
@@ -101,6 +103,7 @@ public sealed class OgcServiceMigrationScannerTests
             .Should().NotContain(value => value.Contains("secret", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_ServiceUrlWithSecretQuery_RedactsArtifactUrls()
     {
@@ -123,6 +126,7 @@ public sealed class OgcServiceMigrationScannerTests
             .Should().OnlyContain(address => address == null || !address.Contains("super-secret", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_ServiceUrlWithRoutingQuery_PreservesSafeDependencyAddress()
     {
@@ -144,6 +148,7 @@ public sealed class OgcServiceMigrationScannerTests
             .Should().OnlyContain(address => address == null || !address.Contains("super-secret", StringComparison.Ordinal));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_DescribeFeatureTypeFailure_UsesSanitizedManualReviewWarning()
     {
@@ -172,6 +177,7 @@ public sealed class OgcServiceMigrationScannerTests
             .Should().NotContain(value => value.Contains("secret", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_WmsCapabilities_ReportsRenderOnlyUnsupportedResource()
     {
@@ -209,6 +215,7 @@ public sealed class OgcServiceMigrationScannerTests
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_WmtsCapabilities_ReportsTileOnlyUnsupportedResourceAndTileMatrixSet()
     {
@@ -249,6 +256,7 @@ public sealed class OgcServiceMigrationScannerTests
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_WcsCapabilitiesAndDescribeCoverage_ProducesCoverageInventory()
     {
@@ -280,6 +288,7 @@ public sealed class OgcServiceMigrationScannerTests
             record.AutomationStatus == MigrationFidelityAutomationStatuses.Assisted);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_WcsDescribeCoverageFailure_LeavesAccessConstraintsEmptyAndFlagsManualReview()
     {
@@ -308,6 +317,7 @@ public sealed class OgcServiceMigrationScannerTests
             .Should().Be(OgcCoverageMigrationCompatibilityCodes.OutputFormatMissing);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task ScanSourceAsync_OgcApiCoveragesCollections_UsesOnlyCoverageOutputLinksForFormats()
     {

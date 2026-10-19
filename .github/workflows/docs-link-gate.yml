@@ -43,11 +43,18 @@ on:
       - 'scripts/ci/check-doc-example-surfaces.test.py'
       - 'scripts/ci/check-okf-bundle.py'
       - 'scripts/ci/check-okf-bundle.test.py'
+      - 'scripts/ci/okf_frontmatter.py'
+      - 'scripts/ci/gis_workflow.py'
+      - 'scripts/ci/generate-okf-graph.py'
+      - 'scripts/ci/generate-okf-graph.test.py'
+      - 'scripts/ci/okf-requirements.txt'
       - 'scripts/ci/okf-bundle.v1.json'
       - 'scripts/ci/generate-capability-concepts.py'
       - 'scripts/ci/generate-llms-txt.py'
       - 'scripts/ci/doc-wire-reference-allowlist.v1.json'
       - 'scripts/docs-validation/test_windows_package_verification.py'
+      - 'scripts/docs-validation/install_artifacts.py'
+      - 'scripts/docs-validation/test_install_artifacts.py'
       - '.github/workflows/docs-link-gate.yml'
   workflow_dispatch:
 
@@ -62,7 +69,7 @@ jobs:
   check:
     name: Documentation links and anchors
     runs-on: ubuntu-latest
-    # Stdlib Python over ~1.6k Markdown files and a handful of source roots: a
+    # Python over Markdown files and a handful of source roots: a
     # cold run is seconds, not minutes. The ceiling is a bound, not a budget.
     timeout-minutes: 10
     steps:
@@ -70,6 +77,9 @@ jobs:
         with:
           # The additions-only example gate diffs the PR head against its base.
           fetch-depth: 0
+
+      - name: Install the safe OKF YAML reader
+        run: python3 -m pip install -r scripts/ci/okf-requirements.txt
 
       # The checker's own tests run first and are self-contained (synthetic docs
       # trees in temp directories). A checker that wrongly reports clean is the
@@ -85,8 +95,16 @@ jobs:
       - name: Test the OKF bundle checker
         run: python3 scripts/ci/check-okf-bundle.test.py
 
+      - name: Test semantic composition and graph boundaries
+        run: python3 scripts/ci/generate-okf-graph.test.py
+
       - name: Challenge Windows package readback verification under Python optimization
         run: python3 scripts/docs-validation/test_windows_package_verification.py
+
+      - name: Check installation artifacts without building the server
+        run: |
+          python3 scripts/docs-validation/test_install_artifacts.py
+          python3 scripts/docs-validation/install_artifacts.py
 
       - name: Check documentation links, anchors, and code-referenced anchors
         run: python3 scripts/ci/check-doc-links.py
@@ -96,6 +114,9 @@ jobs:
       # outside by a recorded decision rather than by being un-navigable.
       - name: Check the OKF concept bundle
         run: python3 scripts/ci/check-okf-bundle.py --summary
+
+      - name: Check the derived OKF agent graph
+        run: python3 scripts/ci/generate-okf-graph.py --check
 
       # One capability concept per registry entry, generated from
       # docs/gis/data/capability-keys.v1.json and the capability matrix. They

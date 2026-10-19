@@ -9,21 +9,31 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 Honua runs as one container beside PostGIS and Redis. This page starts it with
 Docker Compose, publishes a small dataset, and queries it back.
 
-**You need** Docker with Compose 2.23.1 or later, Python 3.11+ for the last
+Prefer an agent-led walkthrough? Start with [Get started with AI](with-ai.md),
+including its [local prerequisite check](with-ai.md#agent-prerequisite-check).
+
+**You need** Docker with Compose 2.23.1 or later, Python 3.11+ with working venv and pip support for the last
 step, and OpenSSL 3 with a POSIX shell (`grep`, `cut`, `chmod`) for the key-ring
 certificate. On Windows, run that certificate block in WSL or Git Bash. Nothing
 else: no repository checkout, no compiler, and **no registry credentials** —
 the server image and both Python clients are public. The 2026.1 release runs
 with licensing disabled, so there is no licence or edition-selection step.
 
-The server image is the 2026.1 release channel
-`ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA);
-only release promotion moves that tag.
+For local evaluation, this guide uses the published preview image
+`ghcr.io/honua-io/honua-server:nightly-0e03bdd`. Its source and immutable registry
+identity are recorded in the [preview artifact receipt](../reference/local-preview-artifact.md).
+This is a development preview, not a promoted 2026.1 release. The public image
+and pinned clients below can be used without a customer install manifest.
+
+After release promotion, the release channel will be
+`ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA).
 The exact digest is in the release's `customer-install-manifest.json`
-(`server.image` in that release's [customer install manifest](https://honua.io/data/customer-install-manifest.json)).
+(`server.image`). Use that channel only when its image and install manifest are
+publicly available; the preview instructions below do not depend on it.
+
 The clients are pinned:
-[honua-admin 0.1.10](https://pypi.org/project/honua-admin/0.1.10/) and
-[honua-sdk 0.1.13](https://pypi.org/project/honua-sdk/0.1.13/).
+[honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/) and
+[honua-sdk 0.1.16](https://pypi.org/project/honua-sdk/0.1.16/).
 
 For a lasting deployment, continue to
 [production Compose](../guides/deploy/docker-compose.md). For a locked-down
@@ -35,8 +45,17 @@ recovery checks scripted, see [Linux](linux-packages.md) or
 
 Make a directory and put this in it as `compose.yaml`:
 
+<!-- docs-validation:install.compose mode=run -->
 ```yaml
 services:
+  keyring-init:
+    image: redis:7.4-alpine
+    user: "0:0"
+    entrypoint: ["sh", "-c"]
+    command: ["chown 0:1001 /keyring/keyring.pfx && chmod 0640 /keyring/keyring.pfx"]
+    volumes:
+      - ./secrets:/keyring
+    restart: "no"
   honua:
     image: ${HONUA_IMAGE:?Set the server image}
     platform: linux/amd64
@@ -59,6 +78,8 @@ services:
       FileStorage__Provider: Local
       FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
     depends_on:
+      keyring-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -115,13 +136,15 @@ configs:
 
 ## 2. Set the secrets
 
-Three secrets go in a `.env` file beside `compose.yaml`. Generate them rather
+Four secrets go in a `.env` file beside `compose.yaml`. Generate them rather
 than inventing them.
 
+<!-- docs-validation:install.secrets mode=run -->
 ```bash
+umask 077
 cat > .env <<EOF
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-0e03bdd
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(openssl rand -hex 32)
 HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
@@ -133,11 +156,12 @@ EOF
 <details>
 <summary>PowerShell</summary>
 
+<!-- docs-validation:install.windows-secrets mode=skip reason="Native Windows alternative" -->
 ```powershell
 function New-Secret { -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) }) }
 @"
 COMPOSE_PROJECT_NAME=honua-quickstart
-HONUA_IMAGE=ghcr.io/honua-io/honua-server:2026.1-rc
+HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-0e03bdd
 HONUA_HTTP_PORT=18080
 POSTGRES_PASSWORD=$(New-Secret)
 HONUA_ADMIN_PASSWORD=Aa1!$(New-Secret)
@@ -156,22 +180,26 @@ Keep `.env`. Losing it means losing the database.
 
 Production stores operation secrets in Redis. The server will not start until a certificate
 encrypts that key ring, so a copy of Redis does not hold both the secrets and the keys. This
-file is not a license. Generate a local RSA PKCS#12. The container runs as a different user
-than you, so the file is world-readable; the password still encrypts it.
-[honua-server#5439](https://github.com/honua-io/honua-server/issues/5439) tracks whether a
-root-owned `0640` mount can replace that mode.
+file is not a license. Generate a local RSA PKCS#12 and keep it private on the host. The
+published image runs as uid 1001 and gid 1001. Before the server starts, Compose runs a
+one-shot root step that sets the mount to owner root, group 1001, mode `0640`. That mode
+has no other-read, and `openssl` cannot replace a root-owned `0640` file. The directory
+stays yours, so the block removes `secrets/keyring.pfx` before the export. The export
+password still encrypts the PKCS#12.
 
+<!-- docs-validation:install.keyring mode=run -->
 ```bash
 mkdir -p secrets
 HONUA_KEYRING_PASSWORD="$(grep '^HONUA_KEYRING_PASSWORD=' .env | cut -d= -f2)"
 openssl req -x509 -newkey rsa:2048 \
   -keyout secrets/keyring.pem -out secrets/keyring.crt \
   -days 3650 -nodes -subj "/CN=honua-quickstart"
+rm -f secrets/keyring.pfx
 openssl pkcs12 -export \
   -inkey secrets/keyring.pem -in secrets/keyring.crt \
   -out secrets/keyring.pfx -passout "pass:${HONUA_KEYRING_PASSWORD}"
 rm -f secrets/keyring.pem secrets/keyring.crt
-chmod a+r secrets/keyring.pfx
+chmod 600 secrets/keyring.pfx
 ```
 
 On Windows, run that block in WSL or Git Bash. `New-SelfSignedCertificate` plus
@@ -180,12 +208,15 @@ put the export password in `HONUA_KEYRING_PASSWORD`.
 
 ## 3. Start it
 
+<!-- docs-validation:install.start mode=run -->
 ```bash
 docker compose up -d --wait --wait-timeout 180
 ```
 
-`--wait` holds until every container reports healthy, so a clean exit is the
-readiness check — there is nothing else to poll. If it times out,
+`--wait` holds for container health checks. The preview image's container probe
+checks liveness; also open `http://localhost:18080/healthz/ready` (using your
+selected port) and wait for `Ready`. The authenticated publish/query below then
+verifies the data path. If startup times out,
 `docker compose logs honua postgres redis` says why.
 
 The admin API is not anonymous: it needs the `HONUA_ADMIN_PASSWORD` from `.env`,
@@ -200,6 +231,7 @@ Once the server has started, that `honua` schema holds its catalog, so an
 unqualified `CREATE TABLE` would put `places` there. The publish step below
 reads `public.places`.
 
+<!-- docs-validation:install.seed mode=run -->
 ```bash
 docker compose exec -T postgres psql -U honua -d honua <<'SQL'
 CREATE TABLE public.places (
@@ -215,14 +247,16 @@ SQL
 
 Install the two public clients, ideally in a virtual environment:
 
+<!-- docs-validation:install.clients mode=run -->
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install 'honua-admin==0.1.10' 'honua-sdk==0.1.13'
+pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.16'
 ```
 
 Save this as `quickstart.py`. It registers that database as a connection,
 publishes the table as a layer, and queries it back:
 
+<!-- docs-validation:install.publish mode=run -->
 ```python
 import json
 from honua_admin import HonuaAdminClient, CreateSecureConnectionRequest, PublishLayerRequest
@@ -253,6 +287,7 @@ print(f"published service quickstart layer {layer.layer_id}")
 print(json.dumps(result["features"], indent=2))
 ```
 
+<!-- docs-validation:install.query mode=run -->
 ```bash
 python quickstart.py
 ```
@@ -281,6 +316,7 @@ deployment actually exposes, rather than what the list above assumes.
 
 ## Stop or remove it
 
+<!-- docs-validation:install.cleanup mode=skip reason="Harness tears down its isolated project on every exit" -->
 ```bash
 docker compose down              # stop, keep all data
 docker compose down --volumes    # stop and permanently delete this project's data
@@ -299,9 +335,15 @@ a backup.
   switch to the Development environment or disable preflight to get past a
   startup failure; it is telling you something.
 - **`KeyRingCertificatePath` is required** — the key-ring PKCS#12 from step 2 is
-  missing. Re-run that `openssl` block so `secrets/keyring.pfx` exists before
-  `docker compose up`.
-- **A pull fails** — these pins need no credentials, so it is network or proxy
-  policy. The optional .NET client uses a different registry; see
+  missing or not readable. Re-run that `openssl` block. It removes
+  `secrets/keyring.pfx` before the export, which is what makes a second run work
+  after Compose has set the file to root, group 1001, mode `0640`. If `rm` is
+  denied, run `sudo chown "$USER" secrets secrets/keyring.pfx` and then the block
+  again. Then `docker compose up` so the root-owned mode `0640` mount is applied
+  before the server starts. Do not grant other-read on the file.
+- **A pull fails** — distinguish an unpublished tag (`not found`), registry
+  authorization failure, unsupported image platform, and network/proxy failure.
+  These are intended public artifacts; registry credentials do not fix an
+  unpublished tag. The optional .NET client uses a different registry; see
   [registry clients](registry-clients.md) only if you need it.
 - **Anything else** — [troubleshooting](../guides/deploy/troubleshooting.md).

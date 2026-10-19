@@ -151,10 +151,12 @@ public sealed class CreateSecureConnectionRequest
     public string? Host { get; init; }
 
     /// <summary>
-    /// Database server port number.
+    /// Optional database server port. When omitted, inline credentials use 5432 and a secret reference
+    /// uses the port in its resolved connection string. For PostgreSQL-family providers, an explicit port
+    /// must match the resolved secret; other providers retain their existing connection-string policies.
     /// </summary>
     [Range(1, 65535)]
-    public int Port { get; init; } = 5432;
+    public int? Port { get; init; }
 
     /// <summary>
     /// Database name to connect to. Required with a password; optional (display metadata) with a secret reference.
@@ -251,6 +253,8 @@ public sealed class CreateSecureConnectionRequest
         validationError = null;
         return true;
     }
+
+    internal int GetEffectivePort() => Port ?? (string.IsNullOrWhiteSpace(SecretReference) ? 5432 : 0);
 }
 
 /// <summary>

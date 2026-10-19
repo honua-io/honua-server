@@ -12,6 +12,7 @@ namespace Honua.Core.Tests.Features.AuditLog;
 /// </summary>
 public sealed class NullAuditRetentionPrunerTests
 {
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PruneAsync_BoundedPolicy_RemovesNothing()
     {
@@ -22,6 +23,7 @@ public sealed class NullAuditRetentionPrunerTests
         removed.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public async Task PruneAsync_NullPolicy_Throws()
     {

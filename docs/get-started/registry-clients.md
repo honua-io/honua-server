@@ -9,23 +9,25 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 **Every Honua client package is public and installs with no credentials**, and so
 does the server image. Nothing on this page needs a token.
 
-The [customer install manifest](https://honua.io/data/customer-install-manifest.json)
-records the pins and where each comes from.
+The local preview uses the image in the
+[preview artifact receipt](../reference/local-preview-artifact.md) and the pinned
+clients below. It does not require the currently unavailable customer install
+manifest. A promoted release must supply its own public install manifest.
 
 | Registry | Manifest pin | Role | Package-read credentials |
 | --- | --- | --- | --- |
-| PyPI | `honua-admin==0.1.10` | Control plane used by this journey | None |
-| PyPI | `honua-sdk==0.1.13` | Data plane used by this journey | None |
+| PyPI | `honua-admin==0.1.12` | Control plane used by this journey | None |
+| PyPI | `honua-sdk==0.1.16` | Data plane used by this journey | None |
 | PyPI | `mcp==2.1.1` | Only if you drive the server over MCP | None |
-| npm | `@honua/sdk-js@0.1.13` | Alternative JS SDK and CLI | None |
-| npm | `create-honua-app@0.1.6` | Application scaffolding CLI | None |
-| npm | `@honua/mcp-server@0.1.13` | Alternative MCP proxy | None |
-| NuGet | `Honua.Sdk` `1.10.3` | Alternative .NET SDK | None |
-| NuGet | `Honua.Sdk.Admin` `1.10.3` | Dedicated .NET control-plane SDK | None |
+| npm | `@honua/sdk-js@0.1.16` | Alternative JS SDK and CLI | None |
+| npm | `create-honua-app@0.1.9` | Application scaffolding CLI | None |
+| npm | `@honua/mcp-server@0.1.16` | Alternative MCP proxy | None |
+| NuGet | `Honua.Sdk` `1.11.1` | Alternative .NET SDK | None |
+| NuGet | `Honua.Sdk.Admin` `1.11.1` | Dedicated .NET control-plane SDK | None |
 
 Pick the one for your language; you do not need the others. The npm and NuGet
-pins are the release manifest's, not a claim that the Python quickstart exercised
-them. The publication record beside the manifest identifies its immutable source
+pins are alternative client selections, not a claim that the Python quickstart
+exercised them. A promoted release publication record identifies its immutable source
 and byte hash.
 
 ## Installing the .NET client
@@ -35,7 +37,7 @@ anonymously:
 
 ```bash
 dotnet new console
-dotnet add package Honua.Sdk --version 1.10.3
+dotnet add package Honua.Sdk --version 1.11.1
 ```
 
 No feed to add, no token, no package-source mapping. The same builds are also

@@ -206,34 +206,48 @@ internal sealed class GeoprocessingJobAuthorizer
     /// <see cref="GeoprocessingAuthorizationException"/> (after logging the denial) when the
     /// decision is not allowed.
     /// </summary>
-    public async Task EnsureAuthorizedAsync(
+    public Task EnsureGPServerExecutionAuthorizedAsync(
+        ClaimsPrincipal principal,
+        GPServerExecutionContext execution,
+        CancellationToken cancellationToken = default)
+        => execution.IsGranted(principal)
+            ? Task.CompletedTask
+            : EnsureAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken);
+
+    public Task EnsureAuthorizedAsync(
         ClaimsPrincipal principal,
         OperatorResourceType resourceType,
         OperatorOperation operation,
         CancellationToken cancellationToken = default)
-    {
-        var decision = await _authEvaluator.EvaluateAsync(
+        => EnsureAuthorizedAsync(
             principal,
             new OperatorAuthorizationRequest
             {
                 ResourceType = resourceType,
                 Operation = operation
             },
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken);
+
+    public async Task EnsureAuthorizedAsync(
+        ClaimsPrincipal principal,
+        OperatorAuthorizationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var decision = await _authEvaluator.EvaluateAsync(principal, request, cancellationToken).ConfigureAwait(false);
 
         if (!decision.IsAllowed)
         {
             // Carry the actual denied operation into both the structured security log and the
             // surfaced exception message so a mutating-process denial is distinguishable from a
             // baseline Execute denial rather than reading as a generic "Execute" 403 (#2798).
-            GeoprocessingServiceLog.AuthorizationDenied(_logger, resourceType.ToString(), operation.ToString());
+            GeoprocessingServiceLog.AuthorizationDenied(_logger, request.ResourceType.ToString(), request.Operation.ToString());
             throw new GeoprocessingAuthorizationException(
                 decision.RequiresAuthentication,
                 decision.RequiresAuthentication
                     ? "Authentication is required for this operation."
-                    : $"You do not have permission to perform '{operation}' on {resourceType}.",
-                resourceType,
-                operation,
+                    : $"You do not have permission to perform '{request.Operation}' on {request.ResourceType}.",
+                request.ResourceType,
+                request.Operation,
                 AuthorizationDenialReason.InsufficientGrant);
         }
 
@@ -242,16 +256,16 @@ internal sealed class GeoprocessingJobAuthorizer
         // only narrow that — never widen it. Non-OAuth principals (X-API-Key, interactive,
         // dev-bypass) are not scope-governed and pass through untouched. A scope denial is a
         // distinct structured reason from a grant denial so operators can tell the two apart.
-        var scopeDecision = _scopeAuthorizer.Evaluate(principal, resourceType, operation);
+        var scopeDecision = _scopeAuthorizer.Evaluate(principal, request.ResourceType, request.Operation);
         if (!scopeDecision.IsAllowed)
         {
-            GeoprocessingServiceLog.AuthorizationScopeDenied(_logger, resourceType.ToString(), operation.ToString());
+            GeoprocessingServiceLog.AuthorizationScopeDenied(_logger, request.ResourceType.ToString(), request.Operation.ToString());
             throw new GeoprocessingAuthorizationException(
                 requiresAuthentication: false,
                 scopeDecision.Reason
-                    ?? $"The access token's scopes do not permit '{operation}' on {resourceType}.",
-                resourceType,
-                operation,
+                    ?? $"The access token's scopes do not permit '{request.Operation}' on {request.ResourceType}.",
+                request.ResourceType,
+                request.Operation,
                 AuthorizationDenialReason.InsufficientScope);
         }
     }

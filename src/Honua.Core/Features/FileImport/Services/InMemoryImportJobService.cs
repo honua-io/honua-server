@@ -147,6 +147,10 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         {
             tempFilePath = request.LocalFilePath;
         }
+        else if (request.UsesObjectStore)
+        {
+            backgroundRequest = request;
+        }
         else if (!request.UsesCloudStorage)
         {
             // Copy stream to a temp file for background processing
@@ -260,6 +264,12 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 }
             });
 
+            if (request.UsesObjectStore)
+            {
+                throw new InvalidOperationException(
+                    "Object-store imports are opened by the universal import runner at execution time.");
+            }
+
             var result = await _importService.ImportFileAsync(request, progress, cancellationToken);
 
             if (_jobs.TryGetValue(jobId, out state))
@@ -268,7 +278,10 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 featureCount = result.FeatureCount;
                 failedFeatures = state.Progress.FailedFeatures;
                 errorMessage = result.ErrorMessage;
-                var clientErrorMessage = result.Success ? result.ErrorMessage : SafeImportFailureMessage;
+                var clientErrorMessage = result.Success ? result.ErrorMessage
+                    : result.ErrorCode == ImportTableOwnershipException.Code
+                        ? ImportTableOwnershipException.CreateSafeMessage(result.TableName)
+                        : SafeImportFailureMessage;
 
                 state.Progress = state.Progress with
                 {
@@ -276,11 +289,12 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                     FeaturesProcessed = result.FeatureCount,
                     CompletedAt = DateTimeOffset.UtcNow,
                     ErrorMessage = clientErrorMessage,
+                    ErrorCode = result.ErrorCode,
                     Warnings = result.Warnings,
                     DetectedSrid = result.DetectedSrid,
                     CurrentPhase = result.Success ? "Import completed" : "Import failed"
                 };
-                state.Result = result.Success ? result : result with { ErrorMessage = SafeImportFailureMessage };
+                state.Result = result.Success ? result : result with { ErrorMessage = clientErrorMessage };
 
                 if (result.Success)
                 {

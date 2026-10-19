@@ -79,7 +79,7 @@ internal sealed partial class PostgresObservationStore
             BindQuery(count, query);
             total = (long)(await ExecuteCatalogScalarAsync(count, cancellationToken).ConfigureAwait(false) ?? 0L);
         }
-        await using var command = new NpgsqlCommand($"SELECT {EntityJsonSql(entitySet)} FROM {EntityTable(entitySet)} d{where} ORDER BY {query.OrderBySql} OFFSET @skip LIMIT @top", lease);
+        await using var command = new NpgsqlCommand($"SELECT {EntityJsonSql(entitySet, includeDerivedIntervals: query.IncludeDerivedDatastreamIntervals)} FROM {EntityTable(entitySet)} d{where} ORDER BY {query.OrderBySql} OFFSET @skip LIMIT @top", lease);
         BindQuery(command, query);
         command.Parameters.AddWithValue("skip", query.Skip);
         command.Parameters.AddWithValue("top", query.Top);
@@ -95,9 +95,9 @@ internal sealed partial class PostgresObservationStore
         if (query.ParentId is { } parent) command.Parameters.AddWithValue("parent", parent);
     }
 
-    private string EntityJsonSql(string set, string alias = "d")
+    private string EntityJsonSql(string set, string alias = "d", bool includeDerivedIntervals = true)
     {
-        if (set != "Datastreams") return $"to_jsonb({alias})";
+        if (set != "Datastreams" || !includeDerivedIntervals) return $"to_jsonb({alias})";
         var geometry = GeoJsonGeometrySql("f.feature", "f.encoding_type");
         return $"""
             to_jsonb({alias}) || (SELECT jsonb_build_object(
@@ -163,7 +163,7 @@ internal sealed partial class PostgresObservationStore
             if (row["phenomenon_time_end"] is { } end) body["phenomenonTime"] = $"{row["phenomenon_time"]!.GetValue<string>()}/{end.GetValue<string>()}";
         }
         if (set == "Sensors") body["metadata"] = (row["metadata_json"] ?? row["metadata"])?.DeepClone();
-        if (set == "Datastreams")
+        if (set == "Datastreams" && row.ContainsKey("computed_phenomenon_start"))
         {
             body.Remove("observedArea");
             foreach (var (property, prefix) in new[] { ("phenomenonTime", "computed_phenomenon"), ("resultTime", "computed_result") })
@@ -219,12 +219,23 @@ internal sealed partial class PostgresObservationStore
     private static JsonObject ParseBody(JsonElement body) => body.ValueKind == JsonValueKind.Object
         ? JsonNode.Parse(body.GetRawText())!.AsObject() : throw new SensorThingsValidationException("An entity must be a JSON object.");
 
+    /// <summary>Accepts only a positive integer <c>@iot.id</c>. Objects and arrays are client errors.</summary>
+    internal static long RequirePositiveEntityId(JsonNode key)
+    {
+        if (key is not JsonValue value || !value.TryGetValue<long>(out var id) || id <= 0)
+        {
+            throw new SensorThingsValidationException("@iot.id must be a positive integer.");
+        }
+
+        return id;
+    }
+
     private async Task<long> ResolveEntityAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string set, JsonNode? value, int depth, CancellationToken ct)
     {
         if (value is not JsonObject body) throw new SensorThingsValidationException($"{set} must be an entity object or an @iot.id reference.");
         if (body.Count == 1 && body["@iot.id"] is { } key)
         {
-            if (!key.AsValue().TryGetValue<long>(out var id) || id <= 0) throw new SensorThingsValidationException("@iot.id must be a positive integer.");
+            var id = RequirePositiveEntityId(key);
             if (!await ExistsAsync(connection, transaction, EntityTable(set), id, ct).ConfigureAwait(false))
                 throw new SensorThingsValidationException($"Referenced {set}({id}) does not exist.");
             return id;

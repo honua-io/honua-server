@@ -55,6 +55,87 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
+    [IntegrationTheory]
+    [InlineData("<VID />")]
+    [InlineData("")]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetView")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task GetView_DefaultViewUsesResolvedRasterMetadata(string viewIdElement)
+    {
+        var rasters = await _fixture.GetService<IRasterStore>()
+            .ListRastersAsync(WebAppFixture.TestLayerId, CancellationToken.None);
+        var reference = rasters.First(raster => raster.Extent.HasValue);
+        var response = await PostSoapAsync($"""<GetView xmlns="{ArcGisNamespace}">{viewIdElement}</GetView>""");
+        response.Status.Should().Be(HttpStatusCode.OK, response.Body);
+        var result = Element(response.Document, "Result");
+        result.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:ImageView");
+        result.Elements().Select(element => element.Name.LocalName).Should().Equal(
+            "VID", "Description", "Extent", "PixelSizeX", "PixelSizeY", "BandCount", "PixelType");
+        Child(result, "VID").Value.Should().BeEmpty();
+        var extent = Child(result, "Extent");
+        double.Parse(Child(extent, "XMin").Value, CultureInfo.InvariantCulture)
+            .Should().Be(rasters.Min(raster => raster.Extent!.Value.XMin));
+        double.Parse(Child(extent, "YMin").Value, CultureInfo.InvariantCulture)
+            .Should().Be(rasters.Min(raster => raster.Extent!.Value.YMin));
+        double.Parse(Child(extent, "XMax").Value, CultureInfo.InvariantCulture)
+            .Should().Be(rasters.Max(raster => raster.Extent!.Value.XMax));
+        double.Parse(Child(extent, "YMax").Value, CultureInfo.InvariantCulture)
+            .Should().Be(rasters.Max(raster => raster.Extent!.Value.YMax));
+        Child(result, "BandCount").Value.Should().Be(reference.BandCount.ToString(CultureInfo.InvariantCulture));
+        Child(result, "PixelType").Value.Should().Be("U8");
+        double.Parse(Child(result, "PixelSizeX").Value, CultureInfo.InvariantCulture)
+            .Should().BeApproximately(ServiceLowCellSize, 1e-9);
+        double.Parse(Child(result, "PixelSizeY").Value, CultureInfo.InvariantCulture)
+            .Should().BeApproximately(ServiceHighCellSize, 1e-9);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetView")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task GetView_UnknownNamedViewIsNotTheDefaultView()
+    {
+        var response = await PostSoapAsync($"""<GetView xmlns="{ArcGisNamespace}"><VID>foreign-view</VID></GetView>""");
+        response.Status.Should().Be(HttpStatusCode.NotFound, response.Body);
+        response.Body.Should().Contain("Image view was not found");
+        response.Document.Descendants().Should().NotContain(element => element.Name.LocalName == "Result");
+    }
+
+    [IntegrationTheory]
+    [InlineData(4326, "GeographicCoordinateSystem")]
+    [InlineData(3857, "ProjectedCoordinateSystem")]
+    [Operation(Operations.GetServiceInfo)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetFields")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task GetFields_GeometryReferenceMatchesServiceExtent(int srid, string coordinateSystem)
+    {
+        var store = _fixture.GetService<IRasterStore>();
+        var rasters = await store.ListRastersAsync(WebAppFixture.TestLayerId, CancellationToken.None);
+        var projected = rasters.Select(raster => raster with
+        {
+            Srid = srid,
+            Extent = raster.Extent!.Value with { Srid = srid },
+        }).ToArray();
+        store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(projected);
+
+        var fields = await PostSoapAsync($"""<GetFields xmlns="{ArcGisNamespace}" />""");
+        var info = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
+        fields.Status.Should().Be(HttpStatusCode.OK, fields.Body);
+        info.Status.Should().Be(HttpStatusCode.OK, info.Body);
+        var geometry = Element(fields.Document, "GeometryDef");
+        geometry.Elements().Select(element => element.Name.LocalName).Should().Equal(
+            "AvgNumPoints", "GeometryType", "HasM", "HasZ", "SpatialReference");
+        var reference = Child(geometry, "SpatialReference");
+        XElement.DeepEquals(reference, Child(Element(info.Document, "Extent"), "SpatialReference"))
+            .Should().BeTrue("GetFields describes the same resolved service CRS as GetServiceInfo");
+        reference.Attribute(XName.Get("type", XsiNamespace))!.Value.Should().Be("tns:" + coordinateSystem);
+        Child(reference, "WKID").Value.Should().Be(srid.ToString(CultureInfo.InvariantCulture));
+        Child(reference, "LatestWKID").Value.Should().Be(srid.ToString(CultureInfo.InvariantCulture));
+        fields.Document.Descendants().Where(element => element.Name.LocalName == "Field")
+            .Select(field => Child(field, "Name").Value).Should().Equal(ImageServerSoapEndpoints.SoapCatalogFieldNames());
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [InterfaceOperation(TestProtocols.ImageServer, "GetCatalogItemCount")]
@@ -499,11 +580,26 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         var soapInfo = await PostSoapAsync($"""<GetServiceInfo xmlns="{ArcGisNamespace}" />""");
         soapInfo.Status.Should().Be(HttpStatusCode.OK, soapInfo.Body);
         Element(soapInfo.Document, "SupportsTime").Value.Should().Be("true");
-        Element(soapInfo.Document, "StartTimeFieldName").Value.Should().Be(
-            info.GetProperty("timeInfo").GetProperty("startTimeField").GetString());
-        var extent = Element(soapInfo.Document, "TimeExtent");
-        UnixMilliseconds(extent, "Start").Should().Be(info.GetProperty("timeInfo").GetProperty("timeExtent")[0].GetInt64());
-        UnixMilliseconds(extent, "End").Should().Be(info.GetProperty("timeInfo").GetProperty("timeExtent")[1].GetInt64());
+        // Attribute time is advertised only through catalog fields; the fixture's
+        // vector temporal hints (timestamp/event_date) are not catalog fields.
+        var catalogFields = info.GetProperty("fields").EnumerateArray()
+            .Select(static field => field.GetProperty("name").GetString()).ToArray();
+        var soapStart = soapInfo.Document.Descendants().SingleOrDefault(static element => element.Name.LocalName == "StartTimeFieldName");
+        var soapEnd = soapInfo.Document.Descendants().SingleOrDefault(static element => element.Name.LocalName == "EndTimeFieldName");
+        if (info.TryGetProperty("timeInfo", out var timeInfo) && timeInfo.ValueKind == JsonValueKind.Object)
+        {
+            soapStart?.Value.Should().Be(timeInfo.GetProperty("startTimeField").GetString());
+            soapStart?.Value.Should().BeOneOf(catalogFields);
+            var extent = Element(soapInfo.Document, "TimeExtent");
+            UnixMilliseconds(extent, "Start").Should().Be(timeInfo.GetProperty("timeExtent")[0].GetInt64());
+            UnixMilliseconds(extent, "End").Should().Be(timeInfo.GetProperty("timeExtent")[1].GetInt64());
+        }
+        else
+        {
+            soapStart.Should().BeNull("REST advertises no attribute time");
+        }
+
+        soapEnd?.Value.Should().BeOneOf(catalogFields);
 
         var soapMultidim = await PostSoapAsync($"""<GetMultidimensionalInfo xmlns="{ArcGisNamespace}" />""");
         soapMultidim.Status.Should().Be(HttpStatusCode.OK, soapMultidim.Body);
@@ -658,7 +754,15 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             description.Status.Should().Be(HttpStatusCode.OK, description.Body);
             description.Body.Should().NotContain("Unsupported ImageServer operation");
             AssertTileCache(Element(description.Document, "TileCacheInfo"), tileInfo);
-            Element(description.Document, "ServiceType").Value.Should().Be("esriCachedMapServiceSingleFused");
+            Element(description.Document, "ServiceType").Value.Should().Be("esriSingleFusedMapCache");
+            var layerCaches = Element(description.Document, "LayerCacheInfos").Elements().ToArray();
+            layerCaches.Should().ContainSingle();
+            layerCaches[0].Name.LocalName.Should().Be("LayerCacheInfo");
+            layerCaches[0].Elements().Select(element => element.Name.LocalName)
+                .Should().Equal("LayerID", "HasCache");
+            Child(layerCaches[0], "LayerID").Value.Should().Be("0");
+            Child(layerCaches[0], "HasCache").Value.Should().Be("false",
+                "the fused service cache does not advertise an individual-layer cache");
             var imageInfo = Element(description.Document, "TileImageInfo");
             Child(imageInfo, "CacheTileFormat").Value.Should().Be(tileInfo.GetProperty("format").GetString());
             Child(imageInfo, "CompressionQuality").Value.Should().Be("0");
@@ -703,6 +807,8 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         soapLods.Should().HaveCount(restLods.Length);
         for (var index = 0; index < restLods.Length; index++)
         {
+            soapLods[index].Elements().Select(element => element.Name.LocalName)
+                .Should().Equal("LevelID", "Scale", "Resolution");
             Child(soapLods[index], "LevelID").Value.Should().Be(
                 restLods[index].GetProperty("level").GetInt32().ToString(CultureInfo.InvariantCulture));
             double.Parse(Child(soapLods[index], "Resolution").Value, CultureInfo.InvariantCulture)

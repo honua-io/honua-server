@@ -479,6 +479,8 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
         GeocodeResult<IReadOnlyList<GeocodeCandidate>>? lastThrottleResult = null;
+        GeocodeLimitDecision? lastBatchRejection = null;
+        string? lastBatchRejectionProvider = null;
 
         foreach (var provider in providers)
         {
@@ -495,6 +497,23 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             if (!HasFailoverBudget(attemptedProviders.Count, allowFailover))
             {
                 break;
+            }
+
+            // Each provider's own cap, not only the first batch-capable provider. An over-cap
+            // candidate is skipped without a call and without consuming the failover budget, so
+            // a later provider with a larger cap can still run (#6160).
+            var providerBatchDecision = _limitEnforcer.CheckBatch(
+                provider.Name, provider.Capabilities, request.Queries.Count);
+            if (!providerBatchDecision.Allowed)
+            {
+                GeocodeCoordinatorLog.BatchSizeRejected(
+                    _logger,
+                    provider.Name,
+                    request.Queries.Count,
+                    providerBatchDecision.EffectiveLimit ?? 0);
+                lastBatchRejection = providerBatchDecision;
+                lastBatchRejectionProvider = provider.Name;
+                continue;
             }
 
             // Per-provider rate-limit check. A throttled provider is skipped without
@@ -560,6 +579,18 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         {
             activity?.SetStatus(ActivityStatusCode.Error, lastThrottleResult.ErrorMessage);
             return lastThrottleResult;
+        }
+
+        // A later provider that refused the batch size wins over an earlier provider's
+        // unrelated failure, and over "no provider supports batch" when nobody was called.
+        if (lastBatchRejection is not null && (lastException is not null || attemptedProviders.Count == 0))
+        {
+            var rejection = lastBatchRejection.Reason ?? "Batch size exceeds the maximum allowed batch size.";
+            activity?.SetStatus(ActivityStatusCode.Error, rejection);
+            return GeocodeResults.Failure<IReadOnlyList<GeocodeCandidate>>(
+                rejection,
+                lastBatchRejectionProvider ?? "unknown",
+                attemptedProviders: attemptedProviders);
         }
 
         var errorMessage = BuildFailureMessage(lastException, "batch geocoding", attemptedProviders);

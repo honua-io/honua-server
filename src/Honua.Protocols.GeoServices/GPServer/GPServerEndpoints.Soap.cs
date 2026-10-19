@@ -60,11 +60,11 @@ internal static partial class GPServerEndpoints
             {
                 var jobId = GPServerSoapExecution.ReadJobId(operation);
                 var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
-                var job = await jobService.GetJobAsync(jobId, context.User, ct).ConfigureAwait(false);
+                var serviceId = originalRoutes["serviceId"]?.ToString() ?? string.Empty;
+                var job = await jobService.GetGPServerJobAsync(jobId, serviceId, null, context.User, ct).ConfigureAwait(false);
                 var taskName = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerTaskName) ?? string.Empty;
                 context.Request.RouteValues["taskName"] = taskName;
                 context.Request.RouteValues["jobId"] = jobId;
-                var serviceId = originalRoutes["serviceId"]?.ToString() ?? string.Empty;
                 var bindingError = ValidateJobBinding(context, logger, job, serviceId, taskName);
                 if (bindingError is not null)
                 {
@@ -139,9 +139,16 @@ internal static partial class GPServerEndpoints
         }
     }
 
-    private static IResult ExecutionFault(IResult response, XNamespace soap)
+    internal static IResult ExecutionFault(IResult response, XNamespace soap)
         => CreateSoapFaultFromResult(response,
-            (response as IValueHttpResult)?.Value is Microsoft.AspNetCore.Mvc.ProblemDetails problem
-                ? problem.Detail ?? problem.Title ?? "The GP operation failed."
-                : "The GP operation failed.", soap);
+            (response as IValueHttpResult)?.Value switch
+            {
+                ProblemDetailsResponse problem => problem.Detail,
+                Microsoft.AspNetCore.Mvc.ProblemDetails problem =>
+                    problem.Detail ?? problem.Title ?? "The GP operation failed.",
+                ApiErrorResponse { Error: { Details: { Length: > 0 } details } } =>
+                    string.Join(" ", details),
+                ApiErrorResponse error => error.Error.Message,
+                _ => "The GP operation failed."
+            }, soap);
 }

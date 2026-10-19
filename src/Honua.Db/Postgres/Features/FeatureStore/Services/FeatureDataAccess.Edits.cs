@@ -9,6 +9,8 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
+using Honua.Core.Queries.Filters;
+using Honua.Db.Postgres.Features.Attachments;
 using NetTopologySuite.IO;
 using Npgsql;
 using NpgsqlTypes;
@@ -170,15 +172,46 @@ internal sealed partial class FeatureDataAccess
                     "delete",
                     deleted.Snapshot,
                     cancellationToken).ConfigureAwait(false);
+                await CaptureDeletedAttachmentsAsync(
+                    layerId,
+                    featureId,
+                    npgsql,
+                    npgsqlTransaction,
+                    npgsqlTransaction,
+                    deleted,
+                    cancellationToken).ConfigureAwait(false);
             }
 
-            await Transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            await CommitAndReleaseAttachmentBlobsAsync(npgsqlTransaction, cancellationToken).ConfigureAwait(false);
             return deleted.Deleted;
         }
 
         await using var conn = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var simpleDelete = await DeleteWithConnectionAsync(layerId, featureId, conn, transaction: null, cancellationToken).ConfigureAwait(false);
-        return simpleDelete.Deleted;
+        if (_attachmentCleanup is null)
+        {
+            var simpleDelete = await DeleteWithConnectionAsync(layerId, featureId, conn, transaction: null, cancellationToken).ConfigureAwait(false);
+            return simpleDelete.Deleted;
+        }
+
+        // The feature row and its attachment rows commit together. Blobs follow that commit,
+        // including when this delete is the only statement in the request (#6137).
+        await using var rowTransaction = await conn.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        var npgsqlRowTransaction = (NpgsqlTransaction)rowTransaction;
+        var deletedRow = await DeleteWithConnectionAsync(layerId, featureId, conn, npgsqlRowTransaction, cancellationToken).ConfigureAwait(false);
+        if (deletedRow.Deleted)
+        {
+            await CaptureDeletedAttachmentsAsync(
+                layerId,
+                featureId,
+                conn,
+                npgsqlRowTransaction,
+                npgsqlRowTransaction,
+                deletedRow,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        await CommitAndReleaseAttachmentBlobsAsync(npgsqlRowTransaction, cancellationToken).ConfigureAwait(false);
+        return deletedRow.Deleted;
     }
 
     private bool TryUseTransactionalOutbox([NotNullWhen(true)] out FeatureMutationOutboxScopeData? scope)
@@ -257,6 +290,37 @@ internal sealed partial class FeatureDataAccess
         await _outboxRepository.WriteOutboxRowAsync(connection, transaction, entry, cancellationToken).ConfigureAwait(false);
     }
 
+    private static readonly AsyncLocal<PendingGrpcEditReceipt?> PendingGrpcReceipt = new();
+
+    /// <summary>
+    /// Applies the batch and, when it commits, writes <paramref name="receipt"/> on that same
+    /// transaction before the commit is acknowledged.
+    /// </summary>
+    public async Task<FeatureEditApplication> ApplyEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        FeatureEditIdempotencyReceipt receipt,
+        CancellationToken cancellationToken = default)
+    {
+        var pending = new PendingGrpcEditReceipt { Receipt = receipt };
+        var previous = PendingGrpcReceipt.Value;
+        PendingGrpcReceipt.Value = pending;
+        try
+        {
+            var result = await ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+            return new FeatureEditApplication
+            {
+                Result = result,
+                ReceiptDurable = pending.Durable,
+                SupersededByExistingReceipt = pending.Superseded,
+            };
+        }
+        finally
+        {
+            PendingGrpcReceipt.Value = previous;
+        }
+    }
+
     public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken)
     {
         if (editBatch.IsEmpty)
@@ -274,7 +338,9 @@ internal sealed partial class FeatureDataAccess
         DbConnection dbConnection;
         NpgsqlTransaction? transaction;
 
-        if (editBatch.RollbackOnFailure)
+        // A keyed receipt has to share the edit's transaction even when the caller allows
+        // partial success. Autocommit would make the receipt a second, losable write.
+        if (editBatch.RollbackOnFailure || PendingGrpcReceipt.Value is not null)
         {
             // Expected absence uses a key-level advisory reservation shared with INSERTs. Read
             // Committed is intentional for that case: if the reservation waits for an inserting
@@ -334,9 +400,13 @@ internal sealed partial class FeatureDataAccess
                 editBatch.Creates,
                 connection,
                 transaction,
+                editBatch.RowSecurityWriteCheck,
                 cancellationToken);
             partialCreatedIds = createdIds;
             partialCreateResults = createResults;
+            // A cancelled autocommit returns the rows already recorded. Do not start
+            // the next kind; the catch below attaches the unknown tail (#6028).
+            cancellationToken.ThrowIfCancellationRequested();
 
             var (updatedCount, updateResults) = await ProcessUpdatesWithResultsAsync(
                 layerId,
@@ -344,8 +414,10 @@ internal sealed partial class FeatureDataAccess
                 connection,
                 transaction,
                 preconditions,
+                editBatch.RowSecurityWriteCheck,
                 cancellationToken);
             partialUpdateResults = updateResults;
+            cancellationToken.ThrowIfCancellationRequested();
 
             var (deletedCount, deleteResults) = await ProcessDeletesWithResultsAsync(
                 layerId,
@@ -355,6 +427,7 @@ internal sealed partial class FeatureDataAccess
                 preconditions,
                 cancellationToken);
             partialDeleteResults = deleteResults;
+            cancellationToken.ThrowIfCancellationRequested();
 
             var hasErrors = System.Linq.Enumerable.Any(createResults, r => !r.IsSuccess) ||
                             System.Linq.Enumerable.Any(updateResults, r => !r.IsSuccess) ||
@@ -365,18 +438,13 @@ internal sealed partial class FeatureDataAccess
                 if (transaction != null)
                 {
                     await transaction.RollbackAsync(CancellationToken.None);
+                    DiscardPendingAttachmentBlobs(transaction);
                 }
                 return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
             }
 
-            if (transaction != null)
-            {
-                await CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (hasErrors)
-            {
-                return FeatureEditResult.Success(
+            var committed = hasErrors
+                ? FeatureEditResult.Success(
                     System.Linq.Enumerable.Count(createResults, r => r.IsSuccess),
                     System.Linq.Enumerable.Count(updateResults, r => r.IsSuccess),
                     System.Linq.Enumerable.Count(deleteResults, r => r.IsSuccess),
@@ -384,21 +452,32 @@ internal sealed partial class FeatureDataAccess
                     createResults,
                     updateResults,
                     deleteResults,
+                    wasRolledBack: false)
+                : FeatureEditResult.Success(
+                    createdIds.Length,
+                    updatedCount,
+                    deletedCount,
+                    createdIds,
+                    createResults,
+                    updateResults,
+                    deleteResults,
                     wasRolledBack: false);
+            if (transaction != null)
+            {
+                return await CommitStagedResultAsync(connection, transaction, committed, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
-            return FeatureEditResult.Success(
-                createdIds.Length,
-                updatedCount,
-                deletedCount,
-                createdIds,
-                createResults,
-                updateResults,
-                deleteResults,
-                wasRolledBack: false);
+            return committed;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested && transaction != null)
         {
+            // rollbackOnFailure and a keyed receipt share one transaction. Dispose rolls
+            // it back, so a partial receipt would name rows that do not stay committed.
+            // Autocommit (no transaction) falls through and returns the rows already
+            // committed plus an unknown tail (#6028). Staged attachment blobs belong to
+            // rows this dispose restores, so they must not be deleted.
+            DiscardPendingAttachmentBlobs(transaction!);
             throw;
         }
         // Intentionally broad: this is the top-level edit-batch error handler; any
@@ -407,11 +486,16 @@ internal sealed partial class FeatureDataAccess
         // rather than letting the exception propagate past the batch boundary.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Log.ApplyEditsFailed(_logger, layerId, editBatch.TotalOperations, ex);
+            if (ex is not OperationCanceledException)
+            {
+                Log.ApplyEditsFailed(_logger, layerId, editBatch.TotalOperations, ex);
+            }
 
             if (transaction != null)
             {
                 await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
+                // Unknown commit may have restored the feature rows. Keep their blobs.
+                DiscardPendingAttachmentBlobs(transaction);
                 var commitOutcomeUnknown = ex is FeatureEditCommitOutcomeUnknownException;
                 var errorMessage = commitOutcomeUnknown
                     ? "Transaction commit outcome is unknown."
@@ -430,22 +514,26 @@ internal sealed partial class FeatureDataAccess
             // every result that was recorded before the exception. Only operations that did
             // not yet produce a result (the unprocessed tail) should be reported as failed.
             // Reporting all as failed previously drove clients to re-submit already-committed
-            // rows, creating duplicates.
+            // rows, creating duplicates. Cancellation uses the same shape so an autocommit
+            // that already landed is not reported as a clean rollback (#6028).
+            var unrecordedMessage = ex is OperationCanceledException
+                ? "Edit cancelled."
+                : "Edit batch failed.";
             var tailCreateFailures = editBatch.Creates.Length > partialCreateResults.Length
                 ? System.Linq.Enumerable
-                    .Repeat(EditOperationResult.FailureWithUnknownCommitOutcome("Edit batch failed."), editBatch.Creates.Length - partialCreateResults.Length)
+                    .Repeat(EditOperationResult.FailureWithUnknownCommitOutcome(unrecordedMessage), editBatch.Creates.Length - partialCreateResults.Length)
                     .ToImmutableArray()
                 : ImmutableArray<EditOperationResult>.Empty;
             var tailUpdateFailures = editBatch.Updates.Length > partialUpdateResults.Length
                 ? editBatch.Updates
                     .Skip(partialUpdateResults.Length)
-                    .Select(f => EditOperationResult.FailureWithUnknownCommitOutcome("Edit batch failed.", objectId: f.Id))
+                    .Select(f => EditOperationResult.FailureWithUnknownCommitOutcome(unrecordedMessage, objectId: f.Id))
                     .ToImmutableArray()
                 : ImmutableArray<EditOperationResult>.Empty;
             var tailDeleteFailures = editBatch.Deletes.Length > partialDeleteResults.Length
                 ? editBatch.Deletes
                     .Skip(partialDeleteResults.Length)
-                    .Select(id => EditOperationResult.FailureWithUnknownCommitOutcome("Edit batch failed.", objectId: id))
+                    .Select(id => EditOperationResult.FailureWithUnknownCommitOutcome(unrecordedMessage, objectId: id))
                     .ToImmutableArray()
                 : ImmutableArray<EditOperationResult>.Empty;
 
@@ -602,6 +690,13 @@ internal sealed partial class FeatureDataAccess
 
     internal static Feature PreserveOmittedAttributes(Feature update, Feature current)
     {
+        // A partial update that omitted geometry takes it from the row locked in this
+        // transaction, not from the caller's earlier unlocked read (#6094).
+        if (update.PreserveOmittedGeometry)
+        {
+            update = update with { Geometry = current.Geometry };
+        }
+
         if (!update.PreserveOmittedMaskedAttributes)
         {
             return update;
@@ -615,7 +710,9 @@ internal sealed partial class FeatureDataAccess
         var attributes = update.Attributes.ToBuilder();
         foreach (var (name, value) in current.Attributes)
         {
-            if (!supplied.Contains(name))
+            // Reads project the physical feature ID into attributes. It is not
+            // an omitted JSON property to persist during a partial update.
+            if (!name.Equals("objectid", StringComparison.OrdinalIgnoreCase) && !supplied.Contains(name))
             {
                 attributes[name] = value;
             }
@@ -637,48 +734,65 @@ internal sealed partial class FeatureDataAccess
         var createResults = ImmutableArray.CreateBuilder<EditOperationResult>();
         var updateResults = ImmutableArray.CreateBuilder<EditOperationResult>();
         var deleteResults = ImmutableArray.CreateBuilder<EditOperationResult>();
+        var operations = editBatch.Operations;
 
-        foreach (var operation in editBatch.Operations)
+        for (var index = 0; index < operations.Length; index++)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var operationSucceeded = await ApplyOrderedEditOperationAsync(
-                layerId,
-                operation,
-                connection,
-                transaction,
-                preconditions,
-                createdIds,
-                createResults,
-                updateResults,
-                deleteResults,
-                cancellationToken).ConfigureAwait(false);
-
-            if (!operationSucceeded && editBatch.RollbackOnFailure)
+            try
             {
-                if (manageTransaction && transaction != null)
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var operationSucceeded = await ApplyOrderedEditOperationAsync(
+                    layerId,
+                    operations[index],
+                    connection,
+                    transaction,
+                    preconditions,
+                    editBatch.RowSecurityWriteCheck,
+                    createdIds,
+                    createResults,
+                    updateResults,
+                    deleteResults,
+                    cancellationToken).ConfigureAwait(false);
+
+                if (!operationSucceeded && editBatch.RollbackOnFailure)
                 {
-                    await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
+                    if (manageTransaction && transaction != null)
+                    {
+                        await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
+                        DiscardPendingAttachmentBlobs(transaction);
+                    }
+
+                    return FeatureEditResult.Rollback(
+                        createResults.ToImmutable(),
+                        updateResults.ToImmutable(),
+                        deleteResults.ToImmutable());
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // An open transaction, including ApplyEditsWithinTransactionAsync, still
+                // rolls back. Autocommit keeps the rows already recorded (#6028).
+                if (transaction != null)
+                {
+                    throw;
                 }
 
-                return FeatureEditResult.Rollback(
+                return CancelledAutocommitOrderedResult(
+                    editBatch,
+                    index,
+                    createdIds.ToImmutable(),
                     createResults.ToImmutable(),
                     updateResults.ToImmutable(),
                     deleteResults.ToImmutable());
             }
         }
 
-        if (manageTransaction && transaction != null)
-        {
-            await CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
-        }
-
         var immutableCreatedIds = createdIds.ToImmutable();
         var immutableCreateResults = createResults.ToImmutable();
         var immutableUpdateResults = updateResults.ToImmutable();
         var immutableDeleteResults = deleteResults.ToImmutable();
-
-        return FeatureEditResult.Success(
+        var orderedResult = FeatureEditResult.Success(
             immutableCreatedIds.Length,
             immutableUpdateResults.Count(static result => result.IsSuccess),
             immutableDeleteResults.Count(static result => result.IsSuccess),
@@ -686,6 +800,76 @@ internal sealed partial class FeatureDataAccess
             immutableCreateResults,
             immutableUpdateResults,
             immutableDeleteResults,
+            wasRolledBack: false);
+        if (manageTransaction && transaction != null)
+        {
+            return await CommitStagedResultAsync(connection, transaction, orderedResult, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return orderedResult;
+    }
+
+    /// <summary>
+    /// Builds the autocommit receipt for an ordered batch cancelled at
+    /// <paramref name="firstUnrecordedIndex"/>. Recorded results keep their object
+    /// ids. The operation at that index and everything after it are an unknown tail:
+    /// the in-flight statement may have committed, and later statements did not run.
+    /// </summary>
+    internal static FeatureEditResult CancelledAutocommitOrderedResult(
+        FeatureEditBatch editBatch,
+        int firstUnrecordedIndex,
+        ImmutableArray<long> createdIds,
+        ImmutableArray<EditOperationResult> createResults,
+        ImmutableArray<EditOperationResult> updateResults,
+        ImmutableArray<EditOperationResult> deleteResults)
+    {
+        const string message = "Edit cancelled.";
+        var creates = createResults.IsDefault
+            ? ImmutableArray.CreateBuilder<EditOperationResult>()
+            : createResults.ToBuilder();
+        var updates = updateResults.IsDefault
+            ? ImmutableArray.CreateBuilder<EditOperationResult>()
+            : updateResults.ToBuilder();
+        var deletes = deleteResults.IsDefault
+            ? ImmutableArray.CreateBuilder<EditOperationResult>()
+            : deleteResults.ToBuilder();
+
+        var start = Math.Max(0, firstUnrecordedIndex);
+        for (var index = start; index < editBatch.Operations.Length; index++)
+        {
+            var operation = editBatch.Operations[index];
+            switch (operation.Kind)
+            {
+                case FeatureEditOperationKind.Create:
+                    creates.Add(EditOperationResult.FailureWithUnknownCommitOutcome(message));
+                    break;
+                case FeatureEditOperationKind.Update:
+                    updates.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
+                        message,
+                        objectId: operation.Feature?.Id));
+                    break;
+                case FeatureEditOperationKind.Delete:
+                    deletes.Add(EditOperationResult.FailureWithUnknownCommitOutcome(
+                        message,
+                        objectId: operation.ObjectId));
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unsupported ordered edit operation kind '{operation.Kind}'.");
+            }
+        }
+
+        var createArray = creates.ToImmutable();
+        var updateArray = updates.ToImmutable();
+        var deleteArray = deletes.ToImmutable();
+        return FeatureEditResult.Success(
+            createArray.Count(static result => result.IsSuccess),
+            updateArray.Count(static result => result.IsSuccess),
+            deleteArray.Count(static result => result.IsSuccess),
+            createdIds.IsDefault ? ImmutableArray<long>.Empty : createdIds,
+            createArray,
+            updateArray,
+            deleteArray,
             wasRolledBack: false);
     }
 
@@ -701,19 +885,97 @@ internal sealed partial class FeatureDataAccess
             throw new NotSupportedException("Cross-layer transactions do not support branch-versioned edits.");
         }
 
-        if (editBatch.Operations.IsDefaultOrEmpty)
+        // Ordered batches keep request sequence. Unordered creates, updates, and deletes use the
+        // same processors as a committing ApplyEditsAsync, but this caller owns the transaction:
+        // a later batch can still roll the earlier ones back (#6359).
+        if (!editBatch.Operations.IsDefaultOrEmpty)
         {
-            throw new NotSupportedException("Cross-layer transactions require ordered edit operations.");
+            return await ApplyOrderedEditsAsync(
+                layerId,
+                editBatch,
+                connection,
+                transaction,
+                BuildPreconditionMap(editBatch),
+                manageTransaction: false,
+                cancellationToken).ConfigureAwait(false);
         }
 
-        return await ApplyOrderedEditsAsync(
+        return await ApplyUnorderedEditsWithinCallerTransactionAsync(
             layerId,
             editBatch,
             connection,
             transaction,
-            BuildPreconditionMap(editBatch),
-            manageTransaction: false,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Applies an unordered batch on a caller-owned transaction without committing or
+    /// rolling that transaction back. Row failures with <see cref="FeatureEditBatch.RollbackOnFailure"/>
+    /// return <see cref="FeatureEditResult.Rollback"/> and leave the SQL transaction open.
+    /// </summary>
+    private async Task<FeatureEditResult> ApplyUnorderedEditsWithinCallerTransactionAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var preconditions = BuildPreconditionMap(editBatch);
+        var (createdIds, createResults) = await ProcessCreatesWithResultsAsync(
+            layerId,
+            editBatch.Creates,
+            connection,
+            transaction,
+            editBatch.RowSecurityWriteCheck,
+            cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var (updatedCount, updateResults) = await ProcessUpdatesWithResultsAsync(
+            layerId,
+            editBatch.Updates,
+            connection,
+            transaction,
+            preconditions,
+            editBatch.RowSecurityWriteCheck,
+            cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var (deletedCount, deleteResults) = await ProcessDeletesWithResultsAsync(
+            layerId,
+            editBatch.Deletes,
+            connection,
+            transaction,
+            preconditions,
+            cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var hasErrors = System.Linq.Enumerable.Any(createResults, static result => !result.IsSuccess) ||
+                        System.Linq.Enumerable.Any(updateResults, static result => !result.IsSuccess) ||
+                        System.Linq.Enumerable.Any(deleteResults, static result => !result.IsSuccess);
+        if (hasErrors && editBatch.RollbackOnFailure)
+        {
+            return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
+        }
+
+        return hasErrors
+            ? FeatureEditResult.Success(
+                System.Linq.Enumerable.Count(createResults, static result => result.IsSuccess),
+                System.Linq.Enumerable.Count(updateResults, static result => result.IsSuccess),
+                System.Linq.Enumerable.Count(deleteResults, static result => result.IsSuccess),
+                createdIds,
+                createResults,
+                updateResults,
+                deleteResults,
+                wasRolledBack: false)
+            : FeatureEditResult.Success(
+                createdIds.Length,
+                updatedCount,
+                deletedCount,
+                createdIds,
+                createResults,
+                updateResults,
+                deleteResults,
+                wasRolledBack: false);
     }
 
     private sealed class PostgresFeatureWriterTransaction(
@@ -760,13 +1022,16 @@ internal sealed partial class FeatureDataAccess
             {
                 await CommitEditTransactionAsync(_transaction, cancellationToken).ConfigureAwait(false);
                 _completed = true;
+                await _owner.FlushPendingAttachmentBlobsAsync(_transaction).ConfigureAwait(false);
                 return FeatureWriterTransactionCommitOutcome.Committed;
             }
             catch (FeatureEditCommitOutcomeUnknownException)
             {
                 // COMMIT may already be durable. Do not let disposal attempt a rollback and
                 // mask the explicit unknown outcome (or imply that the writes were undone).
+                // Do not delete blobs: a rolled-back commit would still reference them.
                 _completed = true;
+                _owner.DiscardPendingAttachmentBlobs(_transaction);
                 return FeatureWriterTransactionCommitOutcome.Unknown;
             }
         }
@@ -779,6 +1044,7 @@ internal sealed partial class FeatureDataAccess
                 return;
             }
 
+            _owner.DiscardPendingAttachmentBlobs(_transaction);
             await _transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             _completed = true;
         }
@@ -812,6 +1078,7 @@ internal sealed partial class FeatureDataAccess
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         Dictionary<long, FeatureEditPrecondition>? preconditions,
+        SqlFragment? writeCheck,
         ImmutableArray<long>.Builder createdIds,
         ImmutableArray<EditOperationResult>.Builder createResults,
         ImmutableArray<EditOperationResult>.Builder updateResults,
@@ -837,11 +1104,12 @@ internal sealed partial class FeatureDataAccess
                             transaction,
                             async (conn, tx, ct) =>
                             {
-                                var c = await CreateWithConnectionAsync(layerId, feature, conn, tx, ct).ConfigureAwait(false);
+                                var c = await CreateCheckedAsync(layerId, feature, writeCheck, conn, tx, ct).ConfigureAwait(false);
                                 await TryWriteOutboxRowForBatchAsync(conn, tx, c.Id, "create", c, ct).ConfigureAwait(false);
                                 return c;
                             },
-                            cancellationToken).ConfigureAwait(false);
+                            cancellationToken,
+                            requireTransaction: writeCheck is not null).ConfigureAwait(false);
                         createdIds.Add(created.Id);
                         createResults.Add(EditOperationResult.Success(
                             created.Id,
@@ -881,7 +1149,7 @@ internal sealed partial class FeatureDataAccess
                                     // requireTransaction guarantees tx is non-null here.
                                     current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
                                 }
-                                else if (feature.PreserveOmittedMaskedAttributes)
+                                else if (feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry)
                                 {
                                     current = await ReadFeatureForUpdateAsync(layerId, feature.Id, conn, tx!, ct).ConfigureAwait(false);
                                 }
@@ -891,12 +1159,12 @@ internal sealed partial class FeatureDataAccess
                                     update = PreserveOmittedAttributes(feature, current.Value);
                                 }
 
-                                var u = await UpdateWithConnectionAsync(layerId, update, conn, tx, ct).ConfigureAwait(false);
+                                var u = await UpdateCheckedAsync(layerId, update, writeCheck, conn, tx, ct).ConfigureAwait(false);
                                 await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
                                 return u;
                             },
                             cancellationToken,
-                            requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes).ConfigureAwait(false);
+                            requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry || writeCheck is not null).ConfigureAwait(false);
                         if (hasPrecondition)
                         {
                             preconditions![updated.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(updated) };
@@ -952,13 +1220,19 @@ internal sealed partial class FeatureDataAccess
                                 if (d.Deleted)
                                 {
                                     await TryWriteOutboxRowForBatchAsync(conn, tx, objectId, "delete", d.Snapshot, ct).ConfigureAwait(false);
+                                    d = await CaptureDeletedAttachmentsAsync(layerId, objectId, conn, tx, transaction, d, ct).ConfigureAwait(false);
                                 }
                                 return d;
                             },
                             cancellationToken,
-                            requireTransaction: hasPrecondition).ConfigureAwait(false);
+                            requireTransaction: hasPrecondition || _attachmentCleanup is not null).ConfigureAwait(false);
                         if (deleted.Deleted)
                         {
+                            if (transaction is null)
+                            {
+                                await ReleaseCommittedAttachmentBlobsAsync(deleted.AttachmentBlobs).ConfigureAwait(false);
+                            }
+
                             deleteResults.Add(EditOperationResult.Success(objectId));
                             return true;
                         }
@@ -1046,6 +1320,119 @@ internal sealed partial class FeatureDataAccess
         => commitOutcomeUnknown
             ? EditOperationResult.FailureWithUnknownCommitOutcome(errorMessage, objectId: objectId)
             : EditOperationResult.Failure(errorMessage, objectId: objectId);
+
+    private sealed class PendingGrpcEditReceipt
+    {
+        public required FeatureEditIdempotencyReceipt Receipt { get; init; }
+
+        public bool Durable { get; set; }
+
+        public bool Superseded { get; set; }
+    }
+
+    /// <summary>Outcome of committing a staged edit, possibly with its idempotency receipt.</summary>
+    internal readonly record struct StagedEditCommit(bool ReceiptDurable, bool SupersededByExistingReceipt);
+
+    /// <summary>
+    /// Writes <paramref name="receipt"/> on <paramref name="transaction"/> and only then commits.
+    /// A failed or conflicting receipt write does not commit the edit.
+    /// </summary>
+    internal static async Task<StagedEditCommit> CommitStagedEditAsync(
+        DbTransaction transaction,
+        FeatureEditResult result,
+        FeatureEditIdempotencyReceipt? receipt,
+        Func<DbTransaction, string, ReadOnlyMemory<byte>, DateTimeOffset, CancellationToken, Task<bool>> writeReceipt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(transaction);
+        ArgumentNullException.ThrowIfNull(writeReceipt);
+
+        if (receipt is { } claim)
+        {
+            if (result.WasRolledBack)
+            {
+                throw new InvalidOperationException("A rolled-back edit cannot commit an idempotency receipt.");
+            }
+
+            if (string.IsNullOrWhiteSpace(claim.Scope) || claim.Scope.Length > PostgresGrpcApplyEditsReceipt.MaxScopeLength)
+            {
+                throw new ArgumentException(
+                    $"Idempotency receipt scope must be 1 to {PostgresGrpcApplyEditsReceipt.MaxScopeLength} characters.",
+                    nameof(receipt));
+            }
+
+            if (claim.Payload is null)
+            {
+                throw new ArgumentException("Idempotency receipt payload factory is required.", nameof(receipt));
+            }
+
+            var payload = claim.Payload(result);
+            if (payload.Length == 0 || payload.Length > PostgresGrpcApplyEditsReceipt.MaxReceiptBytes)
+            {
+                throw new ArgumentException(
+                    $"Idempotency receipt payload must be between 1 byte and {PostgresGrpcApplyEditsReceipt.MaxReceiptBytes} bytes.",
+                    nameof(receipt));
+            }
+
+            var inserted = await writeReceipt(transaction, claim.Scope, payload, claim.ExpiresAt, cancellationToken)
+                .ConfigureAwait(false);
+            if (!inserted)
+            {
+                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                return new StagedEditCommit(ReceiptDurable: false, SupersededByExistingReceipt: true);
+            }
+        }
+
+        await CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
+        return new StagedEditCommit(receipt is not null, SupersededByExistingReceipt: false);
+    }
+
+    private async Task<FeatureEditResult> CommitStagedResultAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        FeatureEditResult result,
+        CancellationToken cancellationToken)
+    {
+        var pending = PendingGrpcReceipt.Value;
+        var staged = await CommitStagedEditAsync(
+            transaction,
+            result,
+            pending?.Receipt,
+            (editTransaction, scope, payload, expiresAt, token) =>
+            {
+                if (!ReferenceEquals(editTransaction, transaction))
+                {
+                    throw new InvalidOperationException("The idempotency receipt must use the edit transaction.");
+                }
+
+                return PostgresGrpcApplyEditsReceipt.TryWriteAsync(
+                    connection,
+                    transaction,
+                    _grpcEditReceiptTable,
+                    scope,
+                    payload,
+                    expiresAt,
+                    _queryTimeoutSeconds,
+                    token);
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        if (pending is not null)
+        {
+            pending.Durable = staged.ReceiptDurable;
+            pending.Superseded = staged.SupersededByExistingReceipt;
+        }
+
+        if (staged.SupersededByExistingReceipt)
+        {
+            // The receipt conflict rolled the edit back, including attachment rows.
+            DiscardPendingAttachmentBlobs(transaction);
+            return FeatureEditResult.Rollback();
+        }
+
+        await FlushPendingAttachmentBlobsAsync(transaction).ConfigureAwait(false);
+        return result;
+    }
 
     internal static async Task CommitEditTransactionAsync(
         DbTransaction transaction,
@@ -1276,7 +1663,117 @@ internal sealed partial class FeatureDataAccess
         return new DeleteOutcome(rowsAffected > 0, null);
     }
 
-    private readonly record struct DeleteOutcome(bool Deleted, Feature? Snapshot);
+    private readonly record struct DeleteOutcome(
+        bool Deleted,
+        Feature? Snapshot,
+        IReadOnlyList<DeletedAttachmentBlob>? AttachmentBlobs = null);
+
+    /// <summary>
+    /// Deletes attachment rows for a feature that this statement just removed. An open batch
+    /// transaction keeps the blob paths until that transaction commits. Autocommit returns
+    /// the paths on <see cref="DeleteOutcome.AttachmentBlobs"/> so the caller can remove the
+    /// blobs after <see cref="RunRowMutationAtomicallyAsync{TResult}"/> commits the row.
+    /// </summary>
+    private async Task<DeleteOutcome> CaptureDeletedAttachmentsAsync(
+        int layerId,
+        long featureId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction? statementTransaction,
+        NpgsqlTransaction? batchTransaction,
+        DeleteOutcome deleted,
+        CancellationToken cancellationToken)
+    {
+        if (!deleted.Deleted || _attachmentCleanup is null)
+        {
+            return deleted;
+        }
+
+        var blobs = await _attachmentCleanup.DeleteRowsAsync(
+            connection,
+            statementTransaction,
+            layerId,
+            featureId,
+            cancellationToken).ConfigureAwait(false);
+        if (batchTransaction is not null)
+        {
+            StageAttachmentBlobs(batchTransaction, blobs);
+            return deleted;
+        }
+
+        return blobs.Count == 0 ? deleted : deleted with { AttachmentBlobs = blobs };
+    }
+
+    private void StageAttachmentBlobs(NpgsqlTransaction batchTransaction, IReadOnlyList<DeletedAttachmentBlob> blobs)
+    {
+        if (blobs.Count == 0)
+        {
+            return;
+        }
+
+        if (_attachmentBlobTransaction is not null && !ReferenceEquals(_attachmentBlobTransaction, batchTransaction))
+        {
+            throw new InvalidOperationException(
+                "Attachment cleanup is already staged for a different edit transaction.");
+        }
+
+        _attachmentBlobTransaction = batchTransaction;
+        _pendingAttachmentBlobs.Hold(blobs, batchTransactionOpen: true);
+    }
+
+    private Task ReleaseCommittedAttachmentBlobsAsync(IReadOnlyList<DeletedAttachmentBlob>? blobs)
+    {
+        if (blobs is not { Count: > 0 } || _attachmentCleanup is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        // The feature row and attachment rows are already durable. Blob failure is an orphan,
+        // not an edit failure, and must not replace a partial autocommit receipt (#6028).
+        return _attachmentCleanup.DeleteBlobsAsync(blobs, CancellationToken.None);
+    }
+
+    private Task FlushPendingAttachmentBlobsAsync(NpgsqlTransaction transaction)
+    {
+        if (!ReferenceEquals(_attachmentBlobTransaction, transaction))
+        {
+            return Task.CompletedTask;
+        }
+
+        _attachmentBlobTransaction = null;
+        return ReleaseCommittedAttachmentBlobsAsync(_pendingAttachmentBlobs.TakeForConfirmedCommit());
+    }
+
+    private void DiscardPendingAttachmentBlobs(NpgsqlTransaction transaction)
+    {
+        if (!ReferenceEquals(_attachmentBlobTransaction, transaction))
+        {
+            return;
+        }
+
+        _attachmentBlobTransaction = null;
+        _pendingAttachmentBlobs.Discard();
+    }
+
+    private async Task CommitAndReleaseAttachmentBlobsAsync(
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var committed = false;
+        try
+        {
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            committed = true;
+        }
+        finally
+        {
+            if (!committed)
+            {
+                DiscardPendingAttachmentBlobs(transaction);
+            }
+        }
+
+        await FlushPendingAttachmentBlobsAsync(transaction).ConfigureAwait(false);
+    }
 
     private static void ValidateGeometrySrid(byte[]? geometry, int? layerSrid)
     {
@@ -1317,6 +1814,7 @@ internal sealed partial class FeatureDataAccess
         ImmutableArray<Feature> features,
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        SqlFragment? writeCheck,
         CancellationToken cancellationToken)
     {
         if (features.Length == 0)
@@ -1335,7 +1833,11 @@ internal sealed partial class FeatureDataAccess
         var outboxActive = TryUseTransactionalOutbox(out _);
 
         // Replica uploads also require the row transaction so provenance is stamped atomically.
-        if (transaction == null && features.Length > 1 && !outboxActive && ReplicaUploadOriginScope.Current is null)
+        // A row-level security write check (#6103) does too: each row is re-selected with the
+        // caller's predicate and rolled back when it falls outside it, which the autocommit
+        // bulk INSERT cannot do.
+        if (transaction == null && features.Length > 1 && !outboxActive && ReplicaUploadOriginScope.Current is null &&
+            writeCheck is null)
         {
             return await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
                 features,
@@ -1350,6 +1852,11 @@ internal sealed partial class FeatureDataAccess
                             EditOperationResult.Success(
                                 created.Id,
                                 feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        // Let the adaptive splitter keep the committed prefix and stop (#6028).
+                        throw;
                     }
                     // Intentionally broad: per-feature failure in an adaptive batch; sanitize via
                     // GetSafeEditOperationError and let the remaining features in the batch continue.
@@ -1369,6 +1876,16 @@ internal sealed partial class FeatureDataAccess
 
         foreach (var feature in features)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                if (transaction != null)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                return (createdIds.ToImmutableArray(), results.ToImmutableArray());
+            }
+
             // Advance per-operation outbox metadata once per attempt; a failed mutation
             // must consume its slot so the next successful row of the same kind picks
             // up its own GeometryChanged / requestId, not the failed row's.
@@ -1380,19 +1897,26 @@ internal sealed partial class FeatureDataAccess
                     transaction,
                     async (conn, tx, ct) =>
                     {
-                        var c = await CreateWithConnectionAsync(layerId, feature, conn, tx, ct).ConfigureAwait(false);
+                        var c = await CreateCheckedAsync(layerId, feature, writeCheck, conn, tx, ct).ConfigureAwait(false);
                         await TryWriteOutboxRowForBatchAsync(conn, tx, c.Id, "create", c, ct).ConfigureAwait(false);
                         return c;
                     },
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    requireTransaction: writeCheck is not null).ConfigureAwait(false);
                 createdIds.Add(created.Id);
                 results.Add(EditOperationResult.Success(created.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // BH7-020: propagate cancellation so the server stops executing remaining
-                // batch items after a client abort, mirroring the update/delete path fixes.
-                throw;
+                // BH7-020: stop the rest of the batch. An open transaction still rolls
+                // back, so that cancellation propagates. Autocommit returns the rows
+                // already recorded; the in-flight row stays in the unknown tail (#6028).
+                if (transaction != null)
+                {
+                    throw;
+                }
+
+                return (createdIds.ToImmutableArray(), results.ToImmutableArray());
             }
             // Intentionally broad: per-feature failure in the row-by-row create path; sanitize
             // via GetSafeEditOperationError and let the rest of the batch continue.
@@ -1438,6 +1962,8 @@ internal sealed partial class FeatureDataAccess
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // One autocommit statement: its ids were not observed. Splitting would
+            // insert the same rows again if the statement had already committed (#6028).
             throw;
         }
         // Intentionally broad: adaptive bisection on any batch-insert failure, recursively split in
@@ -1456,16 +1982,27 @@ internal sealed partial class FeatureDataAccess
                 singleCreateAsync,
                 createSuccessResult,
                 cancellationToken).ConfigureAwait(false);
-            var rightOutcome = await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
-                right,
-                batchCreateAsync,
-                singleCreateAsync,
-                createSuccessResult,
-                cancellationToken).ConfigureAwait(false);
+            if (cancellationToken.IsCancellationRequested || leftOutcome.results.Length < left.Length)
+            {
+                return leftOutcome;
+            }
 
-            return (
-                leftOutcome.createdIds.AddRange(rightOutcome.createdIds),
-                leftOutcome.results.AddRange(rightOutcome.results));
+            try
+            {
+                var rightOutcome = await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
+                    right,
+                    batchCreateAsync,
+                    singleCreateAsync,
+                    createSuccessResult,
+                    cancellationToken).ConfigureAwait(false);
+                return (
+                    leftOutcome.createdIds.AddRange(rightOutcome.createdIds),
+                    leftOutcome.results.AddRange(rightOutcome.results));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return leftOutcome;
+            }
         }
     }
 
@@ -1568,6 +2105,7 @@ internal sealed partial class FeatureDataAccess
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         Dictionary<long, FeatureEditPrecondition>? preconditions,
+        SqlFragment? writeCheck,
         CancellationToken cancellationToken)
     {
         if (features.Length == 0)
@@ -1580,6 +2118,16 @@ internal sealed partial class FeatureDataAccess
 
         foreach (var feature in features)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                if (transaction != null)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                return (updatedCount, results.ToImmutableArray());
+            }
+
             FeatureEditPrecondition precondition = default;
             var hasPrecondition = preconditions?.TryGetValue(feature.Id, out precondition) == true;
 
@@ -1601,7 +2149,7 @@ internal sealed partial class FeatureDataAccess
                             // requireTransaction guarantees tx is non-null here.
                             current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
                         }
-                        else if (feature.PreserveOmittedMaskedAttributes)
+                        else if (feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry)
                         {
                             current = await ReadFeatureForUpdateAsync(layerId, feature.Id, conn, tx!, ct).ConfigureAwait(false);
                         }
@@ -1611,12 +2159,12 @@ internal sealed partial class FeatureDataAccess
                             update = PreserveOmittedAttributes(feature, current.Value);
                         }
 
-                        var u = await UpdateWithConnectionAsync(layerId, update, conn, tx, ct).ConfigureAwait(false);
+                        var u = await UpdateCheckedAsync(layerId, update, writeCheck, conn, tx, ct).ConfigureAwait(false);
                         await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
                         return u;
                     },
                     cancellationToken,
-                    requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes).ConfigureAwait(false);
+                    requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry || writeCheck is not null).ConfigureAwait(false);
                 if (hasPrecondition)
                 {
                     // Later operations on this row in the same batch must observe our
@@ -1628,10 +2176,14 @@ internal sealed partial class FeatureDataAccess
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // BH7-020: propagate cancellation so the server stops executing the remaining
-                // batch items after a client abort. Swallowing this was wasting CPU/connections
-                // and misreporting any committed row as a failure.
-                throw;
+                // BH7-020: stop the rest of the batch. An open transaction still rolls
+                // back. Autocommit returns the rows already recorded (#6028).
+                if (transaction != null)
+                {
+                    throw;
+                }
+
+                return (updatedCount, results.ToImmutableArray());
             }
             catch (FeatureEditPreconditionFailedException ex)
             {
@@ -1666,6 +2218,16 @@ internal sealed partial class FeatureDataAccess
 
         foreach (var featureId in featureIds)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                if (transaction != null)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                return (deletedCount, results.ToImmutableArray());
+            }
+
             FeatureEditPrecondition precondition = default;
             var hasPrecondition = preconditions?.TryGetValue(featureId, out precondition) == true;
 
@@ -1696,13 +2258,21 @@ internal sealed partial class FeatureDataAccess
                         if (d.Deleted)
                         {
                             await TryWriteOutboxRowForBatchAsync(conn, tx, featureId, "delete", d.Snapshot, ct).ConfigureAwait(false);
+                            d = await CaptureDeletedAttachmentsAsync(layerId, featureId, conn, tx, transaction, d, ct).ConfigureAwait(false);
                         }
                         return d;
                     },
                     cancellationToken,
-                    requireTransaction: hasPrecondition).ConfigureAwait(false);
+                    requireTransaction: hasPrecondition || _attachmentCleanup is not null).ConfigureAwait(false);
                 if (deleted.Deleted)
                 {
+                    if (transaction is null)
+                    {
+                        // rollbackOnFailure is false: this row already committed. Remove its
+                        // blobs now so a later failed edit cannot leave them behind (#6137).
+                        await ReleaseCommittedAttachmentBlobsAsync(deleted.AttachmentBlobs).ConfigureAwait(false);
+                    }
+
                     deletedCount++;
                     results.Add(EditOperationResult.Success(featureId));
                 }
@@ -1713,9 +2283,14 @@ internal sealed partial class FeatureDataAccess
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // BH7-020: propagate cancellation so the server stops executing remaining
-                // batch items after a client abort, mirroring the update path fix.
-                throw;
+                // BH7-020: stop the rest of the batch. An open transaction still rolls
+                // back. Autocommit returns the rows already recorded (#6028).
+                if (transaction != null)
+                {
+                    throw;
+                }
+
+                return (deletedCount, results.ToImmutableArray());
             }
             catch (FeatureEditPreconditionFailedException ex)
             {
@@ -1839,6 +2414,7 @@ internal sealed partial class FeatureDataAccess
             // GeometryRequiredForCreateException carries a fixed, client-safe message
             // (no provider internals) so it is surfaced verbatim.
             GeometryRequiredForCreateException => GeometryRequiredForCreateMessage,
+            RowSecurityWriteCheckFailedException => RowSecurityWriteCheckFailedMessage,
             ValidationException => "Invalid feature data.",
             ArgumentException => "Invalid feature data.",
             // InvalidOperationException messages raised by this writer are fixed sentences.
@@ -1877,6 +2453,12 @@ internal sealed partial class FeatureDataAccess
         long? objectId = null)
     {
         var errorMessage = GetSafeEditOperationError(exception, operation);
+        if (exception is RowSecurityWriteCheckFailedException)
+        {
+            // The row was rolled back before this was raised (#6103); never report it as possibly committed.
+            return EditOperationResult.Failure(errorMessage, EditOperationResult.NotPermittedErrorCode, objectId);
+        }
+
         return IsKnownNonCommitFailure(exception)
             ? EditOperationResult.Failure(errorMessage, objectId: objectId)
             : EditOperationResult.FailureWithUnknownCommitOutcome(errorMessage, objectId: objectId);

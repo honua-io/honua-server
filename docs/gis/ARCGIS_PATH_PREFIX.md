@@ -10,9 +10,11 @@ The prefix becomes ASP.NET Core `PathBase` before routing. Authentication,
 authorization, tenancy, and other middleware receive the canonical request path.
 Generated base URLs retain the prefix. If `Public:BaseUrl` or `PUBLIC_BASE_URL` is
 configured, that explicit public URL remains authoritative for service links.
-`/rest/info` (`soapUrl`, `secureSoapUrl`, `tokenServicesUrl`) and the GeocodeServer
+The SOAP URLs in `/rest/info` (`soapUrl` and `secureSoapUrl`) and the GeocodeServer
 directory URL also advertise `/arcgis` when the resolved base is an origin. A base
 that already ends in `/arcgis`, or that already has any other path, is left unchanged.
+Portal discovery (`owningSystemUrl` and `authInfo.tokenServicesUrl`) uses the actual
+public portal root in both `/rest/info` and `/sharing/rest/info`.
 
 For ArcPy standalone routing discovery, the dictionary's `url` and `utilityUrl`
 can both address `/arcgis/rest/services/geoprocessing/GPServer` on the Honua host.

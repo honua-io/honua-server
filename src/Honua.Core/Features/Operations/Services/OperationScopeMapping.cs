@@ -49,7 +49,8 @@ public static class OperationScopeMapping
                 "studio.content.reopen-version" or "studio.content.create-publication-request" or
                 "studio.content.rollback" => ResolveStudioOperation(request.OperationId),
             "admin.layer.publish" => OperatorOperation.Publish,
-            "admin.connections.create" or "admin.import.upload" or "admin.import.upload-url" => OperatorOperation.Create,
+            "admin.connections.create" or "admin.import.upload" or "admin.import.upload-url" or
+                "admin.import.upload-object" => OperatorOperation.Create,
             "admin.connections.delete" or "admin.import.jobs.cancel" => OperatorOperation.Delete,
             "admin.layer.set-enabled" or "admin.layer.fields.set" or "admin.layer.filter.set" or
                 "admin.layer.popup-info.set" or "admin.layer.drawing-info.set" or
@@ -61,6 +62,24 @@ public static class OperationScopeMapping
             _ => default,
         };
         return operation != default;
+    }
+
+    /// <summary>
+    /// Whether a scope-governed caller lacks the OAuth authority this operation requires.
+    /// An operation with no scope mapping is refused rather than allowed: a bearer cannot
+    /// invoke authority the scope catalog does not describe.
+    /// </summary>
+    public static bool ExceedsScopeAuthority(OperationRequest request, OperationPolicyContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+        return context.ScopeGoverned
+            && (context.RecognizedScopes.Count == 0
+                || context.RecognizedScopes.Any(scope =>
+                    !OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal))
+                || !TryResolve(request, out var requiredOperation)
+                || !OperatorScopeCatalog.PermitsOperation(
+                    context.RecognizedScopes.ToHashSet(StringComparer.Ordinal), requiredOperation));
     }
 
     private static bool IsStudioOperation(string operationId)

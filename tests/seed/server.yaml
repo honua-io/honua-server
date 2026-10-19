@@ -400,6 +400,31 @@ sql:
       );
   - "CREATE UNIQUE INDEX IF NOT EXISTS uq_scim_group_members_group_user_lower ON honua.scim_group_members (group_id, LOWER(user_id));"
   - "CREATE INDEX IF NOT EXISTS ix_scim_group_members_user_lower ON honua.scim_group_members (LOWER(user_id));"
+  # Migration 133: Portal sharing is persisted on the same Postgres profile as
+  # metadata. The migration-skipping test host needs these exact tables too.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.portal_community_groups (
+          group_id VARCHAR(64) PRIMARY KEY,
+          tenant_key TEXT NOT NULL DEFAULT '',
+          title TEXT NOT NULL,
+          description TEXT,
+          owner_name TEXT NOT NULL,
+          access_level TEXT NOT NULL,
+          tags TEXT[] NOT NULL DEFAULT '{}',
+          members TEXT[] NOT NULL DEFAULT '{}',
+          created_at TIMESTAMPTZ NOT NULL,
+          modified_at TIMESTAMPTZ NOT NULL
+      );
+  - "CREATE INDEX IF NOT EXISTS ix_portal_community_groups_tenant ON honua.portal_community_groups (tenant_key, group_id);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.portal_item_shares (
+          tenant_key TEXT NOT NULL DEFAULT '',
+          item_id TEXT NOT NULL,
+          owner_name TEXT NOT NULL,
+          group_ids TEXT[] NOT NULL DEFAULT '{}',
+          PRIMARY KEY (tenant_key, item_id)
+      );
+  - "CREATE INDEX IF NOT EXISTS ix_portal_item_shares_groups ON honua.portal_item_shares USING GIN (group_ids);"
   - |
       CREATE TABLE IF NOT EXISTS honua.analysis_content_items (
           item_id            TEXT        PRIMARY KEY,
@@ -863,12 +888,45 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_gitops_change_records_detected ON honua.gitops_change_records(detected_at DESC);"
   - "CREATE INDEX IF NOT EXISTS idx_gitops_change_records_status ON honua.gitops_change_records(status);"
   - "CREATE INDEX IF NOT EXISTS idx_gitops_change_records_approval ON honua.gitops_change_records(pending_approval_id) WHERE pending_approval_id IS NOT NULL;"
+  # Migration-disabled fixtures need the same ownership guard as production migration 129.
+  # Keep these definitions synchronized with 129_ProtectImportTableOwnership.sql and
+  # the long-index-name helper from 108_FixLongImportIndexNames.sql.
   - |
-      -- Import-table DDL below mirrors src/Honua.Server/Migrations/111_PreserveImportOrdinateDimensions.sql:
-      -- a GEOMETRY(Geometry, srid) typmod is XY-only and rejects every XYZ/XYM row (KML altitudes,
-      -- GPX elevations) with "Geometry has Z dimension but column does not". Integration tests seed
-      -- this file instead of running migrations, so a typmod here silently empties those imports
-      -- while production keeps them (honua-server#4419).
+      CREATE OR REPLACE FUNCTION honua.assert_import_table_owned(schema_name text, table_name text)
+      RETURNS boolean LANGUAGE plpgsql AS $$
+      BEGIN
+          PERFORM honua.assert_import_identifier(schema_name, 'Schema name');
+          PERFORM honua.assert_import_identifier(table_name, 'Table name');
+          IF to_regclass(format('%I.%I', schema_name, table_name)) IS NULL THEN
+              RETURN false;
+          END IF;
+          EXECUTE format('LOCK TABLE %I.%I IN EXCLUSIVE MODE', schema_name, table_name);
+          IF obj_description(to_regclass(format('%I.%I', schema_name, table_name)), 'pg_class')
+              IS DISTINCT FROM 'honua:import-owned:v1' THEN
+              RAISE EXCEPTION 'IMPORT_TARGET_NOT_OWNED: Table %.% is not owned by the importer', schema_name, table_name
+                  USING ERRCODE = 'HN409';
+          END IF;
+          RETURN true;
+      END;
+      $$;
+
+      CREATE OR REPLACE FUNCTION honua.import_index_name(table_name text, index_kind text)
+      RETURNS text
+      LANGUAGE plpgsql
+      IMMUTABLE
+      AS $$
+      DECLARE
+          index_name text;
+      BEGIN
+          index_name := 'idx_' || table_name || '_' || index_kind;
+          IF length(index_name) > 63 THEN
+              index_name := left(index_name, 46) || '_' || left(md5(index_name), 16);
+          END IF;
+
+          RETURN index_name;
+      END;
+      $$;
+  - |
       CREATE OR REPLACE FUNCTION honua.create_import_table(schema_name text, table_name text, target_srid integer DEFAULT 4326)
       RETURNS void
       LANGUAGE plpgsql
@@ -899,10 +957,14 @@ sql:
           END IF;
 
           EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
-          EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, table_name);
+          PERFORM honua.assert_import_table_owned(schema_name, table_name);
+          IF honua.assert_import_table_owned(schema_name, table_name) THEN
+              EXECUTE format('DROP TABLE %I.%I', schema_name, table_name);
+          END IF;
           EXECUTE format(
               'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
               schema_name, table_name, target_srid);
+          EXECUTE format('COMMENT ON TABLE %I.%I IS %L', schema_name, table_name, 'honua:import-owned:v1');
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || table_name || '_geometry', schema_name, table_name);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || table_name || '_properties', schema_name, table_name);
       END;
@@ -948,7 +1010,7 @@ sql:
           PERFORM honua.insert_import_feature('honua_data', table_name, wkb, source_srid, target_srid, properties);
       END;
       $$;
-  # Import load-mode helpers (mirrors src/Honua.Server/Migrations/070_AddImportLoadModes.sql).
+  # Import load-mode helpers retain the migration 129 ownership contract.
   # The default streaming import path is Replace, which loads into a fresh
   # <table>__staging sibling via honua.create_import_staging_table then atomically
   # renames it over the live table via honua.swap_import_table. Append/Upsert reuse
@@ -989,9 +1051,13 @@ sql:
           END IF;
 
           EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
+          IF to_regclass(format('%I.%I', schema_name, table_name)) IS NOT NULL THEN
+              RETURN;
+          END IF;
           EXECUTE format(
-              'CREATE TABLE IF NOT EXISTS %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+              'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
               schema_name, table_name, target_srid);
+          EXECUTE format('COMMENT ON TABLE %I.%I IS %L', schema_name, table_name, 'honua:import-owned:v1');
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || table_name || '_geometry', schema_name, table_name);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || table_name || '_properties', schema_name, table_name);
       END;
@@ -1042,10 +1108,15 @@ sql:
           staging_name := honua.import_staging_table_name(table_name);
 
           EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
-          EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, staging_name);
+          PERFORM honua.assert_import_table_owned(schema_name, table_name);
+          PERFORM honua.assert_import_table_owned(schema_name, staging_name);
+          IF honua.assert_import_table_owned(schema_name, staging_name) THEN
+              EXECUTE format('DROP TABLE %I.%I', schema_name, staging_name);
+          END IF;
           EXECUTE format(
               'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
               schema_name, staging_name, target_srid);
+          EXECUTE format('COMMENT ON TABLE %I.%I IS %L', schema_name, staging_name, 'honua:import-owned:v1');
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || staging_name || '_geometry', schema_name, staging_name);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || staging_name || '_properties', schema_name, staging_name);
 
@@ -1067,23 +1138,26 @@ sql:
 
           staging_name := honua.import_staging_table_name(table_name);
 
-          EXECUTE format('DROP TABLE IF EXISTS %I.%I CASCADE', schema_name, table_name);
+          PERFORM honua.assert_import_table_owned(schema_name, table_name);
+          IF NOT honua.assert_import_table_owned(schema_name, staging_name) THEN
+              RAISE EXCEPTION 'IMPORT_TARGET_NOT_OWNED: Required staging table %.% is absent', schema_name, staging_name
+                  USING ERRCODE = 'HN409';
+          END IF;
+          IF honua.assert_import_table_owned(schema_name, table_name) THEN
+              EXECUTE format('DROP TABLE %I.%I CASCADE', schema_name, table_name);
+          END IF;
           EXECUTE format('ALTER TABLE %I.%I RENAME TO %I', schema_name, staging_name, table_name);
 
+          -- Preserve migration 108: canonical names remain distinct for 63-byte targets.
+          -- Staging names are already bounded by import_staging_table_name.
           EXECUTE format('ALTER INDEX IF EXISTS %I.%I RENAME TO %I',
-              schema_name, 'idx_' || staging_name || '_geometry', 'idx_' || table_name || '_geometry');
+              schema_name, 'idx_' || staging_name || '_geometry', honua.import_index_name(table_name, 'geometry'));
           EXECUTE format('ALTER INDEX IF EXISTS %I.%I RENAME TO %I',
-              schema_name, 'idx_' || staging_name || '_properties', 'idx_' || table_name || '_properties');
+              schema_name, 'idx_' || staging_name || '_properties', honua.import_index_name(table_name, 'properties'));
       END;
       $$;
   - |
-      -- Mirrors migration 115_AddDropImportStagingTable.sql. A Replace whose load dropped
-      -- rows against an already-populated target never promotes its staging sibling (#4006)
-      -- and drops it instead, so this migration-skipping fixture must declare the helper or
-      -- that path fails with 42883 on "honua.drop_import_staging_table".
-      CREATE OR REPLACE FUNCTION honua.drop_import_staging_table(
-          schema_name text,
-          table_name text)
+      CREATE OR REPLACE FUNCTION honua.drop_import_staging_table(schema_name text, table_name text)
       RETURNS void
       LANGUAGE plpgsql
       AS $$
@@ -1092,10 +1166,12 @@ sql:
       BEGIN
           PERFORM honua.assert_import_identifier(schema_name, 'Schema name');
           PERFORM honua.assert_import_identifier(table_name, 'Table name');
-
           staging_name := honua.import_staging_table_name(table_name);
 
-          EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, staging_name);
+          PERFORM honua.assert_import_table_owned(schema_name, staging_name);
+          IF honua.assert_import_table_owned(schema_name, staging_name) THEN
+              EXECUTE format('DROP TABLE %I.%I', schema_name, staging_name);
+          END IF;
       END;
       $$;
   - |
@@ -3609,6 +3685,10 @@ sql:
   - |
       CREATE INDEX IF NOT EXISTS ix_network_topology_promotions_dataset_history
           ON honua.network_topology_promotions (dataset_id, promoted_at DESC);
+  # Mirrors migration 128_AddNetworkTopologyPromotionRequestHash (#5828).
+  - |
+      ALTER TABLE honua.network_topology_promotions
+          ADD COLUMN IF NOT EXISTS request_hash TEXT;
   # Tile-cache catalog (#1016 slice 4) + package-import serving columns (#1269).
   # Mirrors migrations 033_CreateTileCacheCatalog + 067_AddTileCachePackageImport so
   # the WMTS exporter sink and the .tpk/.tpkx/.vtpk import + serving binding have their

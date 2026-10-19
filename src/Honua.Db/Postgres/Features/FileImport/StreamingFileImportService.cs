@@ -419,9 +419,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     return result;
                 }
 
-                detectedSrid = layers.Length == 1 && layers[0].Srid > 0
-                    ? layers[0].Srid
-                    : FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
+                // A geodatabase with no feature classes has nothing to georeference (the import
+                // reports NoFeaturesFound), so only then is the target SRID an acceptable source.
+                // Otherwise an unresolvable CRS must fail with SourceSridRequired like every other
+                // format instead of silently assuming the target SRID (#6114).
+                detectedSrid = request.SourceSrid
+                    ?? (layers.Length == 0
+                        ? request.TargetSrid
+                        : await ResolveFileGdbSridAsync(layers, cancellationToken));
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
             }
             else if (format.Value == SupportedFileFormat.GeoParquet)
@@ -500,10 +505,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 fileStream.Position = 0;
             }
 
-            // For FileGDB with no detectable SRID, fall back to TargetSrid (coordinates
-            // may not need transformation if the GDB has no spatial features).
-            var sourceSrid = request.SourceSrid ?? detectedSrid
-                ?? (format.Value == SupportedFileFormat.FileGdb ? request.TargetSrid : null);
+            var sourceSrid = request.SourceSrid ?? detectedSrid;
             if (!sourceSrid.HasValue)
             {
                 errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";
@@ -634,13 +636,29 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
             if (importedCount == 0)
             {
-                errorMessage = "No features found in file";
-                result = ImportResult.CreateFailure(
-                    request.TableName,
-                    format.Value,
-                    errorMessage,
-                    stopwatch.Elapsed,
-                    warnings);
+                if (failedCount > 0)
+                {
+                    errorMessage = FormattableString.Invariant(
+                        $"Import failed: all {failedCount} feature(s) were skipped or rejected and no rows were loaded.");
+                    result = ImportResult.CreateFailure(
+                        request.TableName,
+                        format.Value,
+                        errorMessage,
+                        stopwatch.Elapsed,
+                        warnings,
+                        ImportValidationErrorCodes.AllRowsFailed);
+                }
+                else
+                {
+                    errorMessage = "No features found in file";
+                    result = ImportResult.CreateFailure(
+                        request.TableName,
+                        format.Value,
+                        errorMessage,
+                        stopwatch.Elapsed,
+                        warnings);
+                }
+
                 return result;
             }
 
@@ -686,6 +704,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         {
             // Preserve cancellation for UniversalImportJobService, which records the
             // terminal Cancelled state and uses a non-cancelled token for its receipt.
+            // The metric and the finally log otherwise stay on the failed path.
+            status = "cancelled";
             throw;
         }
         catch (ImportGeometryTooLargeException ex)
@@ -731,13 +751,16 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             // explanation and includes the SQL state code so operators can correlate
             // without leaking provider internals.
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
-            errorMessage = $"Import failed: {DescribePostgresError(ex.SqlState)} (SQL state {ex.SqlState}).";
+            errorMessage = ex.SqlState == "HN409"
+                ? $"IMPORT_TARGET_NOT_OWNED: Import target '{request.TableName}' or its staging table is not owned by the importer; it was not modified. Choose a new target or ask the database administrator to adopt a verified legacy import."
+                : $"Import failed: {DescribePostgresError(ex.SqlState)} (SQL state {ex.SqlState}).";
             result = ImportResult.CreateFailure(
                 request.TableName,
                 format ?? SupportedFileFormat.GeoJson,
                 errorMessage,
                 stopwatch.Elapsed,
-                warnings);
+                warnings,
+                errorCode: ex.SqlState == "HN409" ? ImportTableOwnershipException.Code : null);
             return result;
         }
         // Intentionally broad: this is the top-level import job handler — any unexpected failure

@@ -188,8 +188,8 @@ public sealed record PortalTokenIssueRequest(
 /// </summary>
 /// <param name="Token">The presented token.</param>
 /// <param name="PresentedBinding">Binding observed on the request that presents the token.</param>
-/// <param name="ClientType">Whether the new token binds to a referer or an IP address.</param>
-/// <param name="BindingValue">Referer URL or client IP address the new token binds to.</param>
+/// <param name="ClientType">The requested new binding type, or <see langword="null"/> to inherit the presented token's binding.</param>
+/// <param name="BindingValue">The requested new binding value, or <see langword="null"/> when inheriting.</param>
 /// <param name="ExpiresAt">
 /// Requested absolute expiry of the new token. The issuer clamps it to the presented token's
 /// own expiry.
@@ -197,8 +197,8 @@ public sealed record PortalTokenIssueRequest(
 public sealed record PortalTokenExchangeRequest(
     string Token,
     PortalTokenBinding PresentedBinding,
-    PortalTokenClientType ClientType,
-    string BindingValue,
+    PortalTokenClientType? ClientType,
+    string? BindingValue,
     DateTimeOffset ExpiresAt);
 
 /// <summary>
@@ -207,10 +207,12 @@ public sealed record PortalTokenExchangeRequest(
 /// <param name="Issuance">The new token and its expiry.</param>
 /// <param name="PrincipalId">Principal the presented token, and so the new token, belongs to.</param>
 /// <param name="TenantId">Tenant the new token is scoped to, when present.</param>
+/// <param name="ClientType">Binding type of the new token.</param>
 public sealed record PortalTokenExchange(
     PortalTokenIssuance Issuance,
     string PrincipalId,
-    string? TenantId);
+    string? TenantId,
+    PortalTokenClientType ClientType);
 
 /// <summary>
 /// Token issuance result.

@@ -2,11 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
-using System.Security.Claims;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Collaboration.Checkpoints;
 using Honua.Server.Features.Collaboration.Sessions;
+using Honua.Server.Features.Console;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Collaboration.Operations;
@@ -122,12 +122,16 @@ internal static class SavedMapOperationEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, payloadError);
         }
 
-        var actorId = ResolveActorId(request.ActorId, context.User);
+        // Authorship is the authenticated principal, never the body. A caller-supplied actorId
+        // is ignored so one collaborator cannot attribute an edit to another, and so distinct
+        // admin API keys do not collapse onto the shared name "admin" (ConsolePrincipal prefers
+        // api_key_id, matching presence and checkpoints).
+        var actorId = ConsolePrincipal.ResolveActorId(context.User);
         if (actorId is null)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
-                "actorId is required when the principal has no stable identifier.");
+                "The authenticated principal has no stable identifier.");
         }
 
         var appendRequest = new SavedMapOperationAppendRequest
@@ -167,6 +171,11 @@ internal static class SavedMapOperationEndpoints
             SavedMapOperationAppendStatus.Conflict => Results.Json(
                 ApiResponse<SavedMapOperationAppendApiResponse>.Failure(
                     result.Message ?? "The operation conflicts with concurrent edits.", response),
+                SavedMapOperationJsonContext.Default.ApiResponseSavedMapOperationAppendApiResponse,
+                statusCode: StatusCodes.Status409Conflict),
+            SavedMapOperationAppendStatus.IdempotencyMismatch => Results.Json(
+                ApiResponse<SavedMapOperationAppendApiResponse>.Failure(
+                    result.Message ?? SavedMapOperationIdempotency.MismatchMessage, response),
                 SavedMapOperationJsonContext.Default.ApiResponseSavedMapOperationAppendApiResponse,
                 statusCode: StatusCodes.Status409Conflict),
             _ => Results.Json(
@@ -266,6 +275,7 @@ internal static class SavedMapOperationEndpoints
     {
         SavedMapOperationAppendStatus.Accepted => "accepted",
         SavedMapOperationAppendStatus.Conflict => "conflict",
+        SavedMapOperationAppendStatus.IdempotencyMismatch => "idempotencyMismatch",
         _ => "resyncRequired"
     };
 
@@ -290,19 +300,6 @@ internal static class SavedMapOperationEndpoints
         HeadCursor = conflict.HeadCursor.Value,
         ConflictingOperations = conflict.ConflictingOperations.Select(ToDto).ToArray()
     };
-
-    private static string? ResolveActorId(string? requestedActorId, ClaimsPrincipal principal)
-    {
-        if (!string.IsNullOrWhiteSpace(requestedActorId))
-        {
-            return requestedActorId.Trim();
-        }
-
-        var claimed = principal.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? principal.FindFirstValue("sub")
-            ?? principal.FindFirstValue(ClaimTypes.Name);
-        return string.IsNullOrWhiteSpace(claimed) ? null : claimed.Trim();
-    }
 
     private static bool TryValidate(SavedMapOperationAppendApiRequest request, out string error)
     {

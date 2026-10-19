@@ -384,7 +384,10 @@ public sealed class ResourceValidator : IResourceValidator
         string protocol,
         MetadataV2PublicationType publicationType)
         => ServiceProtocols.IsPreferredPublicationType(protocol, publicationType) ||
-           (string.Equals(protocol, ServiceProtocols.MapServer, StringComparison.OrdinalIgnoreCase) &&
+           // MapServer draws and VectorTileServer tiles feature layers, so a split
+           // service's feature publication can answer either protocol.
+           ((string.Equals(protocol, ServiceProtocols.MapServer, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(protocol, ServiceProtocols.VectorTileServer, StringComparison.OrdinalIgnoreCase)) &&
             publicationType == MetadataV2PublicationType.EsriFeatureLayer);
 
     private async Task<MetadataV2GraphSnapshot> RequireV2SnapshotAsync(CancellationToken cancellationToken)

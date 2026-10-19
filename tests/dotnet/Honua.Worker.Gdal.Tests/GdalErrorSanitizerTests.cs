@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
@@ -88,7 +87,7 @@ public sealed class GdalErrorSanitizerTests
         {
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.SlopeProcessId,
-                ("source", Convert.ToBase64String(Encoding.UTF8.GetBytes("dem"))));
+                ("source", GdalCli.RasterBase64("dem")));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 

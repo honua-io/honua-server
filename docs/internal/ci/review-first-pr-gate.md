@@ -74,13 +74,25 @@ runs. This avoids GitHub's 1,000-result cap on workflow-run searches that use a
 name rather than scanning the repository's unrelated artifacts. It reads one
 paginated repository artifact catalog and joins artifacts to trusted run IDs
 locally; it never makes one artifact-list request per run. The promotion policy
-caps the worst case at 300 run-query pages, 50 repository-artifact pages, and
-300 receipt downloads: 650 requests at the 650-request policy ceiling, with at
-least 350 requests reserved below the `GITHUB_TOKEN` limit of 1,000 per
+uses a three-day rolling collection window and caps the worst case at 30
+run-query pages, 50 repository-artifact pages, and 300 receipt downloads:
+380 requests within the unchanged 650-request policy ceiling, with at
+least 620 requests reserved below the `GITHUB_TOKEN` limit of 1,000 per
 repository per hour. The 50-page catalog bound (5,000 artifacts) keeps at least
 2x headroom over the 1,601-artifact retained catalog observed in #5363. Every page must report the same total, IDs must be unique,
 the complete count must fit the page bound, and the selected receipt count must
 fit the download bound. Any inconsistency or exhausted bound fails closed.
+
+The three-day collection window addresses the observed #5364 download-budget
+failure without sampling an incomplete window or granting a stronger credential.
+A successful default-branch collection remains required. On 2026-10-13 the catalog held 181
+unexpired receipts created in three days, versus 437 in seven days and 1,187 in
+30 days. Every indexed receipt in the configured window is still required;
+growth beyond 300 fails collection rather than silently dropping the tail.
+The minimum remains 20 distinct current-policy heads with zero integrity
+failures. Changing the policy digest starts a new measurement cohort, so old
+receipts cannot make the new cohort ready. The collection window does not
+shorten the 30-day artifact/report retention or alter release qualification.
 
 The pre-ledger audit found seven conservative API-derived candidates among 53
 distinct heads. Those remain useful supporting evidence, but they are not
