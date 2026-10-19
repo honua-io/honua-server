@@ -14,15 +14,19 @@ internal sealed partial class LocalStorageDomainLock
 {
     private readonly string _path;
 
-    internal LocalStorageDomainLock(string configuredJournalDirectory)
+    internal LocalStorageDomainLock(string configuredJournalDirectory, string lockFileName = "domain.lock")
     {
         if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Local storage-domain fencing requires Linux flock.");
         ArgumentException.ThrowIfNullOrWhiteSpace(configuredJournalDirectory);
+        if (string.IsNullOrWhiteSpace(lockFileName) || lockFileName.Length > 128 ||
+            lockFileName.Any(character => !(char.IsAsciiLetterOrDigit(character) || character is '-' or '.')) ||
+            lockFileName is "." or "..")
+            throw new ArgumentException("The control lock name must be one bounded filename.", nameof(lockFileName));
         if (!Path.IsPathFullyQualified(configuredJournalDirectory)) throw new ArgumentException("The journal root must be absolute.");
         var directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(configuredJournalDirectory));
         Directory.CreateDirectory(directory);
         RejectLink(directory);
-        _path = Path.Join(directory, "domain.lock");
+        _path = Path.Join(directory, lockFileName);
         if (File.Exists(_path)) RejectLink(_path);
     }
 

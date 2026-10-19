@@ -6,7 +6,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Honua.FileStorage;
 
-// The configured local budget domain is Linux-only. Flush every affected parent
+// Configured local budget domains are Linux-only. Flush every affected parent
 // directory as well as file bytes before acknowledging a durable object mutation.
 internal static partial class LocalStorageDurability
 {

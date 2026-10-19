@@ -124,7 +124,7 @@ internal sealed class RedisImportStorageBudget : IImportStorageBudget
         return reservation;
     }
 
-    private static void Validate(ImportStorageReservation reservation)
+    internal static void Validate(ImportStorageReservation reservation)
     {
         ArgumentNullException.ThrowIfNull(reservation);
         _ = RedisImportUploadStore.Key(reservation.UploadId);
