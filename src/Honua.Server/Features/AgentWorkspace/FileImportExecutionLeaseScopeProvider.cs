@@ -39,7 +39,7 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
         var captured = await AgentJobSecurityBridge.CaptureAsync(executor,
             services.GetService<IOptions<RbacOptions>>()?.Value ?? new RbacOptions(), services,
             services.GetService<ITenantContext>(), cancellationToken).ConfigureAwait(false);
-        if (JobExecutionLeaseIntentFingerprint.ComputeContext(captured) != JobExecutionLeaseIntentFingerprint.ComputeContext(bound.Prepared.ExecutorPolicyContext)) throw Denied();
+        if (!MatchesPreparedContext(captured, bound.Prepared.ExecutorPolicyContext)) throw Denied();
         var scope = Scope(bound);
         await RequireAccessAsync(bound, executor, requireWrite: true, scope.Operations[0], cancellationToken).ConfigureAwait(false);
         await RequireUnchangedAsync(job, bound, cancellationToken).ConfigureAwait(false);
@@ -57,7 +57,7 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
             var fresh = await AgentJobSecurityBridge.CaptureAsync(principal,
                 services.GetService<IOptions<RbacOptions>>()?.Value ?? new RbacOptions(), services,
                 services.GetService<ITenantContext>(), cancellationToken).ConfigureAwait(false);
-            if (JobExecutionLeaseIntentFingerprint.ComputeContext(fresh) != JobExecutionLeaseIntentFingerprint.ComputeContext(bound.Prepared.ExecutorPolicyContext)) throw Denied();
+            if (!MatchesPreparedContext(fresh, bound.Prepared.ExecutorPolicyContext)) throw Denied();
         }
         else
         {
@@ -200,6 +200,12 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
             || latest.Document.AgentActorId != original.Document.AgentActorId) throw Denied();
         cancellationToken.ThrowIfCancellationRequested();
     }
+
+    internal static bool MatchesPreparedContext(JobSecurityContext fresh, JobSecurityContext prepared)
+        => fresh.AgentCredential is not null
+            && JobSecurityContextFingerprint.ComputeRenewalLineage(fresh) == JobSecurityContextFingerprint.ComputeRenewalLineage(prepared)
+            && JobExecutionLeaseIntentFingerprint.ComputeContext(prepared with { AgentCredential = fresh.AgentCredential })
+                == JobExecutionLeaseIntentFingerprint.ComputeContext(prepared);
 
     private static JobExecutionLeaseScope Scope(BoundImport bound) => new()
     {
