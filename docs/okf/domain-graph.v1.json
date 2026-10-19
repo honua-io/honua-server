@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:028630aff266b80c9ea41e933abc96da6b4faed7ac552502940fb97711261989",
+  "bundleDigest": "sha256:f37ab6499a192e2924df3b85791920d855f5583833a3c928182031fa6c8bcddc",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2319,7 +2319,7 @@
     {
       "id": "guides/migrate/from-arcgis-server",
       "path": "guides/migrate/from-arcgis-server.md",
-      "documentDigest": "sha256:ad0ae096dbd6ebf54fa36fbb5c426e04d7300cfc774dbe2834c9f96c74dcf3a4",
+      "documentDigest": "sha256:b54cb9dda8859285db8e334a60697f1acbdf25252f3e4b90c487ffa4c3da9359",
       "metadata": {
         "type": "guide",
         "title": "Migrate from ArcGIS Server",
@@ -6785,7 +6785,7 @@
     {
       "id": "okf/capabilities/serve.geoservices-featureserver",
       "path": "okf/capabilities/serve.geoservices-featureserver.md",
-      "documentDigest": "sha256:091ed5c41f16bb0d5bd82457abee918aa346cd80bd372fd824291579783dbeee",
+      "documentDigest": "sha256:87dd15a8424e03be7adb09e2cd05cb227f94133014dbcbe4ad36ade9bff3110a",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Query",
