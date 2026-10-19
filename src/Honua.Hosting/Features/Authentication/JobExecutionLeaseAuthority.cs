@@ -201,8 +201,12 @@ internal sealed class JobExecutionLeaseAuthority(
             ObjectDisposedException.ThrowIf(_disposed, this);
             var exact = binding.Scope.Operations.FirstOrDefault(operation => SameRequest(operation, request)) ?? throw Denied();
             var principal = await RequireSourceAsync(cancellationToken).ConfigureAwait(false);
-            var authorization = await owner._services.GetRequiredService<IOperatorAuthorizationEvaluator>()
-                .EvaluateAsync(principal, exact with { ApprovalReasonCodes = exact.ApprovalReasonCodes.ToArray() }, cancellationToken).ConfigureAwait(false);
+            var scopeDecision = owner._services.GetRequiredService<IOperatorScopeAuthorizer>()
+                .Evaluate(principal, exact.ResourceType, exact.Operation);
+            var authorization = scopeDecision.IsAllowed
+                ? await owner._services.GetRequiredService<IOperatorAuthorizationEvaluator>()
+                    .EvaluateAsync(principal, exact with { ApprovalReasonCodes = exact.ApprovalReasonCodes.ToArray() }, cancellationToken).ConfigureAwait(false)
+                : Honua.Core.Features.Security.Domain.AccessDecision.Forbidden(scopeDecision.Reason);
             var requirement = authorization.IsAllowed
                 ? owner._services.GetRequiredService<IOperatorApprovalEvaluator>().Evaluate(principal,
                     exact with { ApprovalReasonCodes = exact.ApprovalReasonCodes.ToArray() })

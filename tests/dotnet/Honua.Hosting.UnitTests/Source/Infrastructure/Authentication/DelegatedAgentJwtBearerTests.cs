@@ -161,6 +161,8 @@ public sealed class DelegatedAgentJwtBearerTests
     [InlineData("generation")]
     [InlineData("ceiling")]
     [InlineData("issuer")]
+    [InlineData("scope-read")]
+    [InlineData("scope-full")]
     public async Task ProductionJwtBearerPipeline_JobLeaseRetainsOnlyCurrentBoundedLineageAfterOriginExpiry(string change)
     {
         using var rsa = RSA.Create(2048);
@@ -204,7 +206,26 @@ public sealed class DelegatedAgentJwtBearerTests
         policy.AuthorizeIssuanceAsync(Arg.Any<JobExecutionLeaseIssuanceRequest>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<CancellationToken>())
             .Returns(new JobExecutionLeasePolicyDecision { IsAllowed = true, DecisionId = "canonical-benign", MaximumExpiresAt = clock.GetUtcNow().AddMinutes(30) });
         policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<IJobExecutionLeaseCurrentPolicy>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var operatorEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
+        operatorEvaluator.EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        var approvalEvaluator = Substitute.For<IOperatorApprovalEvaluator>();
+        approvalEvaluator.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>()).Returns(ApprovalRequirement.NotRequired());
+        if (change is "scope-read" or "scope-full")
+        {
+            policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<JobExecutionLeaseScope>(),
+                Arg.Any<IJobExecutionLeaseCurrentPolicy>(), Arg.Any<CancellationToken>()).Returns(async call =>
+                {
+                    foreach (var operation in call.ArgAt<JobExecutionLeaseScope>(2).Operations)
+                    {
+                        var decision = await call.ArgAt<IJobExecutionLeaseCurrentPolicy>(3).EvaluateAsync(operation);
+                        if (!decision.Authorization.IsAllowed) throw new UnauthorizedAccessException("Current OAuth scope denies the sealed operation.");
+                    }
+                });
+        }
         var services = new ServiceCollection().AddLogging().AddMemoryCache()
+            .AddSingleton<IOperatorScopeAuthorizer, OperatorScopeAuthorizer>()
+            .AddSingleton(operatorEvaluator).AddSingleton(approvalEvaluator)
             .AddSingleton<IConfiguration>(config).AddSingleton<TimeProvider>(clock)
             .AddSingleton(membership).AddSingleton(roles).AddSingleton(tenant).AddSingleton(store)
             .AddSingleton(policy).AddSingleton(scopeProvider)
@@ -229,7 +250,7 @@ public sealed class DelegatedAgentJwtBearerTests
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var token = new JwtSecurityToken("https://issuer.example", "honua",
             [new Claim("sub", "subject"), new Claim("tenant_id", "tenant"),
-                new Claim("scope", "agent:workspace " + OperatorScopeCatalog.Full)],
+                new Claim("scope", "agent:workspace " + (change == "scope-read" ? OperatorScopeCatalog.Read : OperatorScopeCatalog.Full))],
             DateTime.UtcNow.AddMinutes(-1), DateTime.UtcNow.AddMinutes(5), new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
         await using var requestScope = provider.CreateAsyncScope();
         var requestServices = requestScope.ServiceProvider;
@@ -260,7 +281,7 @@ public sealed class DelegatedAgentJwtBearerTests
             case "ceiling": profile.Permissions = ["agent:workspace"]; break;
             case "issuer": profile.Issuer = "https://other.example"; break;
         }
-        if (change != "unchanged")
+        if (change is not ("unchanged" or "scope-full"))
         {
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => authority.RevalidateForExecutionAsync(stored));
             return;

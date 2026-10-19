@@ -25,6 +25,9 @@ public sealed class JobExecutionLeaseAuthorityTests
         using var fixture = await Fixture.CreateAsync();
         var lease = await fixture.Authority.IssueAsync(fixture.Request);
         fixture.Stored = fixture.Accept(lease);
+        fixture.Services.GetRequiredService<IOperatorScopeAuthorizer>()
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorResourceType>(), Arg.Any<OperatorOperation>())
+            .Returns(OperatorScopeDecision.NotGoverned());
         var evaluator = fixture.Services.GetRequiredService<IOperatorAuthorizationEvaluator>();
         evaluator.EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
             .Returns(Honua.Core.Features.Security.Domain.AccessDecision.Allowed());
