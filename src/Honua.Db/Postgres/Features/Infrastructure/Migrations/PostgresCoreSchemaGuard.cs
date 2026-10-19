@@ -4,6 +4,7 @@
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Db.Postgres.Features.SensorThings;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using NpgsqlTypes;
@@ -1152,6 +1153,11 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             }
         }
 
+        var sensingSchema = _migrations.SensorThingsSensingMigration is { } sensingMigration
+            ? await PostgresSensorThingsSchema.ResolveAsync(connection, _schemaName, appliedScripts.Contains(sensingMigration),
+                cancellationToken: cancellationToken).ConfigureAwait(false)
+            : _schemaName;
+
         var hasPostGisRaster = false;
         await using (var extensionCommand = connection.CreateCommand())
         {
@@ -1180,9 +1186,11 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                  AND a.attnum > 0
                  AND NOT a.attisdropped
                 WHERE (
-                    (n.nspname = @schema AND (
+                    (n.nspname = @schema AND c.relname <> ALL(@sensing_objects) AND (
                         @schema = @canonical_schema OR
                         (c.relname <> ALL(@lineage_tables) AND c.relname <> ALL(@lineage_indexes))))
+                    OR
+                    (n.nspname = @sensing_schema AND c.relname = ANY(@sensing_objects))
                     OR
                     (n.nspname = @canonical_schema AND
                         (c.relname = ANY(@lineage_tables) OR c.relname = ANY(@lineage_indexes) OR
@@ -1195,6 +1203,12 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             schemaParameter.ParameterName = "schema";
             schemaParameter.Value = _schemaName;
             schemaCommand.Parameters.Add(schemaParameter);
+
+            schemaCommand.Parameters.Add(new NpgsqlParameter("sensing_schema", sensingSchema));
+            schemaCommand.Parameters.Add(new NpgsqlParameter("sensing_objects", NpgsqlDbType.Array | NpgsqlDbType.Text)
+            {
+                Value = PostgresSensorThingsSchema.SensingObjects
+            });
 
             var canonicalSchemaParameter = schemaCommand.CreateParameter();
             canonicalSchemaParameter.ParameterName = "canonical_schema";

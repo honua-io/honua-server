@@ -29,7 +29,7 @@ namespace Honua.CloudIntegration.Tests;
 /// or advancing the journal.
 /// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.LocalSubstrate)]
-public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture postgres)
+public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture postgres)
     : IClassFixture<LocalSubstratePostgresFixture>
 {
     public static TheoryData<string, int, int, string, DatabaseSchemaFloorFailureKind> DivergenceCases =>
