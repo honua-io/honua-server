@@ -14,12 +14,12 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Infrastructure.Caching;
-using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Configuration;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Services;
+using Honua.Server.Features.Portal;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -56,20 +56,7 @@ internal static class InfrastructureCompositionRoot
                     ServerCoreSchemaMigrations.Manifest);
                 // Postgres is the default server provider. Its Portal stores replace
                 // process-local sharing state before the Hosting defaults are added.
-                services.AddSingleton<IPortalGroupStore>(sp =>
-                    new Honua.Server.Features.Portal.Sharing.PostgresPortalGroupStore(
-                        sp.GetRequiredService<Npgsql.NpgsqlDataSource>(),
-                        sp.GetService<TimeProvider>() ?? TimeProvider.System,
-                        configuration["Database:Schema"]));
-                services.AddSingleton<IPortalItemSharingStore>(sp =>
-                    new Honua.Server.Features.Portal.Sharing.PostgresPortalItemSharingStore(
-                        sp.GetRequiredService<Npgsql.NpgsqlDataSource>(),
-                        sp.GetRequiredService<IHttpContextAccessor>(),
-                        configuration["Database:Schema"]));
-                services.AddSingleton<IPortalAudienceSnapshotProvider>(sp =>
-                    new Honua.Server.Features.Portal.Sharing.PostgresPortalAudienceSnapshotProvider(
-                        sp.GetRequiredService<Npgsql.NpgsqlDataSource>(),
-                        configuration["Database:Schema"]));
+                services.AddPostgresPortalSharing(configuration);
                 break;
             case DataProviderNames.DuckDb:
                 Honua.Db.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);

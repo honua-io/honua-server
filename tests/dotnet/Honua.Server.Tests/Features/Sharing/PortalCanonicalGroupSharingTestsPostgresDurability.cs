@@ -41,6 +41,7 @@ public sealed class PortalCanonicalGroupSharingTestsPostgresDurability(DatabaseF
     public Task DisposeAsync() => database.DropSchemaAsync(_schema);
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task AcceptedGroupsAndShares_SurviveReplicaReconstruction_AndRevokeFreshReads()
     {
         var groupsA = new PostgresPortalGroupStore(database.DataSource, TimeProvider.System, _schema);
