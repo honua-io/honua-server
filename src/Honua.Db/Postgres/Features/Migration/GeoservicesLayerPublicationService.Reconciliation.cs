@@ -184,7 +184,7 @@ internal sealed partial class GeoservicesLayerPublicationService
     /// does not execute the filter; the map is there for a shared-target compiler. Object ids
     /// stay unmapped because the target surrogate key is not the source OBJECTID.
     /// </summary>
-    private static IReadOnlyDictionary<string, string>? BuildFilterFieldMappings(GeoservicesLayerInfo layerInfo)
+    private static Dictionary<string, string>? BuildFilterFieldMappings(GeoservicesLayerInfo layerInfo)
     {
         var map = GeoservicesImportColumns.Map(layerInfo);
         var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
