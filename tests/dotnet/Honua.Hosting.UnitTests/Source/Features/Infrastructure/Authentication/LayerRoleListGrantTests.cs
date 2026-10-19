@@ -60,6 +60,19 @@ public sealed class LayerRoleListGrantTests
     }
 
     [UnitTest]
+    public async Task NamedLayerGrant_ExcludedAllowedRoles_IsAllowed()
+    {
+        var decision = await EvaluateAsync(
+            ["parcel-clerk"],
+            new AccessPolicy { AllowedRoles = ["gis-analyst"] },
+            servicePolicy: null,
+            AuthorizationOperation.Query);
+
+        decision.IsAllowed.Should().BeTrue(
+            "a grant that names this service and layer is an explicit allow");
+    }
+
+    [UnitTest]
     public async Task ViewerGrant_EmptyRoleList_IsAllowed()
     {
         var decision = await EvaluateAsync(
@@ -283,6 +296,15 @@ public sealed class LayerRoleListGrantTests
                 else if (string.Equals(role, "editor", StringComparison.OrdinalIgnoreCase))
                 {
                     permissions.AddRange(EditorGrants);
+                }
+                else if (string.Equals(role, "parcel-clerk", StringComparison.OrdinalIgnoreCase))
+                {
+                    permissions.Add(new PermissionGrant
+                    {
+                        Service = "cadastre",
+                        Layer = "parcels",
+                        Operation = "query",
+                    });
                 }
             }
 

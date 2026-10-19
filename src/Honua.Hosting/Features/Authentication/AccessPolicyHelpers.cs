@@ -234,8 +234,13 @@ internal static class AccessPolicyHelpers
                 operation,
                 cancellationToken).ConfigureAwait(false);
 
-            if (grantDecision == GrantOutcome.Allow)
+            if (grantDecision.IsAllowed)
             {
+                if (!NarrowsWithRoleList(grantDecision.MatchedGrant))
+                {
+                    return null;
+                }
+
                 var granted = ApplyRoleListToGrant(
                     context.RequestServices, context.User, resourcePolicy: null, service, operation);
                 return granted.IsAllowed ? null : CreateAccessDeniedResult(context, granted);
@@ -351,11 +356,13 @@ internal static class AccessPolicyHelpers
                 cancellationToken,
                 requestCache).ConfigureAwait(false);
 
-            // A matching grant does not skip an explicit role list (#6358).
-            if (grantDecision == GrantOutcome.Allow)
+            // A built-in wildcard grant does not skip an explicit role list (#6358).
+            // A grant that names this service and layer is an explicit allow and stands.
+            if (grantDecision.IsAllowed)
             {
-                return ApplyRoleListToGrant(
-                    services, principal, resource.AccessPolicy, service, operation);
+                return NarrowsWithRoleList(grantDecision.MatchedGrant)
+                    ? ApplyRoleListToGrant(services, principal, resource.AccessPolicy, service, operation)
+                    : AccessDecision.Allowed();
             }
         }
 
@@ -421,7 +428,7 @@ internal static class AccessPolicyHelpers
     /// <c>(service, layer, operation)</c> tuple, mapping the request principal's
     /// claims to roles. Returns whether an explicit grant allows the request.
     /// </summary>
-    private static Task<GrantOutcome> EvaluateGrantAsync(
+    private static Task<GrantEvaluation> EvaluateGrantAsync(
         HttpContext context,
         string serviceName,
         string? layerName,
@@ -440,7 +447,7 @@ internal static class AccessPolicyHelpers
     /// Request-context-free grant evaluation shared by the HTTP helpers and the
     /// principal-based <see cref="LayerAccessAuthorizer"/> (honua-server#3046).
     /// </summary>
-    private static async Task<GrantOutcome> EvaluateGrantCoreAsync(
+    private static async Task<GrantEvaluation> EvaluateGrantCoreAsync(
         IServiceProvider services,
         ClaimsPrincipal principal,
         string serviceName,
@@ -452,7 +459,7 @@ internal static class AccessPolicyHelpers
         var resolver = services.GetService<IPermissionResolver>();
         if (resolver is null)
         {
-            return GrantOutcome.NoGrant;
+            return GrantEvaluation.None;
         }
 
         var options = services.GetRequiredService<IOptions<RbacOptions>>().Value;
@@ -460,7 +467,7 @@ internal static class AccessPolicyHelpers
         if (roles.Count == 0)
         {
             // No roles to resolve grants from — defer to the coarse policy.
-            return GrantOutcome.NoGrant;
+            return GrantEvaluation.None;
         }
 
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -508,14 +515,27 @@ internal static class AccessPolicyHelpers
                 cancellationToken).ConfigureAwait(false);
         }
 
-        return decision.IsAllowed ? GrantOutcome.Allow : GrantOutcome.NoGrant;
+        return decision.IsAllowed
+            ? GrantEvaluation.Allowed(decision.MatchedGrant)
+            : GrantEvaluation.None;
     }
 
-    private enum GrantOutcome
+    private readonly record struct GrantEvaluation(bool IsAllowed, PermissionGrant? MatchedGrant)
     {
-        NoGrant = 0,
-        Allow = 1,
+        public static GrantEvaluation None => default;
+
+        public static GrantEvaluation Allowed(PermissionGrant? grant) => new(true, grant);
     }
+
+    /// <summary>
+    /// True when the grant is broad enough that a layer role list must still be
+    /// applied. Built-in viewer and editor grants are <c>*/*</c>. A grant that names
+    /// both the service and the layer is an explicit allow.
+    /// </summary>
+    private static bool NarrowsWithRoleList(PermissionGrant? grant)
+        => grant is null
+            || string.Equals(grant.Service, "*", StringComparison.Ordinal)
+            || string.Equals(grant.Layer, "*", StringComparison.Ordinal);
 
     public static IResult? RequireServiceAccess(
         HttpContext context,
