@@ -6,10 +6,12 @@ using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Deployment.Abstractions;
+using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
@@ -23,8 +25,6 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 [Protocol(TestProtocols.Mcp)]
-[Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
-[Endpoint("POST /mcp resources/read honua://published-services")]
 public sealed class McpPublishedCatalogReadbackTests
 {
     private const string ServiceName = "roads";
@@ -41,6 +41,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_PersistedCatalogFromFreshProvider_ExposesPublicIdentityWithoutInventedPromotion()
     {
         var graph = Catalog();
@@ -61,6 +62,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
     public async Task Index_CatalogPublication_AdvertisesSameReadableUriAndEtag()
     {
         var graph = Catalog();
@@ -78,6 +80,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_GlobalPublishedServiceGrant_DoesNotBypassLayerPolicy()
     {
         var graph = Catalog(new AccessPolicy { AllowedRoles = ["private-road-reader"] });
@@ -87,6 +90,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_ServiceWithoutPersistedStorageBinding_IsNotAPublishedService()
     {
         var graph = Catalog() with { StorageBindings = [] };
@@ -96,6 +100,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_CollidingPromotionIdentity_RefusesToReturnAnUnrelatedService()
     {
         _promotions.GetAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(new PublishedServiceRecord
@@ -115,6 +120,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
     public async Task Index_RestrictedLayer_DoesNotExposeServiceMetadata()
     {
         var graph = Catalog(new AccessPolicy { AllowedRoles = ["private-road-reader"] });
@@ -128,6 +134,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_StoppedService_RetainsPublicationWithoutClaimingItServes()
     {
         var graph = Catalog();
@@ -157,6 +164,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_TenantScopedService_DoesNotLeakAcrossRequests()
     {
         var graph = Catalog();
@@ -173,6 +181,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_CrossResourceStorageBinding_RefusesFalsePublication()
     {
         var graph = Catalog();
@@ -186,6 +195,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
     public async Task Index_CollidingPromotionIdentity_RefusesUnreadableUri()
     {
         _promotions.GetAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(new PublishedServiceRecord
@@ -208,6 +218,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
     public async Task Index_ActivePromotionAndStoppedCatalogCollision_RefusesUnreadableUri()
     {
         var promotion = Promotion();
@@ -231,6 +242,29 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
+    public async Task Index_CaseOnlyActivePromotionCollision_RefusesUnreadablePromotionUri()
+    {
+        var promotion = Promotion() with { ServiceId = "ROADS" };
+        _promotions.GetAsync("ROADS", Arg.Any<CancellationToken>()).Returns(promotion);
+        _promotions.ListActiveAsync(Arg.Any<CancellationToken>()).Returns([promotion]);
+        var graph = Catalog();
+        var detail = new PublishedServiceResource(
+            _promotions, _deployments, _jobs, NullLogger<PublishedServiceResource>.Instance);
+        var promotionUri = McpResourceUris.PublishedServiceUri("ROADS");
+        var readDetail = async () => await detail.ReadAsync(
+            Context(graph), promotionUri, CancellationToken.None);
+        await readDetail.Should().ThrowAsync<GeoprocessingValidationException>();
+
+        var index = new PromotionSurfaceIndexResource(
+            _promotions, _deployments, _jobs, NullLogger<PromotionSurfaceIndexResource>.Instance);
+        var readIndex = async () => await index.ReadAsync(
+            Context(graph), "honua://published-services", CancellationToken.None);
+        await readIndex.Should().ThrowAsync<GeoprocessingValidationException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_PromotionWithRestrictedCatalog_RemainsReadableUnderPromotionGrant()
     {
         var promotion = Promotion();
@@ -247,6 +281,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
     public async Task Index_UnpublishedServiceWithSameName_DoesNotHidePublishedService()
     {
         var graph = Catalog();
@@ -270,6 +305,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_TwoPublishedServicesWithSameName_RefusesAmbiguousIdentity()
     {
         var graph = Catalog();
@@ -299,6 +335,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
     public async Task Index_RestrictedSameNameService_DoesNotMakeAllowedUriUnreadable()
     {
         var graph = Catalog();
@@ -335,6 +372,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_DuplicatePublicLayerIndex_RefusesAmbiguousPublishedLayer()
     {
         var graph = Catalog();
@@ -355,6 +393,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_ForeignTenantDuplicate_DoesNotRevealHiddenGraphShape()
     {
         var graph = Catalog();
@@ -402,6 +441,7 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_EncodedNames_RoundTripToDistinctPersistedServices()
     {
         var graph = Catalog();

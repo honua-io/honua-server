@@ -446,7 +446,8 @@ public sealed class LayerPublishJobTests
 
         Assert.Equal(expectedStatus, status.Status);
         Assert.Null(status.MetadataRevision);
-        Assert.False(status.Result!.Details.ContainsKey("serviceUri"));
+        Assert.Equal($"Layer publish {progressStatus}.", status.Result!.Summary);
+        Assert.False(status.Result.Details.ContainsKey("serviceUri"));
         Assert.False(status.Result.Details.ContainsKey("serviceName"));
         Assert.False(status.ResourceIds.ContainsKey("serviceName"));
     }

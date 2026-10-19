@@ -44,6 +44,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
     private readonly string _firstTable = $"mcpdur_first_{Guid.NewGuid():N}";
     private readonly string _secondTable = $"mcpdur_second_{Guid.NewGuid():N}";
     private readonly WebAppFixture _fixture;
+    private readonly List<int> _publishedLayerIds = [];
     private HttpClient _client = null!;
     private Guid _connectionId;
 
@@ -107,26 +108,44 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         _client?.Dispose();
-        if (_fixture.CurrentSchema is not null)
+        try
         {
-            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
-                DROP TABLE IF EXISTS public.{_firstTable};
-                DROP TABLE IF EXISTS public.{_secondTable};
-                """);
-            await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+            if (_fixture.CurrentSchema is not null)
             {
-                await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
-                await using var command = connection.CreateCommand();
-                command.CommandText = """
-                    DELETE FROM honua.metadata_v2_current WHERE environment = @environment;
-                    DELETE FROM honua.metadata_v2_snapshots WHERE environment = @environment;
-                    """;
-                command.Parameters.AddWithValue("environment", _environment);
-                await command.ExecuteNonQueryAsync();
-            });
+                // Publishing also writes the shared legacy catalog. Remove only
+                // this fixture's layers/service before dropping their source tables.
+                await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+                {
+                    await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+                    await using var command = connection.CreateCommand();
+                    command.CommandText = """
+                        DELETE FROM features
+                        WHERE layer_id = ANY(@layerIds)
+                           OR layer_id IN (
+                               SELECT layer_id FROM honua.service_layers WHERE service_name = @serviceName);
+                        DELETE FROM honua.layers
+                        WHERE layer_id = ANY(@layerIds)
+                           OR layer_id IN (
+                               SELECT layer_id FROM honua.service_layers WHERE service_name = @serviceName);
+                        DELETE FROM honua.services WHERE service_name = @serviceName;
+                        DELETE FROM honua.metadata_v2_current WHERE environment = @environment;
+                        DELETE FROM honua.metadata_v2_snapshots WHERE environment = @environment;
+                        """;
+                    command.Parameters.AddWithValue("layerIds", _publishedLayerIds.ToArray());
+                    command.Parameters.AddWithValue("serviceName", _serviceName);
+                    command.Parameters.AddWithValue("environment", _environment);
+                    await command.ExecuteNonQueryAsync();
+                });
+                await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
+                    DROP TABLE IF EXISTS public.{_firstTable};
+                    DROP TABLE IF EXISTS public.{_secondTable};
+                    """);
+            }
         }
-
-        await _fixture.DisposeAsync();
+        finally
+        {
+            await _fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -145,12 +164,14 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         var exactUri = first.GetProperty("serviceUri").GetString();
         exactUri.Should().NotBeNullOrWhiteSpace();
         var firstStorageId = int.Parse(first.GetProperty("layerId").GetString()!, CultureInfo.InvariantCulture);
+        _publishedLayerIds.Add(firstStorageId);
 
         var second = await PublishAsync(_secondTable, "second layer");
         second.GetProperty("status").GetString().Should().Be("Queued");
         var jobId = second.GetProperty("jobId").GetString();
         jobId.Should().NotBeNullOrWhiteSpace();
         var secondStorageId = await AwaitJobCompletionAsync(jobId!);
+        _publishedLayerIds.Add(secondStorageId);
 
         // Re-read the accepted operation instance and ask the actual executor
         // to resolve its completed job against the persisted graph. No

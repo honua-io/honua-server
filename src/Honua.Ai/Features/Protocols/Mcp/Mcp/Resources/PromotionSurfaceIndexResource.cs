@@ -196,6 +196,8 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         // Impose a deterministic order before truncating so `truncated=true`
         // responses return the same prefix across calls regardless of the
         // backing store's iteration order.
+        var activePromotionNames = new HashSet<string>(
+            active.Select(record => record.ServiceId), StringComparer.OrdinalIgnoreCase);
         var items = active
             .Select(record => new McpPublishedServiceSummary
             {
@@ -216,7 +218,11 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
                 httpContext, snapshot, cancellationToken).ConfigureAwait(false);
             foreach (var service in catalog)
             {
-                if (await _services.GetAsync(service.ServiceName, cancellationToken).ConfigureAwait(false) is not null)
+                // Detail resolves metadata names without case. A differently
+                // cased active promotion would be listed but its URI would refuse
+                // the collision. Keep exact lookup for inactive promotions too.
+                if (activePromotionNames.Contains(service.ServiceName) ||
+                    await _services.GetAsync(service.ServiceName, cancellationToken).ConfigureAwait(false) is not null)
                 {
                     throw new GeoprocessingValidationException(
                         $"Published service identity '{service.ServiceName}' is shared by a promotion and a catalog publication.");

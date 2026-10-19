@@ -278,7 +278,8 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             ResourceIds = resourceIds,
             Result = new OperationResultSummary
             {
-                Summary = progress.LayerId is int published
+                Summary = progress.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Completed &&
+                    progress.LayerId is int published
                     ? $"Published layer id {published.ToString(CultureInfo.InvariantCulture)}."
                     : $"Layer publish {progress.Status}.",
                 Details = details,
