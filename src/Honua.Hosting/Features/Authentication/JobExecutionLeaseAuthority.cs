@@ -168,17 +168,34 @@ internal sealed class JobExecutionLeaseAuthority(
         {
             throw Denied();
         }
-        using (var currentPolicy = new CurrentPolicyEvaluation(this, job, binding))
+        using (var currentPolicy = new CurrentPolicyEvaluation(this, job, binding, execution))
         {
             await policy.RequireCurrentAsync(job, binding.Decision, CopyScope(binding.Scope), currentPolicy, cancellationToken).ConfigureAwait(false);
         }
         // Retained approval evidence can await external stores. Refresh credential lineage
         // once more after that wait and check the finite proof deadline before returning.
-        principal = await AgentCredentialAuthority.RevalidateLeaseLineageAsync(_protector, binding, job, _services, cancellationToken).ConfigureAwait(false)
+        var finalJob = await _jobs.GetAsync(jobId, cancellationToken).ConfigureAwait(false) ?? throw Denied();
+        RequireMatchingCurrentJob(finalJob, job, binding, execution);
+        principal = await AgentCredentialAuthority.RevalidateLeaseLineageAsync(_protector, binding, finalJob, _services, cancellationToken).ConfigureAwait(false)
             ?? throw Denied();
-        _protector.RequireVerifiedCurrentBinding(binding, job);
+        finalJob = await _jobs.GetAsync(jobId, cancellationToken).ConfigureAwait(false) ?? throw Denied();
+        RequireMatchingCurrentJob(finalJob, job, binding, execution);
+        _protector.RequireVerifiedCurrentBinding(binding, finalJob);
         cancellationToken.ThrowIfCancellationRequested();
-        return new(job, binding, principal);
+        return new(finalJob, binding, principal);
+    }
+
+    private static void RequireMatchingCurrentJob(ExecutionJobRecord actual, ExecutionJobRecord original,
+        SealedJobExecutionLeaseBinding binding, bool execution)
+    {
+        if (actual.OperationId != binding.JobId
+            || actual.Audit.SubmitterSecurityContext?.ExecutionLease != original.Audit.SubmitterSecurityContext?.ExecutionLease
+            || JobExecutionLeaseIntentFingerprint.Compute(actual) != binding.IntentFingerprint
+            || (execution && (actual.CancellationRequestedAt is not null
+                || actual.Status is not (ExecutionJobStatus.Queued or ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running))))
+        {
+            throw Denied();
+        }
     }
 
     private static JobExecutionLeaseScope CopyScope(JobExecutionLeaseScope scope)
@@ -190,7 +207,7 @@ internal sealed class JobExecutionLeaseAuthority(
         };
 
     private sealed class CurrentPolicyEvaluation(JobExecutionLeaseAuthority owner, ExecutionJobRecord job,
-        SealedJobExecutionLeaseBinding binding) : IJobExecutionLeaseCurrentPolicy, IDisposable
+        SealedJobExecutionLeaseBinding binding, bool execution) : IJobExecutionLeaseCurrentPolicy, IDisposable
     {
         private bool _disposed;
         public void Dispose() => _disposed = true;
@@ -222,14 +239,15 @@ internal sealed class JobExecutionLeaseAuthority(
         {
             // Deliberately no ValidateBaseAsync: that would recurse into the policy adapter.
             var actual = await owner._jobs.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false) ?? throw Denied();
-            if (actual.Audit.SubmitterSecurityContext?.ExecutionLease != job.Audit.SubmitterSecurityContext?.ExecutionLease
-                || JobExecutionLeaseIntentFingerprint.Compute(actual) != binding.IntentFingerprint)
-            {
-                throw Denied();
-            }
+            RequireMatchingCurrentJob(actual, job, binding, execution);
             owner._protector.RequireVerifiedCurrentBinding(binding, actual);
-            return await AgentCredentialAuthority.RevalidateLeaseLineageAsync(owner._protector, binding, actual,
+            var principal = await AgentCredentialAuthority.RevalidateLeaseLineageAsync(owner._protector, binding, actual,
                 owner._services, cancellationToken).ConfigureAwait(false) ?? throw Denied();
+            actual = await owner._jobs.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false) ?? throw Denied();
+            RequireMatchingCurrentJob(actual, job, binding, execution);
+            owner._protector.RequireVerifiedCurrentBinding(binding, actual);
+            cancellationToken.ThrowIfCancellationRequested();
+            return principal;
         }
 
         private static bool SameRequest(OperatorAuthorizationRequest left, OperatorAuthorizationRequest right)

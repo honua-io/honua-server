@@ -19,6 +19,31 @@ namespace Honua.Hosting.UnitTests.Infrastructure.Authentication;
 
 public sealed class JobExecutionLeaseAuthorityTests
 {
+    [Theory]
+    [InlineData("cancel", true)]
+    [InlineData("terminal", true)]
+    [InlineData("cancel", false)]
+    [InlineData("terminal", false)]
+    public async Task Execution_RechecksActualStatusDuringAndAfterCurrentPolicy(string transition, bool insideCallback)
+    {
+        using var fixture = await Fixture.CreateAsync();
+        fixture.Stored = fixture.Accept(await fixture.Authority.IssueAsync(fixture.Request));
+        var expected = fixture.Stored;
+        fixture.Policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(),
+            Arg.Any<JobExecutionLeaseScope>(), Arg.Any<IJobExecutionLeaseCurrentPolicy>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                fixture.Stored = transition == "cancel"
+                    ? fixture.Stored! with { CancellationRequestedAt = DateTimeOffset.UtcNow }
+                    : fixture.Stored! with { Status = ExecutionJobStatus.Succeeded };
+                if (insideCallback)
+                {
+                    await call.ArgAt<IJobExecutionLeaseCurrentPolicy>(3).EvaluateAsync(call.ArgAt<JobExecutionLeaseScope>(2).Operations[0]);
+                }
+            });
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.RevalidateForExecutionAsync(expected));
+    }
+
     [Fact]
     public async Task CurrentPolicy_IsExactFreshAndDetectsNewApprovalRequirement()
     {
