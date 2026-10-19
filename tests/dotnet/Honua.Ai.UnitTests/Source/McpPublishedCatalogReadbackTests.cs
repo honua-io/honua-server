@@ -321,12 +321,28 @@ public sealed class McpPublishedCatalogReadbackTests
     {
         var promotion = Promotion() with { ServiceId = "ROADS" };
         _promotions.FindByPublicIdAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(promotion);
+        var deployment = new Deployment
+        {
+            DeploymentId = "dep-roads",
+            Source = DeploymentSource.FromPublishedService("ROADS"),
+            Target = new DeploymentTarget
+            {
+                TargetId = "target-roads",
+                Kind = DeploymentKind.FeatureService,
+                HostingMode = HostingMode.ManagedService,
+            },
+            Status = DeploymentStatus.Active,
+            PublicationState = DeploymentPublicationState.Published,
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch,
+        };
         _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "ROADS", Arg.Any<CancellationToken>())
-            .Returns([]);
+            .Returns([deployment]);
         var graph = Catalog() with { Services = [], Publications = [] };
         var read = await ReadAsync(graph);
 
         read.GetProperty("serviceId").GetString().Should().Be("ROADS");
+        read.GetProperty("deploymentResourceUris")[0].GetString().Should().Be("honua://deployments/dep-roads");
         await _deployments.Received(1).ListBySourceAsync(
             DeploymentSourceKind.PublishedService, "ROADS", Arg.Any<CancellationToken>());
         await _deployments.DidNotReceive().ListBySourceAsync(
