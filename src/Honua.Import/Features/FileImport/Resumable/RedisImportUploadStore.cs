@@ -17,7 +17,7 @@ internal sealed class RedisImportUploadStore(IConnectionMultiplexer redis)
 {
     internal const int MaximumChunkBytes = 4 * 1024 * 1024;
     internal const long MaximumFileBytes = 1024L * 1024 * 1024 * 1024;
-    private const int MaximumChunks = 65536;
+    internal const int MaximumChunks = 65536;
     private const int MaximumPageSize = 128;
     private const string StateField = "state";
 

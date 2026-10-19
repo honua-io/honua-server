@@ -49,7 +49,9 @@ internal static class AgentWorkspaceEndpoints
         {
             var context = invocation.HttpContext;
             context.Response.Headers.CacheControl = "no-store";
-            var bodyLimit = context.Request.Path.Value?.Contains("/processes/local/", StringComparison.Ordinal) == true ? 2 * 1024 * 1024 : 65536;
+            var bodyLimit = context.GetEndpoint()?.Metadata.GetMetadata<DatasetImportChunkBodyLimit>() is not null
+                ? DatasetImportUploadTransportOptions.MaximumChunkBytes
+                : context.Request.Path.Value?.Contains("/processes/local/", StringComparison.Ordinal) == true ? 2 * 1024 * 1024 : 65536;
             if (context.Request.ContentLength > bodyLimit)
             {
                 return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
@@ -87,6 +89,7 @@ internal static class AgentWorkspaceEndpoints
             }
         });
         group.MapDatasetImportTasks();
+        group.MapDatasetImportUploads();
         group.MapGet("/target", async (IAgentWorkspaceStore store) => Results.Ok(new AgentTargetResponse(await store.GetTargetIdAsync().ConfigureAwait(false))));
         group.MapPost("/devops/authorize", AuthorizeDevOps);
         group.MapPost("/workspaces", CreateWorkspace);

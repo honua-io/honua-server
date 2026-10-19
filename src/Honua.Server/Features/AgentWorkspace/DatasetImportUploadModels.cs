@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Import.FileImport.Resumable;
 
 namespace Honua.Server.Features.AgentWorkspace;
 
@@ -29,12 +30,12 @@ internal sealed record DatasetImportUploadCapabilities(int ChunkBytes, long Maxi
 internal sealed record DatasetImportUploadTransportOptions(string ScratchDirectory,
     long MaximumScratchBytes, long MaximumFileBytes)
 {
-    internal const int MaximumChunkBytes = 4 * 1024 * 1024;
-    internal const long MaximumChunkedFileBytes = (long)MaximumChunkBytes * 65536;
+    internal const int MaximumChunkBytes = RedisImportUploadStore.MaximumChunkBytes;
+    internal const long MaximumChunkedFileBytes = (long)MaximumChunkBytes * RedisImportUploadStore.MaximumChunks;
     internal long EffectiveMaximumFileBytes => Math.Min(MaximumFileBytes,
-        Math.Min(MaximumScratchBytes, MaximumChunkedFileBytes));
+        Math.Min(MaximumScratchBytes, Math.Min(MaximumChunkedFileBytes, RedisImportUploadStore.MaximumFileBytes)));
 
-    internal bool IsConfigured => Path.IsPathFullyQualified(ScratchDirectory) && MaximumScratchBytes > 0 && MaximumFileBytes > 0;
+    internal bool IsConfigured => !string.IsNullOrWhiteSpace(ScratchDirectory) && Path.IsPathFullyQualified(ScratchDirectory) && MaximumScratchBytes > 0 && MaximumFileBytes > 0;
 }
 
 // Endpoint metadata permits the canonical bounded chunk body through the shared

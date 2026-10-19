@@ -213,6 +213,10 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             binding.OriginalTurnHash.Should().HaveLength(64);
             binding.ExecutorAuthority.Id.Should().Be(keyId);
             executionDocument.DatasetImportTasks[executionTaskId].Single().OwnerActorId.Should().Be(linkedActor);
+            // Explicit contributor task-version observation does not expose the executor's intent index.
+            var humanObservedTask = await Json(await human.GetAsync(executionRoot + $"/dataset-import-tasks/{executionTaskId}/versions/1"));
+            humanObservedTask.GetProperty("taskId").GetString().Should().Be(executionTaskId);
+            (await human.GetAsync(executionRoot + "/dataset-import-task-intents/agent-import-intent")).StatusCode.Should().Be(HttpStatusCode.NotFound);
             var replay = await Json(await agent.PostAsJsonAsync(executionRoot + "/dataset-import-tasks", executionRequest));
             replay.GetProperty("taskId").GetString().Should().Be(executionTaskId);
             var replayDocument = (await fixture.Services.GetRequiredService<IAgentWorkspaceStore>().GetAsync(executionId))!;

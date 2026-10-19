@@ -65,7 +65,7 @@ internal static class DatasetImportTaskEndpoints
         return receipt is null ? Results.NotFound() : Results.Json(receipt, AgentWorkspaceJsonContext.Default.DatasetImportAuthorityRenewal);
     }
 
-    private static async Task<(T? Request, IResult? Error)> ReadBoundedAsync<T>(HttpContext context, JsonTypeInfo<T> type) where T : class
+    internal static async Task<(T? Request, IResult? Error)> ReadBoundedAsync<T>(HttpContext context, JsonTypeInfo<T> type) where T : class
     {
         // Explicit bounded read before deserialization also covers unknown-length/chunked bodies.
         const int maximumBytes = 65536;

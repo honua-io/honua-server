@@ -115,6 +115,17 @@ internal static class DatasetImportTaskService
         if (candidate is null) return Results.NotFound();
         var task = await context.RequestServices.GetRequiredService<IDatasetImportTaskProvider>().AuthorizeAsync(context.User,
             workspace.WorkspaceId, taskId, revision, candidate.ContentHash, false, context.RequestAborted).ConfigureAwait(false);
+        // Only the explicitly bound initiating human can observe an executor-owned
+        // task here. Linked-agent explanation alone still cannot read transfer resources.
+        if (task is null && context.RequestServices.GetService<IDatasetImportContributorAuthorizer>() is { } contributors)
+        {
+            var contribution = await contributors.AuthorizeAsync(context.User, workspace.WorkspaceId, taskId,
+                revision, candidate.ContentHash, false, context.RequestAborted).ConfigureAwait(false);
+            if (contribution is not null && contribution.Task == candidate && contribution.Task.WorkspaceId == workspace.WorkspaceId &&
+                contribution.ExecutorActorId == contribution.Task.OwnerActorId &&
+                contribution.ContributorActorId == contribution.InitiatingHumanActorId && contribution.ContributorActorId != contribution.ExecutorActorId)
+                task = contribution.Task;
+        }
         return task is null ? Results.NotFound() : Results.Json(task, AgentWorkspaceJsonContext.Default.DatasetImportTask);
     }
 
