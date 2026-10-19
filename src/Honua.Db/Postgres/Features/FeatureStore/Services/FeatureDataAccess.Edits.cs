@@ -941,6 +941,7 @@ internal sealed partial class FeatureDataAccess
             transaction,
             preconditions,
             editBatch.RowSecurityWriteCheck,
+            editBatch.OwnerGuards,
             cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -950,6 +951,7 @@ internal sealed partial class FeatureDataAccess
             connection,
             transaction,
             preconditions,
+            editBatch.OwnerGuards,
             cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
 
