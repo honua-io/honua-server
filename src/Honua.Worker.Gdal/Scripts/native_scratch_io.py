@@ -233,5 +233,6 @@ if __name__ == '__main__':
         main()
     except (OSError, ValueError) as error:
         # Never append diagnostics to get's binary stdout or expose input data.
-        print('Native scratch IO failed: ' + type(error).__name__, file=sys.stderr)
+        code = f' (errno={error.errno})' if isinstance(error, OSError) and error.errno is not None else ''
+        print('Native scratch IO failed: ' + type(error).__name__ + code, file=sys.stderr)
         sys.exit(1)
