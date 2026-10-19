@@ -413,11 +413,18 @@ internal sealed partial class FeatureDataAccess
         var baseOwner = OwnerMatchExpression(ownerGuard, "b.attributes", 7, 8);
         var existingOwner = OwnerMatchExpression(ownerGuard, "existing.attributes", 7, 8);
         var baseLock = ownerGuard is null ? string.Empty : " FOR UPDATE OF b";
-        var existingProjection = ownerGuard is null ? "1" : "attributes";
+        var existingProjection = ownerGuard is null ? "1" : "attributes, operation";
         var existingLock = ownerGuard is null ? string.Empty : " FOR UPDATE";
+        // An overlay shadows DEFAULT even when its owner differs or it is a tombstone.
+        // Only an absent overlay permits admission against the base owner. Recheck the
+        // conflict row as well so the upsert never replaces a row with another owner.
         var admission = ownerGuard is null
             ? "WHERE EXISTS (SELECT 1 FROM base) OR EXISTS (SELECT 1 FROM existing)"
-            : $"WHERE EXISTS (SELECT 1 FROM base) OR EXISTS (SELECT 1 FROM existing WHERE {existingOwner})";
+            : $"WHERE EXISTS (SELECT 1 FROM existing WHERE operation <> 3 AND {existingOwner}) OR (NOT EXISTS (SELECT 1 FROM existing) AND EXISTS (SELECT 1 FROM base))";
+        var conflictOwner = OwnerMatchExpression(ownerGuard, "current_edit.attributes", 7, 8);
+        var conflictAdmission = ownerGuard is null
+            ? string.Empty
+            : $"WHERE current_edit.operation <> 3 AND {conflictOwner}";
         var sql = string.Create(CultureInfo.InvariantCulture, $@"
             WITH base AS (
                 SELECT b.geometry AS base_geom, b.attributes AS base_attrs
@@ -428,7 +435,7 @@ internal sealed partial class FeatureDataAccess
                 SELECT {existingProjection} FROM {VersionEditsTableName}
                 WHERE version_id = $1 AND layer_id = $2 AND objectid = $3{existingLock}
             )
-            INSERT INTO {VersionEditsTableName}
+            INSERT INTO {VersionEditsTableName} AS current_edit
                 (version_id, layer_id, objectid, operation, geometry, attributes, base_geometry, base_attributes)
             SELECT $1, $2, $3, $5::smallint, {geometryValueExpression}, $6::jsonb,
                    (SELECT base_geom FROM base), (SELECT base_attrs FROM base)
@@ -437,7 +444,8 @@ internal sealed partial class FeatureDataAccess
                 SET operation = EXCLUDED.operation,
                     geometry = EXCLUDED.geometry,
                     attributes = EXCLUDED.attributes,
-                    modified_at = now()");
+                    modified_at = now()
+                {conflictAdmission}");
 
         await using var command = new NpgsqlCommand(sql, connection) { Transaction = transaction };
         ApplyCommandTimeout(command, _queryTimeoutSeconds);
