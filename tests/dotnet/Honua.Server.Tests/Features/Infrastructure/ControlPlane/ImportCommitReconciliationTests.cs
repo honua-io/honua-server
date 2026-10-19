@@ -96,6 +96,22 @@ public sealed class ImportCommitReconciliationTests
         await backend.DidNotReceive().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task StaleTermination_CannotRequeueReplacementAttemptWithSameWorkerId()
+    {
+        var fixture = new Fixture();
+        var old = await ExecutionJobCommitReconciliation.SetPendingAsync(fixture.Store, fixture.Current, true, default, startExecution: true);
+        fixture.Current = fixture.Current with { AttemptCount = old.AttemptCount + 1 };
+        using var worker = new JobExecutionService(fixture.Queue, fixture.Store, [], new ExecutionJobCancellationTokens(),
+            [], null, NullLogger<JobExecutionService>.Instance);
+        var terminate = typeof(JobExecutionService).GetMethod("TerminateJobAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        await (Task)terminate.Invoke(worker, [old, old.ClaimedBy!, ExecutionJobStatus.Failed, "license expired", CancellationToken.None])!;
+        Assert.Equal(ExecutionJobStatus.Running, fixture.Current.Status);
+        Assert.Null(fixture.Current.CommitRecovery!.DeferredStatus);
+        await fixture.Queue.DidNotReceive().RequeueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
     private sealed class Fixture
     {
         internal IExecutionJobStore Store { get; } = Substitute.For<IExecutionJobStore>();
