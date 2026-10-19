@@ -15,6 +15,15 @@ ALTER TABLE $HonuaSchema$.studio_publication_requests
 ALTER TABLE $HonuaSchema$.studio_publication_requests
     ADD COLUMN IF NOT EXISTS governs_studio_routes BOOLEAN NOT NULL DEFAULT TRUE;
 
+-- A published-pointer rollback can create a successor on the accepted route.
+-- Keep that successor's identity on its own immutable request receipt.
+ALTER TABLE $HonuaSchema$.studio_rollback_requests
+    ADD COLUMN IF NOT EXISTS deployment_id TEXT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_studio_rollback_requests_deployment
+    ON $HonuaSchema$.studio_rollback_requests (deployment_id)
+    WHERE deployment_id IS NOT NULL;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_studio_publication_requests_deployment
     ON $HonuaSchema$.studio_publication_requests (deployment_id)
     WHERE deployment_id IS NOT NULL;

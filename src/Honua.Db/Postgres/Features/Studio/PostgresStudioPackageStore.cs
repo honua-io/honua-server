@@ -895,11 +895,11 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         try
         {
-            var existing = await GetPublicationRequestForReplayAsync(
-                connection, transaction, request.RequestId, cancellationToken).ConfigureAwait(false);
+            var (existing, payloadMatches) = await GetPublicationRequestForReplayAsync(
+                connection, transaction, request, cancellationToken).ConfigureAwait(false);
             if (existing is not null)
             {
-                if (!PublicationRequestMatches(existing, request))
+                if (!PublicationRequestMatches(existing, request, payloadMatches))
                 {
                     throw new InvalidOperationException("The Studio publication request ID is already bound to different content.");
                 }
@@ -981,6 +981,11 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
                     await PersistHostedDeploymentAsync(
                         connection, transaction, deployment, cancellationToken).ConfigureAwait(false);
                 }
+                else
+                {
+                    await RetireHostedDeploymentForItemAsync(
+                        connection, transaction, item, request, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
@@ -1000,7 +1005,9 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken)
     {
         var route = request.Intent?.Route;
-        if (request.Status != StudioPublicationRequestStatus.Accepted || string.IsNullOrWhiteSpace(route))
+        if (request.Status != StudioPublicationRequestStatus.Accepted
+            || !request.GovernsStudioRoutes
+            || string.IsNullOrWhiteSpace(route))
         {
             return;
         }
@@ -1084,9 +1091,9 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
                    governing.intent, governing.status, governing.validation,
                    governing.warning_acknowledgement, governing.requested_by,
                    governing.created_at,
-                   CASE WHEN governing.deployment_id IS NULL THEN NULL
-                        ELSE active.deployment_id END AS deployment_id,
-                   governing.governs_studio_routes
+                   governing.deployment_id,
+                   governing.governs_studio_routes,
+                   active.deployment_id AS active_deployment_id
             FROM (
                 SELECT DISTINCT ON (item_id)
                        request_id, item_id, version_id, intent, status, validation,
@@ -1124,11 +1131,13 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@target_id", DeploymentTarget.ForStudioPublishedRoute(route).TargetId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
-            ? ReadPublicationRequest(reader)
+            ? ReadPublicationRequest(reader, includeActiveDeployment: true)
             : null;
     }
 
-    private static StudioPublicationRequest ReadPublicationRequest(NpgsqlDataReader reader)
+    private static StudioPublicationRequest ReadPublicationRequest(
+        NpgsqlDataReader reader,
+        bool includeActiveDeployment = false)
         => new()
         {
             RequestId = reader.GetGuid(0),
@@ -1145,6 +1154,9 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
             CreatedAt = reader.GetFieldValue<DateTimeOffset>(8),
             DeploymentId = reader.IsDBNull(9) ? null : reader.GetString(9),
             GovernsStudioRoutes = reader.GetBoolean(10),
+            ActiveDeploymentId = includeActiveDeployment && !reader.IsDBNull(11)
+                ? reader.GetString(11)
+                : null,
         };
 
     public async Task<StudioRollbackRequest> RollbackAsync(
@@ -1206,10 +1218,12 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
             var insertSql = $"""
                 INSERT INTO {_rollbackRequestsTable}
                     (request_id, item_id, target_version_id, pointer,
-                     current_version_id, published_version_id, requested_by, reason, created_at)
+                     current_version_id, published_version_id, requested_by, reason, created_at,
+                     deployment_id)
                 VALUES
                     (@request_id, @item_id, @target_version_id, @pointer,
-                     @current_version_id, @published_version_id, @requested_by, @reason, @created_at)
+                     @current_version_id, @published_version_id, @requested_by, @reason, @created_at,
+                     @deployment_id)
                 """;
             await using (var command = new NpgsqlCommand(insertSql, connection, transaction))
             {
@@ -1222,14 +1236,25 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
                 command.Parameters.AddWithValue("@requested_by", (object?)actorId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@reason", (object?)reason ?? DBNull.Value);
                 command.Parameters.AddWithValue("@created_at", now);
+                command.Parameters.Add(new NpgsqlParameter("@deployment_id", NpgsqlDbType.Text)
+                { Value = DBNull.Value });
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
             if (updatePublished)
             {
-                await ReconcileHostedRollbackAsync(
+                var successor = await ReconcileHostedRollbackAsync(
                     connection, transaction, targetVersion, pointers, request.RequestId, actorId,
                     cancellationToken).ConfigureAwait(false);
+                if (successor is not null)
+                {
+                    var updateSql = $"UPDATE {_rollbackRequestsTable} SET deployment_id = @deployment_id WHERE request_id = @request_id";
+                    await using var update = new NpgsqlCommand(updateSql, connection, transaction);
+                    update.Parameters.AddWithValue("@deployment_id", successor.DeploymentId);
+                    update.Parameters.AddWithValue("@request_id", request.RequestId);
+                    await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                    request = request with { DeploymentId = successor.DeploymentId };
+                }
             }
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);

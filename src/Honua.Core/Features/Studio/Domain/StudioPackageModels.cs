@@ -551,6 +551,28 @@ public sealed record StudioPublicationRequest
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? DeploymentId { get; init; }
 
+    /// <summary>Canonical resource for the deployment created by this immutable request.</summary>
+    [JsonPropertyName("deploymentResourceUri")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeploymentResourceUri => DeploymentId is { Length: > 0 }
+        ? $"honua://deployments/{Uri.EscapeDataString(DeploymentId)}"
+        : null;
+
+    /// <summary>
+    /// Current deployment on the route when read through the active-route projection.
+    /// This may differ after rollback; <see cref="DeploymentId"/> remains the original receipt.
+    /// </summary>
+    [JsonPropertyName("activeDeploymentId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ActiveDeploymentId { get; init; }
+
+    /// <summary>Canonical resource for the current route deployment, when projected.</summary>
+    [JsonPropertyName("activeDeploymentResourceUri")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ActiveDeploymentResourceUri => ActiveDeploymentId is { Length: > 0 }
+        ? $"honua://deployments/{Uri.EscapeDataString(ActiveDeploymentId)}"
+        : null;
+
     /// <summary>Content item identifier.</summary>
     [JsonPropertyName("itemId")]
     public required Guid ItemId { get; init; }
@@ -842,6 +864,18 @@ public sealed record StudioRollbackRequest
     /// <summary>Rollback request identifier.</summary>
     [JsonPropertyName("requestId")]
     public required Guid RequestId { get; init; }
+
+    /// <summary>Successor deployment created by a published-pointer rollback, if hosted.</summary>
+    [JsonPropertyName("deploymentId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeploymentId { get; init; }
+
+    /// <summary>Canonical resource for the successor deployment, if hosted.</summary>
+    [JsonPropertyName("deploymentResourceUri")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeploymentResourceUri => DeploymentId is { Length: > 0 }
+        ? $"honua://deployments/{Uri.EscapeDataString(DeploymentId)}"
+        : null;
 
     /// <summary>Content item identifier.</summary>
     [JsonPropertyName("itemId")]

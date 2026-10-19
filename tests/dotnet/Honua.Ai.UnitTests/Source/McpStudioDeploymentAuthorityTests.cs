@@ -165,7 +165,8 @@ public sealed class McpStudioDeploymentAuthorityTests
                     Guid.NewGuid(), Guid.NewGuid(), new string('a', 64), owner, Guid.NewGuid(), family, Guid.NewGuid()),
                 DeploymentTarget.ForStudioPublishedRoute($"/{id}"),
                 audit: new OperationAuditInfo { RequestedBy = "approver", TenantId = tenant })
-            .WithProvisioning().WithRollingOut().WithActive() with { Runtime = RuntimeState.Unknown() };
+            .WithProvisioning().WithRollingOut().WithActive() with
+        { Runtime = RuntimeState.Unknown() };
 
     private static StudioContentItemPointers Pointers(Deployment deployment, string owner, string tenant)
         => new()

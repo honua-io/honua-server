@@ -12,10 +12,10 @@ namespace Honua.Db.Postgres.Features.Studio;
 
 internal sealed partial class PostgresStudioPackageStore
 {
-    private async Task<StudioPublicationRequest?> GetPublicationRequestForReplayAsync(
+    private async Task<(StudioPublicationRequest? Existing, bool PayloadMatches)> GetPublicationRequestForReplayAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        Guid requestId,
+        StudioPublicationRequest requested,
         CancellationToken cancellationToken)
     {
         // Serialize retries of the same immutable request ID across hosts before either
@@ -24,40 +24,45 @@ internal sealed partial class PostgresStudioPackageStore
             "SELECT pg_advisory_xact_lock(hashtextextended(@request_id, 1));",
             connection, transaction))
         {
-            gate.Parameters.AddWithValue("@request_id", requestId.ToString("D"));
+            gate.Parameters.AddWithValue("@request_id", requested.RequestId.ToString("D"));
             await gate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
         var sql = $"""
             SELECT request_id, item_id, version_id, intent, status, validation,
                    warning_acknowledgement, requested_by, created_at, deployment_id,
-                   governs_studio_routes
+                   governs_studio_routes,
+                   (intent IS NOT DISTINCT FROM @requested_intent
+                    AND validation = @requested_validation) AS payload_matches
             FROM {_publicationRequestsTable}
             WHERE request_id = @request_id
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
-        command.Parameters.AddWithValue("@request_id", requestId);
+        command.Parameters.AddWithValue("@request_id", requested.RequestId);
+        var intentJson = requested.Intent is null
+            ? null
+            : JsonSerializer.Serialize(requested.Intent, StudioJsonContext.Default.StudioPublicationIntent);
+        command.Parameters.Add(new NpgsqlParameter("@requested_intent", NpgsqlDbType.Jsonb)
+        { Value = (object?)intentJson ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter("@requested_validation", NpgsqlDbType.Jsonb)
+        { Value = SerializeValidation(requested.Validation) });
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
-            ? ReadPublicationRequest(reader)
-            : null;
+            ? (ReadPublicationRequest(reader), reader.GetBoolean(11))
+            : (null, false);
     }
 
     private static bool PublicationRequestMatches(
         StudioPublicationRequest existing,
-        StudioPublicationRequest requested)
+        StudioPublicationRequest requested,
+        bool payloadMatches)
         => existing.ItemId == requested.ItemId
             && existing.VersionId == requested.VersionId
             && existing.Status == requested.Status
             && existing.GovernsStudioRoutes == requested.GovernsStudioRoutes
             && string.Equals(existing.RequestedBy, requested.RequestedBy, StringComparison.Ordinal)
             && string.Equals(existing.WarningAcknowledgement, requested.WarningAcknowledgement, StringComparison.Ordinal)
-            && string.Equals(
-                JsonSerializer.Serialize(existing.Intent, StudioJsonContext.Default.StudioPublicationIntent),
-                JsonSerializer.Serialize(requested.Intent, StudioJsonContext.Default.StudioPublicationIntent),
-                StringComparison.Ordinal)
-            && string.Equals(SerializeValidation(existing.Validation), SerializeValidation(requested.Validation),
-                StringComparison.Ordinal);
+            && payloadMatches;
 
     private async Task<StudioContentVersion?> GetVersionForPublicationAsync(
         NpgsqlConnection connection,
@@ -125,10 +130,11 @@ internal sealed partial class PostgresStudioPackageStore
             .WithProvisioning("Studio publication accepted", audit)
             .WithRollingOut(reason: "Published pointer staged", audit: audit)
             .WithActive(reason: "Published pointer committed", audit: audit)
-            with { Runtime = RuntimeState.Unknown() };
+            with
+        { Runtime = RuntimeState.Unknown() };
     }
 
-    private async Task ReconcileHostedRollbackAsync(
+    private async Task<Deployment?> ReconcileHostedRollbackAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         StudioContentVersion version,
@@ -164,7 +170,7 @@ internal sealed partial class PostgresStudioPackageStore
 
         if (active.Count == 0)
         {
-            return;
+            return null;
         }
 
         if (active.Count != 1 || active[0].Source.StudioPublicationRequestId is not Guid publicationRequestId)
@@ -190,6 +196,7 @@ internal sealed partial class PostgresStudioPackageStore
         var successor = CreateHostedDeploymentCore(item.TenantId, source, route, actorId,
             rollbackRequestId, "Studio published-pointer rollback");
         await PersistHostedDeploymentAsync(connection, transaction, successor, cancellationToken).ConfigureAwait(false);
+        return successor;
     }
 
     private async Task PersistHostedDeploymentAsync(
@@ -282,5 +289,80 @@ internal sealed partial class PostgresStudioPackageStore
         insert.Parameters.AddWithValue("@created_at", deployment.CreatedAt);
         insert.Parameters.AddWithValue("@updated_at", deployment.UpdatedAt);
         await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task RetireHostedDeploymentForItemAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        StudioContentItemPointers item,
+        StudioPublicationRequest request,
+        CancellationToken cancellationToken)
+    {
+        // An accepted publication without a hosted route withdraws the previously served
+        // version. Keep the deployment projection in the same transaction as the pointer.
+        var selectSql = $"""
+            SELECT document
+            FROM {_deploymentsTable}
+            WHERE source_kind = @source_kind
+              AND status = @active
+              AND document -> 'source' ->> 'studioItemId' = @item_id
+            FOR UPDATE
+            """;
+        var active = new List<Deployment>();
+        await using (var select = new NpgsqlCommand(selectSql, connection, transaction))
+        {
+            select.Parameters.AddWithValue("@source_kind", DeploymentSourceKind.StudioPublishedVersion.ToString());
+            select.Parameters.AddWithValue("@active", DeploymentStatus.Active.ToString());
+            select.Parameters.AddWithValue("@item_id", item.ItemId.ToString("D"));
+            await using var reader = await select.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                active.Add(JsonSerializer.Deserialize(reader.GetString(0), DeploymentJsonContext.Default.Deployment)
+                    ?? throw new InvalidDataException("A stored deployment document was empty."));
+            }
+        }
+
+        if (active.Count > 1)
+        {
+            throw new InvalidDataException("The Studio item has ambiguous active deployments.");
+        }
+
+        foreach (var current in active)
+        {
+            if (!string.Equals(current.Audit.TenantId, item.TenantId, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("The active Studio deployment belongs to a different tenant.");
+            }
+
+            var audit = new OperationAuditInfo
+            {
+                RequestedBy = request.RequestedBy,
+                TenantId = item.TenantId,
+                Reason = "Accepted Studio publication withdrew its hosted route",
+                CorrelationId = request.RequestId.ToString("D")
+            };
+            var retired = current.WithRetired("Studio hosted route withdrawn", audit) with
+            {
+                Version = checked(current.Version + 1)
+            };
+            var updateSql = $"""
+                UPDATE {_deploymentsTable}
+                SET status = @status, version = @next_version, document = @document,
+                    updated_at = @updated_at
+                WHERE deployment_id = @deployment_id AND version = @expected_version
+                """;
+            await using var update = new NpgsqlCommand(updateSql, connection, transaction);
+            update.Parameters.AddWithValue("@status", retired.Status.ToString());
+            update.Parameters.AddWithValue("@next_version", retired.Version);
+            update.Parameters.Add(new NpgsqlParameter("@document", NpgsqlDbType.Jsonb)
+            { Value = JsonSerializer.Serialize(retired, DeploymentJsonContext.Default.Deployment) });
+            update.Parameters.AddWithValue("@updated_at", retired.UpdatedAt);
+            update.Parameters.AddWithValue("@deployment_id", retired.DeploymentId);
+            update.Parameters.AddWithValue("@expected_version", current.Version);
+            if (await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+            {
+                throw new InvalidOperationException("The previous Studio deployment changed concurrently.");
+            }
+        }
     }
 }
