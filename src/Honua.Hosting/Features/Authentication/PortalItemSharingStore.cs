@@ -18,8 +18,8 @@ namespace Honua.Infrastructure.Authentication;
 /// whether a principal may read the underlying service (ADR-0049/#1375). Explicit
 /// group audiences provide an alternative service read grant through that shared
 /// authority; resource policy, tenant isolation and credential scopes still apply.
-/// Everyone/org do not confer authority. The store mirrors the established in-memory auth-store pattern
-/// (no parallel durable store).
+/// Everyone/org do not confer authority. The Postgres profile persists group
+/// audiences; non-Postgres profiles use the process-local implementation below.
 /// </para>
 /// </remarks>
 internal interface IPortalItemSharingStore

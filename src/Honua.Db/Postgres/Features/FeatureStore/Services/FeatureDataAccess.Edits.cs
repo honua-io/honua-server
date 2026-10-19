@@ -889,19 +889,97 @@ internal sealed partial class FeatureDataAccess
             throw new NotSupportedException("Cross-layer transactions do not support branch-versioned edits.");
         }
 
-        if (editBatch.Operations.IsDefaultOrEmpty)
+        // Ordered batches keep request sequence. Unordered creates, updates, and deletes use the
+        // same processors as a committing ApplyEditsAsync, but this caller owns the transaction:
+        // a later batch can still roll the earlier ones back (#6359).
+        if (!editBatch.Operations.IsDefaultOrEmpty)
         {
-            throw new NotSupportedException("Cross-layer transactions require ordered edit operations.");
+            return await ApplyOrderedEditsAsync(
+                layerId,
+                editBatch,
+                connection,
+                transaction,
+                BuildPreconditionMap(editBatch),
+                manageTransaction: false,
+                cancellationToken).ConfigureAwait(false);
         }
 
-        return await ApplyOrderedEditsAsync(
+        return await ApplyUnorderedEditsWithinCallerTransactionAsync(
             layerId,
             editBatch,
             connection,
             transaction,
-            BuildPreconditionMap(editBatch),
-            manageTransaction: false,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Applies an unordered batch on a caller-owned transaction without committing or
+    /// rolling that transaction back. Row failures with <see cref="FeatureEditBatch.RollbackOnFailure"/>
+    /// return <see cref="FeatureEditResult.Rollback"/> and leave the SQL transaction open.
+    /// </summary>
+    private async Task<FeatureEditResult> ApplyUnorderedEditsWithinCallerTransactionAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var preconditions = BuildPreconditionMap(editBatch);
+        var (createdIds, createResults) = await ProcessCreatesWithResultsAsync(
+            layerId,
+            editBatch.Creates,
+            connection,
+            transaction,
+            editBatch.RowSecurityWriteCheck,
+            cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var (updatedCount, updateResults) = await ProcessUpdatesWithResultsAsync(
+            layerId,
+            editBatch.Updates,
+            connection,
+            transaction,
+            preconditions,
+            editBatch.RowSecurityWriteCheck,
+            cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var (deletedCount, deleteResults) = await ProcessDeletesWithResultsAsync(
+            layerId,
+            editBatch.Deletes,
+            connection,
+            transaction,
+            preconditions,
+            cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var hasErrors = System.Linq.Enumerable.Any(createResults, static result => !result.IsSuccess) ||
+                        System.Linq.Enumerable.Any(updateResults, static result => !result.IsSuccess) ||
+                        System.Linq.Enumerable.Any(deleteResults, static result => !result.IsSuccess);
+        if (hasErrors && editBatch.RollbackOnFailure)
+        {
+            return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
+        }
+
+        return hasErrors
+            ? FeatureEditResult.Success(
+                System.Linq.Enumerable.Count(createResults, static result => result.IsSuccess),
+                System.Linq.Enumerable.Count(updateResults, static result => result.IsSuccess),
+                System.Linq.Enumerable.Count(deleteResults, static result => result.IsSuccess),
+                createdIds,
+                createResults,
+                updateResults,
+                deleteResults,
+                wasRolledBack: false)
+            : FeatureEditResult.Success(
+                createdIds.Length,
+                updatedCount,
+                deletedCount,
+                createdIds,
+                createResults,
+                updateResults,
+                deleteResults,
+                wasRolledBack: false);
     }
 
     private sealed class PostgresFeatureWriterTransaction(

@@ -400,6 +400,31 @@ sql:
       );
   - "CREATE UNIQUE INDEX IF NOT EXISTS uq_scim_group_members_group_user_lower ON honua.scim_group_members (group_id, LOWER(user_id));"
   - "CREATE INDEX IF NOT EXISTS ix_scim_group_members_user_lower ON honua.scim_group_members (LOWER(user_id));"
+  # Migration 133: Portal sharing is persisted on the same Postgres profile as
+  # metadata. The migration-skipping test host needs these exact tables too.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.portal_community_groups (
+          group_id VARCHAR(64) PRIMARY KEY,
+          tenant_key TEXT NOT NULL DEFAULT '',
+          title TEXT NOT NULL,
+          description TEXT,
+          owner_name TEXT NOT NULL,
+          access_level TEXT NOT NULL,
+          tags TEXT[] NOT NULL DEFAULT '{}',
+          members TEXT[] NOT NULL DEFAULT '{}',
+          created_at TIMESTAMPTZ NOT NULL,
+          modified_at TIMESTAMPTZ NOT NULL
+      );
+  - "CREATE INDEX IF NOT EXISTS ix_portal_community_groups_tenant ON honua.portal_community_groups (tenant_key, group_id);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.portal_item_shares (
+          tenant_key TEXT NOT NULL DEFAULT '',
+          item_id TEXT NOT NULL,
+          owner_name TEXT NOT NULL,
+          group_ids TEXT[] NOT NULL DEFAULT '{}',
+          PRIMARY KEY (tenant_key, item_id)
+      );
+  - "CREATE INDEX IF NOT EXISTS ix_portal_item_shares_groups ON honua.portal_item_shares USING GIN (group_ids);"
   - |
       CREATE TABLE IF NOT EXISTS honua.analysis_content_items (
           item_id            TEXT        PRIMARY KEY,
