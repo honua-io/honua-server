@@ -43,11 +43,17 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         IStorageDomainMutationFence? domainFence = null)
         : base(logger, progressStore)
     {
+        if (domainFence is not null && domainFence is not IStorageDomainObjectMutationFence)
+            throw new ArgumentException("A fenced local provider requires object-specific reservation admission.", nameof(domainFence));
         _domainFence = domainFence;
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
         _basePath = string.IsNullOrWhiteSpace(_options.BasePath)
             ? Directory.GetCurrentDirectory()
             : Path.TrimEndingDirectorySeparator(_options.BasePath);
+        if (_domainFence is not null && !Path.IsPathFullyQualified(_basePath))
+            throw new ArgumentException("A fenced local provider requires an absolute host-owned storage root.", nameof(options));
+        if (_domainFence is not null)
+            _basePath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_basePath));
         // ".metadata" is a compile-time relative literal, so it cannot be rooted and this
         // combine can never silently drop _basePath.
         _metadataPath = Path.Join(_basePath, ".metadata");
@@ -103,6 +109,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         try
         {
             var totalBytes = request.SizeBytes ?? (request.Content.CanSeek ? request.Content.Length : 0);
+            if (_domainFence is not null && (request.SizeBytes is not > 0 || string.IsNullOrWhiteSpace(request.ObjectKeyOverride)))
+                throw new InvalidOperationException("Reserved local writes require an exact object key and positive declared length.");
             var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
 
             // Store initial progress
@@ -116,6 +124,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             if (!string.IsNullOrWhiteSpace(request.ObjectKeyOverride))
             {
                 ValidateObjectKeyOverride(request.ObjectKeyOverride);
+                if (_domainFence is not null) ValidateReservedObjectKey(request.ObjectKeyOverride);
                 fileId = request.ObjectKeyOverride;
                 storagePath = request.ObjectKeyOverride;
             }
@@ -125,6 +134,10 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 storagePath = BuildStoragePath(fileId, request.FileName, request.Folder);
             }
 
+            await using var objectLease = _domainFence is IStorageDomainObjectMutationFence objects
+                ? await objects.EnterObjectMutationAsync(fileId, totalBytes, cancellationToken).ConfigureAwait(false) : null;
+            if (_domainFence is not null && expectedETag is not null)
+                throw new NotSupportedException("Reserved local objects are immutable and cannot be replaced.");
             var fullPath = GetSafeFullPath(storagePath);
 
             mutationLock = GetMutationLock(fileId);
@@ -133,7 +146,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
 
             if (conditional)
             {
-                _fileIndex.TryGetValue(fileId, out var current);
+                var current = _domainFence is null ? _fileIndex.GetValueOrDefault(fileId)
+                    : await ReadAuthoritativeMetadataAsync(fileId, cancellationToken).ConfigureAwait(false);
                 var preconditionMatches = expectedETag is null
                     ? current is null
                     : current is not null
@@ -156,7 +170,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             string? contentHash;
             long sizeBytes;
 
-            await using (var fileStream = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
+            await using (var fileStream = new FileStream(fullPath, _domainFence is null ? FileMode.Create : FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
             {
                 using var hashAlgorithm = SHA256.Create();
                 await using var cryptoStream = new CryptoStream(fileStream, hashAlgorithm, CryptoStreamMode.Write, leaveOpen: true);
@@ -175,8 +189,12 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                     sourceStream = new ProgressTrackingStream(request.Content, progressTracker, uploadId, request.FileName, totalBytes);
                 }
 
-                await sourceStream.CopyToAsync(cryptoStream, linkedCancellationSource.Token);
+                if (_domainFence is null)
+                    await sourceStream.CopyToAsync(cryptoStream, linkedCancellationSource.Token);
+                else
+                    await CopyReservedContentAsync(sourceStream, cryptoStream, totalBytes, linkedCancellationSource.Token).ConfigureAwait(false);
                 await cryptoStream.FlushFinalBlockAsync(linkedCancellationSource.Token);
+                if (_domainFence is not null) fileStream.Flush(flushToDisk: true);
 
                 if (sourceStream != request.Content)
                 {
@@ -186,6 +204,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 contentHash = Convert.ToHexString(hashAlgorithm.Hash ?? []);
                 sizeBytes = fileStream.Length;
             }
+            if (_domainFence is not null) LocalStorageDurability.FlushDirectoryTree(directory!, _basePath);
 
             if (progressWriter != null)
             {
@@ -215,8 +234,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 Provider = CloudStorageProvider.Local
             };
 
-            _fileIndex[fileId] = cloudFile;
             await SaveMetadataAsync(cloudFile, cancellationToken);
+            _fileIndex[fileId] = cloudFile;
 
             // Report completion
             var completedProgress = new UploadProgress
@@ -323,6 +342,11 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         }
 
         var fullPath = GetSafeFullPath(cloudFile.StoragePath);
+        if (_domainFence is not null)
+        {
+            try { return new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true); }
+            catch (FileNotFoundException) { return null; }
+        }
         if (!File.Exists(fullPath))
         {
             FileStorageLog.FileMissingOnDisk(Logger, fileId);
@@ -339,15 +363,17 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         await using var domainLease = _domainFence is null ? null
             : await _domainFence.EnterMutationAsync(cancellationToken).ConfigureAwait(false);
 
+        await using var objectLease = _domainFence is IStorageDomainObjectMutationFence objects
+            ? await objects.EnterObjectMutationAsync(fileId, null, cancellationToken).ConfigureAwait(false) : null;
         var mutationLock = GetMutationLock(fileId);
         await mutationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!_fileIndex.TryRemove(fileId, out var cloudFile))
-            {
-                return false;
-            }
-
+            var cloudFile = _domainFence is null
+                ? _fileIndex.TryRemove(fileId, out var cached) ? cached : null
+                : await ReadAuthoritativeMetadataAsync(fileId, cancellationToken).ConfigureAwait(false);
+            if (cloudFile is null) return false;
+            _fileIndex.TryRemove(fileId, out _);
             return await DeleteRemovedFileAsync(fileId, cloudFile, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -367,14 +393,16 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
 
         try
         {
-            if (File.Exists(fullPath))
+            if (_domainFence is not null || File.Exists(fullPath))
             {
                 File.Delete(fullPath);
+                if (_domainFence is not null) LocalStorageDurability.FlushDirectoryTree(Path.GetDirectoryName(fullPath)!, _basePath);
             }
 
-            if (File.Exists(metadataFile))
+            if (_domainFence is not null || File.Exists(metadataFile))
             {
                 File.Delete(metadataFile);
+                if (_domainFence is not null) LocalStorageDurability.FlushDirectoryTree(_metadataPath, _basePath);
             }
 
             // Remove from batch index if present
@@ -415,17 +443,17 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             : await _domainFence.EnterMutationAsync(cancellationToken).ConfigureAwait(false);
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
 
+        await using var objectLease = _domainFence is IStorageDomainObjectMutationFence objects
+            ? await objects.EnterObjectMutationAsync(fileId, null, cancellationToken).ConfigureAwait(false) : null;
         var mutationLock = GetMutationLock(fileId);
         await mutationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!_fileIndex.TryGetValue(fileId, out var current)
-                || !string.Equals(current.ETag, expectedETag, StringComparison.Ordinal)
-                || !((ICollection<KeyValuePair<string, CloudFile>>)_fileIndex)
-                    .Remove(new KeyValuePair<string, CloudFile>(fileId, current)))
-            {
-                return false;
-            }
+            var current = _domainFence is null
+                ? _fileIndex.GetValueOrDefault(fileId)
+                : await ReadAuthoritativeMetadataAsync(fileId, cancellationToken).ConfigureAwait(false);
+            if (current is null || !string.Equals(current.ETag, expectedETag, StringComparison.Ordinal)) return false;
+            _fileIndex.TryRemove(fileId, out _);
 
             return await DeleteRemovedFileAsync(fileId, current, cancellationToken).ConfigureAwait(false);
         }
@@ -440,17 +468,18 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
+        if (_domainFence is not null) return ReadAuthoritativeMetadataAsync(fileId, cancellationToken);
         _fileIndex.TryGetValue(fileId, out var cloudFile);
         return Task.FromResult(cloudFile);
     }
 
     /// <inheritdoc />
-    public override Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
+    public override async Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
-        var exists = _fileIndex.ContainsKey(fileId);
-        return Task.FromResult(exists);
+        return _domainFence is null ? _fileIndex.ContainsKey(fileId)
+            : await ReadAuthoritativeMetadataAsync(fileId, cancellationToken).ConfigureAwait(false) is not null;
     }
 
     /// <inheritdoc />
@@ -460,6 +489,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         bool includeMetadata = true,
         CancellationToken cancellationToken = default)
     {
+        if (_domainFence is not null) return ListAuthoritativeFilesAsync(folder, maxResults, cancellationToken);
         // The local index already holds the full CloudFile (including metadata and expiry), so
         // includeMetadata cannot save any work here and is intentionally ignored.
         _ = includeMetadata;
@@ -472,6 +502,25 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         return Task.FromResult<IReadOnlyList<CloudFile>>(files);
     }
 
+    private async Task<IReadOnlyList<CloudFile>> ListAuthoritativeFilesAsync(string? folder, int maxResults,
+        CancellationToken cancellationToken)
+    {
+        if (maxResults <= 0) return [];
+        // This is a bounded catalog view, not a physical storage census: partial
+        // objects and temporary metadata remain the recovery coordinator's concern.
+        var latest = new PriorityQueue<CloudFile, DateTimeOffset>();
+        foreach (var path in Directory.EnumerateFiles(_metadataPath, "*.json"))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var file = await ReadMetadataRecordAsync(path, null, cancellationToken).ConfigureAwait(false);
+            if (file is null || (!string.IsNullOrEmpty(folder)
+                && !file.StoragePath.StartsWith(folder, StringComparison.Ordinal))) continue;
+            latest.Enqueue(file, file.UploadedAt);
+            if (latest.Count > maxResults) latest.Dequeue();
+        }
+        return latest.UnorderedItems.Select(item => item.Element).OrderByDescending(file => file.UploadedAt).ToArray();
+    }
+
     /// <inheritdoc />
     public override Task<string?> GetPresignedUrlAsync(
         string fileId,
@@ -479,6 +528,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
+        if (_domainFence is not null)
+            throw new NotSupportedException("A fenced storage domain exposes content through bounded streams, not raw filesystem paths.");
 
         // For local storage, we return the file path as a "URL"
         // In production, cloud providers would return actual presigned URLs
@@ -563,6 +614,10 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             Directory.CreateDirectory(_metadataPath);
         }
 
+        if (_domainFence is not null && (((File.GetAttributes(_basePath) | File.GetAttributes(_metadataPath))
+            & FileAttributes.ReparsePoint) != 0))
+            throw new IOException("Reserved storage directories cannot be symbolic links.");
+
         // Load existing metadata
         LoadExistingMetadata();
     }
@@ -579,8 +634,13 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         {
             try
             {
+                if (_domainFence is not null && ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0 || new FileInfo(file).Length > 65536))
+                    throw new IOException("Invalid immutable object metadata.");
                 var json = File.ReadAllText(file);
                 var cloudFile = JsonSerializer.Deserialize(json, FileStorageJsonContext.Default.CloudFile);
+                if (_domainFence is not null && (cloudFile is null || cloudFile.StoragePath != cloudFile.FileId ||
+                    GetMetadataFilePath(cloudFile.FileId) != file || string.IsNullOrWhiteSpace(cloudFile.ETag)))
+                    throw new IOException("Immutable object metadata does not match the reserved key.");
                 if (cloudFile is not null)
                 {
                     // Metadata written before generation validators were introduced has no
@@ -610,6 +670,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             // must not abort loading the rest or prevent storage from initializing.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
+                if (_domainFence is not null) throw;
                 FileStorageLog.MetadataLoadFailed(Logger, ex, file);
             }
         }
@@ -621,7 +682,42 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     {
         var metadataFile = GetMetadataFilePath(cloudFile.FileId);
         var json = JsonSerializer.Serialize(cloudFile, FileStorageJsonContext.Default.CloudFile);
-        await File.WriteAllTextAsync(metadataFile, json, cancellationToken);
+        if (_domainFence is null)
+        {
+            await File.WriteAllTextAsync(metadataFile, json, cancellationToken);
+            return;
+        }
+        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+        if (bytes.Length > 65536) throw new IOException("Immutable object metadata exceeds its reserved allowance.");
+        var temporary = metadataFile + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+            4096, FileOptions.Asynchronous | FileOptions.WriteThrough))
+        {
+            await output.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+            output.Flush(flushToDisk: true);
+        }
+        // Metadata becomes visible only after the complete record is durable. A
+        // failed publication retains the charged temporary file for census.
+        File.Move(temporary, metadataFile, overwrite: false);
+        LocalStorageDurability.FlushDirectoryTree(_metadataPath, _basePath);
+    }
+
+    private static async Task CopyReservedContentAsync(Stream source, Stream destination, long maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[65536];
+        long written = 0;
+        while (true)
+        {
+            var read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read == 0) break;
+            if (read > maximumBytes - written)
+                throw new InvalidDataException("The object content exceeds its storage reservation.");
+            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            written += read;
+        }
+        if (written != maximumBytes)
+            throw new InvalidDataException("The object content does not match its declared length.");
     }
 
     private string GetMetadataFilePath(string fileId)
@@ -629,9 +725,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         // Deterministic publish flows can use slash-bearing object keys as fileIds.
         // Encode separators so the metadata file lives flat under _metadataPath
         // and Directory.GetFiles(*.json) still finds it.
-        var safeName = fileId
-            .Replace('/', '_')
-            .Replace('\\', '_');
+        var safeName = _domainFence is null ? fileId.Replace('/', '_').Replace('\\', '_')
+            : Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(fileId)));
 
         // Defence-in-depth: the slash/backslash replacement above already prevents
         // POSIX-style traversal, but it does not prevent a rooted result on platforms
@@ -647,6 +742,33 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         }
 
         return candidate;
+    }
+
+    private Task<CloudFile?> ReadAuthoritativeMetadataAsync(string fileId, CancellationToken cancellationToken)
+    {
+        ValidateReservedObjectKey(fileId);
+        var path = GetMetadataFilePath(fileId);
+        return ReadMetadataRecordAsync(path, fileId, cancellationToken);
+    }
+
+    private async Task<CloudFile?> ReadMetadataRecordAsync(string path, string? expectedFileId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("Invalid immutable object metadata.");
+            await using var content = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true);
+            if (content.Length > 65536) throw new IOException("Invalid immutable object metadata.");
+            var value = await JsonSerializer.DeserializeAsync(content, FileStorageJsonContext.Default.CloudFile, cancellationToken).ConfigureAwait(false);
+            if (value is null || (expectedFileId is not null && value.FileId != expectedFileId)
+                || value.StoragePath != value.FileId || value.SizeBytes < 0 || string.IsNullOrWhiteSpace(value.ETag))
+                throw new IOException("Immutable object metadata does not match the reserved key.");
+            ValidateReservedObjectKey(value.FileId);
+            if (GetMetadataFilePath(value.FileId) != path)
+                throw new IOException("Immutable object metadata does not match its file identity.");
+            return value;
+        }
+        catch (FileNotFoundException) { return null; }
     }
 
     private static void ValidateObjectKeyOverride(string objectKey)
@@ -667,6 +789,18 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         {
             throw new ArgumentException("Object key override must not contain relative traversal segments.", nameof(objectKey));
         }
+    }
+
+    private static void ValidateReservedObjectKey(string objectKey)
+    {
+        // One reservation must identify exactly one physical path. Reject aliases
+        // and the private metadata namespace before acquiring object admission.
+        if (objectKey.Length > 1024 || objectKey.Contains('\\') || Path.IsPathRooted(objectKey))
+            throw new ArgumentException("Reserved object keys must be bounded canonical relative paths.", nameof(objectKey));
+        var segments = objectKey.Split('/');
+        if (segments.Length > 8 || segments.Any(segment => string.IsNullOrWhiteSpace(segment)
+                || segment is "." or ".." || segment.StartsWith('.')))
+            throw new ArgumentException("Reserved object keys cannot alias paths or use private directories.", nameof(objectKey));
     }
 
     private static string GenerateFileId() =>
@@ -699,8 +833,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     /// Combines <paramref name="storagePath"/> with the base path and verifies the result is
     /// contained within the base directory. This is defence-in-depth: the denylist in
     /// <see cref="ValidateObjectKeyOverride"/> and <see cref="ValidateFolderPath"/> already
-    /// blocks explicit traversal segments, but a GetFullPath containment check also catches
-    /// symlinks and any platform-specific path encoding tricks.
+    /// blocks explicit traversal segments. Fenced domains additionally reject existing
+    /// symbolic links; their namespace must remain exclusively owned by the host.
     /// </summary>
     private string GetSafeFullPath(string storagePath)
     {
@@ -711,6 +845,24 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             throw new ArgumentException(
                 "The resolved storage path escapes the base directory.",
                 nameof(storagePath));
+        }
+
+        if (_domainFence is not null)
+        {
+            ValidateReservedObjectKey(storagePath);
+            var current = combined;
+            while (true)
+            {
+                try
+                {
+                    if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                        throw new IOException("Reserved storage paths cannot contain symbolic links.");
+                }
+                catch (FileNotFoundException) { }
+                catch (DirectoryNotFoundException) { }
+                if (current == _basePath) break;
+                current = Path.GetDirectoryName(current) ?? throw new IOException("The storage domain boundary disappeared.");
+            }
         }
 
         return combined;
