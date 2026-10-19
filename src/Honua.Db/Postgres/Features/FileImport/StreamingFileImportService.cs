@@ -645,10 +645,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 warnings,
                 progress,
                 jobId,
-                cancellationToken,
                 BuildSuccessResult,
                 shapefileScratch,
-                fileGdbScratch);
+                fileGdbScratch,
+                cancellationToken);
 
             if (committedResult is not null)
             {

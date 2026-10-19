@@ -33,10 +33,10 @@ internal sealed partial class StreamingFileImportService
         string[] warnings,
         IProgress<ImportProgress>? progress,
         string jobId,
-        CancellationToken cancellationToken,
         Func<int, int, string[], IReadOnlyList<ImportValidationIssue>, string, ImportResult> createCommittedResult,
-        ShapefileScratch? shapefileScratch = null,
-        FileGdbScratch? fileGdbScratch = null)
+        ShapefileScratch? shapefileScratch,
+        FileGdbScratch? fileGdbScratch,
+        CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
 
