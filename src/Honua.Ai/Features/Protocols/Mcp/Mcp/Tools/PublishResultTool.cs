@@ -142,6 +142,14 @@ internal sealed class PublishResultTool : IMcpTool
             .GetJobResultsAsync(sourceId, principal, cancellationToken)
             .ConfigureAwait(false);
 
+        // Failed/cancelled jobs can retain committed-effect receipts for recovery.
+        // Those receipts are not a completed analysis result eligible for promotion.
+        if (package.Status != GeoprocessingWorkflowStatus.Completed)
+        {
+            throw new GeoprocessingPreconditionFailedException(
+                $"Job '{sourceId}' did not complete successfully; its result cannot be published.");
+        }
+
         var artifact = SelectArtifact(package, argument.ArtifactId);
         var (connectionId, schema, table) = RequireMaterializedTable(artifact);
 
