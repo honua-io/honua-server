@@ -22,10 +22,11 @@ internal sealed class FileImportExecutionCommitAuthority(IExecutionJobStore jobs
         string physicalSchema, string physicalTable, CancellationToken cancellationToken = default)
     {
         if (JobSecurityScope.Current is not { JobId: { } id, IntentFingerprint: { } fingerprint,
+            WorkerId: { } worker, AttemptCount: { } attempt,
             Submitter: { ExecutionLease: { } envelope, CurrentAgentPrincipal: { } principal } active }
-            || !JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal)) throw Denied();
+            || attempt < 1 || !JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal)) throw Denied();
         var job = await jobs.GetAsync(id, cancellationToken).ConfigureAwait(false) ?? throw Denied();
-        RequireJob(job, id, fingerprint, active, envelope);
+        RequireJob(job, id, fingerprint, active, envelope, worker, attempt);
         if (job.Spec.Kind != ExecutionJobKind.FileImport
             || !FileImportJobParameters.TryParse(job.Spec.Parameters, out var original, out _, out _)
             || original?.StagedSource is not { Transfer: not null } source || original.Acceptance is null
@@ -43,7 +44,7 @@ internal sealed class FileImportExecutionCommitAuthority(IExecutionJobStore jobs
         if (current.ExecutionLease != envelope
             || JobExecutionLeaseIntentFingerprint.ComputeContext(current) != JobExecutionLeaseIntentFingerprint.ComputeContext(active)) throw Denied();
         var latest = await jobs.GetAsync(id, cancellationToken).ConfigureAwait(false) ?? throw Denied();
-        RequireJob(latest, id, fingerprint, active, envelope);
+        RequireJob(latest, id, fingerprint, active, envelope, worker, attempt);
         cancellationToken.ThrowIfCancellationRequested();
         // The current FileImport scope provider authorizes only absent destinations,
         // using its own database session rather than the importer's transaction.
@@ -51,9 +52,10 @@ internal sealed class FileImportExecutionCommitAuthority(IExecutionJobStore jobs
     }
 
     private static void RequireJob(ExecutionJobRecord job, string id, string fingerprint,
-        JobSecurityContext active, JobExecutionLease envelope)
+        JobSecurityContext active, JobExecutionLease envelope, string worker, int attempt)
     {
-        if (job.OperationId != id || JobExecutionLeaseIntentFingerprint.Compute(job) != fingerprint
+        if (job.OperationId != id || job.ClaimedBy != worker || job.AttemptCount != attempt
+            || JobExecutionLeaseIntentFingerprint.Compute(job) != fingerprint
             || job.CancellationRequestedAt is not null || job.Status is not (ExecutionJobStatus.Queued or ExecutionJobStatus.Running)
             || job.Audit.SubmitterSecurityContext is not { } original || original.ExecutionLease != envelope
             || JobExecutionLeaseIntentFingerprint.ComputeContext(original) != JobExecutionLeaseIntentFingerprint.ComputeContext(active)) throw Denied();

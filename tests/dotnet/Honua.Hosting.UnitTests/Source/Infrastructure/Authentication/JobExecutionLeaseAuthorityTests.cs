@@ -45,6 +45,30 @@ public sealed class JobExecutionLeaseAuthorityTests
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.RevalidateForExecutionAsync(expected));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExecutionClaim_PropagatesThroughNestedScopesAndRejectsReclaimedAttempt(bool replaceWorker)
+    {
+        using var fixture = await Fixture.CreateAsync();
+        fixture.Stored = fixture.Accept(await fixture.Authority.IssueAsync(fixture.Request)) with
+            { Status = ExecutionJobStatus.Running, ClaimedBy = "worker", AttemptCount = 1 };
+        var expected = fixture.Stored;
+        var current = await fixture.Authority.RevalidateForExecutionAsync(expected);
+        using var execution = JobSecurityScope.BeginExecution(expected, current);
+        Assert.Equal("worker", JobSecurityScope.Current!.WorkerId);
+        Assert.Equal(1, JobSecurityScope.Current.AttemptCount);
+        using (JobSecurityScope.Begin(current))
+        {
+            Assert.Equal("worker", JobSecurityScope.Current!.WorkerId);
+            Assert.Equal(1, JobSecurityScope.Current.AttemptCount);
+        }
+        fixture.Stored = replaceWorker ? fixture.Stored with { ClaimedBy = "replacement" }
+            : fixture.Stored with { AttemptCount = 2 };
+        Assert.False(await AgentCredentialAuthority.IsCurrentAsync(current.CurrentAgentPrincipal!, fixture.Services));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.RevalidateForExecutionAsync(expected));
+    }
+
     [Fact]
     public async Task HistoricalObservation_AfterExecutionExpiryRequiresCurrentIndependentObserverAndExecutorLineage()
     {

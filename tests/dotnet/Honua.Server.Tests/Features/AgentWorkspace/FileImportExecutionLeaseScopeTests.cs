@@ -81,15 +81,18 @@ public sealed class FileImportExecutionLeaseScopeTests
     [InlineData("request")]
     [InlineData("source")]
     [InlineData("cancelled")]
+    [InlineData("stale-attempt")]
+    [InlineData("stale-worker")]
     public async Task CommitBoundary_PinsActualScopePhysicalDestinationAndMaterializedRequest(string change)
     {
         using var fixture = await Fixture.CreateAsync();
         var leases = fixture.Services.GetRequiredService<IJobExecutionLeaseAuthority>();
         var lease = await leases.IssueAsync(new() { PreparedJob = fixture.Job, Executor = fixture.Executor,
             RequestedExpiresAt = DateTimeOffset.UtcNow.AddMinutes(20) });
-        fixture.Stored = fixture.Job with { Audit = fixture.Job.Audit with
+        fixture.Stored = fixture.Job with { Status = ExecutionJobStatus.Running, ClaimedBy = "worker", AttemptCount = 1, Audit = fixture.Job.Audit with
             { SubmitterSecurityContext = fixture.Job.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } } };
-        var current = await leases.RevalidateForExecutionAsync(fixture.Stored);
+        var claimed = fixture.Stored;
+        var current = await leases.RevalidateForExecutionAsync(claimed);
         Assert.True(FileImportJobParameters.TryParse(fixture.Stored.Spec.Parameters, out var request, out _, out _));
         using var bytes = new MemoryStream(new byte[100]);
         request = request! with { CloudFileId = null, FileStream = bytes };
@@ -100,7 +103,9 @@ public sealed class FileImportExecutionLeaseScopeTests
         if (change == "request") request = request with { TargetSrid = 3857 };
         if (change == "source") request = request with { StagedSource = request.StagedSource! with { ETag = "other" } };
         if (change == "cancelled") fixture.Stored = fixture.Stored with { CancellationRequestedAt = DateTimeOffset.UtcNow };
-        using var scope = change == "no-scope" ? null : JobSecurityScope.BeginExecution(fixture.Stored, current);
+        if (change == "stale-attempt") fixture.Stored = fixture.Stored with { AttemptCount = 2 };
+        if (change == "stale-worker") fixture.Stored = fixture.Stored with { ClaimedBy = "replacement" };
+        using var scope = change == "no-scope" ? null : JobSecurityScope.BeginExecution(claimed, current);
         var authority = new FileImportExecutionCommitAuthority(fixture.Services.GetRequiredService<IExecutionJobStore>(), leases);
         if (change == "unchanged")
         {

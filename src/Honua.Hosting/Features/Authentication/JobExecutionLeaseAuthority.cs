@@ -298,7 +298,8 @@ internal sealed class JobExecutionLeaseAuthority(
         }
         var binding = _protector.UnprotectAndMatchAuthoritativeJob(job);
         if (expected is not null && (JobExecutionLeaseIntentFingerprint.Compute(expected) != binding.IntentFingerprint
-            || expected.Audit.SubmitterSecurityContext?.ExecutionLease != job.Audit.SubmitterSecurityContext?.ExecutionLease))
+            || expected.Audit.SubmitterSecurityContext?.ExecutionLease != job.Audit.SubmitterSecurityContext?.ExecutionLease
+            || execution && (expected.ClaimedBy != job.ClaimedBy || expected.AttemptCount != job.AttemptCount)))
         {
             throw Denied();
         }
@@ -333,7 +334,8 @@ internal sealed class JobExecutionLeaseAuthority(
         if (actual.OperationId != binding.JobId
             || actual.Audit.SubmitterSecurityContext?.ExecutionLease != original.Audit.SubmitterSecurityContext?.ExecutionLease
             || JobExecutionLeaseIntentFingerprint.Compute(actual) != binding.IntentFingerprint
-            || (execution && (actual.CancellationRequestedAt is not null
+            || (execution && (actual.ClaimedBy != original.ClaimedBy || actual.AttemptCount != original.AttemptCount
+                || actual.CancellationRequestedAt is not null
                 || actual.Status is not (ExecutionJobStatus.Queued or ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running))))
         {
             throw Denied();

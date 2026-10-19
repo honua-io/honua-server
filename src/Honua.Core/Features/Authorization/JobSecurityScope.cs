@@ -62,7 +62,9 @@ public static class JobSecurityScope
         Ambient.Value = new JobSecurityScopeState(submitter)
         {
             JobId = previous?.JobId,
-            IntentFingerprint = previous?.IntentFingerprint
+            IntentFingerprint = previous?.IntentFingerprint,
+            WorkerId = previous?.WorkerId,
+            AttemptCount = previous?.AttemptCount
         };
         return new ScopeReleaser(previous);
     }
@@ -85,7 +87,9 @@ public static class JobSecurityScope
         Ambient.Value = new JobSecurityScopeState(submitter)
         {
             JobId = job.OperationId,
-            IntentFingerprint = JobExecutionLeaseIntentFingerprint.Compute(job)
+            IntentFingerprint = JobExecutionLeaseIntentFingerprint.Compute(job),
+            WorkerId = job.ClaimedBy,
+            AttemptCount = job.AttemptCount
         };
         return new ScopeReleaser(previous);
     }
@@ -122,4 +126,10 @@ public sealed record JobSecurityScopeState(JobSecurityContext? Submitter)
 
     /// <summary>Complete original immutable intent binding of the actual dispatched job.</summary>
     public string? IntentFingerprint { get; init; }
+
+    /// <summary>Actual claimed worker, absent from legacy or unclaimed scopes; never serialized as authority.</summary>
+    public string? WorkerId { get; init; }
+
+    /// <summary>Actual claimed attempt; commit sinks must compare the current authoritative store.</summary>
+    public int? AttemptCount { get; init; }
 }
