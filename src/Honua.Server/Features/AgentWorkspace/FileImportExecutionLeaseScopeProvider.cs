@@ -87,6 +87,7 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
                 bound.Task.Options, requireWrite, cancellationToken, operation).ConfigureAwait(false)
             || !await DatasetImportTaskProvider.SourceAuthorizedAsync(services, principal, bound.Task.TenantId,
                 bound.Document, bound.Task.Source, cancellationToken).ConfigureAwait(false)) throw Denied();
+        if (bound.Source.ExpiresAt is { } expiry && expiry <= clock.GetUtcNow()) throw Denied();
         var storage = services.GetRequiredService<ICloudFileStorage>();
         try
         {
@@ -97,7 +98,8 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
         {
             throw new UnauthorizedAccessException("The exact prepared source generation is no longer current.", exception);
         }
-        if (!await AgentCredentialAuthority.IsCurrentObserverAsync(principal, services, cancellationToken).ConfigureAwait(false)) throw Denied();
+        if (bound.Source.ExpiresAt is { } latestExpiry && latestExpiry <= clock.GetUtcNow()
+            || !await AgentCredentialAuthority.IsCurrentObserverAsync(principal, services, cancellationToken).ConfigureAwait(false)) throw Denied();
     }
 
     private async Task<BoundImport> LoadAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
@@ -132,6 +134,11 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
             || JobExecutionLeaseIntentFingerprint.ComputeContext(original) != JobExecutionLeaseIntentFingerprint.ComputeContext(prepared.ExecutorPolicyContext)) throw Denied();
         if (prepared.InitiatingHumanActorId is { } human && (document.OwnerId != human || document.AgentActorId != task.OwnerActorId
             || !AgentWorkspaceState.CanRead(document, human, task.TenantId, target))) throw Denied();
+        if (task.Source.Kind == "browser-file" && (prepared.InitiatingHumanActorId != document.OwnerId
+            || turn.ActorId != document.OwnerId || document.AgentActorId != task.OwnerActorId
+            || turn.BrowserFileSelection is not { } selected
+            || task.Source.BrowserSelectionId != selected.SelectionId || task.Source.FileName != selected.FileName
+            || task.Source.TotalBytes != selected.TotalBytes || task.Source.ExpectedSha256 != selected.ExpectedSha256)) throw Denied();
         DatasetImportSubmissionIntent intent;
         try { intent = DatasetImportSubmissionIntent.Create(task, prepared, source); }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)

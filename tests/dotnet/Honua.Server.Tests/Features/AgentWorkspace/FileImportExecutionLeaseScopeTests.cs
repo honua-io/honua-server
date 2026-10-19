@@ -14,6 +14,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Import.FileImport.Durable;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.Server.Features.AgentWorkspace;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
@@ -36,6 +37,9 @@ public sealed class FileImportExecutionLeaseScopeTests
     [InlineData("source-generation")]
     [InlineData("revoked-during-source")]
     [InlineData("different-request")]
+    [InlineData("browser-selection")]
+    [InlineData("agent-link")]
+    [InlineData("source-expired")]
     public async Task AcceptedTask_UsesCurrentSourceDestinationAndActualJobScopeWithoutHttpContext(string change)
     {
         using var fixture = await Fixture.CreateAsync();
@@ -47,6 +51,9 @@ public sealed class FileImportExecutionLeaseScopeTests
         switch (change)
         {
             case "workspace": fixture.Document = fixture.Document with { Members = [] }; break;
+            case "browser-selection": fixture.Document = fixture.Document with { Turns = new(fixture.Document.Turns) { ["turn"] = fixture.Document.Turns["turn"] with { BrowserFileSelection = new("other", "roads.geojson", 100, new string('a', 64)) } } }; break;
+            case "agent-link": fixture.Document = fixture.Document with { AgentActorId = "other" }; break;
+            case "source-expired": fixture.Clock.Now = fixture.Clock.Now.AddHours(1); break;
             case "occupied": fixture.Occupied = true; break;
             case "source-generation": fixture.Metadata = fixture.Metadata with { ETag = "replacement" }; break;
             case "revoked-during-source": fixture.RevokeOnMetadata = true; break;
@@ -63,6 +70,12 @@ public sealed class FileImportExecutionLeaseScopeTests
         else await Assert.ThrowsAsync<UnauthorizedAccessException>(() => authority.RevalidateForExecutionAsync(fixture.Stored));
     }
 
+    private sealed class TestClock : TimeProvider
+    {
+        internal DateTimeOffset Now { get; set; }
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
     private sealed class Fixture : IDisposable
     {
         internal required ServiceProvider Services { get; init; }
@@ -71,6 +84,7 @@ public sealed class FileImportExecutionLeaseScopeTests
         internal required AgentWorkspaceDocument Document { get; set; }
         internal required CloudFile Metadata { get; set; }
         internal ExecutionJobRecord? Stored { get; set; }
+        internal required TestClock Clock { get; init; }
         internal bool Occupied { get; set; }
         internal bool RevokeOnMetadata { get; set; }
 
@@ -96,10 +110,11 @@ public sealed class FileImportExecutionLeaseScopeTests
                 .Returns(_ => state?.Occupied ?? false);
             var sessions = Substitute.For<IDatabaseSessionFactory>();
             sessions.OpenAsync(Arg.Any<CancellationToken>()).Returns(session);
+            var clock = new TestClock { Now = DateTimeOffset.UtcNow };
             var config = new ConfigurationBuilder().Build();
             var collection = new ServiceCollection().AddLogging().AddSingleton<IConfiguration>(config)
                 .AddSingleton<IAdminApiKeyStore>(keys).AddSingleton(workspaces).AddSingleton(jobs).AddSingleton(storage).AddSingleton(sessions)
-                .AddSingleton<TimeProvider>(TimeProvider.System).AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider())
+                .AddSingleton<TimeProvider>(clock).AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider())
                 .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()))
                 .AddSingleton<IOptions<OperatorApprovalOptions>>(Options.Create(new OperatorApprovalOptions()))
                 .AddSingleton<IOperatorScopeAuthorizer, OperatorScopeAuthorizer>()
@@ -113,24 +128,26 @@ public sealed class FileImportExecutionLeaseScopeTests
             var services = collection.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
             var context = await AgentJobSecurityBridge.CaptureAsync(executor, new RbacOptions(), services, null, default);
             var owner = context.OwnerActorId!;
+            var humanKey = await keys.CreateAsync("human", ["*"], null, null, default);
+            var human = CanonicalSecurityActor.Resolve(ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(humanKey.Record))!.ActorId;
             var now = DateTimeOffset.UtcNow;
             var task = new DatasetImportTask("task", 1, "", owner, null, "target", "workspace", new("public", "roads"),
-                new("browser-file", "roads.geojson", 100, new string('a', 64)), new(), now.AddHours(1));
+                new("browser-file", "roads.geojson", 100, new string('a', 64), BrowserSelectionId: "selection"), new(), now.AddHours(1));
             task = task with { ContentHash = DatasetImportTaskState.ContentHash(task) };
-            var turn = new AgentWorkspaceTurn("turn", owner, "Import roads", new("workspace", "target", "view", 0, [], null), null);
+            var turn = new AgentWorkspaceTurn("turn", human, "Import roads", new("workspace", "target", "view", 0, [], null), null, BrowserFileSelection: new("selection", "roads.geojson", 100, new string('a', 64)));
             var turnHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(turn, AgentWorkspaceJsonContext.Default.AgentWorkspaceTurn)));
             var authorityHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(context.AgentCredential!, AgentWorkspaceJsonContext.Default.AgentCredentialSnapshot)));
             var policyHash = JobSecurityContextFingerprint.Compute(context);
             var prepared = new DatasetImportPreparedAdmission("task", 1, task.ContentHash, new string('c', 32), 1, authorityHash,
-                owner, null, "turn", turnHash, context, policyHash, context.AgentCredential!, task.UploadAdmissionDeadline);
+                owner, human, "turn", turnHash, context, policyHash, context.AgentCredential!, task.UploadAdmissionDeadline);
             var source = new ImportStagedSourceBinding("imports/resumable/" + new string('d', 32) + "/source-" + new string('e', 32), "generation", 100,
-                new string('a', 64), Transfer: new(new string('d', 32), owner, null, "target", "workspace", "task", 1, task.ContentHash));
+                new string('a', 64), ExpiresAt: clock.Now.AddMinutes(30), Transfer: new(new string('d', 32), owner, null, "target", "workspace", "task", 1, task.ContentHash));
             var intent = DatasetImportSubmissionIntent.Create(task, prepared, source);
-            var document = new AgentWorkspaceDocument { WorkspaceId = "workspace", TargetId = "target", OwnerId = owner, Members = [owner] };
+            var document = new AgentWorkspaceDocument { WorkspaceId = "workspace", TargetId = "target", OwnerId = human, AgentActorId = owner, Members = [human, owner] };
             document.DatasetImportTasks[task.TaskId] = [task];
             document.DatasetImportPreparedAdmissions[task.TaskId] = prepared;
             document.DatasetImportExecutionBindings[task.TaskId] = new("task", 1, task.ContentHash, 1, authorityHash, owner,
-                null, "turn", turnHash, context, policyHash, context.AgentCredential!);
+                human, "turn", turnHash, context, policyHash, context.AgentCredential!);
             document.Turns[turn.TurnId] = turn;
             var job = new ExecutionJobRecord
             {
@@ -141,8 +158,8 @@ public sealed class FileImportExecutionLeaseScopeTests
                     Backend = "local", WorkloadName = "file-import", Parameters = FileImportJobParameters.Build(intent.Request, source.Bytes) }
             };
             state = new Fixture { Services = services, Executor = executor, Job = job, Document = document,
-                Metadata = new() { FileId = source.FileId, FileName = "roads.geojson", StoragePath = source.FileId,
-                    ContentType = "application/geo+json", SizeBytes = 100, UploadedAt = now, ETag = source.ETag, Provider = CloudStorageProvider.Local } };
+                Clock = clock, Metadata = new() { FileId = source.FileId, FileName = "roads.geojson", StoragePath = source.FileId,
+                    ContentType = "application/geo+json", SizeBytes = 100, UploadedAt = now, ETag = source.ETag, ExpiresAt = source.ExpiresAt, Provider = CloudStorageProvider.Local } };
             return state;
         }
         public void Dispose() => Services.Dispose();
