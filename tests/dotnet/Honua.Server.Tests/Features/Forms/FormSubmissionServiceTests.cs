@@ -119,12 +119,13 @@ public sealed class FormSubmissionServiceTests
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         writer.ApplyEditsCalls.Should().Be(1);
-        writer.LastBatch!.Value.OwnerGuards.Should().ContainSingle()
+        var batch = writer.LastBatch ?? throw new InvalidOperationException("The owner mutation did not reach the writer.");
+        batch.OwnerGuards.Should().ContainSingle()
             .Which.Should().Be(new OwnerEditGuard(101, "owner", "field-user"));
         if (operation == FormSubmissionOperations.Update)
         {
-            writer.LastBatch.Value.Updates.Should().ContainSingle();
-            writer.LastBatch.Value.Updates[0].Attributes["owner"].Should().Be("field-user");
+            batch.Updates.Should().ContainSingle();
+            batch.Updates[0].Attributes["owner"].Should().Be("field-user");
         }
     }
 
@@ -145,7 +146,8 @@ public sealed class FormSubmissionServiceTests
 
         adminContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         adminWriter.ApplyEditsCalls.Should().Be(1);
-        adminWriter.LastBatch!.Value.OwnerGuards.IsDefaultOrEmpty.Should().BeTrue();
+        var adminBatch = adminWriter.LastBatch ?? throw new InvalidOperationException("The admin mutation did not reach the writer.");
+        adminBatch.OwnerGuards.IsDefaultOrEmpty.Should().BeTrue();
 
         var disabledStore = new FakeFormPackageStore(allowedOperations: [FormSubmissionOperations.Update]);
         var disabledWriter = new FakeFeatureWriter();
@@ -158,7 +160,8 @@ public sealed class FormSubmissionServiceTests
 
         disabledContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         disabledWriter.ApplyEditsCalls.Should().Be(1);
-        disabledWriter.LastBatch!.Value.OwnerGuards.IsDefaultOrEmpty.Should().BeTrue();
+        var disabledBatch = disabledWriter.LastBatch ?? throw new InvalidOperationException("The disabled-policy mutation did not reach the writer.");
+        disabledBatch.OwnerGuards.IsDefaultOrEmpty.Should().BeTrue();
         await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
@@ -177,8 +180,9 @@ public sealed class FormSubmissionServiceTests
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         writer.ApplyEditsCalls.Should().Be(1);
-        writer.LastBatch!.Value.Creates.Should().ContainSingle();
-        writer.LastBatch.Value.Creates[0].Attributes["owner"].Should().Be("field-user");
+        var batch = writer.LastBatch ?? throw new InvalidOperationException("The create did not reach the writer.");
+        batch.Creates.Should().ContainSingle();
+        batch.Creates[0].Attributes["owner"].Should().Be("field-user");
         await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
