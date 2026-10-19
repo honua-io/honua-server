@@ -5,6 +5,8 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Core.Features.Authorization;
+using Honua.Core.Features.AgentWorkspace.Abstractions;
+using Honua.Core.Features.AgentWorkspace.Domain;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -155,6 +157,36 @@ public sealed class FileImportExecutionLeaseScopeTests
             fixture.Human, JobExecutionLeaseObservationKind.OutputContent));
     }
 
+    [UnitTest]
+    public async Task HistoricalStatus_RemainsVisibleWithStoppedSourceDaemonWhileContentRequiresCurrentSourceRights()
+    {
+        using var fixture = await Fixture.CreateAsync(localSource: true);
+        var authority = fixture.Services.GetRequiredService<IJobExecutionLeaseAuthority>();
+        var prepared = fixture.Document.DatasetImportPreparedAdmissions["task"];
+        var lease = await authority.IssueAsync(new() { PreparedJob = fixture.Job, Executor = fixture.Executor,
+            RequestedExpiresAt = DateTimeOffset.UtcNow.AddMinutes(20), Admission = new()
+            {
+                WorkspaceId = "workspace", TaskId = "task", TaskRevision = 1, TaskContentHash = prepared.TaskContentHash,
+                AuthorityRevision = prepared.AuthorityRevision, AuthorityFingerprint = prepared.AuthorityFingerprint,
+                PolicyContextFingerprint = prepared.PolicyContextFingerprint, InitiatingHumanActorId = prepared.InitiatingHumanActorId,
+                OriginatingTurnId = prepared.OriginatingTurnId, OriginalTurnHash = prepared.OriginalTurnHash
+            } });
+        fixture.Stored = fixture.Job with { Status = ExecutionJobStatus.Succeeded, Audit = fixture.Job.Audit with
+            { SubmitterSecurityContext = fixture.Job.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } },
+            FileImportOutput = new() { Schema = "public", PhysicalTableName = "imported_roads", FeatureCount = 17 } };
+        fixture.Stored = fixture.Stored with { CommittedEffectReferences =
+            [$"honua-import-commit:{fixture.Stored.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(fixture.Stored)}"] };
+        fixture.Clock.Now = lease.ExpiresAt.AddHours(1);
+        fixture.Occupied = true;
+        fixture.DaemonAvailable = false;
+        await fixture.Keys.RevokeAsync(fixture.ExecutorKeyId, default);
+        var status = await authority.ResolveForObservationAsync(fixture.Stored.OperationId, fixture.Human, JobExecutionLeaseObservationKind.Status);
+        Assert.Equal(lease.LeaseId, status.LeaseId);
+        await Assert.ThrowsAsync<LocalProcessWorkspaceException>(() => authority.ResolveForObservationAsync(fixture.Stored.OperationId,
+            fixture.Human, JobExecutionLeaseObservationKind.OutputContent));
+        Assert.Null(JobSecurityScope.Current);
+    }
+
     private sealed class TestClock : TimeProvider
     {
         internal DateTimeOffset Now { get; set; }
@@ -176,8 +208,9 @@ public sealed class FileImportExecutionLeaseScopeTests
         internal string? CheckedPhysicalTable { get; set; }
         internal bool Occupied { get; set; }
         internal bool RevokeOnMetadata { get; set; }
+        internal bool DaemonAvailable { get; set; } = true;
 
-        internal static async Task<Fixture> CreateAsync()
+        internal static async Task<Fixture> CreateAsync(bool localSource = false)
         {
             var keys = new InMemoryAdminApiKeyStore();
             var key = await keys.CreateAsync("executor", ["agent:workspace", "admin:write"], null, null, default);
@@ -204,9 +237,22 @@ public sealed class FileImportExecutionLeaseScopeTests
             var sessions = Substitute.For<IDatabaseSessionFactory>();
             sessions.OpenAsync(Arg.Any<CancellationToken>()).Returns(session);
             var clock = new TestClock { Now = DateTimeOffset.UtcNow };
+            var gateway = Substitute.For<ILocalProcessWorkspaceGateway>();
+            gateway.IsConfigured.Returns(true);
+            gateway.GetRunAsync(Arg.Any<LocalProcessWorkspaceAccess>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(_ => new LocalProcessRun { ProjectId = "project", SnapshotId = "snapshot", SnapshotDigest = new string('b', 64),
+                    RunId = "run", Status = "succeeded", Image = "image", ExitCode = 0,
+                    Artifacts = [new("out/roads.geojson", 100, new string('a', 64))] });
+            gateway.GetIdentityAsync(Arg.Any<LocalProcessWorkspaceAccess>(), Arg.Any<CancellationToken>()).Returns(call =>
+            {
+                if (state?.DaemonAvailable == false) throw new LocalProcessWorkspaceException(503, "Source daemon unavailable.");
+                var access = call.Arg<LocalProcessWorkspaceAccess>();
+                return new LocalProcessProjectIdentity("project", 99, new string('c', 64), "image",
+                    new(access.OwnerActorId, access.TenantId, access.TargetId, access.WorkspaceId));
+            });
             var config = new ConfigurationBuilder().Build();
             var collection = new ServiceCollection().AddLogging().AddSingleton<IConfiguration>(config)
-                .AddSingleton<IAdminApiKeyStore>(keys).AddSingleton(workspaces).AddSingleton(jobs).AddSingleton(storage).AddSingleton(sessions)
+                .AddSingleton<IAdminApiKeyStore>(keys).AddSingleton(gateway).AddSingleton(workspaces).AddSingleton(jobs).AddSingleton(storage).AddSingleton(sessions)
                 .AddSingleton<TimeProvider>(clock).AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider())
                 .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()))
                 .AddSingleton<IOptions<OperatorApprovalOptions>>(Options.Create(new OperatorApprovalOptions()))
@@ -223,13 +269,22 @@ public sealed class FileImportExecutionLeaseScopeTests
             var context = await AgentJobSecurityBridge.CaptureAsync(executor, new RbacOptions(), services, null, default);
             var owner = context.OwnerActorId!;
             var humanKey = await keys.CreateAsync("human", ["*"], null, null, default);
-            var humanPrincipal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(humanKey.Record);
+            // Local-process human source policy uses the ordinary configured OIDC
+            // human role path; this unit fixture assumes authenticated claim provenance.
+            var humanPrincipal = localSource ? new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "human"), new Claim(ClaimTypes.Role, "admin")], "Bearer"))
+                : ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(humanKey.Record);
             var human = CanonicalSecurityActor.Resolve(humanPrincipal)!.ActorId;
             var now = DateTimeOffset.UtcNow;
             var task = new DatasetImportTask("task", 1, "", owner, null, "target", "workspace", new("public", "roads"),
                 new("browser-file", "roads.geojson", 100, new string('a', 64), BrowserSelectionId: "selection"), new(), now.AddHours(1));
+            if (localSource) task = task with { Source = new("local-process-artifact", "roads.geojson", 100,
+                new string('a', 64), new("project", "snapshot", new string('b', 64), "run", "out/roads.geojson")) };
             task = task with { ContentHash = DatasetImportTaskState.ContentHash(task) };
             var turn = new AgentWorkspaceTurn("turn", human, "Import roads", new("workspace", "target", "view", 0, [], null), null, BrowserFileSelection: new("selection", "roads.geojson", 100, new string('a', 64)));
+            if (localSource) turn = turn with { BrowserFileSelection = null,
+                LocalProcessSnapshot = new("project", "snapshot", new string('b', 64), "image", 1),
+                Context = turn.Context with { Task = new("project", 1, "local-process-workspace", ContentHash: new string('b', 64)) } };
             var turnHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(turn, AgentWorkspaceJsonContext.Default.AgentWorkspaceTurn)));
             var authorityHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(context.AgentCredential!, AgentWorkspaceJsonContext.Default.AgentCredentialSnapshot)));
             var policyHash = JobSecurityContextFingerprint.Compute(context);
