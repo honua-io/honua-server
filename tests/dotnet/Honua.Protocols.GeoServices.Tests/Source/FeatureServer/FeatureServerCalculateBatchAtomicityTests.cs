@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
