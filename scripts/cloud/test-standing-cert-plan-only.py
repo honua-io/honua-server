@@ -9,9 +9,9 @@ import os
 import stat
 import tempfile
 import unittest
+import unittest.mock as mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest import mock
 
 SCRIPT = Path(__file__).with_name("standing-cert-plan-only.py")
 spec = importlib.util.spec_from_file_location("standing_cert_plan_only", SCRIPT)
@@ -47,11 +47,23 @@ class StandingCertPlanWorkflow(unittest.TestCase):
         self.request.chmod(0o600)
 
     def git(self, args, **kwargs):
-        return (self.revision + "\n").encode() if args[-2:] == ["rev-parse", "HEAD"] else self.script.read_bytes()
+        if args[-2:] == ["rev-parse", "HEAD"]:
+            return (self.revision + "\n").encode()
+        if "status" in args or "ls-files" in args:
+            return b""
+        return self.script.read_bytes()
 
     def test_private_packet_receipt_only_and_token_cleanup(self):
         receipt = {key: "fixture" for key in entry.PUBLIC_KEYS}
+        receipt["schema"] = "honua.aws-cert-plan-public/v1"
         receipt["status"] = "planned-unapproved"
+        receipt["approvalStatus"] = "not-approved"
+        receipt["qualificationStatus"] = "not-evaluated"
+        receipt["iacRevision"] = self.revision
+        receipt["candidateDigest"] = self.candidate
+        receipt["expiresAtUtc"] = (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat()
+        for key in ("planSha256", "planMetadataDigest", "packetSha256"):
+            receipt[key] = "c" * 64
         child = mock.Mock(returncode=0, stdout=json.dumps(receipt), stderr="PRIVATE SENTINEL")
         out = io.StringIO()
         with mock.patch.dict(os.environ, self.env, clear=True), \
@@ -68,11 +80,34 @@ class StandingCertPlanWorkflow(unittest.TestCase):
 
     def test_changed_producer_refused_before_token(self):
         with mock.patch.dict(os.environ, self.env, clear=True), \
-             mock.patch.object(entry.subprocess, "check_output", side_effect=[(self.revision + "\n").encode(), b"different"]), \
+             mock.patch.object(entry.subprocess, "check_output", side_effect=[(self.revision + "\n").encode(), b"", b"", b"different"]), \
              mock.patch.object(entry, "oidc_token") as token:
             with self.assertRaisesRegex(ValueError, "producer source"):
                 entry.main()
             token.assert_not_called()
+        self.assertFalse(self.token.exists())
+
+    def test_dirty_checkout_refused_before_token(self):
+        with mock.patch.dict(os.environ, self.env, clear=True), \
+             mock.patch.object(entry.subprocess, "check_output", side_effect=[(self.revision + "\n").encode(), b" M unreviewed.tf\n"]), \
+             mock.patch.object(entry, "oidc_token") as token:
+            with self.assertRaisesRegex(ValueError, "source drift"):
+                entry.main()
+            token.assert_not_called()
+
+    def test_private_value_in_receipt_is_never_published(self):
+        receipt = {key: "PRIVATE SENTINEL" for key in entry.PUBLIC_KEYS}
+        receipt["expiresAtUtc"] = (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat()
+        child = mock.Mock(returncode=0, stdout=json.dumps(receipt), stderr="PRIVATE SENTINEL")
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, self.env, clear=True), \
+             mock.patch.object(entry.subprocess, "check_output", side_effect=self.git), \
+             mock.patch.object(entry.subprocess, "run", return_value=child), \
+             mock.patch.object(entry, "oidc_token", return_value="header.payload.signature"), \
+             contextlib.redirect_stdout(out):
+            with self.assertRaisesRegex(ValueError, "plan refused"):
+                entry.main()
+        self.assertEqual(out.getvalue(), "")
         self.assertFalse(self.token.exists())
 
     def test_request_and_token_path_refusals(self):

@@ -100,6 +100,14 @@ def main():
     if subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"],
                                stderr=subprocess.DEVNULL, env=git_env).decode().strip() != revision:
         raise ValueError("IaC revision")
+    if subprocess.check_output(["git", "-C", str(source), "status", "--porcelain",
+                                "--untracked-files=all", "--ignore-submodules=none"],
+                               stderr=subprocess.DEVNULL, env=git_env).strip():
+        raise ValueError("IaC source drift")
+    flags = subprocess.check_output(["git", "-C", str(source), "ls-files", "-v", "-z"],
+                                    stderr=subprocess.DEVNULL, env=git_env)
+    if any(entry[:2] != b"H " for entry in flags.split(b"\0") if entry):
+        raise ValueError("IaC hidden index")
     script_rel = "infrastructure/terraform/validation/scripts/aws/standing_cert_plan.py"
     script = source / script_rel
     if script.is_symlink() or not script.is_file() or script.read_bytes() != subprocess.check_output(
@@ -118,7 +126,17 @@ def main():
         result = subprocess.run(["python3", "-I", str(script), "--request", str(request_file)], cwd=source,
                                 env=child_env, capture_output=True, text=True, timeout=2100, check=False)
         document = json.loads(result.stdout)
-        if result.returncode != 0 or set(document) != PUBLIC_KEYS or document["status"] != "planned-unapproved":
+        expiry = datetime.fromisoformat(document["expiresAtUtc"])
+        if (result.returncode != 0 or set(document) != PUBLIC_KEYS
+                or document["schema"] != "honua.aws-cert-plan-public/v1"
+                or document["status"] != "planned-unapproved"
+                or document["approvalStatus"] != "not-approved"
+                or document["qualificationStatus"] != "not-evaluated"
+                or document["iacRevision"] != revision or document["candidateDigest"] != candidate
+                or not all(isinstance(document[key], str) and re.fullmatch(SHA, document[key])
+                           for key in ("planSha256", "planMetadataDigest", "packetSha256"))
+                or expiry.tzinfo is None or not (datetime.now(timezone.utc) < expiry
+                                                 <= datetime.now(timezone.utc) + timedelta(minutes=31))):
             raise ValueError("plan refused")
         print(json.dumps(document, sort_keys=True))
     finally:
