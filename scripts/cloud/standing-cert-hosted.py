@@ -30,6 +30,20 @@ def require(value, reason):
         raise ValueError(reason)
 
 
+def reject_runtime_overrides():
+    """Refuse inherited routing/startup controls before Terraform or AWS calls."""
+    prefixes = ("TF_CLI_ARGS", "TF_VAR_", "TF_LOG", "GIT_", "HONUA_IAC_", "AWS_ENDPOINT_URL",
+                "BASH_ENV", "BASH_FUNC_", "BASHOPTS", "SHELLOPTS", "LD_", "PYTHONPATH",
+                "PYTHONHOME", "ENV")
+    exact = {"TF_DATA_DIR", "TF_WORKSPACE", "TF_CLI_CONFIG_FILE", "TERRAFORM_CONFIG",
+             "TF_REATTACH_PROVIDERS", "AWS_CA_BUNDLE", "AWS_PROFILE", "AWS_DEFAULT_PROFILE",
+             "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_WEB_IDENTITY_TOKEN_FILE",
+             "AWS_ROLE_ARN", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE",
+             "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"}
+    require(not any(key.startswith(prefixes) or key.upper() in exact for key in os.environ),
+            "ambient-override-refused")
+
+
 def sha(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -126,6 +140,7 @@ def fixed_request():
 
 
 def prepare():
+    reject_runtime_overrides()
     require(os.environ.get("GITHUB_REPOSITORY") == "honua-io/honua-server"
             and os.environ.get("GITHUB_REF") == "refs/heads/trunk"
             and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted", "workflow-context-invalid")
@@ -177,6 +192,7 @@ def prepare():
 
 
 def backend():
+    reject_runtime_overrides()
     iac = source()
     request = fixed_request()
     root = iac / ROOT_REL
@@ -228,6 +244,7 @@ def backend():
 
 
 def plan_and_seal():
+    reject_runtime_overrides()
     iac = source()
     request = fixed_request()
     token_file = STAGE / "backend-token"

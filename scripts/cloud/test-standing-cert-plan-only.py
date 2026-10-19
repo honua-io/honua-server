@@ -164,6 +164,19 @@ class StandingCertPlanWorkflow(unittest.TestCase):
             hosted.extract_terraform_archive(changed, self.base / "third-bin",
                                              hashlib.sha256(data).hexdigest())
 
+    def test_hosted_refuses_ambient_backend_and_shell_routing(self):
+        for name in ("TF_CLI_ARGS_init", "TF_CLI_CONFIG_FILE", "TF_DATA_DIR", "TF_WORKSPACE",
+                     "AWS_ENDPOINT_URL_STS", "AWS_CA_BUNDLE", "AWS_PROFILE", "AWS_ROLE_ARN",
+                     "https_proxy", "BASH_FUNC_terraform%%", "BASHOPTS", "GIT_CONFIG_COUNT"):
+            with self.subTest(name=name), mock.patch.dict(os.environ, {name: "unsafe"}, clear=True):
+                with self.assertRaisesRegex(ValueError, "ambient-override-refused"):
+                    hosted.reject_runtime_overrides()
+        with mock.patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "synthetic",
+                                              "AWS_SECRET_ACCESS_KEY": "synthetic",
+                                              "AWS_SESSION_TOKEN": "synthetic",
+                                              "AWS_REGION": "us-east-1"}, clear=True):
+            hosted.reject_runtime_overrides()
+
     def test_hosted_request_requires_fixed_private_paths(self):
         stage = self.base / "stage"
         stage.mkdir(mode=0o700)
