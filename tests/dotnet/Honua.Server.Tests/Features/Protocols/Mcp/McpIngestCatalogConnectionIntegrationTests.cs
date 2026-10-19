@@ -8,11 +8,20 @@ using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
+using Honua.Db.Postgres.Features.Metadata;
+using Honua.Server.Startup;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Mixins;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
@@ -37,45 +46,63 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
     [Endpoint("POST /api/v1/admin/connections")]
     public async Task RegisteredCatalogConnection_IngestHintFeedsPublish_AndSecondRegistrationIsAmbiguous()
     {
-        var fixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                // The test fixture replaces the provider after AddServerFeatures
-                // has already evaluated its capability-gated MCP roster. Repeat
-                // that production roster entry only after the real import service
-                // is present; the tool still uses the production import pipeline.
-                services.Any(descriptor => descriptor.ServiceType == typeof(IFileImportService))
-                    .Should().BeTrue("the Postgres provider must supply the real import pipeline");
-                services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, IngestDatasetTool>());
-            })
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("Licensing:Mode", "Disabled");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-                builder.UseSetting("Operations:Policy:Enabled", "true");
-                builder.UseSetting("Operations:Policy:DefaultDecision", "Deny");
-                builder.UseSetting("Operations:Policy:Rules:0:Role", "admin");
-                builder.UseSetting("Operations:Policy:Rules:0:Decision", "Allow");
-            });
+        var postgres = new PostgresFixture();
+        await postgres.InitializeAsync();
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var dataset = $"mcpingest{suffix}";
         var secondDataset = $"mcpambiguous{suffix}";
         var serviceName = $"mcpingest{suffix}";
+        var catalogName = $"mcpcatalog{suffix}";
         var aliasName = $"mcpalias{suffix}";
-        var initialized = false;
-        string? testSchema = null;
+        string? databaseName = null;
         try
         {
-            await fixture.InitializeAsync();
-            testSchema = fixture.CurrentSchema
-                ?? throw new InvalidOperationException("The fixture schema was not initialized.");
-            initialized = true;
-            using var admin = fixture.CreateAdminClient();
-            using var scope = fixture.Services.CreateScope();
+            // A dedicated database gives the real registry one catalog connection
+            // and installs the same role search path as docker/init-db.sql. The
+            // process-wide WebAppFixture "test" row cannot be disabled safely.
+            var isolatedConnection = await postgres.CreateIsolatedDatabaseAsync(nameof(McpIngestCatalogConnectionIntegrationTests));
+            var connectionBuilder = new NpgsqlConnectionStringBuilder(isolatedConnection);
+            databaseName = connectionBuilder.Database;
+            await SetOwnedDatabaseSearchPathAsync(isolatedConnection);
+            connectionBuilder.SearchPath = "honua,public";
+            var catalogConnection = connectionBuilder.ConnectionString;
+
+            var migrationRunner = new PostgresDatabaseMigrationRunner(
+                new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
+                ServerCoreSchemaMigrations.Manifest);
+            var migrations = await migrationRunner.RunMigrationsAsync(catalogConnection, typeof(Program).Assembly);
+            migrations.Successful.Should().BeTrue(migrations.ErrorMessage);
+
+            await using var factory = CreateHost(catalogConnection);
+            using var admin = factory.CreateClient();
+            admin.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
+            using var scope = factory.Services.CreateScope();
             var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
-            var fixtureConnection = await registry.GetConnectionByNameAsync("test");
-            fixtureConnection.Should().NotBeNull("the fixture registers the catalog through the real secure registry");
+            (await registry.GetActiveConnectionsAsync()).Should().BeEmpty("this catalog is an owned isolated database");
+            var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+            store.Should().BeOfType<PostgresMetadataV2GraphStore>();
+            await store.SaveAsync(new MetadataV2Graph
+            {
+                Environment = "Test",
+                Revision = 1,
+                GeneratedAt = DateTimeOffset.UtcNow
+            }, expectedEtag: null);
+
+            using var registered = await admin.PostAsJsonAsync("/api/v1/admin/connections", new
+            {
+                name = catalogName,
+                host = connectionBuilder.Host,
+                port = connectionBuilder.Port,
+                databaseName = connectionBuilder.Database,
+                username = connectionBuilder.Username,
+                password = connectionBuilder.Password,
+                provider = "postgis",
+                sslRequired = false,
+                sslMode = "Disable",
+            });
+            registered.StatusCode.Should().Be(HttpStatusCode.Created, await registered.Content.ReadAsStringAsync());
+            var catalogRegistration = await registry.GetConnectionByNameAsync(catalogName);
+            catalogRegistration.Should().NotBeNull("the supported admin route must persist the actual connection");
 
             var ingested = await CallToolAsync(admin, "honua_ingest_dataset", new
             {
@@ -84,7 +111,7 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
             ingested.GetProperty("success").GetBoolean().Should().BeTrue(ingested.GetRawText());
             ingested.GetProperty("rowCount").GetInt32().Should().Be(1);
             var connectionName = ingested.GetProperty("connectionId").GetString();
-            connectionName.Should().Be(fixtureConnection!.Name);
+            connectionName.Should().Be(catalogRegistration!.Name);
             var schema = ingested.GetProperty("schema").GetString();
             var table = ingested.GetProperty("table").GetString();
 
@@ -126,15 +153,14 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
 
             // The supported admin route adds a second valid registration for
             // this same catalog. Ingest must stop suggesting an arbitrary one.
-            var builder = new NpgsqlConnectionStringBuilder(fixture.Postgres.ConnectionString);
             using var created = await admin.PostAsJsonAsync("/api/v1/admin/connections", new
             {
                 name = aliasName,
-                host = builder.Host,
-                port = builder.Port,
-                databaseName = builder.Database,
-                username = builder.Username,
-                password = builder.Password,
+                host = connectionBuilder.Host,
+                port = connectionBuilder.Port,
+                databaseName = connectionBuilder.Database,
+                username = connectionBuilder.Username,
+                password = connectionBuilder.Password,
                 provider = "postgis",
                 sslRequired = false,
                 sslMode = "Disable",
@@ -156,43 +182,73 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
         {
             try
             {
-                if (initialized)
+                if (databaseName is not null)
                 {
-                    // The fixture owns its "test" registration. Clean only this
-                    // test's service, published layer, admin-created alias and
-                    // deterministic import tables, even if publish failed after
-                    // a successful ingest. DDL is serialized with other fixtures.
-                    await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
-                    {
-                        await using var connection = await fixture.Postgres.GetConnectionAsync(testSchema!);
-                        await using var command = connection.CreateCommand();
-                        command.CommandText = $"""
-                            DELETE FROM {QuoteIdentifier(testSchema!)}.features
-                            WHERE layer_id IN (SELECT layer_id FROM honua.service_layers WHERE service_name = @serviceName);
-                            DELETE FROM honua.layers
-                            WHERE layer_id IN (SELECT layer_id FROM honua.service_layers WHERE service_name = @serviceName);
-                            DELETE FROM honua.services WHERE service_name = @serviceName;
-                            DELETE FROM honua.data_connections WHERE name = @aliasName;
-                            DROP TABLE IF EXISTS honua_data.{QuoteIdentifier("imported_" + dataset)} CASCADE;
-                            DROP TABLE IF EXISTS honua_data.{QuoteIdentifier("imported_" + dataset + "__staging")} CASCADE;
-                            DROP TABLE IF EXISTS honua_data.{QuoteIdentifier("imported_" + secondDataset)} CASCADE;
-                            DROP TABLE IF EXISTS honua_data.{QuoteIdentifier("imported_" + secondDataset + "__staging")} CASCADE;
-                            """;
-                        command.Parameters.AddWithValue("serviceName", serviceName);
-                        command.Parameters.AddWithValue("aliasName", aliasName);
-                        await command.ExecuteNonQueryAsync();
-                    });
+                    await postgres.DropDatabaseAsync(databaseName);
                 }
             }
             finally
             {
-                await fixture.DisposeAsync();
+                await postgres.DisposeAsync();
             }
         }
     }
 
-    private static string QuoteIdentifier(string identifier)
-        => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    private static async Task SetOwnedDatabaseSearchPathAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE SCHEMA IF NOT EXISTS honua;
+            DO $$
+            BEGIN
+                EXECUTE format(
+                    'ALTER ROLE %I IN DATABASE %I SET search_path = honua, public',
+                    current_user,
+                    current_database());
+            END $$;
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static WebApplicationFactory<Program> CreateHost(string catalogConnection)
+        => ConfiguredWebApplicationFactory.Create(builder =>
+        {
+            builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("Licensing:Mode", "Disabled");
+            builder.UseSetting("Operations:Policy:Enabled", "true");
+            builder.UseSetting("Operations:Policy:DefaultDecision", "Deny");
+            builder.UseSetting("Operations:Policy:Rules:0:Role", "admin");
+            builder.UseSetting("Operations:Policy:Rules:0:Decision", "Allow");
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(
+                    WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(
+                        catalogConnection,
+                        new Dictionary<string, string?> { ["Metadata:Environment"] = "Test" })));
+            builder.ConfigureTestServices(services =>
+            {
+                WebAppFixturePostgresWiringMixin.RemovePostgresBackedServices(services);
+                WebAppFixturePostgresWiringMixin.RemoveBackgroundPollers(services);
+                Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(
+                    services,
+                    WebAppFixturePostgresWiringMixin.BuildPostgresTestConfiguration(
+                        catalogConnection,
+                        new Dictionary<string, string?> { ["Metadata:Environment"] = "Test" }),
+                    ServerCoreSchemaMigrations.Manifest);
+                WebAppFixturePostgresWiringMixin.OverrideNonMultiplexingDataSource(services, catalogConnection);
+                Honua.Infrastructure.Rendering.VectorAwareRasterMapRendererServiceCollectionExtensions
+                    .AddVectorAwareRasterMapRendering(services);
+                services.Any(descriptor => descriptor.ServiceType == typeof(IFileImportService))
+                    .Should().BeTrue("the production Postgres import pipeline must be registered");
+                // Test skips infrastructure before AddServerFeatures evaluates its
+                // capability-gated MCP roster. Re-add the actual ingest tool after
+                // registering the real Postgres importer, as ImportAuthorizationParityTests does.
+                services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, IngestDatasetTool>());
+            });
+        }, "Test");
 
     private static async Task<JsonElement> CallToolAsync(HttpClient client, string name, object arguments)
     {
