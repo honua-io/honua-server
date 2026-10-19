@@ -1789,7 +1789,10 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                     {
                         var parameters = new Dictionary<string, string>(control)
                         {
-                            ["f"] = "json", ["wkb"] = PointWkbBase64, ["srid"] = "4326", ["distance"] = "10"
+                            ["f"] = "json",
+                            ["wkb"] = PointWkbBase64,
+                            ["srid"] = "4326",
+                            ["distance"] = "10"
                         };
                         using var content = new FormUrlEncodedContent(parameters);
                         var url = $"/rest/services/{ServiceId}/GPServer/geometry.buffer/{route}";
