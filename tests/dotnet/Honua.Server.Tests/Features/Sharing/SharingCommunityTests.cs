@@ -7,14 +7,17 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Server.Features.Portal.Sharing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
@@ -71,9 +74,43 @@ public sealed class SharingCommunityTests : IAsyncLifetime
             builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
         });
+        _fixture.ConfigureServices(services =>
+        {
+            // The Test host skips the production composition root. Bind the
+            // isolated PostgreSQL profile used by the real Portal sharing path.
+            var schema = _fixture.CurrentSchema
+                ?? throw new InvalidOperationException("Portal fixture schema is missing.");
+            services.RemoveAll<IPortalGroupStore>();
+            services.RemoveAll<IPortalItemSharingStore>();
+            services.RemoveAll<IPortalAudienceSnapshotProvider>();
+            services.AddSingleton<IPortalGroupStore>(sp => new PostgresPortalGroupStore(
+                sp.GetRequiredService<NpgsqlDataSource>(), TimeProvider.System, schema));
+            services.AddSingleton<IPortalItemSharingStore>(sp => new PostgresPortalItemSharingStore(
+                sp.GetRequiredService<NpgsqlDataSource>(), sp.GetRequiredService<IHttpContextAccessor>(), schema));
+            services.AddSingleton<IPortalAudienceSnapshotProvider>(sp => new PostgresPortalAudienceSnapshotProvider(
+                sp.GetRequiredService<NpgsqlDataSource>(), schema));
+        });
     }
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        var schema = _fixture.CurrentSchema
+            ?? throw new InvalidOperationException("Portal fixture schema is missing.");
+        await using var stream = typeof(PostgresPortalGroupStore).Assembly.GetManifestResourceStream(
+            "Honua.Server.Migrations.133_CreatePortalSharing.sql")
+            ?? throw new InvalidOperationException("Portal sharing migration resource is missing.");
+        using var reader = new StreamReader(stream);
+        using var builder = new NpgsqlCommandBuilder();
+        var migration = (await reader.ReadToEndAsync())
+            .Replace("$HonuaSchema$", builder.QuoteIdentifier(schema), StringComparison.Ordinal);
+        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+            await using var command = new NpgsqlCommand(migration, connection);
+            await command.ExecuteNonQueryAsync();
+        });
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
@@ -427,13 +464,16 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var client = CreateUserClient();
         var group = await CreateGroupAsync(client, token, "Controlled read-store fixture");
         var other = await CreateGroupAsync(client, token, "Other group");
-        // Direct controlled-store setup exercises paging and independent resource policy.
-        // Actual production sharing and persisted SQL reads have a separate HTTP regression;
-        // this controlled-store setup is not a native content-certification receipt.
-        var store = _fixture.Services.GetRequiredService<IPortalItemSharingStore>();
+        // Persist each audience through the same HTTP mutation path that the
+        // group-content reader uses on its next request.
         foreach (var item in new[] { "content-a", "content-b", "content-private" })
         {
-            await store.ShareAsync(item, "alice", new PortalItemShareRequest(false, false, [group]), CancellationToken.None);
+            using var share = await PostFormAsync(client,
+                $"/sharing/rest/content/items/{item}/share?token={token}", ("groups", group));
+            share.StatusCode.Should().Be(HttpStatusCode.OK);
+            var state = await ReadAsync<SharingPayload>(share);
+            state.ItemId.Should().Be(item);
+            state.Sharing!.Groups.Should().Contain(group);
         }
 
         for (var start = 1; start <= 3; start++)
@@ -457,7 +497,9 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var unrelated = await client.GetAsync($"/sharing/rest/content/groups/{other}?token={token}&f=json");
         using var unrelatedDoc = JsonDocument.Parse(await unrelated.Content.ReadAsStringAsync());
         unrelatedDoc.RootElement.GetProperty("total").GetInt32().Should().Be(0);
-        await store.UnshareAsync("content-a", new PortalItemShareRequest(false, false, [group]), CancellationToken.None);
+        using var unshare = await PostFormAsync(client,
+            $"/sharing/rest/content/items/content-a/unshare?token={token}", ("groups", group));
+        unshare.StatusCode.Should().Be(HttpStatusCode.OK);
         using var after = await client.GetAsync($"/sharing/rest/content/groups/{group}?token={token}&f=json");
         using var afterDoc = JsonDocument.Parse(await after.Content.ReadAsStringAsync());
         afterDoc.RootElement.GetProperty("items").EnumerateArray()
