@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Edit;
@@ -23,6 +24,7 @@ using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData;
 using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
+using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -156,6 +158,229 @@ public sealed class ODataBatchHandlerTests
         await featureReader.Received(2).GetAsync(1, existingFeature.Id, Arg.Any<CancellationToken>());
     }
 
+    private const string NonOwnerDenial =
+        "Feature is owned by another principal and cannot be modified under the owner-based edit policy.";
+
+    private static readonly MetadataV2OwnerEditPolicy OwnerPolicy = new()
+    {
+        Enabled = true,
+        OwnerField = "owner",
+        StampOwnerOnInsert = true
+    };
+
+    private static readonly RbacOptions EditorRoles = new() { DataEditorRoles = ["editor"] };
+
+    [UnitTest]
+    public async Task ProcessBatchAsync_NonOwnerUpdateAndDelete_AreDeniedBeforeTheWrite()
+    {
+        var (reader, writer, applyCount, queryCount, _) = CreateTrackedStores();
+        var sut = CreateSut(reader, writer);
+        var request = new ODataBatchRequest
+        {
+            Requests =
+            [
+                UpdateRequest("update-city"),
+                new ODataBatchRequestItem
+                {
+                    Id = "delete-city",
+                    Method = "DELETE",
+                    Url = "Features(1,42)",
+                    AtomicityGroup = "g1"
+                }
+            ]
+        };
+
+        var response = await sut.ProcessBatchAsync(
+            EditorContext(reader, writer, OwnerPolicy, "bob"),
+            request,
+            "https://example.test",
+            CancellationToken.None);
+
+        response.Responses.Should().HaveCount(2);
+        response.Responses.Should().OnlyContain(item => item.Status == StatusCodes.Status403Forbidden);
+        foreach (var item in response.Responses)
+        {
+            var error = item.Body.Should().BeOfType<ODataError>().Subject;
+            error.Error.Code.Should().Be("Forbidden");
+            error.Error.Message.Should().Be(NonOwnerDenial);
+            error.Error.Message.Should().NotContain("alice");
+        }
+
+        applyCount.Value.Should().Be(0);
+        queryCount.Value.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task ProcessBatchAsync_OwnerUpdate_SucceedsAndPreservesTheStoredOwner()
+    {
+        var (reader, writer, applyCount, queryCount, written) = CreateTrackedStores();
+        var sut = CreateSut(reader, writer);
+
+        var response = await sut.ProcessBatchAsync(
+            EditorContext(reader, writer, OwnerPolicy, "alice"),
+            new ODataBatchRequest { Requests = [UpdateRequest("update-city")] },
+            "https://example.test",
+            CancellationToken.None);
+
+        response.Responses.Should().ContainSingle();
+        response.Responses[0].Status.Should().Be(200);
+        applyCount.Value.Should().Be(1);
+        queryCount.Value.Should().Be(1);
+        written.Value.Updates.Should().ContainSingle();
+        written.Value.Updates[0].Attributes["owner"].Should().Be("alice");
+        written.Value.Updates[0].Attributes["name"].Should().Be("After");
+    }
+
+    [UnitTest]
+    public async Task ProcessBatchAsync_AdminUpdate_BypassesWithoutReadingTheOwner()
+    {
+        var (reader, writer, applyCount, queryCount, written) = CreateTrackedStores();
+        var sut = CreateSut(reader, writer);
+
+        var response = await sut.ProcessBatchAsync(
+            CreateContext(reader, writer, OwnerPolicy, "carol", rbac: null, "admin"),
+            new ODataBatchRequest { Requests = [UpdateRequest("update-city")] },
+            "https://example.test",
+            CancellationToken.None);
+
+        response.Responses.Should().ContainSingle();
+        response.Responses[0].Status.Should().Be(200);
+        applyCount.Value.Should().Be(1);
+        queryCount.Value.Should().Be(0);
+        written.Value.Updates[0].Attributes.ContainsKey("owner").Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ProcessBatchAsync_Insert_StampsTheOwner()
+    {
+        var (reader, writer, applyCount, queryCount, written) = CreateTrackedStores();
+        var sut = CreateSut(reader, writer);
+
+        var response = await sut.ProcessBatchAsync(
+            EditorContext(reader, writer, OwnerPolicy, "alice"),
+            new ODataBatchRequest { Requests = [CreateRequest("create-city")] },
+            "https://example.test",
+            CancellationToken.None);
+
+        response.Responses.Should().ContainSingle();
+        response.Responses[0].Status.Should().Be(201);
+        applyCount.Value.Should().Be(1);
+        queryCount.Value.Should().Be(0);
+        written.Value.Creates.Should().ContainSingle();
+        written.Value.Creates[0].Attributes["owner"].Should().Be("alice");
+    }
+
+    [UnitTest]
+    public async Task ProcessBatchAsync_DisabledPolicy_KeepsFullEditBehavior()
+    {
+        var (reader, writer, applyCount, queryCount, _) = CreateTrackedStores();
+        var sut = CreateSut(reader, writer);
+        var disabled = OwnerPolicy with { Enabled = false };
+
+        var response = await sut.ProcessBatchAsync(
+            EditorContext(reader, writer, disabled, "bob"),
+            new ODataBatchRequest { Requests = [UpdateRequest("update-city")] },
+            "https://example.test",
+            CancellationToken.None);
+
+        response.Responses.Should().ContainSingle();
+        response.Responses[0].Status.Should().Be(200);
+        applyCount.Value.Should().Be(1);
+        queryCount.Value.Should().Be(0);
+    }
+
+    private static DefaultHttpContext EditorContext(
+        IFeatureReader reader,
+        IFeatureWriter writer,
+        MetadataV2OwnerEditPolicy? policy,
+        string subject)
+        => CreateContext(reader, writer, policy, subject, EditorRoles, "editor");
+
+    private static ODataBatchRequestItem UpdateRequest(string id)
+        => new()
+        {
+            Id = id,
+            Method = "PATCH",
+            Url = "Features(1,42)",
+            AtomicityGroup = "g1",
+            Body = new Dictionary<string, object?>
+            {
+                ["Attributes"] = new Dictionary<string, object?> { ["name"] = "After" }
+            }
+        };
+
+    private static ODataBatchRequestItem CreateRequest(string id)
+        => new()
+        {
+            Id = id,
+            Method = "POST",
+            Url = "Layers(1)/Features",
+            AtomicityGroup = "g1",
+            Body = new Dictionary<string, object?>
+            {
+                ["LayerId"] = 1,
+                ["Attributes"] = new Dictionary<string, object?> { ["name"] = "Created in batch" }
+            }
+        };
+
+    private static (
+        IFeatureReader Reader,
+        IFeatureWriter Writer,
+        StrongBox<int> ApplyCount,
+        StrongBox<int> QueryCount,
+        StrongBox<FeatureEditBatch> Written) CreateTrackedStores()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var writer = Substitute.For<IFeatureWriter>();
+        var applyCount = new StrongBox<int>(0);
+        var queryCount = new StrongBox<int>(0);
+        var written = new StrongBox<FeatureEditBatch>(default);
+        reader.GetAsync(1, Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<Feature?>(CreateFeature(call.ArgAt<long>(1), "visible")));
+        reader.QueryAsync(default, default, default)
+            .ReturnsForAnyArgs(call =>
+            {
+                queryCount.Value++;
+                var query = call.ArgAt<FeatureQuery>(1);
+                var features = ImmutableArray.CreateBuilder<Feature>();
+                if (query.ObjectIds is { } ids)
+                {
+                    foreach (var id in ids)
+                    {
+                        features.Add(Feature.Create(
+                            id,
+                            null,
+                            ImmutableDictionary.CreateRange(new Dictionary<string, object?> { ["owner"] = "alice" })));
+                    }
+                }
+
+                return QueryResult<Feature>.Create(features.Count, features.ToImmutable());
+            });
+        writer.ApplyEditsAsync(default, default!, default)
+            .ReturnsForAnyArgs(call =>
+            {
+                applyCount.Value++;
+                var batch = call.ArgAt<FeatureEditBatch>(1);
+                written.Value = batch;
+                var created = batch.Creates.IsDefaultOrEmpty ? 0 : batch.Creates.Length;
+                return FeatureEditResult.Success(
+                    createdCount: created,
+                    updatedCount: batch.Updates.IsDefaultOrEmpty ? 0 : batch.Updates.Length,
+                    deletedCount: batch.Deletes.IsDefaultOrEmpty ? 0 : batch.Deletes.Length,
+                    createdIds: created > 0 ? ImmutableArray.Create(101L) : default,
+                    createResults: created > 0
+                        ? ImmutableArray.Create(EditOperationResult.Success(101))
+                        : default,
+                    updateResults: batch.Updates.IsDefaultOrEmpty
+                        ? default
+                        : ImmutableArray.Create(EditOperationResult.Success(42)),
+                    deleteResults: batch.Deletes.IsDefaultOrEmpty
+                        ? default
+                        : ImmutableArray.Create(EditOperationResult.Success(42)));
+            });
+        return (reader, writer, applyCount, queryCount, written);
+    }
+
     private static ODataBatchHandler CreateSut(
         IFeatureReader featureReader,
         IFeatureWriter featureWriter)
@@ -183,11 +408,20 @@ public sealed class ODataBatchHandlerTests
         IFeatureReader featureReader,
         IFeatureWriter featureWriter,
         params string[] roles)
+        => CreateContext(featureReader, featureWriter, ownerPolicy: null, subject: null, rbac: null, roles);
+
+    private static DefaultHttpContext CreateContext(
+        IFeatureReader featureReader,
+        IFeatureWriter featureWriter,
+        MetadataV2OwnerEditPolicy? ownerPolicy,
+        string? subject,
+        RbacOptions? rbac,
+        params string[] roles)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
-        services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
-        services.AddSingleton<IMetadataV2GraphProvider>(CreateMetadataProvider());
+        services.AddSingleton<IOptions<RbacOptions>>(Options.Create(rbac ?? new RbacOptions()));
+        services.AddSingleton<IMetadataV2GraphProvider>(CreateMetadataProvider(ownerPolicy));
         services.AddSingleton(new ODataFeatureProviderResolver(
             featureReader,
             featureWriter,
@@ -198,9 +432,15 @@ public sealed class ODataBatchHandlerTests
             RequestServices = services.BuildServiceProvider()
         };
 
-        if (roles.Length > 0)
+        var claims = new List<Claim>();
+        if (!string.IsNullOrEmpty(subject))
         {
-            var claims = roles.Select(role => new Claim(ClaimTypes.Role, role)).ToArray();
+            claims.Add(new Claim(ClaimTypes.NameIdentifier, subject));
+        }
+
+        claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+        if (claims.Count > 0)
+        {
             context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
         }
 
@@ -216,8 +456,9 @@ public sealed class ODataBatchHandlerTests
             => Task.CompletedTask;
     }
 
-    private static TestMetadataV2GraphProvider CreateMetadataProvider()
-        => new TestMetadataV2GraphBuilder()
+    private static TestMetadataV2GraphProvider CreateMetadataProvider(MetadataV2OwnerEditPolicy? ownerPolicy = null)
+    {
+        var builder = new TestMetadataV2GraphBuilder()
             .AddResource(
                 "res-layer-1",
                 "cities",
@@ -235,8 +476,14 @@ public sealed class ODataBatchHandlerTests
                 "res-layer-1",
                 layerIndex: 1,
                 storageBindingId: "binding-layer-1",
-                publicationType: MetadataV2PublicationType.ODataEntitySet)
-            .BuildProvider();
+                publicationType: MetadataV2PublicationType.ODataEntitySet);
+        if (ownerPolicy is not null)
+        {
+            builder = builder.WithOwnerEditPolicy("res-layer-1", ownerPolicy);
+        }
+
+        return builder.BuildProvider();
+    }
 
     private static Feature CreateFeature(long id, string name)
         => Feature.Create(
