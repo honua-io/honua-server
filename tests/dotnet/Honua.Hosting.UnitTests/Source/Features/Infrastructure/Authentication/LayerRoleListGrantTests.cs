@@ -14,7 +14,6 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 
