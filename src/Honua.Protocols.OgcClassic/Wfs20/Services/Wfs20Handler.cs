@@ -15,6 +15,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -31,6 +32,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
+using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Classic.Wfs20.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
@@ -62,6 +64,7 @@ internal sealed partial class Wfs20Handler
 
     private readonly ILogger<Wfs20Handler> _logger;
     private readonly IFeatureReader _featureReader;
+    private readonly FeatureProviderQueryRouter? _providerQueryRouter;
     private readonly IFeatureWriter _featureWriter;
     private readonly IGmlFeatureStore _gmlFeatureStore;
     private readonly IMetadataV2GraphProvider _metadataV2GraphProvider;
@@ -88,6 +91,7 @@ internal sealed partial class Wfs20Handler
         _logger = logger;
 
         _featureReader = queryServices.FeatureReader;
+        _providerQueryRouter = queryServices.ProviderQueryRouter;
         _gmlFeatureStore = queryServices.GmlFeatureStore;
         _metadataV2GraphProvider = queryServices.MetadataV2GraphProvider;
         _filterExpressionService = queryServices.FilterExpressionService;
@@ -163,8 +167,9 @@ internal sealed partial class Wfs20Handler
                 cancellationToken: cancellationToken,
                 wfsVersion: wfsVersion);
 
-            var layerMatched = await _featureReader.CountAsync(featureType.StorageLayerId, query, cancellationToken);
-            return (featureType, query, layerMatched);
+            var reader = await ResolveQueryReaderAsync(featureType, cancellationToken).ConfigureAwait(false);
+            var layerMatched = await reader.CountAsync(featureType.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
+            return (featureType, query, layerMatched, reader);
         })).ConfigureAwait(false);
 
         // Known limitation (BH2-006): the per-type COUNT results above are snapshots taken at
@@ -178,7 +183,7 @@ internal sealed partial class Wfs20Handler
         var remainingCount = count;
         long totalMatched = 0;
 
-        foreach (var (featureType, query, layerMatched) in perTypeResults)
+        foreach (var (featureType, query, layerMatched, reader) in perTypeResults)
         {
             totalMatched += layerMatched;
 
@@ -212,7 +217,8 @@ internal sealed partial class Wfs20Handler
                 featureType,
                 query with { Offset = layerOffset, Limit = layerLimit },
                 layerMatched,
-                srsName));
+                srsName,
+                reader));
 
             remainingCount -= layerLimit;
         }
@@ -1005,8 +1011,8 @@ internal sealed partial class Wfs20Handler
 
         foreach (var plan in planSet.Plans)
         {
-            var result = await _gmlFeatureStore.QueryGmlAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
-            queryResults.Add((plan, result.Items));
+            var features = await QueryGmlFeaturesAsync(plan, cancellationToken).ConfigureAwait(false);
+            queryResults.Add((plan, features));
         }
 
         var returnedCount = queryResults.Sum(entry => entry.Features.Length);
@@ -1047,7 +1053,6 @@ internal sealed partial class Wfs20Handler
         CancellationToken cancellationToken)
     {
         var features = new List<GeoJsonFeature>();
-        var geoJsonFeatureStore = _featureReader as IGeoJsonFeatureStore;
 
         foreach (var plan in planSet.Plans)
         {
@@ -1060,8 +1065,9 @@ internal sealed partial class Wfs20Handler
                     ProjectedProperties: projectedProperties,
                     IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(plan.Descriptor.Resource),
                     IdFactory: featureId => BuildFeatureId(plan.Descriptor, featureId)));
+            var reader = ReaderFor(plan);
 
-            if (geoJsonFeatureStore is not null)
+            if (reader is IGeoJsonFeatureStore geoJsonFeatureStore)
             {
                 var result = await geoJsonFeatureStore.QueryGeoJsonAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
                 foreach (var feature in result.Items)
@@ -1076,7 +1082,7 @@ internal sealed partial class Wfs20Handler
                 continue;
             }
 
-            var fallbackResult = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
+            var fallbackResult = await reader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
             foreach (var feature in fallbackResult.Items)
             {
                 features.Add(CreateGeoJsonFeature(
@@ -1100,11 +1106,12 @@ internal sealed partial class Wfs20Handler
         WfsFeatureTypeDescriptor descriptor,
         FeatureQuery query,
         string normalizedFormat,
+        IFeatureReader reader,
         CancellationToken cancellationToken)
     {
         if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Csv, StringComparison.OrdinalIgnoreCase))
         {
-            if (_featureReader is not IPagedFeatureReader pagedFeatureReader)
+            if (reader is not IPagedFeatureReader pagedFeatureReader)
             {
                 throw new InvalidOperationException("Paged feature queries are not supported by the configured feature store.");
             }
@@ -1170,7 +1177,7 @@ internal sealed partial class Wfs20Handler
                 IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(descriptor.Resource),
                 IdFactory: featureId => BuildFeatureId(descriptor, featureId)));
 
-        if (_featureReader is IPagedGeoJsonFeatureStore pagedGeoJsonFeatureStore)
+        if (reader is IPagedGeoJsonFeatureStore pagedGeoJsonFeatureStore)
         {
             var result = await pagedGeoJsonFeatureStore.QueryGeoJsonPageAsync(descriptor.StorageLayerId, query, cancellationToken);
             totalCount = result.TotalCount;
@@ -1183,7 +1190,7 @@ internal sealed partial class Wfs20Handler
                     buildOptions));
             }
         }
-        else if (_featureReader is IPagedFeatureReader pagedFeatureReader)
+        else if (reader is IPagedFeatureReader pagedFeatureReader)
         {
             var result = await pagedFeatureReader.QueryPageAsync(descriptor.StorageLayerId, query, cancellationToken);
             totalCount = result.TotalCount;
@@ -1234,7 +1241,7 @@ internal sealed partial class Wfs20Handler
             // The CSV geometry column is GeoJSON, which is always longitude,latitude
             // (RFC 7946 §3.1.1); OutputAxisOrder applies only to GML serialization.
             const AxisOrder axisOrder = AxisOrder.EastNorth;
-            var result = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
+            var result = await ReaderFor(plan).QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
             foreach (var feature in result.Items)
             {
                 var row = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
@@ -2010,25 +2017,26 @@ internal sealed partial class Wfs20Handler
 
     private static string XmlEscape(string value) => SecurityElement.Escape(value) ?? string.Empty;
 
-    private bool ShouldUsePagedGetFeatureFastPath(
+    private bool CanAttemptPagedGetFeatureFastPath(
         IReadOnlyList<WfsFeatureTypeDescriptor> selectedTypes,
-        string normalizedFormat,
         bool isHitsRequest,
         int maxFeatures)
+        => _wfs20Options.NumberMatchedPolicy == Wfs20NumberMatchedPolicy.UnknownWhenExpensive
+            && !isHitsRequest
+            && selectedTypes.Count == 1
+            && maxFeatures > 0;
+
+    /// <summary>
+    /// True when <paramref name="reader"/> can serve the paged GetFeature fast path for
+    /// <paramref name="normalizedFormat"/>. Callers must pass the reader the request will
+    /// actually query, not the injected store.
+    /// </summary>
+    internal static bool ReaderSupportsPagedGetFeatureFastPath(IFeatureReader reader, string normalizedFormat)
     {
-        if (_wfs20Options.NumberMatchedPolicy != Wfs20NumberMatchedPolicy.UnknownWhenExpensive)
-        {
-            return false;
-        }
-
-        if (isHitsRequest || selectedTypes.Count != 1 || maxFeatures <= 0)
-        {
-            return false;
-        }
-
+        ArgumentNullException.ThrowIfNull(reader);
         if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Csv, StringComparison.OrdinalIgnoreCase))
         {
-            return _featureReader is IPagedFeatureReader;
+            return reader is IPagedFeatureReader;
         }
 
         var isJsonFormat =
@@ -2040,7 +2048,7 @@ internal sealed partial class Wfs20Handler
             return false;
         }
 
-        return _featureReader is IPagedGeoJsonFeatureStore || _featureReader is IPagedFeatureReader;
+        return reader is IPagedGeoJsonFeatureStore || reader is IPagedFeatureReader;
     }
 
     private static string FormatNumberMatched(long? totalCount)
@@ -2054,13 +2062,73 @@ internal sealed partial class Wfs20Handler
         string QualifiedName,
         string LocalName,
         string NamespacePrefix,
-        string NamespaceUri);
+        string NamespaceUri,
+        MetadataV2GraphSnapshot Snapshot);
 
     private sealed record LayerQueryPlan(
         WfsFeatureTypeDescriptor Descriptor,
         FeatureQuery Query,
         long MatchedCount,
-        string? RequestedSrsName = null);
+        string? RequestedSrsName = null,
+        IFeatureReader? Reader = null);
+
+    private IFeatureReader ReaderFor(LayerQueryPlan plan) => plan.Reader ?? _featureReader;
+
+    private async Task<IFeatureReader> ResolveQueryReaderAsync(
+        WfsFeatureTypeDescriptor descriptor,
+        CancellationToken cancellationToken)
+    {
+        var publication = descriptor.Publication;
+        if (_providerQueryRouter is null ||
+            descriptor.Service is null ||
+            publication is null ||
+            string.IsNullOrEmpty(publication.StorageBindingId))
+        {
+            return _featureReader;
+        }
+
+        var read = await StorageBoundFeatureReader.ResolveAsync(
+                _featureReader,
+                _providerQueryRouter,
+                descriptor.Snapshot,
+                descriptor.Service,
+                descriptor.Resource,
+                publication,
+                descriptor.StorageLayerId,
+                FeatureProviderReadOperation.Query,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return read.UseInjectedReader ? _featureReader : read.Reader;
+    }
+
+    private async Task<ImmutableArray<GmlFeature>> QueryGmlFeaturesAsync(
+        LayerQueryPlan plan,
+        CancellationToken cancellationToken)
+    {
+        var reader = ReaderFor(plan);
+        if (reader is IGmlFeatureStore gmlFeatureStore)
+        {
+            var result = await gmlFeatureStore.QueryGmlAsync(
+                    plan.Descriptor.StorageLayerId,
+                    plan.Query,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return result.Items;
+        }
+
+        var features = await reader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken)
+            .ConfigureAwait(false);
+        var builder = ImmutableArray.CreateBuilder<GmlFeature>(features.Items.Length);
+        foreach (var feature in features.Items)
+        {
+            builder.Add(GmlFeature.Create(
+                feature.Id,
+                BuildGeometryGmlFragment(feature.Geometry, plan, Wfs20Utilities.GmlNamespace),
+                feature.Attributes));
+        }
+
+        return builder.ToImmutable();
+    }
 
     private readonly record struct LayerQueryPlanSet(
         ImmutableArray<LayerQueryPlan> Plans,

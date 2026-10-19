@@ -512,20 +512,18 @@ internal sealed partial class Wfs20Handler
             requireResourceIdQualifier: false,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        var result = await _gmlFeatureStore.QueryGmlAsync(
-            descriptor.StorageLayerId,
-            query with { Limit = 1 },
-            cancellationToken).ConfigureAwait(false);
-        if (result.Items.IsDefaultOrEmpty)
+        var reader = await ResolveQueryReaderAsync(descriptor, cancellationToken).ConfigureAwait(false);
+        var limitedQuery = query with { Limit = 1 };
+        var plan = new LayerQueryPlan(descriptor, limitedQuery, 1, Reader: reader);
+        var items = await QueryGmlFeaturesAsync(plan, cancellationToken).ConfigureAwait(false);
+        if (items.IsDefaultOrEmpty)
         {
             return CreateStoredQueryFeatureNotFoundResult(context, featureId);
         }
-
-        var plan = new LayerQueryPlan(descriptor, query with { Limit = 1 }, 1);
         var xml = WriteXmlDocument(writer =>
         {
             writer.WriteStartDocument();
-            WriteFeature(writer, plan, result.Items[0], includeMemberWrapper: false);
+            WriteFeature(writer, plan, items[0], includeMemberWrapper: false);
             writer.WriteEndDocument();
         });
 

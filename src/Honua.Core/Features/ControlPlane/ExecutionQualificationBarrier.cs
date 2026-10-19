@@ -111,33 +111,31 @@ public static class ExecutionQualificationBarrier
             cancellationToken = CancellationToken.None;
         }
 
-        using var registration = cancellationToken.Register(
-            static state =>
-            {
-                var signal = (SignalObservation)state!;
-                WriteJsonAtomically(
-                    signal.Path,
-                    ExecutionQualificationReceiptJsonContext.Default.QualificationSignalObservedReceipt,
-                    new QualificationSignalObservedReceipt(
-                        signal.OperationId,
-                        signal.WorkerId,
-                        signal.Barrier,
-                        DateTimeOffset.UtcNow,
-                        Environment.ProcessId,
-                        signal.ChildProcessId,
-                        TokenCancelled: true));
-            },
-            new SignalObservation(
-                observedPath,
-                scope.OperationId,
-                scope.WorkerId,
-                barrier,
-                childProcessId));
-
-        while (!File.Exists(releasePath))
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken).ConfigureAwait(false);
+            while (!File.Exists(releasePath))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The delay's cancellation callback may complete this method before an
+            // earlier token callback runs. Record the observation in this method's
+            // cancellation path so a canceled wait cannot outrun its receipt.
+            WriteJsonAtomically(
+                observedPath,
+                ExecutionQualificationReceiptJsonContext.Default.QualificationSignalObservedReceipt,
+                new QualificationSignalObservedReceipt(
+                    scope.OperationId,
+                    scope.WorkerId,
+                    barrier,
+                    DateTimeOffset.UtcNow,
+                    Environment.ProcessId,
+                    childProcessId,
+                    TokenCancelled: true));
+            throw;
         }
 
         WriteJsonAtomically(
@@ -182,11 +180,4 @@ public static class ExecutionQualificationBarrier
     {
         public void Dispose() => Current.Value = previous;
     }
-
-    private sealed record SignalObservation(
-        string Path,
-        string OperationId,
-        string WorkerId,
-        string Barrier,
-        int? ChildProcessId);
 }
