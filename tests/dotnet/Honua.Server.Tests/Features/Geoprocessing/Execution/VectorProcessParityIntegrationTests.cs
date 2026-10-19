@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Security.Claims;
-using System.Net.Http.Json;
 using System.Net;
+using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -274,10 +274,11 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
                 RowId: ReadSinkRowId(row),
                 X: row.GetProperty("geometry").GetProperty("x").GetDouble(),
                 Y: row.GetProperty("geometry").GetProperty("y").GetDouble()))
-                .Should().BeEquivalentTo([
-                    ("alpha", 1.0, 2.0),
-                    ("beta", 3.0, 4.0)
-                ]);
+                .Should().BeEquivalentTo(new[]
+                {
+                    (RowId: "alpha", X: 1.0, Y: 2.0),
+                    (RowId: "beta", X: 3.0, Y: 4.0)
+                });
         }
         finally
         {
@@ -977,6 +978,10 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
                 sp.GetRequiredService<ILogger<RedisJobQueue>>()));
         services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
         services.AddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
+
+        // WorkflowOnly sinks are admitted by the production orchestration engine.
+        // The fixture may install Redis after the default feature-registration pass.
+        services.AddOrchestration();
 
         services.RemoveAll<IExecutionLogStore>();
         services.AddSingleton<IExecutionLogStore>(sp =>
