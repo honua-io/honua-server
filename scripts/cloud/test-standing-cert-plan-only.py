@@ -181,6 +181,45 @@ class StandingCertPlanWorkflow(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "hosted-request-invalid"):
                 hosted.fixed_request()
 
+    def test_sealed_export_rejects_private_or_unbound_receipt(self):
+        export = self.base / "encrypted-plan-test"
+        export.mkdir(mode=0o700)
+        ciphertext = export / "plan.age"
+        ciphertext.write_bytes(b"synthetic age ciphertext")
+        ciphertext.chmod(0o600)
+        producer = {"schema": "honua.aws-cert-plan-public/v1", "status": "planned-unapproved",
+                    "iacRevision": self.revision, "candidateDigest": self.candidate}
+        expected = {"schema": "honua.aws-cert-plan-envelope/v1",
+                    "status": "encrypted-awaiting-local-retention",
+                    "context": {"repository": "honua-io/honua-server",
+                                "workflow": ".github/workflows/standing-aws-cert-plan.yml",
+                                "ref": "refs/heads/trunk", "headSha": self.revision,
+                                "runId": 123, "attempt": 1},
+                    "producer": producer, "recipientSha256": "c" * 64,
+                    "ciphertextSha256": hashlib.sha256(ciphertext.read_bytes()).hexdigest(),
+                    "encryptionVersion": "age/v1.3.2", "approvalStatus": "not-approved",
+                    "qualificationStatus": "not-evaluated"}
+        request = {"sealedStaging": {"recipientSha256": "c" * 64}}
+        receipt = export / "receipt.json"
+        def write(value):
+            receipt.write_bytes(json.dumps(value, sort_keys=True, indent=2).encode() + b"\n")
+            receipt.chmod(0o600)
+        env = {"GITHUB_SHA": self.revision, "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            write(expected)
+            hosted.validate_sealed_export(expected, export, producer, request)
+            for changed in ({**expected, "PRIVATE": "SENTINEL"},
+                            {**expected, "ciphertextSha256": "d" * 64},
+                            {**expected, "context": {**expected["context"], "runId": 124}},
+                            {**expected, "producer": {**producer, "PRIVATE": "SENTINEL"}}):
+                with self.subTest(changed=changed), self.assertRaises(ValueError):
+                    write(changed)
+                    hosted.validate_sealed_export(changed, export, producer, request)
+            write(expected)
+            receipt.write_bytes(b'{"PRIVATE":"SENTINEL",' + receipt.read_bytes()[1:])
+            with self.assertRaisesRegex(ValueError, "envelope-export-invalid"):
+                hosted.validate_sealed_export(expected, export, producer, request)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -254,18 +254,43 @@ def plan_and_seal():
                                      "--producer-receipt", str(STAGE / "public.json"),
                                      "--output-directory", str(STAGE / "private"),
                                      "--tools-directory", str(STAGE / "tools")], timeout=180))
-    require(sealed["status"] == "encrypted-awaiting-local-retention"
-            and sealed["recipientSha256"] == request["sealedStaging"]["recipientSha256"],
-            "envelope-refused")
     exports = [p for p in (STAGE / "private").iterdir() if p.is_dir() and p.name.startswith("encrypted-plan-")]
     require(len(exports) == 1 and {p.name for p in exports[0].iterdir()} == {"plan.age", "receipt.json"},
             "export-ambiguous")
+    validate_sealed_export(sealed, exports[0], receipt, request)
     EXPORT.mkdir(mode=0o700)
     for name in ("plan.age", "receipt.json"):
         shutil.copyfile(exports[0] / name, EXPORT / name)
     require(sha((EXPORT / "plan.age").read_bytes()) == sealed["ciphertextSha256"], "export-drift")
     print(json.dumps({"status": "sealed-unapproved", "ciphertextSha256": sealed["ciphertextSha256"]},
                      sort_keys=True))
+
+
+def validate_sealed_export(sealed, directory, producer, request):
+    """Admit only the canonical public receipt bound to this exact ciphertext."""
+    fields = {"schema", "status", "context", "producer", "recipientSha256",
+              "ciphertextSha256", "encryptionVersion", "approvalStatus", "qualificationStatus"}
+    context = {"repository": "honua-io/honua-server",
+               "workflow": ".github/workflows/standing-aws-cert-plan.yml",
+               "ref": "refs/heads/trunk", "headSha": os.environ["GITHUB_SHA"],
+               "runId": int(os.environ["GITHUB_RUN_ID"]),
+               "attempt": int(os.environ["GITHUB_RUN_ATTEMPT"])}
+    require(set(sealed) == fields and sealed["schema"] == "honua.aws-cert-plan-envelope/v1"
+            and sealed["status"] == "encrypted-awaiting-local-retention"
+            and sealed["context"] == context and sealed["producer"] == producer
+            and sealed["recipientSha256"] == request["sealedStaging"]["recipientSha256"]
+            and sealed["encryptionVersion"] == "age/v1.3.2"
+            and sealed["approvalStatus"] == "not-approved"
+            and sealed["qualificationStatus"] == "not-evaluated"
+            and isinstance(sealed["ciphertextSha256"], str)
+            and re.fullmatch(SHA, sealed["ciphertextSha256"]), "envelope-refused")
+    ciphertext, receipt_file = directory / "plan.age", directory / "receipt.json"
+    require(all(p.is_file() and not p.is_symlink() and stat.S_IMODE(p.stat().st_mode) == 0o600
+                for p in (ciphertext, receipt_file))
+            and ciphertext.stat().st_size <= 256 * 1024 * 1024
+            and sha(ciphertext.read_bytes()) == sealed["ciphertextSha256"]
+            and receipt_file.read_bytes() == json.dumps(sealed, sort_keys=True, indent=2).encode() + b"\n",
+            "envelope-export-invalid")
 
 
 if __name__ == "__main__":
