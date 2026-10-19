@@ -180,15 +180,36 @@ class StandingCertPlanWorkflow(unittest.TestCase):
     def test_hosted_request_requires_fixed_private_paths(self):
         stage = self.base / "stage"
         stage.mkdir(mode=0o700)
+        backend_role = "arn:aws:iam::123456789012:role/honua-terraform-backend"
+        deploy_role = "arn:aws:iam::123456789012:role/honua-cert-deploy"
         hosted_request = {"schema": "honua.aws-cert-plan-request/v2",
                           "sealedStaging": {"mode": "age-v1.3.2-exact-run"},
                           "privateStaging": {"directory": str(stage / "private")},
                           "varFile": str(stage / "terraform.tfvars.json"),
                           "backendTokenFile": str(stage / "backend-token"),
-                          "iacRevision": self.revision, "candidateDigest": self.candidate}
+                          "iacRevision": self.revision, "candidateDigest": self.candidate,
+                          "accountId": "123456789012", "region": "us-east-1",
+                          "backend": {"bucket_id": "honua-existing-state",
+                                      "object_key": "standing/cert/terraform.tfstate"},
+                          "workloadIdentityContract": {"role_arn": backend_role},
+                          "executionIdentityContract": {"roles": {"infra_deployment": {"role_arn": deploy_role}}}}
+        backend_bytes = hosted.canonical_backend_source(hosted_request)
+        hosted_request["backendSourceSha256"] = hashlib.sha256(backend_bytes).hexdigest()
         (stage / "request.json").write_text(json.dumps(hosted_request))
-        with mock.patch.object(hosted, "STAGE", stage), mock.patch.dict(os.environ, self.env, clear=True):
+        env = dict(self.env, CERT_DEPLOY_ROLE_ARN=deploy_role, AWS_REGION="us-east-1")
+        with mock.patch.object(hosted, "STAGE", stage), mock.patch.dict(os.environ, env, clear=True):
             self.assertEqual(hosted.fixed_request(), hosted_request)
+            hosted.admit_backend_source(hosted_request, backend_bytes)
+            with self.assertRaisesRegex(ValueError, "backend-source-refused"):
+                hosted.admit_backend_source(hosted_request, backend_bytes + b"endpoint = \"https://evil.invalid\"\n")
+            changed = dict(hosted_request, backendSourceSha256=hashlib.sha256(
+                backend_bytes + b"endpoint = \"https://evil.invalid\"\n").hexdigest())
+            with self.assertRaisesRegex(ValueError, "backend-source-refused"):
+                hosted.admit_backend_source(changed, backend_bytes + b"endpoint = \"https://evil.invalid\"\n")
+            os.environ["CERT_DEPLOY_ROLE_ARN"] = "arn:aws:iam::123456789012:role/other"
+            with self.assertRaisesRegex(ValueError, "hosted-request-invalid"):
+                hosted.fixed_request()
+            os.environ["CERT_DEPLOY_ROLE_ARN"] = deploy_role
             hosted_request["varFile"] = str(self.base / "wrong-file")
             (stage / "request.json").write_text(json.dumps(hosted_request))
             with self.assertRaisesRegex(ValueError, "hosted-request-invalid"):

@@ -128,15 +128,49 @@ def run_private(args, *, cwd=None, env=None, timeout=600):
 
 def fixed_request():
     request = json.loads((STAGE / "request.json").read_bytes())
+    account = request["accountId"]
+    deployment = request["executionIdentityContract"]["roles"]["infra_deployment"]["role_arn"]
+    backend_role = request["workloadIdentityContract"]["role_arn"]
     require(request["schema"] == "honua.aws-cert-plan-request/v2"
             and request["sealedStaging"]["mode"] == "age-v1.3.2-exact-run"
             and request["privateStaging"]["directory"] == str(STAGE / "private")
             and request["varFile"] == str(STAGE / "terraform.tfvars.json")
             and request["backendTokenFile"] == str(STAGE / "backend-token")
             and request["iacRevision"] == os.environ["CERT_IAC_REVISION"]
-            and request["candidateDigest"] == os.environ["CERT_CANDIDATE_SHA256"],
+            and request["candidateDigest"] == os.environ["CERT_CANDIDATE_SHA256"]
+            and re.fullmatch(SHA, request["backendSourceSha256"])
+            and re.fullmatch(r"[0-9]{12}", account)
+            and request["region"] == os.environ["AWS_REGION"]
+            and deployment == os.environ["CERT_DEPLOY_ROLE_ARN"]
+            and backend_role != deployment
+            and all(re.fullmatch(rf"arn:aws:iam::{account}:role/[A-Za-z0-9+=,.@_/-]+", role)
+                    for role in (deployment, backend_role)),
             "hosted-request-invalid")
     return request
+
+
+def canonical_backend_source(request):
+    """Only the reviewed existing S3 backend shape may run before producer checks."""
+    config = request["backend"]
+    role = request["workloadIdentityContract"]["role_arn"]
+    token = request["backendTokenFile"]
+    require(all(isinstance(config[key], str) and config[key] for key in ("bucket_id", "object_key")),
+            "backend-request-invalid")
+    lines = ["terraform {", '  backend "s3" {',
+             "    bucket = " + json.dumps(config["bucket_id"]),
+             "    key = " + json.dumps(config["object_key"]),
+             "    region = " + json.dumps(request["region"]),
+             "    encrypt = true", "    use_lockfile = true",
+             "    assume_role_with_web_identity = {",
+             "      role_arn = " + json.dumps(role),
+             "      web_identity_token_file = " + json.dumps(token),
+             '      duration = "1h"', "    }", "  }", "}"]
+    return ("\n".join(lines) + "\n").encode()
+
+
+def admit_backend_source(request, data):
+    require(sha(data) == request["backendSourceSha256"]
+            and data == canonical_backend_source(request), "backend-source-refused")
 
 
 def prepare():
@@ -157,24 +191,32 @@ def prepare():
     require(sha(request_bytes) == os.environ["CERT_REQUEST_SHA256"], "request-digest-mismatch")
     save(STAGE / "request.json", request_bytes)
     request = fixed_request()
+    root = iac / ROOT_REL
+    backend_file = root / "backend.tf"
+    require(not backend_file.exists() and not backend_file.is_symlink(), "backend-file-occupied")
+    backend_bytes = os.environ["CERT_BACKEND_HCL"].encode()
+    admit_backend_source(request, backend_bytes)
+    save(backend_file, backend_bytes)
     vars_bytes = os.environ["CERT_TFVARS_JSON"].encode()
     require(sha(vars_bytes) == request["varFileSha256"], "tfvars-digest-mismatch")
     save(STAGE / "terraform.tfvars.json", vars_bytes)
     save(STAGE / "terraform.tfrc", b"")
+    setup_env = {key: value for key, value in os.environ.items()
+                 if key not in ("CERT_REQUEST_JSON", "CERT_TFVARS_JSON", "CERT_BACKEND_HCL")}
     envelope = iac / SCRIPT_REL / "cert_plan_envelope.py"
-    preflight = json.loads(run_private(["python3", "-I", str(envelope), "preflight-recipient"]))
+    preflight = json.loads(run_private(["python3", "-I", str(envelope), "preflight-recipient"],
+                                       env=setup_env))
     require(preflight["status"] == "recipient-verified"
             and preflight["iacRevision"] == request["iacRevision"]
             and preflight["recipientSha256"] == request["sealedStaging"]["recipientSha256"],
             "recipient-preflight-invalid")
     run_private(["python3", "-I", str(envelope), "install-tools", "--directory", str(STAGE / "tools")],
-                timeout=120)
+                env=setup_env, timeout=120)
     terraform = shutil.which("terraform")
     require(terraform is not None, "pinned-terraform-required")
-    version = json.loads(run_private([terraform, "version", "-json"]))["terraform_version"]
+    version = json.loads(run_private([terraform, "version", "-json"], env=setup_env))["terraform_version"]
     require(version == request["terraformVersion"] == "1.13.5", "terraform-version-mismatch")
-    root = iac / ROOT_REL
-    init_env = dict(os.environ, TF_CLI_CONFIG_FILE=str(STAGE / "terraform.tfrc"),
+    init_env = dict(setup_env, TF_CLI_CONFIG_FILE=str(STAGE / "terraform.tfrc"),
                     TF_IN_AUTOMATION="1", CHECKPOINT_DISABLE="1", AWS_EC2_METADATA_DISABLED="true")
     for key in list(init_env):
         if key.startswith("AWS_") or key.startswith("TF_CLI_ARGS") or key.startswith("GIT_"):
@@ -197,8 +239,10 @@ def backend():
     request = fixed_request()
     root = iac / ROOT_REL
     backend_file = root / "backend.tf"
-    require(not backend_file.exists() and not backend_file.is_symlink(), "backend-file-occupied")
-    save(backend_file, os.environ["CERT_BACKEND_HCL"].encode())
+    require(backend_file.is_file() and not backend_file.is_symlink()
+            and stat.S_IMODE(backend_file.stat().st_mode) == 0o600,
+            "backend-source-missing")
+    admit_backend_source(request, backend_file.read_bytes())
     # Existing OIDC trust is for the protected cert environment. A separate
     # backend role consumes this short-lived token; no broadening of trust.
     import importlib.util

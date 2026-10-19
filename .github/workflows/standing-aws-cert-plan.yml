@@ -77,6 +77,7 @@ jobs:
         env:
           CERT_REQUEST_JSON: ${{ secrets.HONUA_CERT_REQUEST_JSON }}
           CERT_TFVARS_JSON: ${{ secrets.HONUA_CERT_TFVARS_JSON }}
+          CERT_BACKEND_HCL: ${{ secrets.HONUA_CERT_BACKEND_HCL }}
         run: |
           test -n "$CERT_DEPLOY_ROLE_ARN"
           python3 -I scripts/cloud/standing-cert-hosted.py prepare
@@ -90,8 +91,6 @@ jobs:
           role-session-name: honua-standing-cert-plan
 
       - name: Verify existing backend and restore reviewed bootstrap bytes
-        env:
-          CERT_BACKEND_HCL: ${{ secrets.HONUA_CERT_BACKEND_HCL }}
         run: python3 -I scripts/cloud/standing-cert-hosted.py backend
 
       - name: Produce and seal unapproved packet

@@ -35,9 +35,13 @@ environment contains these reviewed inputs:
 - `HONUA_CERT_TFVARS_JSON`: exact protected JSON tfvars whose SHA256 is in the
   request. `HONUA_CERT_BACKEND_HCL`: protected `backend.tf` for the original S3
   backend and separate backend-access web-identity role, with the fixed private
-  token-file path. No credentials or bearer token belong in that file.
+  token-file path. The request's `backendSourceSha256` binds its exact bytes;
+  the workflow admits only the finite encrypted, lockfile-enabled S3 backend
+  shape and verifies the source before OIDC and again before backend init. No
+  credentials or bearer token belong in that file.
 - `HONUA_CERT_DEPLOY_ROLE_ARN` and `REALAWS_CERT_REGION` environment variables:
-  the existing deployment role and cert region. The role must retain the exact
+  the existing deployment role and cert region. The workflow compares both to
+  the SHA-bound request before assuming the role. The role must retain the exact
   `repo:honua-io/honua-server:environment:cert` trust, and must be able to read
   the existing Lambda code. The separate backend role must read/lock the
   existing state. This workflow does not broaden either role's trust.
