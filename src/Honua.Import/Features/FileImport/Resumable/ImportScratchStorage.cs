@@ -81,6 +81,7 @@ internal sealed class ImportScratchStorage
         };
         var mutationLease = _domainFence is null ? null
             : await _domainFence.EnterMutationAsync(cancellationToken).ConfigureAwait(false);
+        IAsyncDisposable? objectLease = null;
         try
         {
             if (!await _budget.TryReserveAsync(reservation, cancellationToken).ConfigureAwait(false))
@@ -89,6 +90,8 @@ internal sealed class ImportScratchStorage
             // An unknown admission/allocation outcome remains charged for reconciliation.
             // There is deliberately no expiry that could release a still-running writer.
             cancellationToken.ThrowIfCancellationRequested();
+            if (_domainFence is IStorageDomainObjectMutationFence objectFence)
+                objectLease = await objectFence.EnterObjectMutationAsync(reservation.FileId, bytes, cancellationToken).ConfigureAwait(false);
             Directory.CreateDirectory(_directory);
             var path = Path.Join(_directory, fileName);
             var file = new FileStream(path, new FileStreamOptions
@@ -99,11 +102,12 @@ internal sealed class ImportScratchStorage
                 Options = FileOptions.Asynchronous,
                 PreallocationSize = bytes
             });
-            return new ImportScratchLease(file, path, _budget, reservation, _domainFence, mutationLease);
+            return new ImportScratchLease(file, path, _budget, reservation, _domainFence, mutationLease, objectLease);
         }
         catch
         {
-            if (mutationLease is not null) await mutationLease.DisposeAsync().ConfigureAwait(false);
+            try { if (objectLease is not null) await objectLease.DisposeAsync().ConfigureAwait(false); }
+            finally { if (mutationLease is not null) await mutationLease.DisposeAsync().ConfigureAwait(false); }
             throw;
         }
     }
@@ -116,11 +120,12 @@ internal sealed class ImportScratchStorage
 /// </summary>
 internal sealed class ImportScratchLease(FileStream content, string path, IImportStorageBudget budget,
     ImportStorageReservation reservation, IStorageDomainMutationFence? domainFence = null,
-    IAsyncDisposable? mutationLease = null) : IAsyncDisposable
+    IAsyncDisposable? mutationLease = null, IAsyncDisposable? objectLease = null) : IAsyncDisposable
 {
     private readonly Lock _gate = new();
     private Task? _cleanup;
     private IAsyncDisposable? _mutationLease = mutationLease;
+    private IAsyncDisposable? _objectLease = objectLease;
 
     // Only bounded canonical materializers write this stream. Import readers keep
     // this same handle; reopening a path after verification is not supported.
@@ -151,16 +156,34 @@ internal sealed class ImportScratchLease(FileStream content, string path, IImpor
                 var parent = Path.GetDirectoryName(path)!;
                 LocalStorageDurability.FlushDirectoryTree(parent, parent);
             }
+            // The writer is closed and deletion is durable. Release its object
+            // lock before the accounting coordinator acquires that same lock.
+            if (_objectLease is { } objectWriter)
+            {
+                _objectLease = null;
+                await objectWriter.DisposeAsync().ConfigureAwait(false);
+            }
             _ = await budget.ReleaseDeletedAsync(reservation, cleanup.Token).ConfigureAwait(false);
         }
         finally
         {
             // A failed cleanup stays charged but must release its shared lease so
             // exclusive census can recover it. Retrying reacquires the domain fence.
-            if (_mutationLease is { } lease)
+            try
             {
-                _mutationLease = null;
-                await lease.DisposeAsync().ConfigureAwait(false);
+                if (_objectLease is { } objectWriter)
+                {
+                    _objectLease = null;
+                    await objectWriter.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                if (_mutationLease is { } lease)
+                {
+                    _mutationLease = null;
+                    await lease.DisposeAsync().ConfigureAwait(false);
+                }
             }
         }
     }

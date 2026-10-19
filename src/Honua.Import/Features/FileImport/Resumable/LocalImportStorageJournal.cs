@@ -70,7 +70,7 @@ internal sealed partial class LocalImportStorageJournal
         await using var file = Open();
         _ = await ReadHeaderAsync(file, cancellationToken).ConfigureAwait(false);
         var found = await FindAsync(file, fileId, cancellationToken).ConfigureAwait(false);
-        return found.Entry is { } entry ? new(entry.Reservation, entry.State) : null;
+        return found.Entry is { } entry ? new(entry.Reservation, entry.State, found.Slot) : null;
     }
 
     // Only fresh-domain bootstrap may call this, under the exclusive domain fence
@@ -159,7 +159,29 @@ internal sealed partial class LocalImportStorageJournal
             if (page is null) continue;
             var entry = ReadEntry(page);
             if (entry.State != LocalImportStorageState.Retired)
-                yield return new LocalImportStorageJournalEntry(entry.Reservation, entry.State);
+                yield return new LocalImportStorageJournalEntry(entry.Reservation, entry.State, slot);
+        }
+    }
+
+    // Only exclusive domain recovery calls this after a complete raw census.
+    // The callback positively verifies and synchronizes physical absence. It
+    // never infers cleanup from a timeout, expired session or missing Redis key.
+    internal async Task RetireAbsentAsync(Func<ImportStorageReservation, bool> verifyDurableAbsence,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(verifyDurableAbsence);
+        await using var held = await _journalLock.EnterAsync(exclusive: true, cancellationToken).ConfigureAwait(false);
+        await using var file = Open();
+        _ = await ReadHeaderAsync(file, cancellationToken).ConfigureAwait(false);
+        for (var slot = 0; slot < _capacity; slot++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var page = await ReadPairAsync(file, EntryOffset(slot), cancellationToken).ConfigureAwait(false);
+            if (page is null) continue;
+            var entry = ReadEntry(page);
+            if (entry.State == LocalImportStorageState.Retired || !verifyDurableAbsence(entry.Reservation)) continue;
+            await WritePageAsync(file, EntryOffset(slot), page, EntryKind,
+                Serialize(entry with { State = LocalImportStorageState.Retired }), cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -311,7 +333,7 @@ internal sealed partial class LocalImportStorageJournal
 }
 
 internal enum LocalImportStorageState { Reserved, Writing, Deleting, Retired }
-internal sealed record LocalImportStorageJournalEntry(ImportStorageReservation Reservation, LocalImportStorageState State);
+internal sealed record LocalImportStorageJournalEntry(ImportStorageReservation Reservation, LocalImportStorageState State, int Slot);
 
 [JsonSerializable(typeof(LocalImportStorageJournal.Header))]
 [JsonSerializable(typeof(LocalImportStorageJournal.Entry))]

@@ -64,7 +64,7 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
     public async Task WriteFileAsync(Stream source, string path, long expectedBytes, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
-        if (expectedBytes < 0) throw new ArgumentOutOfRangeException(nameof(expectedBytes));
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedBytes);
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -91,6 +91,9 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
             if (!await budget.TryReserveAsync(reservation, cancellationToken).ConfigureAwait(false))
                 throw new InvalidOperationException("The import storage budget is exhausted.");
             cancellationToken.ThrowIfCancellationRequested();
+            await using var objectLease = domainFence is IStorageDomainObjectMutationFence objectFence
+                ? await objectFence.EnterObjectMutationAsync(reservation.FileId, expectedBytes, cancellationToken).ConfigureAwait(false)
+                : null;
             // Persist the physical/accounting association before creating content. A
             // crash can leave a reservation without a file, never unaccounted content.
             var metadataDirectory = Path.Join(DirectoryPath, ".reservations");

@@ -139,6 +139,60 @@ internal sealed class LocalImportStorageCensus
         }
     }
 
+    internal bool VerifyDeleted(ImportStorageReservation reservation)
+    {
+        RedisImportStorageBudget.Validate(reservation);
+        var location = reservation.PhysicalLocation
+            ?? throw new InvalidDataException("Deletion requires the durable physical binding.");
+        if (!_roots.TryGetValue(location.Root, out var root))
+            throw new InvalidDataException("The physical binding belongs to an unconfigured root.");
+        RequireDirectory(root);
+        if (!RequireDurableAbsence(Path.Join(root, location.RelativePath), root)) return false;
+        if (location.MetadataPath(reservation) is not { } relativeMetadata) return true;
+        var metadata = Path.Join(root, relativeMetadata);
+        if (!RequireDurableAbsence(metadata, root)) return false;
+        if (location.Root != ImportStorageRootKind.ProviderObjects) return true;
+        var parent = Path.GetDirectoryName(metadata)!;
+        try { _ = File.GetAttributes(parent); }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException) { return true; }
+        // Even malformed temporary names with this object's exact hash prefix
+        // prevent release. Unknown publication outcomes keep their charge.
+        return !Directory.EnumerateFileSystemEntries(parent, Path.GetFileName(metadata) + ".*").Any();
+    }
+
+    internal void RequireBinding(ImportStorageReservation reservation)
+    {
+        RedisImportStorageBudget.Validate(reservation);
+        if (reservation.PhysicalLocation is not { } location || !_roots.TryGetValue(location.Root, out var root))
+            throw new InvalidDataException("Storage admission requires a physical binding to a configured host root.");
+        RequireDirectory(root);
+    }
+
+    private static bool RequireDurableAbsence(string path, string root)
+    {
+        try { _ = File.GetAttributes(path); return false; }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException) { }
+        for (var parent = Path.GetDirectoryName(path); parent is not null; parent = Path.GetDirectoryName(parent))
+        {
+            try
+            {
+                var attributes = File.GetAttributes(parent);
+                if ((attributes & FileAttributes.Directory) == 0 || (attributes & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException("Deletion cannot be proved through an aliased or non-directory parent.");
+            }
+            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+            {
+                if (parent == root) throw new IOException("The configured storage root disappeared.", exception);
+                continue;
+            }
+            // Flush the surviving ancestry, including removal of missing nested
+            // directories. A permission or I/O error is never proof of absence.
+            LocalStorageDurability.FlushDirectoryTree(parent, root);
+            return true;
+        }
+        throw new IOException("The configured storage boundary could not be verified.");
+    }
+
     private static string? TemporaryMetadataParent(string relative)
     {
         if (relative.Length < 37 || !relative.EndsWith(".tmp", StringComparison.Ordinal) || relative[^37] != '.' ||
