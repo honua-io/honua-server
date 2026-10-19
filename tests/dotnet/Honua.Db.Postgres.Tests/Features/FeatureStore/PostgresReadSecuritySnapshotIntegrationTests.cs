@@ -135,17 +135,25 @@ public sealed class PostgresReadSecuritySnapshotIntegrationTests(PostgresFixture
             .Returns(ImmutableArray.Create("secret"));
         var reader = CreateReader();
 
-        // The provider deliberately treats both a literal "*" and an explicit
-        // empty projection as no matching attributes. Protocol adapters must
-        // expand their wildcard against the public schema before this seam.
+        // The provider treats both a literal "*" and an explicit empty
+        // projection as no matching schema attributes. It still returns the
+        // mandatory objectid identity; adapters must expand the wildcard.
         var literal = await reader.QueryAsync(1, new FeatureQuery { OutFields = ["*"], Limit = 10 });
-        literal.Items.Should().HaveCount(4).And.OnlyContain(item => item.Attributes.Count == 0);
+        literal.Items.Should().HaveCount(4);
+        foreach (var item in literal.Items)
+        {
+            item.Attributes.Keys.Should().Equal(FieldNames.ObjectId);
+        }
         var empty = await reader.QueryAsync(1, new FeatureQuery
         {
             OutFields = ImmutableArray<string>.Empty,
             Limit = 10
         });
-        empty.Items.Should().HaveCount(4).And.OnlyContain(item => item.Attributes.Count == 0);
+        empty.Items.Should().HaveCount(4);
+        foreach (var item in empty.Items)
+        {
+            item.Attributes.Keys.Should().Equal(FieldNames.ObjectId);
+        }
 
         var expanded = await reader.QueryAsync(1, new FeatureQuery
         {
