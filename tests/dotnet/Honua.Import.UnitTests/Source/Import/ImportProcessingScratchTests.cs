@@ -12,6 +12,20 @@ namespace Honua.Import.UnitTests.Import;
 
 public sealed class ImportProcessingScratchTests
 {
+    [UnitTheory]
+    [InlineData("shape\\roads.dbf")]
+    [InlineData("shape/\nroads.dbf")]
+    public async Task NoncanonicalPhysicalPathsAreRejectedBeforeReservationOrReading(string relative)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using var fixture = new Fixture();
+        await using var scratch = await fixture.CreateAsync();
+        using var source = new MemoryStream([1]);
+        await Assert.ThrowsAsync<ArgumentException>(() => scratch.WriteFileAsync(source, Path.Join(scratch.DirectoryPath, relative), 1));
+        Assert.Empty(fixture.Budget.Reservations);
+        Assert.Equal(0, source.Position);
+    }
+
     [UnitTest]
     public async Task DeletedWorkspaceRemainsChargedUntilParentSynchronizationSucceeds()
     {

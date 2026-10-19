@@ -141,6 +141,7 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
         var segments = relative.Split(Path.DirectorySeparatorChar);
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         if (relative == "." || relative.Length > 1024 || segments.Length > 8 ||
+            relative.Any(char.IsControl) || (!OperatingSystem.IsWindows() && relative.Contains('\\')) ||
             Path.IsPathRooted(relative) || segments.Any(segment => segment == ".." || segment.Equals(".reservations", comparison)))
             throw new ArgumentException("Processing scratch paths must remain inside the private workspace.", nameof(path));
         for (var current = Path.GetDirectoryName(fullPath); current is not null; current = Path.GetDirectoryName(current))
