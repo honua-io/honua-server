@@ -87,7 +87,16 @@ internal static class DatasetImportTaskService
     internal static void RequireOriginalSource(HttpContext context, AgentWorkspaceDocument workspace, DatasetImportSource source)
     {
         var turn = AgentWorkspaceCapturedContext.ReadBoundTurn(context, workspace);
-        if (turn is null || source.Kind != "local-process-artifact") return;
+        if (turn is null) return;
+        if (source.Kind == "browser-file")
+        {
+            if (turn.ActorId != workspace.OwnerId || workspace.AgentActorId != CanonicalSecurityActor.Resolve(context.User)?.ActorId ||
+                turn.BrowserFileSelection is not { } selected || source.BrowserSelectionId != selected.SelectionId ||
+                source.FileName != selected.FileName || source.TotalBytes != selected.TotalBytes || source.ExpectedSha256 != selected.ExpectedSha256)
+                throw new AgentWorkspaceConflictException("The browser file must match the original human selection captured by this turn.");
+            return;
+        }
+        if (source.Kind != "local-process-artifact") return;
         if (turn.LocalProcessSnapshot is not { } captured || source.Artifact is not { } artifact ||
             artifact.ProjectId != captured.ProjectId || artifact.SnapshotId != captured.SnapshotId ||
             artifact.SnapshotDigest != captured.SnapshotDigest)

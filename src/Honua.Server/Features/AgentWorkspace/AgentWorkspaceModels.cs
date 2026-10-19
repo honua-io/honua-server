@@ -18,7 +18,7 @@ internal sealed record AgentWorkspaceContext(
 internal sealed record AgentWorkspaceMessage(string Id, string TurnId, string Role, string Content, string EvidenceKind = "conversation");
 internal sealed record AgentWorkspaceTurn(
     string TurnId, string ActorId, string Prompt, AgentWorkspaceContext Context, AgentWorkspaceDraft? Draft,
-    LocalProcessSnapshot? LocalProcessSnapshot = null);
+    LocalProcessSnapshot? LocalProcessSnapshot = null, BrowserImportFileSelection? BrowserFileSelection = null);
 internal sealed record AgentWorkspaceDraft(
     string Id, long Revision, string Kind, Dictionary<string, string> Fields, string[] Validation);
 internal sealed record AgentWorkspaceCommand(
@@ -61,7 +61,9 @@ internal sealed record CreateAgentWorkspace([property: JsonRequired] string View
 internal sealed record UpdateAgentContext(
     [property: JsonRequired] string ViewId, [property: JsonRequired] long ExpectedRevision, [property: JsonRequired] string TargetId,
     [property: JsonRequired] AgentResourceReference[] SelectedResources, [property: JsonRequired, JsonIgnore(Condition = JsonIgnoreCondition.Never)] AgentTaskReference? Task, string? Source);
-internal sealed record CreateAgentTurn([property: JsonRequired] string TurnId, [property: JsonRequired] string ViewId, [property: JsonRequired] long ContextRevision, [property: JsonRequired] string Prompt);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record BrowserImportFileSelection(string SelectionId, string FileName, long TotalBytes, string ExpectedSha256);
+internal sealed record CreateAgentTurn([property: JsonRequired] string TurnId, [property: JsonRequired] string ViewId, [property: JsonRequired] long ContextRevision, [property: JsonRequired] string Prompt, BrowserImportFileSelection? BrowserFileSelection = null);
 internal sealed record CreateAgentDraft([property: JsonRequired] string Kind, [property: JsonRequired] Dictionary<string, string> Fields, [property: JsonRequired] string ViewId, [property: JsonRequired] long ContextRevision);
 internal sealed record PatchAgentDraft([property: JsonRequired] long ExpectedRevision, [property: JsonRequired] string ViewId, [property: JsonRequired] Dictionary<string, string> Changes);
 internal sealed record SubmitAgentDraft([property: JsonRequired] string CommandId, [property: JsonRequired] long ExpectedRevision, [property: JsonRequired] string ViewId);
@@ -80,13 +82,14 @@ internal sealed record AgentDevOpsAuthorizationResponse(
 }
 internal sealed record AgentConversationResponse(AgentWorkspaceMessage[] Messages);
 internal sealed record AgentTurnResponse(string TurnId, string Status, AgentWorkspaceContext Context, AgentWorkspaceMessage[] Messages,
-    AgentWorkspaceDraft? Draft, LocalProcessSnapshot? LocalProcessSnapshot = null, DatasetImportTask? DatasetImportContext = null);
+    AgentWorkspaceDraft? Draft, LocalProcessSnapshot? LocalProcessSnapshot = null, DatasetImportTask? DatasetImportContext = null, BrowserImportFileSelection? BrowserFileSelection = null);
 internal sealed record AgentWorkspaceError(string Message);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(AgentWorkspaceDocument))]
 [JsonSerializable(typeof(AgentWorkspaceTurn))]
+[JsonSerializable(typeof(BrowserImportFileSelection))]
 [JsonSerializable(typeof(Honua.Core.Features.Authorization.Domain.AgentCredentialSnapshot))]
 [JsonSerializable(typeof(DatasetImportTask))]
 [JsonSerializable(typeof(CreateDatasetImportUpload))]

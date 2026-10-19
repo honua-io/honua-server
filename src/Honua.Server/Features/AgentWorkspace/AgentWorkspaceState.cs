@@ -101,9 +101,13 @@ internal static class AgentWorkspaceState
         {
             throw new ArgumentException("A bounded prompt, turn id and view id are required.");
         }
+        if (request.BrowserFileSelection is { } selection &&
+            (!IsIdentifier(selection.SelectionId) || !DatasetImportTaskState.ValidFileName(selection.FileName) ||
+             selection.TotalBytes <= 0 || !DatasetImportTaskState.Hash(selection.ExpectedSha256)))
+            throw new ArgumentException("A bounded verified browser-file selection is required.");
         if (document.Turns.TryGetValue(request.TurnId, out var existing))
         {
-            if (existing.ActorId != actorId || existing.Prompt != request.Prompt ||
+            if (existing.ActorId != actorId || existing.Prompt != request.Prompt || existing.BrowserFileSelection != request.BrowserFileSelection ||
                 existing.Context.ViewId != request.ViewId || existing.Context.Revision != request.ContextRevision)
             {
                 throw new AgentWorkspaceConflictException("The turn id is already bound to different input.");
@@ -122,7 +126,7 @@ internal static class AgentWorkspaceState
         }
         var turns = new Dictionary<string, AgentWorkspaceTurn>(document.Turns, StringComparer.Ordinal)
         {
-            [request.TurnId] = new(request.TurnId, actorId, request.Prompt, context, draft),
+            [request.TurnId] = new(request.TurnId, actorId, request.Prompt, context, draft, BrowserFileSelection: request.BrowserFileSelection),
         };
         return document with
         {

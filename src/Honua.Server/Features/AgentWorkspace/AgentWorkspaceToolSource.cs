@@ -78,6 +78,7 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
             "kind":{"type":"string","enum":["browser-file","local-process-artifact"]},
             "fileName":{"type":"string","minLength":1,"maxLength":255},"totalBytes":{"type":"integer","minimum":1},
             "expectedSha256":{"type":["string","null"],"pattern":"^[0-9a-f]{64}$"},
+            "browserSelectionId":{"type":["string","null"],"pattern":"^[A-Za-z0-9_-]{1,128}$"},
             "artifact":{"type":["object","null"],"properties":{
               "projectId":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,128}$"},"snapshotId":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,128}$"},
               "snapshotDigest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"runId":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,128}$"},

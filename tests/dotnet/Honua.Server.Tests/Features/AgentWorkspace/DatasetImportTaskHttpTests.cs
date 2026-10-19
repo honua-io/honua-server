@@ -183,10 +183,34 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             var executionId = executionWorkspace.GetProperty("workspaceId").GetString()!;
             var executionRoot = $"/api/v1/agent/workspaces/{executionId}";
             await Json(await human.PostAsJsonAsync(executionRoot + "/turns", new { turnId = "turn-create-import", viewId = "execution-tab",
-                contextRevision = 0, prompt = "Prepare an import for my selected file" }));
-            var executionRequest = request with { IntentId = "agent-import-intent", ViewId = "execution-tab" };
+                contextRevision = 0, prompt = "Prepare an import for my selected file",
+                browserFileSelection = new BrowserImportFileSelection("selected-roads", request.Source.FileName, request.Source.TotalBytes, request.Source.ExpectedSha256!) }));
+            var executionRequest = request with { IntentId = "agent-import-intent", ViewId = "execution-tab",
+                Source = request.Source with { BrowserSelectionId = "selected-roads" } };
             agent.DefaultRequestHeaders.Add("X-Honua-Workspace", executionId);
             agent.DefaultRequestHeaders.Add("X-Honua-Turn", "turn-create-import");
+            var originalSelection = await Json(await agent.GetAsync(executionRoot + "/turns/turn-create-import"));
+            originalSelection.GetProperty("browserFileSelection").GetProperty("selectionId").GetString().Should().Be("selected-roads");
+            foreach (var changedSource in new[]
+            {
+                executionRequest.Source with { BrowserSelectionId = null },
+                executionRequest.Source with { BrowserSelectionId = "later-selection" },
+                executionRequest.Source with { ExpectedSha256 = new string('b', 64) },
+                executionRequest.Source with { TotalBytes = executionRequest.Source.TotalBytes + 1 },
+                executionRequest.Source with { FileName = "later.geojson" },
+            })
+            {
+                var refused = await agent.PostAsJsonAsync(executionRoot + "/dataset-import-tasks", executionRequest with { Source = changedSource });
+                refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            }
+            (await human.PostAsJsonAsync(executionRoot + "/turns", new { turnId = "turn-create-import", viewId = "execution-tab",
+                contextRevision = 0, prompt = "Prepare an import for my selected file",
+                browserFileSelection = new BrowserImportFileSelection("later-selection", request.Source.FileName, request.Source.TotalBytes, request.Source.ExpectedSha256!) }))
+                .StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await agent.PostAsJsonAsync(executionRoot + "/turns", new { turnId = "agent-forged-selection", viewId = "execution-tab",
+                contextRevision = 0, prompt = "Claim a human file", browserFileSelection = new BrowserImportFileSelection(
+                    "forged-selection", request.Source.FileName, request.Source.TotalBytes, request.Source.ExpectedSha256!) }))
+                .StatusCode.Should().Be(HttpStatusCode.Forbidden);
             var initialized = await agent.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0", id = 1, method = "initialize",
@@ -201,6 +225,7 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             }));
             envelope.TryGetProperty("error", out _).Should().BeFalse();
             var executionTask = envelope.GetProperty("result").GetProperty("structuredContent");
+            executionTask.GetProperty("source").GetProperty("browserSelectionId").GetString().Should().Be("selected-roads");
             var executionTaskId = executionTask.GetProperty("taskId").GetString()!;
             var executionDocument = (await fixture.Services.GetRequiredService<IAgentWorkspaceStore>().GetAsync(executionId))!;
             var binding = executionDocument.DatasetImportExecutionBindings[executionTaskId];

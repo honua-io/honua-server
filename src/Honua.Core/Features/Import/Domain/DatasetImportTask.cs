@@ -26,9 +26,10 @@ public sealed record DatasetImportArtifactSource(string ProjectId, string Snapsh
 /// <param name="TotalBytes">Declared immutable source length.</param>
 /// <param name="ExpectedSha256">Expected whole-content digest; required before resumable admission.</param>
 /// <param name="Artifact">Required canonical provenance for a local process artifact.</param>
+/// <param name="BrowserSelectionId">Original human-selected file identity retained on the bound turn.</param>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record DatasetImportSource(string Kind, string FileName, long TotalBytes,
-    string? ExpectedSha256 = null, DatasetImportArtifactSource? Artifact = null);
+    string? ExpectedSha256 = null, DatasetImportArtifactSource? Artifact = null, string? BrowserSelectionId = null);
 
 /// <summary>Explicit import behavior frozen into a task revision, with no credential or URL fields.</summary>
 /// <param name="LoadMode">Canonical import load behavior.</param>

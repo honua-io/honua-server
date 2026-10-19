@@ -192,14 +192,15 @@ public sealed class DatasetImportUploadHttpTests(RedisFixture redis)
         var workspace = await Read(await human.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "handoff-tab" }));
         var workspaceId = workspace.GetProperty("workspaceId").GetString()!;
         var root = $"/api/v1/agent/workspaces/{workspaceId}";
+        var bytes = "{\"type\":\"FeatureCollection\",\"features\":[]}"u8.ToArray();
         await Read(await human.PostAsJsonAsync(root + "/turns", new
-            { turnId = "handoff-origin", viewId = "handoff-tab", contextRevision = 0, prompt = "Import the selected dataset" }));
+            { turnId = "handoff-origin", viewId = "handoff-tab", contextRevision = 0, prompt = "Import the selected dataset",
+              browserFileSelection = new BrowserImportFileSelection("selected-handoff", "handoff.geojson", bytes.Length, Digest(bytes)) }));
         agent.DefaultRequestHeaders.Add("X-Honua-Workspace", workspaceId);
         agent.DefaultRequestHeaders.Add("X-Honua-Turn", "handoff-origin");
-        var bytes = "{\"type\":\"FeatureCollection\",\"features\":[]}"u8.ToArray();
         var task = await Read(await agent.PostAsJsonAsync(root + "/dataset-import-tasks", new CreateDatasetImportTask(
             "executor-import-intent", "handoff-tab", 0, new("public", "new_handoff_table"),
-            new("browser-file", "handoff.geojson", bytes.Length, Digest(bytes)), new())));
+            new("browser-file", "handoff.geojson", bytes.Length, Digest(bytes), BrowserSelectionId: "selected-handoff"), new())));
         task.GetProperty("ownerActorId").GetString().Should().Be(executor);
         var path = UploadPath(task);
         var hash = task.GetProperty("contentHash").GetString()!;

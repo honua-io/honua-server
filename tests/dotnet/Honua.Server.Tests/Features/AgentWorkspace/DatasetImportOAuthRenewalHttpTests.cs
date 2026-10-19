@@ -69,6 +69,8 @@ public sealed class DatasetImportOAuthRenewalHttpTests(RedisFixture redis)
             builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+            builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+            builder.UseSetting("Authentication:OperatorBearer:SigningKey", "oauth-import-human-selection-test-key-at-least-32-bytes");
             builder.UseSetting("AgentWorkspace:DeploymentId", $"oauth-renewal-{Guid.NewGuid():N}");
             builder.UseSetting("AgentWorkspace:ReleaseId", "isolated-oauth-renewal-test");
             builder.UseSetting("Oidc:Enabled", "true");
@@ -112,16 +114,26 @@ public sealed class DatasetImportOAuthRenewalHttpTests(RedisFixture redis)
             using var client = fixture.CreateClient();
             var tokenSequence = 0;
             Authenticate(firstExpiry);
-            var created = await Read(await client.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "oauth-tab" }));
+            var discovery = await Read(await client.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "discovery-tab" }));
+            var discoveryDocument = (await fixture.Services.GetRequiredService<IAgentWorkspaceStore>()
+                .GetAsync(discovery.GetProperty("workspaceId").GetString()!))!;
+            fixture.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["AgentWorkspace:LocalAgentPrincipalId"] = discoveryDocument.OwnerId;
+            var humanBearer = fixture.Services.GetRequiredService<OperatorBearerTokenService>().Issue(
+                [new() { Type = ClaimTypes.NameIdentifier, Value = "oauth-import-human" }, new() { Type = ClaimTypes.Role, Value = "admin" },
+                 new() { Type = "tenant_id", Value = "public" }], DateTimeOffset.UtcNow.AddMinutes(5));
+            humanBearer.Should().NotBeNull();
+            using var human = fixture.CreateClient(c => c.DefaultRequestHeaders.Authorization = new("Bearer", humanBearer!.Token));
+            var created = await Read(await human.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "oauth-tab" }));
             var workspaceId = created.GetProperty("workspaceId").GetString()!;
             var root = $"/api/v1/agent/workspaces/{workspaceId}";
-            await Read(await client.PostAsJsonAsync(root + "/turns", new
-                { turnId = "oauth-origin", viewId = "oauth-tab", contextRevision = 0, prompt = "Prepare the selected import" }));
+            await Read(await human.PostAsJsonAsync(root + "/turns", new
+                { turnId = "oauth-origin", viewId = "oauth-tab", contextRevision = 0, prompt = "Prepare the selected import",
+                  browserFileSelection = new BrowserImportFileSelection("oauth-selected-file", "large.geojson", 5L * 1024 * 1024 * 1024, new string('a', 64)) }));
             client.DefaultRequestHeaders.Add("X-Honua-Workspace", workspaceId);
             client.DefaultRequestHeaders.Add("X-Honua-Turn", "oauth-origin");
             var taskJson = await Read(await client.PostAsJsonAsync(root + "/dataset-import-tasks", new CreateDatasetImportTask(
                 "oauth-import-intent", "oauth-tab", 0, new("public", "oauth_new_table"),
-                new("browser-file", "large.geojson", 5L * 1024 * 1024 * 1024, new string('a', 64)), new())));
+                new("browser-file", "large.geojson", 5L * 1024 * 1024 * 1024, new string('a', 64), BrowserSelectionId: "oauth-selected-file"), new())));
             var taskId = taskJson.GetProperty("taskId").GetString()!;
             var store = fixture.Services.GetRequiredService<IAgentWorkspaceStore>();
             var originalDocument = (await store.GetAsync(workspaceId))!;

@@ -41,10 +41,11 @@ internal static class DatasetImportTaskState
             throw new ArgumentException("An explicit operational schema and table are required.");
         var source = request.Source;
         if (source is null || source.Kind is not ("browser-file" or "local-process-artifact") || source.TotalBytes <= 0 ||
-            source.FileName is not { Length: > 0 and <= 255 } || source.FileName.Any(c => char.IsControl(c) || c is '/' or '\\') ||
-            source.FileName != source.FileName.Trim() || source.ExpectedSha256 is not null && !Hash(source.ExpectedSha256))
+            !ValidFileName(source.FileName) || source.ExpectedSha256 is not null && !Hash(source.ExpectedSha256))
             throw new ArgumentException("A bounded immutable source declaration is required.");
-        if (source.Kind == "browser-file" && source.Artifact is not null || source.Kind == "local-process-artifact" &&
+        if (source.BrowserSelectionId is not null && !AgentWorkspaceState.IsIdentifier(source.BrowserSelectionId) ||
+            source.Kind == "local-process-artifact" && source.BrowserSelectionId is not null ||
+            source.Kind == "browser-file" && source.Artifact is not null || source.Kind == "local-process-artifact" &&
             (source.Artifact is not { } artifact || !AgentWorkspaceState.IsIdentifier(artifact.ProjectId) ||
              !AgentWorkspaceState.IsIdentifier(artifact.SnapshotId) || !AgentWorkspaceState.IsIdentifier(artifact.RunId) ||
              !Hash(artifact.SnapshotDigest) || !Hash(source.ExpectedSha256) || !ArtifactPath(artifact.Path)))
@@ -53,6 +54,9 @@ internal static class DatasetImportTaskState
             options.TargetSrid <= 0 || options.SourceSrid is <= 0)
             throw new ArgumentException("Unsupported import options. Upsert requires a canonical key-column contract.");
     }
+
+    internal static bool ValidFileName(string? value) => value is { Length: > 0 and <= 255 } && value == value.Trim() &&
+        !value.Any(c => char.IsControl(c) || c is '/' or '\\');
 
     internal static bool Hash(string? value) => value is { Length: 64 } && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
     private static bool Identifier(string? value, bool underscoreFirst) => value is { Length: > 0 and <= 63 } &&

@@ -330,6 +330,8 @@ internal static class AgentWorkspaceEndpoints
     internal static async Task<IResult> CreateTurn(HttpContext context, IAgentWorkspaceStore store, CreateAgentTurn request)
     {
         var document = await Read(context, store).ConfigureAwait(false);
+        if (request.BrowserFileSelection is not null &&
+            (AgentCredentialAuthority.IsAgent(context.User) || Actor(context) != document.OwnerId)) return Results.Forbid();
         var next = AgentWorkspaceState.AddTurn(document, Actor(context), request);
         if (!ReferenceEquals(document, next))
         {
@@ -381,7 +383,7 @@ internal static class AgentWorkspaceEndpoints
         if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
             return Results.Forbid();
         return Results.Ok(new AgentTurnResponse(turn.TurnId, "accepted", projected,
-            messages, turn.Draft, turn.LocalProcessSnapshot, importContext));
+            messages, turn.Draft, turn.LocalProcessSnapshot, importContext, turn.BrowserFileSelection));
     }
 
     private static async Task<AgentWorkspaceMessage[]> VisibleMessages(HttpContext context, AgentWorkspaceDocument document)
