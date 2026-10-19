@@ -57,7 +57,6 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Operation(Operations.ProcessExecution)]
     [Operation(Operations.Create)]
     [Operation(Operations.Query)]
-    [Endpoint("workflow engine manual run: sink.external-postgis")]
     [Endpoint("POST /mcp tools/call honua_publish_result")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task CommittedPostgisSink_ResultPackagePublishesAndQueriesAuthoredRows()
