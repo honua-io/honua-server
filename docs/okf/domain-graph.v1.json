@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:c2e8202766e7adb906f28dbc1a9634720c1bbf34874e892069f4ee4aacaaef54",
+  "bundleDigest": "sha256:5ce34d78c8f39f881d00021e687526ce9adc6366069185b1470835e3a6af19b0",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2590,7 +2590,7 @@
     {
       "id": "guides/query-analyze/run-geoprocessing",
       "path": "guides/query-analyze/run-geoprocessing.md",
-      "documentDigest": "sha256:27c698657d18b5e3d45dc1bc6de4206c2f55a8d003f9a75a96e7e5262df1ae0e",
+      "documentDigest": "sha256:60ea93240a44559b5b70ecc2495948388ff42baa1757ad2ee0cb3d1356bdc49a",
       "metadata": {
         "type": "guide",
         "title": "Run geoprocessing",

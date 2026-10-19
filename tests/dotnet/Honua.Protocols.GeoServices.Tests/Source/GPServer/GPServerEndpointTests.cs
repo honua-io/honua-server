@@ -1800,7 +1800,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                             ? await client.PostAsync(url, content)
                             : await client.GetAsync(url + "?" + await content.ReadAsStringAsync());
                         var body = await response.Content.ReadAsStringAsync();
-                        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+                        // GeoServices REST transports its error envelope with HTTP 200.
+                        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
                         using var doc = JsonDocument.Parse(body);
                         doc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
                         body.Should().Contain("processing CRS");
