@@ -115,7 +115,7 @@ public readonly record struct FeatureEditBatch
     /// per existing row when a non-administrator must keep the authorized owner. Writers
     /// apply the predicate in the same statement that mutates the row, so a concurrent
     /// ownership transfer is not overwritten or deleted. Empty when the policy is off or
-    /// the caller may edit any owner. Protocol adapters do not set this.
+    /// the caller may edit any owner. Only trusted server-side policy code sets this.
     /// </summary>
     [JsonIgnore]
     public ImmutableArray<OwnerEditGuard> OwnerGuards { get; init; }
