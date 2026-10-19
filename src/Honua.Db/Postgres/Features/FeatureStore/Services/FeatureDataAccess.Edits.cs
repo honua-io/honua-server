@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -138,14 +139,14 @@ internal sealed partial class FeatureDataAccess
                 outboxScope!,
                 async (connection, transaction, ct) =>
                 {
-                    var updated = await UpdateWithConnectionAsync(layerId, feature, connection, transaction, ct).ConfigureAwait(false);
+                    var updated = await UpdateWithConnectionAsync(layerId, feature, connection, transaction, ownerGuard: null, ct).ConfigureAwait(false);
                     return (updated.Id, (Feature?)updated);
                 },
                 cancellationToken).ConfigureAwait(false);
         }
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await UpdateWithConnectionAsync(layerId, feature, connection, transaction: null, cancellationToken);
+        return await UpdateWithConnectionAsync(layerId, feature, connection, transaction: null, ownerGuard: null, cancellationToken);
     }
 
     public async Task<bool> DeleteFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
@@ -161,7 +162,7 @@ internal sealed partial class FeatureDataAccess
             var npgsql = Connection.RequireNpgsqlConnection();
             var npgsqlTransaction = (NpgsqlTransaction)Transaction;
 
-            var deleted = await DeleteWithConnectionAsync(layerId, featureId, npgsql, npgsqlTransaction, cancellationToken).ConfigureAwait(false);
+            var deleted = await DeleteWithConnectionAsync(layerId, featureId, npgsql, npgsqlTransaction, ownerGuard: null, cancellationToken).ConfigureAwait(false);
             if (deleted.Deleted)
             {
                 await TryWriteOutboxRowAsync(
@@ -189,7 +190,7 @@ internal sealed partial class FeatureDataAccess
         await using var conn = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         if (_attachmentCleanup is null)
         {
-            var simpleDelete = await DeleteWithConnectionAsync(layerId, featureId, conn, transaction: null, cancellationToken).ConfigureAwait(false);
+            var simpleDelete = await DeleteWithConnectionAsync(layerId, featureId, conn, transaction: null, ownerGuard: null, cancellationToken).ConfigureAwait(false);
             return simpleDelete.Deleted;
         }
 
@@ -197,7 +198,7 @@ internal sealed partial class FeatureDataAccess
         // including when this delete is the only statement in the request (#6137).
         await using var rowTransaction = await conn.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         var npgsqlRowTransaction = (NpgsqlTransaction)rowTransaction;
-        var deletedRow = await DeleteWithConnectionAsync(layerId, featureId, conn, npgsqlRowTransaction, cancellationToken).ConfigureAwait(false);
+        var deletedRow = await DeleteWithConnectionAsync(layerId, featureId, conn, npgsqlRowTransaction, ownerGuard: null, cancellationToken).ConfigureAwait(false);
         if (deletedRow.Deleted)
         {
             await CaptureDeletedAttachmentsAsync(
@@ -415,6 +416,7 @@ internal sealed partial class FeatureDataAccess
                 transaction,
                 preconditions,
                 editBatch.RowSecurityWriteCheck,
+                editBatch.OwnerGuards,
                 cancellationToken);
             partialUpdateResults = updateResults;
             cancellationToken.ThrowIfCancellationRequested();
@@ -425,6 +427,7 @@ internal sealed partial class FeatureDataAccess
                 connection,
                 transaction,
                 preconditions,
+                editBatch.OwnerGuards,
                 cancellationToken);
             partialDeleteResults = deleteResults;
             cancellationToken.ThrowIfCancellationRequested();
@@ -753,6 +756,7 @@ internal sealed partial class FeatureDataAccess
                     createResults,
                     updateResults,
                     deleteResults,
+                    editBatch.OwnerGuards,
                     cancellationToken).ConfigureAwait(false);
 
                 if (!operationSucceeded && editBatch.RollbackOnFailure)
@@ -1005,6 +1009,7 @@ internal sealed partial class FeatureDataAccess
         ImmutableArray<EditOperationResult>.Builder createResults,
         ImmutableArray<EditOperationResult>.Builder updateResults,
         ImmutableArray<EditOperationResult>.Builder deleteResults,
+        ImmutableArray<OwnerEditGuard> ownerGuards,
         CancellationToken cancellationToken)
     {
         switch (operation.Kind)
@@ -1081,7 +1086,8 @@ internal sealed partial class FeatureDataAccess
                                     update = PreserveOmittedAttributes(feature, current.Value);
                                 }
 
-                                var u = await UpdateCheckedAsync(layerId, update, writeCheck, conn, tx, ct).ConfigureAwait(false);
+                                var u = await UpdateCheckedAsync(
+                                    layerId, update, writeCheck, conn, tx, OwnerEditGuard.Find(ownerGuards, feature.Id), ct).ConfigureAwait(false);
                                 await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
                                 return u;
                             },
@@ -1138,7 +1144,8 @@ internal sealed partial class FeatureDataAccess
                                     }
                                 }
 
-                                var d = await DeleteWithConnectionAsync(layerId, objectId, conn, tx, ct).ConfigureAwait(false);
+                                var d = await DeleteWithConnectionAsync(
+                                    layerId, objectId, conn, tx, OwnerEditGuard.Find(ownerGuards, objectId), ct).ConfigureAwait(false);
                                 if (d.Deleted)
                                 {
                                     await TryWriteOutboxRowForBatchAsync(conn, tx, objectId, "delete", d.Snapshot, ct).ConfigureAwait(false);
@@ -1469,11 +1476,39 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
+    /// <summary>
+    /// Case-insensitive owner comparison against one JSON attributes document.
+    /// Null when <paramref name="guard"/> is null. An absent owner matches an empty expected value.
+    /// </summary>
+    private static string? OwnerMatchExpression(OwnerEditGuard? guard, string attributesSql, int fieldParameter, int valueParameter)
+    {
+        if (guard is null)
+        {
+            return null;
+        }
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"lower(coalesce((SELECT owner_attr.value FROM jsonb_each_text({attributesSql}) AS owner_attr(key, value) WHERE lower(owner_attr.key) = lower(${fieldParameter}) LIMIT 1), '')) = lower(${valueParameter})");
+    }
+
+    private static void AddOwnerGuardParameters(NpgsqlCommand command, OwnerEditGuard? guard)
+    {
+        if (guard is null)
+        {
+            return;
+        }
+
+        command.Parameters.AddWithValue(guard.Value.Field);
+        command.Parameters.AddWithValue(guard.Value.Expected);
+    }
+
     private async Task<Feature> UpdateWithConnectionAsync(
         int layerId,
         Feature feature,
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        OwnerEditGuard? ownerGuard,
         CancellationToken cancellationToken)
     {
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
@@ -1490,10 +1525,12 @@ internal sealed partial class FeatureDataAccess
         }
 
         var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
+        var ownerMatch = OwnerMatchExpression(ownerGuard, "attributes", 5, 6);
+        var ownerClause = ownerMatch is null ? string.Empty : " AND " + ownerMatch;
         var sql = $@"
             UPDATE {_tableName}
             SET geometry = {geometryValueExpression}, attributes = $4
-            WHERE layer_id = $1 AND objectid = $2
+            WHERE layer_id = $1 AND objectid = $2{ownerClause}
             RETURNING objectid, {geometrySelect}, attributes";
 
         await using var command = new NpgsqlCommand(sql, connection)
@@ -1514,6 +1551,7 @@ internal sealed partial class FeatureDataAccess
         var attributesJson = SerializeToJsonString(attributesDictionary);
         var attributesParam = new NpgsqlParameter { Value = attributesJson, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Jsonb };
         command.Parameters.Add(attributesParam);
+        AddOwnerGuardParameters(command, ownerGuard);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -1530,6 +1568,7 @@ internal sealed partial class FeatureDataAccess
         long featureId,
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        OwnerEditGuard? ownerGuard,
         CancellationToken cancellationToken)
     {
         // When an outbox scope is active we use DELETE ... RETURNING to capture
@@ -1546,9 +1585,11 @@ internal sealed partial class FeatureDataAccess
         {
             var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
             var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
+            var ownerMatch = OwnerMatchExpression(ownerGuard, "attributes", 3, 4);
+            var ownerClause = ownerMatch is null ? string.Empty : " AND " + ownerMatch;
             var sqlReturning = $@"
                 DELETE FROM {_tableName}
-                WHERE layer_id = $1 AND objectid = $2
+                WHERE layer_id = $1 AND objectid = $2{ownerClause}
                 RETURNING objectid, {geometrySelect}, attributes";
 
             await using var commandReturning = new NpgsqlCommand(sqlReturning, connection)
@@ -1558,6 +1599,7 @@ internal sealed partial class FeatureDataAccess
             ApplyCommandTimeout(commandReturning, _queryTimeoutSeconds);
             commandReturning.Parameters.AddWithValue(layerId);
             commandReturning.Parameters.AddWithValue(featureId);
+            AddOwnerGuardParameters(commandReturning, ownerGuard);
 
             await using var reader = await commandReturning.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -1569,9 +1611,11 @@ internal sealed partial class FeatureDataAccess
             return new DeleteOutcome(true, snapshot);
         }
 
+        var deleteOwnerMatch = OwnerMatchExpression(ownerGuard, "attributes", 3, 4);
+        var deleteOwnerClause = deleteOwnerMatch is null ? string.Empty : " AND " + deleteOwnerMatch;
         var sql = $@"
             DELETE FROM {_tableName}
-            WHERE layer_id = $1 AND objectid = $2";
+            WHERE layer_id = $1 AND objectid = $2{deleteOwnerClause}";
 
         await using var command = new NpgsqlCommand(sql, connection)
         {
@@ -1580,6 +1624,7 @@ internal sealed partial class FeatureDataAccess
         ApplyCommandTimeout(command, _queryTimeoutSeconds);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
+        AddOwnerGuardParameters(command, ownerGuard);
 
         var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
         return new DeleteOutcome(rowsAffected > 0, null);
@@ -2028,6 +2073,7 @@ internal sealed partial class FeatureDataAccess
         NpgsqlTransaction? transaction,
         Dictionary<long, FeatureEditPrecondition>? preconditions,
         SqlFragment? writeCheck,
+        ImmutableArray<OwnerEditGuard> ownerGuards,
         CancellationToken cancellationToken)
     {
         if (features.Length == 0)
@@ -2081,7 +2127,8 @@ internal sealed partial class FeatureDataAccess
                             update = PreserveOmittedAttributes(feature, current.Value);
                         }
 
-                        var u = await UpdateCheckedAsync(layerId, update, writeCheck, conn, tx, ct).ConfigureAwait(false);
+                        var u = await UpdateCheckedAsync(
+                            layerId, update, writeCheck, conn, tx, OwnerEditGuard.Find(ownerGuards, feature.Id), ct).ConfigureAwait(false);
                         await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
                         return u;
                     },
@@ -2128,6 +2175,7 @@ internal sealed partial class FeatureDataAccess
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         Dictionary<long, FeatureEditPrecondition>? preconditions,
+        ImmutableArray<OwnerEditGuard> ownerGuards,
         CancellationToken cancellationToken)
     {
         if (featureIds.Length == 0)
@@ -2176,7 +2224,8 @@ internal sealed partial class FeatureDataAccess
                             }
                         }
 
-                        var d = await DeleteWithConnectionAsync(layerId, featureId, conn, tx, ct).ConfigureAwait(false);
+                        var d = await DeleteWithConnectionAsync(
+                            layerId, featureId, conn, tx, OwnerEditGuard.Find(ownerGuards, featureId), ct).ConfigureAwait(false);
                         if (d.Deleted)
                         {
                             await TryWriteOutboxRowForBatchAsync(conn, tx, featureId, "delete", d.Snapshot, ct).ConfigureAwait(false);

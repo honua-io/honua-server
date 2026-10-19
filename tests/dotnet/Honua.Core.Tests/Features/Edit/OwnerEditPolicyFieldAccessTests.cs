@@ -249,6 +249,10 @@ public sealed class OwnerEditPolicyFieldAccessTests
         prepared.IsAllowed.Should().BeTrue();
         prepared.Batch.Updates[0].Attributes["owner"].Should().Be("alice");
         prepared.Batch.Updates[0].Attributes["name"].Should().Be("visible");
+        prepared.Batch.OwnerGuards.Should().ContainSingle();
+        prepared.Batch.OwnerGuards[0].ObjectId.Should().Be(42);
+        prepared.Batch.OwnerGuards[0].Field.Should().Be("owner");
+        prepared.Batch.OwnerGuards[0].Expected.Should().Be("alice");
     }
 
     [UnitTest]
@@ -262,6 +266,7 @@ public sealed class OwnerEditPolicyFieldAccessTests
 
         prepared.IsAllowed.Should().BeTrue();
         prepared.Batch.Updates[0].Attributes.ContainsKey("owner").Should().BeFalse();
+        prepared.Batch.OwnerGuards.IsDefaultOrEmpty.Should().BeTrue();
         reader.QueryCount.Should().Be(0);
     }
 

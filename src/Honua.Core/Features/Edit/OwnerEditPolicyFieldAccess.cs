@@ -612,8 +612,40 @@ public static class OwnerEditPolicyFieldAccess
         {
             Operations = operations,
             Creates = creates,
-            Updates = updates
+            Updates = updates,
+            OwnerGuards = preserve
+                ? BuildOwnerGuards(batch, ownerField, owners)
+                : batch.OwnerGuards
         };
+    }
+
+    /// <summary>
+    /// One guard per existing row the non-administrator was authorized to change.
+    /// The expected text matches <see cref="RejectsOwnerReassignment"/>: a null owner is empty.
+    /// </summary>
+    private static ImmutableArray<OwnerEditGuard> BuildOwnerGuards(
+        FeatureEditBatch batch,
+        string ownerField,
+        IReadOnlyDictionary<long, OwnerFieldSnapshot> owners)
+    {
+        var ids = new List<long>();
+        CollectStoredIds(batch, ids);
+        var builder = ImmutableArray.CreateBuilder<OwnerEditGuard>(ids.Count);
+        var seen = new HashSet<long>();
+        foreach (var id in ids)
+        {
+            if (!seen.Add(id) || !owners.TryGetValue(id, out var snapshot) || !snapshot.Visible)
+            {
+                continue;
+            }
+
+            builder.Add(new OwnerEditGuard(
+                id,
+                ownerField,
+                Convert.ToString(snapshot.Owner, CultureInfo.InvariantCulture) ?? string.Empty));
+        }
+
+        return builder.ToImmutable();
     }
 
     private static FeatureEditOperation ApplyOperation(
