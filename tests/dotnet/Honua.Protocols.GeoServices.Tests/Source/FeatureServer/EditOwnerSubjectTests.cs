@@ -318,7 +318,7 @@ public sealed class EditOwnerSubjectTests
         context.DeleteResults![1].Should().NotBeNull();
         context.DeleteResults[1]!.Error!.Code.Should().Be(GeoServicesEditErrorCodes.NotPermitted);
         await reader.Received().QueryAsync(7,
-            Arg.Is<FeatureQuery>(query => query.VersionContext == branch && query.OutFields.Contains("owner")),
+            Arg.Is<FeatureQuery>(query => query.VersionContext == branch && query.OutFields != null && query.OutFields.Contains("owner")),
             Arg.Any<CancellationToken>());
         currentOwner = "subject-b";
 
@@ -344,7 +344,7 @@ public sealed class EditOwnerSubjectTests
                         .Add("name", "before").Add("owner", currentOwner())),
                     Feature.Create(8, null, ImmutableDictionary<string, object?>.Empty
                         .Add("name", "before").Add("owner", "subject-b")),
-                }.Where(feature => query.ObjectIds.IsDefaultOrEmpty || query.ObjectIds.Contains(feature.Id))
+                }.Where(feature => query.ObjectIds == null || query.ObjectIds.Value.IsDefaultOrEmpty || query.ObjectIds.Value.Contains(feature.Id))
                     .ToImmutableArray();
                 return Task.FromResult(QueryResult<Feature>.Create(features.Length, features));
             });
