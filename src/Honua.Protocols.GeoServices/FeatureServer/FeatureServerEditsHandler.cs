@@ -387,7 +387,8 @@ internal sealed class FeatureServerEditsHandler(
 
             if (editCommittedRows && ambientTransaction is null)
             {
-                await RunPostCommitSideEffectsAsync(serviceId, layerId, resource, editContext).ConfigureAwait(false);
+                await RunPostCommitSideEffectsAsync(
+                    serviceId, layerId, resource, editContext, cancellationToken).ConfigureAwait(false);
             }
             else if (editCommittedRows)
             {
@@ -2565,7 +2566,9 @@ internal sealed class FeatureServerEditsHandler(
     /// post-commit hooks that were deferred while the batches were only staged.
     /// </summary>
     /// <returns><see langword="false"/> when the commit acknowledgement was lost. Reservations
-    /// stay held so a retry cannot apply the same rows again.</returns>
+    /// stay held so a retry cannot apply the same rows again. A confirmed commit is durable
+    /// before any receipt or hook await: a failure there keeps the reservation and still
+    /// returns <see langword="true"/>.</returns>
     internal async Task<bool> CommitAmbientEditTransactionAsync(
         AmbientFeatureEditTransaction ambient,
         CancellationToken cancellationToken)
@@ -2577,25 +2580,59 @@ internal sealed class FeatureServerEditsHandler(
             return false;
         }
 
+        // The caller's finally rolls this transaction back and releases reservations while
+        // PreserveReservations is false. Set it before the receipt and hook awaits so a throw
+        // cannot turn a durable calculate into a second apply on retry (#6359).
+        ambient.PreserveReservations = true;
+
         var recordedTokens = new HashSet<string>(ambient.Recorded.Count, StringComparer.Ordinal);
+        var failedReceiptTokens = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (scope, token, response) in ambient.Recorded)
         {
-            recordedTokens.Add(token);
-            await _idempotencyStore.SetAsync(scope, token, response, CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await _idempotencyStore.SetAsync(scope, token, response, CancellationToken.None).ConfigureAwait(false);
+                recordedTokens.Add(token);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // The rows are already durable. Leave this reservation held so the retry
+                // conflicts instead of applying the same calculate again.
+                failedReceiptTokens.Add(token);
+                FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(
+                    _logger, scope.ServiceId, scope.LayerId, ex);
+            }
         }
 
         foreach (var (scope, token) in ambient.HeldReservations)
         {
-            if (!recordedTokens.Contains(token))
+            if (recordedTokens.Contains(token) || failedReceiptTokens.Contains(token))
+            {
+                continue;
+            }
+
+            try
             {
                 await _idempotencyStore.ReleaseAsync(scope, token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(
+                    _logger, scope.ServiceId, scope.LayerId, ex);
             }
         }
 
         ambient.HeldReservations.Clear();
         foreach (var action in ambient.AfterCommit)
         {
-            await action(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await action(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                FeatureServerLog.CalculatePostCommitHookFailed(_logger, ex);
+            }
         }
 
         ambient.AfterCommit.Clear();
