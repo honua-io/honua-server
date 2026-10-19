@@ -40,6 +40,7 @@ internal sealed partial class PostgresObservationStore
     // Translation precedes connection acquisition. Only provider-authored relation identifiers
     // use this reserved token; values remain parameters and are never rewritten.
     private const string DeferredSensingSchema = PostgresSensorThingsSchema.DeferredSchemaToken;
+    private const string DeferredBaseSchema = PostgresSensorThingsSchema.DeferredBaseSchemaToken;
 
     private SensingTables PlanningSensingTables
     {
@@ -48,9 +49,9 @@ internal sealed partial class PostgresObservationStore
             var configured = _schemaContext?.CurrentSchema ?? _configuredSchema;
             var schema = string.IsNullOrWhiteSpace(configured) ? "honua" : configured;
             _ = SchemaSearchPath.ValidateAndQuote(schema);
-            if (schema == DeferredSensingSchema)
+            if (schema is DeferredSensingSchema or DeferredBaseSchema)
                 throw new InvalidOperationException("The configured schema collides with the reserved sensing query identifier.");
-            return new(schema, DeferredSensingSchema);
+            return new(DeferredBaseSchema, DeferredSensingSchema);
         }
     }
 
@@ -78,8 +79,10 @@ internal sealed partial class PostgresObservationStore
             }
             if (!closed) throw new InvalidOperationException("The authored sensing SQL has an unterminated quoted token.");
             var token = sql[start..index];
-            if (quote == '"' && token == "\"" + DeferredSensingSchema + "\"" && index < sql.Length && sql[index] == '.')
-                bound.Append(SchemaSearchPath.ValidateAndQuote(tables.SensingSchema));
+            if (quote == '"' && index < sql.Length && sql[index] == '.' &&
+                (token == "\"" + DeferredSensingSchema + "\"" || token == "\"" + DeferredBaseSchema + "\""))
+                bound.Append(SchemaSearchPath.ValidateAndQuote(token == "\"" + DeferredSensingSchema + "\""
+                    ? tables.SensingSchema : tables.BaseSchema));
             else
                 bound.Append(token);
         }
@@ -158,7 +161,7 @@ internal sealed partial class PostgresObservationStore
         if (query.ParentId is { } parent) command.Parameters.AddWithValue("parent", parent);
     }
 
-    private string EntityJsonSql(SensingTables tables, string set, string alias = "d", bool includeDerivedIntervals = true)
+    private static string EntityJsonSql(SensingTables tables, string set, string alias = "d", bool includeDerivedIntervals = true)
     {
         if (set != "Datastreams" || !includeDerivedIntervals) return $"to_jsonb({alias})";
         var geometry = GeoJsonGeometrySql("f.feature", "f.encoding_type");
@@ -168,10 +171,10 @@ internal sealed partial class PostgresObservationStore
                 'computed_phenomenon_end', max(COALESCE(o.phenomenon_time_end,o.phenomenon_time)),
                 'computed_result_start', min(o.result_time), 'computed_result_end', max(o.result_time),
                 'computed_observed_area', ST_AsGeoJSON(ST_MakeEnvelope(ST_XMin(max(extent.bounds::text)::box2d),ST_YMin(max(extent.bounds::text)::box2d),ST_XMax(max(extent.bounds::text)::box2d),ST_YMax(max(extent.bounds::text)::box2d),4326))::jsonb)
-                FROM (SELECT ST_Extent({geometry}) AS bounds FROM {_observationTable} geometry_observation
+                FROM (SELECT ST_Extent({geometry}) AS bounds FROM {tables.EntityTable("Observations")} geometry_observation
                     LEFT JOIN {tables.EntityTable("FeaturesOfInterest")} f ON f.id=geometry_observation.feature_of_interest_reference_id
                     WHERE geometry_observation.datastream_reference_id={alias}.id) extent
-                LEFT JOIN {_observationTable} o ON o.datastream_reference_id={alias}.id
+                LEFT JOIN {tables.EntityTable("Observations")} o ON o.datastream_reference_id={alias}.id
                 )
             """;
     }
@@ -241,7 +244,8 @@ internal sealed partial class PostgresObservationStore
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand($"SELECT count(*) FROM {_observationTable} WHERE feature_of_interest_reference_id IS NULL OR datastream_reference_id IS NULL", lease);
+        var tables = await ResolveSensingTablesAsync(lease.Connection, null, cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand($"SELECT count(*) FROM {tables.EntityTable("Observations")} WHERE feature_of_interest_reference_id IS NULL OR datastream_reference_id IS NULL", lease);
         return (long)(await ExecuteCatalogScalarAsync(command, cancellationToken).ConfigureAwait(false) ?? 0L);
     }
 
@@ -256,7 +260,7 @@ internal sealed partial class PostgresObservationStore
         await using var transaction = await lease.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var tables = await ResolveSensingTablesAsync(lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
         if (entitySet != "Observations" || bodies.Any(ContainsLocationMutation))
-            await LockCatalogRelationshipsAsync(lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
+            await LockCatalogRelationshipsAsync(tables, lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
         var ids = new List<long>(bodies.Count);
         foreach (var body in bodies) ids.Add(await InsertEntityAsync(tables, lease.Connection, transaction, entitySet, ParseBody(body), 0, cancellationToken).ConfigureAwait(false));
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
@@ -270,13 +274,13 @@ internal sealed partial class PostgresObservationStore
         _ => false
     };
 
-    private async Task LockCatalogRelationshipsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CancellationToken ct)
+    private static async Task LockCatalogRelationshipsAsync(SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, CancellationToken ct)
     {
         // Take this schema-scoped lock before entity row locks. Catalog binding and
         // encoding mutations then see each other's committed association state;
         // direct Observation ingestion retains its independent concurrency.
         await using var command = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended(@identity,0))", connection, transaction);
-        command.Parameters.AddWithValue("identity", (_schemaContext?.CurrentSchema ?? _configuredSchema ?? "public") + ":honua:sensing:catalog-relationships");
+        command.Parameters.AddWithValue("identity", tables.BaseSchema + ":honua:sensing:catalog-relationships");
         await ExecuteCatalogNonQueryAsync(command, ct).ConfigureAwait(false);
     }
 
@@ -512,7 +516,7 @@ internal sealed partial class PostgresObservationStore
 
     private async Task<long?> InferFeatureAsync(SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, long datastream, CancellationToken ct)
     {
-        await using var command = new NpgsqlCommand($"SELECT l.id, l.name, l.description, l.encoding_type, l.location::text FROM {tables.EntityTable("Locations")} l JOIN {tables.AssociationTable("sta_thing_location")} tl ON tl.location_id=l.id JOIN {_datastreamTable} ds ON ds.thing_id=tl.thing_id WHERE ds.id=@ds AND lower(l.encoding_type) IN ('application/vnd.geo+json','application/geo+json') AND NOT ST_IsEmpty({GeoJsonGeometrySql("l.location", "l.encoding_type")}) ORDER BY l.id LIMIT 2 FOR UPDATE OF l", connection, transaction);
+        await using var command = new NpgsqlCommand($"SELECT l.id, l.name, l.description, l.encoding_type, l.location::text FROM {tables.EntityTable("Locations")} l JOIN {tables.AssociationTable("sta_thing_location")} tl ON tl.location_id=l.id JOIN {tables.EntityTable("Datastreams")} ds ON ds.thing_id=tl.thing_id WHERE ds.id=@ds AND lower(l.encoding_type) IN ('application/vnd.geo+json','application/geo+json') AND NOT ST_IsEmpty({GeoJsonGeometrySql("l.location", "l.encoding_type")}) ORDER BY l.id LIMIT 2 FOR UPDATE OF l", connection, transaction);
         command.Parameters.AddWithValue("ds", datastream);
         JsonObject? body = null;
         long location = 0;
@@ -538,9 +542,9 @@ internal sealed partial class PostgresObservationStore
         return feature;
     }
 
-    private async Task ValidateObservationTypeAsync(SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, JsonObject body, long datastream, CancellationToken ct)
+    private static async Task ValidateObservationTypeAsync(SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, JsonObject body, long datastream, CancellationToken ct)
     {
-        await using var command = new NpgsqlCommand($"SELECT observation_type FROM {_datastreamTable} WHERE id=@id FOR SHARE", connection, transaction);
+        await using var command = new NpgsqlCommand($"SELECT observation_type FROM {tables.EntityTable("Datastreams")} WHERE id=@id FOR SHARE", connection, transaction);
         command.Parameters.AddWithValue("id", datastream);
         var type = (string?)await ExecuteCatalogScalarAsync(command, ct).ConfigureAwait(false);
         ValidateObservationResult(body, type);
@@ -610,7 +614,7 @@ internal sealed partial class PostgresObservationStore
                     var column = ForeignKeys(relation.Value.Target).Single(f => f.Navigation == inverse).Column;
                     if (relation.Value.Target == "Observations" && inverse == "Datastream")
                     {
-                        await using var resultCommand = new NpgsqlCommand($"SELECT result_json::text FROM {_observationTable} WHERE id=@related FOR UPDATE", connection, transaction);
+                        await using var resultCommand = new NpgsqlCommand($"SELECT result_json::text FROM {tables.EntityTable("Observations")} WHERE id=@related FOR UPDATE", connection, transaction);
                         resultCommand.Parameters.AddWithValue("related", related);
                         var result = (string?)await ExecuteCatalogScalarAsync(resultCommand, ct).ConfigureAwait(false);
                         await ValidateObservationTypeAsync(tables, connection, transaction, new JsonObject { ["result"] = JsonNode.Parse(result ?? "null") }, id, ct).ConfigureAwait(false);
@@ -646,9 +650,9 @@ internal sealed partial class PostgresObservationStore
         await ExecuteCatalogNonQueryAsync(links, ct).ConfigureAwait(false);
     }
 
-    private async Task LockThingAsync(SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, long thing, CancellationToken ct)
+    private static async Task LockThingAsync(SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, long thing, CancellationToken ct)
     {
-        await using var command = new NpgsqlCommand($"SELECT id FROM {_thingTable} WHERE id=@thing FOR UPDATE", connection, transaction);
+        await using var command = new NpgsqlCommand($"SELECT id FROM {tables.EntityTable("Things")} WHERE id=@thing FOR UPDATE", connection, transaction);
         command.Parameters.AddWithValue("thing", thing);
         await ExecuteCatalogScalarAsync(command, ct).ConfigureAwait(false);
     }
@@ -661,7 +665,7 @@ internal sealed partial class PostgresObservationStore
             throw new SensorThingsValidationException("A Thing's current Locations must have distinct encodingTypes.");
     }
 
-    private async Task SynchronizeCurrentLocationAsync(SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, long history, CancellationToken ct)
+    private static async Task SynchronizeCurrentLocationAsync(SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, long history, CancellationToken ct)
     {
         await using var current = new NpgsqlCommand($"SELECT h.thing_id FROM {tables.EntityTable("HistoricalLocations")} h WHERE h.id=@history AND NOT EXISTS (SELECT 1 FROM {tables.EntityTable("HistoricalLocations")} newer WHERE newer.thing_id=h.thing_id AND newer.id<>h.id AND newer.time>=h.time)", connection, transaction);
         current.Parameters.AddWithValue("history", history);
@@ -688,7 +692,7 @@ internal sealed partial class PostgresObservationStore
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await lease.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var tables = await ResolveSensingTablesAsync(lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
-        await LockCatalogRelationshipsAsync(lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
+        await LockCatalogRelationshipsAsync(tables, lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
         // sta_observation is partitioned, so its primary key is (id, phenomenon_time).
         // An id that matches more than one row must not be patched.
         DateTimeOffset? observationPhenomenonTime = null;
@@ -777,7 +781,7 @@ internal sealed partial class PostgresObservationStore
             var updatedPhenomenonTime = patch["phenomenonTime"] is { } updatedTime
                 ? (DateTimeOffset)ConvertValue(new("phenomenonTime", "phenomenon_time", NpgsqlDbType.TimestampTz), updatedTime)
                 : observationPhenomenonTime;
-            await using var check = new NpgsqlCommand($"SELECT result_json::text,datastream_id FROM {_observationTable} WHERE id=@id{ObservationTimeClause(updatedPhenomenonTime)}", lease.Connection, transaction);
+            await using var check = new NpgsqlCommand($"SELECT result_json::text,datastream_id FROM {tables.EntityTable("Observations")} WHERE id=@id{ObservationTimeClause(updatedPhenomenonTime)}", lease.Connection, transaction);
             check.Parameters.AddWithValue("id", id);
             BindObservationTime(check, updatedPhenomenonTime);
             JsonObject? observation = null; long datastream = 0;
@@ -790,7 +794,7 @@ internal sealed partial class PostgresObservationStore
         }
         if (entitySet == "Datastreams" && patch.TryGetPropertyValue("observationType", out var observationType))
         {
-            await using var results = new NpgsqlCommand($"SELECT result_json::text FROM {_observationTable} WHERE datastream_reference_id=@id", lease.Connection, transaction);
+            await using var results = new NpgsqlCommand($"SELECT result_json::text FROM {tables.EntityTable("Observations")} WHERE datastream_reference_id=@id", lease.Connection, transaction);
             results.Parameters.AddWithValue("id", id);
             await using var reader = await ExecuteCatalogReaderAsync(results, cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -800,7 +804,7 @@ internal sealed partial class PostgresObservationStore
         if (entitySet == "Locations")
         {
             var things = new List<long>();
-            await using (var linked = new NpgsqlCommand($"SELECT t.id FROM {_thingTable} t JOIN {tables.AssociationTable("sta_thing_location")} tl ON tl.thing_id=t.id WHERE tl.location_id=@location ORDER BY t.id FOR UPDATE OF t", lease.Connection, transaction))
+            await using (var linked = new NpgsqlCommand($"SELECT t.id FROM {tables.EntityTable("Things")} t JOIN {tables.AssociationTable("sta_thing_location")} tl ON tl.thing_id=t.id WHERE tl.location_id=@location ORDER BY t.id FOR UPDATE OF t", lease.Connection, transaction))
             {
                 linked.Parameters.AddWithValue("location", id);
                 await using var reader = await ExecuteCatalogReaderAsync(linked, cancellationToken).ConfigureAwait(false);
@@ -830,7 +834,7 @@ internal sealed partial class PostgresObservationStore
         var tables = await ResolveSensingTablesAsync(lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
         try
         {
-            if (entitySet != "Observations") await LockCatalogRelationshipsAsync(lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
+            if (entitySet != "Observations") await LockCatalogRelationshipsAsync(tables, lease.Connection, transaction, cancellationToken).ConfigureAwait(false);
             if (entitySet == "Locations")
             {
                 await using var history = new NpgsqlCommand($"DELETE FROM {tables.EntityTable("HistoricalLocations")} WHERE id IN (SELECT historical_location_id FROM {tables.AssociationTable("sta_historical_location_location")} WHERE location_id=@id)", lease.Connection, transaction);

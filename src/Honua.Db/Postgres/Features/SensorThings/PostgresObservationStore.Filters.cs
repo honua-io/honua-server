@@ -18,7 +18,7 @@ internal sealed partial class PostgresObservationStore
     public SqlFragment TranslateFilter(string entitySet, FilterExpression expression)
     {
         var context = FilterTranslationContext.FromColumns([], "id", "location", 4326, GeometryType.GeometryCollection, entitySet, true);
-        return new SensingFilterVisitor(this, PlanningSensingTables).Translate(expression, context);
+        return new SensingFilterVisitor(PlanningSensingTables).Translate(expression, context);
     }
 
     public SqlFragment TranslateOrderExpression(string entitySet, FilterExpression expression)
@@ -26,12 +26,12 @@ internal sealed partial class PostgresObservationStore
         if (expression is PropertyReference { PropertyName: "unitOfMeasurement" or "properties" or "parameters" or "location" or "feature" or "observedArea" or "resultQuality" })
             throw new SensorThingsValidationException("$orderby requires a primitive property or expression.");
         var context = FilterTranslationContext.FromColumns([], "id", "location", 4326, GeometryType.GeometryCollection, entitySet, true);
-        return new SensingFilterVisitor(this, PlanningSensingTables, expression is PropertyReference).Translate(expression, context);
+        return new SensingFilterVisitor(PlanningSensingTables, expression is PropertyReference).Translate(expression, context);
     }
 
     // The shared Postgres visitor owns the full arithmetic/function/temporal/spatial
     // translation. This adapter only resolves sensing properties and associations.
-    private sealed class SensingFilterVisitor(PostgresObservationStore store, SensingTables tables, bool rawJsonProperties = false) : PostgresSqlFilterTranslator
+    private sealed class SensingFilterVisitor(SensingTables tables, bool rawJsonProperties = false) : PostgresSqlFilterTranslator
     {
         private string _alias = "d";
         private int _scopeIndex;
@@ -71,7 +71,7 @@ internal sealed partial class PostgresObservationStore
                 return $"(SELECT (to_jsonb(min({start})) #>> '{{}}') || '/' || (to_jsonb(max({end})) #>> '{{}}') FROM {tables.EntityTable("Observations")} o WHERE o.datastream_reference_id={alias}.id)";
             }
             if (set == "Datastreams" && name == "observedArea")
-                return GeoJsonGeometrySql($"(({store.EntityJsonSql(tables, set, alias)}) -> 'computed_observed_area')");
+                return GeoJsonGeometrySql($"(({EntityJsonSql(tables, set, alias)}) -> 'computed_observed_area')");
             var column = Columns(set).FirstOrDefault(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
             if (column is not null)
             {
@@ -91,7 +91,7 @@ internal sealed partial class PostgresObservationStore
                 var parts = jsonParts;
                 if (parts.Any(p => p.Length == 0)) throw new SensorThingsValidationException("Invalid JSON property path.");
                 var root = set == "Datastreams" && jsonColumn.Name == "observedArea"
-                    ? $"(({store.EntityJsonSql(tables, set, alias)}) -> 'computed_observed_area')"
+                    ? $"(({EntityJsonSql(tables, set, alias)}) -> 'computed_observed_area')"
                     : alias + "." + jsonColumn.Column;
                 var json = root + " #> ARRAY[" + string.Join(",", parts.Skip(1).Select(p => "'" + p.Replace("'", "''", StringComparison.Ordinal) + "'")) + "]";
                 return rawResult || rawJsonProperties ? $"NULLIF({json},'null'::jsonb)" : JsonScalar(json, null);

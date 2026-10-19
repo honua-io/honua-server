@@ -15,6 +15,7 @@ namespace Honua.Db.Postgres.Features.SensorThings;
 /// </summary>
 internal static class PostgresSensorThingsSchema
 {
+    internal const string DeferredBaseSchemaToken = "__honua_sensing_base__";
     internal const string DeferredSchemaToken = "__honua_sensing_physical__";
     internal const string SensingMigration = "Honua.Server.Migrations.127_CompleteSensorThingsSensing.sql";
     internal static readonly string[] SensingObjects =
@@ -46,7 +47,7 @@ internal static class PostgresSensorThingsSchema
     {
         var configured = string.IsNullOrWhiteSpace(configuredSchema) ? "honua" : configuredSchema;
         _ = SchemaSearchPath.ValidateAndQuote(configured);
-        if (configured == DeferredSchemaToken) throw Failure("The configured schema collides with the reserved sensing query identifier.");
+        if (configured is DeferredSchemaToken or DeferredBaseSchemaToken) throw Failure("The configured schema collides with the reserved sensing query identifier.");
         var objects = new Dictionary<(string Schema, string Name), (uint Oid, char Kind)>();
         var functions = new Dictionary<(string Schema, string Name), uint>();
         await using (var command = connection.CreateCommand())

@@ -61,8 +61,8 @@ public sealed partial class CoreSchemaDivergenceGuardTests
         navigation.Sql.Should().Contain("\"__honua_sensing_physical__\".");
         var filtered = await store.QueryEntitiesAsync("Things", new SensorThingsEntityQuery(navigation.Sql, navigation.Parameters,
             "d.id", 0, 100, Count: true), CancellationToken.None);
-        filtered.Entities.Should().ContainSingle(entity => entity.GetProperty("@iot.id").GetInt64() == thing);
-        const string literalToken = "\"__honua_sensing_physical__\".sta_location";
+        filtered.Entities.Should().ContainSingle().Which.GetProperty("@iot.id").GetInt64().Should().Be(thing);
+        const string literalToken = "\"__honua_sensing_physical__\".sta_location 'quoted' \"__honua_sensing_base__\".sta_thing";
         (await store.PatchEntityAsync("Locations", location,
             JsonSerializer.SerializeToElement(new { description = literalToken }), CancellationToken.None)).Should().BeTrue();
         var literalFilter = store.TranslateFilter("Locations", new BinaryExpression(new PropertyReference("description"),
@@ -70,7 +70,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests
         literalFilter.Parameters.Should().ContainSingle().Which.Should().Be(literalToken);
         var literalRows = await store.QueryEntitiesAsync("Locations", new SensorThingsEntityQuery(literalFilter.Sql,
             literalFilter.Parameters, "d.id", 0, 100), CancellationToken.None);
-        literalRows.Entities.Should().ContainSingle(entity => entity.GetProperty("@iot.id").GetInt64() == location);
+        literalRows.Entities.Should().ContainSingle().Which.GetProperty("@iot.id").GetInt64().Should().Be(location);
         literalFilter.Parameters.Should().ContainSingle().Which.Should().Be(literalToken);
         (await store.PatchEntityAsync("Locations", location, JsonSerializer.SerializeToElement(new
         {
@@ -80,18 +80,25 @@ public sealed partial class CoreSchemaDivergenceGuardTests
             BinaryOperator.Equal, new Literal(5, LiteralType.Number)));
         var jsonKeyRows = await store.QueryEntitiesAsync("Locations", new SensorThingsEntityQuery(jsonKeyFilter.Sql,
             jsonKeyFilter.Parameters, "d.id", 0, 100), CancellationToken.None);
-        jsonKeyRows.Entities.Should().ContainSingle(entity => entity.GetProperty("@iot.id").GetInt64() == location);
+        jsonKeyRows.Entities.Should().ContainSingle().Which.GetProperty("@iot.id").GetInt64().Should().Be(location);
         var history = await store.QueryEntitiesAsync("HistoricalLocations", new SensorThingsEntityQuery(null, [], "d.id", 0, 100,
             "Things", thing, "HistoricalLocations", Count: true), CancellationToken.None);
         history.Count.Should().BeGreaterThan(0);
-        var datastream = await store.CreateEntityAsync("Datastreams", SensingJson($$"""
-            {"name":"stream","description":"test","unitOfMeasurement":{"name":"u","symbol":"u","definition":"urn:u"},
-             "Thing":{"@iot.id":{{thing}}},"Sensor":{"name":"sensor","description":"test","encodingType":"text/plain","metadata":"test"},
-             "ObservedProperty":{"name":"property","description":"test","definition":"urn:property"}}
-            """), CancellationToken.None);
-        var observation = await store.CreateEntityAsync("Observations", SensingJson($$"""
-            {"result":7,"phenomenonTime":"2026-10-19T00:00:00Z","Datastream":{"@iot.id":{{datastream}}}}
-            """), CancellationToken.None);
+        var datastream = await store.CreateEntityAsync("Datastreams", JsonSerializer.SerializeToElement(new
+        {
+            name = "stream",
+            description = "test",
+            unitOfMeasurement = new { name = "u", symbol = "u", definition = "urn:u" },
+            Thing = new Dictionary<string, long> { ["@iot.id"] = thing },
+            Sensor = new { name = "sensor", description = "test", encodingType = "text/plain", metadata = "test" },
+            ObservedProperty = new { name = "property", description = "test", definition = "urn:property" }
+        }), CancellationToken.None);
+        var observation = await store.CreateEntityAsync("Observations", JsonSerializer.SerializeToElement(new
+        {
+            result = 7,
+            phenomenonTime = "2026-10-19T00:00:00Z",
+            Datastream = new Dictionary<string, long> { ["@iot.id"] = datastream }
+        }), CancellationToken.None);
         (await store.PatchEntityAsync("Observations", observation, SensingJson("{\"result\":9}"), CancellationToken.None)).Should().BeTrue();
         await using (var connection = new NpgsqlConnection(connectionString))
         {
@@ -105,7 +112,8 @@ public sealed partial class CoreSchemaDivergenceGuardTests
         areaOrder.Sql.Should().Contain("\"__honua_sensing_physical__\".");
         var streamed = await store.QueryEntitiesAsync("Datastreams", new SensorThingsEntityQuery(null, areaOrder.Parameters,
             areaOrder.Sql + ",d.id", 0, 100), CancellationToken.None);
-        streamed.Entities.Should().Contain(entity => entity.GetProperty("@iot.id").GetInt64() == datastream);
+        var derived = streamed.Entities.Single(entity => entity.GetProperty("@iot.id").GetInt64() == datastream);
+        derived.GetProperty("observedArea").GetProperty("type").GetString().Should().Be("Point");
         (await store.DeleteEntityAsync("Observations", observation, CancellationToken.None)).Should().BeTrue();
         (await store.DeleteEntityAsync("Locations", location, CancellationToken.None)).Should().BeTrue();
         (await store.GetEntityAsync("Locations", location, CancellationToken.None)).Should().BeNull();
@@ -186,11 +194,13 @@ public sealed partial class CoreSchemaDivergenceGuardTests
         (await CaptureSensingAuthorityStateAsync(connectionString)).Should().Be(before);
     }
 
-    [Fact]
-    public void SensingAuthority_ReservedConfiguredIdentifier_CannotBecomeAPlanningOrRuntimeSchema()
+    [Theory]
+    [InlineData(PostgresSensorThingsSchema.DeferredSchemaToken)]
+    [InlineData(PostgresSensorThingsSchema.DeferredBaseSchemaToken)]
+    public void SensingAuthority_ReservedConfiguredIdentifier_CannotBecomeAPlanningOrRuntimeSchema(string schema)
     {
         var store = new PostgresObservationStore(new TestConnectionProvider("not opened"),
-            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest), PostgresSensorThingsSchema.DeferredSchemaToken);
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest), schema);
         var translate = () => store.TranslateFilter("Locations", new BinaryExpression(new PropertyReference("name"),
             BinaryOperator.Equal, new Literal("x", LiteralType.Text)));
         translate.Should().Throw<InvalidOperationException>();
@@ -246,6 +256,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests
         else await adopt.Should().NotThrowAsync();
         (await CaptureSensingAuthorityStateAsync(connectionString)).Should().Be(before);
         await guard.Awaiting(instance => instance.VerifyConsistencyAsync(connection)).Should().ThrowAsync<DatabaseSchemaFloorException>();
+        (await CaptureSensingAuthorityStateAsync(connectionString)).Should().Be(before);
     }
 
     private static PostgresCoreSchemaGuard CreateSensingGuard(string schema) => new(ServerCoreSchemaMigrations.Manifest,
