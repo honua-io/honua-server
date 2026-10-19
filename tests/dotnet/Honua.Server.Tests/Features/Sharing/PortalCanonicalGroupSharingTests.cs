@@ -9,14 +9,18 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Portal.Sharing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 
 namespace Honua.Server.Tests.Features.Sharing;
@@ -29,17 +33,60 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
 {
     private const string Referer = "https://app.example.com";
     private const string ItemId = "svc-test-feature";
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+        .ConfigureWebHost(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
+        });
+
+    public PortalCanonicalGroupSharingTests()
     {
-        builder.UseEnvironment("Test");
-        builder.UseSetting("HONUA_DEV_AUTH", "false");
-        builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-        builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
-    });
+        _fixture.ConfigureServices(services =>
+        {
+            // The fixture owns this schema through its lifetime, including restart.
+            // A shared honua table would make constant ItemId state order-dependent.
+            var schema = _fixture.CurrentSchema
+                ?? throw new InvalidOperationException("Portal fixture schema is missing.");
+            services.RemoveAll<IPortalGroupStore>();
+            services.RemoveAll<IPortalItemSharingStore>();
+            services.RemoveAll<IPortalAudienceSnapshotProvider>();
+            services.AddSingleton<IPortalGroupStore>(sp => new PostgresPortalGroupStore(
+                sp.GetRequiredService<NpgsqlDataSource>(), TimeProvider.System, schema));
+            services.AddSingleton<IPortalItemSharingStore>(sp => new PostgresPortalItemSharingStore(
+                sp.GetRequiredService<NpgsqlDataSource>(), sp.GetRequiredService<IHttpContextAccessor>(), schema));
+            services.AddSingleton<IPortalAudienceSnapshotProvider>(sp => new PostgresPortalAudienceSnapshotProvider(
+                sp.GetRequiredService<NpgsqlDataSource>(), schema));
+        });
+    }
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        await ProvisionPortalTablesAsync();
+        ConfigureGraph();
+    }
+
+    private async Task ProvisionPortalTablesAsync()
+    {
+        var schema = _fixture.CurrentSchema
+            ?? throw new InvalidOperationException("Portal fixture schema is missing.");
+        await using var stream = typeof(PostgresPortalGroupStore).Assembly.GetManifestResourceStream(
+            "Honua.Server.Migrations.133_CreatePortalSharing.sql")
+            ?? throw new InvalidOperationException("Portal sharing migration resource is missing.");
+        using var reader = new StreamReader(stream);
+        using var builder = new NpgsqlCommandBuilder();
+        var migration = (await reader.ReadToEndAsync())
+            .Replace("$HonuaSchema$", builder.QuoteIdentifier(schema), StringComparison.Ordinal);
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = new NpgsqlCommand(migration, connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private void ConfigureGraph()
+    {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var graph = snapshot.Graph with
         {
@@ -116,6 +163,81 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
         }
         await AssertQueryDeniedAsync(client, member);
         await AssertGroupContentAbsentAsync(client, member, group, nonmember: false);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/content/items/{itemId}")]
+    [Endpoint("GET /sharing/rest/search")]
+    [Endpoint("GET /sharing/rest/content/groups/{groupId}")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task GroupShare_AfterHostRestart_ReadsPersistedAudience_AndNextRequestSeesRevocation()
+    {
+        string group;
+        var oldStore = _fixture.Services.GetRequiredService<IPortalGroupStore>();
+        oldStore.Should().BeOfType<PostgresPortalGroupStore>();
+        using (var firstHost = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("Referer", Referer)))
+        {
+            var owner = await IssueAsync("alice", "publisher");
+            var member = await IssueAsync("bob", "org_user");
+            group = await CreateGroupAsync(firstHost, owner);
+            using var add = await PostAsync(firstHost,
+                $"/sharing/rest/community/groups/{group}/addUsers?token={owner}", ("users", "bob"));
+            (await DocumentAsync(add)).GetProperty("members").EnumerateArray()
+                .Select(value => value.GetString()).Should().Contain("bob");
+            using var share = await PostAsync(firstHost,
+                $"/sharing/rest/content/items/{ItemId}/share?token={owner}", ("groups", group));
+            (await DocumentAsync(share)).GetProperty("notSharedWith").GetArrayLength().Should().Be(0);
+            await AssertQueryMatchesSqlAsync(firstHost, member);
+        }
+
+        await _fixture.RestartHostAsync();
+        _fixture.Services.GetRequiredService<IPortalGroupStore>().Should().NotBeSameAs(oldStore);
+        ConfigureGraph();
+        using var secondHost = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("Referer", Referer));
+        var restartedOwner = await IssueAsync("alice", "publisher");
+        var restartedMember = await IssueAsync("bob", "org_user");
+        var outsider = await IssueAsync("carol", "org_user");
+
+        // Witness the durable records independently of either host's API response.
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema))
+        {
+            using var builder = new NpgsqlCommandBuilder();
+            var schema = builder.QuoteIdentifier(_fixture.CurrentSchema!);
+            await using var groups = new NpgsqlCommand(
+                $"SELECT members FROM {schema}.portal_community_groups WHERE group_id = @group", connection);
+            groups.Parameters.AddWithValue("group", group);
+            ((string[])(await groups.ExecuteScalarAsync())!).Should().Contain("bob");
+            await using var shares = new NpgsqlCommand(
+                $"SELECT group_ids FROM {schema}.portal_item_shares WHERE tenant_key = '' AND item_id = @item", connection);
+            shares.Parameters.AddWithValue("item", ItemId);
+            ((string[])(await shares.ExecuteScalarAsync())!).Should().Contain(group);
+        }
+
+        using (var groupResponse = await secondHost.GetAsync(
+            $"/sharing/rest/community/groups/{group}?token={restartedMember}&f=json"))
+        {
+            (await DocumentAsync(groupResponse)).GetProperty("members").EnumerateArray()
+                .Select(value => value.GetString()).Should().Contain("bob");
+        }
+        await AssertItemVisibleAsync(secondHost, restartedMember, true);
+        await AssertSearchVisibleAsync(secondHost, restartedMember, true);
+        await AssertGroupContentVisibleAsync(secondHost, restartedMember, group);
+        await AssertQueryMatchesSqlAsync(secondHost, restartedMember);
+        await AssertItemVisibleAsync(secondHost, outsider, false);
+        await AssertSearchVisibleAsync(secondHost, outsider, false);
+        await AssertQueryDeniedAsync(secondHost, outsider);
+
+        using (var remove = await PostAsync(secondHost,
+            $"/sharing/rest/community/groups/{group}/removeUsers?token={restartedOwner}", ("users", "bob")))
+        {
+            (await DocumentAsync(remove)).GetProperty("members").EnumerateArray()
+                .Select(value => value.GetString()).Should().NotContain("bob");
+        }
+        await AssertItemVisibleAsync(secondHost, restartedMember, false);
+        await AssertSearchVisibleAsync(secondHost, restartedMember, false);
+        await AssertGroupContentAbsentAsync(secondHost, restartedMember, group, nonmember: true);
+        await AssertQueryDeniedAsync(secondHost, restartedMember);
     }
 
     [IntegrationTest]
@@ -199,6 +321,33 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
         {
             (await DocumentAsync(response)).GetProperty("items").GetArrayLength().Should().Be(0);
         }
+    }
+
+    private static async Task AssertGroupContentVisibleAsync(HttpClient client, string token, string group)
+    {
+        using var response = await client.GetAsync($"/sharing/rest/content/groups/{group}?token={token}&f=json");
+        (await DocumentAsync(response)).GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString()).Should().Contain(ItemId);
+    }
+
+    private static async Task AssertItemVisibleAsync(HttpClient client, string token, bool visible)
+    {
+        using var response = await client.GetAsync($"/sharing/rest/content/items/{ItemId}?token={token}&f=json");
+        if (visible)
+        {
+            (await DocumentAsync(response)).GetProperty("id").GetString().Should().Be(ItemId);
+        }
+        else
+        {
+            await response.AssertGeoServicesErrorAsync(404);
+        }
+    }
+
+    private static async Task AssertSearchVisibleAsync(HttpClient client, string token, bool visible)
+    {
+        using var response = await client.GetAsync($"/sharing/rest/search?token={token}&f=json&q=id%3A{ItemId}");
+        (await DocumentAsync(response)).GetProperty("results").EnumerateArray()
+            .Any(item => item.GetProperty("id").GetString() == ItemId).Should().Be(visible);
     }
 
     private async Task AssertQueryMatchesSqlAsync(HttpClient client, string token)

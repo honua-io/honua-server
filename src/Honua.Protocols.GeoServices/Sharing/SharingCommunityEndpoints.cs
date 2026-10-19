@@ -24,9 +24,9 @@ namespace Honua.Protocols.GeoServices.Sharing;
 /// </summary>
 /// <remarks>
 /// <para>
-/// These mutate the in-memory <see cref="IPortalGroupStore"/> /
-/// <see cref="IPortalItemSharingStore"/> overlays (no parallel durable store —
-/// ADR-0049). Authorization composes the existing identity/role model rather than a
+/// These mutate the <see cref="IPortalGroupStore"/> and
+/// <see cref="IPortalItemSharingStore"/> selected by the server profile. The Postgres
+/// profile persists both across replicas. Authorization composes the existing identity/role model rather than a
 /// new one: every mutation requires an authenticated principal, and group/item
 /// mutations require the caller to be the owner or hold the <c>admin</c> role
 /// (resolved from the shared <see cref="ClaimsPrincipal"/>, exactly as the rest of
@@ -453,7 +453,7 @@ internal static class SharingCommunityEndpoints
             notSharedWith.Add("org");
         }
 
-        var existingState = sharingStore.Get(itemId);
+        var existingState = await sharingStore.GetAsync(itemId, context.RequestAborted).ConfigureAwait(false);
         var eligibleGroups = new List<string>();
         foreach (var groupId in groups)
         {
@@ -472,7 +472,7 @@ internal static class SharingCommunityEndpoints
         }
 
         var state = eligibleGroups.Count == 0
-            ? sharingStore.Get(itemId)
+            ? existingState
             : share
                 ? await sharingStore.ShareAsync(itemId, service.Metadata.Publisher ?? caller,
                     new PortalItemShareRequest(false, false, eligibleGroups), context.RequestAborted).ConfigureAwait(false)
