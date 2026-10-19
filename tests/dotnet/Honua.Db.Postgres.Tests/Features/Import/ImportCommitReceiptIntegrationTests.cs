@@ -28,6 +28,49 @@ public sealed class ImportCommitReceiptIntegrationTests(PostgresFixture fixture)
 
     public Task DisposeAsync() => fixture.DropSchemaAsync(_schema);
 
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Recovery_WaitsForOriginalTransactionDecisionBeforeReportingReceiptAbsence(bool commit)
+    {
+        await using var writer = await OpenAsync();
+        await using var reader = await OpenAsync();
+        await using var observer = await OpenAsync();
+        await using var transaction = await writer.BeginTransactionAsync();
+        await InsertDestinationAsync(writer, transaction, 1);
+        await WriteAsync(writer, transaction);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var recovering = PostgresImportCommitReceipt.TryReadAsync(reader, _schema, OperationId, Intent, deadline.Token);
+        try
+        {
+            // Verify the actual PostgreSQL wait graph, not a sleep-based assertion that
+            // the client happened to be slow. Both connections use the real receipt code.
+            await using var blocked = new NpgsqlCommand("SELECT $1 = ANY(pg_blocking_pids($2))", observer);
+            blocked.Parameters.AddWithValue(writer.ProcessID);
+            blocked.Parameters.AddWithValue(reader.ProcessID);
+            while (!(bool)(await blocked.ExecuteScalarAsync(deadline.Token))!)
+            {
+                recovering.IsCompleted.Should().BeFalse("recovery must wait for the transaction's decision");
+                await Task.Delay(TimeSpan.FromMilliseconds(10), deadline.Token);
+            }
+            recovering.IsCompleted.Should().BeFalse();
+            if (commit) await transaction.CommitAsync(deadline.Token);
+            else await transaction.RollbackAsync(deadline.Token);
+            var receipt = await recovering.WaitAsync(deadline.Token);
+            if (commit) receipt.Should().Equal(Receipt);
+            else receipt.Should().BeNull();
+            (await CountAsync(observer)).Should().Be(commit ? 1 : 0);
+        }
+        finally
+        {
+            // A failed assertion must not leave a live query/transaction behind.
+            await transaction.DisposeAsync();
+            await deadline.CancelAsync();
+            try { await recovering; }
+            catch (OperationCanceledException) { }
+        }
+    }
+
     [IntegrationTest]
     public async Task LostResultAfterCommit_FreshConnectionRecoversOriginalWithoutSecondMutation()
     {

@@ -32,6 +32,8 @@ internal sealed partial class StreamingFileImportService
         // cannot leave committed data without its recoverable original result.
         var payload = ImportCommittedResultCodec.Encode(originalResult);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await PostgresImportCommitReceipt.LockDecisionAsync(connection, transaction, _schemaConfiguration.MetadataSchema,
+            originalBinding.OperationId, originalBinding.IntentFingerprint, cancellationToken).ConfigureAwait(false);
         var current = await RequireCurrentCommitBindingAsync(request, schema, table, cancellationToken).ConfigureAwait(false);
         if (current != originalBinding || !current.RequireAbsentTarget)
             throw new UnauthorizedAccessException("The accepted import destination precondition changed before commit.");

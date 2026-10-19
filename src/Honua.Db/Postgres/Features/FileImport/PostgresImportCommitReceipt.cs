@@ -1,6 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
+using System.Data;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
@@ -36,6 +40,8 @@ internal static class PostgresImportCommitReceipt
         {
             throw new ArgumentException("The import receipt exceeds its bounds.", nameof(receipt));
         }
+        await LockDecisionAsync(connection, transaction, honuaSchema, operationId, intentFingerprint,
+            cancellationToken).ConfigureAwait(false);
         var table = SchemaSearchPath.QualifyTable("import_commit_receipt", honuaSchema);
         // A conflicting insert MUST abort the transaction, including its destination
         // mutation. Never upsert, ignore a conflict, or replace an expired receipt.
@@ -58,8 +64,14 @@ internal static class PostgresImportCommitReceipt
         ArgumentNullException.ThrowIfNull(connection);
         ValidateIdentity(operationId, intentFingerprint);
         var table = SchemaSearchPath.QualifyTable("import_commit_receipt", honuaSchema);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted,
+            cancellationToken).ConfigureAwait(false);
+        await LockDecisionAsync(connection, transaction, honuaSchema, operationId, intentFingerprint,
+            cancellationToken).ConfigureAwait(false);
+        // This SELECT must be a separate command under READ COMMITTED: a snapshot
+        // taken before waiting for the original COMMIT could otherwise hide its receipt.
         await using var command = new NpgsqlCommand(
-            $"SELECT intent_fingerprint, receipt FROM {table} WHERE operation_id = $1", connection);
+            $"SELECT intent_fingerprint, receipt FROM {table} WHERE operation_id = $1", connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Text, Value = operationId });
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) return null;
@@ -73,6 +85,23 @@ internal static class PostgresImportCommitReceipt
             throw new InvalidOperationException("The committed import receipt is invalid.");
         }
         return receipt;
+    }
+
+    internal static async Task LockDecisionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
+        string honuaSchema, string operationId, string intentFingerprint, CancellationToken cancellationToken)
+    {
+        ValidateIdentity(operationId, intentFingerprint);
+        if (!ReferenceEquals(transaction.Connection, connection))
+            throw new InvalidOperationException("The import decision fence must join the destination transaction.");
+        _ = SchemaSearchPath.QualifyTable("import_commit_receipt", honuaSchema);
+        // A collision can only serialize unrelated imports; the primary key/full
+        // intent check still decides identity. Exclude intent so changed-intent
+        // retries wait for and refuse the same original operation's decision.
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"honua-import-commit-v1:{honuaSchema}:{operationId}"));
+        var key = BinaryPrimitives.ReadInt64BigEndian(hash);
+        await using var command = new NpgsqlCommand("SELECT pg_advisory_xact_lock($1)", connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Bigint, Value = key });
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static void ValidateIdentity(string operationId, string intentFingerprint)
