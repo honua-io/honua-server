@@ -420,6 +420,37 @@ public sealed class LayerPublishJobTests
         Assert.False(status.ResourceIds.ContainsKey("serviceName"));
     }
 
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData(ProgressStatus.Queued, OperationHandleStatus.Queued)]
+    [InlineData(ProgressStatus.Processing, OperationHandleStatus.Running)]
+    [InlineData(ProgressStatus.Failed, OperationHandleStatus.Failed)]
+    [InlineData(ProgressStatus.Cancelled, OperationHandleStatus.Cancelled)]
+    public async Task Executor_UncompletedPublish_DoesNotAdvertiseExistingServiceAsItsResult(
+        ProgressStatus progressStatus, OperationHandleStatus expectedStatus)
+    {
+        var jobs = Substitute.For<ILayerPublishJobs>();
+        jobs.GetAsync("abc", Arg.Any<CancellationToken>()).Returns(new LayerPublishJobProgress
+        {
+            OperationId = "abc",
+            Status = progressStatus,
+            LayerId = 741,
+            RowsMaterialized = 1,
+            RowsTotal = 12,
+            StartedAt = DateTimeOffset.UtcNow
+        });
+        // The catalog already contains this layer, but that cannot stand in for
+        // successful completion of the current publication operation.
+        var status = await Executor(jobs, new TestMetadataV2GraphProvider(PublishedGraph("roads")))
+            .GetStatusAsync(Handle(OperationHandleStatus.Queued, ServicePublishOperation.OperationId) with { JobId = "abc" });
+
+        Assert.Equal(expectedStatus, status.Status);
+        Assert.Null(status.MetadataRevision);
+        Assert.False(status.Result!.Details.ContainsKey("serviceUri"));
+        Assert.False(status.Result.Details.ContainsKey("serviceName"));
+        Assert.False(status.ResourceIds.ContainsKey("serviceName"));
+    }
+
     private static ILayerPublishJobs CompletedJobs(int layerId)
     {
         var jobs = Substitute.For<ILayerPublishJobs>();
