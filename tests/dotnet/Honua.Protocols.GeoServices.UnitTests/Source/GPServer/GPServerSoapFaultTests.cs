@@ -7,6 +7,7 @@ using Honua.Protocols.GeoServices.GPServer;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
@@ -37,7 +38,7 @@ public sealed class GPServerSoapFaultTests
             : "http://schemas.xmlsoap.org/soap/envelope/";
         var fault = GPServerEndpoints.ExecutionFault(refusal!, soap);
         ((IStatusCodeHttpResult)fault).StatusCode.Should().Be(StatusCodes.Status400BadRequest);
-        var document = XDocument.Parse(((IContentHttpResult)fault).Content!);
+        var document = XDocument.Parse(((ContentHttpResult)fault).ResponseContent!);
         document.Descendants(soap + "Fault").Should().ContainSingle();
         var explanation = soap12
             ? document.Descendants(soap + "Text").Single().Value
