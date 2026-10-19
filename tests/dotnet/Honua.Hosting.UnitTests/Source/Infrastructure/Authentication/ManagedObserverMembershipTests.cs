@@ -56,7 +56,7 @@ public sealed class ManagedObserverMembershipTests
         source.ResolveMembershipAsync("human", "https://issuer.example", Arg.Any<CancellationToken>()).Returns(new PrincipalMembership(true, ["reader"]));
         var retained = await ManagedMembershipRevalidation.ApplyAsync(Human(), source);
         source.ResolveMembershipAsync("human", "https://issuer.example", Arg.Any<CancellationToken>())
-            .Returns(_ => throw new InvalidOperationException("Membership store unavailable"));
+            .Returns(Task.FromException<PrincipalMembership?>(new InvalidOperationException("Membership store unavailable")));
         using var services = new ServiceCollection().AddSingleton(source).BuildServiceProvider();
         var check = () => AgentCredentialAuthority.IsCurrentObserverAsync(retained, services, default);
         await check.Should().ThrowAsync<InvalidOperationException>();

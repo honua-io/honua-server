@@ -8,7 +8,7 @@ namespace Honua.Server.Features.AgentWorkspace;
 
 internal static class DatasetImportSubmissionEndpoints
 {
-    internal static void MapDatasetImportSubmissions(this RouteGroupBuilder group)
+    internal static void MapDatasetImportSubmissions(this IEndpointRouteBuilder group)
     {
         var services = ((IEndpointRouteBuilder)group).ServiceProvider.GetService<IServiceProviderIsService>();
         if (services?.IsService(typeof(DatasetImportSubmissionService)) != true) return;

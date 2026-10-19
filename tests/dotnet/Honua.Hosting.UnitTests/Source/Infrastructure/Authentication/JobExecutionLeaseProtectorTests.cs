@@ -141,7 +141,7 @@ public sealed class JobExecutionLeaseProtectorTests
 
     private sealed class Clock : TimeProvider
     {
-        internal DateTimeOffset UtcNow { get; set; } = DateTimeOffset.Parse("2026-10-18T12:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
+        internal DateTimeOffset UtcNow { get; set; } = DateTimeOffset.Parse("2026-10-18T12:00:00Z", global::System.Globalization.CultureInfo.InvariantCulture);
         public override DateTimeOffset GetUtcNow() => UtcNow;
     }
 }

@@ -640,8 +640,8 @@ internal static class AgentWorkspaceEndpoints
         if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
             return Results.Forbid();
         var result = await OperationsEndpoints.HandleGetBoundHandleStatus(context, command.OperationInstanceId,
-            context.RequestServices.GetRequiredService<IOperationInstanceStore>(), context.RequestAborted,
-            expectedTenantId: document.TenantId, requireExactTenant: true).ConfigureAwait(false);
+            context.RequestServices.GetRequiredService<IOperationInstanceStore>(),
+            expectedTenantId: document.TenantId, requireExactTenant: true, cancellationToken: context.RequestAborted).ConfigureAwait(false);
         var latest = await store.GetAsync(document.WorkspaceId).ConfigureAwait(false);
         var currentTarget = await store.GetTargetIdAsync().ConfigureAwait(false);
         var currentActor = Actor(context);

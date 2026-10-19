@@ -9,7 +9,7 @@ namespace Honua.Server.Features.AgentWorkspace;
 
 internal static class DatasetImportTaskEndpoints
 {
-    internal static void MapDatasetImportTasks(this RouteGroupBuilder group)
+    internal static void MapDatasetImportTasks(this IEndpointRouteBuilder group)
     {
         group.MapPost("/workspaces/{workspaceId}/dataset-import-tasks", Create)
             .Accepts<CreateDatasetImportTask>("application/json");

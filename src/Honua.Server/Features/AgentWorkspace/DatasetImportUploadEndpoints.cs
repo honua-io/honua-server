@@ -12,7 +12,7 @@ namespace Honua.Server.Features.AgentWorkspace;
 
 internal static class DatasetImportUploadEndpoints
 {
-    internal static void MapDatasetImportUploads(this RouteGroupBuilder agent)
+    internal static void MapDatasetImportUploads(this IEndpointRouteBuilder agent)
     {
         var services = ((IEndpointRouteBuilder)agent).ServiceProvider.GetService<IServiceProviderIsService>();
         if (services is null || !services.IsService(typeof(ImportUploadCoordinator)) ||

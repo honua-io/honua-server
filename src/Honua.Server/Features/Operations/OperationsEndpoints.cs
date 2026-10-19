@@ -323,15 +323,15 @@ internal static class OperationsEndpoints
 
     internal static Task<IResult> HandleGetHandleStatus(HttpContext context, string handleId,
         IOperationInstanceStore instanceStore, CancellationToken cancellationToken)
-        => HandleGetBoundHandleStatus(context, handleId, instanceStore, cancellationToken, null, false);
+        => HandleGetBoundHandleStatus(context, handleId, instanceStore, null, false, cancellationToken);
 
     internal static async Task<IResult> HandleGetBoundHandleStatus(
         HttpContext context,
         string handleId,
         IOperationInstanceStore instanceStore,
-        CancellationToken cancellationToken,
         string? expectedTenantId,
-        bool requireExactTenant)
+        bool requireExactTenant,
+        CancellationToken cancellationToken)
     {
         SetNoStore(context);
         if (!await AgentCredentialAuthority.IsCurrentAsync(context.User, context.RequestServices, cancellationToken).ConfigureAwait(false) ||

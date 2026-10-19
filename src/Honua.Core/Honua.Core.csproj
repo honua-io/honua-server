@@ -57,6 +57,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Core.Tests" />
     <InternalsVisibleTo Include="Honua.Hosting" />
+    <InternalsVisibleTo Include="Honua.Hosting.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.ServiceDefaults" />
     <InternalsVisibleTo Include="Honua.Geometry" />
     <InternalsVisibleTo Include="Honua.Io" />

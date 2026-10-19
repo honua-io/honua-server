@@ -60,7 +60,7 @@ public sealed class AgentWorkspaceCommandAuthorityTests
         var operations = Substitute.For<IOperationInstanceStore>();
         var delayed = new TaskCompletionSource<OperationHandle?>(TaskCreationOptions.RunContinuationsAsynchronously);
         operations.GetAsync("operation-1", Arg.Any<CancellationToken>()).Returns(delayed.Task);
-        var pending = OperationsEndpoints.HandleGetBoundHandleStatus(context, "operation-1", operations, default, "tenant-1", true);
+        var pending = OperationsEndpoints.HandleGetBoundHandleStatus(context, "operation-1", operations, "tenant-1", true, default);
         pending.IsCompleted.Should().BeFalse();
         await keys.RevokeAsync(created.Record.Id, default);
         delayed.SetResult(Handle("operation-1", "tenant-1"));
@@ -82,7 +82,7 @@ public sealed class AgentWorkspaceCommandAuthorityTests
         var context = new DefaultHttpContext { User = principal, RequestServices = services };
         var operations = Substitute.For<IOperationInstanceStore>();
         operations.GetAsync("operation-1", Arg.Any<CancellationToken>()).Returns(Handle(actualId, actualTenant));
-        var result = await OperationsEndpoints.HandleGetBoundHandleStatus(context, "operation-1", operations, default, "tenant-1", true);
+        var result = await OperationsEndpoints.HandleGetBoundHandleStatus(context, "operation-1", operations, "tenant-1", true, default);
         ((IStatusCodeHttpResult)result).StatusCode.Should().Be(404);
     }
 
