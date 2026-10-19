@@ -258,9 +258,6 @@ public sealed class TablePublishValidationResult
     /// </summary>
     public required string ServiceName { get; init; }
 
-    /// <summary>The exact metadata graph revision committed by this publish, when available.</summary>
-    public long? MetadataRevision { get; init; }
-
     /// <summary>
     /// Optional layer display name.
     /// </summary>
@@ -478,6 +475,9 @@ public sealed class PublishedLayerSummary
     /// Name of the service this layer belongs to.
     /// </summary>
     public required string ServiceName { get; init; }
+
+    /// <summary>The exact metadata graph revision committed by this publish, when available.</summary>
+    public long? MetadataRevision { get; init; }
 
     /// <summary>
     /// Storage mode the layer was published with (<c>source</c> or <c>managed</c>). Set on
