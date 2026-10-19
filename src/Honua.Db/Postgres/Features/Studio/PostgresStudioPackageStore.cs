@@ -974,7 +974,8 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
                     updateCurrent: false,
                     updatePublished: true,
                     expectedCurrentVersionId,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    governingPublicationRequestId: request.RequestId).ConfigureAwait(false);
 
                 if (deployment is not null)
                 {
@@ -1021,19 +1022,26 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
             await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        // Match the reader's governing request, including its legacy null-pointer fallback.
+        // A route-less accepted request withdraws the old claim in this same transaction.
         var sql = $"""
             SELECT item_id
             FROM (
-                SELECT DISTINCT ON (item_id)
-                       item_id, intent, created_at, request_id, governs_studio_routes
-                FROM {_publicationRequestsTable}
-                WHERE status = @status
-                  AND item_id IN (
+                SELECT DISTINCT ON (publication.item_id)
+                       publication.item_id, publication.intent, publication.created_at,
+                       publication.request_id, publication.governs_studio_routes
+                FROM {_publicationRequestsTable} AS publication
+                JOIN {_itemsTable} AS item ON item.item_id = publication.item_id
+                WHERE publication.status = @status
+                  AND (item.governing_publication_request_id IS NULL
+                       OR publication.request_id = item.governing_publication_request_id)
+                  AND publication.item_id IN (
                       SELECT item_id
                       FROM {_publicationRequestsTable}
                       WHERE status = @status
                         AND intent ->> 'route' = @route)
-                ORDER BY item_id, created_at DESC, request_id DESC
+                ORDER BY publication.item_id, publication.created_at DESC,
+                         publication.request_id DESC
             ) AS governing
             WHERE governing.intent ->> 'route' = @route
               AND governing.governs_studio_routes
@@ -1082,10 +1090,10 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
     {
         ArgumentException.ThrowIfNullOrEmpty(route);
 
-        // honua-server#4907: DISTINCT ON picks each candidate item's newest accepted request (the
-        // one governing the item); the outer filter keeps those still bound to this route, so an
-        // item republished elsewhere no longer answers here. A route has one governing item;
-        // CreatePublicationRequestAsync rejects a claim by any other item.
+        // The item row records the accepted request that last moved its published pointer.
+        // DISTINCT ON retains timestamp ordering only for legacy items without that pointer;
+        // the outer filter excludes items since republished to another route or no route.
+        // CreatePublicationRequestAsync rejects a claim by another item.
         var sql = $"""
             SELECT governing.request_id, governing.item_id, governing.version_id,
                    governing.intent, governing.status, governing.validation,
@@ -1095,18 +1103,24 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
                    governing.governs_studio_routes,
                    active.deployment_id AS active_deployment_id
             FROM (
-                SELECT DISTINCT ON (item_id)
-                       request_id, item_id, version_id, intent, status, validation,
-                       warning_acknowledgement, requested_by, created_at, deployment_id,
-                       governs_studio_routes
-                FROM {_publicationRequestsTable}
-                WHERE status = @status
-                  AND item_id IN (
+                SELECT DISTINCT ON (publication.item_id)
+                       publication.request_id, publication.item_id, publication.version_id,
+                       publication.intent, publication.status, publication.validation,
+                       publication.warning_acknowledgement, publication.requested_by,
+                       publication.created_at, publication.deployment_id,
+                       publication.governs_studio_routes
+                FROM {_publicationRequestsTable} AS publication
+                JOIN {_itemsTable} AS item ON item.item_id = publication.item_id
+                WHERE publication.status = @status
+                  AND (item.governing_publication_request_id IS NULL
+                       OR publication.request_id = item.governing_publication_request_id)
+                  AND publication.item_id IN (
                       SELECT item_id
                       FROM {_publicationRequestsTable}
                       WHERE status = @status
                         AND intent ->> 'route' = @route)
-                ORDER BY item_id, created_at DESC, request_id DESC
+                ORDER BY publication.item_id, publication.created_at DESC,
+                         publication.request_id DESC
             ) AS governing
             LEFT JOIN LATERAL (
                 SELECT deployment_id
@@ -1378,10 +1392,14 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         bool updateCurrent,
         bool updatePublished,
         Guid? expectedCurrentVersionId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? governingPublicationRequestId = null)
     {
         var currentClause = updateCurrent ? "current_version_id = @current_version_id," : string.Empty;
         var publishedClause = updatePublished ? "published_version_id = @published_version_id," : string.Empty;
+        var governingClause = governingPublicationRequestId is null
+            ? string.Empty
+            : "governing_publication_request_id = @governing_publication_request_id,";
         // Compare-and-set predicate (honua-server#3980). Only appended when the caller supplies an
         // expectation, so pointer writes with no approved-pointer contract keep their prior SQL.
         var expectedClause = expectedCurrentVersionId is null
@@ -1391,6 +1409,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
             UPDATE {_itemsTable}
             SET {currentClause}
                 {publishedClause}
+                {governingClause}
                 updated_by = @updated_by,
                 updated_at = @updated_at
             WHERE item_id = @item_id{expectedClause}
@@ -1404,6 +1423,10 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         if (expectedCurrentVersionId is { } expectedCurrent)
         {
             command.Parameters.AddWithValue("@expected_current_version_id", expectedCurrent);
+        }
+        if (governingPublicationRequestId is { } governingRequest)
+        {
+            command.Parameters.AddWithValue("@governing_publication_request_id", governingRequest);
         }
 
         var rows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

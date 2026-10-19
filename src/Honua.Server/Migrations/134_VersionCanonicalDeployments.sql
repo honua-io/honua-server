@@ -15,6 +15,12 @@ ALTER TABLE $HonuaSchema$.studio_publication_requests
 ALTER TABLE $HonuaSchema$.studio_publication_requests
     ADD COLUMN IF NOT EXISTS governs_studio_routes BOOLEAN NOT NULL DEFAULT TRUE;
 
+-- The accepted request that last moved the item's published pointer determines its
+-- current route. Request timestamps can be inverted by concurrent approvals or clocks.
+-- Legacy rows remain nullable and use the preexisting timestamp fallback.
+ALTER TABLE $HonuaSchema$.studio_content_items
+    ADD COLUMN IF NOT EXISTS governing_publication_request_id UUID NULL;
+
 -- A published-pointer rollback can create a successor on the accepted route.
 -- Keep that successor's identity on its own immutable request receipt.
 ALTER TABLE $HonuaSchema$.studio_rollback_requests

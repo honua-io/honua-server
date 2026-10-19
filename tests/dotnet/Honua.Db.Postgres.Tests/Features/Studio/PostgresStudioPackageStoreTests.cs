@@ -50,7 +50,10 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             draft = await writer.CreateDraftAsync(draft);
             var firstVersion = await writer.CreateVersionAsync(draft, "approved map", "tester");
 
-            StudioPublicationRequest Request(StudioContentVersion version, string? route) => new()
+            StudioPublicationRequest Request(
+                StudioContentVersion version,
+                string? route,
+                DateTimeOffset? createdAt = null) => new()
             {
                 RequestId = Guid.NewGuid(),
                 ItemId = version.ItemId,
@@ -59,13 +62,13 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                 Status = StudioPublicationRequestStatus.Accepted,
                 Validation = version.Validation,
                 RequestedBy = "approver",
-                CreatedAt = DateTimeOffset.UtcNow
+                CreatedAt = createdAt ?? DateTimeOffset.UtcNow
             };
 
             var blank = await writer.CreatePublicationRequestAsync(Request(firstVersion, null), firstVersion.VersionId);
             blank.DeploymentId.Should().BeNull();
 
-            var firstRequest = Request(firstVersion, "/maps/first") with
+            var firstRequest = Request(firstVersion, "/maps/first", DateTimeOffset.UtcNow.AddHours(1)) with
             {
                 Intent = new StudioPublicationIntent
                 {
@@ -138,12 +141,17 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                     "a native bridge hint does not claim the hosted Studio route");
 
             var secondVersion = await writer.CreateVersionAsync(draft, "republish map", "tester");
-            var second = await writer.CreatePublicationRequestAsync(Request(secondVersion, "/maps/second"), secondVersion.VersionId);
+            var second = await writer.CreatePublicationRequestAsync(
+                Request(secondVersion, "/maps/second", DateTimeOffset.UtcNow.AddHours(-1)),
+                secondVersion.VersionId);
             second.DeploymentId.Should().NotBe(first.DeploymentId);
             (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/first")).Should().BeNull();
             var activeSecond = await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second");
             activeSecond!.DeploymentId.Should().Be(second.DeploymentId);
             activeSecond.ActiveDeploymentId.Should().Be(second.DeploymentId);
+            (await ReadGoverningPublicationRequestIdAsync(schema, firstVersion.ItemId))
+                .Should().Be(second.RequestId,
+                    "the item row lock records accepted publication order even with inverted request timestamps");
             var superseded = await deploymentReader.GetAsync(first.DeploymentId!);
             superseded!.Status.Should().Be(DeploymentStatus.Superseded);
             superseded.SupersededByDeploymentId.Should().Be(second.DeploymentId);
@@ -154,6 +162,9 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                 firstVersion.ItemId, firstVersion.VersionId, StudioRollbackPointer.Published,
                 "rollback-operator", "restore approved map");
             rollback.Pointers.PublishedVersionId.Should().Be(firstVersion.VersionId);
+            (await ReadGoverningPublicationRequestIdAsync(schema, firstVersion.ItemId))
+                .Should().Be(second.RequestId,
+                    "rollback restores a version on the governing accepted route");
             var afterRollback = await deploymentReader.ListActiveAsync();
             var restored = afterRollback.Should().ContainSingle(candidate =>
                 candidate.Source.StudioItemId == firstVersion.ItemId).Subject;
@@ -166,6 +177,9 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             restored.Runtime.Health.Should().Be(RuntimeHealth.Unknown);
             rollback.DeploymentId.Should().Be(restored.DeploymentId);
             rollback.DeploymentResourceUri.Should().Be($"honua://deployments/{restored.DeploymentId}");
+            (await ReadRollbackDeploymentIdAsync(schema, rollback.RequestId))
+                .Should().Be(restored.DeploymentId,
+                    "the rollback receipt must retain its successor identity after the transaction");
             var activeAfterRollback = await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second");
             activeAfterRollback!.RequestId.Should().Be(second.RequestId);
             activeAfterRollback.VersionId.Should().Be(second.VersionId);
@@ -183,6 +197,9 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             var withdrawn = await writer.CreatePublicationRequestAsync(
                 Request(secondVersion, null), secondVersion.VersionId);
             withdrawn.DeploymentId.Should().BeNull();
+            (await ReadGoverningPublicationRequestIdAsync(schema, firstVersion.ItemId))
+                .Should().Be(withdrawn.RequestId);
+            (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/first")).Should().BeNull();
             (await freshStore.GetActivePublicationRequestByRouteAsync("/maps/second")).Should().BeNull();
             var retiredOnWithdrawal = await deploymentReader.GetAsync(restored.DeploymentId);
             retiredOnWithdrawal!.Status.Should().Be(DeploymentStatus.Retired);
@@ -1297,6 +1314,25 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         {
             await fixture.DropSchemaAsync(schema);
         }
+    }
+
+    private async Task<Guid?> ReadGoverningPublicationRequestIdAsync(string schema, Guid itemId)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT governing_publication_request_id FROM \"{schema}\".studio_content_items WHERE item_id = @item_id";
+        command.Parameters.AddWithValue("@item_id", itemId);
+        var value = await command.ExecuteScalarAsync();
+        return value is Guid requestId ? requestId : null;
+    }
+
+    private async Task<string?> ReadRollbackDeploymentIdAsync(string schema, Guid requestId)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT deployment_id FROM \"{schema}\".studio_rollback_requests WHERE request_id = @request_id";
+        command.Parameters.AddWithValue("@request_id", requestId);
+        return await command.ExecuteScalarAsync() as string;
     }
 
     private async Task EnsureStudioTablesAsync(string schema)
