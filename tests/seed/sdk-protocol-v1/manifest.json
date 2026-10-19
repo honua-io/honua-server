@@ -1,0 +1,83 @@
+{
+  "schema": "honua.sdk-protocol-fixture/v1",
+  "coreFixture": {
+    "path": "docs/gis/data/client-certification-fixture.v1.json",
+    "sha256": "c8a8dc5faa88e1b0250a920622b3b1771d103aa0b91a238539f64cd6e6b35bcb"
+  },
+  "inputs": [
+    {
+      "path": "docker/routing/init-routing.sql",
+      "sha256": "07f0157a6c28de18eba539ca9881788904fb26a2d918f2551b877abf75e09af9"
+    },
+    {
+      "path": "tests/seed/sdk-protocol-v1/geocoder.csv",
+      "sha256": "80371b8f945cdc87d45107478d53dae58be151ac9ec019aba42e5493a4c73a59"
+    },
+    {
+      "path": "src/Honua.Server/appsettings.json",
+      "sha256": "ee9ca95534844d8a72b5fdfcb2cef707e00d50e03f679a8831e88969c51224b7"
+    },
+    {
+      "path": "eng/Honua.ProtocolProfiles.props",
+      "sha256": "c2236fc9135697dfc2aca10ef4c3324c7730a95c51e5689c32c39f4fbb07b73e"
+    },
+    {
+      "path": "src/Honua.Server/fixtures/scenes/downtown-honolulu/tileset.json",
+      "sha256": "8f52090716d28649ba4b2b3f71c8e5d1b99260a927221b958e0a89e14360e588"
+    },
+    {
+      "path": "src/Honua.Server/fixtures/scenes/downtown-honolulu/tiles/0.b3dm",
+      "sha256": "0bbfbf05927e85c28c08cca0e1f15a15dbf06c20b5d703404d8529610683ee63"
+    },
+    {
+      "path": "src/Honua.Server/fixtures/scenes/downtown-honolulu/metadata/scene.json",
+      "sha256": "1c95459d4819a2bf011d9da36f517141af668711ac4d1cdca3bc65a32142904f"
+    }
+  ],
+  "serverConfig": {
+    "Routing__Provider": "pgrouting",
+    "Routing__NetworkDatasetId": "default",
+    "Geocoding__Enabled": "true",
+    "Geocoding__DefaultProvider": "local",
+    "Geocoding__LocatorName": "RedlandsStreets",
+    "Geocoding__DefaultSpatialReferenceWkid": "4326",
+    "Geocoding__Providers__Local__Enabled": "true",
+    "Capabilities__Experimental__scene.catalog__Enabled": "true",
+    "HONUA_DEV_AUTH": "false"
+  },
+  "build": {
+    "HonuaProtocolProfile": "all",
+    "HonuaIncludeScene": true
+  },
+  "routing": {
+    "serviceId": "Routing",
+    "routeLayer": "Route",
+    "serviceAreaLayer": "ServiceArea",
+    "closestFacilityLayer": "ClosestFacility",
+    "networkDatasetId": "default",
+    "vertices": 9,
+    "edges": 12,
+    "origin": [0.0, 0.0],
+    "destination": [0.02, 0.02],
+    "serviceAreaCenter": [0.01, 0.01],
+    "incident": [0.0, 0.0],
+    "facilityA": [0.02, 0.0],
+    "facilityB": [0.02, 0.02]
+  },
+  "geocoding": {
+    "locatorName": "RedlandsStreets",
+    "forwardText": "380 New York St Redlands",
+    "suggestText": "1 Microsoft",
+    "reverse": [-117.1956, 34.0566],
+    "records": 2
+  },
+  "scene": {
+    "id": "downtown-honolulu",
+    "assetRoot": "fixtures/scenes/downtown-honolulu",
+    "maturity": "experimental"
+  },
+  "spec": {
+    "id": "sdk-protocol-count-v1",
+    "sourceServiceId": "test_service"
+  }
+}
