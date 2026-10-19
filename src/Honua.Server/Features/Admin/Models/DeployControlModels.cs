@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Infrastructure.Monitoring;
+using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -242,6 +243,15 @@ public sealed class DeployPreflightMigration
     [JsonPropertyName("pendingScriptClassifications")]
     public IReadOnlyList<DeployPreflightMigrationClassification> PendingScriptClassifications { get; init; }
         = Array.Empty<DeployPreflightMigrationClassification>();
+
+    /// <summary>Exact physical binding and resource/rendered SQL identities.</summary>
+    [JsonPropertyName("scriptBindings")]
+    public IReadOnlyList<DatabaseMigrationScriptBinding> ScriptBindings { get; init; }
+        = Array.Empty<DatabaseMigrationScriptBinding>();
+
+    /// <summary>Approval nonce bound to this exact plan and custom rendering context.</summary>
+    [JsonPropertyName("contractApprovalNonce")]
+    public string? ContractApprovalNonce { get; init; }
 
     /// <summary>
     /// Scripts previously executed against the database but no longer discovered by the current binary.

@@ -3,6 +3,12 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Security.Cryptography;
+using DbUp.Engine;
+using DbUp.ScriptProviders;
+using Honua.Db.Postgres.Features.Attachments;
+using Honua.Core.Features.Attachments.Domain;
+using Microsoft.Extensions.Options;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -504,6 +510,279 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         return (string)(await command.ExecuteScalarAsync())!;
     }
 
+    [Fact]
+    public void AttachmentBindings_PreserveResourcesAndDefaultNonce_AndBindEveryCustomField()
+    {
+        var assembly = typeof(Program).Assembly;
+        var bindings = AttachmentSchemaScriptProvider.Describe(assembly, "configured", "honua");
+        bindings.Should().HaveCount(2);
+        foreach (var binding in bindings)
+        {
+            using var stream = assembly.GetManifestResourceStream(binding.ScriptName)!;
+            using var bytes = new MemoryStream();
+            stream.CopyTo(bytes);
+            binding.ResourceSha256.Should().Be(Convert.ToHexString(SHA256.HashData(bytes.ToArray())).ToLowerInvariant());
+            binding.AttachmentsTable.Should().Be("\"honua\".attachments");
+            binding.ImportCleanupTable.Should().Be("\"honua\".import_attachment_cleanup");
+        }
+
+        MigrationScriptClassification[] classifications =
+        [
+            new()
+            {
+                ScriptName = "reviewed.sql",
+                Classification = MigrationSafetyClassification.ContractAnnotated
+            }
+        ];
+        var historical = MigrationSafetyClassifier.ComputeContractApprovalNonce(["reviewed.sql"]);
+        PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications, []).Should().Be(historical);
+        PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications,
+            AttachmentSchemaScriptProvider.Describe(assembly, "honua", "honua")).Should().Be(historical);
+        var nonce = PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications, bindings);
+        nonce.Should().NotBe(historical);
+        PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications, bindings.Reverse().ToArray()).Should().Be(nonce);
+        foreach (var original in bindings)
+        {
+            DatabaseMigrationScriptBinding[] mutations =
+            [
+                original with { ScriptName = original.ScriptName + ".changed" },
+                original with { ConfiguredSchema = "other_configured" },
+                original with { PhysicalSchema = "other_physical" },
+                original with { AttachmentsTable = "\"other\".attachments" },
+                original with { ImportCleanupTable = "\"other\".import_attachment_cleanup" },
+                original with { ResourceSha256 = new string('a', 64) },
+                original with { RenderedSqlSha256 = new string('b', 64) }
+            ];
+            foreach (var mutation in mutations)
+            {
+                var changed = bindings.Select(binding => binding == original ? mutation : binding).ToArray();
+                PostgresDatabaseMigrationRunner.ComputeApprovalNonce(classifications, changed).Should().NotBe(nonce,
+                    $"every physical/resource/rendering field must be approved: {mutation}");
+            }
+        }
+
+        var renderer = new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), "configured");
+        var unrelated = new SqlScript("unrelated.sql", "SELECT 'honua.attachments', '$HonuaSchema$.attachments';");
+        renderer.Render(unrelated).Contents.Should().Be(unrelated.Contents,
+            "rendering is keyed by exact canonical script name, not arbitrary SQL substrings");
+        renderer.Render(unrelated).SqlScriptOptions.Should().BeSameAs(unrelated.SqlScriptOptions);
+    }
+
+    [SkippableTheory]
+    [InlineData("pre125", true)]
+    [InlineData("complete", true)]
+    [InlineData("missing-cleanup-post125", false)]
+    [InlineData("duplicate", false)]
+    [InlineData("split", false)]
+    [InlineData("partial", false)]
+    [InlineData("non-table", false)]
+    [InlineData("wrong-type", false)]
+    [InlineData("wrong-key", false)]
+    [InlineData("wrong-cleanup-key", false)]
+    [InlineData("wrong-import-key", false)]
+    public async Task AttachmentBinding_RealPhysicalFamilies_ValidatePhaseTypesAndKeys(string state, bool succeeds)
+    {
+        Skip.IfNot(postgres.Available, "Real PostgreSQL is required for attachment physical binding.");
+        var connectionString = await postgres.CreateFreshDatabaseAsync();
+        await ExecuteAsync(connectionString, "CREATE SCHEMA honua; CREATE SCHEMA configured; CREATE TABLE public.schema_versions(scriptname text NOT NULL);");
+        await ApplyAttachmentResourceAsync(connectionString, PostgresAttachmentSchema.CreateMigration, "honua");
+        await ExecuteAsync(connectionString, $"INSERT INTO public.schema_versions VALUES ('{PostgresAttachmentSchema.CreateMigration}');");
+        if (state != "pre125")
+        {
+            await ApplyAttachmentResourceAsync(connectionString, PostgresAttachmentSchema.ImportMigration, "honua");
+            await ExecuteAsync(connectionString, $"INSERT INTO public.schema_versions VALUES ('{PostgresAttachmentSchema.ImportMigration}');");
+        }
+
+        switch (state)
+        {
+            case "missing-cleanup-post125":
+                await ExecuteAsync(connectionString, "DROP TABLE honua.import_attachment_cleanup;");
+                break;
+            case "duplicate":
+                await ApplyAttachmentResourceAsync(connectionString, PostgresAttachmentSchema.CreateMigration, "configured");
+                await ApplyAttachmentResourceAsync(connectionString, PostgresAttachmentSchema.ImportMigration, "configured");
+                break;
+            case "split":
+                await ExecuteAsync(connectionString, "ALTER TABLE honua.import_attachment_cleanup SET SCHEMA configured;");
+                break;
+            case "partial":
+                await ExecuteAsync(connectionString, "ALTER TABLE honua.attachments DROP COLUMN filename;");
+                break;
+            case "non-table":
+                await ExecuteAsync(connectionString, "DROP TABLE honua.attachments; CREATE VIEW honua.attachments AS SELECT 1 AS id;");
+                break;
+            case "wrong-type":
+                await ExecuteAsync(connectionString, "ALTER TABLE honua.attachments ALTER COLUMN filename TYPE integer USING 1;");
+                break;
+            case "wrong-key":
+                await ExecuteAsync(connectionString, "ALTER TABLE honua.attachments DROP CONSTRAINT attachments_pkey;");
+                break;
+            case "wrong-cleanup-key":
+                await ExecuteAsync(connectionString, "ALTER TABLE honua.import_attachment_cleanup DROP CONSTRAINT import_attachment_cleanup_pkey;");
+                break;
+            case "wrong-import-key":
+                await ExecuteAsync(connectionString, "ALTER TABLE honua.attachments DROP CONSTRAINT uq_attachment_import_identity;");
+                break;
+        }
+
+        var before = await CaptureAttachmentAuthorityStateAsync(connectionString);
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        var resolve = () => PostgresAttachmentSchema.ResolveAsync(connection, "configured");
+        if (succeeds)
+        {
+            (await resolve()).Should().Be("honua");
+        }
+        else
+        {
+            await resolve.Should().ThrowAsync<AttachmentSchemaBindingException>();
+        }
+
+        (await CaptureAttachmentAuthorityStateAsync(connectionString)).Should().Be(before, "resolution must not repair DDL or journal state");
+    }
+
+    private static async Task ApplyAttachmentResourceAsync(string connectionString, string resource, string physical)
+    {
+        var assembly = typeof(Program).Assembly;
+        using var stream = assembly.GetManifestResourceStream(resource)!;
+        using var reader = new StreamReader(stream);
+        var renderer = new AttachmentSchemaScriptProvider(new EmbeddedScriptProvider(assembly, _ => true), physical);
+        var original = new SqlScript(resource, await reader.ReadToEndAsync());
+        // Legacy setup executes protected 002 literally, without fixture rewriting.
+        var rendered = resource == PostgresAttachmentSchema.CreateMigration && physical == "honua"
+            ? original : renderer.Render(original);
+        await ExecuteAsync(connectionString, rendered.Contents);
+    }
+
+    private static async Task<string> CaptureLegacyAttachmentAsync(string connectionString)
+        => await CaptureAttachmentAsync(connectionString, "honua");
+
+    private static async Task<string> CaptureAttachmentAuthorityStateAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT jsonb_build_object(
+                'schemas', (SELECT jsonb_agg(jsonb_build_object('name', nspname, 'oid', oid) ORDER BY nspname)
+                            FROM pg_catalog.pg_namespace WHERE nspname !~ '^pg_' AND nspname <> 'information_schema'),
+                'objects', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                    'schema', n.nspname, 'name', c.relname, 'oid', c.oid, 'kind', c.relkind,
+                    'columns', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                        'name', a.attname, 'type', format_type(a.atttypid, a.atttypmod),
+                        'notNull', a.attnotnull, 'default', pg_get_expr(d.adbin, d.adrelid)) ORDER BY a.attnum)
+                        FROM pg_catalog.pg_attribute a
+                        LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+                        WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped), '[]'::jsonb),
+                    'constraints', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                        'name', con.conname, 'definition', pg_get_constraintdef(con.oid), 'validated', con.convalidated)
+                        ORDER BY con.conname) FROM pg_catalog.pg_constraint con WHERE con.conrelid = c.oid), '[]'::jsonb)
+                    ) ORDER BY n.nspname, c.relname)
+                    FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'), '[]'::jsonb))::text
+            """, connection);
+        var catalog = (string)(await command.ExecuteScalarAsync())!;
+        command.CommandText = "SELECT to_regclass('public.schema_versions') IS NOT NULL";
+        var journal = "null";
+        if (await command.ExecuteScalarAsync() is true)
+        {
+            command.CommandText = "SELECT COALESCE(jsonb_agg(scriptname ORDER BY scriptname), '[]'::jsonb)::text FROM public.schema_versions";
+            journal = (string)(await command.ExecuteScalarAsync())!;
+        }
+
+        return "{\"catalog\":" + catalog + ",\"journal\":" + journal + "}";
+    }
+
+    private static async Task<string> CaptureAttachmentAsync(string connectionString, string schema)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        var table = Honua.Db.Postgres.Features.Infrastructure.SchemaSearchPath.QualifyTable("attachments", schema);
+        await using var command = new NpgsqlCommand($"""
+            SELECT jsonb_build_object('tableOid', @table::regclass::oid,
+                'row', to_jsonb(a))::text FROM {table} a WHERE id = 9101
+            """, connection);
+        command.Parameters.AddWithValue("table", table);
+        return (string)(await command.ExecuteScalarAsync())!;
+    }
+
+    [SkippableFact]
+    public async Task AttachmentCustomApproval_AuthorityDriftAfterBackup_RefusesStalePlanAndToken()
+    {
+        Skip.IfNot(postgres.Available, "Real PostgreSQL is required for locked binding drift proof.");
+        const string schema = "attachment_drift";
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        var baseline = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest), ServerCoreSchemaMigrations.Manifest);
+        var boot = await baseline.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        boot.Successful.Should().BeTrue(boot.Error?.ToString());
+        await ExecuteAsync(connectionString, $"""
+            INSERT INTO honua.attachments(id, feature_id, layer_id, filename, content_type, size, storage_path)
+            VALUES (9101, 72, 73, 'legacy.txt', 'text/plain', 6, 'preserved/legacy.txt');
+            CREATE SCHEMA {schema};
+            DELETE FROM public.schema_versions WHERE scriptname LIKE 'Honua.Postgres.Migrations.%'
+                OR scriptname = '{ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration}';
+            """);
+        var original = await CaptureLegacyAttachmentAsync(connectionString);
+        IConfiguration Configuration(string? nonce) => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Database:Schema"] = schema,
+                [MigrationSafetyOptions.ApproveContractMigrationsKey] = nonce
+            }).Build();
+        var configuration = Configuration(null);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest, configuration: configuration);
+        var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
+        plan.Successful.Should().BeTrue(plan.Error?.ToString());
+        plan.ContractApprovalNonce.Should().NotBeNullOrWhiteSpace();
+        var recorder = new AttachmentAuthorityDriftRecorder(connectionString, schema);
+        var approved = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            Options.Create(new MigrationSafetyOptions { BackupCommand = "exit 0" }),
+            Configuration(plan.ContractApprovalNonce), recorder);
+        var rejected = await approved.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        rejected.Successful.Should().BeFalse();
+        rejected.ErrorMessage.Should().Contain("binding changed");
+        recorder.Mutations.Should().Be(1, "the actual successful backup callback changes only this fixture's authority");
+        (await CaptureAttachmentAuthorityStateAsync(connectionString)).Should().Be(recorder.AfterMutation);
+        (await CaptureAttachmentAsync(connectionString, schema)).Should().Be(original, "test-only relocation preserves data and OID");
+
+        var replanned = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
+        replanned.Successful.Should().BeTrue(replanned.Error?.ToString());
+        replanned.ContractApprovalNonce.Should().NotBe(plan.ContractApprovalNonce);
+        replanned.ScriptBindings.Should().OnlyContain(binding => binding.PhysicalSchema == schema);
+        var stale = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: Configuration(plan.ContractApprovalNonce));
+        var staleResult = await stale.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        staleResult.Successful.Should().BeFalse();
+        staleResult.ErrorMessage.Should().Contain(MigrationSafetyOptions.ApproveContractMigrationsKey);
+        (await CaptureAttachmentAuthorityStateAsync(connectionString)).Should().Be(recorder.AfterMutation);
+        var fresh = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            Options.Create(new MigrationSafetyOptions { BackupCommand = "exit 0" }),
+            Configuration(replanned.ContractApprovalNonce));
+        var applied = await fresh.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        applied.Successful.Should().BeTrue(applied.Error?.ToString());
+        (await CaptureAttachmentAsync(connectionString, schema)).Should().Be(original);
+        var restart = await fresh.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        restart.Successful.Should().BeTrue(restart.Error?.ToString());
+        restart.AppliedScripts.Should().BeEmpty();
+    }
+
+    private sealed class AttachmentAuthorityDriftRecorder(string connectionString, string schema) : IDatabaseMigrationBackupHookRecorder
+    {
+        public int Mutations { get; private set; }
+        public string? AfterMutation { get; private set; }
+
+        public async Task RecordAsync(DatabaseMigrationBackupHookResult result, CancellationToken cancellationToken = default)
+        {
+            result.Succeeded.Should().BeTrue();
+            // This DDL is an adversarial fixture actor, never production migration rendering.
+            var quoted = Honua.Db.Postgres.Features.Infrastructure.SchemaSearchPath.ValidateAndQuote(schema);
+            await ExecuteAsync(connectionString, $"ALTER TABLE honua.attachments SET SCHEMA {quoted}; ALTER TABLE honua.import_attachment_cleanup SET SCHEMA {quoted};");
+            Mutations++;
+            AfterMutation = await CaptureAttachmentAuthorityStateAsync(connectionString);
+        }
+    }
+
     [SkippableFact]
     public async Task CanonicalRunner_WhenMetadataSchemaIsConfigured_AppliesAndVerifiesGuardedFloorThere()
     {
@@ -520,12 +799,33 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             ServerCoreSchemaMigrations.Manifest,
             configuration: configuration);
 
+        var freshPlan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
+        freshPlan.Successful.Should().BeTrue(freshPlan.Error?.ToString());
+        freshPlan.JournalIsNonEmpty.Should().BeFalse();
+        freshPlan.ScriptBindings.Should().HaveCount(2).And.OnlyContain(binding => binding.PhysicalSchema == schema);
         var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
 
         result.Successful.Should().BeTrue(
             $"the canonical migration roots and guard must use the configured schema. Error: {result.ErrorMessage}");
         var verify = () => guard.VerifyAsync(connectionString);
         await verify.Should().NotThrowAsync();
+        var attachments = new PostgresAttachmentStore(new TestConnectionProvider(connectionString), null,
+            NullLogger<PostgresAttachmentStore>.Instance, schema);
+        var created = await attachments.CreateAsync(7, 8, new Attachment
+        {
+            Id = 0,
+            LayerId = 7,
+            FeatureId = 8,
+            Filename = "configured.txt",
+            ContentType = "text/plain",
+            Size = 1,
+            CreatedAt = DateTime.UtcNow,
+            StoragePath = "configured/file"
+        });
+        (await attachments.GetAsync(7, 8, created.Id)).Should().NotBeNull();
+        var restart = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        restart.Successful.Should().BeTrue(restart.Error?.ToString());
+        restart.AppliedScripts.Should().BeEmpty();
 
         var observationStore = new PostgresObservationStore(
             new TestConnectionProvider(connectionString),
@@ -628,7 +928,17 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         plan.Successful.Should().BeTrue(
             $"the provider root must be plannable over journaled server no-ops. Error: {plan.ErrorMessage}");
         plan.PendingScripts.Should().Contain(PostgresCoreSchemaGuard.RasterLateProvisioningMigration);
-        plan.HasContractScripts.Should().BeFalse();
+        plan.ContractScriptNames.Should().Equal(PostgresCoreSchemaGuard.RasterTablesMigration);
+        var beforeApproval = await CaptureAttachmentAuthorityStateAsync(connectionString);
+        var refused = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        refused.Successful.Should().BeFalse("late raster discovery includes the reviewed provider contract script");
+        (await CaptureAttachmentAuthorityStateAsync(connectionString)).Should().Be(beforeApproval);
+        var approvedConfiguration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [MigrationSafetyOptions.ApproveContractMigrationsKey] = plan.ContractApprovalNonce
+        }).Build();
+        runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: approvedConfiguration);
 
         var rasterUpgrade = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
         rasterUpgrade.Successful.Should().BeTrue(
@@ -642,12 +952,12 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             DELETE FROM public.schema_versions
             WHERE scriptname = '{PostgresCoreSchemaGuard.RasterLateProvisioningMigration}';
             """);
-        var beforeDivergenceCheck = await CaptureStateAsync(connectionString);
+        var beforeDivergenceCheck = await CaptureAttachmentAuthorityStateAsync(connectionString);
         var verifyDivergence = () => guard.VerifyAsync(connectionString);
         var exception = await verifyDivergence.Should().ThrowAsync<DatabaseSchemaFloorException>();
         exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterLateProvisioningMigration);
         exception.Which.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal);
-        (await CaptureStateAsync(connectionString)).Should().Be(beforeDivergenceCheck,
+        (await CaptureAttachmentAuthorityStateAsync(connectionString)).Should().Be(beforeDivergenceCheck,
             "late-raster verification must never recreate a journal receipt");
     }
 
@@ -667,6 +977,11 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             $"the test requires a canonical legacy baseline. Error: {baseline.ErrorMessage}");
 
         var legacyPackageId = Guid.Parse("72c1fbc0-e898-4e04-99d5-a16534e8f714");
+        await ExecuteAsync(connectionString, """
+            INSERT INTO honua.attachments(id, feature_id, layer_id, filename, content_type, size, storage_path)
+            VALUES (9101, 72, 73, 'legacy.txt', 'text/plain', 6, 'preserved/legacy.txt');
+            """);
+        var legacyAttachment = await CaptureLegacyAttachmentAsync(connectionString);
         await ExecuteAsync(connectionString, $"""
             INSERT INTO honua.metadata_v2_release_packages (
                 package_id,
@@ -717,18 +1032,22 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             $"the one forward adoption migration must be reachable before the configured-schema floor is enforced. Error: {plan.ErrorMessage}");
         plan.PendingScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
         plan.HasContractScripts.Should().BeTrue("moving guarded tables is a contract-phase operation");
-        plan.ContractScriptNames.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
+        plan.ContractScriptNames.Should().Equal(
+            PostgresCoreSchemaGuard.RasterTablesMigration,
+            ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
+        plan.ScriptBindings.Should().HaveCount(2).And.OnlyContain(binding =>
+            binding.PhysicalSchema == "honua" && binding.ImportCleanupTable == "\"honua\".import_attachment_cleanup");
 
-        var beforeBlockedRun = await CaptureStateAsync(connectionString);
+        var beforeBlockedRun = await CaptureAttachmentAuthorityStateAsync(connectionString);
         var blockedResult = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
         blockedResult.Successful.Should().BeFalse(
             "schema adoption must not run while older nodes may still target the legacy schema");
         blockedResult.ErrorMessage.Should().Contain(MigrationSafetyOptions.ApproveContractMigrationsKey);
-        (await CaptureStateAsync(connectionString)).Should().Be(beforeBlockedRun,
+        (await CaptureAttachmentAuthorityStateAsync(connectionString)).Should().Be(beforeBlockedRun,
             "the upgrade gate must block before moving tables or advancing either migration root");
 
-        var approvalNonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(
-            [ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration]);
+        var approvalNonce = plan.ContractApprovalNonce;
+        approvalNonce.Should().NotBeNullOrWhiteSpace();
         var approvedConfiguration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -748,6 +1067,25 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             $"the journaled forward migration must adopt complete legacy families. Error: {result.ErrorMessage}");
         result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
         await approvedGuard.Awaiting(instance => instance.VerifyAsync(connectionString)).Should().NotThrowAsync();
+        (await CaptureLegacyAttachmentAsync(connectionString)).Should().Be(legacyAttachment,
+            "the configured upgrade must preserve the physical attachment OID and all legacy row bytes");
+        var attachmentStore = new PostgresAttachmentStore(new TestConnectionProvider(connectionString), null,
+            NullLogger<PostgresAttachmentStore>.Instance, schema);
+        var found = await attachmentStore.GetAsync(73, 72, 9101);
+        found.Should().NotBeNull();
+        found!.Value.StoragePath.Should().Be("preserved/legacy.txt");
+        (await attachmentStore.HasLegacyAttachmentsAsync(73, CancellationToken.None)).Should().BeTrue();
+        var createdAttachment = await attachmentStore.CreateAsync(73, 72, found.Value with
+        {
+            Id = 0,
+            Filename = "new.txt",
+            StoragePath = "new/new.txt"
+        });
+        (await attachmentStore.GetAsync(73, 72, createdAttachment.Id)).Should().NotBeNull();
+        var restarted = await approvedRunner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        restarted.Successful.Should().BeTrue(restarted.ErrorMessage);
+        restarted.AppliedScripts.Should().BeEmpty();
+        (await CaptureLegacyAttachmentAsync(connectionString)).Should().Be(legacyAttachment);
 
         var observationStore = new PostgresObservationStore(
             new TestConnectionProvider(connectionString),
@@ -1022,7 +1360,17 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             PostgresCoreSchemaGuard.RasterLayerStatisticsMigration,
             PostgresCoreSchemaGuard.RasterLateProvisioningMigration,
         });
-        plan.HasContractScripts.Should().BeFalse();
+        plan.ContractScriptNames.Should().Equal(PostgresCoreSchemaGuard.RasterTablesMigration);
+        var beforeApproval = await CaptureAttachmentAuthorityStateAsync(connectionString);
+        var refused = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        refused.Successful.Should().BeFalse("late raster discovery includes the reviewed provider contract script");
+        (await CaptureAttachmentAuthorityStateAsync(connectionString)).Should().Be(beforeApproval);
+        var approvedConfiguration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [MigrationSafetyOptions.ApproveContractMigrationsKey] = plan.ContractApprovalNonce
+        }).Build();
+        runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: approvedConfiguration);
 
         var restart = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
         restart.Successful.Should().BeTrue(
