@@ -157,6 +157,7 @@ public sealed class FeatureServerOwnerGuardDispatchTests : IAsyncLifetime
     public async Task OwnerTransferAfterAdmission_RejectsMutationAndPreservesTransferredRow(bool delete)
     {
         var id = await AddFeatureAsync(_alice, "alice-original");
+        var controlId = await AddFeatureAsync(_alice, "alice-control");
         _written.Clear();
         _beforeApply = async () =>
         {
@@ -175,17 +176,26 @@ public sealed class FeatureServerOwnerGuardDispatchTests : IAsyncLifetime
             ? JsonSerializer.Serialize(new { deletes = new[] { id }, rollbackOnFailure = true })
             : JsonSerializer.Serialize(new
             {
-                updates = new[] { new { attributes = new { objectid = id, name = "alice-stale-write" } } },
+                // Two updates avoid the separate single-update snapshot precondition,
+                // so this refusal must exercise the stored-owner writer predicate.
+                updates = new[]
+                {
+                    new { attributes = new { objectid = id, name = "alice-stale-write" } },
+                    new { attributes = new { objectid = controlId, name = "must-roll-back" } }
+                },
                 rollbackOnFailure = true
             });
         var response = await ApplyEditsAsync(_alice, payload);
         var results = delete ? response.DeleteResults : response.UpdateResults;
-        results.Should().ContainSingle().Which.Success.Should().BeFalse();
+        results.Should().HaveCount(delete ? 1 : 2).And.OnlyContain(result => !result.Success);
         _written.Should().HaveCount(2, "the independent admin transfer and original mutation both reached the real writer");
-        _written[0].OwnerGuards.Should().ContainSingle().Which
-            .Should().Be(new OwnerEditGuard(id, "owner", _aliceSubject));
+        OwnerEditGuard[] expectedGuards = delete
+            ? [new OwnerEditGuard(id, "owner", _aliceSubject)]
+            : [new OwnerEditGuard(id, "owner", _aliceSubject), new OwnerEditGuard(controlId, "owner", _aliceSubject)];
+        _written[0].OwnerGuards.Should().BeEquivalentTo(expectedGuards);
         _written[1].OwnerGuards.IsDefaultOrEmpty.Should().BeTrue("the admin may transfer ownership");
         await AssertStoredFeatureAsync(_bob, id, "bob-transferred", _bobSubject);
+        await AssertStoredFeatureAsync(_alice, controlId, "alice-control", _aliceSubject);
     }
 
     private async Task BeforeApplyAsync()
