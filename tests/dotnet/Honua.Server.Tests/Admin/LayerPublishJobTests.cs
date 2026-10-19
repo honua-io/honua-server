@@ -346,8 +346,17 @@ public sealed class LayerPublishJobTests
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
 
+        var previous = Handle(OperationHandleStatus.Completed, ServicePublishOperation.OperationId) with
+        {
+            JobId = "abc",
+            ResourceIds = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["serviceName"] = "roads",
+                ["serviceUri"] = "honua://published-services/roads",
+            },
+        };
         var status = await Executor(CompletedJobs(741), new TestMetadataV2GraphProvider(PublishedGraph("roads")), services)
-            .GetStatusAsync(Handle(OperationHandleStatus.Queued, ServicePublishOperation.OperationId) with { JobId = "abc" });
+            .GetStatusAsync(previous);
 
         Assert.Equal(OperationHandleStatus.Completed, status.Status);
         Assert.Equal(11, status.MetadataRevision);
@@ -355,6 +364,7 @@ public sealed class LayerPublishJobTests
         Assert.False(status.Result.Details.ContainsKey("serviceUri"));
         Assert.False(status.Result.Details.ContainsKey("serviceName"));
         Assert.False(status.ResourceIds.ContainsKey("serviceName"));
+        Assert.False(status.ResourceIds.ContainsKey("serviceUri"));
     }
 
     [UnitTest]

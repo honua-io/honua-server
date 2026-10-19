@@ -256,6 +256,10 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             ["status"] = progress.Status.ToString(),
         };
         var resourceIds = new Dictionary<string, string>(handle.ResourceIds, StringComparer.Ordinal);
+        // A prior poll may have advertised this identity. Re-resolve it from
+        // the current persisted stores on every poll before carrying it forward.
+        resourceIds.Remove("serviceName");
+        resourceIds.Remove("serviceUri");
         var metadataRevision = progress.MetadataRevision ?? handle.MetadataRevision;
         if (progress.LayerId is int layerId)
         {

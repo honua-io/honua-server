@@ -134,7 +134,7 @@ public sealed class McpPublishedCatalogReadbackTests
     [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_CollidingPromotionIdentity_RefusesToReturnAnUnrelatedService()
     {
-        _promotions.GetAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(new PublishedServiceRecord
+        _promotions.FindByPublicIdAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(new PublishedServiceRecord
         {
             ServiceId = ServiceName,
             IntentId = "another-intent",
@@ -229,7 +229,7 @@ public sealed class McpPublishedCatalogReadbackTests
     [Endpoint("POST /mcp resources/read honua://published-services")]
     public async Task Index_CollidingPromotionIdentity_RefusesUnreadableUri()
     {
-        _promotions.GetAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(new PublishedServiceRecord
+        _promotions.FindByPublicIdAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(new PublishedServiceRecord
         {
             ServiceId = ServiceName,
             IntentId = "another-intent",
@@ -253,7 +253,7 @@ public sealed class McpPublishedCatalogReadbackTests
     public async Task Index_ActivePromotionAndStoppedCatalogCollision_RefusesUnreadableUri()
     {
         var promotion = Promotion();
-        _promotions.GetAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(promotion);
+        _promotions.FindByPublicIdAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(promotion);
         _promotions.ListActiveAsync(Arg.Any<CancellationToken>()).Returns([promotion]);
         var graph = Catalog();
         graph = graph with
@@ -277,7 +277,7 @@ public sealed class McpPublishedCatalogReadbackTests
     public async Task Index_CaseOnlyActivePromotionCollision_RefusesUnreadablePromotionUri()
     {
         var promotion = Promotion() with { ServiceId = "ROADS" };
-        _promotions.GetAsync("ROADS", Arg.Any<CancellationToken>()).Returns(promotion);
+        _promotions.FindByPublicIdAsync("ROADS", Arg.Any<CancellationToken>()).Returns(promotion);
         _promotions.ListActiveAsync(Arg.Any<CancellationToken>()).Returns([promotion]);
         var graph = Catalog();
         var detail = new PublishedServiceResource(
@@ -317,10 +317,46 @@ public sealed class McpPublishedCatalogReadbackTests
 
     [UnitTest]
     [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
+    public async Task Read_AlternateCasePromotionUri_LoadsDeploymentsByStoredServiceId()
+    {
+        var promotion = Promotion() with { ServiceId = "ROADS" };
+        _promotions.FindByPublicIdAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(promotion);
+        _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "ROADS", Arg.Any<CancellationToken>())
+            .Returns([]);
+        var graph = Catalog() with { Services = [], Publications = [] };
+        var read = await ReadAsync(graph);
+
+        read.GetProperty("serviceId").GetString().Should().Be("ROADS");
+        await _deployments.Received(1).ListBySourceAsync(
+            DeploymentSourceKind.PublishedService, "ROADS", Arg.Any<CancellationToken>());
+        await _deployments.DidNotReceive().ListBySourceAsync(
+            DeploymentSourceKind.PublishedService, ServiceName, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
+    public async Task Read_AmbiguousStoredPromotionIdentity_IsValidationRefusal()
+    {
+        _promotions.FindByPublicIdAsync(ServiceName, Arg.Any<CancellationToken>())
+            .Returns<Task<PublishedServiceRecord?>>(_ => throw new PublishedServiceIdentityAmbiguousException(ServiceName));
+        var detail = new PublishedServiceResource(
+            _promotions, _deployments, _jobs, NullLogger<PublishedServiceResource>.Instance);
+        var readDetail = async () => await detail.ReadAsync(Context(Catalog()), ServiceUri, CancellationToken.None);
+        await readDetail.Should().ThrowAsync<GeoprocessingValidationException>();
+
+        var index = new PromotionSurfaceIndexResource(
+            _promotions, _deployments, _jobs, NullLogger<PromotionSurfaceIndexResource>.Instance);
+        var readIndex = async () => await index.ReadAsync(
+            Context(Catalog()), "honua://published-services", CancellationToken.None);
+        await readIndex.Should().ThrowAsync<GeoprocessingValidationException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_PromotionWithRestrictedCatalog_RemainsReadableUnderPromotionGrant()
     {
         var promotion = Promotion();
-        _promotions.GetAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(promotion);
+        _promotions.FindByPublicIdAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(promotion);
         _promotions.ListActiveAsync(Arg.Any<CancellationToken>()).Returns([promotion]);
         var graph = Catalog(new AccessPolicy { AllowedRoles = ["private-road-reader"] });
         var index = new PromotionSurfaceIndexResource(

@@ -78,10 +78,17 @@ internal sealed class PublishedServiceResource : IMcpResource
 
         McpLog.ResourceRead(_logger, Family, uri);
 
-        var record = _services is null
-            ? null
-            : await _services.FindByPublicIdAsync(serviceId, cancellationToken).ConfigureAwait(false)
-              ?? await _services.GetAsync(serviceId, cancellationToken).ConfigureAwait(false);
+        PublishedServiceRecord? record;
+        try
+        {
+            record = _services is null
+                ? null
+                : await _services.FindByPublicIdAsync(serviceId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PublishedServiceIdentityAmbiguousException exception)
+        {
+            throw new GeoprocessingValidationException(exception.Message);
+        }
         var graphProvider = httpContext.RequestServices.GetService<IMetadataV2GraphProvider>();
         if (graphProvider is not null)
         {
@@ -114,7 +121,7 @@ internal sealed class PublishedServiceResource : IMcpResource
         var deploymentStore = _deployments
             ?? throw new InvalidOperationException("Published promotion records require a deployment store.");
         var deployments = await deploymentStore
-            .ListBySourceAsync(DeploymentSourceKind.PublishedService, serviceId, cancellationToken)
+            .ListBySourceAsync(DeploymentSourceKind.PublishedService, record.ServiceId, cancellationToken)
             .ConfigureAwait(false);
         deployments = PackageViewFactory.FilterPublished(deployments);
 
