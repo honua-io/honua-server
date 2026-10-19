@@ -26,6 +26,95 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class JobExecutionServiceTests
 {
     [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnknownReceiptRead_SurvivesCancellationAndLicenseExpiryUntilReplacementRecoversTruth(bool cancelled)
+    {
+        using var expired = new CancellationTokenSource();
+        expired.Cancel();
+        var durable = CreateProvisioningJob();
+        durable = WithControlledAcceptedImport(durable) with { CancellationRequestedAt = cancelled ? DateTimeOffset.UtcNow : null };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { var next = call.Arg<ExecutionJobRecord>(); if (next.Version != durable.Version) return false;
+                durable = next with { Version = next.Version + 1 }; return true; });
+        var license = Substitute.For<ILicenseOperationPolicy>();
+        license.OperationCancellation.Returns(expired.Token);
+        var executor = Substitute.For<IJobExecutor, IJobCommittedResultRecovery>();
+        executor.Kind.Returns(ExecutionJobKind.FileImport);
+        var unavailable = true;
+        var output = new FileImportOutputReceipt { Schema = "public", PhysicalTableName = "imported_roads", FeatureCount = 17 };
+        ((IJobCommittedResultRecovery)executor).TryRecoverCommittedAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                if (unavailable) throw new IOException("Commit decision is temporarily unavailable.");
+                var actual = call.Arg<ExecutionJobRecord>();
+                await call.Arg<IJobExecutionContext>().RecordCommittedEffectAsync(
+                    $"honua-import-commit:{actual.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(actual)}", call.Arg<CancellationToken>());
+                return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true, FileImportOutput = output };
+            });
+        using var worker = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor], new ExecutionJobCancellationTokens(),
+            [], null, NullLogger<JobExecutionService>.Instance, license);
+        await InvokeProcessJobAsync(worker, durable.OperationId, durable.ClaimedBy!);
+        Assert.Equal(ExecutionJobStatus.Queued, durable.Status);
+        Assert.NotNull(durable.CommitRecovery);
+        Assert.Null(durable.CompletedAt);
+        Assert.Equal(0, durable.ImportExecutionAttemptCount);
+        unavailable = false;
+        durable = durable with { Status = ExecutionJobStatus.Provisioning, ClaimedBy = "replacement", AttemptCount = durable.AttemptCount + 1,
+            ClaimedAt = DateTimeOffset.UtcNow, LastHeartbeatAt = DateTimeOffset.UtcNow };
+        await InvokeProcessJobAsync(worker, durable.OperationId, durable.ClaimedBy);
+        Assert.Equal(ExecutionJobStatus.Succeeded, durable.Status);
+        Assert.Equal(output, durable.FileImportOutput);
+        Assert.Null(durable.CommitRecovery);
+        Assert.Equal(cancelled, durable.CancellationRequestedAt.HasValue);
+        await executor.DidNotReceive().ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AuthoritativeAbsence_AppliesOriginalExecutionRetryPolicyInsteadOfReceiptClaimCount(bool executionStarted)
+    {
+        var durable = WithControlledAcceptedImport(CreateProvisioningJob());
+        durable = durable with { AttemptCount = 15, RetryPolicy = JobRetryPolicy.None, ImportExecutionAttemptCount = executionStarted ? 1 : 0 };
+        durable = durable with { CommitRecovery = new(JobExecutionLeaseIntentFingerprint.Compute(durable), "old", 1, DateTimeOffset.UtcNow)
+            { ExecutionStarted = executionStarted, RetryAllowed = false, DeferredStatus = executionStarted ? ExecutionJobStatus.Failed : null } };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        var executor = Substitute.For<IJobExecutor, IJobCommittedResultRecovery>();
+        executor.Kind.Returns(ExecutionJobKind.FileImport);
+        ((IJobCommittedResultRecovery)executor).TryRecoverCommittedAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<JobExecutionResult?>(null));
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            var actual = call.Arg<ExecutionJobRecord>();
+            await call.Arg<IJobExecutionContext>().RecordCommittedEffectAsync(
+                $"honua-import-commit:{actual.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(actual)}");
+            return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true,
+                FileImportOutput = new() { Schema = "public", PhysicalTableName = "imported_roads", FeatureCount = 17 } };
+        });
+        using var worker = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor], new ExecutionJobCancellationTokens(),
+            [], null, NullLogger<JobExecutionService>.Instance);
+        await InvokeProcessJobAsync(worker, durable.OperationId, durable.ClaimedBy!);
+        Assert.Equal(executionStarted ? ExecutionJobStatus.Failed : ExecutionJobStatus.Succeeded, durable.Status);
+        Assert.Null(durable.CommitRecovery);
+        Assert.Equal(1, durable.ImportExecutionAttemptCount);
+        if (executionStarted) await executor.DidNotReceive().ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
+        else await executor.Received(1).ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    // Controlled accepted metadata only; these tests substitute the trusted persistence
+    // recovery port and do not claim authentication or real database receipt proof.
+    private static ExecutionJobRecord WithControlledAcceptedImport(ExecutionJobRecord job)
+        => job with { Spec = job.Spec with { Kind = ExecutionJobKind.FileImport }, Audit = job.Audit with
+            { SubmitterSecurityContext = new("actor", null, []) { ExecutionLease = new() { LeaseId = "lease", JobId = job.OperationId,
+                IssuedAt = DateTimeOffset.UtcNow, ExpiresAt = DateTimeOffset.UtcNow.AddHours(1), ProtectedAuthority = "controlled" } } } };
+
+    [UnitTheory]
     [InlineData("receipt", true)]
     [InlineData("null", false)]
     [InlineData("missing-marker", false)]

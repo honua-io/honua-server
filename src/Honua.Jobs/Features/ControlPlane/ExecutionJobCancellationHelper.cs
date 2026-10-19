@@ -87,6 +87,12 @@ internal static class ExecutionJobCancellationHelper
         ArgumentNullException.ThrowIfNull(jobStore);
 
         var cancelNow = DateTimeOffset.UtcNow;
+        if (ExecutionJobCommitReconciliation.IsPending(job))
+        {
+            var pending = job with { CancellationRequestedAt = job.CancellationRequestedAt ?? cancelNow, UpdatedAt = cancelNow };
+            _ = await jobStore.TrySetAsync(pending, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return new(PreSubmissionCancelOutcome.Unconfirmed, await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false));
+        }
         var cancelled = job with
         {
             Status = ExecutionJobStatus.Cancelled,
@@ -146,7 +152,7 @@ internal static class ExecutionJobCancellationHelper
             }
 
             var now = DateTimeOffset.UtcNow;
-            if (current.ClaimedBy != null)
+            if (current.ClaimedBy != null || ExecutionJobCommitReconciliation.IsPending(current))
             {
                 if (current.CancellationRequestedAt.HasValue)
                 {
@@ -288,6 +294,8 @@ internal static class ExecutionJobCancellationHelper
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(observation);
 
+        if (ExecutionJobCommitReconciliation.IsPending(job))
+            return job with { CancellationRequestedAt = job.CancellationRequestedAt ?? now, UpdatedAt = now };
         var status = observation.Status;
         var providerId = observation.ProviderOperationId ?? job.ProviderOperationId;
         var percent = observation.PercentComplete ?? job.PercentComplete;

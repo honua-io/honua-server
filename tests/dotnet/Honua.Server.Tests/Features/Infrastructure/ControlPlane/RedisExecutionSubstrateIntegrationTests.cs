@@ -25,6 +25,35 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 {
     [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PendingCommit_RemainsDurableAndDiscoverableWithoutExpiryOrTerminalization(bool partitionLease)
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var job = CreateQueuedJob($"pending-commit-{Guid.NewGuid():N}");
+        job = job with { Spec = job.Spec with { Kind = ExecutionJobKind.FileImport } };
+        (await harness.JobStore.TryCreateAsync(job)).Should().BeTrue();
+        var current = (await harness.JobStore.GetAsync(job.OperationId))!;
+        var pending = current with { CommitRecovery = new(JobExecutionLeaseIntentFingerprint.Compute(current), "worker", 1, DateTimeOffset.UtcNow) };
+        if (partitionLease)
+        {
+            (await harness.JobStore.TryAcquireLeaseAsync("partition-proof", "worker", TimeSpan.FromMinutes(1))).Should().BeTrue();
+            (await harness.JobStore.TrySetIfLeaseOwnedAsync(pending, "partition-proof", "worker", TimeSpan.FromMilliseconds(50))).Should().BeTrue();
+        }
+        else (await harness.JobStore.TrySetAsync(pending, TimeSpan.FromMilliseconds(50))).Should().BeTrue();
+        (await harness.Database.KeyTimeToLiveAsync($"controlplane:job:{job.OperationId}")).Should().BeNull();
+        current = (await harness.JobStore.GetAsync(job.OperationId))!;
+        current.CommitRecovery.Should().Be(pending.CommitRecovery);
+        (await harness.JobStore.ListActiveAsync()).Should().Contain(item => item.OperationId == job.OperationId);
+        (await harness.JobStore.TrySetAsync(current with { Status = ExecutionJobStatus.Cancelled })).Should().BeFalse();
+        (await harness.JobStore.GetAsync(job.OperationId))!.Status.Should().Be(ExecutionJobStatus.Queued);
+        // Persistence-only resolution: the production caller requires authoritative
+        // locked receipt absence before clearing this state.
+        (await harness.JobStore.TrySetAsync(current with { CommitRecovery = null }, TimeSpan.FromMinutes(1))).Should().BeTrue();
+        (await harness.Database.KeyTimeToLiveAsync($"controlplane:job:{job.OperationId}")).Should().NotBeNull();
+    }
+
+    [IntegrationTheory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task ExecutionJobStore_FirstAcceptanceRequiresBothTaskAndExecutionDeadlines(bool expiredLease)

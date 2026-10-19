@@ -406,7 +406,8 @@ internal sealed partial class JobExecutionService(
         // A durable cancellation signal may have been written by a remote API
         // host between the claim and the CTS registration. Honour it before
         // promoting to Running.
-        if (job.CancellationRequestedAt.HasValue)
+        if (job.CancellationRequestedAt.HasValue && !ExecutionJobCommitReconciliation.IsPending(job) && !(job.Spec.Kind == ExecutionJobKind.FileImport
+            && executor is IJobCommittedResultRecovery && job.Audit.SubmitterSecurityContext?.ExecutionLease is not null))
         {
             Log.JobCancelledByOperator(logger, operationId);
             await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Cancelled,
@@ -588,6 +589,8 @@ internal sealed partial class JobExecutionService(
                     await StopHeartbeatPumpAsync().ConfigureAwait(false);
                     return;
                 }
+                if (running.Audit.SubmitterSecurityContext?.ExecutionLease is not null)
+                    running = await ExecutionJobCommitReconciliation.SetPendingAsync(jobStore, running, pending: true, recoveryTimeout.Token).ConfigureAwait(false);
                 var recovered = await recovery.TryRecoverCommittedAsync(running, context, recoveryTimeout.Token).ConfigureAwait(false);
                 if (recovered is not null)
                 {
@@ -596,6 +599,29 @@ internal sealed partial class JobExecutionService(
                         || !IsCommittedImportResult(actual, recovered, claimedImportIntent))
                         throw new InvalidOperationException("Committed import recovery did not provide the exact durable receipt and result.");
                     await FinalizeCommittedImportAsync(recovered).ConfigureAwait(false);
+                    return;
+                }
+                // A null from the trusted, decision-locked reader proves absence
+                // only for this still-current attempt; it grants no execution.
+                var unresolved = running.CommitRecovery;
+                if (unresolved is not null)
+                    running = await ExecutionJobCommitReconciliation.SetPendingAsync(jobStore, running, pending: false, recoveryTimeout.Token).ConfigureAwait(false);
+                if (running.CancellationRequestedAt.HasValue)
+                {
+                    await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Cancelled,
+                        "Cancelled by operator after authoritative commit absence.", CancellationToken.None).ConfigureAwait(false);
+                    return;
+                }
+                if (unresolved is { ExecutionStarted: true })
+                {
+                    if (licenseCancellation.IsCancellationRequested)
+                        await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed, "license expired", CancellationToken.None).ConfigureAwait(false);
+                    else if (unresolved.DeferredStatus == ExecutionJobStatus.Cancelled)
+                        await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Cancelled, "Cancelled after authoritative commit absence.", CancellationToken.None).ConfigureAwait(false);
+                    else
+                        await AbandonJobAsync(running, workerId, unresolved.FailureMessage ?? "Previous import attempt lost its commit acknowledgement.",
+                            CancellationToken.None, forceRequeue: unresolved.ForceRetry, allowRetry: unresolved.RetryAllowed,
+                            executionAttemptOverride: running.ImportExecutionAttemptCount).ConfigureAwait(false);
                     return;
                 }
             }
@@ -611,6 +637,9 @@ internal sealed partial class JobExecutionService(
             var executorCancellationToken = ExecutionQualificationBarrier.IgnoresOperatorCancellation
                 ? qualificationCts.Token
                 : jobCts.Token;
+            if (claimedImportIntent is not null && executor is IJobCommittedResultRecovery
+                && running.Audit.SubmitterSecurityContext?.ExecutionLease is not null)
+                running = await ExecutionJobCommitReconciliation.SetPendingAsync(jobStore, running, pending: true, CancellationToken.None, startExecution: true).ConfigureAwait(false);
             var result = await executor.ExecuteAsync(running, context, executorCancellationToken).ConfigureAwait(false);
 
             var committedImport = claimedImportIntent is not null && result.Status == ExecutionJobStatus.Succeeded
@@ -754,6 +783,21 @@ internal sealed partial class JobExecutionService(
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             activity?.SetStatus(ActivityStatusCode.Error, "Execution lease lost.");
             Log.ExecutionLeaseLost(logger, operationId);
+        }
+        catch (Exception ex) when (running.CommitRecovery is not null && ex is not OutOfMemoryException)
+        {
+            await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            Log.JobExecutionFailed(logger, operationId, ex);
+            var started = running.CommitRecovery!.ExecutionStarted;
+            var cancelled = !licenseCancellation.IsCancellationRequested && !timeoutCts.IsCancellationRequested
+                && jobCts.IsCancellationRequested && !stoppingToken.IsCancellationRequested;
+            var retryAllowed = !licenseCancellation.IsCancellationRequested && !timeoutCts.IsCancellationRequested;
+            var reason = licenseCancellation.IsCancellationRequested ? "license expired"
+                : timeoutCts.IsCancellationRequested ? $"Execution timed out after {timeoutPolicy.MaxDuration}." : SafeExecutionFailureMessage;
+            if (await ExecutionJobCommitReconciliation.RequeueAsync(jobStore, jobQueue, running, CancellationToken.None,
+                deferredStatus: started ? cancelled ? ExecutionJobStatus.Cancelled : ExecutionJobStatus.Failed : null,
+                retryAllowed: !started || retryAllowed, forceRetry: started && stoppingToken.IsCancellationRequested,
+                reason: started ? reason : null).ConfigureAwait(false)) cancellationTokens.Remove(operationId, workerId);
         }
         catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
         {
@@ -1004,6 +1048,12 @@ internal sealed partial class JobExecutionService(
             {
                 return true;
             }
+            if (ExecutionJobCommitReconciliation.IsPending(current) && !IsCommittedImportResult(current, result,
+                JobExecutionLeaseIntentFingerprint.Compute(current)))
+            {
+                _ = await ExecutionJobCommitReconciliation.RequeueAsync(jobStore, jobQueue, current, CancellationToken.None).ConfigureAwait(false);
+                return true;
+            }
             job = current;
             (final, effectiveStatus) = BuildFinalRecord(operationId, job, result);
 
@@ -1092,6 +1142,7 @@ internal sealed partial class JobExecutionService(
         var final = job with
         {
             Status = effectiveStatus,
+            CommitRecovery = null,
             UpdatedAt = now,
             CompletedAt = now,
             ErrorMessage = effectiveStatus switch
@@ -1143,6 +1194,10 @@ internal sealed partial class JobExecutionService(
         {
             return;
         }
+
+        // An unavailable commit decision cannot become an ordinary failure or
+        // cancellation. The heartbeat reconciler will adopt the pending state.
+        if (ExecutionJobCommitReconciliation.IsPending(job)) return;
 
         if (job.Status == ExecutionJobStatus.Succeeded && job.FileImportOutput is not null
             && HasExactImportReceipt(job)) return;
@@ -1229,14 +1284,23 @@ internal sealed partial class JobExecutionService(
         bool forceRequeue = false,
         TimeSpan? requeueDelayOverride = null,
         bool restoreClaimAttempt = false,
-        bool allowRetry = true)
+        bool allowRetry = true,
+        int? executionAttemptOverride = null)
     {
         // Re-read to capture progress and artifact updates made during execution.
         var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false) ?? job;
 
-        if (IsTerminalOrNotOwnedBy(current, workerId))
+        if (IsTerminalOrNotOwnedBy(current, workerId) || current.AttemptCount != job.AttemptCount)
         {
             Log.TerminalStateSkipped(logger, current.OperationId, current.Status.ToString());
+            return;
+        }
+
+        if (ExecutionJobCommitReconciliation.IsPending(current))
+        {
+            _ = await ExecutionJobCommitReconciliation.RequeueAsync(jobStore, jobQueue, job, cancellationToken,
+                deferredStatus: current.CommitRecovery!.ExecutionStarted ? ExecutionJobStatus.Failed : null,
+                retryAllowed: allowRetry, forceRetry: forceRequeue, reason: current.CommitRecovery.ExecutionStarted ? reason : null).ConfigureAwait(false);
             return;
         }
 
@@ -1294,8 +1358,9 @@ internal sealed partial class JobExecutionService(
         }
 
         var retryPolicy = current.RetryPolicy ?? JobRetryPolicy.Default;
+        var retryAttempt = executionAttemptOverride ?? current.AttemptCount;
 
-        if (allowRetry && (forceRequeue || retryPolicy.ShouldRetry(current.AttemptCount)))
+        if (allowRetry && (forceRequeue || retryPolicy.ShouldRetry(retryAttempt)))
         {
             Log.JobAbandoned(logger, current.OperationId, reason);
 
@@ -1327,7 +1392,8 @@ internal sealed partial class JobExecutionService(
             // Re-read before the requeue write to catch cancellation signals
             // that arrived during the log-append phase.
             var latestBeforeRequeue = await jobStore.GetAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
-            if (latestBeforeRequeue == null || IsTerminalOrNotOwnedBy(latestBeforeRequeue, workerId))
+            if (latestBeforeRequeue == null || IsTerminalOrNotOwnedBy(latestBeforeRequeue, workerId)
+                || latestBeforeRequeue.AttemptCount != job.AttemptCount)
             {
                 cancellationTokens.Remove(current.OperationId, workerId);
                 return;
@@ -1342,7 +1408,7 @@ internal sealed partial class JobExecutionService(
             }
 
             var delay = requeueDelayOverride
-                ?? (forceRequeue ? TimeSpan.Zero : retryPolicy.ComputeDelay(latestBeforeRequeue.AttemptCount + 1));
+                ?? (forceRequeue ? TimeSpan.Zero : retryPolicy.ComputeDelay(retryAttempt + 1));
             var now = DateTimeOffset.UtcNow;
             var abandoned = latestBeforeRequeue with
             {
@@ -1388,7 +1454,8 @@ internal sealed partial class JobExecutionService(
         {
             // Re-read before the fail write to catch late cancellation signals.
             var latestBeforeFail = await jobStore.GetAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
-            if (latestBeforeFail == null || IsTerminalOrNotOwnedBy(latestBeforeFail, workerId))
+            if (latestBeforeFail == null || IsTerminalOrNotOwnedBy(latestBeforeFail, workerId)
+                || latestBeforeFail.AttemptCount != job.AttemptCount)
             {
                 cancellationTokens.Remove(current.OperationId, workerId);
                 return;

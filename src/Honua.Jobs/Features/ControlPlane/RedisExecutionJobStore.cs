@@ -48,7 +48,8 @@ internal sealed partial class RedisExecutionJobStore(
                 return redis.error_reply('WRONGTYPE execution job query index is not a sorted set')
             end
         end
-        redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+        if tonumber(ARGV[2]) < 0 then redis.call('SET', KEYS[1], ARGV[1])
+        else redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2]) end
         if ARGV[4] == '1' then
             redis.call('SADD', KEYS[2], ARGV[3])
             redis.call('SADD', KEYS[3], ARGV[3])
@@ -65,7 +66,8 @@ internal sealed partial class RedisExecutionJobStore(
         if current == false then return 0 end
         local v = tonumber(string.match(current, '"version":(%d+)')) or 0
         if v ~= tonumber(ARGV[1]) then return 0 end
-        redis.call('SET', KEYS[1], ARGV[2], 'PX', tonumber(ARGV[3]))
+        if tonumber(ARGV[3]) < 0 then redis.call('SET', KEYS[1], ARGV[2])
+        else redis.call('SET', KEYS[1], ARGV[2], 'PX', tonumber(ARGV[3])) end
         return 1
         """;
 
@@ -75,7 +77,8 @@ internal sealed partial class RedisExecutionJobStore(
         if current == false then return 0 end
         local v = tonumber(string.match(current, '"version":(%d+)')) or 0
         if v ~= tonumber(ARGV[1]) then return 0 end
-        redis.call('SET', KEYS[1], ARGV[2], 'PX', tonumber(ARGV[3]))
+        if tonumber(ARGV[3]) < 0 then redis.call('SET', KEYS[1], ARGV[2])
+        else redis.call('SET', KEYS[1], ARGV[2], 'PX', tonumber(ARGV[3])) end
         return 1
         """;
 
@@ -116,6 +119,7 @@ internal sealed partial class RedisExecutionJobStore(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(job);
+        if (job.CommitRecovery is not null && IsTerminal(job.Status)) return false;
         cancellationToken.ThrowIfCancellationRequested();
 
         var versioned = job with { Version = 1 };
@@ -139,7 +143,7 @@ internal sealed partial class RedisExecutionJobStore(
             keys: keys,
             values:
             [
-                payload, (long)retention.TotalMilliseconds, job.OperationId,
+                payload, job.CommitRecovery is not null ? -1L : (long)retention.TotalMilliseconds, job.OperationId,
                 IsTerminal(job.Status) ? 0 : 1, job.CreatedAt.ToUnixTimeMilliseconds(),
                 (long)DefaultRetention.TotalMilliseconds,
                 admissionDeadline is { } deadline
@@ -176,6 +180,8 @@ internal sealed partial class RedisExecutionJobStore(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(job);
+        if (job.CommitRecovery is not null && IsTerminal(job.Status))
+            throw new InvalidOperationException("An unresolved import commit cannot be terminalized.");
         cancellationToken.ThrowIfCancellationRequested();
 
         var previous = await GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
@@ -184,7 +190,7 @@ internal sealed partial class RedisExecutionJobStore(
         await _database.StringSetAsync(
                 GetJobKey(job.OperationId),
                 payload,
-                ttl ?? DefaultRetention)
+                job.CommitRecovery is not null ? null : ttl ?? DefaultRetention)
             .ConfigureAwait(false);
 
         await UpdateIndexesAsync(previous, versioned).ConfigureAwait(false);
@@ -198,6 +204,7 @@ internal sealed partial class RedisExecutionJobStore(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(job);
+        if (job.CommitRecovery is not null && IsTerminal(job.Status)) return false;
         cancellationToken.ThrowIfCancellationRequested();
 
         var previous = await GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
@@ -208,7 +215,7 @@ internal sealed partial class RedisExecutionJobStore(
         var result = await _database.ScriptEvaluateAsync(
             CasSetScript,
             keys: [(RedisKey)GetJobKey(job.OperationId)],
-            values: [(RedisValue)job.Version, (RedisValue)payload, (RedisValue)(long)retention.TotalMilliseconds])
+            values: [(RedisValue)job.Version, (RedisValue)payload, (RedisValue)(job.CommitRecovery is not null ? -1L : (long)retention.TotalMilliseconds)])
             .ConfigureAwait(false);
 
         if ((long)result != 1)
@@ -231,6 +238,7 @@ internal sealed partial class RedisExecutionJobStore(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(job);
+        if (job.CommitRecovery is not null && IsTerminal(job.Status)) return false;
         ArgumentException.ThrowIfNullOrWhiteSpace(leaseOperationId);
         ArgumentException.ThrowIfNullOrWhiteSpace(leaseOwnerId);
         cancellationToken.ThrowIfCancellationRequested();
@@ -251,7 +259,7 @@ internal sealed partial class RedisExecutionJobStore(
             [
                 (RedisValue)job.Version,
                 (RedisValue)payload,
-                (RedisValue)(long)retention.TotalMilliseconds,
+                (RedisValue)(job.CommitRecovery is not null ? -1L : (long)retention.TotalMilliseconds),
                 (RedisValue)leaseOwnerId
             ]).ConfigureAwait(false);
 

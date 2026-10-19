@@ -65,7 +65,7 @@ internal sealed partial class ExecutionJobReconciler(
 
         try
         {
-            var job = await jobStore.GetAsync(operationId, reconciliationCancellation.Token).ConfigureAwait(false);
+            var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
             if (job == null)
             {
                 reconcileOutcome = "not_found";
@@ -80,6 +80,11 @@ internal sealed partial class ExecutionJobReconciler(
                 return;
             }
 
+            if (ExecutionJobCommitReconciliation.IsPending(job))
+            {
+                reconcileOutcome = "commit_reconciliation_pending";
+                return; // receipt-only worker recovery owns this outcome, not provider terminal observations
+            }
             licenseCancellation.ThrowIfCancellationRequested();
             var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
             if (backend == null)
@@ -259,6 +264,7 @@ internal sealed partial class ExecutionJobReconciler(
                 {
                     break;
                 }
+                if (ExecutionJobCommitReconciliation.IsPending(current)) break;
                 var now = DateTimeOffset.UtcNow;
                 var failed = current with
                 {

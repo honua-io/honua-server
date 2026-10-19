@@ -85,6 +85,13 @@ internal sealed partial class JobReconciliationService(
 
             if (job.Status is ExecutionJobStatus.Queued)
             {
+                if (ExecutionJobCommitReconciliation.IsPending(job))
+                {
+                    var pending = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+                    if (pending is { Status: ExecutionJobStatus.Queued } && ExecutionJobCommitReconciliation.IsPending(pending))
+                        await jobQueue.EnqueueAsync(pending.OperationId, pending.Priority, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
                 // Creation can commit just before request cancellation or process loss.
                 // Queued initial local records are dispatch intent, even if no pending
                 // queue membership was ever written. Re-read to avoid repairing a stale
@@ -208,6 +215,9 @@ internal sealed partial class JobReconciliationService(
             return false;
         }
 
+        if (ExecutionJobCommitReconciliation.IsPending(current!))
+            return await RequeueCommitPendingAsync(current!, cancellationToken).ConfigureAwait(false);
+
         // If cancellation was durably requested before the heartbeat expired,
         // honour it with a terminal Cancelled state instead of retrying. The
         // worker either never observed the signal or crashed before acting on it.
@@ -228,6 +238,8 @@ internal sealed partial class JobReconciliationService(
                 return false;
             }
 
+            if (ExecutionJobCommitReconciliation.IsPending(preRetry!))
+                return await RequeueCommitPendingAsync(preRetry!, cancellationToken).ConfigureAwait(false);
             if (preRetry!.CancellationRequestedAt.HasValue)
             {
                 return await TransitionToCancelledFromDurableSignalAsync(preRetry, snapshot.ClaimedBy!, cancellationToken).ConfigureAwait(false);
@@ -279,6 +291,8 @@ internal sealed partial class JobReconciliationService(
                 return false;
             }
 
+            if (ExecutionJobCommitReconciliation.IsPending(preFail!))
+                return await RequeueCommitPendingAsync(preFail!, cancellationToken).ConfigureAwait(false);
             if (preFail!.CancellationRequestedAt.HasValue)
             {
                 return await TransitionToCancelledFromDurableSignalAsync(preFail, snapshot.ClaimedBy!, cancellationToken).ConfigureAwait(false);
@@ -360,6 +374,9 @@ internal sealed partial class JobReconciliationService(
             return false;
         }
 
+        if (ExecutionJobCommitReconciliation.IsPending(current!))
+            return await RequeueCommitPendingAsync(current!, cancellationToken).ConfigureAwait(false);
+
         Log.TimeoutExpired(logger, current!.OperationId);
 
         var failed = current with
@@ -406,6 +423,17 @@ internal sealed partial class JobReconciliationService(
 
         await NotifyTerminalAsync(failed, CancellationToken.None).ConfigureAwait(false);
         return true;
+    }
+
+    private async Task<bool> RequeueCommitPendingAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        var cancelled = job.CancellationRequestedAt.HasValue;
+        var requeued = await ExecutionJobCommitReconciliation.RequeueAsync(jobStore, jobQueue, job, cancellationToken,
+            deferredStatus: job.CommitRecovery!.ExecutionStarted ? cancelled ? ExecutionJobStatus.Cancelled : ExecutionJobStatus.Failed : null,
+            retryAllowed: !ShouldExpireTimeout(job, DateTimeOffset.UtcNow),
+            reason: job.CommitRecovery.ExecutionStarted ? "Import worker stopped before its database commit outcome was reconciled." : null).ConfigureAwait(false);
+        if (requeued && job.ClaimedBy is { } worker) cancellationTokens.Revoke(job.OperationId, worker);
+        return requeued;
     }
 
     private async Task NotifyTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)

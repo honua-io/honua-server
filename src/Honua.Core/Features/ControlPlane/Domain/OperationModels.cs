@@ -1358,6 +1358,17 @@ public sealed record ExecutionJobRecord
     /// </summary>
     public DateTimeOffset? CancellationRequestedAt { get; init; }
 
+    /// <summary>
+    /// A trusted accepted import attempt may have crossed its database commit boundary.
+    /// Only authoritative receipt absence or the exact committed result resolves this
+    /// dynamic state; cancellation, deadlines and stale heartbeats cannot erase it.
+    /// This is reconciliation metadata, never execution or observation authority.
+    /// </summary>
+    public ExecutionJobCommitRecovery? CommitRecovery { get; init; }
+
+    /// <summary>Accepted import execution entries, separate from receipt-only worker claims and their fencing attempts.</summary>
+    public int ImportExecutionAttemptCount { get; init; }
+
     // -----------------------------------------------------------------------
     // Retry tracking (ticket #681)
     // -----------------------------------------------------------------------
