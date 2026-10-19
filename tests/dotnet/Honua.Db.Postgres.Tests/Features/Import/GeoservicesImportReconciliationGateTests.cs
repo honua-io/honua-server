@@ -15,6 +15,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -200,11 +201,122 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
                 new[] { stored["explicit-null"].Id, stored["omitted"].Id });
             layer.SourceGeometry.UnconvertedTargetFeatureIds.Should().BeEquivalentTo(
                 new[] { stored["unconverted"].Id });
+            layer.SourceGeometry.InvalidTargetFeatureIds.Should().BeEmpty();
             stored.Values.Select(row => row.Id).Should().NotIntersectWith(new long[] { 8536, 10590, 11252, 11323 });
         }
         finally
         {
             await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportLayerAsync_InvalidSourcePolygon_StaysDistinctFromNullsAndMetadataCount()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("InvalidSourceGeometry");
+        var reconciliation = new CapturingReconciliationService();
+        var service = CreateService(
+            new InvalidSourceGeometryFeatureServerHandler(),
+            publishedLayerId: 105,
+            reconciliation,
+            targetSchema: schemaName);
+        try
+        {
+            var result = await service.ImportLayerAsync(
+                BuildRequest("invalid_source_geometry", schemaName) with
+                {
+                    WhereClause = InvalidSourceGeometryFeatureServerHandler.Filter
+                });
+
+            result.FeatureCount.Should().Be(3, result.ErrorMessage);
+            var layer = reconciliation.Requests.Should().ContainSingle().Subject.Layers.Should().ContainSingle().Subject;
+            layer.SourceFeatureCount.Should().Be(3);
+            layer.TargetContainsOnlyImportedFeatures.Should().BeTrue();
+            layer.FilterMirror.Should().Be(InvalidSourceGeometryFeatureServerHandler.Filter);
+            layer.FilterFieldMappings.Should().BeEquivalentTo(new Dictionary<string, string>
+            {
+                ["Name"] = "name",
+                ["Shape"] = "geom"
+            });
+
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                $"SELECT name, objectid, geom IS NULL, ST_IsValid(geom) FROM \"{schemaName}\".invalid_source_geometry ORDER BY objectid";
+            await using var reader = await command.ExecuteReaderAsync();
+            var stored = new Dictionary<string, (long Id, bool IsNull, bool? Valid)>(StringComparer.Ordinal);
+            while (await reader.ReadAsync())
+            {
+                stored.Add(
+                    reader.GetString(0),
+                    (reader.GetInt64(1), reader.GetBoolean(2), reader.IsDBNull(3) ? null : reader.GetBoolean(3)));
+            }
+
+            stored.Should().HaveCount(3);
+            stored["inherited-null"].IsNull.Should().BeTrue();
+            stored["invalid-source"].IsNull.Should().BeFalse();
+            stored["invalid-source"].Valid.Should().BeTrue();
+            stored["valid"].IsNull.Should().BeFalse();
+            stored["valid"].Valid.Should().BeTrue();
+            layer.SourceGeometry.Should().NotBeNull();
+            layer.SourceGeometry!.AbsentTargetFeatureIds.Should().BeEquivalentTo(new[] { stored["inherited-null"].Id });
+            layer.SourceGeometry.InvalidTargetFeatureIds.Should().BeEquivalentTo(new[] { stored["invalid-source"].Id });
+            layer.SourceGeometry.UnconvertedTargetFeatureIds.Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private sealed class InvalidSourceGeometryFeatureServerHandler : HttpMessageHandler
+    {
+        public const string Filter = "OBJECTID<4";
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var uri = request.RequestUri!;
+            var filtered = uri.Query.Contains("where=" + Uri.EscapeDataString(Filter), StringComparison.Ordinal);
+            string body;
+            if (!uri.AbsolutePath.EndsWith("/query", StringComparison.Ordinal))
+            {
+                body = """
+                    {"id":0,"name":"Parcels","geometryType":"esriGeometryPolygon","maxRecordCount":10,
+                     "hasAttachments":false,
+                     "extent":{"xmin":0,"ymin":0,"xmax":2,"ymax":2,"spatialReference":{"wkid":4326}},
+                     "fields":[{"name":"OBJECTID","type":"esriFieldTypeOID","nullable":false},
+                               {"name":"Name","type":"esriFieldTypeString","nullable":true},
+                               {"name":"Shape","type":"esriFieldTypeGeometry","nullable":true}]}
+                    """;
+            }
+            else if (uri.Query.Contains("returnExtentOnly=true", StringComparison.Ordinal))
+            {
+                body = """{"extent":{"xmin":0,"ymin":0,"xmax":2,"ymax":2,"spatialReference":{"wkid":4326}}}""";
+            }
+            else if (uri.Query.Contains("returnCountOnly=true", StringComparison.Ordinal))
+            {
+                body = filtered ? """{"count":3}""" : """{"count":100}""";
+            }
+            else if (uri.Query.Contains("resultOffset=0", StringComparison.Ordinal))
+            {
+                body = """
+                    {"features":[
+                        {"attributes":{"OBJECTID":1,"Name":"inherited-null"},"geometry":null},
+                        {"attributes":{"OBJECTID":2,"Name":"invalid-source"},"geometry":{"rings":[[[0,0],[4,0],[4,3],[1,2],[3,1],[0,3],[0,0]]]}},
+                        {"attributes":{"OBJECTID":3,"Name":"valid"},"geometry":{"rings":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}}
+                    ],"exceededTransferLimit":false}
+                    """;
+            }
+            else
+            {
+                body = """{"features":[],"exceededTransferLimit":false}""";
+            }
+
+            // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            });
         }
     }
 

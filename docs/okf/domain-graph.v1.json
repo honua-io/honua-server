@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:57b409fbf6f98069e3474b9671830676f33615b18ee53011d1cec1ab8ef288fa",
+  "bundleDigest": "sha256:426faea5fffba2418184df995ebec9d70eff7cdd7f12773e9d928d0763eab61c",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2319,7 +2319,7 @@
     {
       "id": "guides/migrate/from-arcgis-server",
       "path": "guides/migrate/from-arcgis-server.md",
-      "documentDigest": "sha256:ad0ae096dbd6ebf54fa36fbb5c426e04d7300cfc774dbe2834c9f96c74dcf3a4",
+      "documentDigest": "sha256:b54cb9dda8859285db8e334a60697f1acbdf25252f3e4b90c487ffa4c3da9359",
       "metadata": {
         "type": "guide",
         "title": "Migrate from ArcGIS Server",
