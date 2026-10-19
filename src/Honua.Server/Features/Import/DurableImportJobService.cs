@@ -104,6 +104,8 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
         ArgumentNullException.ThrowIfNull(request);
         request.Acceptance?.Validate();
         request.StagedSource?.Validate();
+        if (request.StagedSource?.Transfer is not null && intent is null)
+            throw new UnauthorizedAccessException("Task-bound transfers require the canonical prepared import authority.");
         if ((request.Acceptance is not null || request.StagedSource is not null) && !_decision.IsDurable)
         {
             throw new InvalidOperationException("A bound import acceptance or staged source requires a durable job runner.");
@@ -156,6 +158,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
                 }
             };
             await using var authorityScope = _scopeFactory.CreateAsyncScope();
+            await intent.RequireCurrentCallerAsync(authorityScope.ServiceProvider, caller!, cancellationToken).ConfigureAwait(false);
             var authority = authorityScope.ServiceProvider.GetRequiredService<IJobExecutionLeaseAuthority>();
             var deadline = DateTimeOffset.UtcNow.Add(job.TimeoutPolicy!.MaxDuration);
             if (request.StagedSource!.ExpiresAt is { } sourceDeadline && sourceDeadline < deadline)
@@ -167,6 +170,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
                 Admission = intent.Admission,
                 RequestedExpiresAt = deadline
             }, cancellationToken).ConfigureAwait(false);
+            await intent.RequireCurrentCallerAsync(authorityScope.ServiceProvider, caller!, cancellationToken).ConfigureAwait(false);
             job = job with
             {
                 Audit = job.Audit with { SubmitterSecurityContext = intent.ExecutorContext with { ExecutionLease = lease } }

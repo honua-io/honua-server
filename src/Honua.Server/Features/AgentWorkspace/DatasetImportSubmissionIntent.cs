@@ -2,9 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Import.FileImport.Resumable;
 
 namespace Honua.Server.Features.AgentWorkspace;
 
@@ -14,8 +17,26 @@ namespace Honua.Server.Features.AgentWorkspace;
 /// Current caller, source, destination and approval checks still precede acceptance.
 /// </summary>
 internal sealed record DatasetImportSubmissionIntent(
-    ImportRequest Request, JobSecurityContext ExecutorContext, JobExecutionLeaseAdmissionBinding Admission)
+    DatasetImportTask Task, DatasetImportPreparedAdmission Prepared, ImportRequest Request,
+    JobSecurityContext ExecutorContext, JobExecutionLeaseAdmissionBinding Admission)
 {
+    internal async System.Threading.Tasks.Task RequireCurrentCallerAsync(IServiceProvider services, ClaimsPrincipal caller,
+        CancellationToken cancellationToken)
+    {
+        var tasks = new ImportUploadTaskAuthority(services.GetRequiredService<IDatasetImportTaskProvider>(),
+            services.GetService<IDatasetImportContributorAuthorizer>());
+        var authorized = await tasks.AuthorizeAsync(caller, new(Task.WorkspaceId, Task.TaskId, Task.Revision, Task.ContentHash),
+            requireWrite: true, cancellationToken).ConfigureAwait(false);
+        if (authorized.Task != Task) throw new UnauthorizedAccessException("The original import task changed.");
+        var admissions = services.GetRequiredService<IDatasetImportAdmissionProvider>();
+        var prepared = authorized.ContributorActorId == Task.OwnerActorId
+            ? await admissions.ReadAsync(caller, Task.WorkspaceId, Task.TaskId, Task.Revision, Task.ContentHash, cancellationToken).ConfigureAwait(false)
+            : await admissions.ReadContributionAsync(caller, Task.WorkspaceId, Task.TaskId, Task.Revision, Task.ContentHash, cancellationToken).ConfigureAwait(false);
+        if (prepared is null || JsonSerializer.Serialize(prepared, AgentWorkspaceJsonContext.Default.DatasetImportPreparedAdmission) !=
+            JsonSerializer.Serialize(Prepared, AgentWorkspaceJsonContext.Default.DatasetImportPreparedAdmission))
+            throw new UnauthorizedAccessException("The original prepared import authority is unavailable or changed.");
+    }
+
     internal static DatasetImportSubmissionIntent Create(DatasetImportTask task,
         DatasetImportPreparedAdmission prepared, ImportStagedSourceBinding source)
     {
@@ -65,7 +86,7 @@ internal sealed record DatasetImportSubmissionIntent(
             OperationInstanceId = prepared.OperationId
         };
         request.Validate();
-        return new(request, context, new JobExecutionLeaseAdmissionBinding
+        return new(task, prepared, request, context, new JobExecutionLeaseAdmissionBinding
         {
             WorkspaceId = task.WorkspaceId,
             TaskId = task.TaskId,

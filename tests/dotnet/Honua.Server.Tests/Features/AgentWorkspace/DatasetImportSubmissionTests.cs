@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Import.FileImport;
 using Honua.Server.Features.AgentWorkspace;
@@ -30,7 +31,7 @@ public sealed class DatasetImportSubmissionTests
     public async Task Submission_SealsOriginalAuthorityBeforeAcceptanceAndReplaysWithoutNewLeaseOrDispatch()
     {
         var fixture = Intent();
-        using var queue = new Harness();
+        using var queue = new Harness(fixture.Task, fixture.Prepared);
         var caller = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "human")], "test"));
         var executor = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "agent")], "test"));
         var id = await queue.Service.QueueDatasetImportAsync(fixture.Task, fixture.Prepared, fixture.Source, caller, executor);
@@ -53,10 +54,35 @@ public sealed class DatasetImportSubmissionTests
     public async Task Submission_PolicyRefusalCannotCreateOrDispatchJob()
     {
         var fixture = Intent();
-        using var queue = new Harness();
+        using var queue = new Harness(fixture.Task, fixture.Prepared);
         queue.RejectIssuance = true;
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => queue.Service.QueueDatasetImportAsync(
             fixture.Task, fixture.Prepared, fixture.Source, new ClaimsPrincipal(), new ClaimsPrincipal()));
+        Assert.Null(queue.Stored);
+        Assert.Empty(queue.Events);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Submission_RequiresActualCallerBeforeAndAfterLeaseIssuance(bool revokeDuringIssuance)
+    {
+        var fixture = Intent();
+        using var queue = new Harness(fixture.Task, fixture.Prepared)
+        { CallerAllowed = revokeDuringIssuance, RevokeCallerDuringIssuance = revokeDuringIssuance };
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => queue.Service.QueueDatasetImportAsync(
+            fixture.Task, fixture.Prepared, fixture.Source, new ClaimsPrincipal(), new ClaimsPrincipal()));
+        Assert.Null(queue.Stored);
+        Assert.Equal(revokeDuringIssuance ? new[] { "issue" } : [], queue.Events);
+    }
+
+    [Fact]
+    public async Task GenericImportEntry_CannotDowngradeTaskBoundTransferAuthority()
+    {
+        var fixture = Intent();
+        using var queue = new Harness(fixture.Task, fixture.Prepared);
+        var intent = DatasetImportSubmissionIntent.Create(fixture.Task, fixture.Prepared, fixture.Source);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => queue.Service.QueueImportAsync(intent.Request, fixture.Source.Bytes));
         Assert.Null(queue.Stored);
         Assert.Empty(queue.Events);
     }
@@ -65,7 +91,7 @@ public sealed class DatasetImportSubmissionTests
     public async Task Replay_RequiresActualAcceptedAuthorityAndDoesNotIssueReplacement()
     {
         var fixture = Intent();
-        using var queue = new Harness();
+        using var queue = new Harness(fixture.Task, fixture.Prepared);
         await queue.Service.QueueDatasetImportAsync(fixture.Task, fixture.Prepared, fixture.Source,
             new ClaimsPrincipal(), new ClaimsPrincipal());
         queue.RejectObservation = true;
@@ -78,7 +104,7 @@ public sealed class DatasetImportSubmissionTests
     public async Task LostAcceptanceReply_RecoversOriginalLeaseWithoutRedispatch()
     {
         var fixture = Intent();
-        using var queue = new Harness { LoseCreateReply = true };
+        using var queue = new Harness(fixture.Task, fixture.Prepared) { LoseCreateReply = true };
         await Assert.ThrowsAsync<IOException>(() => queue.Service.QueueDatasetImportAsync(
             fixture.Task, fixture.Prepared, fixture.Source, new ClaimsPrincipal(), new ClaimsPrincipal()));
         var original = queue.Stored;
@@ -93,7 +119,7 @@ public sealed class DatasetImportSubmissionTests
     public async Task Replay_RejectsDifferentPreparedAuthorityEvenWhenFileParametersMatch()
     {
         var fixture = Intent();
-        using var queue = new Harness();
+        using var queue = new Harness(fixture.Task, fixture.Prepared);
         await queue.Service.QueueDatasetImportAsync(fixture.Task, fixture.Prepared, fixture.Source,
             new ClaimsPrincipal(), new ClaimsPrincipal());
         queue.WrongObservedAdmission = true;
@@ -180,18 +206,28 @@ public sealed class DatasetImportSubmissionTests
         internal ExecutionJobRecord? Stored { get; private set; }
         internal JobExecutionLeaseIssuanceRequest? Issued { get; private set; }
         internal ClaimsPrincipal? Observer { get; private set; }
+        internal bool CallerAllowed { get; set; } = true;
+        internal bool RevokeCallerDuringIssuance { get; set; }
         internal bool RejectIssuance { get; set; }
         internal bool RejectObservation { get; set; }
         internal bool LoseCreateReply { get; set; }
         internal bool WrongObservedAdmission { get; set; }
         internal DurableImportJobService Service { get; }
 
-        internal Harness()
+        internal Harness(DatasetImportTask task, DatasetImportPreparedAdmission prepared)
         {
             var importer = Substitute.For<IFileImportService>();
             importer.DetectFormat(Arg.Any<string>()).Returns(SupportedFileFormat.GeoJson);
             importer.Limits.Returns(new ImportLimits());
-            _services = new ServiceCollection().AddSingleton(importer).AddSingleton(Authority).BuildServiceProvider();
+            var tasks = Substitute.For<IDatasetImportTaskProvider>();
+            tasks.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>(),
+                Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+                .Returns(_ => System.Threading.Tasks.Task.FromResult<DatasetImportTask?>(CallerAllowed ? task : null));
+            var admissions = Substitute.For<IDatasetImportAdmissionProvider>();
+            admissions.ReadAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>(),
+                Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(System.Threading.Tasks.Task.FromResult<DatasetImportPreparedAdmission?>(prepared));
+            _services = new ServiceCollection().AddSingleton(importer).AddSingleton(Authority).AddSingleton(tasks)
+                .AddSingleton(admissions).BuildServiceProvider();
             var store = Substitute.For<IExecutionJobStore>();
             store.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(Stored));
             store.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
@@ -210,6 +246,7 @@ public sealed class DatasetImportSubmissionTests
             {
                 if (RejectIssuance) return Task.FromException<JobExecutionLease>(new UnauthorizedAccessException("Policy refused"));
                 Events.Add("issue");
+                if (RevokeCallerDuringIssuance) CallerAllowed = false;
                 Issued = call.ArgAt<JobExecutionLeaseIssuanceRequest>(0);
                 return Task.FromResult(new JobExecutionLease { LeaseId = "lease-a", JobId = Issued.PreparedJob.OperationId,
                     IssuedAt = DateTimeOffset.UtcNow, ExpiresAt = Issued.RequestedExpiresAt, ProtectedAuthority = "test-only" });
