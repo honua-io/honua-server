@@ -21935,6 +21935,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.ApplyEdits_NumericPrimaryKeyAndDuplicateIdAttribute_TargetsOnlyPrimaryKey",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerOwnerGuardDispatchTests.OwnerTransferAfterAdmission_RejectsMutationAndPreservesTransferredRow",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerOwnerGuardDispatchTests.PartialUpdateAndDelete_DispatchOnlyAcceptedOwnerGuards",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerPluginValidationTests.ApplyEdits_FeatureAllowedByPlugin_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerPluginValidationTests.ApplyEdits_FeatureRejectedByPlugin_IsNotWritten",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerPluginValidationTests.ApplyEdits_RollbackOnFailure_PluginRejection_RollsBackEntireBatch",

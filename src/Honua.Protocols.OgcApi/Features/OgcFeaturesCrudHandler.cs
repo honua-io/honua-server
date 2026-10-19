@@ -14,6 +14,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Models;
@@ -309,17 +310,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             var deleteResult = editResult.DeleteResults.FirstOrDefault();
             if (!deleteResult.IsSuccess)
             {
-                if (deleteResult.IsPreconditionFailure)
-                {
-                    return Results.Problem(
-                        statusCode: 412,
-                        title: "Precondition Failed",
-                        detail: "The resource has been modified since the provided ETag.");
-                }
-
-                return IsNotFound(deleteResult)
-                    ? StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.")
-                    : StandardErrorHelpers.CreateInternalServerError(context, deleteResult.ErrorMessage ?? "An error occurred while deleting the feature.");
+                return MapDeleteFailure(context, deleteResult, featureId);
             }
 
             await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
@@ -398,7 +389,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
     /// outbox-scope resolution (the storage SRID is read from
     /// <see cref="MetadataV2SpatialExtensions.ReadSrid"/>).
     /// </summary>
-    private async Task<FeatureEditResult> ExecuteEditAsync(
+    internal async Task<FeatureEditResult> ExecuteEditAsync(
         HttpContext context,
         int layerId,
         MetadataV2Resource resource,
@@ -423,6 +414,21 @@ internal sealed partial class OgcFeaturesCrudHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
+        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+            _featureReader,
+            layerId,
+            resource.OwnerEditPolicy,
+            editBatch,
+            ServiceDataEditorAuthorization.ResolveEditPrincipal(context),
+            cancellationToken).ConfigureAwait(false);
+        if (!prepared.IsAllowed)
+        {
+            return OwnerEditPolicyFieldAccess.DeniedEditResult(
+                editBatch,
+                prepared.DenialReason ?? "Edit not permitted.");
+        }
+
+        editBatch = prepared.Batch;
         // Geometry-change semantics mirror the OGC Features Transaction batch handler:
         // a row is considered to have changed geometry when the request feature carries
         // non-null WKB. Delete operations default to false. Without this, an attribute-
@@ -447,6 +453,28 @@ internal sealed partial class OgcFeaturesCrudHandler(
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static IResult MapDeleteFailure(HttpContext context, EditOperationResult deleteResult, string featureId)
+    {
+        if (deleteResult.IsPreconditionFailure)
+        {
+            return Results.Problem(
+                statusCode: 412,
+                title: "Precondition Failed",
+                detail: "The resource has been modified since the provided ETag.");
+        }
+
+        if (deleteResult.ErrorCode == EditOperationResult.NotPermittedErrorCode)
+        {
+            return StandardErrorHelpers.CreateForbidden(
+                context,
+                string.IsNullOrWhiteSpace(deleteResult.ErrorMessage) ? "Edit not permitted." : deleteResult.ErrorMessage);
+        }
+
+        return IsNotFound(deleteResult)
+            ? StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.")
+            : StandardErrorHelpers.CreateInternalServerError(context, deleteResult.ErrorMessage ?? "An error occurred while deleting the feature.");
     }
 
     private static bool IsNotFound(EditOperationResult result)

@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
@@ -32,7 +33,8 @@ internal sealed record ODataCrudDependencies(
     IETagService ETagService,
     FeatureMutationValidator MutationValidator,
     IEditParameterAdapter<ODataEditRequest> EditParameterAdapter,
-    IEditProcessor EditProcessor);
+    IEditProcessor EditProcessor,
+    IHttpContextAccessor? HttpContextAccessor = null);
 
 /// <summary>
 /// Service for handling OData CRUD operations (Create, Read, Update, Delete) on features.
@@ -49,6 +51,7 @@ internal sealed partial class ODataCrudService
     private readonly FeatureMutationValidator _mutationValidator;
     private readonly IEditParameterAdapter<ODataEditRequest> _editParameterAdapter;
     private readonly IEditProcessor _editProcessor;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
     private readonly ILogger<ODataCrudLog> _logger;
 
     /// <summary>
@@ -69,6 +72,7 @@ internal sealed partial class ODataCrudService
         _mutationValidator = dependencies.MutationValidator ?? throw new ArgumentNullException(nameof(dependencies), "MutationValidator is required.");
         _editParameterAdapter = dependencies.EditParameterAdapter ?? throw new ArgumentNullException(nameof(dependencies), "EditParameterAdapter is required.");
         _editProcessor = dependencies.EditProcessor ?? throw new ArgumentNullException(nameof(dependencies), "EditProcessor is required.");
+        _httpContextAccessor = dependencies.HttpContextAccessor;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -233,7 +237,7 @@ internal sealed partial class ODataCrudService
                 cancellationToken);
             if (!editResult.IsSuccess)
             {
-                return ODataCrudResult<Dictionary<string, object?>>.BadRequest(editResult.ErrorMessage ?? "Invalid request data.");
+                return FromEditFailure<Dictionary<string, object?>>(editResult, "Invalid request data.");
             }
 
             var createdId = editResult.Result?.CreateResults.FirstOrDefault(result => result.IsSuccess).ObjectId;
@@ -450,7 +454,7 @@ internal sealed partial class ODataCrudService
                 cancellationToken);
             if (!editResult.IsSuccess)
             {
-                return ODataCrudResult<Dictionary<string, object?>>.BadRequest(editResult.ErrorMessage ?? "Invalid request data.");
+                return FromEditFailure<Dictionary<string, object?>>(editResult, "Invalid request data.");
             }
 
             if (editResult.Result is { } updateEditResult &&
@@ -610,7 +614,7 @@ internal sealed partial class ODataCrudService
                 cancellationToken);
             if (!editResult.IsSuccess)
             {
-                return ODataCrudResult<object>.BadRequest(editResult.ErrorMessage ?? "Invalid request data.");
+                return FromEditFailure<object>(editResult, "Invalid request data.");
             }
 
             if (editResult.Result?.DeleteResults.Any(static result => result.IsPreconditionFailure) == true)
@@ -717,6 +721,22 @@ internal sealed partial class ODataCrudService
 
         var optimizedRequest = _editProcessor.OptimizeEdit(conversion.EditRequest.Value, resource);
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedRequest, resource);
+        var principal = ServiceDataEditorAuthorization.ResolveEditPrincipal(_httpContextAccessor?.HttpContext);
+        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+            _featureReader,
+            storageLayerId,
+            resource.OwnerEditPolicy,
+            editBatch,
+            principal,
+            cancellationToken).ConfigureAwait(false);
+        if (!prepared.IsAllowed)
+        {
+            return UnifiedEditResult.Failure(
+                prepared.DenialReason ?? "Edit not permitted.",
+                StatusCodes.Status403Forbidden);
+        }
+
+        editBatch = prepared.Batch;
         // Storage handle is still int-keyed at the IFeatureWriter boundary.
         var editResult = await _featureWriter.ApplyEditsAsync(storageLayerId, editBatch, cancellationToken)
             .ConfigureAwait(false);
@@ -727,6 +747,14 @@ internal sealed partial class ODataCrudService
             conversion.Transaction.Value,
             _editParameterAdapter.ProtocolName,
             conversion.Metadata);
+    }
+
+    private static ODataCrudResult<T> FromEditFailure<T>(UnifiedEditResult editResult, string fallback)
+    {
+        var message = editResult.ErrorMessage ?? fallback;
+        return editResult.ErrorStatusCode == StatusCodes.Status403Forbidden
+            ? ODataCrudResult<T>.Forbidden(message)
+            : ODataCrudResult<T>.BadRequest(message);
     }
 
     private string ComputeFeatureEtag(
@@ -812,6 +840,9 @@ internal sealed record ODataCrudResult<T>
 
     public static ODataCrudResult<T> BadRequest(string message)
         => new() { IsSuccess = false, StatusCode = 400, ErrorMessage = message };
+
+    public static ODataCrudResult<T> Forbidden(string message)
+        => new() { IsSuccess = false, StatusCode = 403, ErrorMessage = message };
 
     public static ODataCrudResult<T> NotFound(string message)
         => new() { IsSuccess = false, StatusCode = 404, ErrorMessage = message };
