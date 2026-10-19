@@ -83,8 +83,12 @@ internal sealed class PublishedServiceResource : IMcpResource
         if (graphProvider is not null)
         {
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            // A promotion record is independently readable under the operator
+            // grant. A metadata publication hidden by its own policy cannot
+            // make that legitimate promotion URI unreadable.
             var catalog = await PublishedMetadataCatalogProjection.FindAsync(
-                httpContext, snapshot, serviceId, refuseDenied: true, cancellationToken).ConfigureAwait(false);
+                httpContext, snapshot, serviceId, refuseDenied: record is null, cancellationToken)
+                .ConfigureAwait(false);
             if (catalog is not null)
             {
                 if (record is not null)

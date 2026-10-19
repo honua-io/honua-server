@@ -36,6 +36,8 @@ public sealed class McpPublishedCatalogReadbackTests
     public McpPublishedCatalogReadbackTests()
     {
         _promotions.ListActiveAsync(Arg.Any<CancellationToken>()).Returns([]);
+        _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, ServiceName,
+            Arg.Any<CancellationToken>()).Returns([]);
     }
 
     [UnitTest]
@@ -203,6 +205,45 @@ public sealed class McpPublishedCatalogReadbackTests
             "honua://published-services", CancellationToken.None);
 
         await read.Should().ThrowAsync<GeoprocessingValidationException>();
+    }
+
+    [UnitTest]
+    public async Task Index_ActivePromotionAndStoppedCatalogCollision_RefusesUnreadableUri()
+    {
+        var promotion = Promotion();
+        _promotions.GetAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(promotion);
+        _promotions.ListActiveAsync(Arg.Any<CancellationToken>()).Returns([promotion]);
+        var graph = Catalog();
+        graph = graph with
+        {
+            Services = [graph.Services[0] with
+            {
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft },
+                Protocols = []
+            }]
+        };
+        var index = new PromotionSurfaceIndexResource(
+            _promotions, _deployments, _jobs, NullLogger<PromotionSurfaceIndexResource>.Instance);
+        var read = async () => await index.ReadAsync(Context(graph),
+            "honua://published-services", CancellationToken.None);
+
+        await read.Should().ThrowAsync<GeoprocessingValidationException>();
+    }
+
+    [UnitTest]
+    public async Task Read_PromotionWithRestrictedCatalog_RemainsReadableUnderPromotionGrant()
+    {
+        var promotion = Promotion();
+        _promotions.GetAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(promotion);
+        _promotions.ListActiveAsync(Arg.Any<CancellationToken>()).Returns([promotion]);
+        var graph = Catalog(new AccessPolicy { AllowedRoles = ["private-road-reader"] });
+        var index = new PromotionSurfaceIndexResource(
+            _promotions, _deployments, _jobs, NullLogger<PromotionSurfaceIndexResource>.Instance);
+
+        var listed = await index.ReadAsync(Context(graph),
+            "honua://published-services", CancellationToken.None);
+        McpTestFactory.ParseJson(listed.Contents[0].Text).GetProperty("count").GetInt32().Should().Be(1);
+        (await ReadAsync(graph)).GetProperty("sourceId").GetString().Should().Be("another-package");
     }
 
     [UnitTest]
@@ -394,4 +435,16 @@ public sealed class McpPublishedCatalogReadbackTests
                 layerIndex: 3, storageBindingId: "road-binding",
                 publicationType: MetadataV2PublicationType.EsriFeatureLayer)
             .Build();
+
+    private static PublishedServiceRecord Promotion() => new()
+    {
+        ServiceId = ServiceName,
+        IntentId = "another-intent",
+        SourceKind = PublishSourceKind.ResultPackage,
+        SourceId = "another-package",
+        TargetKind = PublishTargetKind.FeatureService,
+        Status = PublishedServiceStatus.Active,
+        PublishedAt = DateTimeOffset.UnixEpoch,
+        UpdatedAt = DateTimeOffset.UnixEpoch
+    };
 }

@@ -91,7 +91,7 @@ internal static class PublishedMetadataCatalogProjection
         return found;
     }
 
-    public static async Task<IReadOnlyList<ServiceView>> ListServingAsync(
+    public static async Task<IReadOnlyList<ServiceView>> ListReadableAsync(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
         CancellationToken cancellationToken)
@@ -115,10 +115,7 @@ internal static class PublishedMetadataCatalogProjection
                     $"Published service identity '{projected.ServiceName}' is ambiguous in the metadata catalog.");
             }
 
-            if (projected.Serving)
-            {
-                results.Add(projected);
-            }
+            results.Add(projected);
         }
 
         return results;

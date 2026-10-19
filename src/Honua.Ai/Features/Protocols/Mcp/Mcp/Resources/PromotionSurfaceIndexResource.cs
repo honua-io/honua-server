@@ -212,7 +212,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         if (graphProvider is not null)
         {
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var catalog = await PublishedMetadataCatalogProjection.ListServingAsync(
+            var catalog = await PublishedMetadataCatalogProjection.ListReadableAsync(
                 httpContext, snapshot, cancellationToken).ConfigureAwait(false);
             foreach (var service in catalog)
             {
@@ -222,7 +222,10 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
                         $"Published service identity '{service.ServiceName}' is shared by a promotion and a catalog publication.");
                 }
 
-                items.Add(service.ToSummary());
+                if (service.Serving)
+                {
+                    items.Add(service.ToSummary());
+                }
             }
         }
 
