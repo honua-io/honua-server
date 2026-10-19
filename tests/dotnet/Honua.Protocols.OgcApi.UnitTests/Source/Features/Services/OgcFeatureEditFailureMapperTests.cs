@@ -19,6 +19,7 @@ public sealed class OgcFeatureEditFailureMapperTests
     [InlineData("Geometry is required for create operation on a spatial layer", 1000, 400)]
     [InlineData("Create failed.", 1000, 500)]
     [InlineData("Something else.", 422, 400)]
+    [InlineData("Feature is owned by another principal and cannot be modified under the owner-based edit policy.", 403, 403)]
     public void DetermineStatus_ClassifiesSafeWriterMessages(string message, int code, int expected)
     {
         var status = OgcFeatureEditFailureMapper.DetermineStatus(
@@ -40,5 +41,26 @@ public sealed class OgcFeatureEditFailureMapperTests
 
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+    }
+
+    [UnitTest]
+    public async Task ToResult_OwnerDenial_ReturnsForbiddenWithThePolicyReason()
+    {
+        const string denial = "Feature is owned by another principal and cannot be modified under the owner-based edit policy.";
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/ogc/features/collections/cities/items/42";
+        context.Response.Body = new MemoryStream();
+
+        var result = OgcFeatureEditFailureMapper.ToResult(
+            context,
+            EditOperationResult.Failure(denial, EditOperationResult.NotPermittedErrorCode),
+            "An error occurred while updating the feature.");
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        context.Response.Body.Position = 0;
+        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        body.Should().Contain(denial);
+        body.Should().NotContain("alice");
     }
 }
