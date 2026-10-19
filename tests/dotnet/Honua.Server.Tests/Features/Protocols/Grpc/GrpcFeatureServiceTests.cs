@@ -1846,11 +1846,9 @@ public sealed class GrpcFeatureServiceTests
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     [Operation(Operations.Query)]
-    public async Task QueryFeatures_PerOperationQueryGrant_OverridesCoarseDeny()
+    public async Task QueryFeatures_PerOperationQueryGrant_DoesNotSkipRoleList()
     {
-        // Coarse policy requires a role the user lacks (would deny), but the
-        // principal's role carries a per-operation "query" grant on the service,
-        // which the resolver must honor across the gRPC read seam (#1376).
+        // Coarse policy requires a role the user lacks. A query grant must not skip it (#6358).
         var protectedService = CreateService(
             "protected",
             accessPolicy: new AccessPolicy { AllowedRoles = ["coarse-only"] });
@@ -1858,18 +1856,16 @@ public sealed class GrpcFeatureServiceTests
         _resourceValidator
             .ValidateServiceLayerV2Async("protected", 0, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(CreateTriple(protectedService, _testResource)));
-        _featureReader
-            .QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty));
 
         var request = new Proto.QueryFeaturesRequest { ServiceId = "protected", LayerId = 0 };
 
         var grant = new PermissionGrant { Service = "protected", Layer = "*", Operation = "query" };
-        var response = await _sut.QueryFeatures(
+        var act = async () => await _sut.QueryFeatures(
             request,
             CreateCallContext(CreateAuthenticatedUser("granted-role"), grant));
 
-        response.Should().NotBeNull();
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
     }
 
     [UnitTest]
