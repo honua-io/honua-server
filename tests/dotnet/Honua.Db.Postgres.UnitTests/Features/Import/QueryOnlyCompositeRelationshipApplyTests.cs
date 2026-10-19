@@ -46,6 +46,44 @@ public sealed class QueryOnlyCompositeRelationshipApplyTests
     }
 
     [UnitTest]
+    public void PlanCompositeRelationships_SameSourceIdOnBothEnds_KeepsTheReciprocal()
+    {
+        var plan = PostgresMigrationCatalogWriter.PlanCompositeRelationships(
+            Graph(Resource(10), Resource(11)),
+            [
+                Request("7", 10, 11, "esriRelRoleOrigin"),
+                Request("7", 11, 10, "esriRelRoleDestination")
+            ]);
+
+        plan.Changed.Should().BeTrue();
+        plan.Rejected.Should().BeEmpty();
+        MetadataV2GraphValidator.Validate(plan.Candidate).IsValid.Should().BeTrue();
+        plan.Candidate.Resources.Should().OnlyContain(resource => resource.Relationships.Count == 1 && resource.Relationships[0].Composite);
+    }
+
+    [UnitTest]
+    public void PlanCompositeRelationships_RoleAlias_StillRetainsExistingOwnership()
+    {
+        var plan = PostgresMigrationCatalogWriter.PlanCompositeRelationships(
+            Graph(Resource(10), Resource(11)),
+            [
+                Request("origin", 10, 11, "esriRelRoleOrigin"),
+                Request("destination", 11, 10, "esriRelRoleDestination")
+            ]);
+
+        var replay = PostgresMigrationCatalogWriter.PlanCompositeRelationships(
+            plan.Candidate,
+            [
+                Request("origin", 10, 11, "origin"),
+                Request("destination", 11, 10, "destination")
+            ]);
+
+        replay.Changed.Should().BeFalse();
+        replay.Rejected.Should().BeEmpty();
+        replay.Accepted.Should().OnlyContain(decision => !decision.Deferred);
+    }
+
+    [UnitTest]
     public void PlanCompositeRelationships_OneSidedEditableOrSimpleExisting_DoesNotWrite()
     {
         var oneSided = PostgresMigrationCatalogWriter.PlanCompositeRelationships(

@@ -512,20 +512,32 @@ public static class MigrationCatalogReconciler
         MetadataV2Resource published,
         MigrationManifestRelationshipRecord expected)
     {
-        var matches = new List<MetadataV2Relationship>();
+        var identified = new List<MetadataV2Relationship>();
         foreach (var relationship in published.Relationships)
         {
             if (string.Equals(relationship.Id, expected.SourceRelationshipId, StringComparison.Ordinal)
                 || (!string.IsNullOrWhiteSpace(expected.TargetRelationshipRef)
-                    && string.Equals(relationship.Id, expected.TargetRelationshipRef, StringComparison.Ordinal))
-                || (!string.IsNullOrWhiteSpace(expected.Name)
-                    && string.Equals(relationship.Name, expected.Name, StringComparison.Ordinal)))
+                    && string.Equals(relationship.Id, expected.TargetRelationshipRef, StringComparison.Ordinal)))
             {
-                matches.Add(relationship);
+                identified.Add(relationship);
             }
         }
 
-        return matches;
+        if (identified.Count > 0 || string.IsNullOrWhiteSpace(expected.Name))
+        {
+            return identified;
+        }
+
+        var named = new List<MetadataV2Relationship>();
+        foreach (var relationship in published.Relationships)
+        {
+            if (string.Equals(relationship.Name, expected.Name, StringComparison.Ordinal))
+            {
+                named.Add(relationship);
+            }
+        }
+
+        return named;
     }
 
     private static bool IsCompositeRelationshipType(string? relationshipType)
