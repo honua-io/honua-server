@@ -1080,9 +1080,10 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             NullLogger<PostgresAttachmentStore>.Instance, schema);
         var found = await attachmentStore.GetAsync(73, 72, 9101);
         found.Should().NotBeNull();
-        found!.Value.StoragePath.Should().Be("preserved/legacy.txt");
+        var preserved = found ?? throw new InvalidOperationException("The migrated legacy attachment must exist.");
+        preserved.StoragePath.Should().Be("preserved/legacy.txt");
         (await attachmentStore.HasLegacyAttachmentsAsync(73, CancellationToken.None)).Should().BeTrue();
-        var createdAttachment = await attachmentStore.CreateAsync(73, 72, found.Value with
+        var createdAttachment = await attachmentStore.CreateAsync(73, 72, preserved with
         {
             Id = 0,
             Filename = "new.txt",
