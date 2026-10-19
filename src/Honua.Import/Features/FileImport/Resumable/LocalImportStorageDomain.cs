@@ -22,18 +22,21 @@ internal sealed class LocalImportStorageDomain : IImportStorageBudget, IStorageD
 
     internal LocalImportStorageDomain(IConnectionMultiplexer redis, string domainId,
         ImportStorageBudgetLimits limits, string journalDirectory,
-        IReadOnlyDictionary<ImportStorageRootKind, string> roots)
+        IReadOnlyDictionary<ImportStorageRootKind, string> roots, int? journalCapacity = null)
     {
         ArgumentNullException.ThrowIfNull(redis);
         // Validate the canonical domain/policy before allocating control files.
         _ = new RedisImportStorageBudget(redis, domainId, limits, Guid.NewGuid().ToString("N"));
-        if (limits.MaximumObjects > LocalImportStorageCensus.MaximumLocalObjects)
+        var capacity = journalCapacity ?? limits.MaximumObjects;
+        if (capacity < limits.MaximumObjects || capacity > LocalImportStorageCensus.MaximumLocalObjects)
             throw new ArgumentException("This local profile exceeds its bounded physical census capacity.", nameof(limits));
         _redis = redis;
         _domainId = domainId;
         _limits = limits;
-        _journal = new(journalDirectory, domainId, limits.MaximumObjects);
-        _census = new(_journal, roots, limits.MaximumObjects);
+        // Physical journal capacity is stable across quota reductions. Existing
+        // objects remain accounted even while their usage exceeds a new policy.
+        _journal = new(journalDirectory, domainId, capacity);
+        _census = new(_journal, roots, capacity);
         _domainLock = new(journalDirectory);
     }
 

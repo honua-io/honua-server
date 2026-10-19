@@ -101,6 +101,30 @@ public sealed class LocalImportStorageDomainTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    public async Task LowerQuotaPreservesExistingPhysicalObjectsAndRefusesNewCapacity()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var disk = new Disk(connection);
+        var original = disk.Domain();
+        await original.InitializeAsync();
+        var storage = disk.Storage(original);
+        _ = await StageAsync(storage, original, Session());
+        _ = await StageAsync(storage, original, Session());
+        var reduced = disk.Domain(limits: new(16, 16, 16, 1));
+        await reduced.InitializeAsync();
+        var session = Session();
+        var candidate = RedisImportStorageBudget.ForObject(session, $"imports/resumable/{session.Id}/{Guid.NewGuid():N}.part", 16);
+        Assert.False(await reduced.TryReserveAsync(candidate));
+        var ledger = await disk.LedgerAsync();
+        Assert.Equal(32, (long)await connection.GetDatabase().HashGetAsync(ledger.Key, "bytes"));
+        Assert.Equal(2, (long)await connection.GetDatabase().HashGetAsync(ledger.Key, "count"));
+        Assert.Equal(2, (await storage.ListFilesAsync()).Count());
+        var otherCandidate = RedisImportStorageBudget.ForObject(session, $"imports/resumable/{session.Id}/{Guid.NewGuid():N}.part", 16);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => original.TryReserveAsync(otherCandidate));
+    }
+
+    [IntegrationTest]
     public async Task RecoveryWaitsForTheEntirePhysicalWriterLifetime()
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -253,8 +277,8 @@ public sealed class LocalImportStorageDomainTests(RedisFixture redis)
                 Roots.Add(kind, path);
             }
         }
-        internal LocalImportStorageDomain Domain(IConnectionMultiplexer? connection = null) => new(connection ?? _connection,
-            _domainId, _limits, JournalPath, Roots);
+        internal LocalImportStorageDomain Domain(IConnectionMultiplexer? connection = null, ImportStorageBudgetLimits? limits = null) => new(connection ?? _connection,
+            _domainId, limits ?? _limits, JournalPath, Roots, _limits.MaximumObjects);
         internal LocalImportStorageJournal Journal() => new(JournalPath, _domainId, _limits.MaximumObjects);
         internal async Task<RedisImportStorageBudget> LedgerAsync() => new(_connection, _domainId, _limits, await Journal().ReadEpochAsync());
         internal LocalFileStorage Storage(LocalImportStorageDomain domain) => new(Options.Create(new LocalStorageOptions
