@@ -197,11 +197,6 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
                 using var reader = new StreamReader(stream);
                 var sql = (await reader.ReadToEndAsync())
                     .Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
-                if (file == "082_CreatePromotionStores.sql")
-                {
-                    sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
-                }
-
                 await _fixture.Postgres.ExecuteAsync(sql, schema);
             }
         });
@@ -212,7 +207,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.");
         await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
         await using var command = new NpgsqlCommand(
-            $"SELECT source_kind FROM \"{schema}\".promotion_deployments WHERE deployment_id = @deployment_id",
+            "SELECT source_kind FROM honua.promotion_deployments WHERE deployment_id = @deployment_id",
             connection);
         command.Parameters.AddWithValue("@deployment_id", deploymentId);
         (await command.ExecuteScalarAsync()).Should().Be("StudioPublishedVersion");

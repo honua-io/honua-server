@@ -18,7 +18,7 @@ internal sealed class PostgresDeploymentStore : IDeploymentStore
         "deployment_id, source_kind, source_id, target_id, status, version, document, created_at, updated_at";
 
     private readonly NpgsqlDataSource _dataSource;
-    private readonly string _table;
+    private readonly string? _configuredSchema;
 
     public PostgresDeploymentStore(
         NpgsqlDataSource dataSource,
@@ -26,7 +26,8 @@ internal sealed class PostgresDeploymentStore : IDeploymentStore
     {
         ArgumentNullException.ThrowIfNull(dataSource);
         _dataSource = dataSource;
-        _table = SchemaSearchPath.QualifyTable("promotion_deployments", schemaName);
+        _ = SchemaSearchPath.ValidateAndQuote(string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName);
+        _configuredSchema = schemaName;
     }
 
     public async Task<bool> TryCreateAsync(
@@ -39,14 +40,16 @@ internal sealed class PostgresDeploymentStore : IDeploymentStore
             throw new ArgumentException("A new deployment must start at revision zero.", nameof(deployment));
         }
 
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _configuredSchema, cancellationToken).ConfigureAwait(false);
+        var table = SchemaSearchPath.QualifyTable("promotion_deployments", schema);
         var sql = $"""
-            INSERT INTO {_table} ({Columns})
+            INSERT INTO {table} ({Columns})
             VALUES (@deployment_id, @source_kind, @source_id, @target_id, @status,
                     @version, @document, @created_at, @updated_at)
             ON CONFLICT (deployment_id) DO NOTHING
             """;
 
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         AddParameters(command, deployment);
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
@@ -56,8 +59,10 @@ internal sealed class PostgresDeploymentStore : IDeploymentStore
         string deploymentId,
         CancellationToken cancellationToken = default)
     {
-        var sql = $"SELECT document FROM {_table} WHERE deployment_id = @deployment_id";
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _configuredSchema, cancellationToken).ConfigureAwait(false);
+        var table = SchemaSearchPath.QualifyTable("promotion_deployments", schema);
+        var sql = $"SELECT document FROM {table} WHERE deployment_id = @deployment_id";
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@deployment_id", NpgsqlDbType.Text, deploymentId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -77,8 +82,11 @@ internal sealed class PostgresDeploymentStore : IDeploymentStore
             throw new ArgumentException("A deployment transition must advance the expected revision once.", nameof(deployment));
         }
 
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _configuredSchema, cancellationToken).ConfigureAwait(false);
+        var table = SchemaSearchPath.QualifyTable("promotion_deployments", schema);
         var sql = $"""
-            UPDATE {_table}
+            UPDATE {table}
             SET status = @status,
                 version = @version,
                 document = @document,
@@ -94,7 +102,6 @@ internal sealed class PostgresDeploymentStore : IDeploymentStore
               AND document -> 'audit' = @audit_document
             """;
 
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         AddParameters(command, deployment);
         command.Parameters.AddWithValue("@expected_version", NpgsqlDbType.Bigint, expectedVersion);
@@ -152,8 +159,10 @@ internal sealed class PostgresDeploymentStore : IDeploymentStore
         Action<NpgsqlCommand> addParameters,
         CancellationToken cancellationToken)
     {
-        var sql = $"SELECT document FROM {_table} WHERE {predicate} ORDER BY updated_at DESC, deployment_id";
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _configuredSchema, cancellationToken).ConfigureAwait(false);
+        var table = SchemaSearchPath.QualifyTable("promotion_deployments", schema);
+        var sql = $"SELECT document FROM {table} WHERE {predicate} ORDER BY updated_at DESC, deployment_id";
         await using var command = new NpgsqlCommand(sql, connection);
         addParameters(command);
         var deployments = new List<Deployment>();

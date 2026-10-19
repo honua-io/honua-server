@@ -12,6 +12,7 @@ using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Publishing;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -31,7 +32,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
     private readonly string _dependenciesTable;
     private readonly string _publicationRequestsTable;
     private readonly string _rollbackRequestsTable;
-    private readonly string _deploymentsTable;
+    private readonly string? _promotionSchema;
 
     public PostgresStudioPackageStore(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
@@ -44,7 +45,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         _dependenciesTable = SchemaSearchPath.QualifyTable("studio_content_version_dependencies", schemaName);
         _publicationRequestsTable = SchemaSearchPath.QualifyTable("studio_publication_requests", schemaName);
         _rollbackRequestsTable = SchemaSearchPath.QualifyTable("studio_rollback_requests", schemaName);
-        _deploymentsTable = SchemaSearchPath.QualifyTable("promotion_deployments", schemaName);
+        _promotionSchema = schemaName;
     }
 
     public StudioPackagePersistenceMode PersistenceMode => StudioPackagePersistenceMode.Durable;
@@ -1090,6 +1091,10 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
     {
         ArgumentException.ThrowIfNullOrEmpty(route);
 
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var schema = await PostgresPromotionSchema.ResolveAsync(lease.Connection, _promotionSchema, cancellationToken).ConfigureAwait(false);
+        var deploymentsTable = SchemaSearchPath.QualifyTable("promotion_deployments", schema);
+
         // The item row records the accepted request that last moved its published pointer.
         // DISTINCT ON retains timestamp ordering only for legacy items without that pointer;
         // the outer filter excludes items since republished to another route or no route.
@@ -1124,7 +1129,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
             ) AS governing
             LEFT JOIN LATERAL (
                 SELECT deployment_id
-                FROM {_deploymentsTable}
+                FROM {deploymentsTable}
                 WHERE source_kind = @studio_source_kind
                   AND status = @active_status
                   AND target_id = @target_id
@@ -1136,7 +1141,6 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
             ORDER BY governing.created_at DESC, governing.request_id DESC
             LIMIT 1
             """;
-        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease.Connection);
         command.Parameters.AddWithValue("@status", ToDbPublicationStatus(StudioPublicationRequestStatus.Accepted));
         command.Parameters.AddWithValue("@route", route);

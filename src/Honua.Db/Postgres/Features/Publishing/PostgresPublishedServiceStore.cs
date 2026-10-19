@@ -18,7 +18,7 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
         "service_id, intent_id, source_kind, source_id, target_kind, status, document, published_at, updated_at";
 
     private readonly NpgsqlDataSource _dataSource;
-    private readonly string _table;
+    private readonly string? _configuredSchema;
 
     public PostgresPublishedServiceStore(
         NpgsqlDataSource dataSource,
@@ -26,7 +26,8 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
     {
         ArgumentNullException.ThrowIfNull(dataSource);
         _dataSource = dataSource;
-        _table = SchemaSearchPath.QualifyTable("promotion_published_services", schemaName);
+        _ = SchemaSearchPath.ValidateAndQuote(string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName);
+        _configuredSchema = schemaName;
     }
 
     public async Task<bool> TryCreateAsync(
@@ -34,14 +35,16 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(service);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _configuredSchema, cancellationToken).ConfigureAwait(false);
+        var table = SchemaSearchPath.QualifyTable("promotion_published_services", schema);
         var sql = $"""
-            INSERT INTO {_table} ({Columns})
+            INSERT INTO {table} ({Columns})
             VALUES (@service_id, @intent_id, @source_kind, @source_id, @target_kind, @status,
                     @document, @published_at, @updated_at)
             ON CONFLICT (service_id) DO NOTHING
             """;
 
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         AddParameters(command, service);
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
@@ -51,8 +54,10 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
         string serviceId,
         CancellationToken cancellationToken = default)
     {
-        var sql = $"SELECT document FROM {_table} WHERE service_id = @service_id";
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _configuredSchema, cancellationToken).ConfigureAwait(false);
+        var table = SchemaSearchPath.QualifyTable("promotion_published_services", schema);
+        var sql = $"SELECT document FROM {table} WHERE service_id = @service_id";
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@service_id", NpgsqlDbType.Text, serviceId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -66,8 +71,11 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(service);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _configuredSchema, cancellationToken).ConfigureAwait(false);
+        var table = SchemaSearchPath.QualifyTable("promotion_published_services", schema);
         var sql = $"""
-            INSERT INTO {_table} ({Columns})
+            INSERT INTO {table} ({Columns})
             VALUES (@service_id, @intent_id, @source_kind, @source_id, @target_kind, @status,
                     @document, @published_at, @updated_at)
             ON CONFLICT (service_id) DO UPDATE SET
@@ -81,7 +89,6 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
                 updated_at = EXCLUDED.updated_at
             """;
 
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         AddParameters(command, service);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -110,8 +117,10 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
         Action<NpgsqlCommand> addParameters,
         CancellationToken cancellationToken)
     {
-        var sql = $"SELECT document FROM {_table} WHERE {predicate} ORDER BY updated_at DESC, service_id";
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _configuredSchema, cancellationToken).ConfigureAwait(false);
+        var table = SchemaSearchPath.QualifyTable("promotion_published_services", schema);
+        var sql = $"SELECT document FROM {table} WHERE {predicate} ORDER BY updated_at DESC, service_id";
         await using var command = new NpgsqlCommand(sql, connection);
         addParameters(command);
         var services = new List<PublishedServiceRecord>();

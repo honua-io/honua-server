@@ -5,6 +5,8 @@ using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Publishing;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -143,12 +145,15 @@ internal sealed partial class PostgresStudioPackageStore
         string? actorId,
         CancellationToken cancellationToken)
     {
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _promotionSchema, cancellationToken, transaction).ConfigureAwait(false);
+        var deploymentsTable = SchemaSearchPath.QualifyTable("promotion_deployments", schema);
+
         // An earlier Studio publication owns the route. Current-only rollbacks do not
         // affect it. Legacy items without a canonical hosted deployment retain their
         // existing pointer behavior without fabricating a route or source receipt.
         var sql = $"""
             SELECT document
-            FROM {_deploymentsTable}
+            FROM {deploymentsTable}
             WHERE source_kind = @source_kind
               AND status = @active
               AND document -> 'source' ->> 'studioItemId' = @item_id
@@ -205,12 +210,15 @@ internal sealed partial class PostgresStudioPackageStore
         Deployment deployment,
         CancellationToken cancellationToken)
     {
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _promotionSchema, cancellationToken, transaction).ConfigureAwait(false);
+        var deploymentsTable = SchemaSearchPath.QualifyTable("promotion_deployments", schema);
+
         // The Studio pointer CAS has locked this item, and the route advisory lock has
         // serialized competitors for this route. Retire the previous deployment in the same
         // transaction so neither a republish nor a route move leaves two live records.
         var selectSql = $"""
             SELECT document
-            FROM {_deploymentsTable}
+            FROM {deploymentsTable}
             WHERE status = @active
               AND (target_id = @target_id
                    OR (source_kind = @studio_kind
@@ -247,7 +255,7 @@ internal sealed partial class PostgresStudioPackageStore
                 Version = checked(current.Version + 1)
             };
             var updateSql = $"""
-                UPDATE {_deploymentsTable}
+                UPDATE {deploymentsTable}
                 SET status = @status, version = @next_version, document = @document,
                     updated_at = @updated_at
                 WHERE deployment_id = @deployment_id AND version = @expected_version
@@ -269,7 +277,7 @@ internal sealed partial class PostgresStudioPackageStore
         }
 
         var insertSql = $"""
-            INSERT INTO {_deploymentsTable}
+            INSERT INTO {deploymentsTable}
                 (deployment_id, source_kind, source_id, target_id, status, version,
                  document, created_at, updated_at)
             VALUES
@@ -298,11 +306,14 @@ internal sealed partial class PostgresStudioPackageStore
         StudioPublicationRequest request,
         CancellationToken cancellationToken)
     {
+        var schema = await PostgresPromotionSchema.ResolveAsync(connection, _promotionSchema, cancellationToken, transaction).ConfigureAwait(false);
+        var deploymentsTable = SchemaSearchPath.QualifyTable("promotion_deployments", schema);
+
         // An accepted publication without a hosted route withdraws the previously served
         // version. Keep the deployment projection in the same transaction as the pointer.
         var selectSql = $"""
             SELECT document
-            FROM {_deploymentsTable}
+            FROM {deploymentsTable}
             WHERE source_kind = @source_kind
               AND status = @active
               AND document -> 'source' ->> 'studioItemId' = @item_id
@@ -346,7 +357,7 @@ internal sealed partial class PostgresStudioPackageStore
                 Version = checked(current.Version + 1)
             };
             var updateSql = $"""
-                UPDATE {_deploymentsTable}
+                UPDATE {deploymentsTable}
                 SET status = @status, version = @next_version, document = @document,
                     updated_at = @updated_at
                 WHERE deployment_id = @deployment_id AND version = @expected_version

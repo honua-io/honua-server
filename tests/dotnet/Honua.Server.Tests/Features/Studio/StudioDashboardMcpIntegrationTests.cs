@@ -67,11 +67,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         {
             var sql = await File.ReadAllTextAsync(Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", migration));
             sql = sql.Replace("$HonuaSchema$", $"\"{_studioSchema}\"", StringComparison.Ordinal);
-            if (migration == "082_CreatePromotionStores.sql")
-            {
-                sql = sql.Replace("honua.", $"\"{_studioSchema}\".", StringComparison.Ordinal);
-            }
-
+            // Execute 082 unchanged: production keeps the canonical promotion family in honua.
             await _fixture.Postgres.ExecuteAsync(sql);
         }
         _client = _fixture.CreateAdminClient();

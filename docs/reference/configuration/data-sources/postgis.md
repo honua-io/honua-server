@@ -75,6 +75,17 @@ migration: drain older nodes, review the deploy preflight, and provide the
 one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce reported by the migration gate
 before applying it.
 
+The canonical promotion stores retain their existing physical tables. Migration
+082 historically created `promotion_deployments` and `promotion_published_services`
+in `honua` even when `Database:Schema` selected another metadata schema. Migration
+134 and the canonical stores use a complete family in the configured schema when
+no legacy family exists, or the complete legacy `honua` family when neither table
+exists in the configured schema. Partial or coexisting families refuse operation
+for reconciliation; reads never create, move, copy, or merge records. Studio
+metadata stays in the configured schema and references that same promotion family.
+Migration 134 adds the deployment revision without relocating tables. This
+additive change does not by itself qualify an older rollback image or a release.
+
 The preflight result is available via `GET /api/v1/admin/deploy/preflight?includeDiagnostics=true` in the `databaseCompatibility` field.
 
 ## AWS Aurora PostgreSQL
