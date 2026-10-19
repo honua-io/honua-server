@@ -769,8 +769,11 @@ internal static class ServiceCollectionExtensions
                 limits,
                 cloudStorage,
                 serviceProvider.GetRequiredService<PostgresSchemaConfiguration>(),
-                serviceProvider.GetService<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>());
+                serviceProvider.GetService<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>(),
+                serviceProvider.GetService<IImportExecutionCommitAuthority>());
         });
+
+        services.TryAddScoped<IImportCommittedResultReader, PostgresImportCommittedResultReader>();
 
         // Register universal import job service using unified progress store
         // This replaces the in-memory job service with one that uses centralized progress tracking

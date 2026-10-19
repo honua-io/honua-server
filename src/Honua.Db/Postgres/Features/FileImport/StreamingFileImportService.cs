@@ -42,6 +42,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly IFileFormatDetectionService _formatDetectionService;
     private readonly ImportLimits _limits;
+    private readonly IImportExecutionCommitAuthority? _commitAuthority;
     private readonly StreamingGeoJsonReader _geoJsonReader;
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<StreamingFileImportService> _logger;
@@ -106,7 +107,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         ImportLimits? limits = null,
         Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? cloudStorage = null,
         PostgresSchemaConfiguration? schemaConfiguration = null,
-        IDatumTransformationCatalog? datumTransformationCatalog = null)
+        IDatumTransformationCatalog? datumTransformationCatalog = null,
+        IImportExecutionCommitAuthority? commitAuthority = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
@@ -121,6 +123,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             PostgresSchemaConfiguration.DefaultDataSchema,
             [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
         _datumTransformationCatalog = datumTransformationCatalog;
+        _commitAuthority = commitAuthority;
     }
 
     /// <summary>
@@ -605,7 +608,17 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             int repairedCount;
             string physicalTableName;
             bool replacementBlocked;
-            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked) = await ImportStreamingAsync(
+            ImportResult? committedResult;
+            var completedFormat = format.Value;
+            ImportResult BuildSuccessResult(int imported, int repaired, string[] completionWarnings,
+                IReadOnlyList<ImportValidationIssue> issues, string physicalTable) =>
+                ImportResult.CreateSuccess(request.TableName, completedFormat, imported, detectedSrid, stopwatch.Elapsed,
+                    completionWarnings, physicalTableName: physicalTable, schema: ResolveTargetSchema(request.TargetSchema),
+                    repairedGeometryCount: repaired) with
+                {
+                    ValidationErrors = preflightWarnings.Length == 0 ? issues : [.. preflightWarnings, .. issues]
+                };
+            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked, committedResult) = await ImportStreamingAsync(
                 request,
                 fileStream,
                 format.Value,
@@ -614,8 +627,15 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 progress,
                 jobId,
                 cancellationToken,
+                BuildSuccessResult,
                 shapefileScratch,
                 fileGdbScratch);
+
+            if (committedResult is not null)
+            {
+                status = "success";
+                return committedResult;
+            }
 
             // A replace whose load dropped rows against an already-populated target never
             // promoted its staging sibling (see ImportStreamingAsync) — the live target is
@@ -663,24 +683,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             }
 
             status = "success";
-            result = ImportResult.CreateSuccess(
-                request.TableName,
-                format.Value,
-                importedCount,
-                detectedSrid,
-                stopwatch.Elapsed,
-                warnings,
-                physicalTableName: physicalTableName,
-                schema: ResolveTargetSchema(request.TargetSchema),
-                repairedGeometryCount: repairedCount) with
-            {
-                // Per-row issues (e.g. CSV address rows that failed to geocode, or GeoJSON
-                // geometries repaired by the validity gate) that did not block the import but should
-                // be relayed to the caller alongside the warnings.
-                ValidationErrors = preflightWarnings.Length == 0
-                    ? rowIssues
-                    : [.. preflightWarnings, .. rowIssues]
-            };
+            result = BuildSuccessResult(importedCount, repairedCount, warnings, rowIssues, physicalTableName);
             return result;
         }
         catch (CsvImportOptionsException ex)

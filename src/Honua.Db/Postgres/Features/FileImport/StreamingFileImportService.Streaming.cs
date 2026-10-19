@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -24,7 +25,7 @@ internal sealed partial class StreamingFileImportService
     /// <summary>
     /// Stream features from source and insert into database in batches.
     /// </summary>
-    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked)> ImportStreamingAsync(
+    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked, ImportResult? committedResult)> ImportStreamingAsync(
         ImportRequest request,
         Stream fileStream,
         SupportedFileFormat format,
@@ -33,6 +34,7 @@ internal sealed partial class StreamingFileImportService
         IProgress<ImportProgress>? progress,
         string jobId,
         CancellationToken cancellationToken,
+        Func<int, int, string[], IReadOnlyList<ImportValidationIssue>, string, ImportResult> createCommittedResult,
         ShapefileScratch? shapefileScratch = null,
         FileGdbScratch? fileGdbScratch = null)
     {
@@ -50,6 +52,9 @@ internal sealed partial class StreamingFileImportService
         ImportAdvisoryLock? replaceLock = null;
         var dataCommitted = false;
         var appendUsesStaging = false;
+        ImportExecutionCommitBinding? commitBinding = null;
+        ImportResult? committedResult = null;
+        var acceptedStagingCreated = false;
         try
         {
             replaceLock = await AcquireImportLockAsync(
@@ -78,7 +83,21 @@ internal sealed partial class StreamingFileImportService
             // guarantees it is committed and visible before that snapshot.
             string loadTableName;
             var hadExistingTarget = false;
-            switch (loadMode)
+            if (JobSecurityScope.Current?.Submitter is { AgentCredential: not null } or { ExecutionLease: not null })
+            {
+                commitBinding = await RequireCurrentCommitBindingAsync(request, targetSchema, allowedTableName, cancellationToken);
+                // Existing-table agent writes need the canonical row/mask/constraint mutation
+                // path. Never fall back to the legacy direct batch writer while it is absent.
+                if (!commitBinding.RequireAbsentTarget)
+                    throw new NotSupportedException("Accepted imports into existing tables require the governed destination mutation path.");
+                if (await ImportTableExistsAsync(connection, targetSchema, allowedTableName, cancellationToken))
+                    throw new InvalidOperationException("The accepted new import destination is already occupied.");
+                loadTableName = await CreateStagingTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
+                acceptedStagingCreated = true;
+                if (loadMode == ImportLoadMode.Upsert)
+                    await EnsureUpsertKeyAsync(connection, targetSchema, loadTableName, request.KeyColumns, cancellationToken);
+            }
+            else switch (loadMode)
             {
                 case ImportLoadMode.Append:
                     await EnsureTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
@@ -273,58 +292,6 @@ internal sealed partial class StreamingFileImportService
                 // the staging dataset is complete enough to replace an existing target.
                 totalFailed += wktGeometryDiagnostics?.UnparseableRecords ?? 0;
 
-                // For a replace, the load streamed into the staging sibling. Promote it over the
-                // live target unless doing so would destroy a prior COMPLETE dataset: when a target
-                // already existed and this load dropped rows (skip/continue), promoting the
-                // incomplete staging sibling would silently replace a complete dataset with a
-                // partial one (#4006). A first-ever replace into a brand-new target has nothing to
-                // protect, so it still promotes imported rows even with dropped rows — that is a
-                // normal partial import, not data loss. A load with no imported rows is discarded.
-                // Append into an owned target uses the same sibling and merges only after the
-                // whole file has loaded, so a failure before that merge leaves the live table as it was.
-                var replacementBlocked = loadMode == ImportLoadMode.Replace && hadExistingTarget && totalFailed > 0;
-                var stagesIntoSibling = loadMode == ImportLoadMode.Replace || appendUsesStaging;
-                if (stagesIntoSibling)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                }
-
-                if (loadMode == ImportLoadMode.Replace)
-                {
-                    if (replacementBlocked || totalImported == 0)
-                    {
-                        await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
-                    }
-                    else
-                    {
-                        await SwapStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
-                        dataCommitted = true;
-                    }
-                }
-                else if (appendUsesStaging)
-                {
-                    if (totalImported == 0)
-                    {
-                        await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
-                    }
-                    else
-                    {
-                        await AppendStagingIntoTargetAsync(
-                            connection,
-                            targetSchema,
-                            allowedTableName,
-                            loadTableName,
-                            CancellationToken.None);
-                        dataCommitted = true;
-                    }
-                }
-                else if (totalImported > 0)
-                {
-                    // Direct append and upsert already wrote the live table. Later cancellation
-                    // must not reclassify that write as if it had been rolled back.
-                    dataCommitted = true;
-                }
-
                 // Surface skipped null-geometry rows in the completion progress report
                 // so background/queued imports expose the same warning as synchronous results.
                 var completionWarningsBuilder = new List<string>(warnings.Length + 2);
@@ -383,6 +350,74 @@ internal sealed partial class StreamingFileImportService
                     completionWarningsBuilder.Add(string.Format(null, _skippedInvalidGeometryWarningFormat, repairTally.SkippedInvalid));
                 }
 
+                // For a replace, the load streamed into the staging sibling. Promote it over the
+                // live target unless doing so would destroy a prior COMPLETE dataset: when a target
+                // already existed and this load dropped rows (skip/continue), promoting the
+                // incomplete staging sibling would silently replace a complete dataset with a
+                // partial one (#4006). A first-ever replace into a brand-new target has nothing to
+                // protect, so it still promotes imported rows even with dropped rows — that is a
+                // normal partial import, not data loss. A load with no imported rows is discarded.
+                // Append into an owned target uses the same sibling and merges only after the
+                // whole file has loaded, so a failure before that merge leaves the live table as it was.
+                var replacementBlocked = loadMode == ImportLoadMode.Replace && hadExistingTarget && totalFailed > 0;
+                var stagesIntoSibling = loadMode == ImportLoadMode.Replace || appendUsesStaging || commitBinding is not null;
+                if (stagesIntoSibling)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                if (commitBinding is not null)
+                {
+                    if (totalImported == 0)
+                    {
+                        await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                    }
+                    else
+                    {
+                        var originalResult = createCommittedResult(totalImported, repairTally.Repaired,
+                            [.. completionWarningsBuilder], rowIssues, allowedTableName);
+                        await PublishNewAcceptedImportAsync(connection, request, targetSchema, allowedTableName,
+                            loadTableName, commitBinding, originalResult, cancellationToken);
+                        dataCommitted = true;
+                        committedResult = originalResult;
+                    }
+                }
+                else if (loadMode == ImportLoadMode.Replace)
+                {
+                    if (replacementBlocked || totalImported == 0)
+                    {
+                        await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                    }
+                    else
+                    {
+                        await SwapStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                        dataCommitted = true;
+                    }
+                }
+                else if (appendUsesStaging)
+                {
+                    if (totalImported == 0)
+                    {
+                        await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                    }
+                    else
+                    {
+                        await AppendStagingIntoTargetAsync(
+                            connection,
+                            targetSchema,
+                            allowedTableName,
+                            loadTableName,
+                            CancellationToken.None);
+                        dataCommitted = true;
+                    }
+                }
+                else if (totalImported > 0)
+                {
+                    // Direct append and upsert already wrote the live table. Later cancellation
+                    // must not reclassify that write as if it had been rolled back.
+                    dataCommitted = true;
+                }
+
                 if (dataCommitted)
                 {
                     try
@@ -394,12 +429,12 @@ internal sealed partial class StreamingFileImportService
                         // The rows are already committed. An ANALYZE failure must not turn that
                         // into a failed import or skip the completion record.
                         ImportLog.AnalyzeAfterCommitFailed(_logger, analyzeException, targetSchema, allowedTableName);
-                        completionWarningsBuilder.Add(
+                        if (committedResult is null) completionWarningsBuilder.Add(
                             "Table statistics could not be refreshed after the import was committed; the imported rows were kept.");
                     }
                 }
 
-                if (dataCommitted && cancellationToken.IsCancellationRequested)
+                if (dataCommitted && committedResult is null && cancellationToken.IsCancellationRequested)
                 {
                     completionWarningsBuilder.Add(
                         "Import was cancelled after the data was committed. The imported rows were kept.");
@@ -407,33 +442,40 @@ internal sealed partial class StreamingFileImportService
 
                 string[] completionWarnings = [.. completionWarningsBuilder];
 
-                // Report completion
-                progress?.Report(new ImportProgress
+                // Once committed, notification failure cannot replace the durable original result.
+                try
                 {
-                    JobId = jobId,
-                    Status = ImportStatus.Completed,
-                    FeaturesProcessed = totalImported,
-                    FailedFeatures = totalFailed,
-                    RepairedFeatures = repairTally.Repaired,
-                    BatchesCommitted = batchesCommitted,
-                    TableName = request.TableName,
-                    FileName = request.FileName,
-                    SourceKind = request.SourceKind,
-                    SourceUrl = request.SourceUrl,
-                    CloudFileId = request.CloudFileId,
-                    UploadId = request.UploadId,
-                    Format = format,
-                    StartedAt = startTime,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
-                    TotalBytes = fileStream.CanSeek ? fileStream.Length : null,
-                    Warnings = completionWarnings,
-                    CurrentPhase = "Import completed"
-                });
+                    progress?.Report(new ImportProgress
+                    {
+                        JobId = jobId,
+                        Status = ImportStatus.Completed,
+                        FeaturesProcessed = totalImported,
+                        FailedFeatures = totalFailed,
+                        RepairedFeatures = repairTally.Repaired,
+                        BatchesCommitted = batchesCommitted,
+                        TableName = request.TableName,
+                        FileName = request.FileName,
+                        SourceKind = request.SourceKind,
+                        SourceUrl = request.SourceUrl,
+                        CloudFileId = request.CloudFileId,
+                        UploadId = request.UploadId,
+                        Format = format,
+                        StartedAt = startTime,
+                        CompletedAt = DateTimeOffset.UtcNow,
+                        BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
+                        TotalBytes = fileStream.CanSeek ? fileStream.Length : null,
+                        Warnings = completionWarnings,
+                        CurrentPhase = "Import completed"
+                    });
+                }
+                catch (Exception notificationError) when (committedResult is not null && notificationError is not OutOfMemoryException)
+                {
+                    ImportLog.CompletionAfterCommitFailed(_logger, notificationError, targetSchema, allowedTableName);
+                }
 
-                return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked);
+                return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked, committedResult);
             }
-            catch when ((loadMode == ImportLoadMode.Replace || appendUsesStaging) && !dataCommitted)
+            catch when (commitBinding is null && (loadMode == ImportLoadMode.Replace || appendUsesStaging) && !dataCommitted)
             {
                 try
                 {
@@ -448,11 +490,30 @@ internal sealed partial class StreamingFileImportService
                 throw;
             }
         }
+        catch when (acceptedStagingCreated && !dataCommitted)
+        {
+            try
+            {
+                await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+            }
+            catch (Exception cleanupError) when (cleanupError is not OutOfMemoryException)
+            {
+                ImportLog.StagingTableCleanupFailed(_logger, cleanupError, targetSchema, allowedTableName);
+            }
+            throw;
+        }
         finally
         {
             if (replaceLock is not null)
             {
-                await replaceLock.DisposeAsync();
+                try
+                {
+                    await replaceLock.DisposeAsync();
+                }
+                catch (Exception cleanupError) when (committedResult is not null && cleanupError is not OutOfMemoryException)
+                {
+                    ImportLog.CompletionAfterCommitFailed(_logger, cleanupError, targetSchema, allowedTableName);
+                }
             }
         }
     }
