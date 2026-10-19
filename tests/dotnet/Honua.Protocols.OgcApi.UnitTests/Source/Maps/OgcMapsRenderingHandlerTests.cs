@@ -76,7 +76,7 @@ public class OgcMapsRenderingHandlerTests
     }
 
     [UnitTest]
-    public async Task CollectionMap_QueryGrant_DoesNotSkipRoleList()
+    public async Task CollectionMap_QueryGrant_RendersWhenCoarsePolicyDenies()
     {
         var renderer = Substitute.For<IRasterMapRenderer>();
         renderer.RenderCollectionMapAsync(Arg.Any<int>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
@@ -87,18 +87,16 @@ public class OgcMapsRenderingHandlerTests
             Substitute.For<IOgcStyleProjection>(),
             NullLogger<OgcMapsRenderingHandler>.Instance);
 
-        var result = await handler.RenderCollectionMapAsync(
+        await handler.RenderCollectionMapAsync(
             1,
             new OgcMapRequest { Bbox = "-158,20,-156,22", Width = 1, Height = 1 },
             CreateGrantContext());
 
-        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
-            .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
-        await renderer.DidNotReceive().RenderCollectionMapAsync(1, Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>());
+        await renderer.Received(1).RenderCollectionMapAsync(1, Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
-    public async Task DatasetMap_QueryGrant_DoesNotRenderExplicitCollectionWhenRoleListDenies()
+    public async Task DatasetMap_QueryGrant_RendersExplicitCollectionWhenCoarsePolicyDenies()
     {
         var renderer = Substitute.For<IRasterMapRenderer>();
         renderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
@@ -109,21 +107,19 @@ public class OgcMapsRenderingHandlerTests
             Substitute.For<IOgcStyleProjection>(),
             NullLogger<OgcMapsRenderingHandler>.Instance);
 
-        var result = await handler.RenderDatasetMapAsync(
+        await handler.RenderDatasetMapAsync(
             [1],
             new OgcMapRequest { Bbox = "-158,20,-156,22", Width = 1, Height = 1 },
             CreateGrantContext());
 
-        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
-            .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
-        await renderer.DidNotReceive().RenderDatasetMapAsync(
-            Arg.Any<int[]>(),
+        await renderer.Received(1).RenderDatasetMapAsync(
+            Arg.Is<int[]>(layers => layers.SequenceEqual(new[] { 1 })),
             Arg.Any<MapRenderRequest>(),
             Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
-    public async Task DatasetMap_QueryGrant_DoesNotRenderDiscoveredCollectionWhenRoleListDenies()
+    public async Task DatasetMap_QueryGrant_RendersDiscoveredCollectionWhenCoarsePolicyDenies()
     {
         var renderer = Substitute.For<IRasterMapRenderer>();
         renderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
@@ -134,15 +130,13 @@ public class OgcMapsRenderingHandlerTests
             Substitute.For<IOgcStyleProjection>(),
             NullLogger<OgcMapsRenderingHandler>.Instance);
 
-        var result = await handler.RenderDatasetMapAsync(
+        await handler.RenderDatasetMapAsync(
             [],
             new OgcMapRequest { Bbox = "-158,20,-156,22", Width = 1, Height = 1 },
             CreateGrantContext());
 
-        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
-            .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
-        await renderer.DidNotReceive().RenderDatasetMapAsync(
-            Arg.Any<int[]>(),
+        await renderer.Received(1).RenderDatasetMapAsync(
+            Arg.Is<int[]>(layers => layers.SequenceEqual(new[] { 1 })),
             Arg.Any<MapRenderRequest>(),
             Arg.Any<CancellationToken>());
     }

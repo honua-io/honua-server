@@ -37,9 +37,9 @@ namespace Honua.Server.Tests.Features.Security;
 /// resolver (#1375) wired through every protocol adapter via the shared
 /// <c>AccessPolicyHelpers</c> seam (#1376).
 /// <para>
-/// Read protocols are exercised against an explicit role list. A per-operation grant
-/// does not skip that list (#6358); a principal who is not in the list is denied with
-/// or without a matching query grant. Write protocols use no explicit role list, so a
+/// Read protocols are exercised against an explicit role list. A wildcard
+/// per-operation grant does not skip that list (#6358). A grant that names the
+/// target layer still allows that layer. Write protocols use no explicit role list, so a
 /// per-operation write grant still overrides the coarse data-editor deny, and a grant
 /// that allows <c>query</c> but not <c>update</c> still denies writes.
 /// </para>
@@ -54,8 +54,8 @@ public sealed class CrossProtocolPermissionMatrixTests
 
     /// <summary>
     /// Builds a factory for the READ matrix: the alpha service has an explicit
-    /// coarse read policy requiring a role the principal never holds. A matching
-    /// query grant does not skip that list (#6358).
+    /// coarse read policy requiring a role the principal never holds. A wildcard
+    /// query grant does not skip that list (#6358). A grant that names the layer does.
     /// </summary>
     private static WebApplicationFactory<Program> CreateFactory(params PermissionGrant[] grants)
         => CreateFactory(
@@ -423,16 +423,15 @@ public sealed class CrossProtocolPermissionMatrixTests
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task FeatureServerQuery_GrantScopedToTargetLayer_StillDeniedByRoleList()
+    public async Task FeatureServerQuery_GrantScopedToTargetLayer_AllowsThatLayer()
     {
-        // The grant names the target layer, but AllowedRoles does not include the caller (#6358).
         using var factory = CreateFactory(Grant("query", layer: "Alpha Layer"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
 
-        await response.AssertGeoServicesErrorAsync(403);
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     // ---- OData query ----

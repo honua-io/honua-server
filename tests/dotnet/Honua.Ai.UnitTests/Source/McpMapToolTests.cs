@@ -1154,11 +1154,10 @@ public sealed class McpMapToolTests
             CancellationToken.None);
 
         response!.Error.Should().BeNull();
-        response.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue(
-            "a query grant must not skip AllowedRoles (#6358)");
+        response.Result!.Value.GetProperty("structuredContent").GetProperty("count").GetInt64().Should().Be(42);
         await resolver.Received(1).AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), ServiceName,
             "Parcels Dataset", AuthorizationOperation.Query, true, Arg.Any<CancellationToken>());
-        await reader.DidNotReceive().CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        await reader.Received(1).CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -1189,8 +1188,7 @@ public sealed class McpMapToolTests
                 $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"includeRowCount":{{includeRowCount.ToString().ToLowerInvariant()}}}"""),
             CancellationToken.None);
 
-        // The caller is not in AllowedRoles, so every grant combination stays denied (#6358).
-        var allowed = false;
+        var allowed = metadataAllowed && (!includeRowCount || queryAllowed);
         if (response is not { } call)
         {
             throw new InvalidOperationException("MCP response was missing");
@@ -1237,8 +1235,8 @@ public sealed class McpMapToolTests
 
         response!.Error.Should().BeNull();
         var content = response.Result!.Value.GetProperty("structuredContent");
-        content.GetProperty("totalCount").GetInt32().Should().Be(0);
-        content.GetProperty("layers").GetArrayLength().Should().Be(0);
+        content.GetProperty("totalCount").GetInt32().Should().Be(metadataAllowed ? 1 : 0);
+        content.GetProperty("layers").GetArrayLength().Should().Be(metadataAllowed ? 1 : 0);
         await resolver.Received(1).AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), ServiceName,
             "Parcels Dataset", AuthorizationOperation.Metadata, true, Arg.Any<CancellationToken>());
     }
