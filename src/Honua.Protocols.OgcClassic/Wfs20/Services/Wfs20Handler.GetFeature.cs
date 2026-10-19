@@ -497,7 +497,9 @@ internal sealed partial class Wfs20Handler
                     requireResourceIdQualifier: selectedTypes.Length > 1,
                     cancellationToken: cancellationToken);
 
-                var layerMatched = await _featureReader.CountAsync(featureType.StorageLayerId, query, cancellationToken);
+                var reader = await ResolveQueryReaderAsync(featureType, cancellationToken).ConfigureAwait(false);
+                var layerMatched = await reader.CountAsync(featureType.StorageLayerId, query, cancellationToken)
+                    .ConfigureAwait(false);
                 totalMatched += layerMatched;
 
                 if (layerMatched == 0)
@@ -530,7 +532,8 @@ internal sealed partial class Wfs20Handler
                     featureType,
                     query with { Offset = layerOffset, Limit = layerLimit },
                     layerMatched,
-                    xmlQuery.SrsName ?? fallbackSrsName));
+                    xmlQuery.SrsName ?? fallbackSrsName,
+                    reader));
 
                 remainingCount -= layerLimit;
             }
