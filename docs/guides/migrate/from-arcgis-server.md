@@ -140,6 +140,9 @@ when it finishes, so the evidence is still there when you come back to it.
   values without adding or removing records are not detected, so import from a quiescent source
   when you need a point-in-time copy.
 - **Filtered imports are reconciled against the filtered source**, not the layer's total count.
+  A null or invalid source geometry that is still missing or invalid on the target stays on the
+  geometry probe as an inherited source defect. A well-formed target geometry in its place is
+  `fidelity.geometry.source-not-repaired` (unverified): not transfer loss and not a successful repair.
 - **Batch layers keep one job identity.** Each layer of a batch run gets a job ID derived from the
   run and its position, so advancing a batch again never queues a second import of a layer that is
   already queued or running.

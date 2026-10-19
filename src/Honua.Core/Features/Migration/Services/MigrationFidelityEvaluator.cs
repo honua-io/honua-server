@@ -200,6 +200,7 @@ public static class MigrationFidelityEvaluator
         CollectAttachmentDifferences(input, differences);
         CollectRelationshipOmissions(input, differences);
         CollectDataReconciliation(input, subject, differences);
+        CollectSourceGeometryRewrites(input, subject, differences);
         CollectCatalogReconciliation(input, subject, differences);
 
         return Fold(differences);
@@ -557,6 +558,41 @@ public static class MigrationFidelityEvaluator
                     + "and extent parity are unproven."
             });
         }
+    }
+
+    private static void CollectSourceGeometryRewrites(
+        MigrationFidelityEvaluationInput input,
+        string subject,
+        List<MigrationFidelityDifference> differences)
+    {
+        var artifact = input.DataReconciliation;
+        if (artifact is null)
+        {
+            return;
+        }
+
+        var rewrites = 0;
+        foreach (var layer in artifact.Layers)
+        {
+            rewrites += layer.Geometry.SourceDefectRewrites;
+        }
+
+        if (rewrites <= 0)
+        {
+            return;
+        }
+
+        differences.Add(new MigrationFidelityDifference
+        {
+            Code = MigrationFidelityDifferenceCodes.GeometrySourceNotRepaired,
+            Severity = MigrationFidelityDifferenceSeverities.Unverified,
+            Subject = subject,
+            Expected = "null or invalid source geometry stays visible and is not described as repaired",
+            Actual = Format(rewrites) + " well-formed target geometries replace a null or invalid source geometry",
+            Summary =
+                $"{Format(rewrites)} feature(s) stored a well-formed geometry where the source geometry was null or "
+                + "invalid. That is not transfer loss and it is not a successful repair."
+        });
     }
 
     private static void CollectCatalogReconciliation(

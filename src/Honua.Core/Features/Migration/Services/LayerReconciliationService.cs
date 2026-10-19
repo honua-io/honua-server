@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -24,6 +25,8 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
 {
     private const int MinSampleSize = 1;
     private const int MaxSampleSize = 10_000;
+    private const int ComparisonPageSize = 1_000;
+    private const int MaxComparisonPages = 10_000;
 
     // Absolute coordinate-noise epsilon used only to decide whether an extent
     // dimension/coordinate is "effectively zero"/"effectively equal" ahead of
@@ -163,11 +166,15 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         }
 
         var comparisonBaseline = SelectExtentBaseline(layer, options).Baseline;
+        int? geometryOutputSrid = null;
         if (targetExtent is { } observed &&
             layer.PlannedTargetSrid == observed.SpatialReference &&
             comparisonBaseline?.SpatialReferenceId is > 0 and var sourceSrid &&
             sourceSrid != observed.SpatialReference)
         {
+            // Same CRS condition as the extent reprojection below. A failed transform stays a
+            // probe failure; it is not counted as missing geometry.
+            geometryOutputSrid = sourceSrid;
             try
             {
                 // The canonical query pipeline transforms each geometry before aggregating
@@ -186,12 +193,22 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
 
         try
         {
-            sample = await _featureReader
-                .QueryAsync(targetLayerId, (await queryTask.ConfigureAwait(false)) with
-                {
-                    Limit = Math.Clamp(options.SampleSize, MinSampleSize, MaxSampleSize)
-                }, cancellationToken)
-                .ConfigureAwait(false);
+            var comparison = await ReadComparisonFeaturesAsync(
+                targetLayerId,
+                await queryTask.ConfigureAwait(false),
+                targetCount,
+                geometryOutputSrid,
+                pagePopulation: layer.SourceGeometry is not null && layer.SourceHasGeometry,
+                sampleLimit: Math.Clamp(options.SampleSize, MinSampleSize, MaxSampleSize),
+                cancellationToken).ConfigureAwait(false);
+            if (comparison.PopulationUnread)
+            {
+                readerFailure ??= "Target geometry comparison did not cover the filtered population; manual review required.";
+            }
+            else
+            {
+                sample = comparison.Result;
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -255,6 +272,105 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         }
 
         return await _queryBuilder.BuildAsync(layer, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads the geometry and content population. A source census pages the filtered target
+    /// until the reader is exhausted. Without a census, one sample page is enough.
+    /// </summary>
+    private async Task<(QueryResult<Feature>? Result, bool PopulationUnread)> ReadComparisonFeaturesAsync(
+        int targetLayerId,
+        FeatureQuery compiled,
+        long? knownPopulation,
+        int? outputSrid,
+        bool pagePopulation,
+        int sampleLimit,
+        CancellationToken cancellationToken)
+    {
+        if (!pagePopulation)
+        {
+            var sample = await _featureReader.QueryAsync(
+                targetLayerId,
+                compiled with { Limit = sampleLimit, OutputSrid = outputSrid },
+                cancellationToken).ConfigureAwait(false);
+            return (sample, false);
+        }
+
+        var items = new List<Feature>();
+        var seen = new HashSet<long>();
+        var offset = 0;
+        long total = 0;
+        for (var pageIndex = 0; pageIndex < MaxComparisonPages; pageIndex++)
+        {
+            var page = await _featureReader.QueryAsync(
+                targetLayerId,
+                compiled with
+                {
+                    Limit = ComparisonPageSize,
+                    Offset = offset,
+                    OutputSrid = outputSrid
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            if (page.Items.IsDefaultOrEmpty)
+            {
+                break;
+            }
+
+            if (page.TotalCount > 0)
+            {
+                total = page.TotalCount;
+            }
+
+            var fresh = 0;
+            foreach (var feature in page.Items)
+            {
+                if (seen.Add(feature.Id))
+                {
+                    items.Add(feature);
+                    fresh++;
+                }
+            }
+
+            // A reader that ignores offset repeats the first page. Stop only when the
+            // known population is already in hand; otherwise the unread tail cannot
+            // be certified, including when no count was available.
+            if (fresh == 0)
+            {
+                if (knownPopulation is { } repeatedExpected && items.Count >= repeatedExpected)
+                {
+                    break;
+                }
+
+                return (null, true);
+            }
+
+            offset += page.Items.Length;
+            if (page.HasMoreResults)
+            {
+                continue;
+            }
+
+            // A full page that claims to be last can still hide rows when the known
+            // population is larger. A short terminal page is judged after the loop.
+            if (page.Items.Length >= ComparisonPageSize
+                && knownPopulation is { } expectedPop
+                && items.Count < expectedPop)
+            {
+                continue;
+            }
+
+            break;
+        }
+
+        // A terminal flag does not prove the known population was read.
+        if (knownPopulation is { } expected && items.Count < expected)
+        {
+            return (null, true);
+        }
+
+        var reportedTotal = total > 0 ? total : items.Count;
+        return (QueryResult<Feature>.Create(reportedTotal, items.ToImmutableArray()), false);
     }
 
     private static MigrationReconciliationCountProbe BuildCountProbe(
@@ -418,14 +534,16 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
 
     /// <summary>
     /// Identity-mapped geometry probe. A known transfer loss fails the probe even when it is
-    /// one row: the validity-ratio bands only apply when the importer did not record which
-    /// source geometries were absent.
+    /// one row. Matching null or invalid source geometries are inherited defects. A well-formed
+    /// target in their place is not a successful repair (#4826).
     /// </summary>
     private static MigrationReconciliationGeometryProbe BuildCensusGeometryProbe(
         SourceGeometryCensus census,
         IReadOnlyList<Feature> features)
     {
-        var inherited = 0;
+        var inheritedNull = 0;
+        var inheritedInvalid = 0;
+        var rewrites = 0;
         var sampledPresent = 0;
         var sampledPresentValid = 0;
         var sampledLosses = 0;
@@ -442,9 +560,28 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
 
             if (census.AbsentTargetFeatureIds.Contains(feature.Id))
             {
-                if (!wellFormed)
+                if (wellFormed)
                 {
-                    inherited++;
+                    rewrites++;
+                }
+                else
+                {
+                    inheritedNull++;
+                }
+
+                continue;
+            }
+
+            if (census.InvalidTargetFeatureIds.Contains(feature.Id) &&
+                !census.UnconvertedTargetFeatureIds.Contains(feature.Id))
+            {
+                if (wellFormed)
+                {
+                    rewrites++;
+                }
+                else
+                {
+                    inheritedInvalid++;
                 }
 
                 continue;
@@ -467,23 +604,15 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             targetId => !wellFormedIds.Contains(targetId));
 
         var migrationLosses = unconvertedLosses + sampledLosses;
+        var inherited = inheritedNull + inheritedInvalid;
         var ratio = sampledPresent == 0
             ? 1d
             : (double)sampledPresentValid / sampledPresent;
-        var classification = migrationLosses == 0
-            ? MigrationReconciliationClassifications.Pass
-            : MigrationReconciliationClassifications.Fail;
-        string? reason = null;
-        if (migrationLosses > 0)
-        {
-            reason = inherited > 0
-                ? $"{migrationLosses} source geometries were lost in transfer ({inherited} inherited null source geometries were not counted as loss)."
-                : $"{migrationLosses} source geometries were lost in transfer.";
-        }
-        else if (inherited > 0)
-        {
-            reason = $"{inherited} sampled features inherited a null source geometry; none were lost in transfer.";
-        }
+        var classification = migrationLosses > 0
+            ? MigrationReconciliationClassifications.Fail
+            : rewrites > 0
+                ? MigrationReconciliationClassifications.Warn
+                : MigrationReconciliationClassifications.Pass;
 
         return new MigrationReconciliationGeometryProbe
         {
@@ -492,9 +621,48 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             Ratio = ratio,
             InheritedSourceDefects = inherited,
             MigrationLosses = migrationLosses,
+            SourceDefectRewrites = rewrites,
             Classification = classification,
-            Reason = reason
+            Reason = DescribeCensusGeometry(migrationLosses, inheritedNull, inheritedInvalid, rewrites)
         };
+    }
+
+    private static string? DescribeCensusGeometry(
+        int migrationLosses,
+        int inheritedNull,
+        int inheritedInvalid,
+        int rewrites)
+    {
+        var inherited = inheritedNull + inheritedInvalid;
+        string? reason = null;
+        if (migrationLosses > 0)
+        {
+            reason = inherited > 0
+                ? $"{migrationLosses} source geometries were lost in transfer ({inherited} inherited null or invalid source geometries were not counted as loss)."
+                : $"{migrationLosses} source geometries were lost in transfer.";
+        }
+        else if (inheritedNull > 0 && inheritedInvalid > 0)
+        {
+            reason =
+                $"{inheritedNull} sampled features inherited a null source geometry and {inheritedInvalid} sampled features inherited an invalid source geometry; none were lost in transfer and none were repaired.";
+        }
+        else if (inheritedNull > 0)
+        {
+            reason = $"{inheritedNull} sampled features inherited a null source geometry; none were lost in transfer and none were repaired.";
+        }
+        else if (inheritedInvalid > 0)
+        {
+            reason = $"{inheritedInvalid} sampled features inherited an invalid source geometry; none were lost in transfer and none were repaired.";
+        }
+
+        if (rewrites <= 0)
+        {
+            return reason;
+        }
+
+        var rewriteReason =
+            $"{rewrites} target geometries differ from a null or invalid source geometry; that is not a successful repair.";
+        return reason is null ? rewriteReason : reason + " " + rewriteReason;
     }
 
     private static MigrationReconciliationContentProbe BuildContentProbe(
