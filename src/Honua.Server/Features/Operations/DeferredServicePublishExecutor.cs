@@ -5,6 +5,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Ai.Protocols.Mcp;
 
@@ -110,7 +111,8 @@ internal sealed class DeferredServicePublishExecutor(IServiceProvider services) 
             graphProvider!,
             clock!,
             services.GetService<IMcpNotificationPublisher>(),
-            services.GetService<ILayerPublishJobs>());
+            services.GetService<ILayerPublishJobs>(),
+            services.GetService<IPublishedServiceStore>());
         unavailable = null;
         return true;
     }

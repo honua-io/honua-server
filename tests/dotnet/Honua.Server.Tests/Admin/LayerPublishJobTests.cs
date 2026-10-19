@@ -13,6 +13,8 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Publishing.Abstractions;
+using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Db.Postgres.Features.Admin;
 using Honua.Infrastructure.Middleware;
@@ -201,6 +203,7 @@ public sealed class LayerPublishJobTests
         Assert.Equal(ProgressStatus.Completed, progress!.Status);
         Assert.Equal(5, progress.RowsMaterialized);
         Assert.Equal(7, progress.LayerId);
+        Assert.Equal(11, progress.MetadataRevision);
     }
 
     [UnitTest]
@@ -316,13 +319,95 @@ public sealed class LayerPublishJobTests
             var status = await executor.GetStatusAsync(originalHandle);
 
             Assert.Equal(OperationHandleStatus.Completed, status.Status);
-            Assert.Equal(12, status.MetadataRevision);
+            Assert.Equal(11, status.MetadataRevision);
             Assert.Equal(serviceName, status.ResourceIds["serviceName"]);
             Assert.Equal("741", status.ResourceIds["layerId"]);
             Assert.Equal(serviceName, status.Result!.Details["serviceName"]);
+            Assert.Equal("11", status.Result.Details["metadataRevision"]);
             Assert.Equal("honua://published-services/roads%2Farea%252Ftwo", status.Result.Details["serviceUri"]);
             Assert.Equal("Resolved", status.Result.Details["readbackStatus"]);
         }
+    }
+
+    [UnitTest]
+    public async Task Executor_CompletedQueuedPublish_CaseOnlyPromotionCollisionWithholdsUri()
+    {
+        var services = Substitute.For<IPublishedServiceStore>();
+        services.FindByPublicIdAsync("roads", Arg.Any<CancellationToken>())
+            .Returns(new PublishedServiceRecord
+            {
+                ServiceId = "ROADS",
+                IntentId = "another-intent",
+                SourceKind = PublishSourceKind.ResultPackage,
+                SourceId = "another-package",
+                TargetKind = PublishTargetKind.FeatureService,
+                Status = PublishedServiceStatus.Active,
+                PublishedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+
+        var status = await Executor(CompletedJobs(741), new TestMetadataV2GraphProvider(PublishedGraph("roads")), services)
+            .GetStatusAsync(Handle(OperationHandleStatus.Queued, ServicePublishOperation.OperationId) with { JobId = "abc" });
+
+        Assert.Equal(OperationHandleStatus.Completed, status.Status);
+        Assert.Equal(11, status.MetadataRevision);
+        Assert.Equal("Unavailable", status.Result!.Details["readbackStatus"]);
+        Assert.False(status.Result.Details.ContainsKey("serviceUri"));
+        Assert.False(status.Result.Details.ContainsKey("serviceName"));
+        Assert.False(status.ResourceIds.ContainsKey("serviceName"));
+    }
+
+    [UnitTest]
+    public async Task Executor_CompletedQueuedPublish_AmbiguousPromotionKeepsCommittedCompletion()
+    {
+        var services = Substitute.For<IPublishedServiceStore>();
+        services.FindByPublicIdAsync("roads", Arg.Any<CancellationToken>())
+            .Returns<Task<PublishedServiceRecord?>>(_ => throw new PublishedServiceIdentityAmbiguousException("roads"));
+
+        var status = await Executor(CompletedJobs(741), new TestMetadataV2GraphProvider(PublishedGraph("roads")), services)
+            .GetStatusAsync(Handle(OperationHandleStatus.Queued, ServicePublishOperation.OperationId) with { JobId = "abc" });
+
+        Assert.Equal(OperationHandleStatus.Completed, status.Status);
+        Assert.Equal(11, status.MetadataRevision);
+        Assert.Equal("Unavailable", status.Result!.Details["readbackStatus"]);
+        Assert.False(status.Result.Details.ContainsKey("serviceUri"));
+    }
+
+    [UnitTest]
+    public async Task Executor_InlinePublish_UsesCommittedRevisionAndWithholdsCollidingUri()
+    {
+        var publisher = Substitute.For<ILayerPublishingService>();
+        publisher.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Summary());
+        var services = Substitute.For<IPublishedServiceStore>();
+        services.FindByPublicIdAsync("default", Arg.Any<CancellationToken>())
+            .Returns(new PublishedServiceRecord
+            {
+                ServiceId = "DEFAULT",
+                IntentId = "another-intent",
+                SourceKind = PublishSourceKind.ResultPackage,
+                SourceId = "another-package",
+                TargetKind = PublishTargetKind.FeatureService,
+                Status = PublishedServiceStatus.Active,
+                PublishedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+        var graph = PublishedGraph("default") with { Revision = 12 };
+        var executor = new ServicePublishExecutor(
+            publisher,
+            Substitute.For<ISecureConnectionResolver>(),
+            new TestMetadataV2GraphProvider(graph),
+            TimeProvider.System,
+            publishedServices: services);
+
+        var handle = await executor.SubmitAsync(Operation(), Policy(), CancellationToken.None);
+
+        Assert.Equal(OperationHandleStatus.Completed, handle.Status);
+        Assert.Equal(11, handle.MetadataRevision);
+        Assert.Equal("11", handle.Result!.Details["metadataRevision"]);
+        Assert.Equal("Unavailable", handle.Result.Details["readbackStatus"]);
+        Assert.False(handle.Result.Details.ContainsKey("serviceName"));
+        Assert.False(handle.ResourceIds.ContainsKey("serviceName"));
     }
 
     [Theory]
@@ -462,6 +547,7 @@ public sealed class LayerPublishJobTests
             RowsMaterialized = 12,
             RowsTotal = 12,
             LayerId = layerId,
+            MetadataRevision = 11,
             StartedAt = DateTimeOffset.UtcNow,
             CompletedAt = DateTimeOffset.UtcNow
         });
@@ -527,14 +613,18 @@ public sealed class LayerPublishJobTests
         return factory;
     }
 
-    private static ServicePublishExecutor Executor(ILayerPublishJobs jobs, IMetadataV2GraphProvider? graph = null)
+    private static ServicePublishExecutor Executor(
+        ILayerPublishJobs jobs,
+        IMetadataV2GraphProvider? graph = null,
+        IPublishedServiceStore? publishedServices = null)
         => new(
             Substitute.For<ILayerPublishingService>(),
             Substitute.For<ISecureConnectionResolver>(),
             graph ?? Substitute.For<IMetadataV2GraphProvider>(),
             TimeProvider.System,
             notifications: null,
-            jobs);
+            jobs,
+            publishedServices);
 
     private static LayerPublishRequest DomainRequest()
         => new() { Schema = "public", Table = "roads", LayerName = "Roads" };
@@ -551,6 +641,7 @@ public sealed class LayerPublishJobTests
             Table = "roads",
             GeometryType = "LineString",
             ServiceName = "default",
+            MetadataRevision = 11,
         };
 
     private static OperationRequest Operation()

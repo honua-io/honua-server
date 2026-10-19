@@ -76,6 +76,14 @@ public interface IPublishedServiceStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Finds a published service under the case-insensitive public URI identity.
+    /// Throws if multiple stored identifiers differ only by case.
+    /// </summary>
+    Task<PublishedServiceRecord?> FindByPublicIdAsync(
+        string serviceId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Persists the latest published service record state.
     /// </summary>
     /// <param name="service">Updated published service record.</param>

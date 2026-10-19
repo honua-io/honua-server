@@ -8,6 +8,8 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Publishing.Abstractions;
+using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Server.Features.Admin;
@@ -30,6 +32,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
     private readonly TimeProvider _clock;
     private readonly IMcpNotificationPublisher? _notifications;
     private readonly ILayerPublishJobs? _jobs;
+    private readonly IPublishedServiceStore? _publishedServices;
 
     /// <summary>
     /// Initializes a new instance of <see cref="ServicePublishExecutor"/>.
@@ -49,7 +52,8 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         IMetadataV2GraphProvider metadataGraphProvider,
         TimeProvider clock,
         IMcpNotificationPublisher? notifications = null,
-        ILayerPublishJobs? jobs = null)
+        ILayerPublishJobs? jobs = null,
+        IPublishedServiceStore? publishedServices = null)
     {
         ArgumentNullException.ThrowIfNull(publishingService);
         ArgumentNullException.ThrowIfNull(connectionResolver);
@@ -61,6 +65,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         _clock = clock;
         _notifications = notifications;
         _jobs = jobs;
+        _publishedServices = publishedServices;
     }
 
     /// <inheritdoc />
@@ -174,18 +179,32 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
                 .ConfigureAwait(false);
         }
 
-        // Surface the resulting Metadata v2 revision in the handle. PublishedLayerSummary does
-        // not carry it today (the publish path computes graph.Revision+1 internally in
-        // PostgreSqlLayerPublishingService.MetadataV2Graph.cs and persists it without echoing it
-        // on the summary), so we read the post-publish current revision from the graph provider.
-        // The canonical source is the graph snapshot the publish just saved; surfacing it here is
-        // the cheapest read-after-write that keeps the executor a thin wrapper over the service.
-        // None, not the request token: an accepted publish must finish after the client disconnects.
-        var graph = await _metadataGraphProvider.GetCurrentAsync(
-            _jobs is null ? cancellationToken : CancellationToken.None).ConfigureAwait(false);
+        // The publisher returns the revision of its own committed graph mutation.
+        // A later current-graph read could attribute another publisher's revision to this job.
         _notifications?.BroadcastResourcesListChanged();
         _notifications?.BroadcastToolsListChanged();
         var now = _clock.GetUtcNow();
+        var promotionCollision = await HasPromotionCollisionAsync(summary.ServiceName, CancellationToken.None)
+            .ConfigureAwait(false);
+        var resultDetails = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+            ["layerName"] = summary.LayerName,
+            ["geometryType"] = summary.GeometryType,
+        };
+        if (promotionCollision)
+        {
+            resultDetails["readbackStatus"] = "Unavailable";
+            resultDetails["readbackReason"] = "The published service identity conflicts with a promotion record.";
+        }
+        else
+        {
+            resultDetails["serviceName"] = summary.ServiceName;
+        }
+        if (summary.MetadataRevision is > 0)
+        {
+            resultDetails["metadataRevision"] = summary.MetadataRevision.Value.ToString(CultureInfo.InvariantCulture);
+        }
 
         return new OperationHandle
         {
@@ -195,23 +214,21 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             Status = OperationHandleStatus.Completed,
             CreatedAt = now,
             UpdatedAt = now,
-            MetadataRevision = graph.Revision,
-            ResourceIds = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
-                ["serviceName"] = summary.ServiceName,
-            },
+            MetadataRevision = summary.MetadataRevision,
+            ResourceIds = promotionCollision
+                ? new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+                }
+                : new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+                    ["serviceName"] = summary.ServiceName,
+                },
             Result = new OperationResultSummary
             {
                 Summary = $"Published layer '{summary.LayerName}' (id {summary.LayerId}) to service '{summary.ServiceName}'.",
-                Details = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
-                    ["layerName"] = summary.LayerName,
-                    ["serviceName"] = summary.ServiceName,
-                    ["geometryType"] = summary.GeometryType,
-                    ["metadataRevision"] = graph.Revision.ToString(CultureInfo.InvariantCulture)
-                }
+                Details = resultDetails
             }
         };
     }
@@ -239,7 +256,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             ["status"] = progress.Status.ToString(),
         };
         var resourceIds = new Dictionary<string, string>(handle.ResourceIds, StringComparer.Ordinal);
-        var metadataRevision = handle.MetadataRevision;
+        var metadataRevision = progress.MetadataRevision ?? handle.MetadataRevision;
         if (progress.LayerId is int layerId)
         {
             var layerText = layerId.ToString(CultureInfo.InvariantCulture);
@@ -251,12 +268,17 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             progress.LayerId is int committedLayerId)
         {
             var graph = await _metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (TryResolvePublishedService(graph, committedLayerId, progress.TenantId, out var serviceName))
+            var resolved = TryResolvePublishedService(graph, committedLayerId, progress.TenantId, out var serviceName);
+            var promotionCollision = resolved &&
+                await HasPromotionCollisionAsync(serviceName, cancellationToken).ConfigureAwait(false);
+            if (resolved && !promotionCollision)
             {
-                metadataRevision = graph.Revision;
                 details["serviceName"] = serviceName;
                 details["serviceUri"] = McpResourceUris.PublishedServiceUri(serviceName);
-                details["metadataRevision"] = graph.Revision.ToString(CultureInfo.InvariantCulture);
+                if (metadataRevision is > 0)
+                {
+                    details["metadataRevision"] = metadataRevision.Value.ToString(CultureInfo.InvariantCulture);
+                }
                 details["readbackStatus"] = "Resolved";
                 resourceIds["serviceName"] = serviceName;
             }
@@ -265,7 +287,9 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
                 // The publication committed, but a missing or ambiguous catalog
                 // identity cannot truthfully produce a service URI. Never retry it.
                 details["readbackStatus"] = "Unavailable";
-                details["readbackReason"] = "The committed layer has no unique persisted feature-service identity.";
+                details["readbackReason"] = promotionCollision
+                    ? "The published service identity conflicts with a promotion record."
+                    : "The committed layer has no unique persisted feature-service identity.";
             }
         }
 
@@ -285,6 +309,26 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
                 Details = details,
             },
         };
+    }
+
+    private async Task<bool> HasPromotionCollisionAsync(string serviceName, CancellationToken cancellationToken)
+    {
+        if (_publishedServices is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return await _publishedServices.FindByPublicIdAsync(serviceName, cancellationToken)
+                .ConfigureAwait(false) is not null;
+        }
+        catch (PublishedServiceIdentityAmbiguousException)
+        {
+            // The layer is already committed. Ambiguous promotions make its URI
+            // unreadable, but must not turn completion into a retryable failure.
+            return true;
+        }
     }
 
     private static bool TryResolvePublishedService(

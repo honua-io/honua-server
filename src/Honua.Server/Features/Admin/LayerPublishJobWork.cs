@@ -155,7 +155,8 @@ internal static partial class LayerPublishJobWork
             try
             {
                 await context.RecordCommittedEffectAsync(
-                    LayerPublishCompletionReceipt.Create(summary.LayerId, observedProgress.LastSnapshot),
+                    LayerPublishCompletionReceipt.Create(
+                        summary.LayerId, observedProgress.LastSnapshot, summary.MetadataRevision),
                     CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -171,7 +172,7 @@ internal static partial class LayerPublishJobWork
         try
         {
             await WriteTerminalAsync(progressStore, jobId, OperationStatus.Completed, summary.LayerId,
-                errorMessage: null, observedProgress.LastSnapshot).ConfigureAwait(false);
+                errorMessage: null, observedProgress.LastSnapshot, summary.MetadataRevision).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
@@ -221,7 +222,8 @@ internal static partial class LayerPublishJobWork
         OperationStatus status,
         int? layerId,
         string? errorMessage,
-        (long RowsMaterialized, long RowsTotal)? snapshot = null)
+        (long RowsMaterialized, long RowsTotal)? snapshot = null,
+        long? metadataRevision = null)
     {
         var current = await progressStore.GetProgressAsync<LayerPublishJobProgress>(jobId, CancellationToken.None)
             .ConfigureAwait(false);
@@ -239,6 +241,7 @@ internal static partial class LayerPublishJobWork
         {
             Status = status,
             LayerId = layerId ?? current.LayerId,
+            MetadataRevision = metadataRevision ?? current.MetadataRevision,
             RowsMaterialized = snapshot?.RowsMaterialized ?? current.RowsMaterialized,
             RowsTotal = snapshot?.RowsTotal ?? current.RowsTotal,
             CompletedAt = DateTimeOffset.UtcNow,

@@ -60,6 +60,32 @@ public sealed class PostgresPromotionStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task PublishedServiceStore_PublicIdentityLookupFindsCaseVariantAndRefusesAmbiguity()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresPromotionStoreTests) + "_PublicId");
+        try
+        {
+            await EnsureTablesAsync(schema);
+            var store = new PostgresPublishedServiceStore(fixture.DataSource, schema);
+            var upper = BuildPublishedService("ROADS", "result-1") with
+            {
+                Status = PublishedServiceStatus.Suspended,
+            };
+            (await store.TryCreateAsync(upper)).Should().BeTrue();
+            (await store.GetAsync("roads")).Should().BeNull();
+            (await store.FindByPublicIdAsync("roads")).Should().BeEquivalentTo(upper);
+
+            (await store.TryCreateAsync(BuildPublishedService("roads", "result-2"))).Should().BeTrue();
+            await FluentActions.Invoking(() => store.FindByPublicIdAsync("roads"))
+                .Should().ThrowAsync<PublishedServiceIdentityAmbiguousException>();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task DeploymentStore_RoundTripsTransitions_AndFiltersLifecycleSourceAndTarget()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresPromotionStoreTests) + "_Deployments");

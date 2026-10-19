@@ -227,12 +227,12 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
                 httpContext, snapshot, cancellationToken).ConfigureAwait(false);
             foreach (var service in catalog)
             {
-                // Detail resolves metadata names without case. A differently
-                // cased active promotion would be listed but its URI would refuse
-                // the collision. Keep exact lookup for inactive promotions too.
+                // Detail resolves metadata names without case, including inactive
+                // promotion records. Refuse a collision before listing either URI.
                 if (activePromotionNames.Contains(service.ServiceName) ||
                     (_services is not null &&
-                     await _services.GetAsync(service.ServiceName, cancellationToken).ConfigureAwait(false) is not null))
+                     (await _services.FindByPublicIdAsync(service.ServiceName, cancellationToken).ConfigureAwait(false)
+                      ?? await _services.GetAsync(service.ServiceName, cancellationToken).ConfigureAwait(false)) is not null))
                 {
                     throw new GeoprocessingValidationException(
                         $"Published service identity '{service.ServiceName}' is shared by a promotion and a catalog publication.");

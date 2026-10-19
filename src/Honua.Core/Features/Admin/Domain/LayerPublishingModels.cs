@@ -258,6 +258,9 @@ public sealed class TablePublishValidationResult
     /// </summary>
     public required string ServiceName { get; init; }
 
+    /// <summary>The exact metadata graph revision committed by this publish, when available.</summary>
+    public long? MetadataRevision { get; init; }
+
     /// <summary>
     /// Optional layer display name.
     /// </summary>

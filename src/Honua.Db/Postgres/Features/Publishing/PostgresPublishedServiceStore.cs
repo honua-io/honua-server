@@ -61,6 +61,29 @@ internal sealed class PostgresPublishedServiceStore : IPublishedServiceStore
             : null;
     }
 
+    public async Task<PublishedServiceRecord?> FindByPublicIdAsync(
+        string serviceId,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"SELECT document FROM {_table} WHERE lower(service_id) = lower(@service_id) ORDER BY service_id LIMIT 2";
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@service_id", NpgsqlDbType.Text, serviceId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var record = Deserialize(reader.GetString(0));
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new PublishedServiceIdentityAmbiguousException(serviceId);
+        }
+
+        return record;
+    }
+
     public async Task SetAsync(
         PublishedServiceRecord service,
         CancellationToken cancellationToken = default)

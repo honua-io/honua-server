@@ -80,7 +80,8 @@ internal sealed class PublishedServiceResource : IMcpResource
 
         var record = _services is null
             ? null
-            : await _services.GetAsync(serviceId, cancellationToken).ConfigureAwait(false);
+            : await _services.FindByPublicIdAsync(serviceId, cancellationToken).ConfigureAwait(false)
+              ?? await _services.GetAsync(serviceId, cancellationToken).ConfigureAwait(false);
         var graphProvider = httpContext.RequestServices.GetService<IMetadataV2GraphProvider>();
         if (graphProvider is not null)
         {

@@ -295,6 +295,27 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
+    public async Task Index_InactiveCaseOnlyPromotionCollision_RefusesCatalogUri()
+    {
+        var promotion = Promotion() with { ServiceId = "ROADS", Status = PublishedServiceStatus.Suspended };
+        _promotions.FindByPublicIdAsync(ServiceName, Arg.Any<CancellationToken>()).Returns(promotion);
+        // An inactive promotion does not appear in ListActiveAsync. Its stored
+        // public identifier still makes the same catalog URI ambiguous.
+        var index = new PromotionSurfaceIndexResource(
+            _promotions, _deployments, _jobs, NullLogger<PromotionSurfaceIndexResource>.Instance);
+        var readIndex = async () => await index.ReadAsync(
+            Context(Catalog()), "honua://published-services", CancellationToken.None);
+        await readIndex.Should().ThrowAsync<GeoprocessingValidationException>();
+
+        var detail = new PublishedServiceResource(
+            _promotions, _deployments, _jobs, NullLogger<PublishedServiceResource>.Instance);
+        var readDetail = async () => await detail.ReadAsync(
+            Context(Catalog()), ServiceUri, CancellationToken.None);
+        await readDetail.Should().ThrowAsync<GeoprocessingValidationException>();
+    }
+
+    [UnitTest]
     [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_PromotionWithRestrictedCatalog_RemainsReadableUnderPromotionGrant()
     {
