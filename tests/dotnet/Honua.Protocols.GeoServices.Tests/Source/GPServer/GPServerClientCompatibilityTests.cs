@@ -113,7 +113,7 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
     {
         var client = new GPServerClient(_fixture.Client, ServiceId);
 
-        // submitJob recognizes env:outSR/env:processSR/env:workspace/env:overwriteOutput
+        // submitJob honors env:outSR/env:workspace/env:overwriteOutput; processSR overrides are refused
         // (see GPServerEndpointTests' env:workspace/overwriteOutput coverage); any
         // other env:* control still yields a clear Esri 400 instead of being
         // silently stripped.
