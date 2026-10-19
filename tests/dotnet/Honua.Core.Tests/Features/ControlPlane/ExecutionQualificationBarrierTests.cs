@@ -49,11 +49,43 @@ public class ExecutionQualificationBarrierTests : IDisposable
         using var cancelled = new CancellationTokenSource();
         var wait = ExecutionQualificationBarrier.WaitAsync(
             "native-process-started", cancelled.Token, childProcessId: 4242);
-        Assert.False(wait.IsCompleted);
-        Assert.True(File.Exists(Path.Join(_root, "selected-op", "native-process-started.ready.json")));
-        await cancelled.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => wait);
-        Assert.True(File.Exists(Path.Join(_root, "selected-op", "native-process-started.signal-observed.json")));
+        var callbackEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var callbackReleased = new ManualResetEventSlim();
+        using var laterRegistration = cancelled.Token.Register(() =>
+        {
+            callbackEntered.TrySetResult();
+            callbackReleased.Wait(TimeSpan.FromSeconds(10));
+        });
+        Task cancellation = Task.CompletedTask;
+        try
+        {
+            Assert.False(wait.IsCompleted);
+            Assert.True(File.Exists(Path.Join(_root, "selected-op", "native-process-started.ready.json")));
+
+            // This later callback runs first and holds the cancellation dispatcher.
+            // The delay can expire and the wait can observe cancellation before the
+            // earlier signal callback runs. The receipt must still precede the wait.
+            cancellation = cancelled.CancelAsync();
+            await callbackEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => wait.WaitAsync(TimeSpan.FromSeconds(2)));
+            Assert.True(File.Exists(Path.Join(_root, "selected-op", "native-process-started.signal-observed.json")));
+        }
+        finally
+        {
+            callbackReleased.Set();
+            if (!cancelled.IsCancellationRequested)
+            {
+                cancellation = cancelled.CancelAsync();
+            }
+
+            await cancellation.WaitAsync(TimeSpan.FromSeconds(5));
+            if (!wait.IsCompleted)
+            {
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                    () => wait.WaitAsync(TimeSpan.FromSeconds(5)));
+            }
+        }
     }
 
     [Trait("Tier", "Fast")]
