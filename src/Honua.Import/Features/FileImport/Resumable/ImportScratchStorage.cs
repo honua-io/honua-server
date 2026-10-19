@@ -27,14 +27,26 @@ internal sealed class ImportScratchStorage
         _budget = budget;
     }
 
+    internal bool IsBoundToDirectory(string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !Path.IsPathFullyQualified(directory)) return false;
+        try
+        {
+            return string.Equals(_directory, Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
     internal Task<ImportScratchLease> AllocateAsync(ImportUploadSession session, string directory,
         long maximumScratchBytes, CancellationToken cancellationToken = default)
     {
         RedisImportUploadStore.Validate(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
-        if (!Path.IsPathFullyQualified(directory) || !string.Equals(_directory,
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)),
-            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        if (!IsBoundToDirectory(directory))
             throw new ArgumentException("Scratch must use the directory bound to its storage budget.", nameof(directory));
         return AllocateAsync(session.Id, session.Scope, session.TotalBytes, maximumScratchBytes, cancellationToken);
     }
