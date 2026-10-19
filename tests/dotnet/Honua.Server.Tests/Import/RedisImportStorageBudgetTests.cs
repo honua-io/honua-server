@@ -33,8 +33,9 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
             "owner" => new ImportStorageBudgetLimits(1000, 1000, 100, 10),
             _ => new ImportStorageBudgetLimits(1000, 1000, 1000, 1)
         };
-        var first = new RedisImportStorageBudget(a, domain, limits);
-        var second = new RedisImportStorageBudget(b, domain, limits);
+        var first = ImportStorageBudgetTestFactory.Bind(a, domain, limits);
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(first);
+        var second = ImportStorageBudgetTestFactory.Bind(b, domain, limits);
         var x = Reservation(60);
         var y = Reservation(60) with
         {
@@ -62,7 +63,8 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var domain = Guid.NewGuid().ToString("N");
         var limits = new ImportStorageBudgetLimits(100, 100, 100, 1);
-        var ordinary = new RedisImportStorageBudget(connection, domain, limits);
+        var ordinary = ImportStorageBudgetTestFactory.Bind(connection, domain, limits);
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(ordinary);
         var database = Substitute.For<IDatabase>();
         database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
             .Returns(async call =>
@@ -75,10 +77,10 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
         var reservation = Reservation(100);
         try
         {
-            await FluentActions.Invoking(() => new RedisImportStorageBudget(interrupted, domain, limits).TryReserveAsync(reservation))
+            await FluentActions.Invoking(() => ImportStorageBudgetTestFactory.Bind(interrupted, domain, limits).TryReserveAsync(reservation))
                 .Should().ThrowAsync<RedisConnectionException>();
             await using var restarted = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-            var recovered = new RedisImportStorageBudget(restarted, domain, limits);
+            var recovered = ImportStorageBudgetTestFactory.Bind(restarted, domain, limits);
             (await recovered.TryReserveAsync(reservation)).Should().BeTrue();
             (await recovered.TryReserveAsync(Reservation(1))).Should().BeFalse();
             ((long)await restarted.GetDatabase().HashGetAsync(recovered.Key, "bytes")).Should().Be(100);
@@ -95,7 +97,8 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
     public async Task Release_ExactReservation_IsIdempotentAndFreesOnlyOriginalCharge()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var budget = new RedisImportStorageBudget(connection, Guid.NewGuid().ToString("N"), new(100, 100, 100, 2));
+        var budget = ImportStorageBudgetTestFactory.Bind(connection, Guid.NewGuid().ToString("N"), new(100, 100, 100, 2));
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(budget);
         var first = Reservation(60);
         var second = Reservation(40);
         try
@@ -121,7 +124,8 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
     public async Task Reserve_CorruptOrExpiringAccounting_FailsWithoutAnyMutation(string corruption)
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var budget = new RedisImportStorageBudget(connection, Guid.NewGuid().ToString("N"), new(100, 100, 100, 2));
+        var budget = ImportStorageBudgetTestFactory.Bind(connection, Guid.NewGuid().ToString("N"), new(100, 100, 100, 2));
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(budget);
         var database = connection.GetDatabase();
         try
         {
@@ -149,7 +153,8 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var domain = Guid.NewGuid().ToString("N");
         var limits = new ImportStorageBudgetLimits(100, 100, 100, 2);
-        var budget = new RedisImportStorageBudget(connection, domain, limits);
+        var budget = ImportStorageBudgetTestFactory.Bind(connection, domain, limits);
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(budget);
         var first = Reservation(60);
         var second = Reservation(40);
         try
@@ -165,11 +170,11 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
                 });
             var interrupted = Substitute.For<IConnectionMultiplexer>();
             interrupted.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-            await FluentActions.Invoking(() => new RedisImportStorageBudget(interrupted, domain, limits).ReleaseDeletedAsync(first))
+            await FluentActions.Invoking(() => ImportStorageBudgetTestFactory.Bind(interrupted, domain, limits).ReleaseDeletedAsync(first))
                 .Should().ThrowAsync<RedisConnectionException>();
 
             await using var restarted = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-            var recovered = new RedisImportStorageBudget(restarted, domain, limits);
+            var recovered = ImportStorageBudgetTestFactory.Bind(restarted, domain, limits);
             (await recovered.ReleaseDeletedAsync(first)).Should().BeFalse();
             (await recovered.TryReserveAsync(second)).Should().BeTrue();
             ((long)await restarted.GetDatabase().HashGetAsync(recovered.Key, "bytes")).Should().Be(40);
@@ -183,7 +188,8 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var maximum = RedisImportStorageBudget.MaximumBudgetBytes;
-        var budget = new RedisImportStorageBudget(connection, Guid.NewGuid().ToString("N"), new(maximum, maximum, maximum, 10));
+        var budget = ImportStorageBudgetTestFactory.Bind(connection, Guid.NewGuid().ToString("N"), new(maximum, maximum, maximum, 10));
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(budget);
         var bytes = 5L * 1024 * 1024 * 1024 + 17;
         var reservation = Reservation(bytes);
         try
@@ -203,8 +209,9 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var domain = Guid.NewGuid().ToString("N");
-        var original = new RedisImportStorageBudget(connection, domain, new(100, 100, 100, 1));
-        var changed = new RedisImportStorageBudget(connection, domain, new(1000, 1000, 1000, 10));
+        var original = ImportStorageBudgetTestFactory.Bind(connection, domain, new(100, 100, 100, 1));
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(original);
+        var changed = ImportStorageBudgetTestFactory.Bind(connection, domain, new(1000, 1000, 1000, 10));
         var reservation = Reservation(100);
         try
         {
@@ -218,6 +225,190 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
             ((long)await connection.GetDatabase().HashGetAsync(original.Key, "bytes")).Should().Be(0);
         }
         finally { await connection.GetDatabase().KeyDeleteAsync(original.Key); }
+    }
+
+    [IntegrationTest]
+    public async Task MissingLedgerRefusesAdmissionAndReleaseWithoutCreatingEmptyAccounting()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var budget = ImportStorageBudgetTestFactory.Bind(connection, Guid.NewGuid().ToString("N"), new(100, 100, 100, 2));
+        await Assert.ThrowsAsync<InvalidDataException>(() => budget.TryReserveAsync(Reservation(1)));
+        await Assert.ThrowsAsync<InvalidDataException>(() => budget.ReleaseDeletedAsync(Reservation(1)));
+        Assert.False(await connection.GetDatabase().KeyExistsAsync(budget.Key));
+    }
+
+    [IntegrationTest]
+    public async Task RebuildAfterRedisLossRetainsCensusChargesAndRejectsEveryOldEpochMutation()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var domain = Guid.NewGuid().ToString("N");
+        var old = await ImportStorageBudgetTestFactory.CreateAsync(connection, domain, new(100, 100, 100, 2));
+        var first = Reservation(60);
+        var second = Reservation(40);
+        var recovered = new RedisImportStorageBudget(connection, domain, new(100, 100, 100, 2), Guid.NewGuid().ToString("N"));
+        try
+        {
+            Assert.True(await old.TryReserveAsync(first));
+            Assert.True(await old.TryReserveAsync(second));
+            await connection.GetDatabase().KeyDeleteAsync(old.Key);
+            await Assert.ThrowsAsync<InvalidDataException>(() => old.TryReserveAsync(Reservation(1)));
+            // Controlled census records: this is real Redis recovery, not a disk census test.
+            await recovered.RebuildFromCensusAsync(null, Census(first, second));
+            Assert.Equal(recovered.Epoch, await recovered.ReadStoredEpochAsync());
+            await Assert.ThrowsAsync<InvalidOperationException>(() => old.ReleaseDeletedAsync(first));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => old.TryReserveAsync(first));
+            Assert.Equal(100, (long)await connection.GetDatabase().HashGetAsync(old.Key, "bytes"));
+            Assert.True(await recovered.ReleaseDeletedAsync(first));
+            Assert.Equal(40, (long)await connection.GetDatabase().HashGetAsync(old.Key, "bytes"));
+            Assert.True(await recovered.TryReserveAsync(second));
+            Assert.Null(await connection.GetDatabase().KeyTimeToLiveAsync(old.Key));
+        }
+        finally { await connection.GetDatabase().KeyDeleteAsync(old.Key); }
+    }
+
+    [IntegrationTest]
+    public async Task RebuildUnderLowerLimitsPreservesExistingUsageAndDeniesNewWritesUntilItFits()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var domain = Guid.NewGuid().ToString("N");
+        var old = await ImportStorageBudgetTestFactory.CreateAsync(connection, domain, new(100, 100, 100, 10));
+        var reservation = Reservation(80);
+        var reduced = new RedisImportStorageBudget(connection, domain, new(50, 50, 50, 1), Guid.NewGuid().ToString("N"));
+        try
+        {
+            Assert.True(await old.TryReserveAsync(reservation));
+            await reduced.RebuildFromCensusAsync(old.Epoch, Census(reservation));
+            Assert.Equal(80, (long)await connection.GetDatabase().HashGetAsync(old.Key, "bytes"));
+            Assert.True(await reduced.TryReserveAsync(reservation));
+            Assert.False(await reduced.TryReserveAsync(Reservation(1)));
+            Assert.True(await reduced.ReleaseDeletedAsync(reservation));
+            Assert.True(await reduced.TryReserveAsync(Reservation(50)));
+        }
+        finally { await connection.GetDatabase().KeyDeleteAsync(old.Key); }
+    }
+
+    [IntegrationTest]
+    public async Task PartialCensusFailureNeverPublishesItsIncompleteAccounting()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var domain = Guid.NewGuid().ToString("N");
+        var old = await ImportStorageBudgetTestFactory.CreateAsync(connection, domain, new(1000, 1000, 1000, 100));
+        var replacement = new RedisImportStorageBudget(connection, domain, new(1000, 1000, 1000, 100), Guid.NewGuid().ToString("N"));
+        try
+        {
+            Assert.True(await old.TryReserveAsync(Reservation(40)));
+            var before = await connection.GetDatabase().KeyDumpAsync(old.Key);
+            await Assert.ThrowsAsync<IOException>(() => replacement.RebuildFromCensusAsync(old.Epoch, InterruptedCensus()));
+            Assert.Equal(before, await connection.GetDatabase().KeyDumpAsync(old.Key));
+            Assert.Equal(old.Epoch, await old.ReadStoredEpochAsync());
+        }
+        finally { await connection.GetDatabase().KeyDeleteAsync(old.Key); }
+
+        static async IAsyncEnumerable<ImportStorageReservation> InterruptedCensus()
+        {
+            await Task.Yield();
+            for (var index = 0; index < 65; index++) yield return Reservation(1);
+            throw new IOException("Census interrupted after an actual staged batch.");
+        }
+    }
+
+    [IntegrationTest]
+    public async Task DelayedEarlierRecoveryCannotReplaceANewerPublishedEpoch()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var domain = Guid.NewGuid().ToString("N");
+        var old = await ImportStorageBudgetTestFactory.CreateAsync(connection, domain, new(100, 100, 100, 2));
+        var slow = new RedisImportStorageBudget(connection, domain, new(100, 100, 100, 2), Guid.NewGuid().ToString("N"));
+        var winner = new RedisImportStorageBudget(connection, domain, new(100, 100, 100, 2), Guid.NewGuid().ToString("N"));
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reservation = Reservation(40);
+        Task? delayed = null;
+        try
+        {
+            Assert.True(await old.TryReserveAsync(reservation));
+            var pending = slow.RebuildFromCensusAsync(old.Epoch, PausedCensus());
+            delayed = pending;
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            await winner.RebuildFromCensusAsync(old.Epoch, Census(reservation));
+            var published = await connection.GetDatabase().KeyDumpAsync(old.Key);
+            resume.TrySetResult();
+            await Assert.ThrowsAsync<InvalidOperationException>(() => pending);
+            Assert.Equal(published, await connection.GetDatabase().KeyDumpAsync(old.Key));
+            Assert.Equal(winner.Epoch, await winner.ReadStoredEpochAsync());
+        }
+        finally
+        {
+            resume.TrySetResult();
+            if (delayed is not null)
+            {
+                try { await delayed; }
+                catch (InvalidOperationException) { }
+            }
+            await connection.GetDatabase().KeyDeleteAsync(old.Key);
+        }
+
+        async IAsyncEnumerable<ImportStorageReservation> PausedCensus()
+        {
+            yield return reservation;
+            entered.TrySetResult();
+            await resume.Task;
+        }
+    }
+
+    [IntegrationTest]
+    public async Task DuplicateCensusIdentityCannotReplaceTheActiveLedger()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var domain = Guid.NewGuid().ToString("N");
+        var old = await ImportStorageBudgetTestFactory.CreateAsync(connection, domain, new(100, 100, 100, 2));
+        var replacement = new RedisImportStorageBudget(connection, domain, new(100, 100, 100, 2), Guid.NewGuid().ToString("N"));
+        try
+        {
+            var before = await connection.GetDatabase().KeyDumpAsync(old.Key);
+            var duplicate = Reservation(10);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => replacement.RebuildFromCensusAsync(old.Epoch, Census(duplicate, duplicate)));
+            Assert.Equal(before, await connection.GetDatabase().KeyDumpAsync(old.Key));
+        }
+        finally { await connection.GetDatabase().KeyDeleteAsync(old.Key); }
+    }
+
+    [IntegrationTest]
+    public async Task RebuildLostPublicationReplyRetainsPublishedEpochAndCharges()
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var domain = Guid.NewGuid().ToString("N");
+        var old = await ImportStorageBudgetTestFactory.CreateAsync(connection, domain, new(100, 100, 100, 2));
+        var epoch = Guid.NewGuid().ToString("N");
+        var reservation = Reservation(60);
+        var database = Substitute.For<IDatabase>();
+        database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
+            .Returns(async call =>
+            {
+                var keys = call.ArgAt<RedisKey[]>(1);
+                var result = await connection.GetDatabase().ScriptEvaluateAsync(call.ArgAt<string>(0), keys, call.ArgAt<RedisValue[]>(2));
+                if (keys.Length == 2) throw new RedisConnectionException(ConnectionFailureType.SocketFailure, "Publication reply lost after rename");
+                return result;
+            });
+        var interrupted = Substitute.For<IConnectionMultiplexer>();
+        interrupted.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        var replacement = new RedisImportStorageBudget(interrupted, domain, new(100, 100, 100, 2), epoch);
+        try
+        {
+            await Assert.ThrowsAsync<RedisConnectionException>(() => replacement.RebuildFromCensusAsync(old.Epoch, Census(reservation)));
+            var observed = new RedisImportStorageBudget(connection, domain, new(100, 100, 100, 2), epoch);
+            Assert.Equal(epoch, await observed.ReadStoredEpochAsync());
+            Assert.Equal(60, (long)await connection.GetDatabase().HashGetAsync(old.Key, "bytes"));
+            Assert.True(await observed.TryReserveAsync(reservation));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => old.ReleaseDeletedAsync(reservation));
+        }
+        finally { await connection.GetDatabase().KeyDeleteAsync(old.Key); }
+    }
+
+    private static async IAsyncEnumerable<ImportStorageReservation> Census(params ImportStorageReservation[] reservations)
+    {
+        await Task.Yield();
+        foreach (var reservation in reservations) yield return reservation;
     }
 
     private static ImportStorageReservation Reservation(long bytes)

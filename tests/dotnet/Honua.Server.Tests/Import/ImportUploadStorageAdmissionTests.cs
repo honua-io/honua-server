@@ -41,6 +41,7 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         using var disk = new Disk();
         var budget = Budget(connection, disk.Root, Bytes.Length);
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(budget);
         var observed = Substitute.For<ICloudFileStorage>();
         observed.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
@@ -83,6 +84,7 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
             });
         var interrupted = Substitute.For<IConnectionMultiplexer>();
         interrupted.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(Budget(connection, disk.Root, Bytes.Length));
         var budget = Budget(interrupted, disk.Root, Bytes.Length);
         await using var input = new MemoryStream(Bytes, writable: false);
 
@@ -102,6 +104,7 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         using var disk = new Disk();
         var budget = Budget(connection, disk.Root, Bytes.Length);
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(budget);
         var session = Session();
         var chunks = new ImportUploadChunkStorage(disk.Storage, budget);
         await using var input = new MemoryStream(Bytes, writable: false);
@@ -151,6 +154,7 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         using var disk = new Disk();
         var budget = Budget(connection, disk.Root, Bytes.Length * (sourceFits ? 2 : 1));
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(budget);
         var store = new RedisImportUploadStore(connection);
         var session = Session();
         (await store.TryCreateAsync(session)).Should().BeTrue();
@@ -162,6 +166,7 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
         session = (await store.GetAsync(session.Id, session.Scope))!;
         var observed = Substitute.For<ICloudFileStorage>();
         var scratchBudget = Budget(connection, disk.Root + ":scratch", Bytes.Length);
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(scratchBudget);
         observed.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(call => disk.Storage.GetMetadataAsync(call.ArgAt<string>(0), call.ArgAt<CancellationToken>(1)));
         observed.DownloadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -201,7 +206,7 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
     private static readonly string Digest = Convert.ToHexStringLower(SHA256.HashData(Bytes));
 
     private static RedisImportStorageBudget Budget(IConnectionMultiplexer connection, string domain, long bytes) =>
-        new(connection, domain, new ImportStorageBudgetLimits(bytes, bytes, bytes, 100));
+        ImportStorageBudgetTestFactory.Bind(connection, domain, new ImportStorageBudgetLimits(bytes, bytes, bytes, 100));
 
     private static ImportUploadSession Session() => new()
     {

@@ -336,7 +336,7 @@ public sealed class ImportUploadContentVerifierTests(RedisFixture redis)
         // Expire the transfer receipt; the retained job source is independently readable.
         (await restart.GetDatabase().KeyExpireAsync(RedisImportUploadStore.Key(session.Id), TimeSpan.Zero)).Should().BeTrue();
         (await restartedStore.GetAsync(session.Id, session.Scope)).Should().BeNull();
-        var workerBudget = new RedisImportStorageBudget(restart, disk.Root + ":worker-scratch",
+        var workerBudget = await ImportStorageBudgetTestFactory.CreateAsync(restart, disk.Root + ":worker-scratch",
             new ImportStorageBudgetLimits(session.TotalBytes, session.TotalBytes, session.TotalBytes, 10));
         await using (var input = await Honua.Import.FileImport.Durable.StagedImportSourceMaterializer.OpenAsync(
             bound.StagedSource!, disk.OpenStorage(), session.TotalBytes, new ImportScratchStorage(Path.Join(disk.Root, "worker-scratch"), workerBudget)))

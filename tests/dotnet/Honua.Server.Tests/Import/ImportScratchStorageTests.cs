@@ -23,6 +23,7 @@ public sealed class ImportScratchStorageTests(RedisFixture redis)
         await using var first = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         await using var second = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var budget = Budget(first, disk.Root);
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(budget);
         var restarted = new ImportScratchStorage(disk.Root, Budget(second, disk.Root));
         var session = Session();
         var lease = await new ImportScratchStorage(disk.Root, budget).AllocateAsync(session, disk.Root, Bytes);
@@ -54,6 +55,7 @@ public sealed class ImportScratchStorageTests(RedisFixture redis)
         using var disk = new Disk();
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var budget = Budget(connection, disk.Root);
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(budget);
         var interrupted = Substitute.For<IImportStorageBudget>();
         interrupted.TryReserveAsync(Arg.Any<ImportStorageReservation>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
@@ -78,6 +80,7 @@ public sealed class ImportScratchStorageTests(RedisFixture redis)
         using var disk = new Disk();
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var budget = Budget(connection, disk.Root);
+        await ImportStorageBudgetTestFactory.InitializeEmptyAsync(budget);
         var lease = await new ImportScratchStorage(disk.Root, budget).AllocateAsync(Session(), disk.Root, Bytes);
         var path = lease.Content.Name;
         // Simulate an unconfirmed cleanup outcome after the writer has closed.
@@ -105,7 +108,7 @@ public sealed class ImportScratchStorageTests(RedisFixture redis)
 
     private const int Bytes = 65536;
     private static RedisImportStorageBudget Budget(IConnectionMultiplexer connection, string domain) =>
-        new(connection, domain, new ImportStorageBudgetLimits(Bytes, Bytes, Bytes, 10));
+        ImportStorageBudgetTestFactory.Bind(connection, domain, new ImportStorageBudgetLimits(Bytes, Bytes, Bytes, 10));
 
     private static ImportUploadSession Session() => new()
     {

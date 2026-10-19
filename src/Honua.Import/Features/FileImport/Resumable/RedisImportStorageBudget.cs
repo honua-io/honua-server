@@ -14,18 +14,21 @@ namespace Honua.Import.FileImport.Resumable;
 /// objects were deleted. This ledger requires durable Redis and must be reconciled
 /// with storage before admitting writes after loss of accounting state.
 /// </summary>
-internal sealed class RedisImportStorageBudget : IImportStorageBudget
+internal sealed partial class RedisImportStorageBudget : IImportStorageBudget
 {
     // Lua numbers exactly represent every integer within this admitted range.
     internal const long MaximumBudgetBytes = 1L << 50;
     private readonly IDatabase _database;
     private readonly ImportStorageBudgetLimits _limits;
     internal RedisKey Key { get; }
+    internal string Epoch { get; }
+    private string Policy => FormattableString.Invariant($"{_limits.GlobalBytes}:{_limits.TenantBytes}:{_limits.OwnerBytes}:{_limits.MaximumObjects}");
 
     private const string ReserveScript = """
         local kind = redis.call('TYPE', KEYS[1]).ok
-        if kind ~= 'none' and kind ~= 'hash' then return -2 end
+        if kind ~= 'hash' then return -2 end
         if redis.call('PTTL', KEYS[1]) >= 0 then return -2 end
+        if redis.call('HGET', KEYS[1], 'epoch') ~= ARGV[11] then return -4 end
         local existing = redis.call('HGET', KEYS[1], ARGV[1])
         if existing and existing ~= ARGV[2] then return -1 end
         local policy = redis.call('HGET', KEYS[1], 'limits')
@@ -57,6 +60,7 @@ internal sealed class RedisImportStorageBudget : IImportStorageBudget
 
     private const string ReleaseScript = """
         if redis.call('TYPE', KEYS[1]).ok ~= 'hash' or redis.call('PTTL', KEYS[1]) >= 0 then return -2 end
+        if redis.call('HGET', KEYS[1], 'epoch') ~= ARGV[6] then return -4 end
         local existing = redis.call('HGET', KEYS[1], ARGV[1])
         if not existing then return 0 end
         if existing ~= ARGV[2] then return -1 end
@@ -79,16 +83,18 @@ internal sealed class RedisImportStorageBudget : IImportStorageBudget
 
     // storageBudgetId is host configuration identifying the actual shared storage
     // domain, not a user/task-selected ID. Every replica must use the same domain.
-    internal RedisImportStorageBudget(IConnectionMultiplexer redis, string storageBudgetId, ImportStorageBudgetLimits limits)
+    internal RedisImportStorageBudget(IConnectionMultiplexer redis, string storageBudgetId, ImportStorageBudgetLimits limits, string epoch)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(storageBudgetId);
         if (storageBudgetId.Length > 256 || storageBudgetId.Any(char.IsControl)) throw new ArgumentException("Invalid storage budget identity.");
         ArgumentNullException.ThrowIfNull(limits);
+        ValidateEpoch(epoch);
         if (limits.GlobalBytes is < 1 or > MaximumBudgetBytes || limits.TenantBytes < 1 || limits.TenantBytes > limits.GlobalBytes ||
             limits.OwnerBytes < 1 || limits.OwnerBytes > limits.TenantBytes || limits.MaximumObjects is < 1 or > 1000000)
             throw new ArgumentOutOfRangeException(nameof(limits));
         _database = redis.GetDatabase();
         _limits = limits;
+        Epoch = epoch;
         Key = $"honua:import-storage:{{{Hash(storageBudgetId)}}}:reservations";
     }
 
@@ -99,7 +105,7 @@ internal sealed class RedisImportStorageBudget : IImportStorageBudget
         var result = (long)await _database.ScriptEvaluateAsync(ReserveScript, [Key],
             [Field(reservation), Serialize(reservation), TenantField(reservation), OwnerField(reservation), reservation.Bytes,
                 _limits.GlobalBytes, _limits.TenantBytes, _limits.OwnerBytes, _limits.MaximumObjects,
-                FormattableString.Invariant($"{_limits.GlobalBytes}:{_limits.TenantBytes}:{_limits.OwnerBytes}:{_limits.MaximumObjects}")]).ConfigureAwait(false);
+                Policy, Epoch]).ConfigureAwait(false);
         return Interpret(result);
     }
 
@@ -111,7 +117,7 @@ internal sealed class RedisImportStorageBudget : IImportStorageBudget
         Validate(reservation);
         cancellationToken.ThrowIfCancellationRequested();
         var result = (long)await _database.ScriptEvaluateAsync(ReleaseScript, [Key],
-            [Field(reservation), Serialize(reservation), TenantField(reservation), OwnerField(reservation), reservation.Bytes]).ConfigureAwait(false);
+            [Field(reservation), Serialize(reservation), TenantField(reservation), OwnerField(reservation), reservation.Bytes, Epoch]).ConfigureAwait(false);
         return Interpret(result);
     }
 
@@ -147,6 +153,7 @@ internal sealed class RedisImportStorageBudget : IImportStorageBudget
         0 => false,
         -1 => throw new InvalidOperationException("The storage reservation belongs to a different immutable request."),
         -3 => throw new InvalidOperationException("Storage budget configuration differs from the retained admission policy."),
+        -4 => throw new InvalidOperationException("Storage accounting belongs to another recovery epoch."),
         _ => throw new InvalidDataException("Import storage accounting is unavailable or invalid.")
     };
 
@@ -159,6 +166,12 @@ internal sealed class RedisImportStorageBudget : IImportStorageBudget
     private static string Hash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     private static string Serialize(ImportStorageReservation reservation)
         => JsonSerializer.Serialize(reservation, ImportUploadJsonContext.Default.ImportStorageReservation);
+
+    private static void ValidateEpoch(string epoch)
+    {
+        if (epoch is not { Length: 32 } || !Guid.TryParseExact(epoch, "N", out var parsed) || parsed.ToString("N") != epoch)
+            throw new ArgumentException("Storage accounting requires its durable canonical recovery epoch.", nameof(epoch));
+    }
 }
 
 internal sealed record ImportStorageBudgetLimits(long GlobalBytes, long TenantBytes, long OwnerBytes, int MaximumObjects);

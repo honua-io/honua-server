@@ -28,7 +28,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task Create_LostCommitReply_OriginalTaskRecoversSameSessionAndDeadlineAfterRestart()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         var database = Substitute.For<IDatabase>();
         database.HashGetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
             .Returns(call => connection.GetDatabase().HashGetAsync(call.ArgAt<RedisKey>(0), call.ArgAt<RedisValue>(1)));
@@ -63,7 +63,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task Append_AuthorityDeniedBeforeRead_DoesNotConsumeBodyOrCreateChunk()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         var session = await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference);
         fixture.Allowed = false;
         await using var input = new MemoryStream(Fixture.Bytes, writable: false);
@@ -80,7 +80,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task Append_AuthorityRevokedAfterStorage_DoesNotAcceptCandidateBytes()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         var session = await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference);
         fixture.MaximumAuthorizedCalls = fixture.AuthorizationCalls + 1;
         await using var input = new MemoryStream(Fixture.Bytes, writable: false);
@@ -99,7 +99,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task Verify_AuthorityRevokedDuringProviderRead_DoesNotSeal()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         var session = await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference);
         await using var input = new MemoryStream(Fixture.Bytes, writable: false);
         var complete = await fixture.Coordinator.AppendAsync(fixture.Actor, fixture.Reference, session.Version, 0, input, Fixture.Digest);
@@ -126,7 +126,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task CompleteTransfer_ReplaysSealAsObservation_AndRejectsStaleRangeBeforeBodyRead()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         var session = await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference);
         await using var input = new MemoryStream(Fixture.Bytes, writable: false);
         var complete = await fixture.Coordinator.AppendAsync(fixture.Actor, fixture.Reference, session.Version, 0, input, Fixture.Digest);
@@ -147,7 +147,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task ExpiredOriginalTask_CannotCreateNewSessionOrExtendDeadline()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         fixture.Task = fixture.Task with { UploadAdmissionDeadline = DateTimeOffset.UtcNow.AddMinutes(-1) };
 
         (await fixture.Coordinator.GetAsync(fixture.Actor, fixture.Reference)).Should().BeNull();
@@ -160,7 +160,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task MissingExpectedWholeFileDigest_CannotStartResumableUpload()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         fixture.Task = fixture.Task with { Source = fixture.Task.Source with { ExpectedSha256 = null } };
 
         await FluentActions.Invoking(() => fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference))
@@ -172,7 +172,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task Cancel_ForeignActorCannotObserve_OriginalCancellationPreventsLateAppend()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         var session = await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference);
         var foreign = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "foreign")], "test"));
         await FluentActions.Invoking(() => fixture.Coordinator.GetAsync(foreign, fixture.Reference))
@@ -189,7 +189,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task SealedReceipt_WriteAdmissionDenied_RecoveryDoesNotMutateOrReopenUpload()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         var session = await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference);
         await using var input = new MemoryStream(Fixture.Bytes, writable: false);
         var complete = await fixture.Coordinator.AppendAsync(fixture.Actor, fixture.Reference,
@@ -215,7 +215,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task CancelledReceipt_WriteAdmissionDenied_RecoveryPreservesOriginalCancellation()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         var session = await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference);
         var cancelled = await fixture.Coordinator.CancelAsync(fixture.Actor, fixture.Reference, session.Version);
         fixture.WriteAllowed = false;
@@ -232,7 +232,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task ReadOnlyAuthority_CannotAdmitAppendSealOrCancelAnUpload()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         fixture.WriteAllowed = false;
         await FluentActions.Invoking(() => fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference))
             .Should().ThrowAsync<UnauthorizedAccessException>();
@@ -262,7 +262,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task Retain_LostCommitReply_RecoversOriginalSourceWithReadAccessWithoutWritingAgain()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         var session = await SealAsync(fixture);
         var database = Substitute.For<IDatabase>();
         database.HashGetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
@@ -304,7 +304,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task Retain_NoWriteAuthority_DoesNotReadSourceOrAllocateScratch()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         var session = await SealAsync(fixture);
         fixture.WriteAllowed = false;
         var inaccessible = Substitute.For<ICloudFileStorage>();
@@ -332,7 +332,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task Get_ReadAuthorityRevokedDuringReceiptLookup_DoesNotReturnReceipt()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         var session = await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference);
         var database = Substitute.For<IDatabase>();
         database.HashGetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
@@ -357,7 +357,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task HumanAndExecutor_ResumeOneTransfer_WithAtomicActualContributorReceipts()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         fixture.EnableContributor();
         var bytes = new byte[RedisImportUploadStore.MaximumChunkBytes + 17];
         for (var index = 0; index < bytes.Length; index++) bytes[index] = (byte)(index % 251);
@@ -404,7 +404,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task HumanContribution_RequiresCurrentAuthorityBeforeAndAfterProviderWrite(bool revokedDuringWrite)
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         fixture.EnableContributor();
         var created = await fixture.Coordinator.CreateAsync(fixture.Human, fixture.Reference);
         var observed = Substitute.For<ICloudFileStorage>();
@@ -436,7 +436,7 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
     public async Task HumanCancellation_KeepsExecutorOwnershipAndRecordsContributorOnlyOnce()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        using var fixture = new Fixture(connection);
+        using var fixture = await Fixture.CreateAsync(connection);
         fixture.EnableContributor();
         var created = await fixture.Coordinator.CreateAsync(fixture.Actor, fixture.Reference);
         var cancelled = await fixture.Coordinator.CancelAsync(fixture.Human, fixture.Reference, created.Version);
@@ -471,17 +471,34 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
         public LocalFileStorage Storage { get; }
         public RedisImportUploadStore Store { get; }
         public RedisImportStorageBudget Budget { get; }
+        private readonly RedisImportStorageBudget _scratchBudget;
         public ImportScratchStorage Scratch { get; }
         public ImportUploadCoordinator Coordinator { get; }
 
-        public Fixture(IConnectionMultiplexer connection)
+        public static async global::System.Threading.Tasks.Task<Fixture> CreateAsync(IConnectionMultiplexer connection)
+        {
+            var fixture = new Fixture(connection);
+            try
+            {
+                await ImportStorageBudgetTestFactory.InitializeEmptyAsync(fixture.Budget);
+                await ImportStorageBudgetTestFactory.InitializeEmptyAsync(fixture._scratchBudget);
+                return fixture;
+            }
+            catch
+            {
+                fixture.Dispose();
+                throw;
+            }
+        }
+
+        private Fixture(IConnectionMultiplexer connection)
         {
             Storage = new LocalFileStorage(Options.Create(new LocalStorageOptions { BasePath = Root, CreateDirectoryIfNotExists = true }),
                 NullLogger<LocalFileStorage>.Instance, Substitute.For<IUploadProgressStore>());
             Store = new RedisImportUploadStore(connection);
-            Budget = new RedisImportStorageBudget(connection, Root, new ImportStorageBudgetLimits(33554432, 33554432, 33554432, 100));
-            Scratch = new ImportScratchStorage(Path.Join(Root, "scratch"), new RedisImportStorageBudget(connection,
-                Root + ":scratch", new ImportStorageBudgetLimits(33554432, 33554432, 33554432, 100)));
+            Budget = ImportStorageBudgetTestFactory.Bind(connection, Root, new ImportStorageBudgetLimits(33554432, 33554432, 33554432, 100));
+            _scratchBudget = ImportStorageBudgetTestFactory.Bind(connection, Root + ":scratch", new ImportStorageBudgetLimits(33554432, 33554432, 33554432, 100));
+            Scratch = new ImportScratchStorage(Path.Join(Root, "scratch"), _scratchBudget);
             Tasks.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>(),
                     Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
                 .Returns(call =>

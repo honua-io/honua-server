@@ -17,6 +17,7 @@ using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.Configuration;
 using Honua.Import.FileImport.Resumable;
 using Honua.Server.Features.AgentWorkspace;
+using Honua.Server.Tests.Import;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -272,9 +273,9 @@ public sealed class DatasetImportUploadHttpTests(RedisFixture redis)
             fixture.Connection = await ConnectionMultiplexer.ConnectAsync(redisConnection);
             fixture.Storage = new LocalFileStorage(Options.Create(new LocalStorageOptions { BasePath = fixture.Root, CreateDirectoryIfNotExists = true }),
                 NullLogger<LocalFileStorage>.Instance, Substitute.For<IUploadProgressStore>());
-            var budget = new RedisImportStorageBudget(fixture.Connection, fixture.Root,
+            var budget = await ImportStorageBudgetTestFactory.CreateAsync(fixture.Connection, fixture.Root,
                 new ImportStorageBudgetLimits(128L * 1024 * 1024, 128L * 1024 * 1024, 128L * 1024 * 1024, 100));
-            var scratch = new ImportScratchStorage(Path.Join(fixture.Root, "scratch"), new RedisImportStorageBudget(fixture.Connection,
+            var scratch = new ImportScratchStorage(Path.Join(fixture.Root, "scratch"), await ImportStorageBudgetTestFactory.CreateAsync(fixture.Connection,
                 fixture.Root + ":scratch", new ImportStorageBudgetLimits(128L * 1024 * 1024, 128L * 1024 * 1024, 128L * 1024 * 1024, 100)));
             fixture.App = new WebAppFixture().UseKestrel().ConfigureWebHost(builder =>
             {

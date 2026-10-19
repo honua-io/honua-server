@@ -29,6 +29,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.AgentWorkspace;
+using Honua.Server.Tests.Import;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -66,8 +67,8 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var storage = new LocalFileStorage(Options.Create(new LocalStorageOptions { BasePath = storageRoot, CreateDirectoryIfNotExists = true }),
             NullLogger<LocalFileStorage>.Instance, Substitute.For<IUploadProgressStore>());
-        var budget = new RedisImportStorageBudget(connection, storageRoot, new ImportStorageBudgetLimits(32L * 1024 * 1024, 32L * 1024 * 1024, 32L * 1024 * 1024, 20));
-        var scratch = new ImportScratchStorage(Path.Join(storageRoot, "scratch"), new RedisImportStorageBudget(connection, storageRoot + ":scratch",
+        var budget = await ImportStorageBudgetTestFactory.CreateAsync(connection, storageRoot, new ImportStorageBudgetLimits(32L * 1024 * 1024, 32L * 1024 * 1024, 32L * 1024 * 1024, 20));
+        var scratch = new ImportScratchStorage(Path.Join(storageRoot, "scratch"), await ImportStorageBudgetTestFactory.CreateAsync(connection, storageRoot + ":scratch",
             new ImportStorageBudgetLimits(32L * 1024 * 1024, 32L * 1024 * 1024, 32L * 1024 * 1024, 20)));
         var delivery = Substitute.For<IJobQueue>();
         const string issuer = "https://import-workload.example";
