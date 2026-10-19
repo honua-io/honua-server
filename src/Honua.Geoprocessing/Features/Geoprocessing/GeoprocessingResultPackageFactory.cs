@@ -502,6 +502,14 @@ internal static class GeoprocessingResultPackageFactory
     {
         if (!string.IsNullOrWhiteSpace(reference))
         {
+            // A committed sink's data URI contains a JSON receipt describing the
+            // materialized layer, not inline GeoJSON geometry. Its media type must
+            // describe the bytes even when the artifact kind is FeatureLayer.
+            if (reference.StartsWith(Execution.SinkResultArtifact.DataUriPrefix, StringComparison.Ordinal))
+            {
+                return "application/json";
+            }
+
             if (reference.EndsWith(".geojson", StringComparison.OrdinalIgnoreCase) ||
                 reference.EndsWith(".json", StringComparison.OrdinalIgnoreCase) && kind == ArtifactKind.FeatureLayer)
             {
