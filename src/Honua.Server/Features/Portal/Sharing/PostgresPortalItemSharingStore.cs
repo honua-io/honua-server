@@ -69,7 +69,7 @@ internal sealed class PostgresPortalItemSharingStore(
         {
             await using var insert = new NpgsqlCommand($"""
                 INSERT INTO {_table} (tenant_key, item_id, owner_name, group_ids)
-                VALUES (@tenant, @item, @owner, '{{}}') ON CONFLICT DO NOTHING
+                VALUES (@tenant, @item, @owner, ARRAY[]::text[]) ON CONFLICT DO NOTHING
                 """, connection, transaction);
             insert.Parameters.AddWithValue("tenant", tenant);
             insert.Parameters.AddWithValue("item", itemId);
