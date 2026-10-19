@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:28b7c2fe1726525bc4330a2504baa7edb787b3a9b9f1764504a609f8c3d64beb",
+  "bundleDigest": "sha256:c2e8202766e7adb906f28dbc1a9634720c1bbf34874e892069f4ee4aacaaef54",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2590,7 +2590,7 @@
     {
       "id": "guides/query-analyze/run-geoprocessing",
       "path": "guides/query-analyze/run-geoprocessing.md",
-      "documentDigest": "sha256:603ba96d3b4761f3528174e7caf63de83ca7df2536168fb356d73d2ebcb8b558",
+      "documentDigest": "sha256:27c698657d18b5e3d45dc1bc6de4206c2f55a8d003f9a75a96e7e5262df1ae0e",
       "metadata": {
         "type": "guide",
         "title": "Run geoprocessing",
@@ -7608,7 +7608,7 @@
     {
       "id": "reference/compatibility/geoservices-parity",
       "path": "reference/compatibility/geoservices-parity.md",
-      "documentDigest": "sha256:08951596ffa6147f389ffc022bed27be9a76bf40e2f50aa2294958c3fea95ca0",
+      "documentDigest": "sha256:b58b68b244d1ade65633738a22265faa15b72fc9b0b93a7dde00e460965cc8b2",
       "metadata": {
         "type": "reference",
         "title": "GeoServices REST parity",
