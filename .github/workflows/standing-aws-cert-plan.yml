@@ -1,0 +1,82 @@
+name: Standing AWS certification plan only
+
+# Protected, manual source entrypoint. A dedicated private runner and existing
+# initialized IaC checkout are operator prerequisites; this workflow is dormant
+# until they are provisioned. It never uploads plaintext or calls apply.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/standing-aws-cert-plan.yml'
+      - 'scripts/cloud/standing-cert-plan-only.py'
+      - 'scripts/cloud/test-standing-cert-plan-only.py'
+  workflow_dispatch:
+    inputs:
+      iac_revision:
+        description: Exact reviewed honua-iac commit (40 lowercase hex)
+        required: true
+        type: string
+      request_sha256:
+        description: SHA256 of the protected request file on the private runner
+        required: true
+        type: string
+      candidate_sha256:
+        description: Exact prepared release candidate digest (64 lowercase hex)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: standing-aws-cert-plan
+  cancel-in-progress: false
+
+jobs:
+  controls:
+    name: Plan-only workflow controls (offline)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: python3 scripts/cloud/test-standing-cert-plan-only.py
+
+  plan:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk'
+    name: Retain unapproved private plan
+    runs-on: [self-hosted, linux, x64, honua-cert-private]
+    environment: cert
+    timeout-minutes: 45
+    env:
+      CERT_IAC_REVISION: ${{ inputs.iac_revision }}
+      CERT_REQUEST_SHA256: ${{ inputs.request_sha256 }}
+      CERT_CANDIDATE_SHA256: ${{ inputs.candidate_sha256 }}
+      CERT_IAC_SOURCE: ${{ vars.HONUA_CERT_PRIVATE_IAC_SOURCE }}
+      CERT_REQUEST_FILE: ${{ vars.HONUA_CERT_PRIVATE_REQUEST_FILE }}
+      CERT_DEPLOY_ROLE_ARN: ${{ vars.HONUA_CERT_DEPLOY_ROLE_ARN }}
+      AWS_REGION: ${{ vars.REALAWS_CERT_REGION || 'us-east-1' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Require private runtime and deployment role
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CERT_IAC_SOURCE" && test -n "$CERT_REQUEST_FILE" && test -n "$CERT_DEPLOY_ROLE_ARN"
+          test "$RUNNER_ENVIRONMENT" = self-hosted
+          test -d "$CERT_IAC_SOURCE/.git" || git -C "$CERT_IAC_SOURCE" rev-parse --is-inside-work-tree >/dev/null
+
+      - name: Assume existing standing deployment role through cert OIDC
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6
+        with:
+          role-to-assume: ${{ env.CERT_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 3600
+          role-session-name: honua-standing-cert-plan
+
+      - name: Produce private unapproved packet
+        shell: bash
+        run: python3 -I scripts/cloud/standing-cert-plan-only.py

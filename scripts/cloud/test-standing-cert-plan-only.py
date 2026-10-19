@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Offline private-runner boundary controls; no GitHub token or AWS calls."""
+import contextlib
+import hashlib
+import importlib.util
+import io
+import json
+import os
+import stat
+import tempfile
+import unittest
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest import mock
+
+SCRIPT = Path(__file__).with_name("standing-cert-plan-only.py")
+spec = importlib.util.spec_from_file_location("standing_cert_plan_only", SCRIPT)
+entry = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(entry)
+
+
+class StandingCertPlanWorkflow(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.source = self.base / "iac"
+        self.script = self.source / "infrastructure/terraform/validation/scripts/aws/standing_cert_plan.py"
+        self.script.parent.mkdir(parents=True)
+        self.script.write_text("# authored producer fixture\n")
+        self.request = self.base / "request.json"
+        self.token = self.base / "backend-token"
+        self.revision = "a" * 40
+        self.candidate = "b" * 64
+        self.data = {"iacRevision": self.revision, "candidateDigest": self.candidate,
+                     "backendTokenFile": str(self.token),
+                     "sessionExpiresAtUtc": (datetime.now(timezone.utc) + timedelta(minutes=45)).isoformat()}
+        self.save_request()
+        self.env = {"GITHUB_REPOSITORY": "honua-io/honua-server", "GITHUB_REF": "refs/heads/trunk",
+                    "ACTIONS_RUNTIME_TOKEN": "PRIVATE RUNTIME TOKEN",
+                    "CERT_IAC_REVISION": self.revision, "CERT_CANDIDATE_SHA256": self.candidate,
+                    "CERT_REQUEST_SHA256": hashlib.sha256(self.request.read_bytes()).hexdigest(),
+                    "CERT_IAC_SOURCE": str(self.source), "CERT_REQUEST_FILE": str(self.request)}
+
+    def save_request(self):
+        self.request.write_text(json.dumps(self.data))
+        self.request.chmod(0o600)
+
+    def git(self, args, **kwargs):
+        return (self.revision + "\n").encode() if args[-2:] == ["rev-parse", "HEAD"] else self.script.read_bytes()
+
+    def test_private_packet_receipt_only_and_token_cleanup(self):
+        receipt = {key: "fixture" for key in entry.PUBLIC_KEYS}
+        receipt["status"] = "planned-unapproved"
+        child = mock.Mock(returncode=0, stdout=json.dumps(receipt), stderr="PRIVATE SENTINEL")
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, self.env, clear=True), \
+             mock.patch.object(entry.subprocess, "check_output", side_effect=self.git), \
+             mock.patch.object(entry.subprocess, "run", return_value=child) as run, \
+             mock.patch.object(entry, "oidc_token", return_value="header.payload.signature"), \
+             contextlib.redirect_stdout(out):
+            entry.main()
+        self.assertEqual(json.loads(out.getvalue()), receipt)
+        self.assertNotIn("PRIVATE SENTINEL", out.getvalue())
+        self.assertFalse(self.token.exists())
+        self.assertEqual(run.call_args.args[0][-2:], ["--request", str(self.request)])
+        self.assertNotIn("ACTIONS_RUNTIME_TOKEN", run.call_args.kwargs["env"])
+
+    def test_changed_producer_refused_before_token(self):
+        with mock.patch.dict(os.environ, self.env, clear=True), \
+             mock.patch.object(entry.subprocess, "check_output", side_effect=[(self.revision + "\n").encode(), b"different"]), \
+             mock.patch.object(entry, "oidc_token") as token:
+            with self.assertRaisesRegex(ValueError, "producer source"):
+                entry.main()
+            token.assert_not_called()
+        self.assertFalse(self.token.exists())
+
+    def test_request_and_token_path_refusals(self):
+        with mock.patch.dict(os.environ, self.env, clear=True):
+            os.environ["CERT_REQUEST_SHA256"] = "0" * 64
+            with self.assertRaisesRegex(ValueError, "request digest"):
+                entry.main()
+        link = self.base / "token-link"
+        link.symlink_to(self.request)
+        with self.assertRaisesRegex(ValueError, "token destination occupied"):
+            entry.private_path(link, exists=False)
+        self.assertEqual(stat.S_IMODE(self.request.stat().st_mode), 0o600)
+
+
+if __name__ == "__main__":
+    unittest.main()
