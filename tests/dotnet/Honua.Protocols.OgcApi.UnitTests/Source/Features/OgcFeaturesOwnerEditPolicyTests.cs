@@ -269,6 +269,7 @@ public sealed class OgcFeaturesOwnerEditPolicyTests
     private static DefaultHttpContext Context()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Request.Path = "/ogc/features/collections/cities/items/42";

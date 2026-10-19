@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Protocols.Ogc.Api.Features.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.Services;
 
@@ -47,7 +48,8 @@ public sealed class OgcFeatureEditFailureMapperTests
     public async Task ToResult_OwnerDenial_ReturnsForbiddenWithThePolicyReason()
     {
         const string denial = "Feature is owned by another principal and cannot be modified under the owner-based edit policy.";
-        var context = new DefaultHttpContext();
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
         context.Request.Path = "/ogc/features/collections/cities/items/42";
         context.Response.Body = new MemoryStream();
 
