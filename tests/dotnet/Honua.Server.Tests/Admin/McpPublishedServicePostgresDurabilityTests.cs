@@ -16,6 +16,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Db.Postgres.Features.Admin;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.Infrastructure.MultiTenancy;
@@ -30,6 +32,8 @@ using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Npgsql;
+using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.Server.Tests.Admin;
 
@@ -96,9 +100,9 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
             await _fixture.Postgres.ExecuteDdlUnderLockAsync(ddl);
         }
 
+        await McpPublicationFixtureSetup.InstallPromotionStoresAsync(_fixture);
         _client = _fixture.CreateAdminClient();
-        _connectionId = await _fixture.GetTestSecureConnectionIdAsync()
-            ?? throw new InvalidOperationException("The fixture did not register a secure test connection.");
+        await CreateOwnedPublishConnectionAsync();
 
         // A private metadata environment makes the persisted baseline and
         // teardown independent of other fixtures using the shared honua schema.
@@ -166,8 +170,46 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         }
         finally
         {
-            await _fixture.DisposeAsync();
+            try
+            {
+                if (_connectionId != Guid.Empty)
+                {
+                    await using var scope = _fixture.Services.CreateAsyncScope();
+                    await scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>()
+                        .DeleteConnectionAsync(_connectionId);
+                }
+            }
+            finally
+            {
+                await _fixture.DisposeAsync();
+            }
         }
+    }
+
+    private async Task CreateOwnedPublishConnectionAsync()
+    {
+        // Source-backed publishing also materializes rows into canonical features.
+        // Match the server's isolated schema without modifying the shared fixture connection.
+        var builder = new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
+        {
+            SearchPath = $"{_fixture.CurrentSchema},public"
+        };
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var encryption = scope.ServiceProvider.GetRequiredService<IConnectionEncryptionService>();
+        var connection = DataConnection.CreateWithEncryptedCredentials(
+            name: _serviceName,
+            host: builder.Host!,
+            port: builder.Port,
+            databaseName: builder.Database!,
+            username: builder.Username!,
+            encryptedConnectionString: await encryption.EncryptConnectionStringAsync(builder.ConnectionString),
+            encryptionKeyVersion: await encryption.GetCurrentKeyVersionAsync(),
+            createdBy: nameof(McpPublishedServicePostgresDurabilityTests),
+            sslRequired: builder.SslMode is Npgsql.SslMode.Require or Npgsql.SslMode.VerifyCA or Npgsql.SslMode.VerifyFull,
+            sslMode: Enum.Parse<CoreSslMode>(builder.SslMode.ToString(), true));
+        var created = await scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>()
+            .CreateConnectionAsync(connection);
+        _connectionId = created.ConnectionId;
     }
 
     [IntegrationTest]

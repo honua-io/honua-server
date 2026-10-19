@@ -22,6 +22,7 @@ public sealed partial class LayerPublishingIntegrationTests
     [Endpoint("POST /mcp")]
     public async Task McpPublishService_CompletedPublication_ReturnedResourceIsReadableByFreshClient()
     {
+        await McpPublicationFixtureSetup.InstallPromotionStoresAsync(_fixture);
         using var errors = new McpPublicationErrorCapture();
         _fixture.Services.GetRequiredService<ILoggerFactory>().AddProvider(errors);
         await UseServerFeatureStoreConnectionAsync();
