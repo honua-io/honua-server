@@ -565,6 +565,7 @@ internal sealed partial class JobExecutionService(
             }
         }
 
+        var commitDecisionUncertain = running.CommitRecovery is not null;
         try
         {
             if (claimedImportIntent is not null && executor is IJobCommittedResultRecovery recovery)
@@ -590,7 +591,10 @@ internal sealed partial class JobExecutionService(
                     return;
                 }
                 if (running.Audit.SubmitterSecurityContext?.ExecutionLease is not null)
+                {
+                    commitDecisionUncertain = true;
                     running = await ExecutionJobCommitReconciliation.SetPendingAsync(jobStore, running, pending: true, recoveryTimeout.Token).ConfigureAwait(false);
+                }
                 var recovered = await recovery.TryRecoverCommittedAsync(running, context, recoveryTimeout.Token).ConfigureAwait(false);
                 if (recovered is not null)
                 {
@@ -606,6 +610,7 @@ internal sealed partial class JobExecutionService(
                 var unresolved = running.CommitRecovery;
                 if (unresolved is not null)
                     running = await ExecutionJobCommitReconciliation.SetPendingAsync(jobStore, running, pending: false, recoveryTimeout.Token).ConfigureAwait(false);
+                commitDecisionUncertain = false;
                 if (running.CancellationRequestedAt.HasValue)
                 {
                     await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Cancelled,
@@ -639,7 +644,10 @@ internal sealed partial class JobExecutionService(
                 : jobCts.Token;
             if (claimedImportIntent is not null && executor is IJobCommittedResultRecovery
                 && running.Audit.SubmitterSecurityContext?.ExecutionLease is not null)
+            {
+                commitDecisionUncertain = true;
                 running = await ExecutionJobCommitReconciliation.SetPendingAsync(jobStore, running, pending: true, CancellationToken.None, startExecution: true).ConfigureAwait(false);
+            }
             var result = await executor.ExecuteAsync(running, context, executorCancellationToken).ConfigureAwait(false);
 
             var committedImport = claimedImportIntent is not null && result.Status == ExecutionJobStatus.Succeeded
@@ -784,10 +792,13 @@ internal sealed partial class JobExecutionService(
             activity?.SetStatus(ActivityStatusCode.Error, "Execution lease lost.");
             Log.ExecutionLeaseLost(logger, operationId);
         }
-        catch (Exception ex) when (running.CommitRecovery is not null && ex is not OutOfMemoryException)
+        catch (Exception ex) when (commitDecisionUncertain && ex is not OutOfMemoryException)
         {
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             Log.JobExecutionFailed(logger, operationId, ex);
+            // The pending CAS may have committed even when Redis lost its reply.
+            // Reload/adopt it rather than selecting a terminal path from stale local state.
+            running = await ExecutionJobCommitReconciliation.SetPendingAsync(jobStore, running, pending: true, CancellationToken.None).ConfigureAwait(false);
             var started = running.CommitRecovery!.ExecutionStarted;
             var cancelled = !licenseCancellation.IsCancellationRequested && !timeoutCts.IsCancellationRequested
                 && jobCts.IsCancellationRequested && !stoppingToken.IsCancellationRequested;
@@ -1195,9 +1206,14 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
-        // An unavailable commit decision cannot become an ordinary failure or
-        // cancellation. The heartbeat reconciler will adopt the pending state.
-        if (ExecutionJobCommitReconciliation.IsPending(job)) return;
+        // Retain the disposition while receipt reconciliation remains pending.
+        if (ExecutionJobCommitReconciliation.IsPending(job))
+        {
+            if (job.ClaimedBy == workerId)
+                await ExecutionJobCommitReconciliation.RequeueAsync(jobStore, jobQueue, job, cancellationToken,
+                    deferredStatus: terminalStatus, retryAllowed: false, reason: reason).ConfigureAwait(false);
+            return;
+        }
 
         if (job.Status == ExecutionJobStatus.Succeeded && job.FileImportOutput is not null
             && HasExactImportReceipt(job)) return;

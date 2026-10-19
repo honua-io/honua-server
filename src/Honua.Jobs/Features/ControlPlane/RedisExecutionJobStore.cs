@@ -61,6 +61,17 @@ internal sealed partial class RedisExecutionJobStore(
         return 1
         """;
 
+    private const string GuardedSetScript = """
+        local current = redis.call('GET', KEYS[1])
+        if current then
+            local decoded = cjson.decode(current)
+            if decoded.commitRecovery and decoded.commitRecovery ~= cjson.null then return 0 end
+        end
+        if tonumber(ARGV[2]) < 0 then redis.call('SET', KEYS[1], ARGV[1])
+        else redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2]) end
+        return 1
+        """;
+
     private const string CasSetScript = """
         local current = redis.call('GET', KEYS[1])
         if current == false then return 0 end
@@ -187,11 +198,14 @@ internal sealed partial class RedisExecutionJobStore(
         var previous = await GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
         var versioned = job with { Version = job.Version + 1 };
         var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.ExecutionJobRecord);
-        await _database.StringSetAsync(
-                GetJobKey(job.OperationId),
-                payload,
-                job.CommitRecovery is not null ? null : ttl ?? DefaultRetention)
+        // Unconditional writers cannot erase or alter unresolved commit state.
+        // Its transitions require the explicit versioned CAS path.
+        var written = await _database.ScriptEvaluateAsync(GuardedSetScript,
+            keys: [(RedisKey)GetJobKey(job.OperationId)],
+            values: [(RedisValue)payload, (RedisValue)(job.CommitRecovery is not null ? -1L : (long)(ttl ?? DefaultRetention).TotalMilliseconds)])
             .ConfigureAwait(false);
+        if ((long)written != 1)
+            throw new InvalidOperationException("An unresolved import commit requires a versioned state transition.");
 
         await UpdateIndexesAsync(previous, versioned).ConfigureAwait(false);
         Log.ExecutionJobUpdated(logger, job.OperationId, versioned.Status.ToString());

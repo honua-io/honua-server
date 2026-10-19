@@ -44,6 +44,10 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         (await harness.Database.KeyTimeToLiveAsync($"controlplane:job:{job.OperationId}")).Should().BeNull();
         current = (await harness.JobStore.GetAsync(job.OperationId))!;
         current.CommitRecovery.Should().Be(pending.CommitRecovery);
+        Func<Task> staleUnconditionalWrite = () => harness.JobStore.SetAsync(job with { Status = ExecutionJobStatus.Cancelled });
+        await staleUnconditionalWrite.Should().ThrowAsync<InvalidOperationException>();
+        (await harness.JobStore.TrySetAsync(job with { Status = ExecutionJobStatus.Cancelled })).Should().BeFalse();
+        (await harness.JobStore.GetAsync(job.OperationId))!.CommitRecovery.Should().Be(pending.CommitRecovery);
         (await harness.JobStore.ListActiveAsync()).Should().Contain(item => item.OperationId == job.OperationId);
         (await harness.JobStore.TrySetAsync(current with { Status = ExecutionJobStatus.Cancelled })).Should().BeFalse();
         (await harness.JobStore.GetAsync(job.OperationId))!.Status.Should().Be(ExecutionJobStatus.Queued);

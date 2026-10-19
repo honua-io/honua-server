@@ -25,10 +25,50 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Collection("ControlPlaneTransitionTelemetry")]
 public sealed class JobExecutionServiceTests
 {
+    [UnitTest]
+    public async Task AcceptedImport_LateNormalReturnAfterTimeoutRetainsNoRetryDisposition()
+    {
+        var durable = WithControlledAcceptedImport(CreateProvisioningJob()) with
+        {
+            TimeoutPolicy = new() { MaxDuration = TimeSpan.FromMilliseconds(25) }
+        };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var next = call.Arg<ExecutionJobRecord>();
+                if (next.Version != durable.Version) return false;
+                durable = next with { Version = next.Version + 1 };
+                return true;
+            });
+        var executor = Substitute.For<IJobExecutor, IJobCommittedResultRecovery>();
+        executor.Kind.Returns(ExecutionJobKind.FileImport);
+        ((IJobCommittedResultRecovery)executor).TryRecoverCommittedAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<JobExecutionResult?>(null));
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await Task.Delay(100, CancellationToken.None);
+                return JobExecutionResult.Succeeded();
+            });
+        using var worker = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
+            new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
+        await InvokeProcessJobAsync(worker, durable.OperationId, durable.ClaimedBy!);
+        Assert.Equal(ExecutionJobStatus.Queued, durable.Status);
+        Assert.NotNull(durable.CommitRecovery);
+        Assert.Equal(ExecutionJobStatus.Failed, durable.CommitRecovery.DeferredStatus);
+        Assert.False(durable.CommitRecovery.RetryAllowed);
+        Assert.Contains("timed out", durable.CommitRecovery.FailureMessage);
+        Assert.Null(durable.CompletedAt);
+    }
+
     [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task UnknownReceiptRead_SurvivesCancellationAndLicenseExpiryUntilReplacementRecoversTruth(bool cancelled)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task UnknownReceiptRead_SurvivesCancellationAndLicenseExpiryUntilReplacementRecoversTruth(bool cancelled, bool losePendingReply)
     {
         using var expired = new CancellationTokenSource();
         expired.Cancel();
@@ -38,7 +78,13 @@ public sealed class JobExecutionServiceTests
         store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
         store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(call => { var next = call.Arg<ExecutionJobRecord>(); if (next.Version != durable.Version) return false;
-                durable = next with { Version = next.Version + 1 }; return true; });
+                durable = next with { Version = next.Version + 1 };
+                if (losePendingReply && next.CommitRecovery is not null)
+                {
+                    losePendingReply = false;
+                    throw new IOException("Pending CAS committed but its response was lost.");
+                }
+                return true; });
         var license = Substitute.For<ILicenseOperationPolicy>();
         license.OperationCancellation.Returns(expired.Token);
         var executor = Substitute.For<IJobExecutor, IJobCommittedResultRecovery>();
