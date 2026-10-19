@@ -110,9 +110,10 @@ public sealed record LayerReconciliationLayerInput
 
     /// <summary>
     /// Per-feature source geometry census keyed by the target feature id the reader returns.
-    /// Null keeps the target-only validity ratio. When present, a null target geometry is an
-    /// inherited source defect when the source geometry was absent, and transfer loss when the
-    /// source geometry was present (#4826).
+    /// Null keeps the target-only validity ratio. When present, the filtered population is
+    /// compared in one CRS: a null or invalid source that is still missing or not well-formed
+    /// is an inherited source defect, a well-formed target in its place is not a successful
+    /// repair, and a present valid source that did not survive is transfer loss (#4826).
     /// </summary>
     public SourceGeometryCensus? SourceGeometry { get; init; }
 
@@ -144,6 +145,13 @@ public sealed record SourceGeometryCensus
     /// malformed target geometry for one of these ids is transfer loss, not an inherited defect.
     /// </summary>
     public IReadOnlySet<long> UnconvertedTargetFeatureIds { get; init; } = new HashSet<long>();
+
+    /// <summary>
+    /// Target ids whose source geometry was present and topologically invalid. A still-invalid
+    /// or missing target geometry is an inherited source defect. A well-formed target geometry
+    /// is not a successful repair of that defect (#4826).
+    /// </summary>
+    public IReadOnlySet<long> InvalidTargetFeatureIds { get; init; } = new HashSet<long>();
 }
 
 /// <summary>
