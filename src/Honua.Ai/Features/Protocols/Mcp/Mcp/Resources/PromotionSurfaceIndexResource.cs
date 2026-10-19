@@ -111,7 +111,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         MimeType = McpResourceHelpers.JsonMimeType
     };
 
-    private static IReadOnlyList<McpResourceDescriptor> AllDescriptors() => new[]
+    private static McpResourceDescriptor[] AllDescriptors() => new[]
     {
         PublishedServicesDescriptor(),
         new McpResourceDescriptor
