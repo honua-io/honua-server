@@ -109,7 +109,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
             $$"""{"packageKey":"{{packageKey}}","family":"map","schemaVersion":"1.0"}""");
         var draftId = created.GetProperty("draftId").GetGuid();
         var updated = await CallToolAsync(admin, "honua_studio_update_draft",
-            $$$"""{"body":{"layers":[{"id":"roads"}],"view":{"center":[-158,22],"zoom":7}},"draftId":"{{{draftId:D}}}","generation":1,"packageKey":"{{{packageKey}}}","schemaVersion":"1.0"}""");
+            $$$"""{"body":{"mapPackageId":"{{{packageKey}}}","format":"honua_map_package.v1","status":"Ready","createdAt":"2026-01-01T00:00:00Z","title":"Roads Overview","description":"Road coverage map.","layers":[{"id":"roads","title":"Roads"}],"basemap":"streets"},"draftId":"{{{draftId:D}}}","generation":1,"packageKey":"{{{packageKey}}}","schemaVersion":"1.0"}""");
         var generation = updated.GetProperty("generation").GetInt64();
         await CallToolAsync(admin, "honua_studio_validate_draft",
             $$"""{"draftId":"{{draftId:D}}"}""");
