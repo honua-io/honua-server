@@ -24,7 +24,7 @@ internal sealed class FileImportExecutionCommitAuthority(IExecutionJobStore jobs
         if (JobSecurityScope.Current is not { JobId: { } id, IntentFingerprint: { } fingerprint,
             WorkerId: { } worker, AttemptCount: { } attempt,
             Submitter: { ExecutionLease: { } envelope, CurrentAgentPrincipal: { } principal } active }
-            || attempt < 1 || !JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal)) throw Denied();
+            || attempt < 1 || !JobExecutionLeaseTransientAuthority.MatchesExecutionClaim(principal, worker, attempt)) throw Denied();
         var job = await jobs.GetAsync(id, cancellationToken).ConfigureAwait(false) ?? throw Denied();
         RequireJob(job, id, fingerprint, active, envelope, worker, attempt);
         if (job.Spec.Kind != ExecutionJobKind.FileImport

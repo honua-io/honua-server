@@ -48,7 +48,7 @@ internal static class JobExecutionLeaseTransientAuthority
             JobExecutionLeaseIntentFingerprint.ComputeContext(context), verified.ExpiresAt,
             verified.Scope.Resources.Select(resource => resource with { }).ToArray(),
             verified.Scope.Operations.Select(operation => operation with { ApprovalReasonCodes = operation.ApprovalReasonCodes.ToArray() }).ToArray(),
-            clock, original.ExecutionLease, new ClaimsPrincipal(principal.Identities.Select(source => source.Clone())), requireCurrent));
+            clock, original.ExecutionLease, authoritativeJob.ClaimedBy, authoritativeJob.AttemptCount, new ClaimsPrincipal(principal.Identities.Select(source => source.Clone())), requireCurrent));
         return attenuated;
     }
 
@@ -97,14 +97,19 @@ internal static class JobExecutionLeaseTransientAuthority
     private static bool Satisfies(AuthorizationOperation granted, AuthorizationOperation requested)
         => AuthorizationOperationExtensions.Satisfies(granted.ToWireName(), requested);
 
+    internal static bool MatchesExecutionClaim(ClaimsPrincipal principal, string workerId, int attemptCount)
+        => attemptCount > 0 && Principals.TryGetValue(principal, out var binding)
+            && binding.WorkerId == workerId && binding.AttemptCount == attemptCount && MatchesExecutionScope(binding);
+
     private static bool MatchesExecutionScope(Binding binding)
         => binding.ExpiresAt > binding.Clock.GetUtcNow()
             && JobSecurityScope.Current is { Submitter: { } context } scope
             && scope.JobId == binding.JobId && scope.IntentFingerprint == binding.IntentFingerprint
+            && scope.WorkerId == binding.WorkerId && scope.AttemptCount == binding.AttemptCount
             && context.ExecutionLease == binding.Lease
             && JobExecutionLeaseIntentFingerprint.ComputeContext(context) == binding.ContextFingerprint;
 
     private sealed record Binding(string JobId, string IntentFingerprint, string ContextFingerprint,
         DateTimeOffset ExpiresAt, JobExecutionLeaseResource[] Resources, OperatorAuthorizationRequest[] Operations,
-        TimeProvider Clock, JobExecutionLease Lease, ClaimsPrincipal AuthorizationPrincipal, Func<CancellationToken, Task<bool>> RequireCurrent);
+        TimeProvider Clock, JobExecutionLease Lease, string? WorkerId, int AttemptCount, ClaimsPrincipal AuthorizationPrincipal, Func<CancellationToken, Task<bool>> RequireCurrent);
 }

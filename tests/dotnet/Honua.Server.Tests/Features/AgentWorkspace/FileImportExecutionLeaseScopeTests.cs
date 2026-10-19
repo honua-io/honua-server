@@ -83,6 +83,7 @@ public sealed class FileImportExecutionLeaseScopeTests
     [InlineData("cancelled")]
     [InlineData("stale-attempt")]
     [InlineData("stale-worker")]
+    [InlineData("transplanted-scope")]
     public async Task CommitBoundary_PinsActualScopePhysicalDestinationAndMaterializedRequest(string change)
     {
         using var fixture = await Fixture.CreateAsync();
@@ -103,9 +104,9 @@ public sealed class FileImportExecutionLeaseScopeTests
         if (change == "request") request = request with { TargetSrid = 3857 };
         if (change == "source") request = request with { StagedSource = request.StagedSource! with { ETag = "other" } };
         if (change == "cancelled") fixture.Stored = fixture.Stored with { CancellationRequestedAt = DateTimeOffset.UtcNow };
-        if (change == "stale-attempt") fixture.Stored = fixture.Stored with { AttemptCount = 2 };
+        if (change is "stale-attempt" or "transplanted-scope") fixture.Stored = fixture.Stored with { AttemptCount = 2 };
         if (change == "stale-worker") fixture.Stored = fixture.Stored with { ClaimedBy = "replacement" };
-        using var scope = change == "no-scope" ? null : JobSecurityScope.BeginExecution(claimed, current);
+        using var scope = change == "no-scope" ? null : JobSecurityScope.BeginExecution(change == "transplanted-scope" ? fixture.Stored : claimed, current);
         var authority = new FileImportExecutionCommitAuthority(fixture.Services.GetRequiredService<IExecutionJobStore>(), leases);
         if (change == "unchanged")
         {
