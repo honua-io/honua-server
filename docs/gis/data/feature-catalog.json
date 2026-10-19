@@ -16247,7 +16247,7 @@
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.CreateConnection_ValidSecretRefConnection_ReturnsCreated",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.CreateConnection_WhenEncryptionServiceThrowsInvalidOperation_ReturnsInternalServerError",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.Endpoints_ResponsesSanitized_NoSensitiveDataExposed",
-        "Honua.Server.Tests.Features.Protocols.Mcp.McpIngestCatalogConnectionIntegrationTests.RegisteredCatalogConnection_IngestHintFeedsPublish_AndSecondRegistrationIsAmbiguous",
+        "Honua.Server.Tests.Features.Eval.McpIngestCatalogConnectionIntegrationTests.RegisteredCatalogConnection_IngestHintFeedsPublish_AndSecondRegistrationIsAmbiguous",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminWriteEndpoint_ApiKeyAuth_AllowsAuthorizationFlow",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminWriteEndpoint_BearerAuth_AllowsAuthorizationFlow"
       ],
