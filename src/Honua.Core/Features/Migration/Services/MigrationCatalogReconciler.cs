@@ -456,43 +456,166 @@ public static class MigrationCatalogReconciler
             return;
         }
 
-        var publishedIds = published.Relationships
-            .Select(static relationship => relationship.Id)
-            .Where(static id => !string.IsNullOrWhiteSpace(id))
-            .ToHashSet(StringComparer.Ordinal);
-        var publishedNames = published.Relationships
-            .Select(static relationship => relationship.Name)
-            .Where(static name => !string.IsNullOrWhiteSpace(name))
-            .ToHashSet(StringComparer.Ordinal);
-
         foreach (var expected in expectedRelationships)
         {
-            // Only assert persistence for relationships the manifest classified as automated or
-            // assisted. Manual-review and unsupported relationships are intentionally captured but
-            // not persisted by the apply stage.
-            if (!IsRelationshipExpectedToPersist(expected.Classification))
+            // Automated and assisted relationships are expected to be persisted. Manual-review and
+            // unsupported relationships stay on the manifest until an operator applies them, so
+            // their absence is not a missing-relationship finding and this pass does not change
+            // their classification. A published copy that drops composite ownership still fails:
+            // a name match must not turn that receipt into a simple relationship.
+            var expectPersist = IsRelationshipExpectedToPersist(expected.Classification);
+            var composite = IsCompositeRelationshipType(expected.RelationshipType);
+            var matches = FindPublishedRelationships(published, expected);
+            if (matches.Count == 0)
+            {
+                if (!expectPersist)
+                {
+                    continue;
+                }
+
+                findings.Add(new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.RelationshipMissing,
+                    Severity = MigrationCatalogReconciliationSeverities.Fail,
+                    Subject = expected.SourceRelationshipId,
+                    Expected = expected.Name ?? expected.SourceRelationshipId,
+                    Summary = $"Relationship '{expected.SourceRelationshipId}' captured at manifest time is missing from the published catalog entry."
+                });
+                continue;
+            }
+
+            if (!composite)
             {
                 continue;
             }
 
-            var matched = publishedIds.Contains(expected.SourceRelationshipId)
-                || (!string.IsNullOrWhiteSpace(expected.TargetRelationshipRef) && publishedIds.Contains(expected.TargetRelationshipRef))
-                || (!string.IsNullOrWhiteSpace(expected.Name) && publishedNames.Contains(expected.Name));
-
-            if (matched)
+            if (matches.Count > 1 || !PublishedCompositeMatches(expected, matches[0]))
             {
-                continue;
+                findings.Add(new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.RelationshipCompositeDowngraded,
+                    Severity = MigrationCatalogReconciliationSeverities.Fail,
+                    Subject = expected.SourceRelationshipId,
+                    Expected = "composite",
+                    Actual = matches.Count > 1
+                        ? "ambiguous"
+                        : matches[0].Composite ? "composite" : "simple",
+                    Summary = matches.Count > 1
+                        ? $"Relationship '{expected.SourceRelationshipId}' matches more than one published relationship. Composite ownership was not accepted from an ambiguous catalog row."
+                        : $"Relationship '{expected.SourceRelationshipId}' was published without the source composite ownership, role, cardinality, or key fields. It was not accepted as a simple relationship."
+                });
             }
-
-            findings.Add(new MigrationCatalogReconciliationFinding
-            {
-                Code = MigrationCatalogReconciliationCodes.RelationshipMissing,
-                Severity = MigrationCatalogReconciliationSeverities.Fail,
-                Subject = expected.SourceRelationshipId,
-                Expected = expected.Name ?? expected.SourceRelationshipId,
-                Summary = $"Relationship '{expected.SourceRelationshipId}' captured at manifest time is missing from the published catalog entry."
-            });
         }
+    }
+
+    private static List<MetadataV2Relationship> FindPublishedRelationships(
+        MetadataV2Resource published,
+        MigrationManifestRelationshipRecord expected)
+    {
+        var matches = new List<MetadataV2Relationship>();
+        foreach (var relationship in published.Relationships)
+        {
+            if (string.Equals(relationship.Id, expected.SourceRelationshipId, StringComparison.Ordinal)
+                || (!string.IsNullOrWhiteSpace(expected.TargetRelationshipRef)
+                    && string.Equals(relationship.Id, expected.TargetRelationshipRef, StringComparison.Ordinal))
+                || (!string.IsNullOrWhiteSpace(expected.Name)
+                    && string.Equals(relationship.Name, expected.Name, StringComparison.Ordinal)))
+            {
+                matches.Add(relationship);
+            }
+        }
+
+        return matches;
+    }
+
+    private static bool IsCompositeRelationshipType(string? relationshipType)
+        => string.Equals(relationshipType, "composite", StringComparison.OrdinalIgnoreCase);
+
+    private static bool PublishedCompositeMatches(
+        MigrationManifestRelationshipRecord expected,
+        MetadataV2Relationship published)
+    {
+        if (!published.Composite)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expected.Name)
+            && !string.Equals(published.Name, expected.Name, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expected.Role)
+            && !string.Equals(
+                NormalizeReconciledRole(published.Role),
+                NormalizeReconciledRole(expected.Role),
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expected.OriginKeyField)
+            && !string.Equals(published.OriginField, expected.OriginKeyField, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expected.DestinationKeyField)
+            && !string.Equals(published.DestinationField, expected.DestinationKeyField, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expected.Cardinality)
+            && !string.Equals(
+                NormalizeReconciledCardinality(published.Cardinality),
+                NormalizeReconciledCardinality(expected.Cardinality),
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string NormalizeReconciledRole(string? role)
+    {
+        if (string.IsNullOrWhiteSpace(role))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = role.Trim();
+        if (trimmed.Equals("origin", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("esriRelRoleOrigin", StringComparison.OrdinalIgnoreCase))
+        {
+            return "origin";
+        }
+
+        if (trimmed.Equals("destination", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("esriRelRoleDestination", StringComparison.OrdinalIgnoreCase))
+        {
+            return "destination";
+        }
+
+        return trimmed.ToLowerInvariant();
+    }
+
+    private static string NormalizeReconciledCardinality(string? cardinality)
+    {
+        if (string.IsNullOrWhiteSpace(cardinality))
+        {
+            return string.Empty;
+        }
+
+        return cardinality.Trim().ToUpperInvariant() switch
+        {
+            "1:1" or "ONE-TO-ONE" or "ONE_TO_ONE" or "ESRIRELCARDINALITYONETOONE" => "one-to-one",
+            "1:N" or "1:M" or "ONE-TO-MANY" or "ONE_TO_MANY" or "ESRIRELCARDINALITYONETOMANY" => "one-to-many",
+            "M:N" or "MANY-TO-MANY" or "MANY_TO_MANY" or "ESRIRELCARDINALITYMANYTOMANY" => "many-to-many",
+            _ => cardinality.Trim().ToLowerInvariant()
+        };
     }
 
     private static bool IsRelationshipExpectedToPersist(string classification)
