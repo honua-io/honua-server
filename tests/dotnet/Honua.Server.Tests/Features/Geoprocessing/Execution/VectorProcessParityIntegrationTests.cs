@@ -149,6 +149,9 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
                 new Claim(ClaimTypes.NameIdentifier, WebAppFixture.SharedAdminActorId),
                 new Claim(ClaimTypes.Name, "admin"),
                 new Claim(ClaimTypes.Role, "admin"),
+                // Match the fixture's effective HTTP tenant. The engine runs outside
+                // request middleware, so this must be explicit on its submitter.
+                new Claim("tenant_id", "public"),
                 new Claim("permission", "admin:write")
             ], "TestAdmin"));
             var engine = fixture.GetService<WorkflowOrchestrationEngine>();
@@ -189,6 +192,18 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             }
             terminalJob.Should().NotBeNull("the actual Redis worker must reach a terminal state");
             terminalJob!.Status.Should().Be(ExecutionJobStatus.Succeeded, terminalJob.ErrorMessage);
+
+            var foreignTenant = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, WebAppFixture.SharedAdminActorId),
+                new Claim(ClaimTypes.Name, "admin"),
+                new Claim(ClaimTypes.Role, "admin"),
+                new Claim("tenant_id", "other-tenant")
+            ], "TestAdmin"));
+            Func<Task> foreignRead = () => fixture.GetService<IGeoprocessingJobService>()
+                .GetJobResultsForTerminalAsync(jobId!, foreignTenant);
+            await foreignRead.Should().ThrowAsync<GeoprocessingNotFoundException>(
+                "a cross-tenant administrator must not read the committed sink result");
 
             AnalysisResultPackage? package = null;
             using (var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
