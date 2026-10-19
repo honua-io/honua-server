@@ -30,11 +30,158 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Forms;
 
 public sealed class FormSubmissionServiceTests
 {
+    private static readonly MetadataV2OwnerEditPolicy EnabledOwnerPolicy = new()
+    {
+        Enabled = true,
+        OwnerField = "owner",
+        StampOwnerOnInsert = true
+    };
+
+    [UnitTheory]
+    [InlineData(FormSubmissionOperations.Update)]
+    [InlineData(FormSubmissionOperations.Delete)]
+    public async Task SubmitAsync_NonOwnerMutation_IsRejectedBeforeWriter(string operation)
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(allowedOperations: [operation]);
+        var writer = new FakeFeatureWriter();
+        var reader = ReaderWithOwner("another-user");
+        var service = CreateService(store, writer, featureReader: reader, ownerPolicy: EnabledOwnerPolicy);
+        var context = CreateContext(CreateSubmission($"other-{operation}", operation, targetFeatureId: 101), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("rejected");
+        body.ValidationIssues.Should().ContainSingle(issue => issue.Code == "ownerEditDenied");
+        body.ValidationIssues[0].Message.Should().NotContain("another-user");
+        writer.ApplyEditsCalls.Should().Be(0);
+        store.CompleteCalls.Should().Be(1);
+        await reader.Received(1).QueryAsync(TargetLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_OwnerDenialReplay_RemainsForbiddenWithoutASecondWriteOrClaim()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(allowedOperations: [FormSubmissionOperations.Update]);
+        var writer = new FakeFeatureWriter();
+        var reader = ReaderWithOwner("another-user");
+        var service = CreateService(store, writer, featureReader: reader, ownerPolicy: EnabledOwnerPolicy);
+        var request = CreateSubmission("owner-denial-replay", FormSubmissionOperations.Update, targetFeatureId: 101);
+        var firstContext = CreateContext(request, requestServices);
+
+        var first = await service.SubmitAsync(firstContext, store.PackageVersion.FormId);
+        await first.ExecuteAsync(firstContext);
+        firstContext.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+
+        var replayContext = CreateContext(request, requestServices);
+        var replay = await service.SubmitAsync(replayContext, store.PackageVersion.FormId);
+        await replay.ExecuteAsync(replayContext);
+
+        replayContext.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var replayBody = ReadResponseBody(replayContext);
+        replayBody.IdempotentReplay.Should().BeTrue();
+        replayBody.ValidationIssues.Should().ContainSingle(issue => issue.Code == "ownerEditDenied");
+        writer.ApplyEditsCalls.Should().Be(0);
+        store.CompleteCalls.Should().Be(1);
+        store.CreateSubmissionCalls.Should().Be(1);
+        await reader.Received(1).QueryAsync(TargetLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData(FormSubmissionOperations.Update)]
+    [InlineData(FormSubmissionOperations.Delete)]
+    public async Task SubmitAsync_OwnerMutation_CarriesAtomicOwnerGuard(string operation)
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(allowedOperations: [operation]);
+        var writer = new FakeFeatureWriter
+        {
+            Result = operation == FormSubmissionOperations.Update
+                ? FeatureEditResult.Success(0, 1, 0)
+                : FeatureEditResult.Success(0, 0, 1)
+        };
+        var reader = ReaderWithOwner("field-user");
+        var service = CreateService(store, writer, featureReader: reader, ownerPolicy: EnabledOwnerPolicy);
+        var context = CreateContext(CreateSubmission($"owner-{operation}", operation, targetFeatureId: 101), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        writer.ApplyEditsCalls.Should().Be(1);
+        writer.LastBatch!.Value.OwnerGuards.Should().ContainSingle()
+            .Which.Should().Be(new OwnerEditGuard(101, "owner", "field-user"));
+        if (operation == FormSubmissionOperations.Update)
+        {
+            writer.LastBatch.Value.Updates.Should().ContainSingle();
+            writer.LastBatch.Value.Updates[0].Attributes["owner"].Should().Be("field-user");
+        }
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_AdminAndDisabledPolicy_BypassStoredOwner()
+    {
+        using var requestServices = CreateRequestServices();
+        var reader = ReaderWithOwner("another-user");
+        var adminStore = new FakeFormPackageStore(allowedOperations: [FormSubmissionOperations.Update]);
+        var adminWriter = new FakeFeatureWriter();
+        var adminService = CreateService(adminStore, adminWriter, featureReader: reader, ownerPolicy: EnabledOwnerPolicy);
+        var adminContext = CreateContext(CreateSubmission("admin-update", FormSubmissionOperations.Update, targetFeatureId: 101), requestServices);
+        adminContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "form-admin"), new Claim("roles", "admin")], "test"));
+
+        var adminResult = await adminService.SubmitAsync(adminContext, adminStore.PackageVersion.FormId);
+        await adminResult.ExecuteAsync(adminContext);
+
+        adminContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        adminWriter.ApplyEditsCalls.Should().Be(1);
+        adminWriter.LastBatch!.Value.OwnerGuards.IsDefaultOrEmpty.Should().BeTrue();
+
+        var disabledStore = new FakeFormPackageStore(allowedOperations: [FormSubmissionOperations.Update]);
+        var disabledWriter = new FakeFeatureWriter();
+        var disabledService = CreateService(disabledStore, disabledWriter, featureReader: reader,
+            ownerPolicy: EnabledOwnerPolicy with { Enabled = false });
+        var disabledContext = CreateContext(CreateSubmission("disabled-update", FormSubmissionOperations.Update, targetFeatureId: 101), requestServices);
+
+        var disabledResult = await disabledService.SubmitAsync(disabledContext, disabledStore.PackageVersion.FormId);
+        await disabledResult.ExecuteAsync(disabledContext);
+
+        disabledContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        disabledWriter.ApplyEditsCalls.Should().Be(1);
+        disabledWriter.LastBatch!.Value.OwnerGuards.IsDefaultOrEmpty.Should().BeTrue();
+        await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_Create_StampsAuthenticatedOwner()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore();
+        var writer = new FakeFeatureWriter();
+        var reader = ReaderWithOwner("another-user");
+        var service = CreateService(store, writer, featureReader: reader, ownerPolicy: EnabledOwnerPolicy);
+        var context = CreateContext(CreateSubmission("owner-create"), requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        writer.ApplyEditsCalls.Should().Be(1);
+        writer.LastBatch!.Value.Creates.Should().ContainSingle();
+        writer.LastBatch.Value.Creates[0].Attributes["owner"].Should().Be("field-user");
+        await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     public async Task SubmitAsync_WhenRequestAbortedAfterEdit_PersistsTerminalResponseWithServerToken()
     {
@@ -523,14 +670,17 @@ public sealed class FormSubmissionServiceTests
     private static FormSubmissionService CreateService(
         FakeFormPackageStore store,
         FakeFeatureWriter writer,
-        IAttachmentStore? attachmentStore = null)
+        IAttachmentStore? attachmentStore = null,
+        IFeatureReader? featureReader = null,
+        MetadataV2OwnerEditPolicy? ownerPolicy = null)
     {
-        var targetMetadataResolver = new FormTargetMetadataResolver(CreateMetadataProvider());
+        var targetMetadataResolver = new FormTargetMetadataResolver(CreateMetadataProvider(ownerPolicy));
         return new FormSubmissionService(
             store,
             new FormPackageValidator(targetMetadataResolver, Options.Create(CreateLimitsOptions())),
             targetMetadataResolver,
             new PassThroughEditProcessor(),
+            featureReader ?? Substitute.For<IFeatureReader>(),
             writer,
             attachmentStore ?? new RecordingAttachmentStore(),
             Options.Create(CreateLimitsOptions()),
@@ -542,8 +692,18 @@ public sealed class FormSubmissionServiceTests
     private const string TargetServiceName = "test";
     private const int TargetLayerId = 0;
 
-    private static TestMetadataV2GraphProvider CreateMetadataProvider()
-        => new TestMetadataV2GraphBuilder()
+    private static IFeatureReader ReaderWithOwner(string owner)
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(TargetLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1,
+            [Feature.Create(101, null, ImmutableDictionary<string, object?>.Empty.Add("owner", owner))]));
+        return reader;
+    }
+
+    private static TestMetadataV2GraphProvider CreateMetadataProvider(MetadataV2OwnerEditPolicy? ownerPolicy = null)
+    {
+        var builder = new TestMetadataV2GraphBuilder()
             .AddConnection("managed", "Managed")
             .AddResource(
                 "resource-inspections",
@@ -552,6 +712,7 @@ public sealed class FormSubmissionServiceTests
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Editable = true },
                     new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255, Editable = true },
+                    new MetadataV2Field { Name = "owner", Type = MetadataV2FieldType.String, Length = 255, Editable = true },
                     new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Editable = false }
                 ],
                 spatial: new MetadataV2ResourceSpatial
@@ -589,8 +750,14 @@ public sealed class FormSubmissionServiceTests
                 "resource-inspections",
                 layerIndex: TargetLayerId,
                 storageBindingId: "binding-inspections",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
-            .BuildProvider();
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+        if (ownerPolicy is not null)
+        {
+            builder.WithOwnerEditPolicy("resource-inspections", ownerPolicy);
+        }
+
+        return builder.BuildProvider();
+    }
 
     private static JsonElement JsonArray(IEnumerable<string> values)
         => JsonSerializer.SerializeToElement(values);
@@ -867,6 +1034,8 @@ public sealed class FormSubmissionServiceTests
 
         public bool ClaimResult { get; init; } = true;
 
+        public int CreateSubmissionCalls { get; private set; }
+
         public int CompleteCalls { get; private set; }
 
         public bool CompleteTokenWasCanceled { get; private set; }
@@ -981,6 +1150,7 @@ public sealed class FormSubmissionServiceTests
             string status,
             CancellationToken cancellationToken = default)
         {
+            CreateSubmissionCalls++;
             LastRequestHash = requestHash;
             return Task.FromResult(ClaimResult);
         }
@@ -1045,7 +1215,17 @@ public sealed class FormSubmissionServiceTests
             => editRequest;
 
         public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Resource resource)
-            => FeatureEditBatch.Create();
+            => FeatureEditBatch.Create(
+                creates: editRequest.Creates is { } creates
+                    ? creates.Select(static feature => Feature.Create(0, feature.Geometry,
+                        feature.Attributes ?? ImmutableDictionary<string, object?>.Empty)).ToImmutableArray()
+                    : ImmutableArray<Feature>.Empty,
+                updates: editRequest.Updates is { } updates
+                    ? updates.Select(static feature => Feature.Create(feature.ObjectId!.Value, feature.Geometry,
+                        feature.Attributes ?? ImmutableDictionary<string, object?>.Empty))
+                        .ToImmutableArray()
+                    : ImmutableArray<Feature>.Empty,
+                deletes: editRequest.Deletes ?? ImmutableArray<long>.Empty);
 
         public TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Resource resource)
             => TransactionValidationResult.Success();
@@ -1063,6 +1243,8 @@ public sealed class FormSubmissionServiceTests
     private sealed class FakeFeatureWriter : IFeatureWriter
     {
         public int ApplyEditsCalls { get; private set; }
+
+        public FeatureEditBatch? LastBatch { get; private set; }
 
         public Action? OnApplyEdits { get; init; }
 
@@ -1083,6 +1265,7 @@ public sealed class FormSubmissionServiceTests
             CancellationToken cancellationToken = default)
         {
             ApplyEditsCalls++;
+            LastBatch = editBatch;
             OnApplyEdits?.Invoke();
             return Task.FromResult(Result);
         }
