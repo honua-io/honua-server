@@ -336,12 +336,14 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         }
 
         var warnings = new List<string>(importResult.Warnings);
-        var connectionId = await TryResolveCatalogConnectionIdAsync(services, cancellationToken).ConfigureAwait(false);
-        if (connectionId is null)
+        var catalogConnection = await TryResolveCatalogConnectionIdAsync(services, cancellationToken).ConfigureAwait(false);
+        if (catalogConnection.ConnectionId is null)
         {
-            warnings.Add(
-                "No registered secure connection matches the server's catalog database, so 'connectionId' is null. "
-                + "Register a connection for the catalog database and pass its name or id as connectionId to honua_publish_service.");
+            warnings.Add(catalogConnection.Ambiguous
+                ? "More than one registered secure connection matches the server's catalog database, so 'connectionId' is null. "
+                    + "Choose the intended registered connection name or id explicitly for honua_publish_service."
+                : "No unique registered secure connection could be resolved for the server's catalog database, so 'connectionId' is null. "
+                    + "Register a connection for the catalog database and pass its name or id as connectionId to honua_publish_service.");
         }
 
         return new McpIngestDatasetOutput
@@ -349,7 +351,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             Success = true,
             DatasetName = validated.DatasetName,
             RowCount = importResult.FeatureCount,
-            ConnectionId = connectionId,
+            ConnectionId = catalogConnection.ConnectionId,
             Schema = importResult.Schema,
             Table = importResult.PhysicalTableName ?? importResult.TableName,
             Srid = importResult.DetectedSrid ?? 4326,
@@ -369,29 +371,43 @@ internal sealed partial class IngestDatasetTool : IMcpTool
     /// registered connections against the configured default connection string.
     /// Never fails the ingest: returns null when no match can be determined.
     /// </summary>
-    private static async Task<string?> TryResolveCatalogConnectionIdAsync(IServiceProvider services, CancellationToken cancellationToken)
+    private static async Task<CatalogConnectionMatch> TryResolveCatalogConnectionIdAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken)
     {
         try
         {
             var resolver = services.GetService<ISecureConnectionResolver>();
+            var registry = services.GetService<ISecureConnectionRegistry>();
+            var matcher = services.GetService<ICatalogConnectionIdentityMatcher>();
             var configuration = services.GetService<IConfiguration>();
             var defaultConnectionString = configuration?["ConnectionStrings:DefaultConnection"];
-            if (resolver is null || string.IsNullOrWhiteSpace(defaultConnectionString))
+            if (resolver is null || registry is null || matcher is null || string.IsNullOrWhiteSpace(defaultConnectionString))
             {
-                return null;
+                return default;
             }
 
-            var normalizedDefault = NormalizeConnectionString(defaultConnectionString);
-            var names = await resolver.GetAvailableConnectionsAsync(cancellationToken).ConfigureAwait(false);
-            foreach (var name in names)
+            string? matchedName = null;
+            var connections = await registry.GetActiveConnectionsAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var connection in connections)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (!connection.IsActive || string.IsNullOrWhiteSpace(connection.Name))
+                {
+                    continue;
+                }
+
                 try
                 {
-                    var connectionString = await resolver.ResolveConnectionStringAsync(name, cancellationToken).ConfigureAwait(false);
-                    if (string.Equals(NormalizeConnectionString(connectionString), normalizedDefault, StringComparison.OrdinalIgnoreCase))
+                    var connectionString = await resolver.ResolveConnectionStringAsync(connection.Name, cancellationToken).ConfigureAwait(false);
+                    if (matcher.IsMatch(connection.NormalizedProvider, defaultConnectionString, connectionString))
                     {
-                        return name;
+                        if (matchedName is not null)
+                        {
+                            return new CatalogConnectionMatch(null, Ambiguous: true);
+                        }
+
+                        matchedName = connection.Name;
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -401,23 +417,17 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 }
             }
 
-            return null;
+            return new CatalogConnectionMatch(matchedName, Ambiguous: false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // The connection hint is best-effort; the ingest result stays valid
             // without it (the output carries an explanatory warning instead).
-            return null;
+            return default;
         }
     }
 
-    private static string NormalizeConnectionString(string connectionString)
-    {
-        var segments = connectionString
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Order(StringComparer.OrdinalIgnoreCase);
-        return string.Join(';', segments);
-    }
+    private readonly record struct CatalogConnectionMatch(string? ConnectionId, bool Ambiguous);
 
     private static string? NormalizeOption(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

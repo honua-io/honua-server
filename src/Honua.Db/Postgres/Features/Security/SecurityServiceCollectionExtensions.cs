@@ -49,6 +49,7 @@ internal static class SecurityServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ILogger<ConnectionEncryptionService>>()));
 
         services.TryAddSingleton<IDatabaseConnectionStringBuilder, PostgresConnectionStringBuilder>();
+        services.TryAddSingleton<ICatalogConnectionIdentityMatcher, PostgresCatalogConnectionIdentityMatcher>();
         services.TryAddSingleton<IConnectionHealthTester, PostgresConnectionHealthTester>();
 
         // Outbound data-source connection host policy (#354): an operator-configured
