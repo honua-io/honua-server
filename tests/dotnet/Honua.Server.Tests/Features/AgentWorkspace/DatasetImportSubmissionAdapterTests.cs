@@ -34,9 +34,41 @@ public sealed class DatasetImportSubmissionAdapterTests
         receipt.Job!.JobId.Should().Be(fixture.Job.OperationId);
         receipt.Job.Output!.PhysicalTableName.Should().Be("actual_physical_table");
         receipt.Job.Output.PhysicalTableName.Should().NotBe(fixture.Task.Destination.Table);
+        receipt.Job.OutcomePending.Should().BeFalse();
         fixture.Observed.Should().BeSameAs(fixture.Context.User);
         await fixture.Tasks.DidNotReceiveWithAnyArgs().AuthorizeAsync(default!, default!, default!, default, default!, default);
         JsonSerializer.Serialize(receipt, AgentWorkspaceJsonContext.Default.DatasetImportSubmissionReceipt).Should().NotContain("sealed-private-authority");
+    }
+
+    [UnitTheory]
+    [InlineData(ExecutionJobStatus.Queued)]
+    [InlineData(ExecutionJobStatus.Provisioning)]
+    [InlineData(ExecutionJobStatus.Running)]
+    public async Task UnresolvedAcceptedImportExposesSafePendingOutcomeWithoutClaimingCompletion(ExecutionJobStatus status)
+    {
+        using var fixture = new Fixture();
+        fixture.CurrentJob = fixture.Job with
+        {
+            Status = status,
+            CompletedAt = null,
+            FileImportOutput = null,
+            CancellationRequestedAt = DateTimeOffset.UtcNow,
+            CommitRecovery = new(JobExecutionLeaseIntentFingerprint.Compute(fixture.Job), "private-worker", 2, DateTimeOffset.UtcNow)
+            {
+                FailureMessage = "private-reconciliation-detail",
+                DeferredStatus = ExecutionJobStatus.Cancelled
+            }
+        };
+        var receipt = await fixture.Service.ReadAsync(fixture.Context, fixture.Reference);
+        receipt!.State.Should().Be("accepted");
+        receipt.Job!.Status.Should().Be(status.ToString().ToLowerInvariant());
+        receipt.Job.OutcomePending.Should().BeTrue();
+        receipt.Job.Output.Should().BeNull();
+        receipt.Job.CompletedAt.Should().BeNull();
+        receipt.Job.ErrorCode.Should().BeNull();
+        var json = JsonSerializer.Serialize(receipt, AgentWorkspaceJsonContext.Default.DatasetImportSubmissionReceipt);
+        json.Should().Contain("\"outcomePending\":true");
+        json.Should().NotContain("private-worker").And.NotContain("private-reconciliation-detail").And.NotContain("sealed-private-authority");
     }
 
     [UnitTheory]

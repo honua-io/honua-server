@@ -30,6 +30,7 @@ public sealed record DatasetImportSubmissionReceipt(string TaskId, long TaskRevi
 /// <param name="PercentComplete">Finite provider progress when present.</param>
 /// <param name="Output">Actual persisted successful physical dataset receipt, never reconstructed from task destination.</param>
 /// <param name="ErrorCode">Stable safe failure code when terminal failure is recorded.</param>
+/// <param name="OutcomePending">True while Honua is confirming whether this accepted import committed; never permission to submit another import.</param>
 public sealed record DatasetImportJobReceipt(string JobId, string LeaseId, string Status, DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt, DateTimeOffset? CompletedAt = null, double? PercentComplete = null,
-    FileImportOutputReceipt? Output = null, string? ErrorCode = null);
+    FileImportOutputReceipt? Output = null, string? ErrorCode = null, bool OutcomePending = false);

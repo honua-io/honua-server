@@ -200,7 +200,9 @@ internal sealed class DatasetImportSubmissionService(IAgentWorkspaceStore store)
         => new(job.OperationId, observed.LeaseId, job.Status.ToString().ToLowerInvariant(), job.CreatedAt, job.UpdatedAt, job.CompletedAt,
             job.PercentComplete is { } percent && double.IsFinite(percent) && percent is >= 0 and <= 100 ? percent : null,
             job.Status == ExecutionJobStatus.Succeeded ? job.FileImportOutput : null,
-            job.Status == ExecutionJobStatus.Failed ? "import-failed" : null);
+            job.Status == ExecutionJobStatus.Failed ? "import-failed" : null,
+            job.Status is ExecutionJobStatus.Queued or ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running
+                && JobExecutionLeaseObservationEligibility.AllowsRetainedFact(job, JobExecutionLeaseObservationKind.Status));
 
     private static void RequireReviewed(DatasetImportSubmissionReceipt value, SubmitDatasetImport input)
     {
