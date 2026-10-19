@@ -3,13 +3,21 @@
 
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Orchestration.Abstractions;
+using Honua.Core.Features.Orchestration.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Geoprocessing;
 using Honua.ControlPlane;
+using Honua.Server.Features.Orchestration;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -21,7 +29,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using Npgsql;
 using StackExchange.Redis;
+using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
@@ -42,6 +52,305 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
+
+    [IntegrationTest]
+    [Trait("Category", "RemoteSourceExecutionProof")]
+    [Operation(Operations.ProcessExecution)]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_publish_result")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task CommittedPostgisSink_ResultPackagePublishesAndQueriesAuthoredRows()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        var fixture = BuildFixture();
+        await fixture.InitializeAsync();
+        var table = $"gp_result_{Guid.NewGuid():N}";
+        var service = $"gp_result_{Guid.NewGuid():N}";
+        Guid connectionId = Guid.Empty;
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(90);
+            // The same reviewed, registered connection is resolved by the worker and
+            // by service.publish. Its search path also reaches the fixture's canonical
+            // features table when the publisher materializes source rows.
+            var builder = new NpgsqlConnectionStringBuilder(fixture.Postgres.ConnectionString)
+            {
+                SearchPath = $"{fixture.CurrentSchema},public"
+            };
+            await using (var scope = fixture.Services.CreateAsyncScope())
+            {
+                var encryption = scope.ServiceProvider.GetRequiredService<IConnectionEncryptionService>();
+                var registered = DataConnection.CreateWithEncryptedCredentials(
+                    name: service,
+                    host: builder.Host!,
+                    port: builder.Port,
+                    databaseName: builder.Database!,
+                    username: builder.Username!,
+                    encryptedConnectionString: await encryption.EncryptConnectionStringAsync(builder.ConnectionString),
+                    encryptionKeyVersion: await encryption.GetCurrentKeyVersionAsync(),
+                    createdBy: nameof(VectorProcessParityIntegrationTests),
+                    sslRequired: builder.SslMode is Npgsql.SslMode.Require or Npgsql.SslMode.VerifyCA or Npgsql.SslMode.VerifyFull,
+                    sslMode: Enum.Parse<CoreSslMode>(builder.SslMode.ToString(), true));
+                connectionId = (await scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>()
+                    .CreateConnectionAsync(registered)).ConnectionId;
+            }
+
+            const string features = """
+                {"type":"FeatureCollection","features":[
+                  {"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"row_id":"alpha"}},
+                  {"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{"row_id":"beta"}}
+                ]}
+                """;
+            var input = DataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(features));
+            var now = DateTimeOffset.UtcNow;
+            var definition = new WorkflowDefinition
+            {
+                WorkflowId = $"wf-{Guid.NewGuid():N}",
+                Name = "Committed PostGIS result publication",
+                CreatedAt = now,
+                UpdatedAt = now,
+                Steps =
+                [
+                    new WorkflowStepDefinition
+                    {
+                        StepId = "sink",
+                        Plan = new AnalysisPlan
+                        {
+                            PlanId = $"plan-{Guid.NewGuid():N}",
+                            IntentId = "authored-two-row-sink",
+                            Outputs = [ArtifactKind.FeatureLayer],
+                            Steps =
+                            [
+                                new AnalysisPlanStep
+                                {
+                                    StepId = "sink",
+                                    Kind = AnalysisPlanStepKind.Geoprocess,
+                                    ProcessId = "sink.external-postgis",
+                                    Inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+                                    {
+                                        ["input"] = input,
+                                        ["connectionId"] = connectionId.ToString("D"),
+                                        ["schema"] = "public",
+                                        ["table"] = table,
+                                        ["targetSrid"] = "4326"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            };
+            (await fixture.GetService<IWorkflowDefinitionStore>().TryCreateAsync(definition))
+                .Should().BeTrue();
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, WebAppFixture.SharedAdminActorId),
+                new Claim(ClaimTypes.Name, "admin"),
+                new Claim(ClaimTypes.Role, "admin"),
+                // Match the fixture's effective HTTP tenant. The engine runs outside
+                // request middleware, so this must be explicit on its submitter.
+                new Claim("tenant_id", "public"),
+                new Claim("permission", "admin:write")
+            ], "TestAdmin"));
+            var engine = fixture.GetService<WorkflowOrchestrationEngine>();
+            var run = await engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, principal);
+            await engine.ReconcileWorkflowRunAsync(run.RunId);
+            var runStore = fixture.GetService<IWorkflowRunStore>();
+            string? jobId = null;
+            using (var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+            {
+                while (!deadline.IsCancellationRequested)
+                {
+                    var current = await runStore.GetAsync(run.RunId, deadline.Token);
+                    jobId = current?.StepStates.Single().JobId;
+                    if (!string.IsNullOrEmpty(jobId))
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(100), deadline.Token);
+                }
+            }
+            jobId.Should().NotBeNullOrWhiteSpace("a trusted workflow must submit the sink's worker job");
+            var jobStore = fixture.GetService<IExecutionJobStore>();
+            ExecutionJobRecord? terminalJob = null;
+            using (var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(60)))
+            {
+                while (!deadline.IsCancellationRequested)
+                {
+                    var current = await jobStore.GetAsync(jobId!, deadline.Token);
+                    if (current?.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled)
+                    {
+                        terminalJob = current;
+                        break;
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(100), deadline.Token);
+                }
+            }
+            terminalJob.Should().NotBeNull("the actual Redis worker must reach a terminal state");
+            terminalJob!.Status.Should().Be(ExecutionJobStatus.Succeeded, terminalJob.ErrorMessage);
+
+            var foreignTenant = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, WebAppFixture.SharedAdminActorId),
+                new Claim(ClaimTypes.Name, "admin"),
+                new Claim(ClaimTypes.Role, "admin"),
+                new Claim("tenant_id", "other-tenant")
+            ], "TestAdmin"));
+            Func<Task> foreignRead = () => fixture.GetService<IGeoprocessingJobService>()
+                .GetJobResultsForTerminalAsync(jobId!, foreignTenant);
+            await foreignRead.Should().ThrowAsync<GeoprocessingNotFoundException>(
+                "a cross-tenant administrator must not read the committed sink result");
+
+            AnalysisResultPackage? package = null;
+            using (var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
+            {
+                while (!deadline.IsCancellationRequested)
+                {
+                    package = await fixture.GetService<IGeoprocessingResultPackageStore>()
+                        .GetAsync(jobId!, deadline.Token);
+                    if (package is not null)
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(100), deadline.Token);
+                }
+            }
+            package.Should().NotBeNull();
+            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+            var artifact = package.Artifacts.Should().ContainSingle().Subject;
+            artifact.Kind.Should().Be(ArtifactKind.FeatureLayer);
+            artifact.Metadata.Should().ContainKey("connectionId")
+                .WhoseValue.Should().Be(connectionId.ToString("D"));
+            artifact.Metadata.Should().ContainKey("schema").WhoseValue.Should().Be("public");
+            artifact.Metadata.Should().ContainKey("table").WhoseValue.Should().Be(table);
+            artifact.Metadata.Values.Should().NotContain(value => value.Contains("Host=", StringComparison.Ordinal));
+
+            using (var resourceResponse = await client.PostAsJsonAsync("/mcp", new
+            {
+                jsonrpc = "2.0",
+                id = 1,
+                method = "resources/read",
+                @params = new { uri = $"honua://jobs/{jobId}/results" }
+            }))
+            {
+                resourceResponse.EnsureSuccessStatusCode();
+                using var resource = JsonDocument.Parse(await resourceResponse.Content.ReadAsStringAsync());
+                var hasError = resource.RootElement.TryGetProperty("error", out var error);
+                var errorClass = hasError && error.TryGetProperty("data", out var data)
+                    && data.TryGetProperty("code", out var code)
+                    ? code.GetString()
+                    : "unknown";
+                hasError.Should().BeFalse($"MCP job results returned error class {errorClass}");
+                resource.RootElement.GetProperty("result").GetProperty("contents")[0]
+                    .GetProperty("text").GetString().Should().Contain(artifact.ArtifactId);
+            }
+
+            using var publishResponse = await client.PostAsJsonAsync("/mcp", new
+            {
+                jsonrpc = "2.0",
+                id = 2,
+                method = "tools/call",
+                @params = new
+                {
+                    name = "honua_publish_result",
+                    arguments = new
+                    {
+                        sourceId = jobId,
+                        artifactId = artifact.ArtifactId,
+                        serviceName = service,
+                        layerName = "Authored sink rows"
+                    }
+                }
+            });
+            var publishBody = await publishResponse.Content.ReadAsStringAsync();
+            publishResponse.EnsureSuccessStatusCode();
+            using var published = JsonDocument.Parse(publishBody);
+            published.RootElement.TryGetProperty("error", out _).Should().BeFalse(publishBody);
+            var toolResult = published.RootElement.GetProperty("result");
+            toolResult.TryGetProperty("isError", out var isError);
+            (isError.ValueKind == JsonValueKind.True).Should().BeFalse(publishBody);
+            var result = toolResult.GetProperty("structuredContent");
+            result.GetProperty("status").GetString().Should().Be("Completed", publishBody);
+            var serviceUri = result.GetProperty("serviceUri").GetString();
+            serviceUri.Should().Be($"honua://published-services/{service}");
+            var publishedServiceId = result.GetProperty("serviceId").GetString();
+            publishedServiceId.Should().Be(service);
+            var publicLayerId = result.GetProperty("layerId").GetString();
+            publicLayerId.Should().NotBeNullOrWhiteSpace();
+
+            using var query = await client.GetAsync($"/rest/services/{publishedServiceId}/FeatureServer/{publicLayerId}" +
+                "/query?f=json&where=1%3D1&outFields=*&returnGeometry=true&resultRecordCount=10");
+            var queryBody = await query.Content.ReadAsStringAsync();
+            query.EnsureSuccessStatusCode();
+            using var queried = JsonDocument.Parse(queryBody);
+            var rows = queried.RootElement.GetProperty("features").EnumerateArray().ToArray();
+            rows.Should().HaveCount(2, queryBody);
+            rows.Select(row => (
+                RowId: ReadSinkRowId(row),
+                X: row.GetProperty("geometry").GetProperty("x").GetDouble(),
+                Y: row.GetProperty("geometry").GetProperty("y").GetDouble()))
+                .Should().BeEquivalentTo(new[]
+                {
+                    (RowId: "alpha", X: 1.0, Y: 2.0),
+                    (RowId: "beta", X: 3.0, Y: 4.0)
+                });
+        }
+        finally
+        {
+            try
+            {
+                if (fixture.CurrentSchema is not null)
+                {
+                    await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+                    {
+                        await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
+                        await using var command = connection.CreateCommand();
+                        command.CommandText = """
+                            DELETE FROM features WHERE layer_id IN
+                                (SELECT layer_id FROM honua.service_layers WHERE service_name = @serviceName);
+                            DELETE FROM honua.layers WHERE layer_id IN
+                                (SELECT layer_id FROM honua.service_layers WHERE service_name = @serviceName);
+                            DELETE FROM honua.services WHERE service_name = @serviceName;
+                            """;
+                        command.Parameters.AddWithValue("serviceName", service);
+                        await command.ExecuteNonQueryAsync();
+                    });
+                    await fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{table}");
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (connectionId != Guid.Empty)
+                    {
+                        await using var scope = fixture.Services.CreateAsyncScope();
+                        await scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>()
+                            .DeleteConnectionAsync(connectionId);
+                    }
+                }
+                finally
+                {
+                    await fixture.DisposeAsync();
+                    await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+                }
+            }
+        }
+
+        static string ReadSinkRowId(JsonElement row)
+        {
+            var value = row.GetProperty("attributes").GetProperty("attributes");
+            using var json = JsonDocument.Parse(value.ValueKind == JsonValueKind.String
+                ? value.GetString()!
+                : value.GetRawText());
+            return json.RootElement.GetProperty("row_id").GetString()!;
+        }
+    }
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
@@ -689,6 +998,10 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
                 sp.GetRequiredService<ILogger<RedisJobQueue>>()));
         services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
         services.AddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
+
+        // WorkflowOnly sinks are admitted by the production orchestration engine.
+        // The fixture may install Redis after the default feature-registration pass.
+        services.AddOrchestration();
 
         services.RemoveAll<IExecutionLogStore>();
         services.AddSingleton<IExecutionLogStore>(sp =>
