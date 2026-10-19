@@ -37,12 +37,11 @@ namespace Honua.Server.Tests.Features.Security;
 /// resolver (#1375) wired through every protocol adapter via the shared
 /// <c>AccessPolicyHelpers</c> seam (#1376).
 /// <para>
-/// Each protocol is exercised twice against the same coarse <see cref="AccessPolicy"/>
-/// deny: once where the principal holds a per-operation grant that the resolver
-/// must honor (overriding the coarse deny), and once where the principal holds no
-/// matching grant so behavior must fall back to the coarse policy exactly as
-/// before (no regression). A per-operation grant that allows <c>query</c> but not
-/// <c>update</c> is also proven to deny writes consistently across protocols.
+/// Read protocols are exercised against an explicit role list. A per-operation grant
+/// does not skip that list (#6358); a principal who is not in the list is denied with
+/// or without a matching query grant. Write protocols use no explicit role list, so a
+/// per-operation write grant still overrides the coarse data-editor deny, and a grant
+/// that allows <c>query</c> but not <c>update</c> still denies writes.
 /// </para>
 /// </summary>
 public sealed class CrossProtocolPermissionMatrixTests
@@ -55,10 +54,8 @@ public sealed class CrossProtocolPermissionMatrixTests
 
     /// <summary>
     /// Builds a factory for the READ matrix: the alpha service has an explicit
-    /// coarse read policy requiring a role the principal never holds (so the
-    /// legacy AccessPolicy read seam denies), and seeds the supplied per-operation
-    /// grants onto <see cref="GrantedRole"/>. The resolver overrides the explicit
-    /// coarse read deny when a matching query grant is present.
+    /// coarse read policy requiring a role the principal never holds. A matching
+    /// query grant does not skip that list (#6358).
     /// </summary>
     private static WebApplicationFactory<Program> CreateFactory(params PermissionGrant[] grants)
         => CreateFactory(
@@ -317,7 +314,7 @@ public sealed class CrossProtocolPermissionMatrixTests
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task FeatureServerQuery_PerOperationGrant_OverridesCoarseDeny()
+    public async Task FeatureServerQuery_PerOperationGrant_DoesNotSkipRoleList()
     {
         using var factory = CreateFactory(Grant("query"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
@@ -325,7 +322,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     [IntegrationTest]
@@ -426,15 +423,16 @@ public sealed class CrossProtocolPermissionMatrixTests
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task FeatureServerQuery_GrantScopedToTargetLayer_AllowsThatLayer()
+    public async Task FeatureServerQuery_GrantScopedToTargetLayer_StillDeniedByRoleList()
     {
+        // The grant names the target layer, but AllowedRoles does not include the caller (#6358).
         using var factory = CreateFactory(Grant("query", layer: "Alpha Layer"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(403);
     }
 
     // ---- OData query ----
@@ -443,7 +441,7 @@ public sealed class CrossProtocolPermissionMatrixTests
     [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Layers({layerId})/Features")]
-    public async Task ODataQuery_QueryGrant_OverridesCoarseDeny()
+    public async Task ODataQuery_QueryGrant_DoesNotSkipRoleList()
     {
         using var factory = CreateFactory(Grant("query"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
@@ -451,7 +449,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         var response = await client.GetAsync(
             $"/odata/Layers({ServiceRbacTestFixture.AlphaLayerId})/Features");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
     }
 
     [IntegrationTest]
@@ -606,7 +604,7 @@ public sealed class CrossProtocolPermissionMatrixTests
     [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
-    public async Task ODataBatch_QueryGrant_AllowsBatchedRead()
+    public async Task ODataBatch_QueryGrant_DoesNotSkipRoleList()
     {
         using var factory = CreateFactory(Grant("query"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
@@ -632,7 +630,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var responses = ServiceRbacTestFixture.GetPropertyCaseInsensitive(document.RootElement, "responses");
         responses.GetArrayLength().Should().Be(1);
-        ServiceRbacTestFixture.GetPropertyCaseInsensitive(responses[0], "status").GetInt32().Should().Be(200);
+        ServiceRbacTestFixture.GetPropertyCaseInsensitive(responses[0], "status").GetInt32().Should().Be(403);
     }
 
     [IntegrationTest]
@@ -674,7 +672,7 @@ public sealed class CrossProtocolPermissionMatrixTests
     [Protocol(TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task OgcFeaturesRead_QueryGrant_OverridesCoarseDeny()
+    public async Task OgcFeaturesRead_QueryGrant_DoesNotSkipRoleList()
     {
         using var factory = CreateFactory(Grant("query"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
@@ -682,7 +680,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         var response = await client.GetAsync(
             $"/ogc/features/collections/{ServiceRbacTestFixture.AlphaLayerId}/items");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
     }
 
     [IntegrationTest]
@@ -785,7 +783,7 @@ public sealed class CrossProtocolPermissionMatrixTests
     [Protocol(TestProtocols.OgcApiTiles)]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
-    public async Task OgcTilesRead_QueryGrant_OverridesCoarseDeny()
+    public async Task OgcTilesRead_QueryGrant_DoesNotSkipRoleList()
     {
         using var factory = CreateFactory(Grant("query"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
@@ -793,7 +791,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         var response = await client.GetAsync(
             $"/ogc/tiles/collections/{ServiceRbacTestFixture.AlphaLayerId}");
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
     }
 
     [IntegrationTest]
@@ -1001,9 +999,9 @@ public sealed class CrossProtocolPermissionMatrixTests
 /// Direct coverage of the WFS GetFeature read seam: the WFS adapter filters
 /// published feature types through <c>AccessPolicyHelpers.IsResourceAccessibleAsync</c>
 /// with the <see cref="AuthorizationOperation.Query"/> operation (#1376). These
-/// tests exercise that exact shared seam so a per-operation grant is proven to be
-/// honored for WFS reads, with the no-grant case falling back to the coarse
-/// <see cref="AccessPolicy"/> exactly as before.
+/// tests exercise that exact shared seam. A per-operation grant does not skip an
+/// explicit role list (#6358); an empty or matching list still honors the grant, and
+/// the no-grant case falls back to the coarse <see cref="AccessPolicy"/>.
 /// </summary>
 [Protocol(TestProtocols.Wfs20)]
 [Operation(Operations.Query)]
@@ -1015,10 +1013,9 @@ public sealed class WfsReadVisibilitySeamTests
     [UnitTest]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
-    public async Task WfsReadSeam_QueryGrant_OverridesCoarseDeny()
+    public async Task WfsReadSeam_QueryGrant_DoesNotSkipRoleList()
     {
-        // Coarse policy requires a role the principal lacks (would hide the layer),
-        // but the principal's role carries a query grant on the service.
+        // Coarse policy requires a role the principal lacks. A query grant must not skip it (#6358).
         var context = CreateContext(
             roles: [GrantedRole],
             grant: new PermissionGrant { Service = ServiceName, Layer = "*", Operation = "query" });
@@ -1029,7 +1026,7 @@ public sealed class WfsReadVisibilitySeamTests
             CreateService(coarseReadRole: "coarse-only"),
             AuthorizationOperation.Query);
 
-        accessible.Should().BeTrue("the WFS read seam honors the per-operation query grant");
+        accessible.Should().BeFalse("an explicit role list denies even when a query grant matches");
     }
 
     [UnitTest]
@@ -1061,12 +1058,12 @@ public sealed class WfsReadVisibilitySeamTests
         var first = await AccessPolicyHelpers.IsResourceAccessibleAsync(
             context,
             CreateResource(),
-            CreateService(coarseReadRole: "coarse-only"),
+            CreateService(coarseReadRole: GrantedRole),
             AuthorizationOperation.Query);
         var second = await AccessPolicyHelpers.IsResourceAccessibleAsync(
             context,
             CreateResource(),
-            CreateService(coarseReadRole: "coarse-only", serviceName: "Beta Service"),
+            CreateService(coarseReadRole: GrantedRole, serviceName: "Beta Service"),
             AuthorizationOperation.Query);
 
         first.Should().BeTrue();

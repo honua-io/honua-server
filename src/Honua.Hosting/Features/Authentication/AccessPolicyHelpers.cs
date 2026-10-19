@@ -236,7 +236,9 @@ internal static class AccessPolicyHelpers
 
             if (grantDecision == GrantOutcome.Allow)
             {
-                return null;
+                var granted = ApplyRoleListToGrant(
+                    context.RequestServices, context.User, resourcePolicy: null, service, operation);
+                return granted.IsAllowed ? null : CreateAccessDeniedResult(context, granted);
             }
         }
 
@@ -281,7 +283,8 @@ internal static class AccessPolicyHelpers
     /// <summary>
     /// The single, request-context-free implementation of the resource access decision:
     /// tenant scope, then the per-operation RBAC grant resolver, then the coarse
-    /// <see cref="AccessPolicy"/> fallback. Every HTTP helper above delegates here, and
+    /// <see cref="AccessPolicy"/> fallback. A matching grant still has to pass an explicit
+    /// role list (#6358). Every HTTP helper above delegates here, and
     /// so does the principal-based <see cref="LayerAccessAuthorizer"/> used by the
     /// geoprocessing submit pipeline (honua-server#3046) — so the asynchronous job
     /// surface and the synchronous query surfaces cannot drift apart.
@@ -348,10 +351,11 @@ internal static class AccessPolicyHelpers
                 cancellationToken,
                 requestCache).ConfigureAwait(false);
 
-            // An explicit per-operation grant authorizes the request directly.
+            // A matching grant does not skip an explicit role list (#6358).
             if (grantDecision == GrantOutcome.Allow)
             {
-                return AccessDecision.Allowed();
+                return ApplyRoleListToGrant(
+                    services, principal, resource.AccessPolicy, service, operation);
             }
         }
 
@@ -597,12 +601,38 @@ internal static class AccessPolicyHelpers
             .Evaluate(principal, resourcePolicy, servicePolicy, scope);
     }
 
+    // Empty role lists and AllowAnonymous still allow, so the grant stands unless the
+    // evaluator forbids the principal for the role list.
+    private static AccessDecision ApplyRoleListToGrant(
+        IServiceProvider services,
+        ClaimsPrincipal principal,
+        AccessPolicy? resourcePolicy,
+        MetadataV2Service? service,
+        AuthorizationOperation operation)
+    {
+        var policyDecision = EvaluateServicePolicy(
+            services,
+            principal,
+            resourcePolicy,
+            service,
+            ScopeForOperation(operation),
+            operation);
+        return policyDecision is { IsAllowed: false, RequiresAuthentication: false }
+            && string.Equals(
+                policyDecision.FailureReason,
+                AccessPolicyEvaluator.RequiredRoleDeniedReason,
+                StringComparison.Ordinal)
+            ? policyDecision
+            : AccessDecision.Allowed();
+    }
+
     /// <summary>
     /// Resolver-aware accessibility predicate (#1376). Consults the canonical
     /// per-operation permission resolver for the supplied operation first; when no
     /// grant matches it falls back to the coarse <see cref="AccessPolicy"/>
     /// evaluation, so visibility filtering (e.g. WFS GetFeature published types)
-    /// honors per-operation grants while ungranted services behave as before.
+    /// honors per-operation grants that an explicit role list also admits, while ungranted
+    /// services behave as before.
     /// </summary>
     /// <param name="context">The request context.</param>
     /// <param name="resource">The resource (layer) being accessed.</param>

@@ -47,6 +47,8 @@ public sealed class McpReadableCatalogTests
     [InlineData("missing-tenant")]
     [InlineData("unpublished")]
     [InlineData("inactive")]
+    [InlineData("granted")]
+    [InlineData("layer-grant")]
     public async Task RenderMap_UnreadableLayer_DoesNotRender(string restriction)
     {
         using var services = CreateServices(restriction);
@@ -67,8 +69,6 @@ public sealed class McpReadableCatalogTests
     [Trait("Tier", "Fast")]
     [InlineData("allowed")]
     [InlineData("same-tenant")]
-    [InlineData("granted")]
-    [InlineData("layer-grant")]
     public async Task RenderMap_ReadableLayer_Renders(string restriction)
     {
         using var services = CreateServices(restriction);
@@ -107,7 +107,7 @@ public sealed class McpReadableCatalogTests
 
         result.IsError.Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("matchCount").GetInt32()
-            .Should().Be(restriction == "layer-grant" ? 1 : IsReadable(restriction) ? 2 : 0);
+            .Should().Be(IsReadable(restriction) ? 2 : 0);
     }
 
     [Theory]
@@ -240,7 +240,7 @@ public sealed class McpReadableCatalogTests
             Arg.Is<int[]>(ids => ids.Length == 1 && ids[0] == 42), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>());
     }
 
-    private static bool IsReadable(string restriction) => restriction is "allowed" or "same-tenant" or "granted" or "layer-grant";
+    private static bool IsReadable(string restriction) => restriction is "allowed" or "same-tenant";
 
     private static readonly ClaimsPrincipal Principal = new(new ClaimsIdentity(
         [new Claim(ClaimTypes.NameIdentifier, "reader"), new Claim(ClaimTypes.Role, "scoped-reader")], "Test"));

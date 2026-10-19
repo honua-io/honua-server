@@ -296,7 +296,7 @@ public class OgcMapsTileSetHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTileMetadata)]
-    public async Task GetMapTileSetsAsync_QueryGrant_SucceedsWhenCoarsePolicyDenies()
+    public async Task GetMapTileSetsAsync_QueryGrant_DoesNotSkipRoleList()
     {
         var restricted = new AccessPolicy { AllowedRoles = ["gis-admin"] };
         var provider = new TestMetadataV2GraphBuilder()
@@ -320,7 +320,8 @@ public class OgcMapsTileSetHandlerTests
 
         var result = await CreateHandler(provider).GetMapTileSetsAsync(1, context);
 
-        result.Should().BeOfType<Ok<TileSetsList>>();
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
     }
 
     private static OgcMapsTileSetHandler CreateHandler(TestMetadataV2GraphProvider provider)
