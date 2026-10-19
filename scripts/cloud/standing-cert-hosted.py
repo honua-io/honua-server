@@ -131,6 +131,7 @@ def fixed_request():
     request = json.loads((STAGE / "request.json").read_bytes())
     lifetime = request["expiresInSeconds"]
     expiry = datetime.fromisoformat(request["sessionExpiresAtUtc"].replace("Z", "+00:00"))
+    now = datetime.now(timezone.utc)
     account = request["accountId"]
     deployment = request["executionIdentityContract"]["roles"]["infra_deployment"]["role_arn"]
     backend_role = request["workloadIdentityContract"]["role_arn"]
@@ -144,7 +145,8 @@ def fixed_request():
             and re.fullmatch(SHA, request["backendSourceSha256"])
             and type(lifetime) is int and 60 <= lifetime <= 1800
             and expiry.tzinfo is not None
-            and expiry > datetime.now(timezone.utc) + timedelta(seconds=lifetime + 120)
+            and now + timedelta(seconds=max(300, lifetime + 120)) < expiry
+            <= now + timedelta(minutes=55)
             and re.fullmatch(r"[0-9]{12}", account)
             and request["region"] == os.environ["AWS_REGION"]
             and deployment == os.environ["CERT_DEPLOY_ROLE_ARN"]

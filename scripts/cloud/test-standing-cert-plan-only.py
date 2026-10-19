@@ -221,6 +221,13 @@ class StandingCertPlanWorkflow(unittest.TestCase):
             hosted_request["sessionExpiresAtUtc"] = future_expiry
             (stage / "request.json").write_text(json.dumps(hosted_request))
             self.assertEqual(hosted.fixed_request(), hosted_request)
+            hosted_request["sessionExpiresAtUtc"] = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+            (stage / "request.json").write_text(json.dumps(hosted_request))
+            with self.assertRaisesRegex(ValueError, "hosted-request-invalid"):
+                hosted.fixed_request()
+            hosted_request["sessionExpiresAtUtc"] = future_expiry
+            (stage / "request.json").write_text(json.dumps(hosted_request))
+            self.assertEqual(hosted.fixed_request(), hosted_request)
             hosted_request["varFile"] = str(self.base / "wrong-file")
             (stage / "request.json").write_text(json.dumps(hosted_request))
             with self.assertRaisesRegex(ValueError, "hosted-request-invalid"):
