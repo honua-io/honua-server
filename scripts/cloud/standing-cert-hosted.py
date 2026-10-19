@@ -10,6 +10,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import threading
 import urllib.parse
 import urllib.request
 import zipfile
@@ -124,6 +125,33 @@ def run_private(args, *, cwd=None, env=None, timeout=600):
                                 stderr=log, timeout=timeout, check=False)
         require(result.returncode == 0, "private-setup-step-refused")
         return result.stdout
+
+
+def with_backend_token_rotation(entry, token_file, invoke, interval_seconds=60):
+    """Keep the backend JWT reusable by post-plan Terraform processes."""
+    stop = threading.Event()
+    failures = []
+
+    def rotate():
+        while not stop.wait(interval_seconds):
+            renewed = STAGE / "backend-token-renewed"
+            try:
+                save(renewed, entry.oidc_token().encode())
+                os.replace(renewed, token_file)
+            except Exception as error:
+                renewed.unlink(missing_ok=True)
+                failures.append(type(error).__name__)
+                return
+
+    worker = threading.Thread(target=rotate, name="cert-backend-token-renewal", daemon=True)
+    worker.start()
+    try:
+        result = invoke()
+    finally:
+        stop.set()
+        worker.join(timeout=30)
+    require(not worker.is_alive() and not failures, "backend-token-renewal-refused")
+    return result
 
 
 def fixed_request():
@@ -372,8 +400,10 @@ def plan_and_seal():
     os.replace(renewed, token_file)
     env = dict(os.environ, CERT_REQUEST_FILE=str(STAGE / "request.json"),
                CERT_BACKEND_TOKEN_PREPARED="1")
-    public = run_private(["python3", "-I", str(Path(__file__).with_name("standing-cert-plan-only.py"))],
-                         env=env, timeout=2400)
+    public = with_backend_token_rotation(
+        entry, token_file,
+        lambda: run_private(["python3", "-I", str(Path(__file__).with_name("standing-cert-plan-only.py"))],
+                            env=env, timeout=2400))
     receipt = json.loads(public)
     require(receipt["status"] == "planned-unapproved", "producer-refused")
     save(STAGE / "public.json", public)

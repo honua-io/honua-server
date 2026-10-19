@@ -54,9 +54,10 @@ reviewed release candidate and existing cert/backend outputs; they are not in
 source. The request's `sessionExpiresAtUtc` must conservatively bound the
 deployment STS session. The initialized Terraform S3 backend descriptor must
 configure `assume_role_with_web_identity.duration = "1h"`. The workflow renews
-the GitHub token before the producer starts. The producer checks that exact
-descriptor, requires over 60 seconds of token validity at plan start, and
-conservatively
+the GitHub token before the producer starts and atomically rotates the private
+token file every minute while it runs. The producer checks that exact
+descriptor, requires over 60 seconds of bound token validity at plan start
+and over three minutes before post-plan Terraform state checks, and conservatively
 reserves five minutes from the configured one-hour backend session. Terraform
 itself exchanges the token for its backend STS credentials; a separate sibling
 role session is not treated as proof of Terraform's credentials.

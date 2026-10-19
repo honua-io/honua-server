@@ -8,6 +8,7 @@ import json
 import os
 import stat
 import tempfile
+import time
 import unittest
 import unittest.mock as mock
 import zipfile
@@ -56,6 +57,32 @@ class StandingCertPlanWorkflow(unittest.TestCase):
         if "status" in args or "ls-files" in args:
             return b""
         return self.script.read_bytes()
+
+    def test_backend_token_rotates_atomically_during_producer(self):
+        stage = self.base / "stage"
+        stage.mkdir(mode=0o700)
+        token = stage / "backend-token"
+        token.write_text("old")
+        token.chmod(0o600)
+        source = mock.Mock()
+        source.oidc_token.return_value = "new.header.signature"
+
+        def producer():
+            limit = time.monotonic() + 1
+            while token.read_text() == "old" and time.monotonic() < limit:
+                time.sleep(0.005)
+            return b"producer-result"
+
+        with mock.patch.object(hosted, "STAGE", stage):
+            self.assertEqual(hosted.with_backend_token_rotation(source, token, producer, 0.01),
+                             b"producer-result")
+            self.assertEqual(token.read_text(), "new.header.signature")
+            self.assertEqual(stat.S_IMODE(token.stat().st_mode), 0o600)
+            self.assertFalse((stage / "backend-token-renewed").exists())
+            source.oidc_token.side_effect = ValueError("no OIDC")
+            with self.assertRaisesRegex(ValueError, "backend-token-renewal-refused"):
+                hosted.with_backend_token_rotation(source, token, lambda: time.sleep(0.03), 0.01)
+            self.assertEqual(token.read_text(), "new.header.signature")
 
     def test_private_packet_receipt_only_and_token_cleanup(self):
         receipt = {key: "fixture" for key in entry.PUBLIC_KEYS}
