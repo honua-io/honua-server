@@ -213,6 +213,164 @@ public sealed class OwnerEditPolicyFieldAccessTests
             .Should().BeFalse();
     }
 
+    [UnitTest]
+    public async Task PrepareBatchAsync_NonOwnerUpdateAndDelete_AreDeniedBeforeAWrite()
+    {
+        var reader = new RecordingReader(RecordingReader.Mode.PolicyOwner);
+        var bob = new EditPrincipal("bob", IsAuthenticated: true, IsAdmin: false);
+        var update = FeatureEditBatch.Create(updates: ImmutableArray.Create(Named(42)));
+        var delete = FeatureEditBatch.Create(deletes: ImmutableArray.Create(42L));
+
+        var updated = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(reader, 7, Policy, update, bob);
+        var deleted = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(reader, 7, Policy, delete, bob);
+
+        updated.IsAllowed.Should().BeFalse();
+        deleted.IsAllowed.Should().BeFalse();
+        updated.DenialReason.Should().Be("Feature is owned by another principal and cannot be modified under the owner-based edit policy.");
+        deleted.DenialReason.Should().Be(updated.DenialReason);
+        updated.DenialReason.Should().NotContain("alice");
+        var denied = OwnerEditPolicyFieldAccess.DeniedEditResult(update, updated.DenialReason!);
+        denied.WasRolledBack.Should().BeTrue();
+        denied.UpdateResults.Should().ContainSingle();
+        denied.UpdateResults[0].ErrorCode.Should().Be(EditOperationResult.NotPermittedErrorCode);
+        denied.UpdateResults[0].ErrorMessage.Should().Be(updated.DenialReason);
+        reader.QueryCount.Should().Be(2);
+    }
+
+    [UnitTest]
+    public async Task PrepareBatchAsync_Owner_SucceedsAndPreservesAnOmittedOwner()
+    {
+        var reader = new RecordingReader(RecordingReader.Mode.PolicyOwner);
+        var alice = new EditPrincipal("alice", IsAuthenticated: true, IsAdmin: false);
+        var batch = FeatureEditBatch.Create(updates: ImmutableArray.Create(Named(42)));
+
+        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(reader, 7, Policy, batch, alice);
+
+        prepared.IsAllowed.Should().BeTrue();
+        prepared.Batch.Updates[0].Attributes["owner"].Should().Be("alice");
+        prepared.Batch.Updates[0].Attributes["name"].Should().Be("visible");
+        prepared.Batch.OwnerGuards.Should().ContainSingle();
+        prepared.Batch.OwnerGuards[0].ObjectId.Should().Be(42);
+        prepared.Batch.OwnerGuards[0].Field.Should().Be("owner");
+        prepared.Batch.OwnerGuards[0].Expected.Should().Be("alice");
+    }
+
+    [UnitTest]
+    public async Task PrepareBatchAsync_Admin_BypassesWithoutReading()
+    {
+        var reader = new RecordingReader(RecordingReader.Mode.PolicyOwner);
+        var admin = new EditPrincipal("carol", IsAuthenticated: true, IsAdmin: true);
+        var batch = FeatureEditBatch.Create(updates: ImmutableArray.Create(Named(42)), deletes: ImmutableArray.Create(43L));
+
+        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(reader, 7, Policy, batch, admin);
+
+        prepared.IsAllowed.Should().BeTrue();
+        prepared.Batch.Updates[0].Attributes.ContainsKey("owner").Should().BeFalse();
+        prepared.Batch.OwnerGuards.IsDefaultOrEmpty.Should().BeTrue();
+        reader.QueryCount.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task PrepareBatchAsync_Anonymous_IsDeniedWithoutReading()
+    {
+        var reader = new RecordingReader(RecordingReader.Mode.PolicyOwner);
+        var batch = FeatureEditBatch.Create(creates: ImmutableArray.Create(Named(0)));
+
+        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(reader, 7, Policy, batch, EditPrincipal.Anonymous);
+
+        prepared.IsAllowed.Should().BeFalse();
+        prepared.DenialReason.Should().Be("Anonymous edits are not permitted while an owner-based edit policy is active.");
+        reader.QueryCount.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task PrepareBatchAsync_DisabledOrAbsentPolicy_KeepsTheBatchAndDoesNotRead()
+    {
+        var reader = new RecordingReader(RecordingReader.Mode.PolicyOwner);
+        var bob = new EditPrincipal("bob", IsAuthenticated: true, IsAdmin: false);
+        var batch = FeatureEditBatch.Create(updates: ImmutableArray.Create(Named(42)), rollbackOnFailure: true);
+
+        var disabled = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+            reader, 7, Policy with { Enabled = false }, batch, bob);
+        var absent = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(reader, 7, null, batch, bob);
+
+        disabled.IsAllowed.Should().BeTrue();
+        absent.IsAllowed.Should().BeTrue();
+        disabled.Batch.Should().Be(batch);
+        absent.Batch.Should().Be(batch);
+        reader.QueryCount.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task PrepareBatchAsync_Insert_StampsOnlyWhenRequested()
+    {
+        var reader = new RecordingReader(RecordingReader.Mode.PolicyOwner);
+        var alice = new EditPrincipal("alice", IsAuthenticated: true, IsAdmin: false);
+        var batch = FeatureEditBatch.Create(creates: ImmutableArray.Create(Named(0)));
+
+        var stamped = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(reader, 7, Policy, batch, alice);
+        var unstamped = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+            reader, 7, Policy with { StampOwnerOnInsert = false }, batch, alice);
+
+        stamped.IsAllowed.Should().BeTrue();
+        stamped.Batch.Creates[0].Attributes["owner"].Should().Be("alice");
+        unstamped.IsAllowed.Should().BeTrue();
+        unstamped.Batch.Creates[0].Attributes.ContainsKey("owner").Should().BeFalse();
+        reader.QueryCount.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task PrepareBatchAsync_OrderedOperations_DenyANonOwnerAndStampACreate()
+    {
+        var reader = new RecordingReader(RecordingReader.Mode.PolicyOwner);
+        var bob = new EditPrincipal("bob", IsAuthenticated: true, IsAdmin: false);
+        var alice = new EditPrincipal("alice", IsAuthenticated: true, IsAdmin: false);
+        var deniedBatch = FeatureEditBatch.Create(operations: ImmutableArray.Create(
+            FeatureEditOperation.Update(Named(42)),
+            FeatureEditOperation.Delete(43)));
+        var stampedBatch = FeatureEditBatch.Create(operations: ImmutableArray.Create(FeatureEditOperation.Create(Named(0))));
+
+        var denied = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(reader, 7, Policy, deniedBatch, bob);
+        var stamped = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(reader, 7, Policy, stampedBatch, alice);
+
+        denied.IsAllowed.Should().BeFalse();
+        denied.DenialReason.Should().Be("Feature is owned by another principal and cannot be modified under the owner-based edit policy.");
+        var result = OwnerEditPolicyFieldAccess.DeniedEditResult(deniedBatch, denied.DenialReason!);
+        result.UpdateResults.Should().ContainSingle();
+        result.DeleteResults.Should().ContainSingle();
+        result.CreateResults.Should().BeEmpty();
+        stamped.Batch.Operations[0].Feature!.Value.Attributes["owner"].Should().Be("alice");
+    }
+
+    [UnitTest]
+    public async Task PrepareBatchAsync_ExplicitOwnerChange_IsDeniedAndAHiddenRowIsDenied()
+    {
+        var reader = new RecordingReader(RecordingReader.Mode.PolicyOwner);
+        var alice = new EditPrincipal("alice", IsAuthenticated: true, IsAdmin: false);
+        var changed = Feature.Create(42, null, ImmutableDictionary.CreateRange(new Dictionary<string, object?>
+        {
+            ["name"] = "visible",
+            ["owner"] = "carol"
+        }));
+
+        var reassignment = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+            reader, 7, Policy, FeatureEditBatch.Create(updates: ImmutableArray.Create(changed)), alice);
+        var hidden = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+            new RecordingReader(RecordingReader.Mode.Hidden),
+            7,
+            Policy,
+            FeatureEditBatch.Create(deletes: ImmutableArray.Create(42L)),
+            alice);
+
+        reassignment.IsAllowed.Should().BeFalse();
+        reassignment.DenialReason.Should().Be(OwnerEditPolicyFieldAccess.OwnerReassignmentDeniedReason);
+        hidden.IsAllowed.Should().BeFalse();
+        hidden.DenialReason.Should().Be("Edit not permitted.");
+    }
+
+    private static Feature Named(long id)
+        => Feature.Create(id, null, ImmutableDictionary<string, object?>.Empty.Add("name", "visible"));
+
     /// <summary>
     /// Returns the owner only when the query is the policy read. Any other query looks like a
     /// field-masked response: the owner is absent and an unrelated secret is present.

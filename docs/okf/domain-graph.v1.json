@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:f37ab6499a192e2924df3b85791920d855f5583833a3c928182031fa6c8bcddc",
+  "bundleDigest": "sha256:e17ad07200a23b1c1e6c1c051e582e30073ecab986772b3e064dde6bed6222c8",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -6054,7 +6054,7 @@
     {
       "id": "okf/capabilities/editing.featureserver-edits",
       "path": "okf/capabilities/editing.featureserver-edits.md",
-      "documentDigest": "sha256:6e94311b6d73aa3929b808e18e80edf31a652252341a06ce3da7a2ebbd160b03",
+      "documentDigest": "sha256:cc427a15620da98ae2bfa1305ce419befb1e2127712ddd4869e03fb7540ee39e",
       "metadata": {
         "type": "capability",
         "title": "FeatureServer Editing",
