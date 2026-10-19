@@ -129,7 +129,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         versionedNames.Should().BeEquivalentTo(_expectedVersionedNames);
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData(false, false, false)]
     [InlineData(false, false, true)]
     [InlineData(false, true, false)]
