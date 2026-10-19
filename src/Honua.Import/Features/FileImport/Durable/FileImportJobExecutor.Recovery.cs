@@ -61,8 +61,9 @@ internal sealed partial class FileImportJobExecutor
         if (execution is null || execution.Status == ExecutionJobStatus.Succeeded)
             throw new InvalidOperationException("The accepted import has no durable commit receipt.");
 
+        using var failedCompletion = new CancellationTokenSource(RecoveryTimeout);
         await WriteTerminalAsync(job.OperationId, CreateInitialProgress(job.OperationId, request, bytes),
-            ImportStatus.Failed, null, execution.ErrorMessage).ConfigureAwait(false);
+            ImportStatus.Failed, null, execution.ErrorMessage, failedCompletion.Token).ConfigureAwait(false);
         return execution;
 
         async Task<ImportResult?> ReadCommittedAsync()
@@ -96,7 +97,7 @@ internal sealed partial class FileImportJobExecutor
             try
             {
                 await WriteTerminalAsync(job.OperationId, CreateInitialProgress(job.OperationId, request, bytes),
-                    ImportStatus.Completed, result, result.ErrorMessage).ConfigureAwait(false);
+                    ImportStatus.Completed, result, result.ErrorMessage, completion.Token).ConfigureAwait(false);
                 await context.ReportProgressAsync(100, "Import completed", completion.Token).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -105,6 +106,7 @@ internal sealed partial class FileImportJobExecutor
                 // even when a subscriber, cache, or late cancellation refuses a notification.
                 Log.ImportFaulted(logger, job.OperationId, ex);
             }
+            Log.ImportCompleted(logger, job.OperationId, request.TableName, result.FeatureCount);
             return JobExecutionResult.Succeeded(result.Warnings) with
             {
                 CompletedWithCommittedEffects = true,

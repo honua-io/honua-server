@@ -299,7 +299,7 @@ internal sealed partial class FileImportJobExecutor(
             await WriteTerminalAsync(jobId, processing, ImportStatus.Completed, result, result.ErrorMessage).ConfigureAwait(false);
             await context.ReportProgressAsync(100, "Import completed", CancellationToken.None).ConfigureAwait(false);
         }
-        Log.ImportCompleted(logger, jobId, request.TableName, result.FeatureCount);
+        if (!deferTerminal) Log.ImportCompleted(logger, jobId, request.TableName, result.FeatureCount);
         return JobExecutionResult.Succeeded(result.Warnings) with
         {
             FileImportOutput = !string.IsNullOrWhiteSpace(result.PhysicalTableName)
@@ -339,9 +339,10 @@ internal sealed partial class FileImportJobExecutor(
         ImportProgress fallback,
         ImportStatus status,
         ImportResult? result,
-        string? errorMessage)
+        string? errorMessage,
+        CancellationToken cancellationToken = default)
     {
-        var current = await progressStore.GetProgressAsync<ImportProgress>(jobId, CancellationToken.None).ConfigureAwait(false)
+        var current = await progressStore.GetProgressAsync<ImportProgress>(jobId, cancellationToken).ConfigureAwait(false)
             ?? fallback;
         var terminal = current with
         {
@@ -358,7 +359,7 @@ internal sealed partial class FileImportJobExecutor(
             Runner = fallback.Runner,
             InstanceId = fallback.InstanceId,
         };
-        await progressStore.SetProgressAsync(jobId, terminal, ProgressRetention, CancellationToken.None).ConfigureAwait(false);
+        await progressStore.SetProgressAsync(jobId, terminal, ProgressRetention, cancellationToken).ConfigureAwait(false);
     }
 
     private static ImportProgress CreateInitialProgress(string jobId, ImportRequest request, long fileSize)
