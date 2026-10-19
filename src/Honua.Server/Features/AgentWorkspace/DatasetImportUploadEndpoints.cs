@@ -77,10 +77,13 @@ internal static class DatasetImportUploadEndpoints
     private static async Task<IResult> Capabilities(string workspaceId, string taskId, long revision, string contentHash, HttpContext context)
     {
         var reference = Reference(workspaceId, taskId, revision, contentHash);
-        _ = await Authority(context).AuthorizeAsync(context.User, reference, false, context.RequestAborted).ConfigureAwait(false);
+        var original = await Authority(context).AuthorizeAsync(context.User, reference, false, context.RequestAborted).ConfigureAwait(false);
+        var acceptanceReady = await DatasetImportSubmissionService.IsReadyAsync(context.RequestServices, context.RequestAborted).ConfigureAwait(false);
+        var current = await Authority(context).AuthorizeAsync(context.User, reference, false, context.RequestAborted).ConfigureAwait(false);
+        if (current.Task != original.Task) throw new UnauthorizedAccessException();
         var options = context.RequestServices.GetRequiredService<DatasetImportUploadTransportOptions>();
         return Results.Json(new DatasetImportUploadCapabilities(DatasetImportUploadTransportOptions.MaximumChunkBytes,
-            options.EffectiveMaximumFileBytes), AgentWorkspaceJsonContext.Default.DatasetImportUploadCapabilities);
+            options.EffectiveMaximumFileBytes, acceptanceReady), AgentWorkspaceJsonContext.Default.DatasetImportUploadCapabilities);
     }
 
     private static async Task<IResult> Create(string workspaceId, string taskId, long revision, HttpContext context)

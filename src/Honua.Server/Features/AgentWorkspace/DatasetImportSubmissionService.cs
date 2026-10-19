@@ -23,17 +23,23 @@ namespace Honua.Server.Features.AgentWorkspace;
 // in-process fallback, caller-selected storage key, or submitted ownership exists here.
 internal sealed class DatasetImportSubmissionService(IAgentWorkspaceStore store)
 {
+    // Composition discovery does not instantiate dependencies or claim worker readiness.
     internal static bool IsConfigured(IServiceProvider services)
-        => services.GetService<IServiceProviderIsService>()?.IsService(typeof(DatasetImportSubmissionService)) == true &&
-            services.GetService<IImportJobService>() is DurableImportJobService &&
-            services.GetService<BackgroundImportRunnerDecision>()?.IsDurable == true &&
-            services.GetService<ImportUploadCoordinator>() is not null &&
-            services.GetService<IDatasetImportAdmissionProvider>() is not null &&
-            services.GetService<IDatasetImportAuthorityDescriptorReader>() is not null &&
-            services.GetService<IExecutionJobStore>() is not null &&
-            services.GetService<IJobExecutionLeaseAuthority>() is not null &&
-            services.GetService<IJobExecutionLeasePolicy>() is not null &&
-            services.GetServices<IJobExecutionLeaseScopeProvider>().Any(provider => provider.Kind == ExecutionJobKind.FileImport);
+    {
+        var registrations = services.GetService<IServiceProviderIsService>();
+        return registrations is not null && new[]
+        {
+            typeof(DatasetImportSubmissionService), typeof(IDatasetImportSubmissionReadiness),
+            typeof(IImportJobService), typeof(BackgroundImportRunnerDecision), typeof(ImportUploadCoordinator),
+            typeof(IDatasetImportAdmissionProvider), typeof(IDatasetImportAuthorityDescriptorReader),
+            typeof(IExecutionJobStore), typeof(IJobExecutionLeaseAuthority), typeof(IJobExecutionLeasePolicy),
+            typeof(IJobExecutionLeaseObservationPolicy), typeof(IJobExecutionLeaseScopeProvider)
+        }.All(registrations.IsService);
+    }
+
+    internal static async ValueTask<bool> IsReadyAsync(IServiceProvider services, CancellationToken cancellationToken)
+        => IsConfigured(services) && await services.GetRequiredService<IDatasetImportSubmissionReadiness>()
+            .IsReadyAsync(cancellationToken).ConfigureAwait(false);
 
     internal async Task<DatasetImportSubmissionReceipt?> ReadAsync(HttpContext context, ReadDatasetImportAuthority request)
     {
@@ -86,7 +92,8 @@ internal sealed class DatasetImportSubmissionService(IAgentWorkspaceStore store)
             RequireReviewed(original, input);
             return original;
         }
-        if (!IsConfigured(context.RequestServices)) throw new AgentWorkspaceUnavailableException();
+        if (!await IsReadyAsync(context.RequestServices, context.RequestAborted).ConfigureAwait(false))
+            throw new AgentWorkspaceUnavailableException();
         var services = context.RequestServices;
         var authorized = await Authority(context).AuthorizeAsync(context.User, Reference(reference), true, context.RequestAborted).ConfigureAwait(false);
         var descriptor = await services.GetRequiredService<IDatasetImportAuthorityDescriptorReader>()

@@ -45,7 +45,8 @@ namespace Honua.Server.Tests.Features.AgentWorkspace;
 
 // Actual Kestrel, RSA JWT validation, canonical delegated capture and Redis CAS.
 // Membership/grant discovery and queue delivery are controlled ports. Actual bytes, Redis acceptance,
-// production task scope and lease admission are exercised; this test does not execute the GIS worker.
+// production task scope and lease admission are exercised. Readiness is an explicit test-only
+// acceptance fixture; this test does not execute or qualify the GIS worker or its storage readiness.
 [Collection(RedisFixture.CollectionName)]
 [Protocol(TestProtocols.Admin)]
 public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
@@ -118,6 +119,7 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
                 sp.GetRequiredService<IDatasetImportContributorAuthorizer>()), new RedisImportUploadStore(connection), storage, budget, scratch));
             services.AddScoped<IDatasetImportAdmissionProvider, DatasetImportAdmissionProvider>();
             services.AddScoped<DatasetImportSubmissionService>();
+            services.AddSingleton<IDatasetImportSubmissionReadiness, AcceptanceOnlyTestReadiness>();
             services.AddScoped<IJobExecutionLeasePolicy, ExecutionJobLeasePolicy>();
             services.AddScoped<IJobExecutionLeaseObservationPolicy>(sp => (ExecutionJobLeasePolicy)sp.GetRequiredService<IJobExecutionLeasePolicy>());
             services.AddScoped<IJobExecutionLeaseScopeProvider, FileImportExecutionLeaseScopeProvider>();
@@ -295,6 +297,12 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
             await fixture.DisposeAsync();
             if (Directory.Exists(storageRoot)) Directory.Delete(storageRoot, recursive: true);
         }
+    }
+
+    // This fixture deliberately controls delivery and only qualifies acceptance, not worker readiness.
+    private sealed class AcceptanceOnlyTestReadiness : IDatasetImportSubmissionReadiness
+    {
+        public ValueTask<bool> IsReadyAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult(true);
     }
 
     private static DateTimeOffset WholeSecond(DateTimeOffset value) => DateTimeOffset.FromUnixTimeSeconds(value.ToUnixTimeSeconds());
