@@ -9,7 +9,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Portal.Sharing;
-using Honua.TestKit;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
@@ -22,34 +22,33 @@ namespace Honua.Server.Tests.Features.Sharing;
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class PortalCanonicalGroupSharingTestsPostgresDurability(PostgresFixture postgres) : IAsyncLifetime
+public sealed class PortalCanonicalGroupSharingTestsPostgresDurability(DatabaseFixtureAdapter database) : IAsyncLifetime
 {
     private readonly string _schema = "portal6366_" + Guid.NewGuid().ToString("N");
 
     public async Task InitializeAsync()
     {
-        await postgres.CreateSchemaUnderLockAsync(_schema);
+        await database.CreateSchemaUnderLockAsync(_schema);
         await using var stream = typeof(PostgresPortalGroupStore).Assembly.GetManifestResourceStream(
             "Honua.Server.Migrations.133_CreatePortalSharing.sql")
             ?? throw new InvalidOperationException("Portal sharing migration resource is missing.");
         using var reader = new StreamReader(stream);
         var migration = await reader.ReadToEndAsync();
-        await postgres.RunUnderSchemaMutationLockAsync(() =>
-            postgres.ExecuteAsync(migration.Replace("$HonuaSchema$", _schema, StringComparison.Ordinal)));
+        await database.ExecuteDdlUnderLockAsync(
+            migration.Replace("$HonuaSchema$", _schema, StringComparison.Ordinal));
     }
 
-    public Task DisposeAsync() => postgres.RunUnderSchemaMutationLockAsync(
-        () => postgres.ExecuteAsync($"DROP SCHEMA IF EXISTS {_schema} CASCADE"));
+    public Task DisposeAsync() => database.DropSchemaAsync(_schema);
 
     [IntegrationTest]
     public async Task AcceptedGroupsAndShares_SurviveReplicaReconstruction_AndRevokeFreshReads()
     {
-        var groupsA = new PostgresPortalGroupStore(postgres.DataSource, TimeProvider.System, _schema);
-        var groupsB = new PostgresPortalGroupStore(postgres.DataSource, TimeProvider.System, _schema);
+        var groupsA = new PostgresPortalGroupStore(database.DataSource, TimeProvider.System, _schema);
+        var groupsB = new PostgresPortalGroupStore(database.DataSource, TimeProvider.System, _schema);
         var accessorA = new TestHttpContextAccessor();
         var accessorB = new TestHttpContextAccessor();
-        using var servicesA = Services(accessorA, groupsA, postgres.DataSource, _schema, "tenant-a");
-        using var servicesB = Services(accessorB, groupsB, postgres.DataSource, _schema, "tenant-a");
+        using var servicesA = Services(accessorA, groupsA, database.DataSource, _schema, "tenant-a");
+        using var servicesB = Services(accessorB, groupsB, database.DataSource, _schema, "tenant-a");
         accessorA.HttpContext = Context(servicesA, "tenant-a", "member");
         accessorB.HttpContext = Context(servicesB, "tenant-a", "member");
         var sharesA = servicesA.GetRequiredService<IPortalItemSharingStore>();
