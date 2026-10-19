@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Db.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
@@ -54,7 +55,7 @@ public sealed class ImportCommitReceiptIntegrationTests(PostgresFixture fixture)
                 await Task.Delay(TimeSpan.FromMilliseconds(10), deadline.Token);
             }
             recovering.IsCompleted.Should().BeFalse();
-            if (commit) await transaction.CommitAsync(deadline.Token);
+            if (commit) await transaction.CommitSafelyAsync(deadline.Token);
             else await transaction.RollbackAsync(deadline.Token);
             var receipt = await recovering.WaitAsync(deadline.Token);
             if (commit) receipt.Should().Equal(Receipt);

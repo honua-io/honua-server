@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Db.Postgres.Features.WorkflowPackages;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
@@ -74,7 +75,7 @@ public sealed class PostgresWorkflowPackageStoreTests(PostgresFixture fixture)
             await seed.SavePublicationAsync(SamplePublication("package", 1, "publication"));
             var writer = new PostgresWorkflowPackageStore(provider, schema, loseCommitReceipt ? async (transaction, token) =>
             {
-                await transaction.CommitAsync(token);
+                await transaction.CommitSafelyAsync(token);
                 throw new IOException("Injected lost commit response after real PostgreSQL commit.");
             }
             : null);

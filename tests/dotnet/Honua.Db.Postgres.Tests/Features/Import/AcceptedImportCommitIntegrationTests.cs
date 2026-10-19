@@ -146,7 +146,7 @@ public sealed class AcceptedImportCommitIntegrationTests(PostgresFixture fixture
             }
             // This check must happen after the decision lock, not while waiting.
             Assert.Equal(1, authority.Checks);
-            await transaction.CommitAsync(deadline.Token);
+            await transaction.CommitSafelyAsync(deadline.Token);
             var result = await importing.WaitAsync(deadline.Token);
             Assert.False(result.Success);
             Assert.Equal(2, authority.Checks);
