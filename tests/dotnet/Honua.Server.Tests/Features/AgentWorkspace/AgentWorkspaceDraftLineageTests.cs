@@ -46,7 +46,7 @@ public sealed class AgentWorkspaceDraftLineageTests
         context.Request.Headers["X-Honua-Turn"] = "turn-1";
         using var create = JsonDocument.Parse("""{"workspaceId":"workspace-1","viewId":"tab-1","contextRevision":0,"kind":"publish-layer","fields":{"layerName":"initial"}}""");
         var created = await AgentWorkspaceTool.All.Single(tool => tool.Name == "honua_workspace_create_draft").InvokeAsync(context, create.RootElement, default);
-        created.IsError.Should().NotBeTrue();
+        created.IsError.Should().BeFalse();
         var draftId = created.StructuredContent!.Value.GetProperty("id").GetString()!;
         var patchTool = AgentWorkspaceTool.All.Single(tool => tool.Name == "honua_workspace_patch_draft");
         using var patch = JsonDocument.Parse(JsonSerializer.Serialize(new
@@ -57,7 +57,7 @@ public sealed class AgentWorkspaceDraftLineageTests
             expectedRevision = 0,
             changes = new { layerName = "turn-output" }
         }));
-        (await patchTool.InvokeAsync(context, patch.RootElement, default)).IsError.Should().NotBeTrue();
+        (await patchTool.InvokeAsync(context, patch.RootElement, default)).IsError.Should().BeFalse();
         document.Drafts[draftId].Revision.Should().Be(1);
         document.DraftLineages.Values.Should().ContainSingle().Which.Should().Be(new AgentWorkspaceDraftLineage("turn-1", actor, draftId, 1));
         document.Turns["turn-1"].Context.Task.Should().BeNull();

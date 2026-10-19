@@ -12,6 +12,7 @@ using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.FileStorage;
 using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.Configuration;
@@ -159,8 +160,7 @@ public sealed class DatasetImportUploadHttpTests(RedisFixture redis)
         (await anonymous.GetAsync(path + "?contentHash=" + hash)).StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
     }
 
-    [IntegrationTest]
-    [Theory]
+    [IntegrationTheory]
     [InlineData(false, false)]
     [InlineData(true, true)]
     public async Task MissingRegistrationOrMismatchedScratchCannotAdvertiseTransfer(bool install, bool mismatched)
@@ -270,7 +270,7 @@ public sealed class DatasetImportUploadHttpTests(RedisFixture redis)
         internal string Root { get; } = Path.Join(Path.GetTempPath(), "honua-upload-http-" + Guid.NewGuid().ToString("N"));
         internal WebAppFixture App { get; private set; } = null!;
         internal DestinationPolicy Policy { get; } = new();
-        internal IConnectionMultiplexer Connection { get; private set; } = null!;
+        internal ConnectionMultiplexer Connection { get; private set; } = null!;
         internal LocalFileStorage Storage { get; private set; } = null!;
         internal static async Task<Fixture> Create(string redisConnection, bool install = true, bool mismatch = false, bool handoff = false)
         {

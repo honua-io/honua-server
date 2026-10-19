@@ -53,7 +53,7 @@ public sealed class AgentWorkspaceCapturedContextTests
         document.Turns["turn-1"].Context.Revision.Should().Be(0);
         // Explicit current-user navigation remains available independently of the old turn.
         context.Request.Headers.Clear();
-        (await tool.InvokeAsync(context, arguments.RootElement, default)).IsError.Should().NotBeTrue();
+        (await tool.InvokeAsync(context, arguments.RootElement, default)).IsError.Should().BeFalse();
         await store.Received(1).SaveAsync(Arg.Any<AgentWorkspaceDocument>());
     }
     [UnitTheory]

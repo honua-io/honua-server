@@ -101,7 +101,7 @@ public sealed class JobExecutionServiceTests
                 var actual = call.Arg<ExecutionJobRecord>();
                 await call.Arg<IJobExecutionContext>().RecordCommittedEffectAsync(
                     $"honua-import-commit:{actual.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(actual)}", call.Arg<CancellationToken>());
-                return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true, FileImportOutput = output };
+                return (JobExecutionResult?)(JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true, FileImportOutput = output });
             });
         using var worker = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor], new ExecutionJobCancellationTokens(),
             [], null, NullLogger<JobExecutionService>.Instance, license);

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
@@ -32,7 +33,7 @@ public sealed class DatasetImportTaskStateTests
     {
         var request = Request();
         var task = new DatasetImportTask("import-task-1", 1, "", "actor-1", "tenant-1", "target-1", "workspace-1",
-            request.Destination, request.Source, request.Options, DateTimeOffset.Parse("2026-10-19T00:00:00Z"));
+            request.Destination, request.Source, request.Options, DateTimeOffset.Parse("2026-10-19T00:00:00Z", CultureInfo.InvariantCulture));
         task = task with { ContentHash = DatasetImportTaskState.ContentHash(task) };
         var restored = JsonSerializer.Deserialize(JsonSerializer.Serialize(task, AgentWorkspaceJsonContext.Default.DatasetImportTask), AgentWorkspaceJsonContext.Default.DatasetImportTask)!;
         DatasetImportTaskState.ContentHash(restored).Should().Be(task.ContentHash);

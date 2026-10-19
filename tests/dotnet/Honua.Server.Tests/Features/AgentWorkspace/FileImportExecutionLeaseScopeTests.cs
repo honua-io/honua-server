@@ -287,7 +287,7 @@ public sealed class FileImportExecutionLeaseScopeTests
             storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(async _ =>
             {
                 if (state!.RevokeOnMetadata) await keys.RevokeAsync(key.Record.Id, default);
-                return state.Metadata;
+                return (CloudFile?)state.Metadata;
             });
             var session = Substitute.For<IDatabaseSession>();
             session.QuerySingleOrDefaultAsync<bool>(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<CancellationToken>())

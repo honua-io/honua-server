@@ -56,7 +56,7 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
                 .OfType<RouteEndpoint>().Single(endpoint => endpoint.RoutePattern.RawText?.EndsWith("/dataset-import-tasks", StringComparison.Ordinal) == true);
             var bodyMetadata = endpoint.Metadata.GetMetadata<IAcceptsMetadata>();
             bodyMetadata.Should().NotBeNull();
-            bodyMetadata!.RequestType.Should().Be(typeof(CreateDatasetImportTask));
+            bodyMetadata!.RequestType.Should().Be<CreateDatasetImportTask>();
             bodyMetadata.ContentTypes.Should().Contain("application/json");
             using var client = fixture.CreateAdminClient();
             var created = await Json(await client.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "tab-1" }));
@@ -307,7 +307,7 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             var renewalPath = authorityPath + "-renewals";
             var renewalEndpoint = fixture.Services.GetServices<EndpointDataSource>().SelectMany(source => source.Endpoints)
                 .OfType<RouteEndpoint>().Single(endpoint => endpoint.RoutePattern.RawText?.EndsWith("/authority-renewals", StringComparison.Ordinal) == true);
-            renewalEndpoint.Metadata.GetMetadata<IAcceptsMetadata>()!.RequestType.Should().Be(typeof(RenewDatasetImportAuthority));
+            renewalEndpoint.Metadata.GetMetadata<IAcceptsMetadata>()!.RequestType.Should().Be<RenewDatasetImportAuthority>();
             // This nonexpiring key has no refreshed expiry; neither adapter may invent one.
             (await agent.PostAsJsonAsync(renewalPath, renewal)).StatusCode.Should().Be(HttpStatusCode.Conflict);
             foreach (var malformed in new[]

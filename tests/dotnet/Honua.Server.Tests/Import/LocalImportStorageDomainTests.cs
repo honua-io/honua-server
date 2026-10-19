@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.FileStorage;
 using Honua.Import.FileImport.Resumable;
 using Honua.TestKit;
@@ -119,7 +120,7 @@ public sealed class LocalImportStorageDomainTests(RedisFixture redis)
         var ledger = await disk.LedgerAsync();
         Assert.Equal(32, (long)await connection.GetDatabase().HashGetAsync(ledger.Key, "bytes"));
         Assert.Equal(2, (long)await connection.GetDatabase().HashGetAsync(ledger.Key, "count"));
-        Assert.Equal(2, (await storage.ListFilesAsync()).Count());
+        Assert.Equal(2, (await storage.ListFilesAsync()).Count);
         var otherCandidate = RedisImportStorageBudget.ForObject(session, $"imports/resumable/{session.Id}/{Guid.NewGuid():N}.part", 16);
         await Assert.ThrowsAsync<InvalidOperationException>(() => original.TryReserveAsync(otherCandidate));
     }
@@ -233,7 +234,7 @@ public sealed class LocalImportStorageDomainTests(RedisFixture redis)
             Convert.ToHexStringLower(SHA256.HashData(content)));
     }
 
-    private static IConnectionMultiplexer RelayWithLostReply(IConnectionMultiplexer connection, Func<RedisValue[]?, bool> loseReply)
+    private static IConnectionMultiplexer RelayWithLostReply(ConnectionMultiplexer connection, Func<RedisValue[]?, bool> loseReply)
     {
         var database = Substitute.For<IDatabase>();
         database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
