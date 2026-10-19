@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Infrastructure.Security;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;

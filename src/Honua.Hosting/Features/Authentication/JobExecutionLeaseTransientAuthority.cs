@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Infrastructure.Authentication;
 
