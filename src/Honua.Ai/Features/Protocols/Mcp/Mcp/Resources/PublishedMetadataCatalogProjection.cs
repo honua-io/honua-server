@@ -72,7 +72,7 @@ internal static class PublishedMetadataCatalogProjection
         foreach (var service in snapshot.Graph.Services.Where(service =>
                      string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase)))
         {
-            var projected = await ProjectAsync(context, snapshot, service, refuseDenied, cancellationToken)
+            var projected = await ProjectAsync(context, snapshot, service, refuseDenied: false, cancellationToken)
                 .ConfigureAwait(false);
             if (projected is null)
             {
@@ -86,6 +86,20 @@ internal static class PublishedMetadataCatalogProjection
             }
 
             found = projected;
+        }
+
+        if (found is null && refuseDenied)
+        {
+            // Match the index's visible catalog first. If no matching service
+            // is readable, preserve the typed authorization refusal for a
+            // genuine policy denial without rejecting a different readable
+            // service merely because a hidden duplicate appears first.
+            foreach (var service in snapshot.Graph.Services.Where(service =>
+                         string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase)))
+            {
+                _ = await ProjectAsync(context, snapshot, service, refuseDenied: true, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         return found;

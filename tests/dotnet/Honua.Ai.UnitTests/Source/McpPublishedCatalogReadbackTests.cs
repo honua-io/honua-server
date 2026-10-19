@@ -299,6 +299,42 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    public async Task Index_RestrictedSameNameService_DoesNotMakeAllowedUriUnreadable()
+    {
+        var graph = Catalog();
+        graph = graph with
+        {
+            Services =
+            [
+                graph.Services[0] with
+                {
+                    AccessPolicy = new AccessPolicy { AllowedRoles = ["private-road-reader"] }
+                },
+                graph.Services[0] with
+                {
+                    Metadata = graph.Services[0].Metadata with { Id = "allowed-service" }
+                }
+            ],
+            Publications =
+            [
+                graph.Publications[0],
+                graph.Publications[0] with
+                {
+                    Metadata = graph.Publications[0].Metadata with { Id = "allowed-publication" },
+                    ServiceId = "allowed-service"
+                }
+            ]
+        };
+        var index = new PromotionSurfaceIndexResource(
+            _promotions, _deployments, _jobs, NullLogger<PromotionSurfaceIndexResource>.Instance);
+
+        var listed = await index.ReadAsync(Context(graph),
+            "honua://published-services", CancellationToken.None);
+        McpTestFactory.ParseJson(listed.Contents[0].Text).GetProperty("count").GetInt32().Should().Be(1);
+        (await ReadAsync(graph)).GetProperty("metadataServiceId").GetString().Should().Be("allowed-service");
+    }
+
+    [UnitTest]
     public async Task Read_DuplicatePublicLayerIndex_RefusesAmbiguousPublishedLayer()
     {
         var graph = Catalog();
