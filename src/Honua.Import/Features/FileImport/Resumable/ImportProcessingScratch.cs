@@ -5,13 +5,17 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Import.FileImport.Resumable;
 
-internal sealed class ImportProcessingScratchFactory(string directory, IImportStorageBudget budget)
+internal sealed class ImportProcessingScratchFactory(string directory, IImportStorageBudget budget,
+    IStorageDomainMutationFence? domainFence = null)
     : IImportProcessingScratchFactory
 {
-    public Task<IImportProcessingScratch> CreateAsync(ImportTransferProvenance transfer, long maximumBytes,
+    internal bool IsBoundToMutationFence(IStorageDomainMutationFence fence) => ReferenceEquals(domainFence, fence);
+
+    public async Task<IImportProcessingScratch> CreateAsync(ImportTransferProvenance transfer, long maximumBytes,
         int maximumFiles, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(transfer);
@@ -22,14 +26,24 @@ internal sealed class ImportProcessingScratchFactory(string directory, IImportSt
             throw new ArgumentException("Processing scratch requires a configured volume and bounded capacity.");
         cancellationToken.ThrowIfCancellationRequested();
         var root = Path.Join(Path.GetFullPath(directory), $"honua-processing-{transfer.UploadId}-{Guid.NewGuid():N}");
-        if (OperatingSystem.IsWindows()) Directory.CreateDirectory(root);
-        else Directory.CreateDirectory(root, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        return Task.FromResult<IImportProcessingScratch>(new ImportProcessingScratch(root, transfer, budget, maximumBytes, maximumFiles));
+        var lease = domainFence is null ? null : await domainFence.EnterMutationAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (OperatingSystem.IsWindows()) Directory.CreateDirectory(root);
+            else Directory.CreateDirectory(root, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            return new ImportProcessingScratch(root, transfer, budget, maximumBytes, maximumFiles, domainFence, lease);
+        }
+        catch
+        {
+            if (lease is not null) await lease.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 }
 
 internal sealed class ImportProcessingScratch(string directory, ImportTransferProvenance transfer,
-    IImportStorageBudget budget, long maximumBytes, int maximumFiles) : IImportProcessingScratch
+    IImportStorageBudget budget, long maximumBytes, int maximumFiles,
+    IStorageDomainMutationFence? domainFence = null, IAsyncDisposable? mutationLease = null) : IImportProcessingScratch
 {
     internal const int FileAccountingOverhead = 64 * 1024;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -39,6 +53,9 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
     private bool _disposed;
     private bool _physicalDeleted;
     private bool _cleanupCompleted;
+    // The importer also creates derived directories and removes files between
+    // managed writes. Keep census excluded for the entire active workspace.
+    private IAsyncDisposable? _mutationLease = mutationLease;
 
     public string DirectoryPath { get; } = directory;
 
@@ -132,6 +149,12 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
         {
             if (_cleanupCompleted) return;
             _disposed = true;
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            // A failed cleanup closes the workspace and releases its mutation
+            // lease so census can recover it. A later cleanup retries under a
+            // fresh lease; retained files and charges must never be mutated unfenced.
+            if (_mutationLease is null && domainFence is not null)
+                _mutationLease = await domainFence.EnterMutationAsync(cleanup.Token).ConfigureAwait(false);
             // Delete content before manifests. A failed content deletion must leave its
             // physical/accounting association available for later census. Exists() is not
             // proof of absence: it also returns false for inaccessible paths.
@@ -142,12 +165,22 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
                 catch (DirectoryNotFoundException) { }
                 _physicalDeleted = true;
             }
-            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             foreach (var reservation in _reservations)
                 _ = await budget.ReleaseDeletedAsync(reservation, cleanup.Token).ConfigureAwait(false);
             _cleanupCompleted = true;
         }
-        finally { _gate.Release(); }
+        finally
+        {
+            try
+            {
+                if (_mutationLease is { } lease)
+                {
+                    _mutationLease = null;
+                    await lease.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+            finally { _gate.Release(); }
+        }
     }
 }
 

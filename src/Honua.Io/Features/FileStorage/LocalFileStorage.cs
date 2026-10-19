@@ -35,6 +35,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     /// <param name="options">Local storage options</param>
     /// <param name="logger">Logger instance</param>
     /// <param name="progressStore">Upload progress store</param>
+    /// <param name="domainFence">Optional host-owned fence covering physical mutations and metadata publication.</param>
     public LocalFileStorage(
         IOptions<LocalStorageOptions> options,
         ILogger<LocalFileStorage> logger,

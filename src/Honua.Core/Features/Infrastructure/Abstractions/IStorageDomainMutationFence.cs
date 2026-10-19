@@ -14,5 +14,7 @@ public interface IStorageDomainMutationFence
     /// Enters an initialized domain. Nested mutations must use independently held shared
     /// leases; no ambient flag may bypass initialization or the exclusive recovery fence.
     /// </summary>
+    /// <param name="cancellationToken">Cancellation while entering the domain.</param>
+    /// <returns>A lease retained until all physical mutations and metadata publication finish.</returns>
     ValueTask<IAsyncDisposable> EnterMutationAsync(CancellationToken cancellationToken = default);
 }

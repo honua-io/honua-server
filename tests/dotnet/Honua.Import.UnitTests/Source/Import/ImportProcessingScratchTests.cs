@@ -4,6 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Import.FileImport.Resumable;
 using Honua.TestKit.Attributes;
 
@@ -11,6 +12,56 @@ namespace Honua.Import.UnitTests.Import;
 
 public sealed class ImportProcessingScratchTests
 {
+    [UnitTest]
+    public async Task WorkspaceHoldsMutationFenceThroughPhysicalWritesAndAccountingCleanup()
+    {
+        using var fixture = new Fixture();
+        fixture.Fence.BeforeAcquire = () => Assert.False(Directory.Exists(fixture.Root));
+        await using var scratch = await fixture.CreateAsync();
+        fixture.Budget.Directory = scratch.DirectoryPath;
+        Assert.Equal(1, fixture.Fence.Active);
+        using var source = new ReadObserverStream([1, 2, 3], () => Assert.Equal(1, fixture.Fence.Active));
+        await scratch.WriteFileAsync(source, Path.Join(scratch.DirectoryPath, "data"), 3);
+        Assert.Equal(1, fixture.Fence.Active);
+        await scratch.DisposeAsync();
+        Assert.Equal(0, fixture.Fence.Active);
+        Assert.Equal(1, fixture.Fence.Acquired);
+        Assert.Single(fixture.Budget.Released);
+    }
+
+    [UnitTest]
+    public async Task CleanupFailureReleasesMutationFenceAndRetryReacquiresBeforeReleasingAccounting()
+    {
+        using var fixture = new Fixture();
+        var scratch = await fixture.CreateAsync();
+        fixture.Budget.Directory = scratch.DirectoryPath;
+        using var source = new MemoryStream([1]);
+        await scratch.WriteFileAsync(source, Path.Join(scratch.DirectoryPath, "data"), 1);
+        fixture.Budget.ReleaseUnavailable = true;
+        await Assert.ThrowsAsync<IOException>(() => scratch.DisposeAsync().AsTask());
+        Assert.Equal(0, fixture.Fence.Active);
+        Assert.Empty(fixture.Budget.Released);
+        fixture.Budget.ReleaseUnavailable = false;
+        await scratch.DisposeAsync();
+        Assert.Equal(2, fixture.Fence.Acquired);
+        Assert.Equal(0, fixture.Fence.Active);
+        Assert.Single(fixture.Budget.Released);
+    }
+
+    [UnitTest]
+    public async Task PhysicalWorkspaceCreationFailureReleasesMutationFence()
+    {
+        using var fixture = new Fixture();
+        await File.WriteAllTextAsync(fixture.Root, "not a directory");
+        try
+        {
+            await Assert.ThrowsAsync<IOException>(() => fixture.CreateAsync());
+            Assert.Equal(1, fixture.Fence.Acquired);
+            Assert.Equal(0, fixture.Fence.Active);
+        }
+        finally { File.Delete(fixture.Root); }
+    }
+
     [UnitTest]
     public async Task ExactCopy_ReservesBeforeReadingAndReleasesOnlyAfterDeletion()
     {
@@ -136,14 +187,40 @@ public sealed class ImportProcessingScratchTests
     private sealed class Fixture : IDisposable
     {
         internal string Root { get; } = Path.Join(Path.GetTempPath(), "honua-processing-test-" + Guid.NewGuid().ToString("N"));
-        internal Budget Budget { get; } = new();
+        internal Fence Fence { get; } = new();
+        internal Budget Budget { get; }
+        internal Fixture() => Budget = new(Fence);
         internal Task<IImportProcessingScratch> CreateAsync(long maximumBytes = 1024 * 1024)
-            => new ImportProcessingScratchFactory(Root, Budget).CreateAsync(
+            => new ImportProcessingScratchFactory(Root, Budget, Fence).CreateAsync(
                 new(new string('a', 32), "owner", "tenant", "target", "workspace", "task", 1, new string('b', 64)), maximumBytes, 10);
         public void Dispose() { if (Directory.Exists(Root)) Directory.Delete(Root, true); }
     }
 
-    private sealed class Budget : IImportStorageBudget
+    private sealed class Fence : IStorageDomainMutationFence
+    {
+        internal int Active;
+        internal int Acquired;
+        internal Action? BeforeAcquire;
+        public ValueTask<IAsyncDisposable> EnterMutationAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            BeforeAcquire?.Invoke();
+            Active++;
+            Acquired++;
+            return ValueTask.FromResult<IAsyncDisposable>(new Lease(this));
+        }
+        private sealed class Lease(Fence owner) : IAsyncDisposable
+        {
+            private bool _released;
+            public ValueTask DisposeAsync()
+            {
+                if (!_released) { owner.Active--; _released = true; }
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
+    private sealed class Budget(Fence fence) : IImportStorageBudget
     {
         internal string? Directory { get; set; }
         internal bool Allow { get; set; } = true;
@@ -153,12 +230,14 @@ public sealed class ImportProcessingScratchTests
         internal List<ImportStorageReservation> Released { get; } = [];
         public Task<bool> TryReserveAsync(ImportStorageReservation reservation, CancellationToken cancellationToken = default)
         {
+            Assert.Equal(1, fence.Active);
             Reservations.Add(reservation);
             if (Unknown) throw new IOException("Admission reply lost.");
             return Task.FromResult(Allow);
         }
         public Task<bool> ReleaseDeletedAsync(ImportStorageReservation reservation, CancellationToken cancellationToken = default)
         {
+            Assert.Equal(1, fence.Active);
             Assert.False(System.IO.Directory.Exists(Directory), "Accounting must survive until physical deletion.");
             if (ReleaseUnavailable) throw new IOException("Accounting unavailable.");
             Released.Add(reservation);
