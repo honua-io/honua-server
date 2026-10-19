@@ -126,6 +126,7 @@ internal sealed partial class FeatureDataAccess
         SqlFragment? writeCheck,
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
+        OwnerEditGuard? ownerGuard,
         CancellationToken cancellationToken)
         => RunRowSecurityCheckedWriteAsync(
             writeCheck,
@@ -136,7 +137,8 @@ internal sealed partial class FeatureDataAccess
             versionId: null,
             async () =>
             {
-                var updated = await UpdateWithConnectionAsync(layerId, feature, connection, transaction, cancellationToken).ConfigureAwait(false);
+                var updated = await UpdateWithConnectionAsync(
+                    layerId, feature, connection, transaction, ownerGuard, cancellationToken).ConfigureAwait(false);
                 return (updated.Id, updated);
             },
             cancellationToken);
