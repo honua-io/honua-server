@@ -16,6 +16,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Coordination;
 /// Tests for RedisDistributedLeaderElection — validates distributed leader election behavior.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
+[Collection(RedisLeaderElectionTimingCollection.Name)]
 public sealed class RedisDistributedLeaderElectionTests : IDisposable
 {
     private readonly RedisDistributedLeaderElection _leaderElection;
@@ -435,4 +436,15 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
             _redis.Object,
             NullLogger<RedisDistributedLeaderElection>.Instance);
     }
+}
+
+/// <summary>
+/// Isolates thread-pool dispatch deadlines and the process-wide unhandled-exception
+/// observation from unrelated test classes. Disposal assertions retain their bounds.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
+public sealed class RedisLeaderElectionTimingCollection
+{
+    public const string Name = "RedisLeaderElectionTiming";
 }

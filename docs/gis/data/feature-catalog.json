@@ -9608,6 +9608,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ExportImage_WithBboxBeyondRasterFootprint_CoversRequestedBboxWithNoDataOutsideData",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ImageServerOperations_WithEsriEpochMillisecondTimeExtent_AreNotRejected",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ImageServerOperations_WithMixedResolutionMosaic_AreServedFromTheAlignedUnion",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_AdminKeyOutsideAllowedRoles_DoesNotBypassRasterPolicy",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_JpegFormat_ReturnsSeededRaster",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_MaximumSize_ReturnsSeededRaster",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_MinimumSize_ReturnsSeededRaster",
