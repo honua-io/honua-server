@@ -196,6 +196,58 @@ public sealed partial class CoreSchemaDivergenceGuardTests
         translate.Should().Throw<InvalidOperationException>();
     }
 
+    [SkippableFact]
+    public async Task SensingAuthority_UnrelatedRequirement_RemainsScopedWhileFullAndSensingGuardsRefuse()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is required for scoped schema guard proof.");
+        var connectionString = await CreateSensingBaselineAsync();
+        await ExecuteAsync(connectionString, "DROP TABLE honua.sta_historical_location_location");
+        var before = await CaptureSensingAuthorityStateAsync(connectionString);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await guard.Awaiting(instance => instance.VerifyRequirementAsync(connection,
+            DatabaseSchemaRequirement.MetadataV2Snapshot)).Should().NotThrowAsync();
+        await guard.Awaiting(instance => instance.VerifyRequirementAsync(connection,
+            DatabaseSchemaRequirement.SensorThings)).Should().ThrowAsync<DatabaseSchemaFloorException>();
+        await guard.Awaiting(instance => instance.VerifyAsync(connection)).Should().ThrowAsync<DatabaseSchemaFloorException>();
+        (await CaptureSensingAuthorityStateAsync(connectionString)).Should().Be(before);
+    }
+
+    [SkippableTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SensingAuthority_EmptyJournalAdoption_UsesCreationFloorInsteadOfRuntimeCompleteness(bool malformedBase)
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is required for creation-floor adoption proof.");
+        var raw = await postgres.CreateFreshDatabaseAsync();
+        var connectionString = new NpgsqlConnectionStringBuilder(raw) { Pooling = false }.ConnectionString;
+        await ExecuteAsync(connectionString, "CREATE SCHEMA honua; CREATE TABLE public.schema_versions(scriptname text NOT NULL)");
+        const string name = "Honua.Server.Migrations.059_CreateSensorThings.sql";
+        await using (var stream = typeof(Program).Assembly.GetManifestResourceStream(name)!)
+        using (var reader = new StreamReader(stream))
+            await ExecuteAsync(connectionString, (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", "honua", StringComparison.Ordinal));
+        // A valid subset of 127 creation-time objects is legitimate before the first
+        // migration. The pending script creates the remainder; runtime completeness
+        // must not run in this opt-in creation-floor validation phase.
+        await ExecuteAsync(connectionString, """
+            CREATE SEQUENCE honua.sta_location_id_seq;
+            CREATE TABLE honua.sta_location(id bigint PRIMARY KEY DEFAULT nextval('honua.sta_location_id_seq'),
+              name text NOT NULL,description text NOT NULL,encoding_type text NOT NULL,location jsonb NOT NULL,properties jsonb);
+            """);
+        if (malformedBase)
+            await ExecuteAsync(connectionString, "ALTER TABLE honua.sta_thing ALTER COLUMN name TYPE integer USING 1");
+        var before = await CaptureSensingAuthorityStateAsync(connectionString);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        var adopt = () => guard.VerifyFirstMigrationAdoptionAsync(connection);
+        if (malformedBase) await adopt.Should().ThrowAsync<DatabaseSchemaFloorException>();
+        else await adopt.Should().NotThrowAsync();
+        (await CaptureSensingAuthorityStateAsync(connectionString)).Should().Be(before);
+        await guard.Awaiting(instance => instance.VerifyConsistencyAsync(connection)).Should().ThrowAsync<DatabaseSchemaFloorException>();
+    }
+
     private static PostgresCoreSchemaGuard CreateSensingGuard(string schema) => new(ServerCoreSchemaMigrations.Manifest,
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = schema }).Build());
 

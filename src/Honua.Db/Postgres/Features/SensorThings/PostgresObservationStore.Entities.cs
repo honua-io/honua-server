@@ -107,7 +107,7 @@ internal sealed partial class PostgresObservationStore
     private async Task<SensingTables> ResolveSensingTablesAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, CancellationToken ct)
     {
         var schema = _schemaContext?.CurrentSchema ?? _configuredSchema;
-        var physical = await PostgresSensorThingsSchema.ResolveAsync(connection, schema, true, transaction, ct, requireConfiguredBase: true).ConfigureAwait(false);
+        var physical = await PostgresSensorThingsSchema.ResolveAsync(connection, schema, true, transaction, requireConfiguredBase: true, cancellationToken: ct).ConfigureAwait(false);
         return new(string.IsNullOrWhiteSpace(schema) ? "honua" : schema, physical);
     }
 
@@ -183,7 +183,7 @@ internal sealed partial class PostgresObservationStore
         return $"ST_SetSRID(ST_GeomFromGeoJSON(NULLIF({geometry},'null'::jsonb)),4326)";
     }
 
-    private string RelationshipPredicate(SensingTables tables, string parent, string navigation, string childAlias = "d", string parentExpression = "@parent") => ((parent, navigation) switch
+    private static string RelationshipPredicate(SensingTables tables, string parent, string navigation, string childAlias = "d", string parentExpression = "@parent") => ((parent, navigation) switch
     {
         ("Things", "Datastreams") => "d.thing_id=@parent",
         ("Sensors", "Datastreams") => "d.sensor_id=@parent",
@@ -631,7 +631,7 @@ internal sealed partial class PostgresObservationStore
         }
     }
 
-    private async Task RecordHistoryAsync(SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, long thing, CancellationToken ct)
+    private static async Task RecordHistoryAsync(SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, long thing, CancellationToken ct)
     {
         await using (var locations = new NpgsqlCommand($"SELECT EXISTS(SELECT 1 FROM {tables.AssociationTable("sta_thing_location")} WHERE thing_id=@thing)", connection, transaction))
         {
@@ -653,7 +653,7 @@ internal sealed partial class PostgresObservationStore
         await ExecuteCatalogScalarAsync(command, ct).ConfigureAwait(false);
     }
 
-    private async Task ValidateCurrentLocationEncodingsAsync(SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, long thing, CancellationToken ct)
+    private static async Task ValidateCurrentLocationEncodingsAsync(SensingTables tables, NpgsqlConnection connection, NpgsqlTransaction transaction, long thing, CancellationToken ct)
     {
         await using var command = new NpgsqlCommand($"SELECT EXISTS (SELECT 1 FROM {tables.AssociationTable("sta_thing_location")} tl JOIN {tables.EntityTable("Locations")} l ON l.id=tl.location_id WHERE tl.thing_id=@thing GROUP BY lower(l.encoding_type) HAVING count(*)>1)", connection, transaction);
         command.Parameters.AddWithValue("thing", thing);
@@ -880,8 +880,9 @@ internal sealed partial class PostgresObservationStore
         _ => null
     };
 
-    private async Task<IReadOnlyList<DateTimeOffset>> LockObservationTimesAsync(
-        SensingTables tables,        NpgsqlConnection connection, NpgsqlTransaction transaction, long id, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<DateTimeOffset>> LockObservationTimesAsync(
+        SensingTables tables,
+        NpgsqlConnection connection, NpgsqlTransaction transaction, long id, CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand($"SELECT phenomenon_time FROM {tables.EntityTable("Observations")} WHERE id=@id FOR UPDATE", connection, transaction);
         command.Parameters.AddWithValue("id", id);

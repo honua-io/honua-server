@@ -42,7 +42,7 @@ internal static class PostgresSensorThingsSchema
     ];
 
     internal static async Task<string> ResolveAsync(DbConnection connection, string? configuredSchema,
-        bool sensingApplied, DbTransaction? transaction = null, CancellationToken cancellationToken = default, bool requireConfiguredBase = false)
+        bool sensingApplied, DbTransaction? transaction = null, bool requireConfiguredBase = false, CancellationToken cancellationToken = default)
     {
         var configured = string.IsNullOrWhiteSpace(configuredSchema) ? "honua" : configuredSchema;
         _ = SchemaSearchPath.ValidateAndQuote(configured);

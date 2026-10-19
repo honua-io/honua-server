@@ -154,7 +154,7 @@ internal sealed partial class PostgresObservationStore
             var prefix = navigation + "/";
             var outerAlias = _alias;
             var innerAlias = "q" + (++_scopeIndex).ToString(CultureInfo.InvariantCulture);
-            var predicate = store.RelationshipPredicate(tables, sourceSet, navigation, innerAlias, sourceAlias + ".id");
+            var predicate = RelationshipPredicate(tables, sourceSet, navigation, innerAlias, sourceAlias + ".id");
             var rewritten = Rewrite(expression, property =>
             {
                 var reference = _outerReferences.TryGetValue(property.PropertyName, out var outer)

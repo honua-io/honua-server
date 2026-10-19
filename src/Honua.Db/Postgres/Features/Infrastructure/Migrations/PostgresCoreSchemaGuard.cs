@@ -399,7 +399,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     {
         ArgumentNullException.ThrowIfNull(connection);
         await VerifyReaderCompatibilityAsync(connection, cancellationToken).ConfigureAwait(false);
-        var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+        var state = await ReadStateAsync(connection, cancellationToken, resolveSensingAuthority: true).ConfigureAwait(false);
 
         if (state.RequiresRasterFloor)
         {
@@ -474,7 +474,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     {
         ArgumentNullException.ThrowIfNull(connection);
         await VerifyReaderCompatibilityAsync(connection, cancellationToken).ConfigureAwait(false);
-        var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+        var state = await ReadStateAsync(connection, cancellationToken, resolveSensingAuthority: true).ConfigureAwait(false);
 
         if (!state.JournalIsEmpty)
         {
@@ -520,6 +520,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         // journaled, a migration-owned table without its journal row is ordinary divergence.
         if (!state.JournalIsEmpty)
         {
+            state = await ReadStateAsync(connection, cancellationToken, resolveSensingAuthority: true).ConfigureAwait(false);
             VerifyConsistency(state);
             return;
         }
@@ -730,7 +731,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);
-        var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+        var state = await ReadStateAsync(connection, cancellationToken,
+            resolveSensingAuthority: requirement == DatabaseSchemaRequirement.SensorThings).ConfigureAwait(false);
 
         var (migration, requiredTables, requiredColumns, requiredIndexes) = requirement switch
         {
@@ -1129,7 +1131,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             .ToArray();
     }
 
-    private async Task<SchemaState> ReadStateAsync(DbConnection connection, CancellationToken cancellationToken)
+    private async Task<SchemaState> ReadStateAsync(DbConnection connection, CancellationToken cancellationToken,
+        bool resolveSensingAuthority = false)
     {
         var appliedScripts = new HashSet<string>(StringComparer.Ordinal);
         await using (var journalCommand = connection.CreateCommand())
@@ -1153,7 +1156,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             }
         }
 
-        var sensingSchema = _migrations.SensorThingsSensingMigration is { } sensingMigration
+        var sensingSchema = resolveSensingAuthority && _migrations.SensorThingsSensingMigration is { } sensingMigration
             ? await PostgresSensorThingsSchema.ResolveAsync(connection, _schemaName, appliedScripts.Contains(sensingMigration),
                 cancellationToken: cancellationToken).ConfigureAwait(false)
             : _schemaName;
