@@ -139,10 +139,11 @@ internal static partial class GPServerEndpoints
         }
     }
 
-    private static IResult ExecutionFault(IResult response, XNamespace soap)
+    internal static IResult ExecutionFault(IResult response, XNamespace soap)
         => CreateSoapFaultFromResult(response,
             (response as IValueHttpResult)?.Value switch
             {
+                ProblemDetailsResponse problem => problem.Detail,
                 Microsoft.AspNetCore.Mvc.ProblemDetails problem =>
                     problem.Detail ?? problem.Title ?? "The GP operation failed.",
                 ApiErrorResponse { Error: { Details: { Length: > 0 } details } } =>
