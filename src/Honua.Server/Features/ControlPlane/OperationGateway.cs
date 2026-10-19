@@ -833,7 +833,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     // Derive a stable proposal id from (kind, descriptor, idempotency key) so a repeated proposal
     // maps to the same durable record. This makes TryCreate collide on a duplicate,
     // giving the gateway a race-safe fetch-and-return instead of a second proposal.
-    private static string DeriveProposalId(OperationClass kind, string? operationId, string idempotencyKey, string? tenantId)
+    internal static string DeriveProposalId(OperationClass kind, string? operationId, string idempotencyKey, string? tenantId)
     {
         var key = $"{kind}:{operationId}:{idempotencyKey}";
         var material = System.Text.Encoding.UTF8.GetBytes(tenantId is null ? key : $"{tenantId.Length}:{tenantId}:{key}");
