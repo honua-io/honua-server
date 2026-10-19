@@ -86,6 +86,26 @@ class StandingCertPlanWorkflow(unittest.TestCase):
             entry.private_path(link, exists=False)
         self.assertEqual(stat.S_IMODE(self.request.stat().st_mode), 0o600)
 
+    def test_sharded_github_token_host_and_host_substitution(self):
+        valid = "https://pipelinesghubeus13.actions.githubusercontent.com/abc/_apis/token?api-version=2.0"
+        with mock.patch.dict(os.environ, {"ACTIONS_ID_TOKEN_REQUEST_URL": valid,
+                                          "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "PRIVATE"}, clear=True), \
+             mock.patch.object(entry.urllib.request, "build_opener") as opener:
+            opener.return_value.open.return_value = io.BytesIO(b'{"value":"header.payload.signature"}')
+            self.assertEqual(entry.oidc_token(), "header.payload.signature")
+            request = opener.return_value.open.call_args.args[0]
+            self.assertEqual(request.get_header("Authorization"), "Bearer PRIVATE")
+            self.assertIn("audience=sts.amazonaws.com", request.full_url)
+        for host in ("pipelines.actions.githubusercontent.com.evil.invalid",
+                     "actions.githubusercontent.com", "evilactions.githubusercontent.com"):
+            with self.subTest(host=host), mock.patch.dict(os.environ, {
+                    "ACTIONS_ID_TOKEN_REQUEST_URL": "https://" + host + "/token",
+                    "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "PRIVATE"}, clear=True), \
+                 mock.patch.object(entry.urllib.request, "build_opener") as opener:
+                with self.assertRaisesRegex(ValueError, "OIDC issuer endpoint"):
+                    entry.oidc_token()
+                opener.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

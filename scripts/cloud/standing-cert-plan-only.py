@@ -41,8 +41,11 @@ def oidc_token():
     url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
     auth = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
     parsed = urllib.parse.urlsplit(url)
-    if parsed.scheme != "https" or parsed.hostname not in ("pipelines.actions.githubusercontent.com",
-                                                                "actions.githubusercontent.com"):
+    # GitHub documents *.actions.githubusercontent.com for token retrieval;
+    # runners may use a regional, sharded host instead of the base pipelines host.
+    if (parsed.scheme != "https" or not parsed.hostname
+            or not parsed.hostname.endswith(".actions.githubusercontent.com")
+            or parsed.username or parsed.password or parsed.port not in (None, 443)):
         raise ValueError("OIDC issuer endpoint")
     query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
     query.append(("audience", "sts.amazonaws.com"))

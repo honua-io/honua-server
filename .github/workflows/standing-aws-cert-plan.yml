@@ -44,6 +44,7 @@ jobs:
 
   plan:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk'
+    needs: controls
     name: Retain unapproved private plan
     runs-on: [self-hosted, linux, x64, honua-cert-private]
     environment: cert
