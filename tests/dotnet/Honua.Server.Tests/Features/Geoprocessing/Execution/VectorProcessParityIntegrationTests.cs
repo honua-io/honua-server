@@ -210,6 +210,8 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
             var artifact = package.Artifacts.Should().ContainSingle().Subject;
             artifact.Kind.Should().Be(ArtifactKind.FeatureLayer);
+            artifact.Uri.Should().StartWith("data:application/json;base64,");
+            artifact.ContentType.Should().Be("application/json");
             artifact.Metadata.Should().ContainKey("connectionId")
                 .WhoseValue.Should().Be(connectionId.ToString("D"));
             artifact.Metadata.Should().ContainKey("schema").WhoseValue.Should().Be("public");
@@ -232,6 +234,8 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             restoredPackage!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
             var restoredArtifact = restoredPackage.Artifacts.Should().ContainSingle().Subject;
             restoredArtifact.ArtifactId.Should().Be(artifact.ArtifactId);
+            restoredArtifact.Uri.Should().Be(artifact.Uri);
+            restoredArtifact.ContentType.Should().Be("application/json");
             restoredArtifact.Metadata.Should().ContainKey("connectionId")
                 .WhoseValue.Should().Be(connectionId.ToString("D"));
             restoredArtifact.Metadata.Should().ContainKey("schema").WhoseValue.Should().Be("public");
