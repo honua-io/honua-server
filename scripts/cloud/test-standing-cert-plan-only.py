@@ -6,6 +6,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import stat
 import tempfile
 import time
@@ -99,7 +100,7 @@ class StandingCertPlanWorkflow(unittest.TestCase):
         out = io.StringIO()
         with mock.patch.dict(os.environ, self.env, clear=True), \
              mock.patch.object(entry.subprocess, "check_output", side_effect=self.git), \
-             mock.patch.object(entry.subprocess, "run", return_value=child) as run, \
+             mock.patch.object(entry, "run_producer", return_value=child) as run, \
              mock.patch.object(entry, "oidc_token", return_value="header.payload.signature"), \
              contextlib.redirect_stdout(out):
             entry.main()
@@ -107,7 +108,24 @@ class StandingCertPlanWorkflow(unittest.TestCase):
         self.assertNotIn("PRIVATE SENTINEL", out.getvalue())
         self.assertFalse(self.token.exists())
         self.assertEqual(run.call_args.args[0][-2:], ["--request", str(self.request)])
-        self.assertNotIn("ACTIONS_RUNTIME_TOKEN", run.call_args.kwargs["env"])
+        self.assertNotIn("ACTIONS_RUNTIME_TOKEN", run.call_args.args[2])
+
+    def test_producer_timeout_signals_graceful_cleanup(self):
+        marker = self.base / "interrupted"
+        script = self.base / "producer.py"
+        script.write_text("""import signal, sys, time
+from pathlib import Path
+def cleanup(*_):
+    Path(sys.argv[1]).write_text('graceful')
+    raise SystemExit(0)
+signal.signal(signal.SIGINT, cleanup)
+while True:
+    time.sleep(0.01)
+""")
+        with self.assertRaises(subprocess.TimeoutExpired):
+            entry.run_producer(["python3", "-I", str(script), str(marker)], self.base,
+                               dict(os.environ), timeout=1, grace_seconds=2)
+        self.assertEqual(marker.read_text(), "graceful")
 
     def test_changed_producer_refused_before_token(self):
         with mock.patch.dict(os.environ, self.env, clear=True), \

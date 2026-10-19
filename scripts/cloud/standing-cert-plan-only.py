@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import signal
 import re
 import stat
 import subprocess
@@ -62,6 +63,29 @@ def oidc_token():
     if not isinstance(token, str) or token.count(".") != 2:
         raise ValueError("OIDC response")
     return token
+
+
+def run_producer(args, source, child_env, timeout=2100, grace_seconds=75):
+    """Let the IaC producer interrupt Terraform and release its state lock."""
+    process = subprocess.Popen(args, cwd=source, env=child_env,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               text=True, start_new_session=True)
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except BaseException:
+        try:
+            os.killpg(process.pid, signal.SIGINT)
+            stdout, stderr = process.communicate(timeout=grace_seconds)
+        except ProcessLookupError:
+            process.wait()
+        except (subprocess.TimeoutExpired, KeyboardInterrupt, OSError):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.communicate()
+        raise
+    return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
 
 
 def main():
@@ -125,8 +149,8 @@ def main():
                 os.fsync(stream.fileno())
         child_env = {key: value for key, value in os.environ.items()
                      if not key.startswith("ACTIONS_") and key not in ("GITHUB_TOKEN", "GH_TOKEN")}
-        result = subprocess.run(["python3", "-I", str(script), "--request", str(request_file)], cwd=source,
-                                env=child_env, capture_output=True, text=True, timeout=2100, check=False)
+        result = run_producer(["python3", "-I", str(script), "--request", str(request_file)],
+                              source, child_env)
         document = json.loads(result.stdout)
         expiry = datetime.fromisoformat(document["expiresAtUtc"])
         if (result.returncode != 0 or set(document) != PUBLIC_KEYS
