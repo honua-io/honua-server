@@ -3186,7 +3186,7 @@
         "Durable per-parameter result retrieval: successful terminal GP jobs advertise named result parameters and jobs/{jobId}/results/{paramName} reads their values from the result-package store"
       ],
       "knownGaps": [
-        "GP environment control coverage is bounded: env:outSR, env:workspace, and env:overwriteOutput are honored on submitJob and execute; env:processSR is validated and preserved on both routes but does not yet change the processing CRS; other env:* controls (for example env:transferDomains) return 400 until engine support is available; the Esri 10.6.1\u002B context parameter maps context.outSR/context.processSR onto the same controls, accepts an empty extent, and rejects any other context property (or a context SR that conflicts with env:*) with 400",
+        "GP environment control coverage is bounded: env:outSR, env:workspace, and env:overwriteOutput are honored on submitJob and execute; nonempty env:processSR or context.processSR are rejected before execution or job submission (GeoServices error.code=400 over HTTP 200) because the engine cannot apply a processing-CRS override; other env:* controls (for example env:transferDomains) return an error with code 400 until engine support is available; the Esri 10.6.1\u002B context parameter maps context.outSR to env:outSR, accepts an empty extent, and rejects any other context property (or a context SR that conflicts with env:*) with code 400",
         "Esri-conventional task aliases do not adapt canonical Honua parameters to the same-named Esri tool\u0027s wire contract; for example Buffer accepts base64 WKB, SRID, and numeric distance rather than Esri JSON feature-record-set, linear-unit, and dissolve-option inputs (#2788)"
       ],
       "evidence": {
@@ -3362,7 +3362,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Runs sync-eligible (deterministic single-geometry geometry.* / conversion.geometry-format) tasks inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results \u002B messages). Async-only tasks return a 400 capability message pointing at submitJob. Both execute and submitJob honor env:outSR, env:workspace, and env:overwriteOutput; env:processSR is accepted and preserved but does not yet change the processing CRS; unsupported env:* controls return 400. context.outSR/context.processSR are applied as their env:* equivalents (#4030). A failed or cancelled run returns the GeoServices error envelope (code 500, job id and failure message in details) instead of an empty results list (#4034). Implemented in #1660."
+            "notes": "Runs sync-eligible (deterministic single-geometry geometry.* / conversion.geometry-format) tasks inline through the same canonical job runtime as submitJob and returns the Esri execute envelope (results \u002B messages). Async-only tasks return a 400 capability message pointing at submitJob. Both execute and submitJob honor env:outSR, env:workspace, and env:overwriteOutput; nonempty env:processSR or context.processSR are rejected before execution or job submission (GeoServices error.code=400 over HTTP 200); unsupported env:* controls return an error with code 400. context.outSR maps to env:outSR; null or blank processing references request no override. A failed or cancelled run returns the GeoServices error envelope (code 500, job id and failure message in details) instead of an empty results list (#4034). Implemented in #1660."
           },
           {
             "name": "Jobs List",
