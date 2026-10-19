@@ -68,6 +68,36 @@ public sealed class ImportScratchStorageFenceTests
         Assert.Equal(0, budget.ReleaseCalls);
     }
 
+    [UnitTest]
+    public async Task DeletedScratchRemainsChargedWhenParentCannotBeDurablySynchronized()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using var disk = new Disk();
+        var fence = new Fence();
+        var budget = new Budget();
+        var lease = await new ImportScratchStorage(disk.Root, budget, fence).AllocateAsync(Session(), disk.Root, 64);
+        var moved = disk.Root + "-moved";
+        // Keep the same actual scratch directory reachable for deletion, but
+        // make its configured parent unfit for the no-follow directory fsync.
+        Directory.Move(disk.Root, moved);
+        Directory.CreateSymbolicLink(disk.Root, moved);
+        try
+        {
+            await Assert.ThrowsAsync<IOException>(() => lease.DisposeAsync().AsTask());
+            Assert.Empty(Directory.EnumerateFiles(moved));
+            Assert.Equal(0, budget.ReleaseCalls);
+            Assert.Equal(0, fence.Active);
+        }
+        finally
+        {
+            Directory.Delete(disk.Root);
+            Directory.Move(moved, disk.Root);
+            await lease.DisposeAsync();
+        }
+        Assert.Equal(1, budget.ReleaseCalls);
+        Assert.Equal(2, fence.Entered);
+    }
+
     private static ImportUploadSession Session() => new()
     {
         Id = Guid.NewGuid().ToString("N"), Scope = new("owner", "tenant", "target", "workspace", "task", 1),

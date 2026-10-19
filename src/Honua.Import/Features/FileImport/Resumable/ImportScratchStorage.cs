@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.FileStorage;
 
 namespace Honua.Import.FileImport.Resumable;
 
@@ -139,6 +140,13 @@ internal sealed class ImportScratchLease(FileStream content, string path, IImpor
                 _mutationLease = await domainFence.EnterMutationAsync(cleanup.Token).ConfigureAwait(false);
             await Content.DisposeAsync().ConfigureAwait(false);
             File.Delete(path);
+            if (domainFence is not null)
+            {
+                // Deletion must survive a host restart before its capacity can
+                // be reused. A failed fsync retains the charge for reconciliation.
+                var parent = Path.GetDirectoryName(path)!;
+                LocalStorageDurability.FlushDirectoryTree(parent, parent);
+            }
             _ = await budget.ReleaseDeletedAsync(reservation, cleanup.Token).ConfigureAwait(false);
         }
         finally

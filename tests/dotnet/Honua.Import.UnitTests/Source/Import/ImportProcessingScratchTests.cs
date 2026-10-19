@@ -13,6 +13,35 @@ namespace Honua.Import.UnitTests.Import;
 public sealed class ImportProcessingScratchTests
 {
     [UnitTest]
+    public async Task DeletedWorkspaceRemainsChargedUntilParentSynchronizationSucceeds()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using var fixture = new Fixture();
+        var scratch = await fixture.CreateAsync();
+        fixture.Budget.Directory = scratch.DirectoryPath;
+        using var source = new MemoryStream([1]);
+        await scratch.WriteFileAsync(source, Path.Join(scratch.DirectoryPath, "data"), 1);
+        var moved = fixture.Root + "-moved";
+        Directory.Move(fixture.Root, moved);
+        Directory.CreateSymbolicLink(fixture.Root, moved);
+        try
+        {
+            await Assert.ThrowsAsync<IOException>(() => scratch.DisposeAsync().AsTask());
+            Assert.Empty(Directory.EnumerateFileSystemEntries(moved));
+            Assert.Empty(fixture.Budget.Released);
+            Assert.Equal(0, fixture.Fence.Active);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root);
+            Directory.Move(moved, fixture.Root);
+            await scratch.DisposeAsync();
+        }
+        Assert.Single(fixture.Budget.Released);
+        Assert.Equal(2, fixture.Fence.Acquired);
+    }
+
+    [UnitTest]
     public async Task WorkspaceHoldsMutationFenceThroughPhysicalWritesAndAccountingCleanup()
     {
         using var fixture = new Fixture();

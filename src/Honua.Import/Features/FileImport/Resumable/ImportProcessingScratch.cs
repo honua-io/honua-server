@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.FileStorage;
 
 namespace Honua.Import.FileImport.Resumable;
 
@@ -164,6 +165,13 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
                 try { Directory.Delete(DirectoryPath, recursive: true); }
                 catch (DirectoryNotFoundException) { }
                 _physicalDeleted = true;
+            }
+            if (domainFence is not null)
+            {
+                // Repeat this on cleanup retry even if deletion already returned:
+                // an earlier synchronization failure cannot free retained charges.
+                var parent = Path.GetDirectoryName(DirectoryPath)!;
+                LocalStorageDurability.FlushDirectoryTree(parent, parent);
             }
             foreach (var reservation in _reservations)
                 _ = await budget.ReleaseDeletedAsync(reservation, cleanup.Token).ConfigureAwait(false);
