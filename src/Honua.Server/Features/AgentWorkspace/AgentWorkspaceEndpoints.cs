@@ -90,6 +90,7 @@ internal static class AgentWorkspaceEndpoints
         });
         group.MapDatasetImportTasks();
         group.MapDatasetImportUploads();
+        group.MapDatasetImportSubmissions();
         group.MapGet("/target", async (IAgentWorkspaceStore store) => Results.Ok(new AgentTargetResponse(await store.GetTargetIdAsync().ConfigureAwait(false))));
         group.MapPost("/devops/authorize", AuthorizeDevOps);
         group.MapPost("/workspaces", CreateWorkspace);

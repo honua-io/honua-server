@@ -25,6 +25,7 @@ internal sealed class AgentWorkspaceToolSource(IAgentWorkspaceStore store, IServ
         if (importReady) tools.AddRange(AgentWorkspaceTool.DatasetImportTools);
         if (authorityReady) tools.AddRange(AgentWorkspaceTool.DatasetImportAuthorityReadTools);
         if (authorityReady && captureReady) tools.AddRange(AgentWorkspaceTool.DatasetImportAuthorityRenewTools);
+        if (capabilities?.IsService(typeof(DatasetImportSubmissionService)) == true) tools.AddRange(AgentWorkspaceTool.DatasetImportSubmissionTools);
         return ValueTask.FromResult<IReadOnlyList<IMcpTool>>(tools);
     }
 }
@@ -114,6 +115,22 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
             "\"workspaceId\",\"taskId\",\"revision\",\"request\"", false),
     ];
 
+    private const string DatasetSubmitSchema = """
+        {"type":"object","properties":{"taskContentHash":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+        "authorityRevision":{"type":"integer","minimum":1},"authorityFingerprint":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+        "policyContextFingerprint":{"type":"string","pattern":"^[0-9a-f]{64}$"}},
+        "required":["taskContentHash","authorityRevision","authorityFingerprint","policyContextFingerprint"],"additionalProperties":false}
+        """;
+    internal static readonly IMcpTool[] DatasetImportSubmissionTools =
+    [
+        new AgentWorkspaceTool("get_dataset_import_submission", "Read the original task preparation or actual accepted durable import job under current observer authority. Preparation alone is not acceptance. This never dispatches or retries a job; successful output names only the actual persisted physical dataset receipt.",
+            $"{Workspace},{Property("taskId", Identifier)},{DatasetRevision},{Property("contentHash", "{\"type\":\"string\",\"pattern\":\"^[0-9a-f]{64}$\"}")}",
+            "\"workspaceId\",\"taskId\",\"revision\",\"contentHash\"", true),
+        new AgentWorkspaceTool("submit_dataset_import", "Explicitly submit the exact retained-source task using its reviewed authority descriptor. Actual agent submission uses canonical durable queue, lease and side-effect/approval policy. Human contribution prepares and awaits the actual agent. Recover unknown outcomes with get_dataset_import_submission before any explicit original replay; never change the task or infer acceptance from preparation.",
+            $"{Workspace},{Property("taskId", Identifier)},{DatasetRevision},{Property("request", DatasetSubmitSchema)}",
+            "\"workspaceId\",\"taskId\",\"revision\",\"request\"", false),
+    ];
+
     public string Name => $"honua_workspace_{action}";
     public string WorkflowFamily => "lifecycle";
     public McpToolDescriptor Describe() => new()
@@ -164,6 +181,10 @@ internal sealed class AgentWorkspaceTool(string action, string description, stri
                 "get_turn" => await AgentWorkspaceEndpoints.GetTurn(context, store).ConfigureAwait(false),
                 "conversation" => await AgentWorkspaceEndpoints.GetConversation(context, store).ConfigureAwait(false),
                 "append_message" => await AgentWorkspaceEndpoints.AppendMessage(context, store, Parse(args, AgentWorkspaceJsonContext.Default.AppendAgentMessage)).ConfigureAwait(false),
+                "get_dataset_import_submission" => await DatasetImportSubmissionEndpoints.ReadAsync(context,
+                    args.Deserialize(AgentWorkspaceJsonContext.Default.ReadDatasetImportAuthority)).ConfigureAwait(false),
+                "submit_dataset_import" => await DatasetImportSubmissionEndpoints.SubmitAsync(context,
+                    args.Deserialize(AgentWorkspaceJsonContext.Default.SubmitDatasetImportCall)).ConfigureAwait(false),
                 "get_dataset_import_authority" => await DatasetImportTaskEndpoints.ReadAuthorityAsync(context,
                     Parse(args, AgentWorkspaceJsonContext.Default.ReadDatasetImportAuthority)).ConfigureAwait(false),
                 "renew_dataset_import_authority" => await DatasetImportTaskEndpoints.RenewAuthorityAsync(context, store,
