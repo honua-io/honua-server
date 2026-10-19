@@ -66,8 +66,48 @@ public sealed class FileImportExecutionLeaseScopeTests
             using var scope = JobSecurityScope.BeginExecution(fixture.Stored, current);
             Assert.True(await ImportAdminAuthorization.IsAuthorizedAsync(fixture.Services, current.CurrentAgentPrincipal!, "target", true, default));
             Assert.False(current.CurrentAgentPrincipal!.IsInRole("admin"));
+            Assert.Equal("imported_roads", fixture.CheckedPhysicalTable);
         }
         else await Assert.ThrowsAsync<UnauthorizedAccessException>(() => authority.RevalidateForExecutionAsync(fixture.Stored));
+    }
+
+    [UnitTheory]
+    [InlineData("unchanged")]
+    [InlineData("no-scope")]
+    [InlineData("schema")]
+    [InlineData("physical-table")]
+    [InlineData("request")]
+    [InlineData("source")]
+    [InlineData("cancelled")]
+    public async Task CommitBoundary_PinsActualScopePhysicalDestinationAndMaterializedRequest(string change)
+    {
+        using var fixture = await Fixture.CreateAsync();
+        var leases = fixture.Services.GetRequiredService<IJobExecutionLeaseAuthority>();
+        var lease = await leases.IssueAsync(new() { PreparedJob = fixture.Job, Executor = fixture.Executor,
+            RequestedExpiresAt = DateTimeOffset.UtcNow.AddMinutes(20) });
+        fixture.Stored = fixture.Job with { Audit = fixture.Job.Audit with
+            { SubmitterSecurityContext = fixture.Job.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } } };
+        var current = await leases.RevalidateForExecutionAsync(fixture.Stored);
+        Assert.True(FileImportJobParameters.TryParse(fixture.Stored.Spec.Parameters, out var request, out _, out _));
+        using var bytes = new MemoryStream(new byte[100]);
+        request = request! with { CloudFileId = null, FileStream = bytes };
+        var schema = "public";
+        var table = "imported_roads";
+        if (change == "schema") schema = "other";
+        if (change == "physical-table") table = "roads";
+        if (change == "request") request = request with { TargetSrid = 3857 };
+        if (change == "source") request = request with { StagedSource = request.StagedSource! with { ETag = "other" } };
+        if (change == "cancelled") fixture.Stored = fixture.Stored with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+        using var scope = change == "no-scope" ? null : JobSecurityScope.BeginExecution(fixture.Stored, current);
+        var authority = new FileImportExecutionCommitAuthority(fixture.Services.GetRequiredService<IExecutionJobStore>(), leases);
+        if (change == "unchanged")
+        {
+            var binding = await authority.RequireCurrentAsync(request, schema, table);
+            Assert.Equal(fixture.Stored.OperationId, binding.OperationId);
+            Assert.Equal(JobExecutionLeaseIntentFingerprint.Compute(fixture.Stored), binding.IntentFingerprint);
+            Assert.True(binding.RequireAbsentTarget);
+        }
+        else await Assert.ThrowsAsync<UnauthorizedAccessException>(() => authority.RequireCurrentAsync(request, schema, table));
     }
 
     private sealed class TestClock : TimeProvider
@@ -85,6 +125,7 @@ public sealed class FileImportExecutionLeaseScopeTests
         internal required CloudFile Metadata { get; set; }
         internal ExecutionJobRecord? Stored { get; set; }
         internal required TestClock Clock { get; init; }
+        internal string? CheckedPhysicalTable { get; set; }
         internal bool Occupied { get; set; }
         internal bool RevokeOnMetadata { get; set; }
 
@@ -107,7 +148,11 @@ public sealed class FileImportExecutionLeaseScopeTests
             });
             var session = Substitute.For<IDatabaseSession>();
             session.QuerySingleOrDefaultAsync<bool>(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<CancellationToken>())
-                .Returns(_ => state?.Occupied ?? false);
+                .Returns(call =>
+                {
+                    if (state is not null) state.CheckedPhysicalTable = (string)((Dictionary<string, object?>)call[1])["table"]!;
+                    return state?.Occupied ?? false;
+                });
             var sessions = Substitute.For<IDatabaseSessionFactory>();
             sessions.OpenAsync(Arg.Any<CancellationToken>()).Returns(session);
             var clock = new TestClock { Now = DateTimeOffset.UtcNow };
