@@ -2,7 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Security.Claims;
 using Honua.ControlPlane;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -11,6 +14,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Import.FileImport;
 using Honua.Import.FileImport.Durable;
+using Honua.Server.Features.AgentWorkspace;
 
 namespace Honua.Server.Features.Import;
 
@@ -77,7 +81,25 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
         }
     }
 
-    public async Task<string> QueueImportAsync(ImportRequest request, long fileSize, CancellationToken cancellationToken = default)
+    public Task<string> QueueImportAsync(ImportRequest request, long fileSize, CancellationToken cancellationToken = default)
+        => QueueCoreAsync(request, fileSize, null, null, null, cancellationToken);
+
+    // Only the server task coordinator calls this after actual-caller authorization.
+    // The lease policy must independently verify the retained task/preparation and
+    // current source/destination policy. This path has no default HTTP registration.
+    internal Task<string> QueueDatasetImportAsync(DatasetImportTask task, DatasetImportPreparedAdmission prepared,
+        ImportStagedSourceBinding source, ClaimsPrincipal caller, ClaimsPrincipal executor,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(caller);
+        ArgumentNullException.ThrowIfNull(executor);
+        var intent = DatasetImportSubmissionIntent.Create(task, prepared, source);
+        return QueueCoreAsync(intent.Request, source.Bytes, intent, caller, executor, cancellationToken);
+    }
+
+    private async Task<string> QueueCoreAsync(ImportRequest request, long fileSize,
+        DatasetImportSubmissionIntent? intent, ClaimsPrincipal? caller, ClaimsPrincipal? executor,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         request.Acceptance?.Validate();
@@ -104,6 +126,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
             if (existing is not null)
             {
                 RequireSameAcceptance(existing, request, fileSize);
+                await RequireSameTaskAuthorityAsync(existing, intent, caller, cancellationToken).ConfigureAwait(false);
                 return existing.OperationId;
             }
 
@@ -121,6 +144,35 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
         await EnsureAdmittedAsync(limits, cancellationToken).ConfigureAwait(false);
         var job = BuildJobRecord(jobId, request, fileSize, _decision, DateTimeOffset.UtcNow);
 
+        if (intent is not null)
+        {
+            job = job with
+            {
+                Audit = job.Audit with
+                {
+                    RequestedBy = intent.ExecutorContext.OwnerActorId,
+                    TenantId = intent.ExecutorContext.TenantId,
+                    SubmitterSecurityContext = intent.ExecutorContext
+                }
+            };
+            await using var authorityScope = _scopeFactory.CreateAsyncScope();
+            var authority = authorityScope.ServiceProvider.GetRequiredService<IJobExecutionLeaseAuthority>();
+            var deadline = DateTimeOffset.UtcNow.Add(job.TimeoutPolicy!.MaxDuration);
+            if (request.StagedSource!.ExpiresAt is { } sourceDeadline && sourceDeadline < deadline)
+                deadline = sourceDeadline;
+            var lease = await authority.IssueAsync(new JobExecutionLeaseIssuanceRequest
+            {
+                PreparedJob = job,
+                Executor = executor!,
+                Admission = intent.Admission,
+                RequestedExpiresAt = deadline
+            }, cancellationToken).ConfigureAwait(false);
+            job = job with
+            {
+                Audit = job.Audit with { SubmitterSecurityContext = intent.ExecutorContext with { ExecutionLease = lease } }
+            };
+        }
+
         if (request.Acceptance is { } bound && bound.AcceptBefore <= DateTimeOffset.UtcNow)
         {
             throw new InvalidOperationException("The import acceptance deadline has passed.");
@@ -132,6 +184,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
                 await _jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false) is { } accepted)
             {
                 RequireSameAcceptance(accepted, request, fileSize);
+                await RequireSameTaskAuthorityAsync(accepted, intent, caller, cancellationToken).ConfigureAwait(false);
                 return accepted.OperationId;
             }
 
@@ -189,6 +242,24 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
 
         Log.JobSubmitted(_logger, jobId, request.TableName, _decision.Runner, job.Spec.Backend);
         return jobId;
+    }
+
+    private async Task RequireSameTaskAuthorityAsync(ExecutionJobRecord existing, DatasetImportSubmissionIntent? intent,
+        ClaimsPrincipal? caller, CancellationToken cancellationToken)
+    {
+        if (intent is null) return;
+        if (existing.Audit.SubmitterSecurityContext is not { ExecutionLease: not null } original ||
+            existing.Audit.RequestedBy != intent.ExecutorContext.OwnerActorId || existing.Audit.TenantId != intent.ExecutorContext.TenantId ||
+            JobExecutionLeaseIntentFingerprint.ComputeContext(original) != JobExecutionLeaseIntentFingerprint.ComputeContext(intent.ExecutorContext))
+            throw new ImportAcceptanceConflictException();
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var observation = await scope.ServiceProvider.GetRequiredService<IJobExecutionLeaseAuthority>()
+            .ResolveForObservationAsync(existing.OperationId, caller!, JobExecutionLeaseObservationKind.Status, cancellationToken).ConfigureAwait(false);
+        if (observation.JobId != existing.OperationId || observation.Admission != intent.Admission ||
+            observation.LeaseId != original.ExecutionLease.LeaseId ||
+            observation.IntentFingerprint != JobExecutionLeaseIntentFingerprint.Compute(existing) ||
+            observation.ExecutorActorId != intent.ExecutorContext.OwnerActorId || observation.TenantId != intent.ExecutorContext.TenantId)
+            throw new ImportAcceptanceConflictException();
     }
 
     private static void RequireSameAcceptance(ExecutionJobRecord existing, ImportRequest request, long fileSize)
