@@ -82,7 +82,7 @@ internal static class StagedImportSourceMaterializer
         }
     }
 
-    private static void RequireGeneration(CloudFile? file, ImportStagedSourceBinding source)
+    internal static void RequireGeneration(CloudFile? file, ImportStagedSourceBinding source)
     {
         if (file is null || file.FileId != source.FileId || file.ETag != source.ETag || file.SizeBytes != source.Bytes ||
             file.ExpiresAt != source.ExpiresAt || source.ExpiresAt <= DateTimeOffset.UtcNow)

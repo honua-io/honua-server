@@ -69,13 +69,18 @@ internal sealed class DatasetImportTaskProvider(IAgentWorkspaceStore store, IHtt
         => task.OwnerActorId == actor || allowLinkedContext && AgentCredentialAuthority.IsAgent(principal) &&
             workspace.AgentActorId == actor && workspace.OwnerId == task.OwnerActorId;
 
-    internal static async Task<bool> SourceAuthorizedAsync(HttpContext context, AgentWorkspaceDocument workspace,
+    internal static Task<bool> SourceAuthorizedAsync(HttpContext context, AgentWorkspaceDocument workspace,
         DatasetImportSource source, CancellationToken cancellationToken)
+        => SourceAuthorizedAsync(context.RequestServices, context.User,
+            context.RequestServices.GetService<ITenantContext>()?.TenantId, workspace, source, cancellationToken);
+
+    internal static async Task<bool> SourceAuthorizedAsync(IServiceProvider services, ClaimsPrincipal principal,
+        string? tenant, AgentWorkspaceDocument workspace, DatasetImportSource source, CancellationToken cancellationToken)
     {
         if (source.Kind == "browser-file") return source.Artifact is null;
         if (source.Kind != "local-process-artifact" || source.Artifact is not { } artifact ||
-            LocalProcessWorkspaceAuthorization.TrustedAccess(context, workspace) is not { } access) return false;
-        var gateway = context.RequestServices.GetService<ILocalProcessWorkspaceGateway>();
+            LocalProcessWorkspaceAuthorization.TrustedAccess(principal, tenant, workspace) is not { } access) return false;
+        var gateway = services.GetService<ILocalProcessWorkspaceGateway>();
         if (gateway?.IsConfigured != true) return false;
         try
         {
@@ -100,15 +105,21 @@ internal sealed class DatasetImportDestinationAuthorizer(IHttpContextAccessor ac
         CancellationToken cancellationToken = default)
     {
         var transport = accessor.HttpContext;
-        if (transport is null || DataProviderNames.Normalize(configuration["DataSource:Provider"]) is not (DataProviderNames.Postgis or DataProviderNames.PostgreSql) ||
+        return transport is not null && await IsAuthorizedCoreAsync(transport.RequestServices, principal, targetId,
+            destination, options, requireWrite, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<bool> IsAuthorizedCoreAsync(IServiceProvider services, ClaimsPrincipal principal, string targetId,
+        DatasetImportDestination destination, DatasetImportTaskOptions options, bool requireWrite,
+        CancellationToken cancellationToken, Honua.Core.Features.Authorization.Domain.OperatorAuthorizationRequest? sealedOperation = null)
+    {
+        if (DataProviderNames.Normalize(configuration["DataSource:Provider"]) is not (DataProviderNames.Postgis or DataProviderNames.PostgreSql) ||
             !ImportTargetSchemaPolicy.IsAllowed(destination.Schema, configuration) ||
             options.LoadMode is not (ImportLoadMode.Append or ImportLoadMode.Replace) ||
-            targetId != await transport.RequestServices.GetRequiredService<IAgentWorkspaceStore>().GetTargetIdAsync().ConfigureAwait(false)) return false;
-        var context = new DefaultHttpContext { RequestServices = transport.RequestServices, User = principal, RequestAborted = cancellationToken };
-        context.Request.Path = "/api/v1/admin/import/upload";
-        if (!requireWrite)
-            return await OperationAdminAuthorization.IsAuthorizedAsync(context, principal, OperationSideEffectClass.ReadOnly, cancellationToken).ConfigureAwait(false);
-        if (!await ImportAdminAuthorization.IsAuthorizedAsync(context, principal, cancellationToken).ConfigureAwait(false)) return false;
+            targetId != await services.GetRequiredService<IAgentWorkspaceStore>().GetTargetIdAsync().ConfigureAwait(false)) return false;
+        if (!await ImportAdminAuthorization.IsAuthorizedAsync(services, principal, targetId, requireWrite,
+            cancellationToken, sealedOperation).ConfigureAwait(false)) return false;
+        if (!requireWrite) return true;
         await using var session = await sessions.OpenAsync(cancellationToken).ConfigureAwait(false);
         var occupied = await session.QuerySingleOrDefaultAsync<bool>("""
             SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c

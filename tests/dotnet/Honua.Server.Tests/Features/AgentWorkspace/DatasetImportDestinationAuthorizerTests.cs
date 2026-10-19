@@ -4,6 +4,8 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.AgentWorkspace;
 using Honua.TestKit.Attributes;
@@ -25,7 +27,8 @@ public sealed class DatasetImportDestinationAuthorizerTests
         authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), Arg.Any<string>()).Returns(AuthorizationResult.Success());
         var store = Substitute.For<IAgentWorkspaceStore>();
         store.GetTargetIdAsync().Returns("target-1");
-        using var services = new ServiceCollection().AddSingleton(authorization).AddSingleton(store).BuildServiceProvider();
+        using var services = new ServiceCollection().AddSingleton(authorization).AddSingleton(store)
+            .AddSingleton<IOperatorScopeAuthorizer, OperatorScopeAuthorizer>().BuildServiceProvider();
         var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = principal, RequestServices = services } };
         var session = Substitute.For<IDatabaseSession>();
         var sessions = Substitute.For<IDatabaseSessionFactory>();

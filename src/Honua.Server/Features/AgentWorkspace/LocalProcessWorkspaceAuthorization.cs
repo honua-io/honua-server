@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using Honua.Core.Features.AgentWorkspace.Abstractions;
 using Honua.Core.Features.AgentWorkspace.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -13,14 +14,18 @@ namespace Honua.Server.Features.AgentWorkspace;
 internal static class LocalProcessWorkspaceAuthorization
 {
     internal static LocalProcessWorkspaceAccess? TrustedAccess(HttpContext context, AgentWorkspaceDocument workspace)
+        => TrustedAccess(context.User, context.RequestServices.GetService<ITenantContext>()?.TenantId, workspace);
+
+    // Principal-based binding shared by HTTP and accepted-job source authorization.
+    // Callers own current credential checks; no request or owner is synthesized here.
+    internal static LocalProcessWorkspaceAccess? TrustedAccess(ClaimsPrincipal principal, string? tenant, AgentWorkspaceDocument workspace)
     {
-        var actor = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
-        var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId;
-        var delegated = context.User.FindFirst("api_key_id") is not null ||
-            context.User.Identity?.AuthenticationType == AuthenticationExtensions.ApiKeyScheme;
-        if (context.User.Identity?.IsAuthenticated != true || actor is null ||
+        var actor = CanonicalSecurityActor.Resolve(principal)?.ActorId;
+        var delegated = principal.FindFirst("api_key_id") is not null ||
+            principal.Identity?.AuthenticationType == AuthenticationExtensions.ApiKeyScheme || AgentCredentialAuthority.IsAgent(principal);
+        if (principal.Identity?.IsAuthenticated != true || actor is null ||
             !AgentWorkspaceState.CanRead(workspace, actor, tenant, workspace.TargetId) ||
-            (delegated ? !context.User.HasClaim("permission", "agent:workspace") : actor != workspace.OwnerId)) return null;
+            (delegated ? !principal.HasClaim("permission", "agent:workspace") : actor != workspace.OwnerId)) return null;
         return new(actor, workspace.OwnerId, workspace.WorkspaceId, workspace.TargetId, tenant, delegated);
     }
 
