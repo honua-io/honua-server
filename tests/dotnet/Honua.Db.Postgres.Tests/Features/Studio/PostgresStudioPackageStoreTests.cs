@@ -54,16 +54,16 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                 StudioContentVersion version,
                 string? route,
                 DateTimeOffset? createdAt = null) => new()
-            {
-                RequestId = Guid.NewGuid(),
-                ItemId = version.ItemId,
-                VersionId = version.VersionId,
-                Intent = route is null ? null : new StudioPublicationIntent { Route = route, Visibility = "public" },
-                Status = StudioPublicationRequestStatus.Accepted,
-                Validation = version.Validation,
-                RequestedBy = "approver",
-                CreatedAt = createdAt ?? DateTimeOffset.UtcNow
-            };
+                {
+                    RequestId = Guid.NewGuid(),
+                    ItemId = version.ItemId,
+                    VersionId = version.VersionId,
+                    Intent = route is null ? null : new StudioPublicationIntent { Route = route, Visibility = "public" },
+                    Status = StudioPublicationRequestStatus.Accepted,
+                    Validation = version.Validation,
+                    RequestedBy = "approver",
+                    CreatedAt = createdAt ?? DateTimeOffset.UtcNow
+                };
 
             var blank = await writer.CreatePublicationRequestAsync(Request(firstVersion, null), firstVersion.VersionId);
             blank.DeploymentId.Should().BeNull();
