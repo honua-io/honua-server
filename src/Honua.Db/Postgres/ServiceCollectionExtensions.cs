@@ -770,7 +770,8 @@ internal static class ServiceCollectionExtensions
                 cloudStorage,
                 serviceProvider.GetRequiredService<PostgresSchemaConfiguration>(),
                 serviceProvider.GetService<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>(),
-                serviceProvider.GetService<IImportExecutionCommitAuthority>());
+                serviceProvider.GetService<IImportExecutionCommitAuthority>(),
+                serviceProvider.GetService<IImportProcessingScratchFactory>());
         });
 
         services.TryAddScoped<IImportCommittedResultReader, PostgresImportCommittedResultReader>();

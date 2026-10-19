@@ -5,6 +5,7 @@ using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -43,6 +44,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private readonly IFileFormatDetectionService _formatDetectionService;
     private readonly ImportLimits _limits;
     private readonly IImportExecutionCommitAuthority? _commitAuthority;
+    private readonly IImportProcessingScratchFactory? _processingScratchFactory;
+    private static readonly AsyncLocal<IImportProcessingScratch?> _processingScratch = new();
     private readonly StreamingGeoJsonReader _geoJsonReader;
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<StreamingFileImportService> _logger;
@@ -108,7 +111,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? cloudStorage = null,
         PostgresSchemaConfiguration? schemaConfiguration = null,
         IDatumTransformationCatalog? datumTransformationCatalog = null,
-        IImportExecutionCommitAuthority? commitAuthority = null)
+        IImportExecutionCommitAuthority? commitAuthority = null,
+        IImportProcessingScratchFactory? processingScratchFactory = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
@@ -124,6 +128,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
         _datumTransformationCatalog = datumTransformationCatalog;
         _commitAuthority = commitAuthority;
+        _processingScratchFactory = processingScratchFactory;
     }
 
     /// <summary>
@@ -311,11 +316,25 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         FileGdbScratch? fileGdbScratch = null;
         GeoParquetScratch? geoParquetScratch = null;
         FileStream? fgbTempStream = null;
+        IImportProcessingScratch? processingScratch = null;
+        var previousProcessingScratch = _processingScratch.Value;
 
         ImportLog.ImportStarted(_logger, jobId, request.TableName, formatName, mode, totalBytes);
 
         try
         {
+            if (JobSecurityScope.Current?.Submitter is { AgentCredential: not null } or { ExecutionLease: not null }
+                && (format is SupportedFileFormat.Shapefile or SupportedFileFormat.GeoPackage or SupportedFileFormat.FileGdb
+                    || format == SupportedFileFormat.Kml && IsKmzFileName(request.FileName)
+                    || format == SupportedFileFormat.GeoParquet && !fileStream.CanSeek))
+            {
+                var transfer = request.StagedSource?.Transfer
+                    ?? throw new InvalidOperationException("Processing scratch requires the original verified transfer.");
+                processingScratch = await (_processingScratchFactory
+                    ?? throw new InvalidOperationException("Accounted processing scratch is unavailable."))
+                    .CreateAsync(transfer, _limits.MaxWorkerScratchBytes, _limits.MaxArchiveEntries, cancellationToken).ConfigureAwait(false);
+                _processingScratch.Value = processingScratch;
+            }
             if (format == null)
             {
                 errorMessage = "Unsupported file format: " + Path.GetExtension(request.FileName);
@@ -806,6 +825,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             CleanupKmzScratch(kmzScratch);
             CleanupFileGdbScratch(fileGdbScratch);
             CleanupGeoParquetScratch(geoParquetScratch);
+            _processingScratch.Value = previousProcessingScratch;
+            if (processingScratch is not null)
+                await processingScratch.DisposeAsync().ConfigureAwait(false);
             RecordImportMetrics(formatName, mode, status, stopwatch.Elapsed, bytesRead, importedCount, failedCount);
 
             if (status == "success")

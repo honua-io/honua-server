@@ -33,7 +33,7 @@ internal sealed partial class StreamingFileImportService
             throw new NotSupportedException("Shapefile imports require a .zip containing .shp and .dbf files.");
         }
 
-        var scratchDir = Path.Join(_shapefileScratchRoot, Guid.NewGuid().ToString("N"));
+        var scratchDir = CreateProcessingScratchDirectory(_shapefileScratchRoot);
         Directory.CreateDirectory(scratchDir);
 
         string? zipPath = null;
@@ -55,10 +55,7 @@ internal sealed partial class StreamingFileImportService
             else
             {
                 zipPath = Path.Join(scratchDir, "upload.zip");
-                await using (var zipFileStream = File.Create(zipPath))
-                {
-                    await stream.CopyToAsync(zipFileStream, cancellationToken);
-                }
+                await CopyProcessingScratchFileAsync(stream, zipPath, cancellationToken);
 
                 zipStream = File.OpenRead(zipPath);
             }
@@ -125,7 +122,7 @@ internal sealed partial class StreamingFileImportService
         Stream stream,
         CancellationToken cancellationToken)
     {
-        var scratchDir = Path.Join(_geoPackageScratchRoot, Guid.NewGuid().ToString("N"));
+        var scratchDir = CreateProcessingScratchDirectory(_geoPackageScratchRoot);
         Directory.CreateDirectory(scratchDir);
 
         var filePath = Path.Join(scratchDir, "upload.gpkg");
@@ -137,15 +134,7 @@ internal sealed partial class StreamingFileImportService
                 stream.Position = 0;
             }
 
-            await using var outputStream = new FileStream(filePath, new FileStreamOptions
-            {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-                BufferSize = _limits.StreamBufferSize,
-                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-            });
-            await stream.CopyToAsync(outputStream, cancellationToken);
+            await CopyProcessingScratchFileAsync(stream, filePath, cancellationToken);
 
             return new GeoPackageScratch(scratchDir, filePath);
         }
@@ -160,7 +149,7 @@ internal sealed partial class StreamingFileImportService
         Stream stream,
         CancellationToken cancellationToken)
     {
-        var scratchDir = Path.Join(_kmzScratchRoot, Guid.NewGuid().ToString("N"));
+        var scratchDir = CreateProcessingScratchDirectory(_kmzScratchRoot);
         Directory.CreateDirectory(scratchDir);
 
         string? zipPath = null;
@@ -182,10 +171,7 @@ internal sealed partial class StreamingFileImportService
             else
             {
                 zipPath = Path.Join(scratchDir, "upload.kmz");
-                await using (var zipFileStream = File.Create(zipPath))
-                {
-                    await stream.CopyToAsync(zipFileStream, cancellationToken);
-                }
+                await CopyProcessingScratchFileAsync(stream, zipPath, cancellationToken);
 
                 zipStream = File.OpenRead(zipPath);
             }
@@ -247,22 +233,14 @@ internal sealed partial class StreamingFileImportService
             return new GeoParquetScratch(stream, null);
         }
 
-        var scratchDir = Path.Join(_geoParquetScratchRoot, Guid.NewGuid().ToString("N"));
+        var scratchDir = CreateProcessingScratchDirectory(_geoParquetScratchRoot);
         Directory.CreateDirectory(scratchDir);
 
         var filePath = Path.Join(scratchDir, "upload.parquet");
 
         try
         {
-            await using var outputStream = new FileStream(filePath, new FileStreamOptions
-            {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-                BufferSize = _limits.StreamBufferSize,
-                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-            });
-            await stream.CopyToAsync(outputStream, cancellationToken);
+            await CopyProcessingScratchFileAsync(stream, filePath, cancellationToken);
 
             var readStream = new FileStream(filePath, new FileStreamOptions
             {
@@ -289,7 +267,7 @@ internal sealed partial class StreamingFileImportService
         Stream stream,
         CancellationToken cancellationToken)
     {
-        var scratchDir = Path.Join(_fileGdbScratchRoot, Guid.NewGuid().ToString("N"));
+        var scratchDir = CreateProcessingScratchDirectory(_fileGdbScratchRoot);
         Directory.CreateDirectory(scratchDir);
 
         string? zipPath = null;
@@ -311,10 +289,7 @@ internal sealed partial class StreamingFileImportService
             else
             {
                 zipPath = Path.Join(scratchDir, "upload.gdb.zip");
-                await using (var zipFileStream = File.Create(zipPath))
-                {
-                    await stream.CopyToAsync(zipFileStream, cancellationToken);
-                }
+                await CopyProcessingScratchFileAsync(stream, zipPath, cancellationToken);
 
                 zipStream = File.OpenRead(zipPath);
             }
@@ -353,7 +328,8 @@ internal sealed partial class StreamingFileImportService
                     throw new InvalidDataException("Archive contains path traversal.");
                 }
 
-                Directory.CreateDirectory(Path.GetDirectoryName(entryPath)!);
+                if (_processingScratch.Value is null)
+                    Directory.CreateDirectory(Path.GetDirectoryName(entryPath)!);
                 await ExtractEntryAsync(entry, entryPath, extractionBudget, cancellationToken);
             }
 
@@ -590,6 +566,12 @@ internal sealed partial class StreamingFileImportService
         var entryExtractedBytes = 0L;
         var buffer = new byte[64 * 1024];
         await using var entryStream = entry.Open();
+        if (_processingScratch.Value is { } processing)
+        {
+            await processing.WriteFileAsync(entryStream, destinationPath, entry.Length, cancellationToken).ConfigureAwait(false);
+            extractionBudget.TotalExtractedBytes += entry.Length;
+            return;
+        }
         await using var outputStream = File.Create(destinationPath);
         while (true)
         {
@@ -616,4 +598,25 @@ internal sealed partial class StreamingFileImportService
             extractionBudget.TotalExtractedBytes += bytesRead;
         }
     }
+
+    private static string CreateProcessingScratchDirectory(string fallbackRoot)
+        => Path.Join(_processingScratch.Value?.DirectoryPath ?? fallbackRoot, Guid.NewGuid().ToString("N"));
+
+    private async Task CopyProcessingScratchFileAsync(Stream source, string path, CancellationToken cancellationToken)
+    {
+        if (_processingScratch.Value is { } processing)
+        {
+            if (!source.CanSeek)
+                throw new InvalidOperationException("Accepted processing requires a verified seekable source.");
+            await processing.WriteFileAsync(source, path, source.Length - source.Position, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        await using var output = new FileStream(path, new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None,
+            BufferSize = _limits.StreamBufferSize, Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+        });
+        await source.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+    }
+
 }
