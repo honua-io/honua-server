@@ -16,6 +16,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Coordination;
 /// Tests for RedisDistributedLeaderElection — validates distributed leader election behavior.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
+[Collection(RedisLeaderElectionTimingCollection.Name)]
 public sealed class RedisDistributedLeaderElectionTests : IDisposable
 {
     private readonly RedisDistributedLeaderElection _leaderElection;
@@ -435,4 +436,14 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
             _redis.Object,
             NullLogger<RedisDistributedLeaderElection>.Instance);
     }
+}
+
+/// <summary>
+/// Isolates thread-pool dispatch deadlines and the process-wide unhandled-exception
+/// observation from unrelated test classes. Disposal assertions retain their bounds.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class RedisLeaderElectionTimingCollection
+{
+    public const string Name = "RedisLeaderElectionTiming";
 }
