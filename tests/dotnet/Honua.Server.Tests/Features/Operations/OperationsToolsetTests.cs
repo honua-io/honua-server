@@ -1649,6 +1649,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public async Task SubmitAsync_With_AllowAll_Calls_PublishLayer_And_Handle_Carries_MetadataRevision()
     {
+        const long expectedRevision = 42;
         var publishing = Substitute.For<ILayerPublishingService>();
         publishing
             .PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
@@ -1660,16 +1661,11 @@ public sealed class OperationsToolsetTests
                 Table = "parcels",
                 GeometryType = "Polygon",
                 Srid = 4326,
-                ServiceName = "default"
+                ServiceName = "default",
+                MetadataRevision = expectedRevision
             });
 
-        const long expectedRevision = 42;
-        var snapshot = new MetadataV2GraphSnapshot(
-            new MetadataV2Graph { Revision = expectedRevision }, "\"etag\"", DateTimeOffset.UtcNow);
         var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
-        graphProvider
-            .GetCurrentAsync(Arg.Any<CancellationToken>())
-            .Returns(snapshot);
 
         var notifications = Substitute.For<IMcpNotificationPublisher>();
         var executor = BuildExecutor(publishing, graphProvider, notifications);
@@ -1682,6 +1678,7 @@ public sealed class OperationsToolsetTests
         handle.Result.Should().NotBeNull();
         handle.Result!.Details["layerId"].Should().Be("7");
         handle.Result.Details["metadataRevision"].Should().Be("42");
+        await graphProvider.DidNotReceive().GetCurrentAsync(Arg.Any<CancellationToken>());
 
         // Policy was Allow → publish was actually invoked with the mapped request.
         await publishing.Received(1).PublishLayerAsync(
