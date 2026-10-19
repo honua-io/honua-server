@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
@@ -69,6 +70,9 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
                 _environment,
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 static scope => scope.GetRequiredService<IMetadataV2GraphStore>()));
+            // Test skips production infrastructure registration; this callback
+            // runs after its real graph provider is installed by the fixture.
+            services.AddMcpCatalogPublicationSurface();
             services.Configure<LayerPublishingOptions>(options => options.AsyncPublishRowThreshold = 1);
         });
     }
