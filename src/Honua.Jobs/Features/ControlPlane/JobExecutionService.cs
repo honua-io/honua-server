@@ -518,7 +518,7 @@ internal sealed partial class JobExecutionService(
             ? JobExecutionLeaseIntentFingerprint.Compute(running) : null;
         using var context = new JobExecutionContext(
             operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, jobCts, logger,
-            running.AttemptCount, licenseCancellation, claimedImportIntent);
+            running.AttemptCount, claimedImportIntent, licenseCancellation);
 
         // Start heartbeat pump in background.
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
@@ -1729,8 +1729,8 @@ internal sealed partial class JobExecutionContext(
     CancellationTokenSource? durableCancellationCts,
     ILogger logger,
     int claimedAttempt = 0,
-    CancellationToken licenseCancellation = default,
-    string? claimedIntentFingerprint = null) : IJobExecutionContext, IDisposable
+    string? claimedIntentFingerprint = null,
+    CancellationToken licenseCancellation = default) : IJobExecutionContext, IDisposable
 {
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private int _leaseLost;
