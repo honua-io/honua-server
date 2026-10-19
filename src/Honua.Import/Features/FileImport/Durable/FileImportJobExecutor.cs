@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -107,6 +110,26 @@ internal sealed partial class FileImportJobExecutor(
         try
         {
             await using var scope = scopeFactory.CreateAsyncScope();
+            IJobExecutionLeaseAuthority? executionAuthority = null;
+            JobSecurityContext? validatedExecution = null;
+            if (job.Audit.SubmitterSecurityContext is { } submitted &&
+                (submitted.AgentCredential is not null || submitted.ExecutionLease is not null))
+            {
+                if (submitted.AgentCredential is null || submitted.ExecutionLease is null)
+                    throw new UnauthorizedAccessException("A durable agent import requires an accepted job-specific execution lease.");
+                executionAuthority = scope.ServiceProvider.GetService<IJobExecutionLeaseAuthority>()
+                    ?? throw new UnauthorizedAccessException("Current job execution authority is unavailable.");
+                validatedExecution = await executionAuthority.RevalidateForExecutionAsync(job, cancellationToken).ConfigureAwait(false);
+            }
+            var clock = scope.ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
+            var deadline = validatedExecution?.CredentialExpiresAt;
+            if (validatedExecution is not null && (deadline is null || deadline <= clock.GetUtcNow()))
+                throw new UnauthorizedAccessException("The accepted job execution lease has expired.");
+            using var executionExpiry = deadline is { } expiresAt
+                ? new CancellationTokenSource(expiresAt - clock.GetUtcNow(), clock) : null;
+            using var executionCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken,
+                executionExpiry?.Token ?? CancellationToken.None);
+            cancellationToken = executionCancellation.Token;
             try
             {
                 var active = request;
@@ -150,6 +173,12 @@ internal sealed partial class FileImportJobExecutor(
                     active = active with { CloudFileId = null, FileStream = scratchLease.Content };
                 }
 
+                // Materialization can await remote storage. Revalidate the actual accepted
+                // job after all source/scratch work, immediately before importer access.
+                if (executionAuthority is not null)
+                    validatedExecution = await executionAuthority.RevalidateForExecutionAsync(job, cancellationToken).ConfigureAwait(false);
+                using var executionScope = validatedExecution is null ? null : JobSecurityScope.BeginExecution(job, validatedExecution);
+                cancellationToken.ThrowIfCancellationRequested();
                 result = await importService.ImportFileAsync(active, progress, cancellationToken).ConfigureAwait(false);
 
                 if (result.Success)

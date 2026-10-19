@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Cryptography;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.Authentication;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -23,6 +27,103 @@ namespace Honua.Server.Tests.Import;
 
 public sealed class StagedImportSourceTests
 {
+    [IntegrationTheory]
+    [InlineData("unchanged")]
+    [InlineData("no-lease")]
+    [InlineData("no-authority")]
+    [InlineData("revoked-during-source")]
+    [InlineData("committed-revoked")]
+    [InlineData("committed-expired")]
+    public async Task Worker_AcceptedLeaseFencesSourceAndImporterButPreservesCommittedTruth(string scenario)
+    {
+        using var fixture = new Fixture();
+        var receipt = await fixture.StageAsync();
+        var keys = new InMemoryAdminApiKeyStore();
+        var created = await keys.CreateAsync("executor", ["agent:workspace", "admin:write"], null, null, default);
+        var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
+        using var captureServices = new ServiceCollection().AddSingleton<IAdminApiKeyStore>(keys)
+            .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions())).BuildServiceProvider();
+        var original = await AgentJobSecurityBridge.CaptureAsync(principal, new RbacOptions(), captureServices, null, default);
+        receipt = receipt with { Transfer = receipt.Transfer! with { OwnerActorId = original.OwnerActorId!, TenantId = original.TenantId } };
+        var accepted = Request(receipt);
+        var clock = new LeaseWorkerClock();
+        var envelope = new JobExecutionLease { JobId = accepted.Acceptance!.OperationId, LeaseId = "controlled-authority-port",
+            IssuedAt = clock.GetUtcNow(), ExpiresAt = clock.GetUtcNow().AddMinutes(30), ProtectedAuthority = "port-contract-fixture" };
+        var job = new ExecutionJobRecord
+        {
+            OperationId = envelope.JobId, Status = ExecutionJobStatus.Running, CreatedAt = clock.GetUtcNow(), UpdatedAt = clock.GetUtcNow(),
+            AcceptanceDeadline = accepted.Acceptance.AcceptBefore,
+            Audit = new() { RequestedBy = original.OwnerActorId, TenantId = original.TenantId,
+                SubmitterSecurityContext = original with { ExecutionLease = scenario == "no-lease" ? null : envelope } },
+            Spec = new() { Kind = ExecutionJobKind.FileImport, TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "in-process", WorkloadName = "file-import", Parameters = FileImportJobParameters.Build(accepted, receipt.Bytes) }
+        };
+        var revoked = false;
+        var calls = 0;
+        var authority = Substitute.For<IJobExecutionLeaseAuthority>();
+        authority.RevalidateForExecutionAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            calls++;
+            if (revoked || envelope.ExpiresAt <= clock.GetUtcNow()) throw new UnauthorizedAccessException("Current authority refused.");
+            JobExecutionLeaseIntentFingerprint.Compute(call.ArgAt<ExecutionJobRecord>(0)).Should().Be(JobExecutionLeaseIntentFingerprint.Compute(job));
+            // Controlled Core authority port; Host cryptographic/lineage proof has its
+            // own tests. This asserts actual executor scope and call placement only.
+            return original with { ExecutionLease = envelope, CurrentAgentPrincipal = principal, CredentialExpiresAt = envelope.ExpiresAt };
+        });
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync(receipt.FileId, Arg.Any<CancellationToken>())
+            .Returns(call => fixture.Storage.GetMetadataAsync(receipt.FileId, call.ArgAt<CancellationToken>(1)));
+        storage.DownloadAsync(receipt.FileId, Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            var stream = await fixture.Storage.DownloadAsync(receipt.FileId, call.ArgAt<CancellationToken>(1));
+            if (scenario == "revoked-during-source") revoked = true;
+            return stream;
+        });
+        var importer = Substitute.For<IFileImportService>();
+        importer.Limits.Returns(new ImportLimits { MaxWorkerScratchBytes = receipt.Bytes });
+        importer.ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<IProgress<ImportProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                JobSecurityScope.Current!.JobId.Should().Be(job.OperationId);
+                JobSecurityScope.Current.IntentFingerprint.Should().Be(JobExecutionLeaseIntentFingerprint.Compute(job));
+                JobSecurityScope.Current.Submitter!.ExecutionLease.Should().Be(envelope);
+                call.ArgAt<ImportRequest>(0).FileStream!.CanSeek.Should().BeTrue();
+                // These transitions happen after the simulated physical commit. They
+                // cannot erase truthful output; generic worker publication is separate.
+                if (scenario == "committed-revoked") revoked = true;
+                if (scenario == "committed-expired") clock.UtcNow = envelope.ExpiresAt.AddSeconds(1);
+                return new ImportResult { Success = true, TableName = "roads", PhysicalTableName = "roads",
+                    Schema = "honua_data", FeatureCount = 1, Format = SupportedFileFormat.GeoJson };
+            });
+        var collection = new ServiceCollection().AddSingleton<ICloudFileStorage>(storage).AddSingleton(importer)
+            .AddSingleton(fixture.Scratch).AddSingleton<TimeProvider>(clock);
+        if (scenario != "no-authority") collection.AddSingleton(authority);
+        using var services = collection.BuildServiceProvider();
+        var executor = new FileImportJobExecutor(services.GetRequiredService<IServiceScopeFactory>(),
+            Substitute.For<IUniversalProgressStore>(), NullLogger<FileImportJobExecutor>.Instance);
+        var result = await executor.ExecuteAsync(job, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+        if (scenario is "unchanged" or "committed-revoked" or "committed-expired")
+        {
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            result.FileImportOutput!.PhysicalTableName.Should().Be("roads");
+            calls.Should().Be(2, "current authority is checked before source work and after it, not after physical commit");
+        }
+        else
+        {
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            await importer.DidNotReceive().ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<IProgress<ImportProgress>>(), Arg.Any<CancellationToken>());
+            if (scenario is "no-lease" or "no-authority") storage.ReceivedCalls().Should().BeEmpty();
+            if (scenario == "revoked-during-source") calls.Should().Be(2);
+        }
+        JobSecurityScope.Current.Should().BeNull("executor scope must be disposed on every path");
+    }
+
+    private sealed class LeaseWorkerClock : TimeProvider
+    {
+        internal DateTimeOffset UtcNow { get; set; } = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => UtcNow;
+    }
+
     [IntegrationTheory]
     [InlineData("unchanged")]
     [InlineData("cleanup-failed")]
