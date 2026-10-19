@@ -300,7 +300,6 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         var seen = new HashSet<long>();
         var offset = 0;
         long total = 0;
-        var exhausted = false;
         for (var pageIndex = 0; pageIndex < MaxComparisonPages; pageIndex++)
         {
             var page = await _featureReader.QueryAsync(
@@ -315,7 +314,6 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
 
             if (page.Items.IsDefaultOrEmpty)
             {
-                exhausted = true;
                 break;
             }
 
@@ -334,26 +332,39 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
                 }
             }
 
-            // A reader that ignores offset would otherwise repeat the first page forever.
+            // A reader that ignores offset repeats the first page. Stop only when the
+            // known population is already in hand; otherwise the unread tail cannot
+            // be certified, including when no count was available.
             if (fresh == 0)
             {
-                break;
+                if (knownPopulation is { } repeatedExpected && items.Count >= repeatedExpected)
+                {
+                    break;
+                }
+
+                return (null, true);
             }
 
             offset += page.Items.Length;
-            var pageFull = page.Items.Length >= ComparisonPageSize;
-            var belowKnown = knownPopulation is { } expected && items.Count < expected;
-            // Continue when the reader reports more rows, including a short page. Also continue
-            // when a full page claims to be the last one but the known population is larger.
-            if (!page.HasMoreResults && !(pageFull && belowKnown))
+            if (page.HasMoreResults)
             {
-                exhausted = true;
-                break;
+                continue;
             }
+
+            // A full page that claims to be last can still hide rows when the known
+            // population is larger. A short terminal page is judged after the loop.
+            if (page.Items.Length >= ComparisonPageSize
+                && knownPopulation is { } expectedPop
+                && items.Count < expectedPop)
+            {
+                continue;
+            }
+
+            break;
         }
 
-        var covered = !knownPopulation.HasValue || items.Count >= knownPopulation.Value;
-        if (!exhausted && !covered)
+        // A terminal flag does not prove the known population was read.
+        if (knownPopulation is { } expected && items.Count < expected)
         {
             return (null, true);
         }

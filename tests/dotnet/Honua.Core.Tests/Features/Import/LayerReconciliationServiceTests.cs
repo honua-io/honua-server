@@ -471,6 +471,67 @@ public sealed class LayerReconciliationServiceTests
     }
 
     [UnitTest]
+    public async Task Reconcile_ShortTerminalPage_DoesNotCertifyUnreadPopulation()
+    {
+        var attributes = ImmutableDictionary<string, object?>.Empty.Add("NAME", "x");
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            QueryByPage = _ => QueryResult<Feature>.Create(
+                2,
+                ImmutableArray.Create(Feature.Create(1, [1, 1, 0, 0, 0], attributes)),
+                hasMoreResults: false)
+        };
+        var request = CensusRequest(2);
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("fail");
+        geometry.Reason.Should().Contain("did not cover the filtered population");
+        reader.SampleQueries.Should().ContainSingle();
+    }
+
+    [UnitTest]
+    public async Task Reconcile_EmptyTerminalPage_DoesNotCertifyKnownPopulation()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            QueryByPage = _ => QueryResult<Feature>.Create(2, ImmutableArray<Feature>.Empty, hasMoreResults: false)
+        };
+        var request = CensusRequest(2);
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("fail");
+        geometry.Reason.Should().Contain("did not cover the filtered population");
+        reader.SampleQueries.Should().ContainSingle();
+    }
+
+    [UnitTest]
+    public async Task Reconcile_OffsetIgnoringReader_WithoutCount_DoesNotCertifyFirstPage()
+    {
+        var attributes = ImmutableDictionary<string, object?>.Empty.Add("NAME", "x");
+        var reader = new StubFeatureReader
+        {
+            CountUnavailable = true,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            QueryByPage = _ => QueryResult<Feature>.Create(
+                1,
+                ImmutableArray.Create(Feature.Create(1, [1, 1, 0, 0, 0], attributes)),
+                hasMoreResults: true)
+        };
+        var request = CensusRequest(2);
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("fail");
+        reader.SampleQueries.Should().HaveCount(2);
+    }
+
+    [UnitTest]
     public async Task Reconcile_DedicatedTarget_DoesNotExecuteDateFilterOrHideExtraRows()
     {
         const string sourceFilter = "DateOfFlight = DATE '2026-01-02'";
@@ -731,6 +792,15 @@ public sealed class LayerReconciliationServiceTests
             new ReconciliationQueryBuilder(graph.Object, filters.Object));
     }
 
+    private static LayerReconciliationRequest CensusRequest(long sourceCount)
+    {
+        var request = BuildRequest(sourceCount, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        return request with
+        {
+            Layers = [request.Layers[0] with { SourceGeometry = new SourceGeometryCensus() }]
+        };
+    }
+
     private static LayerReconciliationRequest BuildRequest(
         long sourceCount,
         BoundingBox sourceExtent,
@@ -877,6 +947,8 @@ public sealed class LayerReconciliationServiceTests
     private sealed class StubFeatureReader : IFeatureReader
     {
         public long Count { get; init; }
+
+        public bool CountUnavailable { get; init; }
         public FeatureExtent? Extent { get; init; }
         public FeatureExtent? ComparisonExtent { get; init; }
         public List<FeatureQuery?> ExtentQueries { get; } = [];
@@ -888,6 +960,11 @@ public sealed class LayerReconciliationServiceTests
         public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         {
             CountQueries.Add(query);
+            if (CountUnavailable)
+            {
+                throw new InvalidOperationException("count unavailable");
+            }
+
             return Task.FromResult(Count);
         }
 
