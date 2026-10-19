@@ -13,6 +13,7 @@ using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Migration;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -252,6 +253,115 @@ public sealed class GeoservicesRelationshipApplyTests
         writer.VerifyNoOtherCalls();
     }
 
+    [UnitTest]
+    public async Task ApplyRelationshipsAsync_AssistedComposite_PreservesOwnershipAndReviewReceipt()
+    {
+        MigrationRelationshipApplyRequest[]? captured = null;
+        var writer = new Mock<IMigrationCatalogWriter>(MockBehavior.Strict);
+        writer.Setup(w => w.EnsureRelationshipsAsync(
+                It.IsAny<string>(),
+                It.IsAny<IMetadataV2GraphStore?>(),
+                It.IsAny<MigrationRelationshipApplyRequest[]>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<string, IMetadataV2GraphStore?, MigrationRelationshipApplyRequest[], CancellationToken>(
+                (_, _, requests, _) =>
+                {
+                    captured = requests;
+                    return Task.FromResult(Array.Empty<MigrationRelationshipApplyOutcome>());
+                });
+
+        var manifest = BuildManifestWithRelationship(
+            originResourceId: "resource:Inspections:layer:0",
+            relatedSourceLayerToken: "layer:1",
+            cardinality: "1:N",
+            esriRelationshipId: 3,
+            classification: MigrationManifestRelationshipClassifications.Assisted,
+            relationshipType: "composite");
+        var origin = manifest.TargetResources[0];
+        var related = manifest.TargetResources[1];
+        var review = new MigrationManifestReviewItem
+        {
+            SourceId = "relationship:3",
+            Kind = "relationship",
+            Code = "ownership-unsupported",
+            Severity = "manual-review",
+            Reason = "Composite ownership edits are not supported."
+        };
+        manifest = manifest with
+        {
+            ManualReviewItems = [review],
+            TargetResources =
+            [
+                origin,
+                related with
+                {
+                    Relationships =
+                    [
+                        origin.Relationships[0] with
+                        {
+                            SourceRelationshipId = "3-destination",
+                            SourceResourceId = related.SourceResourceId,
+                            Role = "esriRelRoleDestination",
+                            RelatedLayerIds = ["layer:0"]
+                        }
+                    ]
+                }
+            ]
+        };
+
+        await CreateService(writer.Object).ApplyRelationshipsAsync(
+            manifest,
+            new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                ["resource:Inspections:layer:0"] = 200,
+                ["resource:Inspections:layer:1"] = 201
+            },
+            graphStore: null,
+            CancellationToken.None);
+
+        captured.Should().NotBeNull();
+        captured.Should().HaveCount(2);
+        captured.Should().OnlyContain(request => request.Composite);
+        captured.Select(request => request.Role).Should().BeEquivalentTo("esriRelRoleOrigin", "esriRelRoleDestination");
+        captured.Should().OnlyContain(request =>
+            request.OriginKeyField == "INSPECTION_ID" && request.DestinationKeyField == "INSPECTION_ID");
+        captured.Should().Contain(request => request.OriginLayerId == 200 && request.RelatedLayerId == 201);
+        captured.Should().Contain(request => request.OriginLayerId == 201 && request.RelatedLayerId == 200);
+        manifest.TargetResources[0].Relationships[0].Classification.Should().Be(MigrationManifestRelationshipClassifications.Assisted);
+        manifest.TargetResources[0].Relationships[0].RelationshipType.Should().Be("composite");
+        manifest.ManualReviewItems.Should().ContainSingle().Which.Should().BeSameAs(review);
+    }
+
+    [UnitTest]
+    public async Task ApplyRelationshipsAsync_ManualReviewComposite_StaysDeferredWithoutSimpleRewrite()
+    {
+        var writer = new Mock<IMigrationCatalogWriter>(MockBehavior.Strict);
+        var manifest = BuildManifestWithRelationship(
+            originResourceId: "resource:Inspections:layer:0",
+            relatedSourceLayerToken: "layer:1",
+            cardinality: "1:N",
+            esriRelationshipId: 3,
+            classification: MigrationManifestRelationshipClassifications.ManualReview,
+            relationshipType: "composite");
+
+        var outcomes = await CreateService(writer.Object).ApplyRelationshipsAsync(
+            manifest,
+            new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                ["resource:Inspections:layer:0"] = 200,
+                ["resource:Inspections:layer:1"] = 201
+            },
+            graphStore: null,
+            CancellationToken.None);
+
+        var outcome = outcomes.Should().ContainSingle().Subject;
+        outcome.Deferred.Should().BeTrue();
+        outcome.Message.Should().Contain(MigrationManifestRelationshipClassifications.ManualReview);
+        manifest.TargetResources[0].Relationships[0].Classification.Should().Be(MigrationManifestRelationshipClassifications.ManualReview);
+        manifest.TargetResources[0].Relationships[0].RelationshipType.Should().Be("composite");
+        writer.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task ApplyRelationshipsAsync_NonArcGisSource_ReturnsEmpty()
     {
@@ -279,7 +389,8 @@ public sealed class GeoservicesRelationshipApplyTests
         string relatedSourceLayerToken,
         string cardinality,
         int esriRelationshipId,
-        string classification)
+        string classification,
+        string relationshipType = "simple")
     {
         var compatibility = new MigrationCompatibilityAssessment
         {
@@ -302,7 +413,7 @@ public sealed class GeoservicesRelationshipApplyTests
                     SourceResourceId = originResourceId,
                     Name = "Photos",
                     Cardinality = cardinality,
-                    RelationshipType = "simple",
+                    RelationshipType = relationshipType,
                     RelatedLayerIds = [relatedSourceLayerToken],
                     Role = "esriRelRoleOrigin",
                     OriginKeyField = "INSPECTION_ID",

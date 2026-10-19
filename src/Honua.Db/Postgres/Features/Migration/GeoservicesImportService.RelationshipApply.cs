@@ -147,7 +147,8 @@ internal sealed partial class GeoservicesImportService
                     OriginKeyField = originKeyField!,
                     DestinationKeyField = destinationKeyField!,
                     Role = string.IsNullOrWhiteSpace(relationship.Role) ? "origin" : relationship.Role!,
-                    Cardinality = relationship.Cardinality ?? "1:N"
+                    Cardinality = relationship.Cardinality ?? "1:N",
+                    Composite = IsCompositeRelationship(relationship)
                 });
             }
         }
@@ -174,6 +175,9 @@ internal sealed partial class GeoservicesImportService
     private static bool IsApplyEligible(string classification)
         => string.Equals(classification, MigrationManifestRelationshipClassifications.Automated, StringComparison.Ordinal) ||
            string.Equals(classification, MigrationManifestRelationshipClassifications.Assisted, StringComparison.Ordinal);
+
+    private static bool IsCompositeRelationship(MigrationManifestRelationshipRecord relationship)
+        => string.Equals(relationship.RelationshipType, "composite", StringComparison.OrdinalIgnoreCase);
 
     private static bool TryResolveRelatedSource(
         string originSourceResourceId,
