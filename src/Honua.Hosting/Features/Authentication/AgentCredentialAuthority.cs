@@ -184,6 +184,19 @@ internal static class AgentCredentialAuthority
         return RevalidateCoreAsync(snapshot, services, permitOriginTokenExpiry: true, cancellationToken);
     }
 
+    // Closed historical validation only. The principal stays private to the host
+    // provenance validator and cannot be restored as execution or request authority.
+    internal static Task<ClaimsPrincipal?> RevalidateHistoricalLineageAsync(
+        JobExecutionLeaseProtector protector, SealedJobExecutionLeaseBinding binding,
+        Honua.Core.Features.ControlPlane.Domain.ExecutionJobRecord authoritativeJob,
+        IServiceProvider services, CancellationToken cancellationToken)
+    {
+        protector.RequireVerifiedHistoricalBinding(binding, authoritativeJob);
+        var snapshot = authoritativeJob.Audit.SubmitterSecurityContext?.AgentCredential
+            ?? throw new UnauthorizedAccessException("The historical job has no original credential lineage.");
+        return RevalidateCoreAsync(snapshot, services, permitOriginTokenExpiry: true, cancellationToken);
+    }
+
     private static async Task<ClaimsPrincipal?> RevalidateCoreAsync(
         AgentCredentialSnapshot snapshot, IServiceProvider services, bool permitOriginTokenExpiry,
         CancellationToken cancellationToken)

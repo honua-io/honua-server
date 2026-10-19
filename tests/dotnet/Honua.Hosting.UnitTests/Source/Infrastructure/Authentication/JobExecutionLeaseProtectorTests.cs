@@ -12,6 +12,29 @@ namespace Honua.Hosting.UnitTests.Source.Infrastructure.Authentication;
 public sealed class JobExecutionLeaseProtectorTests
 {
     [Fact]
+    public void HistoricalProof_RequiresTerminalReceiptAndNeverEnablesExecution()
+    {
+        var clock = new Clock();
+        var protector = new JobExecutionLeaseProtector(new EphemeralDataProtectionProvider(), clock);
+        var job = Job(clock.GetUtcNow());
+        var lease = protector.ProtectValidatedBinding(job, Scope(), Decision(clock), null, clock.GetUtcNow().AddHours(1));
+        var accepted = Bind(job, lease);
+        var terminal = accepted with { Status = ExecutionJobStatus.Succeeded };
+        var active = protector.UnprotectAndMatchAuthoritativeJob(terminal);
+        Assert.Throws<UnauthorizedAccessException>(() => protector.RequireVerifiedHistoricalBinding(active, terminal));
+        clock.UtcNow = lease.ExpiresAt.AddDays(1);
+        Assert.Throws<UnauthorizedAccessException>(() => protector.UnprotectAndMatchAuthoritativeJob(terminal));
+        Assert.Throws<UnauthorizedAccessException>(() => protector.UnprotectHistoricalTerminalJob(accepted));
+        var historical = protector.UnprotectHistoricalTerminalJob(terminal);
+        protector.RequireVerifiedHistoricalBinding(historical, terminal);
+        Assert.Throws<UnauthorizedAccessException>(() => protector.RequireVerifiedHistoricalBinding(historical,
+            Bind(job, lease with { ExpiresAt = lease.ExpiresAt.AddHours(1) }) with { Status = ExecutionJobStatus.Succeeded }));
+        Assert.Throws<UnauthorizedAccessException>(() => protector.RequireVerifiedCurrentBinding(historical, terminal));
+        Assert.Throws<UnauthorizedAccessException>(() => protector.RequireVerifiedHistoricalBinding(historical with { }, terminal));
+        Assert.Throws<UnauthorizedAccessException>(() => protector.RequireVerifiedHistoricalBinding(historical, terminal with { OperationId = "other" }));
+    }
+
+    [Fact]
     public void Protection_PinsOriginalIntentAndAllowsOnlyProgressChanges()
     {
         var clock = new Clock();

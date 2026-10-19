@@ -128,7 +128,15 @@ internal static class AgentJobSecurityBridge
         JobSecurityContext context, IServiceProvider services, CancellationToken cancellationToken)
     {
         await RevalidateAsync(context, services, cancellationToken).ConfigureAwait(false);
-        var roles = context.AgentCredential!.MembershipRoles;
+        return CreatePolicyEvaluationPrincipal(context);
+    }
+
+    // Pure, unauthenticated policy input projection. The closed provenance validator
+    // must verify protected lineage before calling; this does not restore authority.
+    internal static ClaimsPrincipal CreatePolicyEvaluationPrincipal(JobSecurityContext context)
+    {
+        var roles = context.AgentCredential?.MembershipRoles
+            ?? throw new UnauthorizedAccessException("Agent policy inputs require a sealed credential lineage.");
         var roleType = context.RoleClaimType ?? ClaimTypes.Role;
         ValidatePolicyClaims(context.Claims);
         var roleTypes = new[] { ClaimTypes.Role, RbacOptions.DefaultRoleClaimType, roleType }

@@ -19,7 +19,7 @@ namespace Honua.Server.Features.Operations;
 // intentionally not registered until the job-kind and submission adapters are wired.
 internal sealed class ExecutionJobLeasePolicy(IOperationProposalStore proposals,
     IOperatorScopeAuthorizer scopes, IOperatorAuthorizationEvaluator authorization,
-    IOperatorApprovalEvaluator approvals, TimeProvider clock) : IJobExecutionLeasePolicy
+    IOperatorApprovalEvaluator approvals, TimeProvider clock) : IJobExecutionLeasePolicy, IJobExecutionLeaseObservationPolicy
 {
     internal const string ApprovalFormat = "honua.execution-job-approval/v1";
     private const int MaximumPayloadBytes = 1048576;
@@ -72,6 +72,28 @@ internal sealed class ExecutionJobLeasePolicy(IOperationProposalStore proposals,
         var receipt = await ReadApprovalAsync(job, scope, requirements, cancellationToken).ConfigureAwait(false);
         if (receipt.Proposal.ProposalId != decision.ApprovalReceiptId || receipt.Proposal.SealedPlanHash != decision.DecisionId ||
             receipt.Proposal.Audit.ApprovalPolicyRef != decision.ApprovalPolicyRef || receipt.Binding.ExpiresAt < decision.MaximumExpiresAt) throw Denied();
+    }
+
+    public async Task RequireObservationAsync(ExecutionJobRecord job, JobExecutionLeasePolicyDecision decision,
+        JobExecutionLeaseScope scope, ClaimsPrincipal observer, JobExecutionLeaseObservationKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(observer);
+        if (!Enum.IsDefined(kind) || job.Status is not (ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled)
+            || scope.Kind != job.Spec.Kind || !decision.IsAllowed) throw Denied();
+        // This validates retained historical receipt integrity only. Current observer
+        // grants/provenance are independently checked by Host and the kind adapter;
+        // expired execution approval is never renewed or restored as authority.
+        if (decision.ApprovalReceiptId is null)
+        {
+            if (job.Audit.ProposalId is not null || decision.ApprovalPolicyRef is not null
+                || decision.DecisionId != "benign:" + ScopeFingerprint(scope)) throw Denied();
+            return;
+        }
+        var receipt = await ReadApprovalAsync(job, scope, null, cancellationToken, historical: true).ConfigureAwait(false);
+        if (receipt.Proposal.ProposalId != decision.ApprovalReceiptId || receipt.Proposal.SealedPlanHash != decision.DecisionId
+            || receipt.Proposal.Audit.ApprovalPolicyRef != decision.ApprovalPolicyRef
+            || receipt.Binding.ExpiresAt < decision.MaximumExpiresAt) throw Denied();
     }
 
     // Caller uses the canonical gateway's reserved proposal identity in job.Audit
@@ -154,7 +176,7 @@ internal sealed class ExecutionJobLeasePolicy(IOperationProposalStore proposals,
     }
 
     private async Task<(OperationProposal Proposal, ExecutionJobApprovalBinding Binding)> ReadApprovalAsync(ExecutionJobRecord job,
-        JobExecutionLeaseScope scope, ApprovalRequirement[] current, CancellationToken cancellationToken)
+        JobExecutionLeaseScope scope, ApprovalRequirement[]? current, CancellationToken cancellationToken, bool historical = false)
     {
         var proposalId = job.Audit.ProposalId;
         if (string.IsNullOrWhiteSpace(proposalId) || proposalId.Length > 256) throw Denied();
@@ -162,7 +184,9 @@ internal sealed class ExecutionJobLeasePolicy(IOperationProposalStore proposals,
         var now = clock.GetUtcNow();
         if (proposal.ProposalId != proposalId || proposal.TenantId != job.Audit.TenantId || proposal.RequestedBy != job.Audit.RequestedBy ||
             job.Audit.OperationInstanceId != job.OperationId || proposal.Audit.OperationInstanceId != job.OperationId ||
-            proposal.Status is not (OperationProposalStatus.Executing or OperationProposalStatus.Submitted or OperationProposalStatus.Reconciling) ||
+            (!historical && proposal.Status is not (OperationProposalStatus.Executing or OperationProposalStatus.Submitted or OperationProposalStatus.Reconciling)) ||
+            (historical && proposal.Status is not (OperationProposalStatus.Executing or OperationProposalStatus.Submitted or OperationProposalStatus.Reconciling
+                or OperationProposalStatus.Succeeded or OperationProposalStatus.Failed or OperationProposalStatus.RolledBack)) ||
             (proposal.ExecutionOperationId is not null && proposal.ExecutionOperationId != job.OperationId) ||
             string.IsNullOrWhiteSpace(proposal.Audit.AuditId) || string.IsNullOrWhiteSpace(proposal.ApprovedByAtClaim) ||
             proposal.ApprovedByAtClaim.Equals(proposal.RequestedBy, StringComparison.OrdinalIgnoreCase) ||
@@ -176,13 +200,13 @@ internal sealed class ExecutionJobLeasePolicy(IOperationProposalStore proposals,
         catch (JsonException exception) { throw new UnauthorizedAccessException("The exact job approval is unavailable or changed.", exception); }
         if (binding.Format != ApprovalFormat || string.IsNullOrWhiteSpace(binding.DescriptorId) || binding.DescriptorId != proposal.OperationId || binding.OperationClass != proposal.Kind ||
             binding.IntentFingerprint != JobExecutionLeaseIntentFingerprint.Compute(job) || binding.ScopeFingerprint != ScopeFingerprint(scope) ||
-            binding.ExpiresAt <= now || binding.ExpiresAt <= approvedAt || binding.ExpiresAt - proposal.CreatedAt > TimeSpan.FromHours(24) ||
-            binding.Requirements is null || binding.Requirements.Length != current.Length ||
+            (!historical && binding.ExpiresAt <= now) || binding.ExpiresAt <= approvedAt || binding.ExpiresAt - proposal.CreatedAt > TimeSpan.FromHours(24) ||
+            binding.Requirements is null || binding.Requirements.Length != scope.Operations.Length ||
             !binding.Requirements.Any(requirement => requirement is { IsRequired: true })) throw Denied();
-        for (var index = 0; index < current.Length; index++)
+        for (var index = 0; index < binding.Requirements.Length; index++)
         {
             var original = CopyRequirement(binding.Requirements[index]);
-            if (current[index].IsRequired && (!original.IsRequired || original.PolicyRef != current[index].PolicyRef ||
+            if (current is not null && current[index].IsRequired && (!original.IsRequired || original.PolicyRef != current[index].PolicyRef ||
                 !original.ReasonCodes.SequenceEqual(current[index].ReasonCodes, StringComparer.Ordinal))) throw Denied();
         }
         cancellationToken.ThrowIfCancellationRequested();

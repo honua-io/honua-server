@@ -24,7 +24,7 @@ namespace Honua.Server.Features.AgentWorkspace;
 // mutation or arbitrary object URI authority. Not registered before integrated qualification.
 internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore workspaces,
     IHttpContextAccessor accessor, IConfiguration configuration, IDatabaseSessionFactory sessions,
-    IServiceProvider services, TimeProvider clock) : IJobExecutionLeaseScopeProvider
+    IServiceProvider services, TimeProvider clock) : IJobExecutionLeaseScopeProvider, IJobExecutionLeaseObservationScopeProvider
 {
     private const int MaximumBindingBytes = 65536;
     private readonly DatasetImportDestinationAuthorizer _destination = new(accessor, configuration, sessions);
@@ -71,6 +71,35 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
         if (kind is not null && !Enum.IsDefined(kind.Value)) throw Denied();
         await RequireAccessAsync(bound, principal, kind is null, kind is null ? scope.Operations[0] : null, cancellationToken).ConfigureAwait(false);
         await RequireUnchangedAsync(job, bound, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RequireObservationAsync(ExecutionJobRecord job, JobExecutionLeaseScope scope,
+        ClaimsPrincipal observer, JobExecutionLeaseObservationKind kind, IJobExecutionLeaseProvenanceValidator provenance,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(provenance);
+        if (!Enum.IsDefined(kind) || job.Status is not (ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled)) throw Denied();
+        var bound = await LoadAsync(job, cancellationToken).ConfigureAwait(false);
+        if (Serialize(Scope(bound)) != Serialize(scope)) throw Denied();
+        var actor = CanonicalSecurityActor.Resolve(observer)?.ActorId;
+        if (actor is null || actor != bound.Task.OwnerActorId &&
+            (actor != bound.Prepared.InitiatingHumanActorId || actor != bound.Document.OwnerId
+                || bound.Document.AgentActorId != bound.Task.OwnerActorId)) throw Denied();
+        if (kind == JobExecutionLeaseObservationKind.OutputContent &&
+            (job.FileImportOutput is not { } output || output.Schema != bound.Task.Destination.Schema
+                || output.PhysicalTableName != ImportPhysicalTableName.Canonical(bound.Task.Destination.Table)
+                || !job.CommittedEffectReferences.Contains($"honua-import-commit:{job.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(job)}", StringComparer.Ordinal))) throw Denied();
+        // A historical observation never reopens source bytes or demands the target
+        // remain absent. Current rights to the original selected source and actual
+        // destination are checked on the observer; no executor scope is restored.
+        if (!AgentWorkspaceState.CanRead(bound.Document, actor, bound.Task.TenantId, bound.Task.TargetId)
+            || !await AgentCredentialAuthority.IsCurrentObserverAsync(observer, services, cancellationToken).ConfigureAwait(false)
+            || !await _destination.IsAuthorizedCoreAsync(services, observer, bound.Task.TargetId, bound.Task.Destination,
+                bound.Task.Options, false, cancellationToken).ConfigureAwait(false)
+            || !await DatasetImportTaskProvider.HistoricalSourceAuthorizedAsync(services, observer, bound.Task.TenantId,
+                bound.Document, bound.Task.Source, cancellationToken).ConfigureAwait(false)) throw Denied();
+        await RequireUnchangedAsync(job, bound, cancellationToken).ConfigureAwait(false);
+        if (!await AgentCredentialAuthority.IsCurrentObserverAsync(observer, services, cancellationToken).ConfigureAwait(false)) throw Denied();
     }
 
     private async Task RequireAccessAsync(BoundImport bound, ClaimsPrincipal principal, bool requireWrite,
@@ -139,6 +168,10 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
             || turn.BrowserFileSelection is not { } selected
             || task.Source.BrowserSelectionId != selected.SelectionId || task.Source.FileName != selected.FileName
             || task.Source.TotalBytes != selected.TotalBytes || task.Source.ExpectedSha256 != selected.ExpectedSha256)) throw Denied();
+        if (task.Source.Kind == "local-process-artifact" && (task.Source.Artifact is not { } artifact
+            || turn.LocalProcessSnapshot is not { } snapshot || artifact.ProjectId != snapshot.ProjectId
+            || artifact.SnapshotId != snapshot.SnapshotId || artifact.SnapshotDigest != snapshot.SnapshotDigest)) throw Denied();
+        if (task.Source.Kind is not ("browser-file" or "local-process-artifact")) throw Denied();
         DatasetImportSubmissionIntent intent;
         try { intent = DatasetImportSubmissionIntent.Create(task, prepared, source); }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)

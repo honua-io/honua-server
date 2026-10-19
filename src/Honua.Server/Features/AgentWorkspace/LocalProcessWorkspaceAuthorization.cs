@@ -89,7 +89,7 @@ internal static class LocalProcessWorkspaceAuthorization
         return access;
     }
 
-    private static bool BindingMatches(LocalProcessProjectBinding? binding, LocalProcessWorkspaceAccess access)
+    internal static bool BindingMatches(LocalProcessProjectBinding? binding, LocalProcessWorkspaceAccess access)
         => binding is not null && binding.OwnerActorId == access.OwnerActorId && binding.TenantId == access.TenantId &&
             binding.EnvironmentId == access.TargetId && binding.WorkspaceId == access.WorkspaceId;
 }

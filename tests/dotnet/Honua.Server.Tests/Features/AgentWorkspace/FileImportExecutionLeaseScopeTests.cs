@@ -110,6 +110,51 @@ public sealed class FileImportExecutionLeaseScopeTests
         else await Assert.ThrowsAsync<UnauthorizedAccessException>(() => authority.RequireCurrentAsync(request, schema, table));
     }
 
+    [UnitTheory]
+    [InlineData("unchanged")]
+    [InlineData("executor-revoked")]
+    [InlineData("human-revoked")]
+    [InlineData("workspace-removed")]
+    [InlineData("source-selection-changed")]
+    [InlineData("output-substituted")]
+    public async Task TerminalHumanObservation_UsesCurrentHumanRightsWithoutRestoringExecutor(string change)
+    {
+        using var fixture = await Fixture.CreateAsync();
+        var authority = fixture.Services.GetRequiredService<IJobExecutionLeaseAuthority>();
+        var prepared = fixture.Document.DatasetImportPreparedAdmissions["task"];
+        var lease = await authority.IssueAsync(new() { PreparedJob = fixture.Job, Executor = fixture.Executor,
+            RequestedExpiresAt = DateTimeOffset.UtcNow.AddMinutes(20), Admission = new()
+            {
+                WorkspaceId = "workspace", TaskId = "task", TaskRevision = 1,
+                TaskContentHash = fixture.Document.DatasetImportTasks["task"][0].ContentHash,
+                AuthorityRevision = prepared.AuthorityRevision, AuthorityFingerprint = prepared.AuthorityFingerprint,
+                PolicyContextFingerprint = prepared.PolicyContextFingerprint, InitiatingHumanActorId = prepared.InitiatingHumanActorId,
+                OriginatingTurnId = prepared.OriginatingTurnId, OriginalTurnHash = prepared.OriginalTurnHash
+            } });
+        fixture.Stored = fixture.Job with { Status = ExecutionJobStatus.Succeeded, Audit = fixture.Job.Audit with
+            { SubmitterSecurityContext = fixture.Job.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } },
+            FileImportOutput = new() { Schema = "public", PhysicalTableName = "imported_roads", FeatureCount = 17 } };
+        fixture.Stored = fixture.Stored with { CommittedEffectReferences =
+            [$"honua-import-commit:{fixture.Stored.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(fixture.Stored)}"] };
+        fixture.Clock.Now = lease.ExpiresAt.AddHours(1);
+        fixture.Occupied = true;
+        if (change == "executor-revoked") await fixture.Keys.RevokeAsync(fixture.ExecutorKeyId, default);
+        if (change == "human-revoked") await fixture.Keys.RevokeAsync(Guid.Parse(fixture.Human.FindFirst("api_key_id")!.Value), default);
+        if (change == "workspace-removed") fixture.Document = fixture.Document with { Members = [] };
+        if (change == "source-selection-changed") fixture.Document.Turns["turn"] = fixture.Document.Turns["turn"] with
+            { BrowserFileSelection = new("other", "roads.geojson", 100, new string('a', 64)) };
+        if (change == "output-substituted") fixture.Stored = fixture.Stored with { FileImportOutput = fixture.Stored.FileImportOutput! with { PhysicalTableName = "other" } };
+        if (change is "unchanged" or "executor-revoked")
+        {
+            var observed = await authority.ResolveForObservationAsync(fixture.Stored.OperationId, fixture.Human, JobExecutionLeaseObservationKind.OutputContent);
+            Assert.Equal(lease.LeaseId, observed.LeaseId);
+            Assert.Null(JobSecurityScope.Current);
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => authority.RevalidateForExecutionAsync(fixture.Stored));
+        }
+        else await Assert.ThrowsAsync<UnauthorizedAccessException>(() => authority.ResolveForObservationAsync(fixture.Stored.OperationId,
+            fixture.Human, JobExecutionLeaseObservationKind.OutputContent));
+    }
+
     private sealed class TestClock : TimeProvider
     {
         internal DateTimeOffset Now { get; set; }
@@ -120,6 +165,9 @@ public sealed class FileImportExecutionLeaseScopeTests
     {
         internal required ServiceProvider Services { get; init; }
         internal required ClaimsPrincipal Executor { get; init; }
+        internal required ClaimsPrincipal Human { get; init; }
+        internal required InMemoryAdminApiKeyStore Keys { get; init; }
+        internal required Guid ExecutorKeyId { get; init; }
         internal required ExecutionJobRecord Job { get; init; }
         internal required AgentWorkspaceDocument Document { get; set; }
         internal required CloudFile Metadata { get; set; }
@@ -166,6 +214,7 @@ public sealed class FileImportExecutionLeaseScopeTests
                 .AddSingleton<IOperatorAuthorizationEvaluator, OperatorAuthorizationEvaluator>()
                 .AddSingleton<IOperatorApprovalEvaluator, DefaultOperatorApprovalEvaluator>()
                 .AddSingleton(Substitute.For<IOperationProposalStore>())
+                .AddScoped<IJobExecutionLeaseObservationPolicy>(provider => (ExecutionJobLeasePolicy)provider.GetRequiredService<IJobExecutionLeasePolicy>())
                 .AddScoped<IJobExecutionLeasePolicy, ExecutionJobLeasePolicy>()
                 .AddScoped<IJobExecutionLeaseScopeProvider, FileImportExecutionLeaseScopeProvider>()
                 .AddScoped<JobExecutionLeaseAuthority>().AddSingleton<IJobExecutionLeaseAuthority, JobExecutionLeaseAuthorityFacade>();
@@ -174,7 +223,8 @@ public sealed class FileImportExecutionLeaseScopeTests
             var context = await AgentJobSecurityBridge.CaptureAsync(executor, new RbacOptions(), services, null, default);
             var owner = context.OwnerActorId!;
             var humanKey = await keys.CreateAsync("human", ["*"], null, null, default);
-            var human = CanonicalSecurityActor.Resolve(ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(humanKey.Record))!.ActorId;
+            var humanPrincipal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(humanKey.Record);
+            var human = CanonicalSecurityActor.Resolve(humanPrincipal)!.ActorId;
             var now = DateTimeOffset.UtcNow;
             var task = new DatasetImportTask("task", 1, "", owner, null, "target", "workspace", new("public", "roads"),
                 new("browser-file", "roads.geojson", 100, new string('a', 64), BrowserSelectionId: "selection"), new(), now.AddHours(1));
@@ -202,7 +252,7 @@ public sealed class FileImportExecutionLeaseScopeTests
                 Spec = new() { Kind = ExecutionJobKind.FileImport, TargetKind = BatchComputeTargetKind.KubernetesJob,
                     Backend = "local", WorkloadName = "file-import", Parameters = FileImportJobParameters.Build(intent.Request, source.Bytes) }
             };
-            state = new Fixture { Services = services, Executor = executor, Job = job, Document = document,
+            state = new Fixture { Services = services, Executor = executor, Human = humanPrincipal, Keys = keys, ExecutorKeyId = key.Record.Id, Job = job, Document = document,
                 Clock = clock, Metadata = new() { FileId = source.FileId, FileName = "roads.geojson", StoragePath = source.FileId,
                     ContentType = "application/geo+json", SizeBytes = 100, UploadedAt = now, ETag = source.ETag, ExpiresAt = source.ExpiresAt, Provider = CloudStorageProvider.Local } };
             return state;

@@ -103,6 +103,18 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
         return maskedFields.Count == 0 ? ImmutableArray<string>.Empty : maskedFields.ToImmutableArray();
     }
 
+    // Uses the same policy store/kernel with service names from the verified graph.
+    // No ambient principal or executable job context is created.
+    internal async Task<ImmutableArray<string>> ResolveForProvenanceAsync(
+        MetadataV2Resource resource, IReadOnlyList<string> currentRoles,
+        IReadOnlyCollection<string> actualServiceNames, CancellationToken cancellationToken)
+    {
+        var fields = await CollectMaskedFieldsAsync(currentRoles, actualServiceNames, resource.Metadata.Name,
+            cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        return fields.Count == 0 ? ImmutableArray<string>.Empty : fields.ToImmutableArray();
+    }
+
     private async Task<HashSet<string>> CollectMaskedFieldsAsync(
         IReadOnlyList<string> roles,
         IReadOnlyCollection<string> serviceNames,

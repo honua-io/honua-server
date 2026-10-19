@@ -142,6 +142,51 @@ public sealed class ExecutionJobLeasePolicyTests
         Assert.Empty(fixture.Approvals.ReceivedCalls());
     }
 
+    [Theory]
+    [InlineData("unchanged")]
+    [InlineData("missing")]
+    [InlineData("seal")]
+    [InlineData("claim")]
+    [InlineData("rejected")]
+    [InlineData("scope")]
+    [InlineData("intent")]
+    public async Task HistoricalPolicy_VerifiesOriginalReceiptAfterApprovalExpiryWithoutExecutionAuthority(string change)
+    {
+        var fixture = new Fixture();
+        await fixture.ApproveAsync();
+        var decision = await fixture.Policy.AuthorizeIssuanceAsync(fixture.Request(fixture.Job), fixture.Scope);
+        fixture.Proposal = fixture.Proposal! with { Status = OperationProposalStatus.Succeeded };
+        fixture.Clock.UtcNow = fixture.Now.AddDays(1);
+        var job = fixture.Job with { Status = ExecutionJobStatus.Succeeded };
+        var scope = fixture.Scope;
+        if (change == "missing") fixture.Proposal = null;
+        if (change == "seal") fixture.Proposal = fixture.Proposal! with { SealedPlanHash = new string('0', 64) };
+        if (change == "claim") fixture.Proposal = fixture.Proposal! with { ApprovedByAtClaim = fixture.Job.Audit.RequestedBy };
+        if (change == "rejected") fixture.Proposal = fixture.Proposal! with { Status = OperationProposalStatus.Rejected };
+        if (change == "scope") scope = scope with { ProviderBinding = "other" };
+        if (change == "intent") job = job with { AcceptanceDeadline = fixture.Now.AddHours(2) };
+        if (change == "unchanged")
+        {
+            await fixture.Policy.RequireObservationAsync(job, decision, scope, fixture.Executor, JobExecutionLeaseObservationKind.Status);
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Policy.RequireCurrentAsync(job, decision, scope, fixture.Current));
+        }
+        else await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Policy.RequireObservationAsync(job, decision,
+            scope, fixture.Executor, JobExecutionLeaseObservationKind.Status));
+    }
+
+    [Fact]
+    public async Task HistoricalBenignPolicy_DoesNotDemandANewMutationApprovalForCompletedFact()
+    {
+        var fixture = new Fixture();
+        var job = fixture.Job with { Audit = fixture.Job.Audit with { ProposalId = null } };
+        var decision = await fixture.Policy.AuthorizeIssuanceAsync(fixture.Request(job), fixture.Scope);
+        fixture.Clock.UtcNow = fixture.Now.AddDays(1);
+        fixture.Requirement = ApprovalRequirement.Required("tightened", "new-mutation-policy");
+        await fixture.Policy.RequireObservationAsync(job with { Status = ExecutionJobStatus.Succeeded }, decision,
+            fixture.Scope, fixture.Executor, JobExecutionLeaseObservationKind.Status);
+        Assert.Empty(fixture.Store.ReceivedCalls());
+    }
+
     private sealed class Fixture
     {
         internal DateTimeOffset Now { get; } = DateTimeOffset.UtcNow;

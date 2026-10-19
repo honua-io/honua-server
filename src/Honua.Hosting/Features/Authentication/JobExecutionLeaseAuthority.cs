@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Security;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;
 
@@ -97,6 +98,11 @@ internal sealed class JobExecutionLeaseAuthority(
         {
             throw Denied();
         }
+        var candidate = await _jobs.GetAsync(jobId, cancellationToken).ConfigureAwait(false) ?? throw Denied();
+        if (candidate.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled)
+        {
+            return await ResolveHistoricalObservationAsync(candidate, observer, kind, cancellationToken).ConfigureAwait(false);
+        }
         var live = await ValidateBaseAsync(jobId, null, execution: false, cancellationToken).ConfigureAwait(false);
         var original = live.Job.Audit.SubmitterSecurityContext!;
         if (JobSecurityContextCapture.ResolveTenantId(observer, _services.GetService<ITenantContext>()) != original.TenantId)
@@ -129,6 +135,141 @@ internal sealed class JobExecutionLeaseAuthority(
             ExecutorActorId = original.OwnerActorId!, TenantId = original.TenantId, ExpiresAt = live.Binding.ExpiresAt,
             InitiatingHumanActorId = live.Binding.Admission?.InitiatingHumanActorId, Admission = live.Binding.Admission
         };
+    }
+
+    private async Task<JobExecutionLeaseObservation> ResolveHistoricalObservationAsync(ExecutionJobRecord candidate,
+        ClaimsPrincipal observer, JobExecutionLeaseObservationKind kind, CancellationToken cancellationToken)
+    {
+        var outcome = JobExecutionLeaseTerminalOutcome.Compute(candidate);
+        var live = await ValidateHistoricalAsync(candidate.OperationId, candidate, outcome, observer, kind, cancellationToken).ConfigureAwait(false);
+        var provider = Provider(live.Job.Spec.Kind) as IJobExecutionLeaseObservationScopeProvider ?? throw Denied();
+        using var provenance = new HistoricalProvenanceValidator(_scopeFactory, live.Job, outcome, observer, kind);
+        await provider.RequireObservationAsync(live.Job, CopyScope(live.Binding.Scope), observer, kind, provenance, cancellationToken).ConfigureAwait(false);
+        _ = await ValidateHistoricalAsync(candidate.OperationId, live.Job, outcome, observer, kind, cancellationToken).ConfigureAwait(false);
+        var original = live.Job.Audit.SubmitterSecurityContext!;
+        return new()
+        {
+            JobId = live.Job.OperationId, LeaseId = live.Binding.LeaseId, IntentFingerprint = live.Binding.IntentFingerprint,
+            ExecutorActorId = original.OwnerActorId!, TenantId = original.TenantId, ExpiresAt = live.Binding.ExpiresAt,
+            InitiatingHumanActorId = live.Binding.Admission?.InitiatingHumanActorId, Admission = live.Binding.Admission
+        };
+    }
+
+    private async Task<LiveLease> ValidateHistoricalAsync(string jobId, ExecutionJobRecord expected, string expectedOutcome,
+        ClaimsPrincipal observer, JobExecutionLeaseObservationKind kind, CancellationToken cancellationToken)
+    {
+        var job = await _jobs.GetAsync(jobId, cancellationToken).ConfigureAwait(false) ?? throw Denied();
+        var binding = _protector.UnprotectHistoricalTerminalJob(job);
+        if (JobExecutionLeaseTerminalOutcome.Compute(job) != expectedOutcome
+            || job.OperationId != jobId || JobExecutionLeaseIntentFingerprint.Compute(expected) != binding.IntentFingerprint
+            || expected.Audit.SubmitterSecurityContext?.ExecutionLease != job.Audit.SubmitterSecurityContext?.ExecutionLease
+            || !await AgentCredentialAuthority.IsCurrentAsync(observer, _services, cancellationToken).ConfigureAwait(false))
+        {
+            throw Denied();
+        }
+        var original = job.Audit.SubmitterSecurityContext!;
+        if (JobSecurityContextCapture.ResolveTenantId(observer, _services.GetService<ITenantContext>()) != original.TenantId)
+        {
+            throw Denied();
+        }
+        var request = new OperatorAuthorizationRequest
+            { ResourceType = OperatorResourceType.Job, ResourceId = jobId, Operation = OperatorOperation.Read };
+        if (!_services.GetRequiredService<IOperatorScopeAuthorizer>().Evaluate(observer, request.ResourceType, request.Operation).IsAllowed
+            || !(await _services.GetRequiredService<IOperatorAuthorizationEvaluator>().EvaluateAsync(observer, request, cancellationToken).ConfigureAwait(false)).IsAllowed)
+        {
+            throw Denied();
+        }
+        await (_services.GetService<IJobExecutionLeaseObservationPolicy>() ?? throw Denied())
+            .RequireObservationAsync(job, binding.Decision, CopyScope(binding.Scope), observer, kind, cancellationToken).ConfigureAwait(false);
+        var latest = await _jobs.GetAsync(jobId, cancellationToken).ConfigureAwait(false) ?? throw Denied();
+        if (JobExecutionLeaseTerminalOutcome.Compute(latest) != expectedOutcome
+            || JobExecutionLeaseIntentFingerprint.Compute(latest) != binding.IntentFingerprint
+            || latest.Audit.SubmitterSecurityContext?.ExecutionLease != job.Audit.SubmitterSecurityContext?.ExecutionLease
+            || !await AgentCredentialAuthority.IsCurrentObserverAsync(observer, _services, cancellationToken).ConfigureAwait(false)) throw Denied();
+        job = latest;
+        // A protected historical fact cannot restore executor authority. The sealed
+        // initiating human instead reads under that human's own current source policy.
+        // Kind adapters must independently bind workspace/owner and output provenance.
+        if (original.PrincipalId != original.OwnerActorId) throw Denied();
+        if (IsIndependentInitiator(binding, observer))
+        {
+            _protector.RequireVerifiedHistoricalBinding(binding, job);
+            cancellationToken.ThrowIfCancellationRequested();
+            return new(job, binding, observer);
+        }
+        var principal = await AgentCredentialAuthority.RevalidateHistoricalLineageAsync(_protector, binding, job, _services, cancellationToken).ConfigureAwait(false)
+            ?? throw Denied();
+        if (CanonicalSecurityActor.Resolve(principal)?.ActorId != original.OwnerActorId
+            || original.PrincipalId != original.OwnerActorId || !AgentCredentialAuthority.MatchesTenant(principal, original.TenantId))
+        {
+            throw Denied();
+        }
+        _protector.RequireVerifiedHistoricalBinding(binding, job);
+        if (!await AgentCredentialAuthority.IsCurrentObserverAsync(observer, _services, cancellationToken).ConfigureAwait(false)) throw Denied();
+        cancellationToken.ThrowIfCancellationRequested();
+        return new(job, binding, principal);
+    }
+
+    private static bool IsIndependentInitiator(SealedJobExecutionLeaseBinding binding, ClaimsPrincipal observer)
+        => !AgentCredentialAuthority.IsAgent(observer) && !AgentCredentialAuthority.IsDelegated(observer)
+            && binding.Admission?.InitiatingHumanActorId is { } human
+            && CanonicalSecurityActor.Resolve(observer)?.ActorId == human;
+
+    private sealed class HistoricalProvenanceValidator(IServiceScopeFactory scopes, ExecutionJobRecord expected, string expectedOutcome,
+        ClaimsPrincipal observer, JobExecutionLeaseObservationKind kind) : IJobExecutionLeaseProvenanceValidator, IDisposable
+    {
+        private bool _disposed;
+        public void Dispose() => _disposed = true;
+
+        public async Task RequireResourceAsync(JobExecutionLeaseResource resource, CancellationToken cancellationToken = default)
+            => _ = await ValidateResourceAsync(resource, fingerprint: false, cancellationToken).ConfigureAwait(false);
+
+        public Task<string> GetPolicyFingerprintAsync(JobExecutionLeaseResource resource, CancellationToken cancellationToken = default)
+            => ValidateResourceAsync(resource, fingerprint: true, cancellationToken);
+
+        private async Task<string> ValidateResourceAsync(JobExecutionLeaseResource requested, bool fingerprint, CancellationToken cancellationToken)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            await using var scope = scopes.CreateAsyncScope();
+            var engine = scope.ServiceProvider.GetRequiredService<JobExecutionLeaseAuthority>();
+            var live = await engine.ValidateHistoricalAsync(expected.OperationId, expected, expectedOutcome, observer, kind, cancellationToken).ConfigureAwait(false);
+            if (!live.Binding.Scope.Resources.Contains(requested) || requested.ResourceType != OperatorResourceType.Catalog
+                || requested.StorageLayerId is not { } layerId)
+            {
+                throw Denied();
+            }
+            var current = scope.ServiceProvider;
+            var snapshot = await current.GetRequiredService<IMetadataV2GraphProvider>().GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource)
+                || resource.Metadata.Id != requested.ResourceId)
+            {
+                throw Denied();
+            }
+            var operation = requested.Operation is AuthorizationOperation.Query or AuthorizationOperation.Read
+                ? OperatorOperation.Read : OperatorOperation.ExecuteMutatingProcess;
+            if (!current.GetRequiredService<IOperatorScopeAuthorizer>().Evaluate(live.Principal, OperatorResourceType.Catalog, operation).IsAllowed
+                || !(await current.GetRequiredService<ILayerAccessAuthorizer>().AuthorizeLayerAsync(live.Principal, layerId, requested.Operation, cancellationToken).ConfigureAwait(false)).IsAllowed)
+            {
+                throw Denied();
+            }
+            var result = string.Empty;
+            if (fingerprint)
+            {
+                var context = live.Job.Audit.SubmitterSecurityContext!;
+                var policyPrincipal = AgentJobSecurityBridge.CreatePolicyEvaluationPrincipal(context);
+                IReadOnlyCollection<string> names = snapshot.Index.ServiceNamesByResource.TryGetValue(resource.Metadata.Id, out var publications)
+                    ? publications : Array.Empty<string>();
+                var rows = current.GetRequiredService<IRowLevelSecurityFilterSource>() as RowLevelSecurityFilterSource ?? throw Denied();
+                var masks = current.GetRequiredService<IFieldMaskSource>() as FieldMaskSource ?? throw Denied();
+                var filter = await rows.ResolveForProvenanceAsync(resource, policyPrincipal, context.AgentCredential!.MembershipRoles, names, cancellationToken).ConfigureAwait(false);
+                var fields = await masks.ResolveForProvenanceAsync(resource, context.AgentCredential.MembershipRoles, names, cancellationToken).ConfigureAwait(false);
+                result = JobResourcePolicyFingerprint.Compute(resource, new ReadSecurityResolution(filter, fields));
+            }
+            _ = await engine.ValidateHistoricalAsync(expected.OperationId, expected, expectedOutcome, observer, kind, cancellationToken).ConfigureAwait(false);
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            cancellationToken.ThrowIfCancellationRequested();
+            return result;
+        }
     }
 
     private JobSecurityContext BindTransient(LiveLease live, bool execution)

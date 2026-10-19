@@ -74,6 +74,25 @@ internal sealed class DatasetImportTaskProvider(IAgentWorkspaceStore store, IHtt
         => SourceAuthorizedAsync(context.RequestServices, context.User,
             context.RequestServices.GetService<ITenantContext>()?.TenantId, workspace, source, cancellationToken);
 
+    internal static async Task<bool> HistoricalSourceAuthorizedAsync(IServiceProvider services, ClaimsPrincipal principal,
+        string? tenant, AgentWorkspaceDocument workspace, DatasetImportSource source, CancellationToken cancellationToken)
+    {
+        if (source.Kind == "browser-file") return source.Artifact is null;
+        if (source.Kind != "local-process-artifact" || source.Artifact is not { } artifact
+            || LocalProcessWorkspaceAuthorization.TrustedAccess(principal, tenant, workspace) is not { } access) return false;
+        var gateway = services.GetService<ILocalProcessWorkspaceGateway>();
+        if (gateway?.IsConfigured != true) return false;
+        try
+        {
+            // The accepted protected task pins original run/snapshot/path/bytes/hash.
+            // Historical observation needs current project ownership, not retained
+            // source bytes or an old daemon run manifest that cleanup may remove.
+            var identity = await gateway.GetIdentityAsync(access, cancellationToken).ConfigureAwait(false);
+            return identity.ProjectId == artifact.ProjectId && LocalProcessWorkspaceAuthorization.BindingMatches(identity.Binding, access);
+        }
+        catch (LocalProcessWorkspaceException exception) when (exception.StatusCode is 403 or 404) { return false; }
+    }
+
     internal static async Task<bool> SourceAuthorizedAsync(IServiceProvider services, ClaimsPrincipal principal,
         string? tenant, AgentWorkspaceDocument workspace, DatasetImportSource source, CancellationToken cancellationToken)
     {

@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -42,6 +43,107 @@ public sealed class JobExecutionLeaseAuthorityTests
                 }
             });
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.RevalidateForExecutionAsync(expected));
+    }
+
+    [Fact]
+    public async Task HistoricalObservation_AfterExecutionExpiryRequiresCurrentIndependentObserverAndExecutorLineage()
+    {
+        var clock = new ObservationClock();
+        using var fixture = await Fixture.CreateAsync(clock);
+        var lease = await fixture.Authority.IssueAsync(fixture.Request);
+        fixture.Stored = fixture.Accept(lease) with { Status = ExecutionJobStatus.Succeeded };
+        var human = await fixture.Keys.CreateAsync("observer", ["admin:read"], null, null, default);
+        var observer = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(human.Record);
+        fixture.Services.GetRequiredService<IOperatorScopeAuthorizer>()
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorResourceType>(), Arg.Any<OperatorOperation>())
+            .Returns(OperatorScopeDecision.Allowed());
+        fixture.Services.GetRequiredService<IOperatorAuthorizationEvaluator>()
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        clock.UtcNow = lease.ExpiresAt.AddSeconds(1);
+        var observation = await fixture.Authority.ResolveForObservationAsync(fixture.Stored.OperationId, observer, JobExecutionLeaseObservationKind.Status);
+        Assert.Equal(lease.LeaseId, observation.LeaseId);
+        Assert.Equal(lease.ExpiresAt, observation.ExpiresAt);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.RevalidateForExecutionAsync(fixture.Stored));
+        await fixture.Keys.RevokeAsync(fixture.KeyId, default);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.ResolveForObservationAsync(fixture.Stored.OperationId,
+            observer, JobExecutionLeaseObservationKind.Status));
+        Assert.Equal(ExecutionJobStatus.Succeeded, fixture.Stored.Status);
+    }
+
+    [Theory]
+    [InlineData(false, "unchanged")]
+    [InlineData(true, "unchanged")]
+    [InlineData(true, "output")]
+    [InlineData(true, "status")]
+    [InlineData(true, "artifacts")]
+    [InlineData(true, "committed")]
+    [InlineData(true, "observer-revoked")]
+    public async Task HistoricalInitiatingHuman_UsesOwnCurrentAuthorityAfterExecutorRevocation(bool executionExpired, string change)
+    {
+        var clock = new ObservationClock();
+        using var fixture = await Fixture.CreateAsync(clock);
+        var human = await fixture.Keys.CreateAsync("initiator", ["admin:read"], null, null, default);
+        var observer = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(human.Record);
+        var humanActor = CanonicalSecurityActor.Resolve(observer)!.ActorId;
+        var request = fixture.Request with { Admission = new()
+        {
+            WorkspaceId = "workspace", TaskId = "task", TaskRevision = 1, TaskContentHash = new string('a', 64),
+            AuthorityRevision = 1, AuthorityFingerprint = new string('b', 64), PolicyContextFingerprint = new string('c', 64),
+            InitiatingHumanActorId = humanActor, OriginatingTurnId = "turn", OriginalTurnHash = new string('d', 64)
+        } };
+        var lease = await fixture.Authority.IssueAsync(request);
+        fixture.Stored = fixture.Accept(lease) with { Status = ExecutionJobStatus.Succeeded };
+        fixture.Services.GetRequiredService<IOperatorScopeAuthorizer>()
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorResourceType>(), Arg.Any<OperatorOperation>())
+            .Returns(OperatorScopeDecision.Allowed());
+        fixture.Services.GetRequiredService<IOperatorAuthorizationEvaluator>()
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        if (executionExpired) clock.UtcNow = lease.ExpiresAt.AddSeconds(1);
+        await fixture.Keys.RevokeAsync(fixture.KeyId, default);
+        fixture.Services.GetRequiredService<IJobExecutionLeaseObservationPolicy>()
+            .RequireObservationAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<JobExecutionLeaseScope>(),
+                Arg.Any<ClaimsPrincipal>(), Arg.Any<JobExecutionLeaseObservationKind>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                fixture.Stored = change switch
+                {
+                    "output" => fixture.Stored with { FileImportOutput = new() { Schema = "other", PhysicalTableName = "other" } },
+                    "status" => fixture.Stored with { Status = ExecutionJobStatus.Failed },
+                    "artifacts" => fixture.Stored with { ArtifactReferences = ["replacement"] },
+                    "committed" => fixture.Stored with { CommittedEffectReferences = ["replacement"] },
+                    _ => fixture.Stored
+                };
+                if (change == "observer-revoked") await fixture.Keys.RevokeAsync(human.Record.Id, default);
+            });
+        if (change != "unchanged")
+        {
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.ResolveForObservationAsync(fixture.Stored.OperationId,
+                observer, JobExecutionLeaseObservationKind.Status));
+            return;
+        }
+        var observed = await fixture.Authority.ResolveForObservationAsync(fixture.Stored.OperationId, observer, JobExecutionLeaseObservationKind.Status);
+        Assert.Equal(humanActor, observed.InitiatingHumanActorId);
+        Assert.Equal(lease.LeaseId, observed.LeaseId);
+        Assert.Null(JobSecurityScope.Current);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.RevalidateForExecutionAsync(fixture.Stored));
+        // Current observer authorization still applies; no protected executor principal escapes.
+        fixture.Services.GetRequiredService<IOperatorAuthorizationEvaluator>()
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Forbidden("Current observer grant removed."));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.ResolveForObservationAsync(fixture.Stored.OperationId,
+            observer, JobExecutionLeaseObservationKind.Status));
+        await fixture.Keys.RevokeAsync(human.Record.Id, default);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.ResolveForObservationAsync(fixture.Stored.OperationId,
+            observer, JobExecutionLeaseObservationKind.Status));
+        Assert.Equal(ExecutionJobStatus.Succeeded, fixture.Stored.Status);
+    }
+
+    private sealed class ObservationClock : TimeProvider
+    {
+        internal DateTimeOffset UtcNow { get; set; } = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => UtcNow;
     }
 
     [Fact]
@@ -171,7 +273,7 @@ public sealed class JobExecutionLeaseAuthorityTests
         var store = Substitute.For<IExecutionJobStore>();
         ExecutionJobRecord? stored = null;
         store.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(stored));
-        var provider = Substitute.For<IJobExecutionLeaseScopeProvider>();
+        var provider = Substitute.For<IJobExecutionLeaseScopeProvider, IJobExecutionLeaseObservationScopeProvider>();
         provider.Kind.Returns(ExecutionJobKind.Geoprocessing);
         provider.PrepareAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(new JobExecutionLeaseScope
         {
@@ -246,8 +348,9 @@ public sealed class JobExecutionLeaseAuthorityTests
             => Request.PreparedJob with { Audit = Request.PreparedJob.Audit with
                 { SubmitterSecurityContext = Request.PreparedJob.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } } };
 
-        internal static async Task<Fixture> CreateAsync()
+        internal static async Task<Fixture> CreateAsync(TimeProvider? clock = null)
         {
+            clock ??= TimeProvider.System;
             var keys = new InMemoryAdminApiKeyStore();
             var created = await keys.CreateAsync("worker", ["agent:workspace", "admin:write"], null, null, default);
             JobExecutionLeaseAuthority? currentAuthority = null;
@@ -256,10 +359,12 @@ public sealed class JobExecutionLeaseAuthorityTests
                 .AddSingleton<IAdminApiKeyStore>(keys)
                 .AddSingleton(Substitute.For<IOperatorAuthorizationEvaluator>())
                 .AddSingleton(Substitute.For<IOperatorApprovalEvaluator>())
+                .AddSingleton(Substitute.For<IOperatorScopeAuthorizer>())
+                .AddSingleton(Substitute.For<IJobExecutionLeaseObservationPolicy>())
                 .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions())).BuildServiceProvider();
             var principal = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(created.Record);
             var context = await AgentJobSecurityBridge.CaptureAsync(principal, new RbacOptions(), services, null, default);
-            var now = DateTimeOffset.UtcNow;
+            var now = clock.GetUtcNow();
             var job = new ExecutionJobRecord
             {
                 OperationId = "job", Status = ExecutionJobStatus.Queued, CreatedAt = now, UpdatedAt = now,
@@ -275,13 +380,13 @@ public sealed class JobExecutionLeaseAuthorityTests
             policy.AuthorizeIssuanceAsync(Arg.Any<JobExecutionLeaseIssuanceRequest>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<CancellationToken>())
                 .Returns(new JobExecutionLeasePolicyDecision { IsAllowed = true, DecisionId = "canonical-benign", MaximumExpiresAt = now.AddHours(1) });
             policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<IJobExecutionLeaseCurrentPolicy>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-            var provider = Substitute.For<IJobExecutionLeaseScopeProvider>();
+            var provider = Substitute.For<IJobExecutionLeaseScopeProvider, IJobExecutionLeaseObservationScopeProvider>();
             provider.Kind.Returns(job.Spec.Kind);
             provider.PrepareAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(scope);
             provider.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<JobSecurityContext>(),
                 Arg.Any<ClaimsPrincipal>(), Arg.Any<JobExecutionLeaseObservationKind?>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
             var store = Substitute.For<IExecutionJobStore>();
-            var authority = new JobExecutionLeaseAuthority(store, policy, [provider], new EphemeralDataProtectionProvider(), TimeProvider.System, services);
+            var authority = new JobExecutionLeaseAuthority(store, policy, [provider], new EphemeralDataProtectionProvider(), clock, services);
             currentAuthority = authority;
             var fixture = new Fixture
             {

@@ -121,6 +121,28 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         return policies.Select(policy => BuildPredicate(policy, principal, resource)).ToArray();
     }
 
+    // Explicit read-only policy evaluation over an already verified graph snapshot.
+    // This path neither restores ambient job authority nor exposes an executor identity.
+    internal async Task<SqlFragment?> ResolveForProvenanceAsync(
+        MetadataV2Resource resource, ClaimsPrincipal policyPrincipal, IReadOnlyList<string> currentRoles,
+        IReadOnlyCollection<string> actualServiceNames, CancellationToken cancellationToken)
+    {
+        if (policyPrincipal.Identities.Any(identity => identity.IsAuthenticated))
+        {
+            throw new UnauthorizedAccessException("Provenance policy inputs must be unauthenticated.");
+        }
+        var policies = await CollectPoliciesAsync(currentRoles, actualServiceNames, resource.Metadata.Name,
+            cancellationToken).ConfigureAwait(false);
+        SqlFragment? result = null;
+        foreach (var policy in policies)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var predicate = BuildPredicate(policy, policyPrincipal, resource).Sql;
+            result = result is null ? predicate : AndFragments(result, predicate);
+        }
+        return result;
+    }
+
     private async Task<IReadOnlyList<RlsPolicy>> CollectPoliciesAsync(
         IReadOnlyList<string> roles,
         IReadOnlyCollection<string> serviceNames,
