@@ -51,7 +51,36 @@ internal static class McpResourceUris
     public static string WorkspaceUri(string workspaceId) => $"{WorkspacesPrefix}{workspaceId}";
 
     /// <summary>Builds the <c>honua://published-services/{serviceId}</c> URI.</summary>
-    public static string PublishedServiceUri(string serviceId) => $"{PublishedServicesPrefix}{serviceId}";
+    public static string PublishedServiceUri(string serviceId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(serviceId);
+        return PublishedServicesPrefix + Uri.EscapeDataString(serviceId);
+    }
+
+    /// <summary>Parses one canonically encoded service identity without decoding it twice.</summary>
+    public static bool TryParsePublishedServiceUri(string uri, out string serviceId)
+    {
+        serviceId = string.Empty;
+        if (uri is null || !uri.StartsWith(PublishedServicesPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var encoded = uri[PublishedServicesPrefix.Length..];
+        if (encoded.Length == 0 || encoded.Contains('/'))
+        {
+            return false;
+        }
+
+        var decoded = Uri.UnescapeDataString(encoded);
+        if (decoded.Length == 0 || !string.Equals(PublishedServiceUri(decoded), uri, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        serviceId = decoded;
+        return true;
+    }
 
     /// <summary>Builds the <c>honua://deployments/{deploymentId}</c> URI.</summary>
     public static string DeploymentUri(string deploymentId) => $"{DeploymentsPrefix}{deploymentId}";

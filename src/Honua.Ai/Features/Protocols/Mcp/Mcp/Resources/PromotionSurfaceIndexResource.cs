@@ -4,10 +4,12 @@
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
@@ -16,10 +18,13 @@ namespace Honua.Ai.Protocols.Mcp.Resources;
 /// surfaces without a trailing identifier:
 /// <c>honua://published-services</c>, <c>honua://deployments</c>,
 /// <c>honua://map-packages</c>, and <c>honua://app-packages</c>. Each returns
-/// a capped summary list drawn from the canonical store. Services and
+/// a capped summary list drawn from canonical stores. Published services also
+/// include ordinary Metadata v2 layer publications when they are serving;
+/// their detail URI is backed by the same persisted graph. Services and
 /// deployments are narrowed past the store's broader "non-decommissioned" /
 /// "non-retired-non-superseded" semantics to the truly live subsets — services
-/// with <see cref="PublishedServiceStatus.Active"/> and deployments with
+/// with <see cref="PublishedServiceStatus.Active"/> (or routable metadata
+/// publications) and deployments with
 /// <see cref="DeploymentPublicationState.Published"/> — so the advertised
 /// "active" descriptors match the wire contract. Package roots reuse the same
 /// published-deployment filter from <see cref="PackageViewFactory.IsPublished"/>
@@ -100,7 +105,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         {
             Uri = McpResourceUris.PublishedServicesRoot,
             Name = "Published services index",
-            Description = "Published services whose status is Active (serving requests).",
+            Description = "Published services currently serving requests.",
             MimeType = McpResourceHelpers.JsonMimeType
         },
         new McpResourceDescriptor
@@ -143,7 +148,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
 
         if (string.Equals(uri, McpResourceUris.PublishedServicesRoot, StringComparison.Ordinal))
         {
-            return await ReadPublishedServiceIndexAsync(principal, uri, cancellationToken).ConfigureAwait(false);
+            return await ReadPublishedServiceIndexAsync(httpContext, principal, uri, cancellationToken).ConfigureAwait(false);
         }
 
         if (string.Equals(uri, McpResourceUris.DeploymentsRoot, StringComparison.Ordinal))
@@ -164,6 +169,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
     }
 
     private async Task<McpResourcesReadResult> ReadPublishedServiceIndexAsync(
+        HttpContext httpContext,
         System.Security.Claims.ClaimsPrincipal principal,
         string uri,
         CancellationToken cancellationToken)
@@ -190,10 +196,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         // Impose a deterministic order before truncating so `truncated=true`
         // responses return the same prefix across calls regardless of the
         // backing store's iteration order.
-        active.Sort(static (a, b) => string.CompareOrdinal(a.ServiceId, b.ServiceId));
-        var truncated = active.Count > _pageSize;
         var items = active
-            .Take(_pageSize)
             .Select(record => new McpPublishedServiceSummary
             {
                 ServiceId = record.ServiceId,
@@ -204,6 +207,28 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
                 Etag = PromotionSurfaceEtag.ForPublishedService(record)
             })
             .ToList();
+
+        var graphProvider = httpContext.RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (graphProvider is not null)
+        {
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var catalog = await PublishedMetadataCatalogProjection.ListServingAsync(
+                httpContext, snapshot, cancellationToken).ConfigureAwait(false);
+            foreach (var service in catalog)
+            {
+                if (await _services.GetAsync(service.ServiceName, cancellationToken).ConfigureAwait(false) is not null)
+                {
+                    throw new GeoprocessingValidationException(
+                        $"Published service identity '{service.ServiceName}' is shared by a promotion and a catalog publication.");
+                }
+
+                items.Add(service.ToSummary());
+            }
+        }
+
+        items.Sort(static (a, b) => string.CompareOrdinal(a.ServiceId, b.ServiceId));
+        var truncated = items.Count > _pageSize;
+        items = items.Take(_pageSize).ToList();
 
         McpLog.PromotionListRead(_logger, McpTelemetry.ResourceFamily.PublishedServices, items.Count, truncated);
 
