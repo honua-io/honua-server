@@ -312,9 +312,13 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
             snapshot.ResolveStorageBinding(publication)!.StorageLayerId == firstStorageId);
         var secondPublication = publications.Single(publication =>
             snapshot.ResolveStorageBinding(publication)!.StorageLayerId == secondStorageId);
-        await AssertPublishedRowsAsync(firstPublication.LayerIndex!.Value,
+        // Query the IDs actually returned by publication/job completion. A
+        // different working graph ID must not conceal a broken public contract.
+        firstPublication.LayerIndex.Should().Be(firstStorageId);
+        secondPublication.LayerIndex.Should().Be(secondStorageId);
+        await AssertPublishedRowsAsync(firstStorageId,
             [(1, "first-authored-row", 1d, 2d)]);
-        await AssertPublishedRowsAsync(secondPublication.LayerIndex!.Value,
+        await AssertPublishedRowsAsync(secondStorageId,
             [(1, "second-authored-row-a", 3d, 4d), (2, "second-authored-row-b", 5d, 6d)]);
 
         var detail = await ReadResourceAsync(exactUri!);
