@@ -53,7 +53,7 @@ public static class ImportAdminAuthorization
         OperatorAuthorizationRequest? sealedOperation = null)
     {
         var resource = new SemanticImportAuthorizationResource(targetId, requireWrite, sealedOperation);
-        if (!resource.IsValid || !await AgentCredentialAuthority.IsCurrentAsync(principal, services, cancellationToken).ConfigureAwait(false)) return false;
+        if (!resource.IsValid || !await AgentCredentialAuthority.IsCurrentObserverAsync(principal, services, cancellationToken).ConfigureAwait(false)) return false;
         var operation = resource.OperatorRequest;
         var source = principal;
         if (JobExecutionLeaseTransientAuthority.IsLeasePrincipal(principal))
@@ -73,7 +73,7 @@ public static class ImportAdminAuthorization
         if (source.FindFirst("api_key_id") is not null && !AdminApiKeyPermission.IsAuthorized(source,
             resource.Method, SemanticImportAuthorizationResource.CanonicalPath)) return false;
         cancellationToken.ThrowIfCancellationRequested();
-        return await AgentCredentialAuthority.IsCurrentAsync(principal, services, cancellationToken).ConfigureAwait(false);
+        return await AgentCredentialAuthority.IsCurrentObserverAsync(principal, services, cancellationToken).ConfigureAwait(false);
     }
 
 }

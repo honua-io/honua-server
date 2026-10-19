@@ -6,6 +6,9 @@ using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Identity.Abstractions;
+using Microsoft.AspNetCore.Authorization;
+using NSubstitute;
 using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
@@ -64,11 +67,46 @@ public sealed class SemanticImportAuthorizationTests
             Assert.True(await ImportAdminAuthorization.IsAuthorizedAsync(services, principal, "configured-target", true, default));
             Assert.False(await ImportAdminAuthorization.IsAuthorizedAsync(services, principal, "other-target", true, default));
             Assert.False(await ImportAdminAuthorization.IsAuthorizedAsync(services, principal, "configured-target", false, default));
+            var exact = scope.Operations[0];
+            Assert.False(await ImportAdminAuthorization.IsAuthorizedAsync(services, principal, "configured-target", true, default,
+                exact with { RequiresExplicitApproval = true }));
+            Assert.False(await ImportAdminAuthorization.IsAuthorizedAsync(services, principal, "configured-target", true, default,
+                exact with { ApprovalReasonCodes = ["changed-after-sealing"] }));
+            Assert.False(await ImportAdminAuthorization.IsAuthorizedAsync(services, principal, "configured-target", true, default,
+                exact with { IsDestructive = true }));
             var copy = new ClaimsPrincipal(principal.Identities.Select(identity => identity.Clone()));
             Assert.False(await ImportAdminAuthorization.IsAuthorizedAsync(services, copy, "configured-target", true, default));
             _ = await keys.RotateAsync(record.Record.Id, default);
             Assert.False(await ImportAdminAuthorization.IsAuthorizedAsync(services, principal, "configured-target", true, default));
         }
+    }
+
+    [Theory]
+    [InlineData("unchanged")]
+    [InlineData("removed-before")]
+    [InlineData("removed-during")]
+    public async Task ManagedHumanKernel_RechecksMembershipBeforeAndAfterPolicyAwait(string change)
+    {
+        var membership = Substitute.For<IPrincipalMembershipSource>();
+        membership.ResolveMembershipAsync("human", "https://issuer.example", Arg.Any<CancellationToken>())
+            .Returns(new PrincipalMembership(true, ["admin"]));
+        var original = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "human"), new Claim("iss", "https://issuer.example"),
+            new Claim("roles", "admin")], "managed-human-test"));
+        var human = await ManagedMembershipRevalidation.ApplyAsync(original, membership);
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), AuthenticationExtensions.AdminPolicy).Returns(_ =>
+        {
+            if (change == "removed-during") membership.ResolveMembershipAsync("human", "https://issuer.example", Arg.Any<CancellationToken>())
+                .Returns(new PrincipalMembership(true, []));
+            return Task.FromResult(AuthorizationResult.Success());
+        });
+        if (change == "removed-before") membership.ResolveMembershipAsync("human", "https://issuer.example", Arg.Any<CancellationToken>())
+            .Returns(new PrincipalMembership(true, []));
+        using var services = new ServiceCollection().AddSingleton(membership).AddSingleton(authorization)
+            .AddSingleton<IOperatorScopeAuthorizer, OperatorScopeAuthorizer>()
+            .AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions())).BuildServiceProvider();
+        Assert.Equal(change == "unchanged", await ImportAdminAuthorization.IsAuthorizedAsync(services, human, "configured-target", true, default));
+        Assert.True(human.IsInRole("admin")); // No caller identity rewriting or executor substitution.
     }
 
     private static ServiceProvider Services(InMemoryAdminApiKeyStore keys)
