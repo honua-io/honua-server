@@ -65,12 +65,12 @@ public sealed class JobExecutionLeaseAuthorityTests
         }
         fixture.Stored = replaceWorker ? fixture.Stored with { ClaimedBy = "replacement" }
             : fixture.Stored with { AttemptCount = 2 };
-        Assert.False(await AgentCredentialAuthority.IsCurrentAsync(current.CurrentAgentPrincipal!, fixture.Services));
+        Assert.False(await AgentCredentialAuthority.IsCurrentAsync(current.CurrentAgentPrincipal!, fixture.Services, default));
         using (JobSecurityScope.BeginExecution(fixture.Stored, current))
         {
             Assert.False(JobExecutionLeaseTransientAuthority.MatchesExecutionClaim(current.CurrentAgentPrincipal!,
                 fixture.Stored.ClaimedBy!, fixture.Stored.AttemptCount));
-            Assert.False(await AgentCredentialAuthority.IsCurrentAsync(current.CurrentAgentPrincipal!, fixture.Services));
+            Assert.False(await AgentCredentialAuthority.IsCurrentAsync(current.CurrentAgentPrincipal!, fixture.Services, default));
         }
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Authority.RevalidateForExecutionAsync(expected));
         var fresh = await fixture.Authority.RevalidateForExecutionAsync(fixture.Stored);

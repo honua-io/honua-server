@@ -17,15 +17,15 @@ internal sealed partial class FileImportJobExecutor
 
     public async Task<JobExecutionResult> ExecuteAsync(ExecutionJobRecord job,
         IJobExecutionContext context, CancellationToken cancellationToken)
-        => await ExecuteOrRecoverAsync(job, context, cancellationToken, recoveryOnly: false).ConfigureAwait(false)
+        => await ExecuteOrRecoverAsync(job, context, recoveryOnly: false, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Import execution returned no result.");
 
     public Task<JobExecutionResult?> TryRecoverCommittedAsync(ExecutionJobRecord job,
         IJobExecutionContext context, CancellationToken cancellationToken = default)
-        => ExecuteOrRecoverAsync(job, context, cancellationToken, recoveryOnly: true);
+        => ExecuteOrRecoverAsync(job, context, recoveryOnly: true, cancellationToken);
 
     private async Task<JobExecutionResult?> ExecuteOrRecoverAsync(ExecutionJobRecord job,
-        IJobExecutionContext context, CancellationToken cancellationToken, bool recoveryOnly)
+        IJobExecutionContext context, bool recoveryOnly, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(context);
