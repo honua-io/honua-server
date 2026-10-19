@@ -132,7 +132,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         });
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task CanonicalDeploymentMigration_DefaultExistingDatabase_RemainsExpandOnlyWithoutApproval()
     {
         var assembly = typeof(Program).Assembly;
@@ -161,7 +161,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         restart.AppliedScripts.Should().BeEmpty("the journal prevents replay on restart");
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("legacy", true)]
     [InlineData("configured", true)]
     [InlineData("duplicate", false)]
