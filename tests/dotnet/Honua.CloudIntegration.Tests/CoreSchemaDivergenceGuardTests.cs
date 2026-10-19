@@ -701,7 +701,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
-        var table = Honua.Db.Postgres.Features.Infrastructure.SchemaSearchPath.QualifyTable("attachments", schema);
+        using var identifiers = new NpgsqlCommandBuilder();
+        var table = identifiers.QuoteIdentifier(schema) + ".attachments";
         await using var command = new NpgsqlCommand($"""
             SELECT jsonb_build_object('tableOid', @table::regclass::oid,
                 'row', to_jsonb(a))::text FROM {table} a WHERE id = 9101
@@ -781,7 +782,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         {
             result.Succeeded.Should().BeTrue();
             // This DDL is an adversarial fixture actor, never production migration rendering.
-            var quoted = Honua.Db.Postgres.Features.Infrastructure.SchemaSearchPath.ValidateAndQuote(schema);
+            using var identifiers = new NpgsqlCommandBuilder();
+            var quoted = identifiers.QuoteIdentifier(schema);
             await ExecuteAsync(connectionString, $"ALTER TABLE honua.attachments SET SCHEMA {quoted}; ALTER TABLE honua.import_attachment_cleanup SET SCHEMA {quoted};");
             Mutations++;
             AfterMutation = await CaptureAttachmentAuthorityStateAsync(connectionString);
