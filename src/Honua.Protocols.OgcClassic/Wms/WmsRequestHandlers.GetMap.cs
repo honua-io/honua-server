@@ -289,9 +289,14 @@ internal static partial class WmsRequestHandlers
                 layerFilters?[i],
                 layerTemporalFilters?[i]);
 
+            var layerReader = await ResolveLayerReaderAsync(
+                context,
+                layer,
+                featureReader,
+                cancellationToken).ConfigureAwait(false);
             var renderedPointCount = await TryRenderRasterPointFastPathAsync(
                 canvas,
-                featureReader,
+                layerReader,
                 layer.StorageLayerId,
                 geometryType,
                 stylePlan,
@@ -307,7 +312,7 @@ internal static partial class WmsRequestHandlers
                 continue;
             }
 
-            var features = await QueryRasterFeaturesAsync(featureReader, layer.StorageLayerId, featureQuery, cancellationToken);
+            var features = await QueryRasterFeaturesAsync(layerReader, layer.StorageLayerId, featureQuery, cancellationToken);
             if (features.Length == 0)
             {
                 continue;

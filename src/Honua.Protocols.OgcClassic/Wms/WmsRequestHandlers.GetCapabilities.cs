@@ -147,7 +147,7 @@ internal static partial class WmsRequestHandlers
         // the whole GetCapabilities document — skip its TIME dimension and keep the rest
         // (honua-server#1911).
         var tasks = temporalLayers.Select(layer =>
-            ResolveTemporalRangeSafeAsync(layer, featureReader, logger, cancellationToken));
+            ResolveTemporalRangeSafeAsync(context, layer, featureReader, logger, cancellationToken));
 
         var results = await Task.WhenAll(tasks).ConfigureAwait(false);
 
@@ -223,6 +223,7 @@ internal static partial class WmsRequestHandlers
     /// rather than failing the whole capabilities document (honua-server#1911).
     /// </summary>
     private static async Task<MetadataV2TemporalRange?> ResolveTemporalRangeSafeAsync(
+        HttpContext context,
         WmsLayer layer,
         IFeatureReader featureReader,
         ILogger logger,
@@ -230,10 +231,12 @@ internal static partial class WmsRequestHandlers
     {
         try
         {
+            var layerReader = await ResolveLayerReaderAsync(context, layer, featureReader, cancellationToken)
+                .ConfigureAwait(false);
             return await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
                 layer.Resource,
                 layer.StorageLayerId,
-                featureReader,
+                layerReader,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
