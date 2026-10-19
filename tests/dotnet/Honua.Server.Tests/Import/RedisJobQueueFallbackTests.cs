@@ -65,7 +65,7 @@ public sealed class RedisJobQueueFallbackTests
         redis.Down = false;
         typeof(RedisJobQueue)
             .GetField("_lastRedisFailure", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .SetValue(queue, DateTime.MinValue);
+            .SetValue(queue, DateTime.UtcNow);
 
         await queue.CompleteAsync("job-1");
 
