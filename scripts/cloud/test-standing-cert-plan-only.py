@@ -10,6 +10,7 @@ import stat
 import tempfile
 import unittest
 import unittest.mock as mock
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,6 +18,9 @@ SCRIPT = Path(__file__).with_name("standing-cert-plan-only.py")
 spec = importlib.util.spec_from_file_location("standing_cert_plan_only", SCRIPT)
 entry = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(entry)
+hosted_spec = importlib.util.spec_from_file_location("standing_cert_hosted", SCRIPT.with_name("standing-cert-hosted.py"))
+hosted = importlib.util.module_from_spec(hosted_spec)
+hosted_spec.loader.exec_module(hosted)
 
 
 class StandingCertPlanWorkflow(unittest.TestCase):
@@ -140,6 +144,42 @@ class StandingCertPlanWorkflow(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "OIDC issuer endpoint"):
                     entry.oidc_token()
                 opener.assert_not_called()
+
+    def test_pinned_terraform_archive_member_allowlist(self):
+        archive = self.base / "terraform.zip"
+        with zipfile.ZipFile(archive, "w") as output:
+            output.writestr("LICENSE.txt", "license")
+            output.writestr("terraform", "synthetic executable")
+        data = archive.read_bytes()
+        target = hosted.extract_terraform_archive(data, self.base / "bin",
+                                                  hashlib.sha256(data).hexdigest())
+        self.assertEqual(target.read_bytes(), b"synthetic executable")
+        with zipfile.ZipFile(archive, "a") as output:
+            output.writestr("extra", "unreviewed")
+        changed = archive.read_bytes()
+        with self.assertRaisesRegex(ValueError, "archive-members-invalid"):
+            hosted.extract_terraform_archive(changed, self.base / "other-bin",
+                                             hashlib.sha256(changed).hexdigest())
+        with self.assertRaisesRegex(ValueError, "archive-mismatch"):
+            hosted.extract_terraform_archive(changed, self.base / "third-bin",
+                                             hashlib.sha256(data).hexdigest())
+
+    def test_hosted_request_requires_fixed_private_paths(self):
+        stage = self.base / "stage"
+        stage.mkdir(mode=0o700)
+        hosted_request = {"schema": "honua.aws-cert-plan-request/v2",
+                          "sealedStaging": {"mode": "age-v1.3.2-exact-run"},
+                          "privateStaging": {"directory": str(stage / "private")},
+                          "varFile": str(stage / "terraform.tfvars.json"),
+                          "backendTokenFile": str(stage / "backend-token"),
+                          "iacRevision": self.revision, "candidateDigest": self.candidate}
+        (stage / "request.json").write_text(json.dumps(hosted_request))
+        with mock.patch.object(hosted, "STAGE", stage), mock.patch.dict(os.environ, self.env, clear=True):
+            self.assertEqual(hosted.fixed_request(), hosted_request)
+            hosted_request["varFile"] = str(self.base / "wrong-file")
+            (stage / "request.json").write_text(json.dumps(hosted_request))
+            with self.assertRaisesRegex(ValueError, "hosted-request-invalid"):
+                hosted.fixed_request()
 
 
 if __name__ == "__main__":

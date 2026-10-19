@@ -93,7 +93,8 @@ def main():
     if not (datetime.now(timezone.utc) + timedelta(minutes=5) < expiry
             <= datetime.now(timezone.utc) + timedelta(minutes=55)):
         raise ValueError("session bound")
-    token_path = private_path(approved["backendTokenFile"], exists=False)
+    prepared_token = os.environ.get("CERT_BACKEND_TOKEN_PREPARED") == "1"
+    token_path = private_path(approved["backendTokenFile"], exists=prepared_token)
     git_env = dict(os.environ, GIT_NO_REPLACE_OBJECTS="1", GIT_CONFIG_COUNT="2",
                    GIT_CONFIG_KEY_0="core.fsmonitor", GIT_CONFIG_VALUE_0="false",
                    GIT_CONFIG_KEY_1="core.untrackedCache", GIT_CONFIG_VALUE_1="false")
@@ -114,13 +115,14 @@ def main():
             ["git", "-C", str(source), "show", "HEAD:" + script_rel], stderr=subprocess.DEVNULL,
             env=git_env):
         raise ValueError("IaC producer source")
-    token = oidc_token()
-    fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     try:
-        with os.fdopen(fd, "w") as stream:
-            stream.write(token)
-            stream.flush()
-            os.fsync(stream.fileno())
+        if not prepared_token:
+            token = oidc_token()
+            fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, "w") as stream:
+                stream.write(token)
+                stream.flush()
+                os.fsync(stream.fileno())
         child_env = {key: value for key, value in os.environ.items()
                      if not key.startswith("ACTIONS_") and key not in ("GITHUB_TOKEN", "GH_TOKEN")}
         result = subprocess.run(["python3", "-I", str(script), "--request", str(request_file)], cwd=source,

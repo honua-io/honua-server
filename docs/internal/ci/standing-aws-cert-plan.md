@@ -1,12 +1,62 @@
 # Standing AWS certification plan-only workflow
 
-The manual `standing-aws-cert-plan.yml` workflow uses the existing `honua-server:environment:cert` GitHub OIDC subject to assume the **standing deployment role** for a plan only. It never initializes a backend, changes a workspace, applies a plan, adopts a key or uploads Terraform output. It reports only the producer's public allowlisted unapproved receipt. The Terraform plan, diagnostics, source inputs and request stay on the private runner.
+The protected manual `standing-aws-cert-plan.yml` job runs on an ephemeral
+GitHub-hosted Linux runner. It checks the reviewed IaC source, configured age
+recipient, exact request bytes, pinned Terraform binary, provider lock and
+complete VPC/RDS module bytes **before** asking GitHub for the existing `cert`
+deployment role through OIDC. It then opens only the original remote backend
+and existing workspace, checks the expected state lineage/serial, reads the
+deployed PostGIS bootstrap ZIP and compares it to the reviewed SHA256 before
+planning. It neither applies a plan nor creates a workspace or state backend.
 
-This source workflow is dormant until the operator provisions all of these external inputs:
+The job encrypts the private packet to the reviewed age recipient and uploads
+only `plan.age` and `receipt.json` under the exact run/attempt artifact name.
+Its `always()` cleanup removes the owned IaC checkout, transient request,
+tfvars, backend configuration, state cache, plan, diagnostics, bootstrap ZIP,
+and local export. The hosted VM is ephemeral; this workflow makes no local
+retention or recovery claim. The [IaC encrypted-packet guide](https://github.com/honua-io/honua-iac/blob/trunk/docs/devops/standing-cert-encrypted-packets.md)
+defines authenticated exact-run private receipt and retention.
 
-- A dedicated Linux x64 self-hosted runner bearing `honua-cert-private`, with the `cert` environment's independent approval and physical/logical protection appropriate for secret-bearing Terraform plans. Do not give public pull requests this runner label. The runner must preserve the custodian-owned private directory across the review period; GitHub-hosted ephemeral storage does not meet this contract.
-- `HONUA_CERT_DEPLOY_ROLE_ARN`, `HONUA_CERT_PRIVATE_IAC_SOURCE` and `HONUA_CERT_PRIVATE_REQUEST_FILE` environment/repository variables. The first names the **existing** deployment role whose OIDC trust is the exact server `cert` subject. The second names an existing clean checkout of the reviewed IaC commit with its **initialized original backend/workspace**, locked providers, resolved module cache and unchanged PostGIS bootstrap build/ZIP. The third names a mode-0600 protected request in the private directory. No workflow step fetches private request bytes or reconstructs ignored Terraform inputs from a source-only checkout.
-- The request's existing backend configuration must reference a separate backend-access role and an absolute token-file path in a private directory. The workflow creates a fresh `sts.amazonaws.com` GitHub OIDC token at that path only for the plan process and deletes it afterward. Its private runner must have the approved IAM permissions to inspect both roles and read the existing state. The workflow does not modify trust or bootstrap roles.
-- Operator-authored request data pinned to the existing account, state lineage/serial, backend digest, image digests, secret **references**, candidate digest and retention obligation as described by the IaC [standing plan guide](https://github.com/honua-io/honua-iac/blob/trunk/docs/devops/standing-aws-cert-plan.md). The dispatch provides the exact IaC revision, request-file SHA256 and candidate SHA256; all three must match the protected request. The request's session expiry must be a conservative bound within 55 minutes of the newly assumed 60-minute role session.
+The workflow is **not ready for a live dispatch** until the protected `cert`
+environment contains these reviewed inputs:
 
-A dispatch on a non-`trunk` ref does not run the job. The protected environment and runner are operational prerequisites, not properties that source CI can prove. Source review and hosted checks do not demonstrate that the role, runner, private storage, backend or request have been configured. The workflow has no public artifact upload and no downstream apply trigger. Independent private plan review, recipient adoption for encrypted transport, signed one-time approval, exact-byte restore/apply, key adoption and candidate qualification remain separate gates.
+- `HONUA_CERT_IAC_READ_TOKEN`: read-only access to the private IaC repository.
+  Checkout is fixed to its current `trunk`; the dispatch SHA must match that
+  exact checkout. The workflow does not select an arbitrary revision.
+- `HONUA_CERT_REQUEST_JSON`: exact v2 request bytes, SHA256 supplied in the
+  dispatch. The request pins candidate, account, backend identity, existing
+  state lineage/serial, image digests, secret references, separate backend and
+  deployment roles, provider lock, exact IaC SHA, and the reviewed age recipient
+  fingerprint. `privateStaging.directory`, `varFile` and `backendTokenFile` must
+  use the fixed `/home/runner/.local/state/honua/cert-plan-stage/` paths. Its
+  `bootstrapFunctionArn` names the existing cert Lambda; GetFunction is read
+  only and its returned code SHA must match the committed bootstrap manifest.
+- `HONUA_CERT_TFVARS_JSON`: exact protected JSON tfvars whose SHA256 is in the
+  request. `HONUA_CERT_BACKEND_HCL`: protected `backend.tf` for the original S3
+  backend and separate backend-access web-identity role, with the fixed private
+  token-file path. No credentials or bearer token belong in that file.
+- `HONUA_CERT_DEPLOY_ROLE_ARN` and `REALAWS_CERT_REGION` environment variables:
+  the existing deployment role and cert region. The role must retain the exact
+  `repo:honua-io/honua-server:environment:cert` trust, and must be able to read
+  the existing Lambda code. The separate backend role must read/lock the
+  existing state. This workflow does not broaden either role's trust.
+
+The operator must prepare these per-dispatch protected values from the
+reviewed release candidate and existing cert/backend outputs; they are not in
+source. The request's `sessionExpiresAtUtc` must conservatively bound the
+deployment STS session. The initialized Terraform S3 backend descriptor must
+configure `assume_role_with_web_identity.duration = "1h"`. The workflow renews
+the GitHub token before the producer starts. The producer checks that exact
+descriptor, requires over 60 seconds of token validity at plan start, and
+conservatively
+reserves five minutes from the configured one-hour backend session. Terraform
+itself exchanges the token for its backend STS credentials; a separate sibling
+role session is not treated as proof of Terraform's credentials.
+
+Source review and offline controls establish refusal behavior, not live AWS
+permissions, original state, deployed ZIP identity or successful plan execution.
+After a real protected run, the trusted receiver must authenticate the GitHub
+run/attempt/artifact digest, decrypt using the dedicated local identity, verify
+the complete packet, and retain it under separate custody. No approval,
+exact-byte apply consumer, audit/keyring adoption or candidate qualification is
+included here.

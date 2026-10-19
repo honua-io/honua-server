@@ -1,13 +1,13 @@
 name: Standing AWS certification plan only
 
-# Protected, manual source entrypoint. A dedicated private runner and existing
-# initialized IaC checkout are operator prerequisites; this workflow is dormant
-# until they are provisioned. It never uploads plaintext or calls apply.
+# Protected, manual source entrypoint. The ephemeral job admits reviewed inputs,
+# plans without apply, and exports only age ciphertext plus a safe receipt.
 on:
   pull_request:
     paths:
       - '.github/workflows/standing-aws-cert-plan.yml'
       - 'scripts/cloud/standing-cert-plan-only.py'
+      - 'scripts/cloud/standing-cert-hosted.py'
       - 'scripts/cloud/test-standing-cert-plan-only.py'
   workflow_dispatch:
     inputs:
@@ -16,7 +16,7 @@ on:
         required: true
         type: string
       request_sha256:
-        description: SHA256 of the protected request file on the private runner
+        description: SHA256 of the protected v2 request secret bytes
         required: true
         type: string
       candidate_sha256:
@@ -45,16 +45,16 @@ jobs:
   plan:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk'
     needs: controls
-    name: Retain unapproved private plan
-    runs-on: [self-hosted, linux, x64, honua-cert-private]
+    name: Seal unapproved plan for private retention
+    runs-on: ubuntu-24.04
     environment: cert
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       CERT_IAC_REVISION: ${{ inputs.iac_revision }}
       CERT_REQUEST_SHA256: ${{ inputs.request_sha256 }}
       CERT_CANDIDATE_SHA256: ${{ inputs.candidate_sha256 }}
-      CERT_IAC_SOURCE: ${{ vars.HONUA_CERT_PRIVATE_IAC_SOURCE }}
-      CERT_REQUEST_FILE: ${{ vars.HONUA_CERT_PRIVATE_REQUEST_FILE }}
+      CERT_IAC_SOURCE: ${{ github.workspace }}/iac
+      CERT_REQUEST_FILE: /home/runner/.local/state/honua/cert-plan-stage/request.json
       CERT_DEPLOY_ROLE_ARN: ${{ vars.HONUA_CERT_DEPLOY_ROLE_ARN }}
       AWS_REGION: ${{ vars.REALAWS_CERT_REGION || 'us-east-1' }}
     steps:
@@ -62,13 +62,25 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Require private runtime and deployment role
-        shell: bash
+      - name: Checkout exact current IaC trunk
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/honua-iac
+          ref: trunk
+          path: iac
+          token: ${{ secrets.HONUA_CERT_IAC_READ_TOKEN }}
+          persist-credentials: false
+
+      - name: Install pinned Terraform CLI
+        run: python3 -I scripts/cloud/standing-cert-hosted.py install-terraform
+
+      - name: Admit reviewed recipient and immutable setup inputs before credentials
+        env:
+          CERT_REQUEST_JSON: ${{ secrets.HONUA_CERT_REQUEST_JSON }}
+          CERT_TFVARS_JSON: ${{ secrets.HONUA_CERT_TFVARS_JSON }}
         run: |
-          set -euo pipefail
-          test -n "$CERT_IAC_SOURCE" && test -n "$CERT_REQUEST_FILE" && test -n "$CERT_DEPLOY_ROLE_ARN"
-          test "$RUNNER_ENVIRONMENT" = self-hosted
-          test -d "$CERT_IAC_SOURCE/.git" || git -C "$CERT_IAC_SOURCE" rev-parse --is-inside-work-tree >/dev/null
+          test -n "$CERT_DEPLOY_ROLE_ARN"
+          python3 -I scripts/cloud/standing-cert-hosted.py prepare
 
       - name: Assume existing standing deployment role through cert OIDC
         uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6
@@ -78,6 +90,27 @@ jobs:
           role-duration-seconds: 3600
           role-session-name: honua-standing-cert-plan
 
-      - name: Produce private unapproved packet
+      - name: Verify existing backend and restore reviewed bootstrap bytes
+        env:
+          CERT_BACKEND_HCL: ${{ secrets.HONUA_CERT_BACKEND_HCL }}
+        run: python3 -I scripts/cloud/standing-cert-hosted.py backend
+
+      - name: Produce and seal unapproved packet
+        run: python3 -I scripts/cloud/standing-cert-hosted.py plan-and-seal
+
+      - name: Upload exact ciphertext and safe receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: standing-aws-cert-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            sealed/plan.age
+            sealed/receipt.json
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Remove owned transient plaintext and export
+        if: always()
         shell: bash
-        run: python3 -I scripts/cloud/standing-cert-plan-only.py
+        run: |
+          set -euo pipefail
+          rm -rf -- "$HOME/.local/state/honua/cert-plan-stage" "$GITHUB_WORKSPACE/sealed" "$GITHUB_WORKSPACE/iac"
