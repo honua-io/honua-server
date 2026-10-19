@@ -121,7 +121,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
 
         using var anonymous = _fixture.CreateClient();
         using var denied = await PostRpcAsync(anonymous,
-            $$"""{"jsonrpc":"2.0","id":"anon","method":"resources/read","params":{"uri":"{{resourceUri}}"}}""");
+            JsonSerializer.Serialize(new { jsonrpc = "2.0", id = "anon", method = "resources/read", @params = new { uri = resourceUri } }));
         var denial = await denied.Content.ReadAsStringAsync();
         if (denied.StatusCode == HttpStatusCode.OK)
         {
@@ -197,7 +197,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
     private static async Task<JsonElement> ReadDeploymentAsync(HttpClient client, string uri)
     {
         var response = await RpcAsync(client,
-            $$"""{"jsonrpc":"2.0","id":"read","method":"resources/read","params":{"uri":"{{uri}}"}}""");
+            JsonSerializer.Serialize(new { jsonrpc = "2.0", id = "read", method = "resources/read", @params = new { uri } }));
         response.TryGetProperty("error", out _).Should().BeFalse(response.GetRawText());
         var contents = response.GetProperty("result").GetProperty("contents");
         contents.GetArrayLength().Should().Be(1);
