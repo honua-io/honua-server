@@ -338,6 +338,110 @@ public sealed class GrpcFeatureServiceTests
         _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
     }
 
+    [UnitTheory]
+    [InlineData(2)]
+    [InlineData(4)]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_OwnerPolicy_NonOwnerIsDeniedBeforeWriterAndOutbox(int editKinds)
+    {
+        ArrangeOwnerEditPolicy("another-user");
+        using var context = CreateCallContext(CreateAuthenticatedUser("data-editor"));
+
+        var act = () => _sut.ApplyEdits(CreateApplyEditsRequest(editKinds), context);
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+        exception.Which.Status.Detail.Should().NotContain("another-user");
+        _featureWriter.ReceivedCalls().Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+        _outboxCapabilityProvider.ReceivedCalls().Should().BeEmpty();
+        _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData(2, 1L)]
+    [InlineData(4, 2L)]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_OwnerPolicy_OwnerWriteCarriesAtomicOwnerGuard(int editKinds, long objectId)
+    {
+        ArrangeOwnerEditPolicy("test-user");
+        _featureWriter.ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(FeatureEditResult.Success(
+                createdCount: 0, updatedCount: editKinds == 2 ? 1 : 0, deletedCount: editKinds == 4 ? 1 : 0)));
+        using var context = CreateCallContext(CreateAuthenticatedUser("data-editor"));
+
+        await _sut.ApplyEdits(CreateApplyEditsRequest(editKinds), context);
+
+        var writes = _featureWriter.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync)).ToArray();
+        writes.Should().ContainSingle();
+        var batch = (FeatureEditBatch)writes[0].GetArguments()[1]!;
+        batch.OwnerGuards.Should().ContainSingle()
+            .Which.Should().Be(new OwnerEditGuard(objectId, "owner", "test-user"));
+        if (editKinds == 2)
+        {
+            batch.Updates.Should().ContainSingle();
+            batch.Updates[0].Attributes["owner"].Should().Be("test-user");
+            batch.Updates[0].Attributes["name"].Should().Be("updated");
+        }
+        else
+        {
+            batch.Deletes.Should().Equal(objectId);
+        }
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_OwnerPolicy_InsertStampsAuthenticatedOwner()
+    {
+        ArrangeOwnerEditPolicy("another-user");
+        _featureWriter.ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(FeatureEditResult.Success(
+                createdCount: 1, updatedCount: 0, deletedCount: 0)));
+        using var context = CreateCallContext(CreateAuthenticatedUser("data-editor"));
+
+        await _sut.ApplyEdits(CreateApplyEditsRequest(editKinds: 1), context);
+
+        var writes = _featureWriter.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync)).ToArray();
+        writes.Should().ContainSingle();
+        var batch = (FeatureEditBatch)writes[0].GetArguments()[1]!;
+        batch.Creates.Should().ContainSingle();
+        batch.Creates[0].Attributes["owner"].Should().Be("test-user");
+        batch.Creates[0].Attributes["name"].Should().Be("created");
+        _featureReader.ReceivedCalls().Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureReader.QueryAsync));
+    }
+
+    private void ArrangeOwnerEditPolicy(string storedOwner)
+    {
+        var resource = _testResource with
+        {
+            OwnerEditPolicy = new MetadataV2OwnerEditPolicy
+            {
+                Enabled = true,
+                OwnerField = "owner",
+                StampOwnerOnInsert = true
+            },
+            SchemaFields =
+            [
+                .. _testResource.SchemaFields,
+                new MetadataV2Field { Name = "owner", Type = MetadataV2FieldType.String, Nullable = true }
+            ]
+        };
+        _resourceValidator.ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(_testService, resource)));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(2,
+            [
+                Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("owner", storedOwner)),
+                Feature.Create(2, null, ImmutableDictionary<string, object?>.Empty.Add("owner", storedOwner))
+            ]));
+    }
+
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]

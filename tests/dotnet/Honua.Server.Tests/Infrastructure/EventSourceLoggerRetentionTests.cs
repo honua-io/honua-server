@@ -48,6 +48,38 @@ public sealed class EventSourceLoggerRetentionTests
     }
 
     [Fact]
+    public void Forwarding_IndependentHosts_DoNotCaptureAmbientStaticEvents()
+    {
+        var firstCounter = new CountingProvider();
+        var secondCounter = new CountingProvider();
+        using var firstHost = CreateHost(firstCounter);
+        using var secondHost = CreateHost(secondCounter);
+        var firstProvider = Assert.Single(firstHost.Services.GetServices<ILoggerProvider>().OfType<CachedEventSourceLoggerProvider>());
+        var secondProvider = Assert.Single(secondHost.Services.GetServices<ILoggerProvider>().OfType<CachedEventSourceLoggerProvider>());
+
+        Serilog.Log.ForContext("SourceContext", "Honua.Tests.Ambient")
+            .Information("An unrelated process-wide event");
+
+        Assert.Equal(0, firstCounter.EventCount);
+        Assert.Equal(0, secondCounter.EventCount);
+        Assert.Empty(RetainedLoggers(firstProvider));
+        Assert.Empty(RetainedLoggers(secondProvider));
+
+        var firstLogger = firstHost.Services.GetRequiredService<Serilog.ILogger>()
+            .ForContext("SourceContext", "Honua.Tests.FirstHost");
+        var secondLogger = secondHost.Services.GetRequiredService<Serilog.ILogger>()
+            .ForContext("SourceContext", "Honua.Tests.SecondHost");
+        firstLogger.Information("First host event");
+        secondLogger.Information("Second host event {Index}", 1);
+        secondLogger.Information("Second host event {Index}", 2);
+
+        Assert.Equal(1, firstCounter.EventCount);
+        Assert.Equal(2, secondCounter.EventCount);
+        Assert.Single(RetainedLoggers(firstProvider));
+        Assert.Single(RetainedLoggers(secondProvider));
+    }
+
+    [Fact]
     public void Forwarding_EventSourceMessagesAndScopes_RemainObservableAndStopAfterDisposal()
     {
         var categoryPrefix = "Honua.Tests.EventDelivery." + Guid.NewGuid().ToString("N");
@@ -107,7 +139,7 @@ public sealed class EventSourceLoggerRetentionTests
 
     private static IHost CreateHost(CountingProvider otherProvider) => new HostBuilder()
         .ConfigureLogging(logging => logging.ClearProviders().AddEventSourceLogger().AddProvider(otherProvider))
-        .UseSerilog((_, configuration) => configuration.MinimumLevel.Information(), writeToProviders: true)
+        .UseSerilog((_, configuration) => configuration.MinimumLevel.Information(), preserveStaticLogger: true, writeToProviders: true)
         .ConfigureServices(services => services.CacheEventSourceLoggersForSerilogForwarding())
         .Build();
 
