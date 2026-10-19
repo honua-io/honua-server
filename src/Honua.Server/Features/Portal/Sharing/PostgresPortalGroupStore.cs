@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Cryptography;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Npgsql;
 
@@ -129,7 +130,7 @@ internal sealed class PostgresPortalGroupStore(
         command.Parameters.AddWithValue("modified", updated.Modified);
         command.Parameters.AddWithValue("id", groupId);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return updated;
     }
 

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Npgsql;
 
@@ -104,7 +105,7 @@ internal sealed class PostgresPortalItemSharingStore(
         update.Parameters.AddWithValue("tenant", tenant);
         update.Parameters.AddWithValue("item", itemId);
         await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return new PortalItemShareState(false, false, groups);
     }
 
