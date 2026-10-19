@@ -40,10 +40,10 @@ internal sealed partial class FileImportJobExecutor(
 
     public ExecutionJobKind Kind => ExecutionJobKind.FileImport;
 
-    public async Task<JobExecutionResult> ExecuteAsync(
+    private async Task<JobExecutionResult> ExecuteCoreAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool deferTerminal = false)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(context);
@@ -239,7 +239,7 @@ internal sealed partial class FileImportJobExecutor(
                 }
             }
         }
-        catch (ImportObjectStoreException ex)
+        catch (ImportObjectStoreException ex) when (!deferTerminal)
         {
             Log.ImportFaulted(logger, jobId, ex);
             await writer.CloseAndDrainAsync().ConfigureAwait(false);
@@ -258,7 +258,7 @@ internal sealed partial class FileImportJobExecutor(
             // outcome (cancelled, failed or handed back for retry), and the job-status read
             // projects a terminal execution record onto this document.
             await writer.CloseAndDrainAsync().ConfigureAwait(false);
-            if (licenseCancellation.IsCancellationRequested)
+            if (!deferTerminal && licenseCancellation.IsCancellationRequested)
             {
                 // Parity with the in-process runner: a partial import stopped by licence expiry is a
                 // terminal failure, never a retry.
@@ -268,7 +268,7 @@ internal sealed partial class FileImportJobExecutor(
 
             throw;
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        catch (Exception ex) when (!deferTerminal && ex is not OutOfMemoryException)
         {
             // Deliberately broad: any importer fault is a failed import. The detail is logged;
             // the job document carries the same safe message the in-process runner reports.
@@ -278,19 +278,27 @@ internal sealed partial class FileImportJobExecutor(
             return NonRetryableFailure(SafeImportFailureMessage);
         }
 
-        await writer.CloseAndDrainAsync().ConfigureAwait(false);
+        finally
+        {
+            await writer.CloseAndDrainAsync().ConfigureAwait(false);
+        }
+
         if (!result.Success)
         {
             Log.ImportFailed(logger, jobId, result.ErrorMessage ?? "unknown");
             var errorMessage = result.ErrorCode == ImportTableOwnershipException.Code
                 ? ImportTableOwnershipException.CreateSafeMessage(result.TableName)
                 : SafeImportFailureMessage;
-            await WriteTerminalAsync(jobId, processing, ImportStatus.Failed, result, errorMessage).ConfigureAwait(false);
+            if (!deferTerminal)
+                await WriteTerminalAsync(jobId, processing, ImportStatus.Failed, result, errorMessage).ConfigureAwait(false);
             return NonRetryableFailure(errorMessage, result.Warnings);
         }
 
-        await WriteTerminalAsync(jobId, processing, ImportStatus.Completed, result, result.ErrorMessage).ConfigureAwait(false);
-        await context.ReportProgressAsync(100, "Import completed", CancellationToken.None).ConfigureAwait(false);
+        if (!deferTerminal)
+        {
+            await WriteTerminalAsync(jobId, processing, ImportStatus.Completed, result, result.ErrorMessage).ConfigureAwait(false);
+            await context.ReportProgressAsync(100, "Import completed", CancellationToken.None).ConfigureAwait(false);
+        }
         Log.ImportCompleted(logger, jobId, request.TableName, result.FeatureCount);
         return JobExecutionResult.Succeeded(result.Warnings) with
         {

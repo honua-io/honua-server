@@ -12,6 +12,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.FileStorage;
@@ -34,6 +35,17 @@ public sealed class StagedImportSourceTests
     [InlineData("revoked-during-source")]
     [InlineData("committed-revoked")]
     [InlineData("committed-expired")]
+    [InlineData("recover-expired")]
+    [InlineData("recover-revoked")]
+    [InlineData("lost-commit-response")]
+    [InlineData("failed-commit-response")]
+    [InlineData("receipt-read-failed")]
+    [InlineData("receipt-read-failed-after-commit")]
+    [InlineData("job-changed-before-read")]
+    [InlineData("job-changed-during-read")]
+    [InlineData("lease-changed-during-read")]
+    [InlineData("missing-receipt")]
+    [InlineData("effect-record-refused")]
     public async Task Worker_AcceptedLeaseFencesSourceAndImporterButPreservesCommittedTruth(string scenario)
     {
         using var fixture = new Fixture();
@@ -58,7 +70,23 @@ public sealed class StagedImportSourceTests
             Spec = new() { Kind = ExecutionJobKind.FileImport, TargetKind = BatchComputeTargetKind.AwsBatch,
                 Backend = "in-process", WorkloadName = "file-import", Parameters = FileImportJobParameters.Build(accepted, receipt.Bytes) }
         };
-        var revoked = false;
+        var recovered = scenario is "recover-expired" or "recover-revoked";
+        ImportResult? committed = recovered ? SuccessfulResult() : null;
+        var revoked = scenario == "recover-revoked";
+        if (scenario == "recover-expired") clock.UtcNow = envelope.ExpiresAt.AddSeconds(1);
+        var stored = scenario == "job-changed-before-read" ? job with { Audit = job.Audit with { RequestedBy = "changed" } } : job;
+        var jobs = Substitute.For<IExecutionJobStore>();
+        jobs.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(_ => stored);
+        var receipts = Substitute.For<IImportCommittedResultReader>();
+        receipts.TryReadAsync(job.OperationId, JobExecutionLeaseIntentFingerprint.Compute(job), Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            if (scenario == "receipt-read-failed" || (scenario == "receipt-read-failed-after-commit" && committed is not null))
+                throw new IOException("Database receipt read unavailable.");
+            if (scenario == "job-changed-during-read") stored = job with { Audit = job.Audit with { RequestedBy = "changed" } };
+            if (scenario == "lease-changed-during-read") stored = job with { Audit = job.Audit with
+                { SubmitterSecurityContext = job.Audit.SubmitterSecurityContext! with { ExecutionLease = envelope with { ProtectedAuthority = "changed" } } } };
+            return committed;
+        });
         var calls = 0;
         var authority = Substitute.For<IJobExecutionLeaseAuthority>();
         authority.RevalidateForExecutionAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>()).Returns(call =>
@@ -92,21 +120,50 @@ public sealed class StagedImportSourceTests
                 // cannot erase truthful output; generic worker publication is separate.
                 if (scenario == "committed-revoked") revoked = true;
                 if (scenario == "committed-expired") clock.UtcNow = envelope.ExpiresAt.AddSeconds(1);
-                return new ImportResult { Success = true, TableName = "roads", PhysicalTableName = "roads",
-                    Schema = "honua_data", FeatureCount = 1, Format = SupportedFileFormat.GeoJson };
+                if (scenario != "missing-receipt") committed = SuccessfulResult();
+                if (scenario == "lost-commit-response") throw new IOException("Lost COMMIT response.");
+                if (scenario == "failed-commit-response") return ImportResult.CreateFailure("roads", SupportedFileFormat.GeoJson, "Lost response.");
+                return SuccessfulResult();
             });
         var collection = new ServiceCollection().AddSingleton<ICloudFileStorage>(storage).AddSingleton(importer)
-            .AddSingleton(fixture.Scratch).AddSingleton<TimeProvider>(clock);
+            .AddSingleton(fixture.Scratch).AddSingleton<TimeProvider>(clock).AddSingleton(jobs).AddSingleton(receipts);
         if (scenario != "no-authority") collection.AddSingleton(authority);
         using var services = collection.BuildServiceProvider();
         var executor = new FileImportJobExecutor(services.GetRequiredService<IServiceScopeFactory>(),
             Substitute.For<IUniversalProgressStore>(), NullLogger<FileImportJobExecutor>.Instance);
-        var result = await executor.ExecuteAsync(job, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
-        if (scenario is "unchanged" or "committed-revoked" or "committed-expired")
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns(job.OperationId);
+        if (scenario == "effect-record-refused") context.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException("Stale attempt."));
+        if (scenario is "receipt-read-failed" or "receipt-read-failed-after-commit" or "job-changed-before-read"
+            or "job-changed-during-read" or "lease-changed-during-read" or "missing-receipt" or "effect-record-refused" or "no-authority" or "revoked-during-source")
+        {
+            await FluentActions.Invoking(() => executor.ExecuteAsync(job, context, CancellationToken.None))
+                .Should().ThrowAsync<Exception>();
+            if (scenario is not ("receipt-read-failed-after-commit" or "missing-receipt" or "effect-record-refused" or "revoked-during-source"))
+            {
+                storage.ReceivedCalls().Should().BeEmpty();
+                await importer.DidNotReceive().ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<IProgress<ImportProgress>>(), Arg.Any<CancellationToken>());
+            }
+            if (scenario != "effect-record-refused")
+                await context.DidNotReceive().RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+            JobSecurityScope.Current.Should().BeNull();
+            return;
+        }
+        var result = await executor.ExecuteAsync(job, context, CancellationToken.None);
+        if (recovered || scenario is "unchanged" or "committed-revoked" or "committed-expired" or "lost-commit-response" or "failed-commit-response")
         {
             result.Status.Should().Be(ExecutionJobStatus.Succeeded);
             result.FileImportOutput!.PhysicalTableName.Should().Be("roads");
-            calls.Should().Be(2, "current authority is checked before source work and after it, not after physical commit");
+            result.CompletedWithCommittedEffects.Should().BeTrue();
+            await context.Received(1).RecordCommittedEffectAsync(
+                $"honua-import-commit:{job.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(job)}", Arg.Any<CancellationToken>());
+            calls.Should().Be(recovered ? 0 : 2, "receipt recovery performs no execution or source access");
+            if (recovered)
+            {
+                storage.ReceivedCalls().Should().BeEmpty();
+                await importer.DidNotReceive().ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<IProgress<ImportProgress>>(), Arg.Any<CancellationToken>());
+            }
         }
         else
         {
@@ -117,6 +174,9 @@ public sealed class StagedImportSourceTests
         }
         JobSecurityScope.Current.Should().BeNull("executor scope must be disposed on every path");
     }
+
+    private static ImportResult SuccessfulResult() => new() { Success = true, TableName = "roads", PhysicalTableName = "roads",
+        Schema = "honua_data", FeatureCount = 1, Format = SupportedFileFormat.GeoJson };
 
     private sealed class LeaseWorkerClock : TimeProvider
     {
