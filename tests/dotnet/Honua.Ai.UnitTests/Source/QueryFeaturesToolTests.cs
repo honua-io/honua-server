@@ -120,7 +120,7 @@ public sealed class QueryFeaturesToolTests
             });
 
         var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"outFields":["NAME"]}""");
+            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"outFields":["NAME"],"returnGeometry":false}""");
 
         SuccessfulContent(response);
         captured.OutFields.Should().NotBeNull();
