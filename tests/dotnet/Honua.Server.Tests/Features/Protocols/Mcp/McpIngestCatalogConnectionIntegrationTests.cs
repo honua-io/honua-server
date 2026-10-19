@@ -106,7 +106,9 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
 
             var ingested = await CallToolAsync(admin, "honua_ingest_dataset", new
             {
-                format = "geojson", data = GeoJson, datasetName = dataset
+                format = "geojson",
+                data = GeoJson,
+                datasetName = dataset
             });
             ingested.GetProperty("success").GetBoolean().Should().BeTrue(ingested.GetRawText());
             ingested.GetProperty("rowCount").GetInt32().Should().Be(1);
@@ -171,7 +173,9 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
 
             var ambiguous = await CallToolAsync(admin, "honua_ingest_dataset", new
             {
-                format = "geojson", data = GeoJson, datasetName = secondDataset
+                format = "geojson",
+                data = GeoJson,
+                datasetName = secondDataset
             });
             ambiguous.GetProperty("success").GetBoolean().Should().BeTrue();
             ambiguous.TryGetProperty("connectionId", out _).Should().BeFalse();
