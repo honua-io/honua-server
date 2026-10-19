@@ -57,15 +57,22 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         foreach (var migration in new[]
                  {
                      "035_CreateStudioPackageLifecycle.sql", "036_CreateContentPublications.sql",
+                     "082_CreatePromotionStores.sql",
                      "089_AddStudioContentEnumerationIndexes.sql", "090_AddStudioContentItemOwner.sql",
                      // honua-server#4905 adds studio_*.tenant_id, which every lifecycle write reads.
                      "120_AddStudioTenantOwnership.sql",
                      "126_AddStudioContentHashInput.sql",
+                     "134_VersionCanonicalDeployments.sql",
                  })
         {
             var sql = await File.ReadAllTextAsync(Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", migration));
-            await _fixture.Postgres.ExecuteAsync(
-                sql.Replace("$HonuaSchema$", $"\"{_studioSchema}\"", StringComparison.Ordinal));
+            sql = sql.Replace("$HonuaSchema$", $"\"{_studioSchema}\"", StringComparison.Ordinal);
+            if (migration == "082_CreatePromotionStores.sql")
+            {
+                sql = sql.Replace("honua.", $"\"{_studioSchema}\".", StringComparison.Ordinal);
+            }
+
+            await _fixture.Postgres.ExecuteAsync(sql);
         }
         _client = _fixture.CreateAdminClient();
     }
