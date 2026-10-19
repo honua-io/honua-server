@@ -445,6 +445,15 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             // keeps re-apply idempotent. Composite requests reach this insert only
             // after the Metadata v2 candidate kept their ownership flag.
             var v1Outcome = await InsertRelationshipRowAsync(connection, request, cancellationToken).ConfigureAwait(false);
+            if (request.Composite && v1Outcome == MigrationCatalogWriteOutcome.AlreadyExists &&
+                !await ExistingRelationshipMatchesAsync(connection, request, cancellationToken).ConfigureAwait(false))
+            {
+                decisions[OutcomeKey(request)] = DeferredComposite(request,
+                    "The existing SQL relationship does not match the reviewed composite mapping. " +
+                    "Related layer, role, name, and join fields must agree before this mapping can be accepted.");
+                continue;
+            }
+
             if (v1Outcome == MigrationCatalogWriteOutcome.Created)
             {
                 v1Created++;
@@ -653,6 +662,33 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         return inserted is null
             ? MigrationCatalogWriteOutcome.AlreadyExists
             : MigrationCatalogWriteOutcome.Created;
+    }
+
+    private static async Task<bool> ExistingRelationshipMatchesAsync(
+        NpgsqlConnection connection,
+        MigrationRelationshipApplyRequest request,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT related_layer_id, relationship_type, origin_foreign_key, destination_foreign_key, name
+            FROM honua.relationships
+            WHERE layer_id = @layerId AND relationship_id = @relationshipId;
+            """;
+        var relationshipId = request.EsriRelationshipId ?? DeriveStableRelationshipId(request.SourceRelationshipId);
+        var expectedName = string.IsNullOrWhiteSpace(request.Name)
+            ? $"rel-{relationshipId.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            : request.Name!;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@layerId", request.OriginLayerId);
+        command.Parameters.AddWithValue("@relationshipId", relationshipId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            && reader.GetInt32(0) == request.RelatedLayerId
+            && string.Equals(NormalizeRelationshipRole(reader.GetString(1)),
+                NormalizeRelationshipRole(request.Role), StringComparison.Ordinal)
+            && string.Equals(reader.GetString(2), request.OriginKeyField, StringComparison.Ordinal)
+            && string.Equals(reader.GetString(3), request.DestinationKeyField, StringComparison.Ordinal)
+            && string.Equals(reader.GetString(4), expectedName, StringComparison.Ordinal);
     }
 
     private static (MigrationCatalogWriteOutcome Outcome, string Message) CombineRelationshipOutcomes(
