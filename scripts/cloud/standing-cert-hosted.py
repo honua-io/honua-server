@@ -299,6 +299,6 @@ if __name__ == "__main__":
         operation = sys.argv[1]
         {"install-terraform": install_terraform, "prepare": prepare,
          "backend": backend, "plan-and-seal": plan_and_seal}[operation]()
-    except BaseException:
+    except Exception:
         print('{"status":"refused"}')
         sys.exit(3)
