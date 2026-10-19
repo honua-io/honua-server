@@ -166,6 +166,21 @@ All WCS 2.0.1 coverage exports are limited to 4096 pixels per axis and 16,777,21
 
 > Open `https://server.example.com/rest/services/0/ImageServer/WCS?SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCoverage&COVERAGEID=0&FORMAT=image/tiff&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)` in a browser.
 
+### WCS authorization
+
+WCS metadata and coverage reads honor scoped API key read grants against the
+resolved service and resource names. For a service named `imagery`,
+`read:imagery`, `read:imagery/*`, and `read:*` permit reads within that service.
+A grant such as `read:imagery/elevation` exposes only the matching published
+coverage in capabilities and authorizes only that coverage's description and
+bytes. The direct layer route resolves the owning coverage service before
+checking the same grant.
+
+Wrong-target and write-only keys remain forbidden, including on otherwise
+anonymous services. Tenant restrictions apply to services, resources, and
+publications before scoped grants. Ordinary user role policies remain in force;
+authorization failures retain WCS XML exception responses.
+
 ### Connecting ArcGIS Pro
 
 Add the WCS server connection (or run `MakeWCSLayer`) with

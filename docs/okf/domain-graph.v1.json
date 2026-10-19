@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:c29a229e2e156c9fe76d9e16de606aa1fa976c49bf12bc24d2b7bd8fe321dadd",
+  "bundleDigest": "sha256:28b7c2fe1726525bc4330a2504baa7edb787b3a9b9f1764504a609f8c3d64beb",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -8072,7 +8072,7 @@
     {
       "id": "reference/protocols/wms-wfs-wcs-wmts",
       "path": "reference/protocols/wms-wfs-wcs-wmts.md",
-      "documentDigest": "sha256:ec405bc26b05ef799d4f738d5cc4a1863c6377bcca93d72e07df7c7e3b8976f4",
+      "documentDigest": "sha256:89dfa408c1b9ead722625c738e0f0a00196a363ec6c98f3ab163410cfd726067",
       "metadata": {
         "type": "reference",
         "title": "WMS, WFS, WCS, WMTS (classic OGC)",
@@ -8115,7 +8115,7 @@
     {
       "id": "reference/versioning-and-support",
       "path": "reference/versioning-and-support.md",
-      "documentDigest": "sha256:aaf342f2c0a5f7cfeb71d57e2968b2d386228dfa8151ad2e09f2895d7e8adb07",
+      "documentDigest": "sha256:04e7fb4aac64d4001966169cc2ed8cd13ef8bde4abb2b3280fc9ce7fc5226abb",
       "metadata": {
         "type": "reference",
         "title": "Versioning and support",
@@ -16175,6 +16175,11 @@
     {
       "source": "reference/versioning-and-support",
       "relation": "links_to",
+      "target": "cite-status"
+    },
+    {
+      "source": "reference/versioning-and-support",
+      "relation": "links_to",
       "target": "concepts/protocols"
     },
     {
@@ -16186,6 +16191,11 @@
       "source": "reference/versioning-and-support",
       "relation": "links_to",
       "target": "reference/admin-api/overview"
+    },
+    {
+      "source": "reference/versioning-and-support",
+      "relation": "links_to",
+      "target": "reference/compatibility/clients"
     },
     {
       "source": "reference/versioning-and-support",
