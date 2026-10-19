@@ -46,6 +46,7 @@ public sealed class StagedImportSourceTests
     [InlineData("lease-changed-during-read")]
     [InlineData("missing-receipt")]
     [InlineData("effect-record-refused")]
+    [InlineData("retry-after-effect-refusal")]
     public async Task Worker_AcceptedLeaseFencesSourceAndImporterButPreservesCommittedTruth(string scenario)
     {
         using var fixture = new Fixture();
@@ -133,8 +134,15 @@ public sealed class StagedImportSourceTests
             Substitute.For<IUniversalProgressStore>(), NullLogger<FileImportJobExecutor>.Instance);
         var context = Substitute.For<IJobExecutionContext>();
         context.OperationId.Returns(job.OperationId);
-        if (scenario == "effect-record-refused") context.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => throw new InvalidOperationException("Stale attempt."));
+        var rejectEffect = scenario is "effect-record-refused" or "retry-after-effect-refusal";
+        if (rejectEffect) context.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => rejectEffect ? Task.FromException(new InvalidOperationException("Stale attempt.")) : Task.CompletedTask);
+        if (scenario == "retry-after-effect-refusal")
+        {
+            await FluentActions.Invoking(() => executor.ExecuteAsync(job, context, CancellationToken.None))
+                .Should().ThrowAsync<InvalidOperationException>();
+            rejectEffect = false;
+        }
         if (scenario is "receipt-read-failed" or "receipt-read-failed-after-commit" or "job-changed-before-read"
             or "job-changed-during-read" or "lease-changed-during-read" or "missing-receipt" or "effect-record-refused" or "no-authority" or "revoked-during-source")
         {
@@ -151,14 +159,16 @@ public sealed class StagedImportSourceTests
             return;
         }
         var result = await executor.ExecuteAsync(job, context, CancellationToken.None);
-        if (recovered || scenario is "unchanged" or "committed-revoked" or "committed-expired" or "lost-commit-response" or "failed-commit-response")
+        if (recovered || scenario is "unchanged" or "committed-revoked" or "committed-expired" or "lost-commit-response" or "failed-commit-response" or "retry-after-effect-refusal")
         {
             result.Status.Should().Be(ExecutionJobStatus.Succeeded);
             result.FileImportOutput!.PhysicalTableName.Should().Be("roads");
             result.CompletedWithCommittedEffects.Should().BeTrue();
-            await context.Received(1).RecordCommittedEffectAsync(
+            await context.Received(scenario == "retry-after-effect-refusal" ? 2 : 1).RecordCommittedEffectAsync(
                 $"honua-import-commit:{job.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(job)}", Arg.Any<CancellationToken>());
             calls.Should().Be(recovered ? 0 : 2, "receipt recovery performs no execution or source access");
+            if (scenario == "retry-after-effect-refusal")
+                await importer.Received(1).ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<IProgress<ImportProgress>>(), Arg.Any<CancellationToken>());
             if (recovered)
             {
                 storage.ReceivedCalls().Should().BeEmpty();
