@@ -2,10 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 
 using FluentAssertions;
 
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -99,6 +101,22 @@ public class ImageServerParameterValidationTests : IClassFixture<ImageServerPara
     #endregion
 
     #region Export Image Parameters
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImage_AdminKeyOutsideAllowedRoles_DoesNotBypassRasterPolicy()
+    {
+        using var adminClient = _fixture.CreateClient(client =>
+            client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword));
+        await RasterIntegrationTestData.RunWithIssue522MosaicAsync(_fixture, async () =>
+        {
+            using var response = await adminClient.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=0,0,4,2&size=32,32&format=png");
+            await response.AssertGeoServicesErrorAsync(403);
+            response.Content.Headers.ContentType?.MediaType.Should().NotStartWith("image/");
+        });
+    }
 
     [IntegrationTest]
     [Operation(Operations.Export)]
@@ -595,6 +613,9 @@ public class ImageServerParameterValidationTests : IClassFixture<ImageServerPara
 /// <summary>Authenticated ImageServer host with a restricted raster resource.</summary>
 public sealed class ImageServerParameterFixture : IAsyncLifetime
 {
+    private const string EntitledRole = "imagery-reader";
+    private const string Referer = "https://imageserver-parameters.example/";
+
     public WebAppFixture App { get; } = new WebAppFixture()
         .ConfigureWebHost(builder =>
         {
@@ -609,9 +630,22 @@ public sealed class ImageServerParameterFixture : IAsyncLifetime
     {
         await App.InitializeAsync();
         App.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId,
-            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["imagery-reader"] });
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [EntitledRole] });
+        var token = await App.GetService<IPortalTokenIssuer>().IssueAsync(
+            new PortalTokenIssueRequest(
+                "imagery-parameter-reader",
+                "imagery-parameter-reader",
+                TenantId: null,
+                Roles: [EntitledRole],
+                PortalTokenClientType.Referer,
+                Referer,
+                DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None);
         Client = App.CreateClient(client =>
-            client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword));
+        {
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+            client.DefaultRequestHeaders.Referrer = new Uri(Referer);
+        });
     }
 
     public Task DisposeAsync() => App.DisposeAsync();
