@@ -26,7 +26,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 
-namespace Honua.Server.Tests.Features.Protocols.Mcp;
+namespace Honua.Server.Tests.Features.Eval;
 
 /// <summary>
 /// Real admin and MCP HTTP surfaces over the production secure-connection
