@@ -69,8 +69,8 @@ internal sealed class FeatureServerEditsHandler(
         ApplyEditsRequest request,
         Honua.Core.Configuration.EditLimits editLimits,
         ApplyEditsIdempotencyChoice? idempotencyOverride = null,
-        CancellationToken cancellationToken = default,
-        AmbientFeatureEditTransaction? ambientTransaction = null)
+        AmbientFeatureEditTransaction? ambientTransaction = null,
+        CancellationToken cancellationToken = default)
     {
         var httpContext = _httpContextAccessor.HttpContext!;
 

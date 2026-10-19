@@ -822,8 +822,8 @@ internal static partial class FeatureServerEndpoints
                 applyRequest,
                 editLimits,
                 batchKey,
-                cancellationToken,
-                ambient).ConfigureAwait(false);
+                ambient,
+                cancellationToken).ConfigureAwait(false);
 
             if (batchResult is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult ||
                 jsonResult.Value is null)
