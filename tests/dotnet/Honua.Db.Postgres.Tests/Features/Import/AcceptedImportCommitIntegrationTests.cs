@@ -94,6 +94,77 @@ public sealed class AcceptedImportCommitIntegrationTests(PostgresFixture fixture
     }
 
     [IntegrationTest]
+    public async Task ReplacedAttempt_AfterAuthoritativeAbsenceCannotCommitWhenDecisionLockBecomesAvailable()
+    {
+        // The claim authority is controlled; both the original importer and the
+        // absence reader use the actual PostgreSQL decision fence. Host tests
+        // separately verify that a protected principal cannot forge this claim.
+        var job = CreateJob() with { ClaimedBy = "original", AttemptCount = 1 };
+        var currentAttempt = 1;
+        var firstCheck = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resumeOriginal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var authority = new CommitAuthority(job)
+        {
+            BeforeCheck = async check =>
+            {
+                if (Volatile.Read(ref currentAttempt) != job.AttemptCount)
+                    throw new UnauthorizedAccessException("The original worker claim was replaced.");
+                if (check == 1)
+                {
+                    firstCheck.SetResult();
+                    await resumeOriginal.Task.WaitAsync(deadline.Token);
+                }
+            }
+        };
+        using var scope = JobSecurityScope.BeginExecution(job, job.Audit.SubmitterSecurityContext!);
+        var importing = ImportAsync(authority, cancellationToken: deadline.Token);
+        await using var fence = await _dataSource.OpenConnectionAsync(deadline.Token);
+        await using var transaction = await fence.BeginTransactionAsync(deadline.Token);
+        try
+        {
+            await firstCheck.Task.WaitAsync(deadline.Token);
+            Interlocked.Exchange(ref currentAttempt, 2);
+            // Replacement claim precedes the real read: no original transaction
+            // has committed, and the fresh reader establishes authoritative absence.
+            Assert.Null(await ReadAsync(job));
+            await PostgresImportCommitReceipt.LockDecisionAsync(fence, transaction, "honua", OperationId,
+                JobExecutionLeaseIntentFingerprint.Compute(job), deadline.Token);
+            resumeOriginal.SetResult();
+
+            await using var observer = await _dataSource.OpenConnectionAsync(deadline.Token);
+            await using var blocked = new NpgsqlCommand("""
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_stat_activity
+                    WHERE datname = current_database() AND $1 = ANY(pg_blocking_pids(pid)))
+                """, observer);
+            blocked.Parameters.AddWithValue(fence.ProcessID);
+            while (!(bool)(await blocked.ExecuteScalarAsync(deadline.Token))!)
+            {
+                Assert.False(importing.IsCompleted, "The original importer must reach the real decision lock.");
+                await Task.Delay(TimeSpan.FromMilliseconds(10), deadline.Token);
+            }
+            // This check must happen after the decision lock, not while waiting.
+            Assert.Equal(1, authority.Checks);
+            await transaction.CommitAsync(deadline.Token);
+            var result = await importing.WaitAsync(deadline.Token);
+            Assert.False(result.Success);
+            Assert.Equal(2, authority.Checks);
+            Assert.Null(await ReadAsync(job));
+            Assert.Equal(true, await ScalarAsync("SELECT to_regclass('honua_data.imported_roads') IS NULL"));
+            Assert.Equal(true, await ScalarAsync("SELECT to_regclass('honua_data.imported_roads__staging') IS NULL"));
+        }
+        finally
+        {
+            await transaction.DisposeAsync();
+            await deadline.CancelAsync();
+            resumeOriginal.TrySetCanceled(deadline.Token);
+            try { await importing; }
+            catch (OperationCanceledException) { }
+        }
+    }
+
+    [IntegrationTest]
     public async Task AuthorityRevokedAfterRename_RollsBackDestinationAndReceipt()
     {
         var job = CreateJob();
@@ -234,7 +305,8 @@ public sealed class AcceptedImportCommitIntegrationTests(PostgresFixture fixture
     }
 
     private async Task<ImportResult> ImportAsync(CommitAuthority authority,
-        ImportLoadMode mode = ImportLoadMode.Append, IProgress<ImportProgress>? progress = null)
+        ImportLoadMode mode = ImportLoadMode.Append, IProgress<ImportProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         var service = new StreamingFileImportService(_connections,
             new CrsDetectionService(_connections, NullLogger<CrsDetectionService>.Instance),
@@ -246,7 +318,7 @@ public sealed class AcceptedImportCommitIntegrationTests(PostgresFixture fixture
             FileStream = source, FileName = "roads.geojson", TableName = "roads", TargetSchema = "honua_data",
             SourceSrid = 4326, TargetSrid = 4326, LoadMode = mode,
             OverwriteExisting = mode == ImportLoadMode.Replace, KeyColumns = mode == ImportLoadMode.Upsert ? ["code"] : []
-        }, progress);
+        }, progress, cancellationToken);
     }
 
     private Task<ImportResult?> ReadAsync(ExecutionJobRecord job) =>
