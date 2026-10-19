@@ -48,6 +48,7 @@ internal sealed partial class GeoservicesImportService
         var objectIdMap = new Dictionary<long, long>(features.Length);
         var absentGeometryTargetIds = new HashSet<long>();
         var unconvertedGeometryTargetIds = new HashSet<long>();
+        var invalidSourceGeometryTargetIds = new HashSet<long>();
 
         var columnList = new List<string>(fields.Length + 1);
         columnList.AddRange(columnMap.Columns.Select(column => $"\"{column.ColumnName}\""));
@@ -69,8 +70,13 @@ internal sealed partial class GeoservicesImportService
                 : $"{parameterPlaceholders}, {geometryExpression}";
         }
 
+        // Classify the source WKT, not the geometry stored after ST_MakeValid. A repaired
+        // polygon remains an inherited source defect or an unrepaired rewrite (#4826).
+        var sourceValidity = hasGeometry
+            ? $", CASE WHEN @geom IS NULL THEN NULL ELSE ST_IsValid(ST_GeomFromText(@geom, {targetSrid})) END"
+            : string.Empty;
         var insertSql =
-            $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders}) RETURNING {FieldNames.ObjectId}";
+            $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders}) RETURNING {FieldNames.ObjectId}{sourceValidity}";
 
         // Create the command once, add parameters with placeholder values, and prepare
         await using var cmd = connection.CreateCommand();
@@ -144,12 +150,24 @@ internal sealed partial class GeoservicesImportService
                     cmd.Parameters["geom"].Value = DBNull.Value;
                 }
 
-                var rawInsertedId = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                long? insertedId = null;
+                bool? sourceGeometryValid = null;
+                await using (var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false) && !reader.IsDBNull(0))
+                    {
+                        insertedId = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
+                        if (hasGeometry && !reader.IsDBNull(1))
+                        {
+                            sourceGeometryValid = reader.GetBoolean(1);
+                        }
+                    }
+                }
+
                 inserted++;
 
-                if (rawInsertedId is not null && rawInsertedId is not DBNull)
+                if (insertedId is { } targetFeatureId)
                 {
-                    var targetFeatureId = Convert.ToInt64(rawInsertedId, CultureInfo.InvariantCulture);
                     if (sourceGeometryAbsent)
                     {
                         absentGeometryTargetIds.Add(targetFeatureId);
@@ -157,6 +175,10 @@ internal sealed partial class GeoservicesImportService
                     else if (sourceGeometryUnconverted)
                     {
                         unconvertedGeometryTargetIds.Add(targetFeatureId);
+                    }
+                    else if (sourceGeometryValid == false)
+                    {
+                        invalidSourceGeometryTargetIds.Add(targetFeatureId);
                     }
 
                     if (sourceObjectIdField is not null
@@ -203,7 +225,8 @@ internal sealed partial class GeoservicesImportService
             objectIdMap,
             firstFailureReason,
             absentGeometryTargetIds,
-            unconvertedGeometryTargetIds);
+            unconvertedGeometryTargetIds,
+            invalidSourceGeometryTargetIds);
     }
 
     private static bool TryReadSourceObjectId(
@@ -265,7 +288,8 @@ internal sealed partial class GeoservicesImportService
         Dictionary<long, long> ObjectIdMap,
         string? FirstFailureReason = null,
         HashSet<long>? AbsentGeometryTargetIds = null,
-        HashSet<long>? UnconvertedGeometryTargetIds = null);
+        HashSet<long>? UnconvertedGeometryTargetIds = null,
+        HashSet<long>? InvalidSourceGeometryTargetIds = null);
 
     private static string BuildGeometryInsertExpression(string? geometryType, int targetSrid)
     {
