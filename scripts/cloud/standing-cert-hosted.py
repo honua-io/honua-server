@@ -180,6 +180,64 @@ def admit_backend_source(request, data):
             and data == canonical_backend_source(request), "backend-source-refused")
 
 
+def normalize_reviewed_module_cache(root):
+    """Narrow archive modes inside the private Terraform data tree before admission."""
+    data = root / ".terraform"
+    info = data.lstat()
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid()
+            and stat.S_IMODE(info.st_mode) == 0o700, "module-staging-not-private")
+    cache = data / "modules"
+    info = cache.lstat()
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid(), "module-cache-invalid")
+    cache.chmod(0o700)
+    index_path = cache / "modules.json"
+    info = index_path.lstat()
+    require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid(), "module-index-invalid")
+    index_path.chmod(0o600)
+    index = json.loads(index_path.read_bytes())
+    sources = {"registry.terraform.io/terraform-aws-modules/vpc/aws",
+               "registry.terraform.io/terraform-aws-modules/rds/aws"}
+    packages = []
+    for item in index["Modules"]:
+        if item.get("Source") not in sources:
+            continue
+        location = Path(item.get("Dir", ""))
+        require(not location.is_absolute() and len(location.parts) == 3
+                and location.parts[:2] == (".terraform", "modules"),
+                "module-package-location-invalid")
+        packages.append((item["Source"], cache / location.parts[2]))
+    require({source for source, _ in packages} == sources and len(packages) == 2
+            and len({path for _, path in packages}) == 2, "module-package-index-invalid")
+    for _, package in packages:
+        count, total = 0, 0
+        for parent, children, files in os.walk(package, followlinks=False):
+            directory = Path(parent)
+            info = directory.lstat()
+            require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid(),
+                    "module-package-entry-invalid")
+            directory.chmod(0o700)
+            for name in children:
+                path = directory / name
+                info = path.lstat()
+                require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid(),
+                        "module-package-entry-invalid")
+                path.chmod(0o700)
+            for name in files:
+                path = directory / name
+                info = path.lstat()
+                count += 1
+                total += info.st_size
+                require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
+                        and count <= 512 and total <= 32 * 1024 * 1024,
+                        "module-package-entry-invalid")
+                path.chmod(0o644)
+        require(count > 0, "module-package-empty")
+        for parent, children, _ in os.walk(package, followlinks=False):
+            for name in children:
+                (Path(parent) / name).chmod(0o755)
+        package.chmod(0o755)
+
+
 def prepare():
     reject_runtime_overrides()
     require(os.environ.get("GITHUB_REPOSITORY") == "honua-io/honua-server"
@@ -228,8 +286,12 @@ def prepare():
     for key in list(init_env):
         if key.startswith("AWS_") or key.startswith("TF_CLI_ARGS") or key.startswith("GIT_"):
             init_env.pop(key)
+    data = root / ".terraform"
+    require(not data.exists() and not data.is_symlink(), "module-staging-occupied")
+    data.mkdir(mode=0o700)
     run_private([terraform, "-chdir=" + str(root), "init", "-backend=false", "-lockfile=readonly",
                  "-input=false", "-no-color"], env=init_env, timeout=600)
+    normalize_reviewed_module_cache(root)
     verified = json.loads(run_private(["python3", "-I", str(iac / SCRIPT_REL / "verify_reviewed_modules.py"),
                                        "--root", str(root), "--manifest",
                                        str(iac / "release/aws-cert-reviewed-modules.json")], env=setup_env))

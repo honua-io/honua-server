@@ -173,6 +173,73 @@ class StandingCertPlanWorkflow(unittest.TestCase):
             hosted.extract_terraform_archive(changed, self.base / "third-bin",
                                              hashlib.sha256(data).hexdigest())
 
+    def module_cache(self):
+        root = self.base / "cache-root"
+        root.mkdir()
+        data = root / ".terraform"
+        data.mkdir(mode=0o700)
+        cache = data / "modules"
+        cache.mkdir()
+        cache.chmod(0o775)
+        modules = []
+        for name in ("vpc", "rds"):
+            package = cache / name
+            package.mkdir()
+            package.chmod(0o775)
+            nested = package / "nested"
+            nested.mkdir()
+            nested.chmod(0o775)
+            file = nested / "main.tf"
+            file.write_text("reviewed fixture")
+            file.chmod(0o664)
+            modules.append({"Source": "registry.terraform.io/terraform-aws-modules/" + name + "/aws",
+                            "Dir": ".terraform/modules/" + name})
+        index = cache / "modules.json"
+        index.write_text(json.dumps({"Modules": modules}))
+        index.chmod(0o664)
+        return root, cache
+
+    def test_hosted_narrows_archive_module_modes_inside_private_parent(self):
+        root, cache = self.module_cache()
+        hosted.normalize_reviewed_module_cache(root)
+        self.assertEqual((root / ".terraform").stat().st_mode & 0o777, 0o700)
+        self.assertEqual((cache / "modules.json").stat().st_mode & 0o777, 0o600)
+        for name in ("vpc", "rds"):
+            self.assertEqual((cache / name / "nested").stat().st_mode & 0o777, 0o755)
+            self.assertEqual((cache / name / "nested/main.tf").stat().st_mode & 0o777, 0o644)
+
+    def test_hosted_module_setup_refuses_links_and_nonregular_entries(self):
+        root, cache = self.module_cache()
+        outside = self.base / "outside"
+        outside.mkdir()
+        external = outside / "main.tf"
+        external.write_text("outside")
+        external.chmod(0o664)
+        nested = cache / "vpc/nested"
+        link = nested / "external"
+        link.symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "module-package-entry-invalid"):
+            hosted.normalize_reviewed_module_cache(root)
+        self.assertEqual(external.stat().st_mode & 0o777, 0o664)
+        link.unlink()
+        pipe = nested / "pipe"
+        os.mkfifo(pipe)
+        with self.assertRaisesRegex(ValueError, "module-package-entry-invalid"):
+            hosted.normalize_reviewed_module_cache(root)
+        pipe.unlink()
+        package = cache / "rds"
+        backup = cache / "rds-backup"
+        package.rename(backup)
+        package.symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "module-package-entry-invalid|module-package-empty"):
+            hosted.normalize_reviewed_module_cache(root)
+        self.assertEqual(external.stat().st_mode & 0o777, 0o664)
+        package.unlink()
+        backup.rename(package)
+        (root / ".terraform").chmod(0o775)
+        with self.assertRaisesRegex(ValueError, "module-staging-not-private"):
+            hosted.normalize_reviewed_module_cache(root)
+
     def test_hosted_refuses_ambient_backend_and_shell_routing(self):
         for name in ("TF_CLI_ARGS_init", "TF_CLI_CONFIG_FILE", "TF_DATA_DIR", "TF_WORKSPACE",
                      "AWS_ENDPOINT_URL_STS", "AWS_CA_BUNDLE", "AWS_PROFILE", "AWS_ROLE_ARN",

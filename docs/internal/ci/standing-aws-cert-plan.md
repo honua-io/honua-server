@@ -1,6 +1,6 @@
 # Standing AWS certification plan-only workflow
 
-The protected manual `standing-aws-cert-plan.yml` job runs on an ephemeral
+The manual `standing-aws-cert-plan.yml` job runs on an ephemeral
 GitHub-hosted Linux runner. It checks the reviewed IaC source, configured age
 recipient, exact request bytes, pinned Terraform binary, provider lock and
 complete VPC/RDS module bytes **before** asking GitHub for the existing `cert`
@@ -17,8 +17,11 @@ and local export. The hosted VM is ephemeral; this workflow makes no local
 retention or recovery claim. The [IaC encrypted-packet guide](https://github.com/honua-io/honua-iac/blob/trunk/docs/devops/standing-cert-encrypted-packets.md)
 defines authenticated exact-run private receipt and retention.
 
-The workflow is **not ready for a live dispatch** until the protected `cert`
-environment contains these reviewed inputs:
+The workflow is **not ready for a live dispatch** until the `cert` environment
+has reviewed protection rules and contains these reviewed inputs. The
+environment name alone supplies no protection. Terraform's data directory is
+created owner-only before module init; package modes are narrowed inside that
+private tree before the strict module-byte verifier admits them:
 
 - The public `honua-iac` checkout uses the job's default read-only
   `GITHUB_TOKEN`. Checkout is fixed to its current `trunk`; the dispatch SHA
