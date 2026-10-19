@@ -143,13 +143,14 @@ def transfer(operation, path, length, content_hash, suffix):
 
 
 device = binding = None
-volume_created = False
+loop_attempted = False
 try:
     disk = ROOT / (NAME + '.ext4')
     with disk.open('xb') as output:
         os.posix_fallocate(output.fileno(), 0, STATE['capacityBytes'])
         os.fsync(output.fileno())
     run(['mkfs.ext4', '-q', '-F', '-m', '0', str(disk)])
+    loop_attempted = True
     device = helper('/usr/sbin/losetup', '--find', '--show', '/backing/' + disk.name)
     assert device.startswith('/dev/loop') and device[9:].isdigit(), device
     binding = loop_binding(device)
@@ -161,7 +162,6 @@ try:
     save()
     run(['docker', 'volume', 'create', '--driver', 'local', '--opt', 'type=ext4',
          '--opt', 'device=' + device, '--label', 'honua.component-probe=' + NAME, NAME])
-    volume_created = True
     initializer = NAME + '-init'
     CONTAINERS.append(initializer)
     run(['docker', 'run', '--rm', '--name', initializer, '--network', 'none', '--read-only',
@@ -261,16 +261,27 @@ finally:
             found = run(['docker', 'container', 'ls', '--all', '--quiet', '--filter', 'name=^/' + container + '$'])
             if found:
                 run(['docker', 'container', 'rm', '--force', container])
-        if volume_created:
+        # Creation may have succeeded before its response was lost. Always
+        # reconcile the exact owned volume before detaching any backing device.
+        found = run(['docker', 'volume', 'ls', '--format', '{{.Name}}',
+                     '--filter', 'name=^' + NAME + '$'])
+        if found:
+            assert found == NAME, 'volume lookup returned a different identity'
+            info = json.loads(run(['docker', 'volume', 'inspect', NAME]))
+            assert len(info) == 1 and info[0]['Name'] == NAME
+            assert info[0]['Labels'].get('honua.component-probe') == NAME
+            assert info[0]['Driver'] == 'local' and info[0]['Options'] == {'device': device, 'type': 'ext4'}
             run(['docker', 'volume', 'rm', NAME])
             STATE['volumeRemoved'] = True
+        if loop_attempted and (device is None or binding is None):
+            raise RuntimeError('Loop attachment outcome unknown; backing retained for reconciliation')
         if device is not None and binding is not None:
             assert loop_binding(device) == binding, 'Loop device ownership changed'
             helper('/usr/sbin/losetup', '--detach', device)
             rows = json.loads(helper('/usr/sbin/losetup', '--json', '--list', '--output', 'NAME,BACK-FILE'))['loopdevices']
             assert all(row['back-file'] != binding['back-file'] for row in rows), 'backing remains attached'
             STATE['loopDetached'] = True
-        if device is None or STATE.get('loopDetached'):
+        if not loop_attempted or STATE.get('loopDetached'):
             disk.unlink(missing_ok=True)
             parent = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY)
             try:
