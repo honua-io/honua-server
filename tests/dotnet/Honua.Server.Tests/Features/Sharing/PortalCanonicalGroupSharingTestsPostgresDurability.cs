@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Sharing;
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class PostgresPortalSharingDurabilityTests(PostgresFixture postgres) : IAsyncLifetime
+public sealed class PortalCanonicalGroupSharingTestsPostgresDurability(PostgresFixture postgres) : IAsyncLifetime
 {
     private readonly string _schema = "portal6366_" + Guid.NewGuid().ToString("N");
 
