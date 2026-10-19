@@ -1106,9 +1106,9 @@ internal sealed partial class Wfs20Handler
         WfsFeatureTypeDescriptor descriptor,
         FeatureQuery query,
         string normalizedFormat,
+        IFeatureReader reader,
         CancellationToken cancellationToken)
     {
-        var reader = await ResolveQueryReaderAsync(descriptor, cancellationToken).ConfigureAwait(false);
         if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Csv, StringComparison.OrdinalIgnoreCase))
         {
             if (reader is not IPagedFeatureReader pagedFeatureReader)
@@ -2017,25 +2017,26 @@ internal sealed partial class Wfs20Handler
 
     private static string XmlEscape(string value) => SecurityElement.Escape(value) ?? string.Empty;
 
-    private bool ShouldUsePagedGetFeatureFastPath(
+    private bool CanAttemptPagedGetFeatureFastPath(
         IReadOnlyList<WfsFeatureTypeDescriptor> selectedTypes,
-        string normalizedFormat,
         bool isHitsRequest,
         int maxFeatures)
+        => _wfs20Options.NumberMatchedPolicy == Wfs20NumberMatchedPolicy.UnknownWhenExpensive
+            && !isHitsRequest
+            && selectedTypes.Count == 1
+            && maxFeatures > 0;
+
+    /// <summary>
+    /// True when <paramref name="reader"/> can serve the paged GetFeature fast path for
+    /// <paramref name="normalizedFormat"/>. Callers must pass the reader the request will
+    /// actually query, not the injected store.
+    /// </summary>
+    internal static bool ReaderSupportsPagedGetFeatureFastPath(IFeatureReader reader, string normalizedFormat)
     {
-        if (_wfs20Options.NumberMatchedPolicy != Wfs20NumberMatchedPolicy.UnknownWhenExpensive)
-        {
-            return false;
-        }
-
-        if (isHitsRequest || selectedTypes.Count != 1 || maxFeatures <= 0)
-        {
-            return false;
-        }
-
+        ArgumentNullException.ThrowIfNull(reader);
         if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Csv, StringComparison.OrdinalIgnoreCase))
         {
-            return _featureReader is IPagedFeatureReader;
+            return reader is IPagedFeatureReader;
         }
 
         var isJsonFormat =
@@ -2047,7 +2048,7 @@ internal sealed partial class Wfs20Handler
             return false;
         }
 
-        return _featureReader is IPagedGeoJsonFeatureStore || _featureReader is IPagedFeatureReader;
+        return reader is IPagedGeoJsonFeatureStore || reader is IPagedFeatureReader;
     }
 
     private static string FormatNumberMatched(long? totalCount)
@@ -2061,7 +2062,8 @@ internal sealed partial class Wfs20Handler
         string QualifiedName,
         string LocalName,
         string NamespacePrefix,
-        string NamespaceUri);
+        string NamespaceUri,
+        MetadataV2GraphSnapshot Snapshot);
 
     private sealed record LayerQueryPlan(
         WfsFeatureTypeDescriptor Descriptor,
@@ -2085,11 +2087,10 @@ internal sealed partial class Wfs20Handler
             return _featureReader;
         }
 
-        var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var read = await StorageBoundFeatureReader.ResolveAsync(
                 _featureReader,
                 _providerQueryRouter,
-                snapshot,
+                descriptor.Snapshot,
                 descriptor.Service,
                 descriptor.Resource,
                 publication,

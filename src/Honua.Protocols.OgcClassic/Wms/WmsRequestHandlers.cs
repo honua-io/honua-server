@@ -115,7 +115,8 @@ internal static partial class WmsRequestHandlers
         MetadataV2Resource Resource,
         MetadataV2Publication Publication,
         int StorageLayerId,
-        string Identifier);
+        string Identifier,
+        MetadataV2GraphSnapshot Snapshot);
 
     private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
         => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
@@ -312,7 +313,7 @@ internal static partial class WmsRequestHandlers
                 ? publication.LayerIndex.Value.ToString(CultureInfo.InvariantCulture)
                 : publication.ServiceLocalId ?? publication.Metadata.Name ?? routableResource.Metadata.Name;
 
-            var candidate = new WmsLayer(routableResource, publication, storageLayerId.Value, identifier);
+            var candidate = new WmsLayer(routableResource, publication, storageLayerId.Value, identifier, snapshot);
             if (!byResource.TryGetValue(routableResource.Metadata.Id, out var existing) ||
                 (publication.IsPrimary && !existing.Publication.IsPrimary))
             {
@@ -343,8 +344,7 @@ internal static partial class WmsRequestHandlers
             return fallback;
         }
 
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.Index.ServicesById.TryGetValue(layer.Publication.ServiceId, out var service))
+        if (!layer.Snapshot.Index.ServicesById.TryGetValue(layer.Publication.ServiceId, out var service))
         {
             return fallback;
         }
@@ -352,7 +352,7 @@ internal static partial class WmsRequestHandlers
         var read = await StorageBoundFeatureReader.ResolveAsync(
                 fallback,
                 router,
-                snapshot,
+                layer.Snapshot,
                 service,
                 layer.Resource,
                 layer.Publication,

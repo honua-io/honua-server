@@ -156,37 +156,45 @@ internal sealed partial class Wfs20Handler
                     : CreateEmptyFeatureCollectionResult(normalizedFormat);
             }
 
-            if (ShouldUsePagedGetFeatureFastPath(selectedTypes, normalizedFormat, isHitsRequest, maxFeatures))
+            if (CanAttemptPagedGetFeatureFastPath(selectedTypes, isHitsRequest, maxFeatures))
             {
                 var descriptor = selectedTypes[0];
-                var query = (await BuildFeatureQueryAsync(
-                    descriptor,
-                    propertyName,
-                    sortBy,
-                    bbox,
-                    filter,
-                    resourceId,
-                    srsName,
-                    enforceResourceIdTypeMatch: true,
-                    requireResourceIdQualifier: selectedTypes.Length > 1,
-                    cancellationToken: cancellationToken).ConfigureAwait(false)) with
+                // The publication may be bound to a provider that does not page, even when
+                // the injected reader does. Decide from the reader this request will use.
+                var resolvedReader = await ResolveQueryReaderAsync(descriptor, cancellationToken)
+                    .ConfigureAwait(false);
+                if (ReaderSupportsPagedGetFeatureFastPath(resolvedReader, normalizedFormat))
                 {
-                    Offset = offset,
-                    Limit = maxFeatures
-                };
+                    var query = (await BuildFeatureQueryAsync(
+                        descriptor,
+                        propertyName,
+                        sortBy,
+                        bbox,
+                        filter,
+                        resourceId,
+                        srsName,
+                        enforceResourceIdTypeMatch: true,
+                        requireResourceIdQualifier: selectedTypes.Length > 1,
+                        cancellationToken: cancellationToken).ConfigureAwait(false)) with
+                    {
+                        Offset = offset,
+                        Limit = maxFeatures
+                    };
 
-                var pagedResult = await BuildPagedGetFeatureResultAsync(
-                    descriptor,
-                    query,
-                    normalizedFormat,
-                    cancellationToken);
+                    var pagedResult = await BuildPagedGetFeatureResultAsync(
+                        descriptor,
+                        query,
+                        normalizedFormat,
+                        resolvedReader,
+                        cancellationToken);
 
-                Wfs20Log.GetFeatureReturned(
-                    _logger,
-                    pagedResult.ReturnedCount,
-                    pagedResult.NumberMatchedSummary);
+                    Wfs20Log.GetFeatureReturned(
+                        _logger,
+                        pagedResult.ReturnedCount,
+                        pagedResult.NumberMatchedSummary);
 
-                return pagedResult.Result;
+                    return pagedResult.Result;
+                }
             }
 
             var planSet = await BuildLayerQueryPlansAsync(
