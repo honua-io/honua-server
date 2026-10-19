@@ -65,7 +65,7 @@ internal sealed partial class FeatureDataAccess
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var ok = await ApplyVersionedOperationAsync(
-                        layerId, versionId, operation, editBatch.RowSecurityWriteCheck, connection, transaction,
+                        layerId, versionId, operation, editBatch.RowSecurityWriteCheck, editBatch.OwnerGuards, connection, transaction,
                         createdIds, createResults, updateResults, deleteResults, cancellationToken).ConfigureAwait(false);
                     if (!ok)
                     {
@@ -94,7 +94,7 @@ internal sealed partial class FeatureDataAccess
                     foreach (var feature in editBatch.Updates)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        if (!await TryVersionedUpdateAsync(layerId, versionId, feature, editBatch.RowSecurityWriteCheck, connection, transaction, updateResults, cancellationToken).ConfigureAwait(false))
+                        if (!await TryVersionedUpdateAsync(layerId, versionId, feature, editBatch.RowSecurityWriteCheck, OwnerEditGuard.Find(editBatch.OwnerGuards, feature.Id), connection, transaction, updateResults, cancellationToken).ConfigureAwait(false))
                         {
                             failed = true;
                             if (editBatch.RollbackOnFailure) break;
@@ -107,7 +107,7 @@ internal sealed partial class FeatureDataAccess
                     foreach (var objectId in editBatch.Deletes)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        if (!await TryVersionedDeleteAsync(layerId, versionId, objectId, connection, transaction, deleteResults, cancellationToken).ConfigureAwait(false))
+                        if (!await TryVersionedDeleteAsync(layerId, versionId, objectId, OwnerEditGuard.Find(editBatch.OwnerGuards, objectId), connection, transaction, deleteResults, cancellationToken).ConfigureAwait(false))
                         {
                             failed = true;
                             if (editBatch.RollbackOnFailure) break;
@@ -165,6 +165,7 @@ internal sealed partial class FeatureDataAccess
         Guid versionId,
         FeatureEditOperation operation,
         SqlFragment? writeCheck,
+        ImmutableArray<OwnerEditGuard> ownerGuards,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         ImmutableArray<long>.Builder createdIds,
@@ -181,10 +182,13 @@ internal sealed partial class FeatureDataAccess
             FeatureEditOperationKind.Update => await TryVersionedUpdateAsync(
                 layerId, versionId,
                 operation.Feature ?? throw new InvalidOperationException("Ordered update is missing the feature payload."),
-                writeCheck, connection, transaction, updateResults, cancellationToken).ConfigureAwait(false),
+                writeCheck,
+                OwnerEditGuard.Find(ownerGuards, operation.Feature?.Id ?? 0),
+                connection, transaction, updateResults, cancellationToken).ConfigureAwait(false),
             FeatureEditOperationKind.Delete => await TryVersionedDeleteAsync(
                 layerId, versionId,
                 operation.ObjectId ?? throw new InvalidOperationException("Ordered delete is missing the target object id."),
+                OwnerEditGuard.Find(ownerGuards, operation.ObjectId ?? 0),
                 connection, transaction, deleteResults, cancellationToken).ConfigureAwait(false),
             _ => throw new InvalidOperationException($"Unsupported ordered edit operation kind '{operation.Kind}'.")
         };
@@ -280,6 +284,7 @@ internal sealed partial class FeatureDataAccess
         Guid versionId,
         Feature feature,
         SqlFragment? writeCheck,
+        OwnerEditGuard? ownerGuard,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         ImmutableArray<EditOperationResult>.Builder updateResults,
@@ -304,7 +309,7 @@ internal sealed partial class FeatureDataAccess
                 {
                     var affected = await UpsertOverlayRowAsync(
                         layerId, versionId, feature.Id, operation: 2, feature.Geometry, feature.Attributes,
-                        geometryStorageType, layerSrid, isDelete: false, connection, transaction, cancellationToken).ConfigureAwait(false);
+                        geometryStorageType, layerSrid, isDelete: false, ownerGuard, connection, transaction, cancellationToken).ConfigureAwait(false);
                     if (affected == 0)
                     {
                         throw new ResourceNotFoundException($"Feature {feature.Id} not found");
@@ -340,6 +345,7 @@ internal sealed partial class FeatureDataAccess
         int layerId,
         Guid versionId,
         long objectId,
+        OwnerEditGuard? ownerGuard,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         ImmutableArray<EditOperationResult>.Builder deleteResults,
@@ -352,7 +358,7 @@ internal sealed partial class FeatureDataAccess
 
             var rowsAffected = await UpsertOverlayRowAsync(
                 layerId, versionId, objectId, operation: 3, geometry: null, attributes: null,
-                geometryStorageType, layerSrid, isDelete: true, connection, transaction, cancellationToken).ConfigureAwait(false);
+                geometryStorageType, layerSrid, isDelete: true, ownerGuard, connection, transaction, cancellationToken).ConfigureAwait(false);
 
             if (rowsAffected == 0)
             {
@@ -388,6 +394,7 @@ internal sealed partial class FeatureDataAccess
         Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType geometryStorageType,
         int? layerSrid,
         bool isDelete,
+        OwnerEditGuard? ownerGuard,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
@@ -403,21 +410,29 @@ internal sealed partial class FeatureDataAccess
         // base image, then INSERT ... ON CONFLICT upserts the overlay. base_* is captured from DEFAULT only
         // when no prior overlay row exists (first touch); the ON CONFLICT branch preserves the existing
         // base. The mutation is a no-op (0 rows) when neither an overlay row nor a DEFAULT row exists.
+        var baseOwner = OwnerMatchExpression(ownerGuard, "b.attributes", 7, 8);
+        var existingOwner = OwnerMatchExpression(ownerGuard, "existing.attributes", 7, 8);
+        var baseLock = ownerGuard is null ? string.Empty : " FOR UPDATE OF b";
+        var existingProjection = ownerGuard is null ? "1" : "attributes";
+        var existingLock = ownerGuard is null ? string.Empty : " FOR UPDATE";
+        var admission = ownerGuard is null
+            ? "WHERE EXISTS (SELECT 1 FROM base) OR EXISTS (SELECT 1 FROM existing)"
+            : $"WHERE EXISTS (SELECT 1 FROM base) OR EXISTS (SELECT 1 FROM existing WHERE {existingOwner})";
         var sql = string.Create(CultureInfo.InvariantCulture, $@"
             WITH base AS (
                 SELECT b.geometry AS base_geom, b.attributes AS base_attrs
                 FROM {_tableName} b
-                WHERE b.layer_id = $2 AND b.objectid = $3
+                WHERE b.layer_id = $2 AND b.objectid = $3{(baseOwner is null ? string.Empty : " AND " + baseOwner)}{baseLock}
             ),
             existing AS (
-                SELECT 1 FROM {VersionEditsTableName}
-                WHERE version_id = $1 AND layer_id = $2 AND objectid = $3
+                SELECT {existingProjection} FROM {VersionEditsTableName}
+                WHERE version_id = $1 AND layer_id = $2 AND objectid = $3{existingLock}
             )
             INSERT INTO {VersionEditsTableName}
                 (version_id, layer_id, objectid, operation, geometry, attributes, base_geometry, base_attributes)
             SELECT $1, $2, $3, $5::smallint, {geometryValueExpression}, $6::jsonb,
                    (SELECT base_geom FROM base), (SELECT base_attrs FROM base)
-            WHERE EXISTS (SELECT 1 FROM base) OR EXISTS (SELECT 1 FROM existing)
+            {admission}
             ON CONFLICT (version_id, layer_id, objectid) DO UPDATE
                 SET operation = EXCLUDED.operation,
                     geometry = EXCLUDED.geometry,
@@ -432,6 +447,7 @@ internal sealed partial class FeatureDataAccess
         command.Parameters.Add(new NpgsqlParameter { Value = geometry ?? (object)DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bytea });
         command.Parameters.AddWithValue((short)operation);
         command.Parameters.Add(new NpgsqlParameter { Value = (object?)attributesJson ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Jsonb });
+        AddOwnerGuardParameters(command, ownerGuard);
 
         try
         {
