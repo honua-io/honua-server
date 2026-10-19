@@ -293,6 +293,16 @@ class GeneratedFilesContracts(unittest.TestCase):
 
             run('git', 'init', '--bare', str(remote))
             run('git', 'init', '-b', 'trunk')
+            # Automatic maintenance may otherwise outlive the Git subprocess
+            # and write into .git while TemporaryDirectory removes it (#6396).
+            # Keep maintenance enabled but synchronous in BOTH repositories:
+            # publisher children use repo; receive-pack children use remote.
+            # Cleanup remains strict so unrelated surviving writers still fail.
+            for directory in (repo, remote):
+                for option in ('gc.autoDetach', 'maintenance.autoDetach'):
+                    run('git', '-C', str(directory), 'config', '--local', option, 'false')
+                    self.assertEqual(run('git', '-C', str(directory), 'config',
+                                         '--bool', '--get', option).stdout.strip(), 'false')
             scripts = repo / 'scripts/ci'
             scripts.mkdir(parents=True)
             for name in ('generated-files.sh', 'publish-generated-files.sh'):
