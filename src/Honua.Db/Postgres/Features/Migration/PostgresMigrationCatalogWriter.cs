@@ -389,7 +389,7 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         {
             foreach (var request in compositeRequests)
             {
-                decisions[request.SourceRelationshipId] = DeferredComposite(
+                decisions[OutcomeKey(request)] = DeferredComposite(
                     request,
                     "Composite ownership requires a Metadata v2 graph and was not rewritten as a simple relationship.");
             }
@@ -411,16 +411,15 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
                 graphStore, compositeRequests, cancellationToken).ConfigureAwait(false);
             foreach (var decision in plan.Accepted)
             {
-                graphOutcomes[decision.SourceRelationshipId] = new GraphRelationshipOutcome(decision.Outcome, decision.Message);
-                v1Requests.Add(compositeRequests.First(request =>
-                    string.Equals(request.SourceRelationshipId, decision.SourceRelationshipId, StringComparison.Ordinal)));
+                var request = MatchCompositeRequest(compositeRequests, decision);
+                graphOutcomes[OutcomeKey(request)] = new GraphRelationshipOutcome(decision.Outcome, decision.Message);
+                v1Requests.Add(request);
             }
 
             foreach (var decision in plan.Rejected)
             {
-                var request = compositeRequests.First(candidate =>
-                    string.Equals(candidate.SourceRelationshipId, decision.SourceRelationshipId, StringComparison.Ordinal));
-                decisions[request.SourceRelationshipId] = DeferredComposite(request, decision.Message);
+                var request = MatchCompositeRequest(compositeRequests, decision);
+                decisions[OutcomeKey(request)] = DeferredComposite(request, decision.Message);
             }
         }
 
@@ -455,9 +454,9 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
                 v1AlreadyExists++;
             }
 
-            graphOutcomes.TryGetValue(request.SourceRelationshipId, out var graphOutcome);
+            graphOutcomes.TryGetValue(OutcomeKey(request), out var graphOutcome);
             var combined = CombineRelationshipOutcomes(graphOutcome, v1Outcome, graphStore != null);
-            decisions[request.SourceRelationshipId] = new MigrationRelationshipApplyOutcome
+            decisions[OutcomeKey(request)] = new MigrationRelationshipApplyOutcome
             {
                 SourceRelationshipId = request.SourceRelationshipId,
                 Outcome = combined.Outcome,
@@ -477,7 +476,7 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         var results = new List<MigrationRelationshipApplyOutcome>(orderedRequests.Length);
         foreach (var request in orderedRequests)
         {
-            if (!decisions.TryGetValue(request.SourceRelationshipId, out var decision))
+            if (!decisions.TryGetValue(OutcomeKey(request), out var decision))
             {
                 throw new InvalidOperationException(
                     $"Relationship '{request.SourceRelationshipId}' produced no apply outcome.");
@@ -761,28 +760,19 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         var accepted = new List<CompositeRelationshipDecision>();
         var rejected = new List<CompositeRelationshipDecision>();
         var staged = new Dictionary<int, List<MetadataV2Relationship>>();
-        var stagedSourceIds = new HashSet<string>(StringComparer.Ordinal);
-        var seenSourceIds = new HashSet<string>(StringComparer.Ordinal);
+        var stagedScopes = new HashSet<string>(StringComparer.Ordinal);
+        var seenOnOrigin = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var request in requests)
         {
-            if (!seenSourceIds.Add(request.SourceRelationshipId))
-            {
-                rejected.Add(new CompositeRelationshipDecision(
-                    request.SourceRelationshipId,
-                    MigrationCatalogWriteOutcome.AlreadyExists,
-                    $"Relationship '{request.SourceRelationshipId}' is ambiguous in the composite batch and was not written.",
-                    Deferred: true));
-                continue;
-            }
-
             if (!request.Composite)
             {
                 rejected.Add(new CompositeRelationshipDecision(
                     request.SourceRelationshipId,
                     MigrationCatalogWriteOutcome.AlreadyExists,
                     "Only composite ownership requests belong in the composite relationship plan.",
-                    Deferred: true));
+                    Deferred: true,
+                    OriginLayerId: request.OriginLayerId));
                 continue;
             }
 
@@ -793,7 +783,22 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
                     request.SourceRelationshipId,
                     MigrationCatalogWriteOutcome.AlreadyExists,
                     $"Origin resource '{originResourceId}' is not in the Metadata v2 graph. Composite ownership was not rewritten as a simple relationship.",
-                    Deferred: true));
+                    Deferred: true,
+                    OriginLayerId: request.OriginLayerId));
+                continue;
+            }
+
+            // The same ArcGIS relationship id is translated onto both ends. Duplicate
+            // detection is per origin resource, so the reciprocal request is kept.
+            var scope = RelationshipScope(request);
+            if (!seenOnOrigin.Add(scope))
+            {
+                rejected.Add(new CompositeRelationshipDecision(
+                    request.SourceRelationshipId,
+                    MigrationCatalogWriteOutcome.AlreadyExists,
+                    $"Relationship '{request.SourceRelationshipId}' is ambiguous in the composite batch and was not written.",
+                    Deferred: true,
+                    OriginLayerId: request.OriginLayerId));
                 continue;
             }
 
@@ -808,7 +813,8 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
                         request.SourceRelationshipId,
                         MigrationCatalogWriteOutcome.AlreadyExists,
                         $"Relationship '{relationshipId}' already retains composite ownership on '{originResourceId}'.",
-                        Deferred: false));
+                        Deferred: false,
+                        OriginLayerId: request.OriginLayerId));
                 }
                 else
                 {
@@ -816,7 +822,8 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
                         request.SourceRelationshipId,
                         MigrationCatalogWriteOutcome.AlreadyExists,
                         $"Relationship '{relationshipId}' on '{originResourceId}' does not retain composite ownership, roles, and keys. It was left unchanged and was not rewritten as a simple relationship.",
-                        Deferred: true));
+                        Deferred: true,
+                        OriginLayerId: request.OriginLayerId));
                 }
 
                 continue;
@@ -829,7 +836,8 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
                     request.SourceRelationshipId,
                     MigrationCatalogWriteOutcome.AlreadyExists,
                     $"Relationship '{relationshipId}' is ambiguous in the composite batch and was not written.",
-                    Deferred: true));
+                    Deferred: true,
+                    OriginLayerId: request.OriginLayerId));
                 continue;
             }
 
@@ -840,12 +848,13 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             }
 
             additions.Add(BuildRelationshipMetadata(request, relationshipId));
-            stagedSourceIds.Add(request.SourceRelationshipId);
+            stagedScopes.Add(scope);
             accepted.Add(new CompositeRelationshipDecision(
                 request.SourceRelationshipId,
                 MigrationCatalogWriteOutcome.Created,
                 $"Appended composite relationship '{relationshipId}' to resource '{originResourceId}'.",
-                Deferred: false));
+                Deferred: false,
+                OriginLayerId: request.OriginLayerId));
         }
 
         if (staged.Count == 0)
@@ -880,7 +889,7 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         var kept = new List<CompositeRelationshipDecision>();
         foreach (var decision in accepted)
         {
-            if (!stagedSourceIds.Contains(decision.SourceRelationshipId))
+            if (!stagedScopes.Contains(RelationshipScope(decision.OriginLayerId, decision.SourceRelationshipId)))
             {
                 kept.Add(decision);
                 continue;
@@ -890,7 +899,8 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
                 decision.SourceRelationshipId,
                 MigrationCatalogWriteOutcome.AlreadyExists,
                 $"Composite relationship was not written because the candidate graph is invalid: {introduced[0]} Composite ownership was not rewritten as a simple relationship.",
-                Deferred: true));
+                Deferred: true,
+                OriginLayerId: decision.OriginLayerId));
         }
 
         return new CompositeRelationshipPlan(graph, Changed: false, kept, rejected);
@@ -900,12 +910,12 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         MetadataV2Relationship existing,
         MigrationRelationshipApplyRequest request)
     {
-        var role = string.IsNullOrWhiteSpace(request.Role) ? "origin" : request.Role;
+        var role = NormalizeRelationshipRole(request.Role);
         if (!existing.Composite
             || !string.Equals(existing.RelatedResourceId, BuildResourceId(request.RelatedLayerId), StringComparison.Ordinal)
             || !string.Equals(existing.OriginField, request.OriginKeyField, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(existing.DestinationField, request.DestinationKeyField, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(existing.Role, role, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(NormalizeRelationshipRole(existing.Role), role, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(existing.Cardinality, MapCardinalityToV2(request.Cardinality), StringComparison.OrdinalIgnoreCase))
         {
             return false;
@@ -1019,7 +1029,29 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         string SourceRelationshipId,
         MigrationCatalogWriteOutcome Outcome,
         string Message,
-        bool Deferred);
+        bool Deferred,
+        int OriginLayerId);
+
+    private static string RelationshipScope(int originLayerId, string sourceRelationshipId)
+        => string.Concat(
+            originLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "\u001f",
+            sourceRelationshipId);
+
+    private static string RelationshipScope(MigrationRelationshipApplyRequest request)
+        => RelationshipScope(request.OriginLayerId, request.SourceRelationshipId);
+
+    private static string OutcomeKey(MigrationRelationshipApplyRequest request)
+        => request.Composite
+            ? RelationshipScope(request)
+            : request.SourceRelationshipId;
+
+    private static MigrationRelationshipApplyRequest MatchCompositeRequest(
+        List<MigrationRelationshipApplyRequest> requests,
+        CompositeRelationshipDecision decision)
+        => requests.First(candidate =>
+            candidate.OriginLayerId == decision.OriginLayerId
+            && string.Equals(candidate.SourceRelationshipId, decision.SourceRelationshipId, StringComparison.Ordinal));
 
     private static async Task<long> CountRowsAsync(NpgsqlConnection connection, string identifier, CancellationToken cancellationToken)
     {
