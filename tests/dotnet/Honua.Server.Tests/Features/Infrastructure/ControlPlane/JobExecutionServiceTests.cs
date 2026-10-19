@@ -77,14 +77,17 @@ public sealed class JobExecutionServiceTests
         var store = Substitute.For<IExecutionJobStore>();
         store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
         store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(call => { var next = call.Arg<ExecutionJobRecord>(); if (next.Version != durable.Version) return false;
+            .Returns(call =>
+            {
+                var next = call.Arg<ExecutionJobRecord>(); if (next.Version != durable.Version) return false;
                 durable = next with { Version = next.Version + 1 };
                 if (losePendingReply && next.CommitRecovery is not null)
                 {
                     losePendingReply = false;
                     throw new IOException("Pending CAS committed but its response was lost.");
                 }
-                return true; });
+                return true;
+            });
         var license = Substitute.For<ILicenseOperationPolicy>();
         license.OperationCancellation.Returns(expired.Token);
         var executor = Substitute.For<IJobExecutor, IJobCommittedResultRecovery>();
@@ -108,8 +111,14 @@ public sealed class JobExecutionServiceTests
         Assert.Null(durable.CompletedAt);
         Assert.Equal(0, durable.ImportExecutionAttemptCount);
         unavailable = false;
-        durable = durable with { Status = ExecutionJobStatus.Provisioning, ClaimedBy = "replacement", AttemptCount = durable.AttemptCount + 1,
-            ClaimedAt = DateTimeOffset.UtcNow, LastHeartbeatAt = DateTimeOffset.UtcNow };
+        durable = durable with
+        {
+            Status = ExecutionJobStatus.Provisioning,
+            ClaimedBy = "replacement",
+            AttemptCount = durable.AttemptCount + 1,
+            ClaimedAt = DateTimeOffset.UtcNow,
+            LastHeartbeatAt = DateTimeOffset.UtcNow
+        };
         await InvokeProcessJobAsync(worker, durable.OperationId, durable.ClaimedBy);
         Assert.Equal(ExecutionJobStatus.Succeeded, durable.Status);
         Assert.Equal(output, durable.FileImportOutput);
@@ -125,8 +134,11 @@ public sealed class JobExecutionServiceTests
     {
         var durable = WithControlledAcceptedImport(CreateProvisioningJob());
         durable = durable with { AttemptCount = 15, RetryPolicy = JobRetryPolicy.None, ImportExecutionAttemptCount = executionStarted ? 1 : 0 };
-        durable = durable with { CommitRecovery = new(JobExecutionLeaseIntentFingerprint.Compute(durable), "old", 1, DateTimeOffset.UtcNow)
-            { ExecutionStarted = executionStarted, RetryAllowed = false, DeferredStatus = executionStarted ? ExecutionJobStatus.Failed : null } };
+        durable = durable with
+        {
+            CommitRecovery = new(JobExecutionLeaseIntentFingerprint.Compute(durable), "old", 1, DateTimeOffset.UtcNow)
+            { ExecutionStarted = executionStarted, RetryAllowed = false, DeferredStatus = executionStarted ? ExecutionJobStatus.Failed : null }
+        };
         var store = Substitute.For<IExecutionJobStore>();
         store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
         store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -140,8 +152,11 @@ public sealed class JobExecutionServiceTests
             var actual = call.Arg<ExecutionJobRecord>();
             await call.Arg<IJobExecutionContext>().RecordCommittedEffectAsync(
                 $"honua-import-commit:{actual.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(actual)}");
-            return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true,
-                FileImportOutput = new() { Schema = "public", PhysicalTableName = "imported_roads", FeatureCount = 17 } };
+            return JobExecutionResult.Succeeded() with
+            {
+                CompletedWithCommittedEffects = true,
+                FileImportOutput = new() { Schema = "public", PhysicalTableName = "imported_roads", FeatureCount = 17 }
+            };
         });
         using var worker = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor], new ExecutionJobCancellationTokens(),
             [], null, NullLogger<JobExecutionService>.Instance);
@@ -156,9 +171,24 @@ public sealed class JobExecutionServiceTests
     // Controlled accepted metadata only; these tests substitute the trusted persistence
     // recovery port and do not claim authentication or real database receipt proof.
     private static ExecutionJobRecord WithControlledAcceptedImport(ExecutionJobRecord job)
-        => job with { Spec = job.Spec with { Kind = ExecutionJobKind.FileImport }, Audit = job.Audit with
-            { SubmitterSecurityContext = new("actor", null, []) { ExecutionLease = new() { LeaseId = "lease", JobId = job.OperationId,
-                IssuedAt = DateTimeOffset.UtcNow, ExpiresAt = DateTimeOffset.UtcNow.AddHours(1), ProtectedAuthority = "controlled" } } } };
+        => job with
+        {
+            Spec = job.Spec with { Kind = ExecutionJobKind.FileImport },
+            Audit = job.Audit with
+            {
+                SubmitterSecurityContext = new("actor", null, [])
+                {
+                    ExecutionLease = new()
+                    {
+                        LeaseId = "lease",
+                        JobId = job.OperationId,
+                        IssuedAt = DateTimeOffset.UtcNow,
+                        ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                        ProtectedAuthority = "controlled"
+                    }
+                }
+            }
+        };
 
     [UnitTheory]
     [InlineData("receipt", true)]
@@ -213,8 +243,11 @@ public sealed class JobExecutionServiceTests
     {
         using var expired = new CancellationTokenSource();
         var durable = CreateProvisioningJob();
-        durable = durable with { Spec = durable.Spec with { Kind = ExecutionJobKind.FileImport },
-            TimeoutPolicy = new JobTimeoutPolicy { MaxDuration = change == "timeout" ? TimeSpan.FromMilliseconds(25) : TimeSpan.FromMinutes(5) } };
+        durable = durable with
+        {
+            Spec = durable.Spec with { Kind = ExecutionJobKind.FileImport },
+            TimeoutPolicy = new JobTimeoutPolicy { MaxDuration = change == "timeout" ? TimeSpan.FromMilliseconds(25) : TimeSpan.FromMinutes(5) }
+        };
         var store = Substitute.For<IExecutionJobStore>();
         store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
         store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())

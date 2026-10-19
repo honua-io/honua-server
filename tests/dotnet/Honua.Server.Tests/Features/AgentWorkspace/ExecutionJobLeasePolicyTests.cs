@@ -193,14 +193,31 @@ public sealed class ExecutionJobLeasePolicyTests
     public async Task PendingImportPolicy_AllowsOnlyMetadataAfterExecutionExpiry()
     {
         var fixture = new Fixture();
-        var job = fixture.Job with { Audit = fixture.Job.Audit with { ProposalId = null },
-            Spec = fixture.Job.Spec with { Kind = ExecutionJobKind.FileImport } };
+        var job = fixture.Job with
+        {
+            Audit = fixture.Job.Audit with { ProposalId = null },
+            Spec = fixture.Job.Spec with { Kind = ExecutionJobKind.FileImport }
+        };
         var scope = fixture.Scope with { Kind = ExecutionJobKind.FileImport };
         var decision = await fixture.Policy.AuthorizeIssuanceAsync(fixture.Request(job), scope);
-        job = job with { Status = ExecutionJobStatus.Queued,
-            Audit = job.Audit with { SubmitterSecurityContext = new("actor", null, [])
-                { ExecutionLease = new() { LeaseId = "controlled", JobId = job.OperationId, IssuedAt = fixture.Now,
-                    ExpiresAt = fixture.Now.AddMinutes(1), ProtectedAuthority = "controlled" } } } };
+        job = job with
+        {
+            Status = ExecutionJobStatus.Queued,
+            Audit = job.Audit with
+            {
+                SubmitterSecurityContext = new("actor", null, [])
+                {
+                    ExecutionLease = new()
+                    {
+                        LeaseId = "controlled",
+                        JobId = job.OperationId,
+                        IssuedAt = fixture.Now,
+                        ExpiresAt = fixture.Now.AddMinutes(1),
+                        ProtectedAuthority = "controlled"
+                    }
+                }
+            }
+        };
         job = job with { CommitRecovery = new(JobExecutionLeaseIntentFingerprint.Compute(job), "worker", 1, fixture.Now) };
         fixture.Clock.UtcNow = fixture.Now.AddDays(1);
         await fixture.Policy.RequireObservationAsync(job, decision, scope, fixture.Executor, JobExecutionLeaseObservationKind.Status);
@@ -224,7 +241,9 @@ public sealed class ExecutionJobLeasePolicyTests
         internal ExecutionJobRecord Job { get; }
         internal JobExecutionLeaseScope Scope { get; } = new()
         {
-            Kind = ExecutionJobKind.FileImport, ProviderBinding = "original-destination-and-source", Resources = [],
+            Kind = ExecutionJobKind.FileImport,
+            ProviderBinding = "original-destination-and-source",
+            Resources = [],
             Operations = [new() { ResourceType = OperatorResourceType.Catalog, ResourceId = "destination", Operation = OperatorOperation.Create }]
         };
         internal ClaimsPrincipal Executor { get; } = new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "executor")], "test"));
@@ -234,10 +253,24 @@ public sealed class ExecutionJobLeasePolicyTests
             Clock = new(Now);
             Job = new()
             {
-                OperationId = "job-original", Status = ExecutionJobStatus.Queued, CreatedAt = Now, UpdatedAt = Now,
-                Spec = new() { Kind = ExecutionJobKind.FileImport, TargetKind = BatchComputeTargetKind.LocalProcess, Backend = "local", WorkloadName = "import",
-                    Parameters = FileImportJobParameters.Build(new ImportRequest { CloudFileId = "private-source", FileName = "roads.geojson",
-                        TableName = "roads", TargetSchema = "honua_data" }, 4096) },
+                OperationId = "job-original",
+                Status = ExecutionJobStatus.Queued,
+                CreatedAt = Now,
+                UpdatedAt = Now,
+                Spec = new()
+                {
+                    Kind = ExecutionJobKind.FileImport,
+                    TargetKind = BatchComputeTargetKind.LocalProcess,
+                    Backend = "local",
+                    WorkloadName = "import",
+                    Parameters = FileImportJobParameters.Build(new ImportRequest
+                    {
+                        CloudFileId = "private-source",
+                        FileName = "roads.geojson",
+                        TableName = "roads",
+                        TargetSchema = "honua_data"
+                    }, 4096)
+                },
                 Audit = new() { OperationInstanceId = "job-original", ProposalId = Honua.ControlPlane.OperationGateway.DeriveProposalId(OperationClass.AdminConfigChange, "dataset-import.submit", "original-intent", "tenant"), RequestedBy = "executor", TenantId = "tenant" }
             };
             Store.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(Proposal));
@@ -257,17 +290,29 @@ public sealed class ExecutionJobLeasePolicyTests
             Requirement = ApprovalRequirement.Required("import-review", "replace");
             var gateway = new OperationGatewayRequest
             {
-                OperationId = "dataset-import.submit", OperationInstanceId = Job.OperationId, Kind = OperationClass.AdminConfigChange,
-                RequestedBy = Job.Audit.RequestedBy, TenantId = Job.Audit.TenantId, IdempotencyKey = "original-intent"
+                OperationId = "dataset-import.submit",
+                OperationInstanceId = Job.OperationId,
+                Kind = OperationClass.AdminConfigChange,
+                RequestedBy = Job.Audit.RequestedBy,
+                TenantId = Job.Audit.TenantId,
+                IdempotencyKey = "original-intent"
             };
             var plan = await Policy.PrepareApprovalPlanAsync(Job, Scope, Executor, gateway, Now.AddMinutes(30));
             Proposal = new()
             {
-                ProposalId = Job.Audit.ProposalId!, OperationId = "dataset-import.submit", Kind = OperationClass.AdminConfigChange,
-                TenantId = "tenant", RequestedBy = "executor", Status = OperationProposalStatus.Executing,
-                Plan = plan, SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
+                ProposalId = Job.Audit.ProposalId!,
+                OperationId = "dataset-import.submit",
+                Kind = OperationClass.AdminConfigChange,
+                TenantId = "tenant",
+                RequestedBy = "executor",
+                Status = OperationProposalStatus.Executing,
+                Plan = plan,
+                SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
                 Audit = new() { OperationInstanceId = Job.OperationId, AuditId = "audit-original", ApprovalPolicyRef = "import-review" },
-                ApprovedByAtClaim = "human-approver", ApprovedAtClaim = Now, CreatedAt = Now, UpdatedAt = Now
+                ApprovedByAtClaim = "human-approver",
+                ApprovedAtClaim = Now,
+                CreatedAt = Now,
+                UpdatedAt = Now
             };
         }
     }

@@ -48,9 +48,10 @@ public sealed class DatasetImportAuthorityRenewalTests
             .AddSingleton(tasks).AddSingleton(turns).AddSingleton(capture).AddSingleton<TimeProvider>(TimeProvider.System).BuildServiceProvider();
         var context = new DefaultHttpContext { User = principal, RequestServices = services };
         var originalAuthority = (await AgentCredentialAuthority.CaptureAsync(principal, services, default))!
-            with { TokenExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1) };
+            with
+        { TokenExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1) };
         var originalPolicy = new JobSecurityContext(actor, "tenant-1", [new("department", "north"), new("exp", "original-exp")], "role")
-            { OwnerActorId = actor, AgentCredential = originalAuthority };
+        { OwnerActorId = actor, AgentCredential = originalAuthority };
         var task = new DatasetImportTask("import-task-1", 1, string.Empty, actor, "tenant-1", "target-1", "workspace-1",
             new("public", "new_table"), new("browser-file", "large.geojson", 5L * 1024 * 1024 * 1024, new string('a', 64)),
             new(), DateTimeOffset.UtcNow.AddHours(24));
@@ -63,9 +64,15 @@ public sealed class DatasetImportAuthorityRenewalTests
             originalPolicy, JobSecurityContextFingerprint.Compute(originalPolicy), originalAuthority);
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-1", AgentActorId = actor,
-            TenantId = "tenant-1", Members = [actor, "human-1"], Turns = new() { [turn.TurnId] = turn },
-            DatasetImportTasks = new() { [task.TaskId] = [task] }, DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
+            WorkspaceId = "workspace-1",
+            TargetId = "target-1",
+            OwnerId = "human-1",
+            AgentActorId = actor,
+            TenantId = "tenant-1",
+            Members = [actor, "human-1"],
+            Turns = new() { [turn.TurnId] = turn },
+            DatasetImportTasks = new() { [task.TaskId] = [task] },
+            DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
         };
         var store = Substitute.For<IAgentWorkspaceStore>();
         store.GetAsync("workspace-1").Returns(_ => document);
@@ -97,8 +104,11 @@ public sealed class DatasetImportAuthorityRenewalTests
                 var prepared = new DatasetImportPreparedAdmission(task.TaskId, 1, task.ContentHash, new string('b', 32), 1,
                     binding.AuthorityFingerprint, actor, "human-1", turn.TurnId, binding.OriginalTurnHash,
                     originalPolicy, binding.PolicyContextFingerprint, originalAuthority, task.UploadAdmissionDeadline);
-                document = document with { Version = document.Version + 1,
-                    DatasetImportPreparedAdmissions = new() { [task.TaskId] = prepared } };
+                document = document with
+                {
+                    Version = document.Version + 1,
+                    DatasetImportPreparedAdmissions = new() { [task.TaskId] = prepared }
+                };
             }
             return freshPolicy;
         });
@@ -122,7 +132,7 @@ public sealed class DatasetImportAuthorityRenewalTests
                 retained.ExecutorAuthority.TokenExpiresAt.Should().Be(freshAuthority.TokenExpiresAt);
                 // Lose the response, refresh again, then recover the original receipt.
                 capture.CaptureCurrentAsync(Arg.Any<CancellationToken>()).Returns(freshPolicy with
-                    { AgentCredential = freshAuthority with { TokenExpiresAt = freshAuthority.TokenExpiresAt.AddHours(1) } });
+                { AgentCredential = freshAuthority with { TokenExpiresAt = freshAuthority.TokenExpiresAt.AddHours(1) } });
                 var replay = await DatasetImportAuthorityRenewalService.RenewAsync(context, store, "workspace-1", task.TaskId, 1, request);
                 replay.Should().BeSameAs(receipt);
                 document.DatasetImportExecutionBindings[task.TaskId].AuthorityRevision.Should().Be(2);

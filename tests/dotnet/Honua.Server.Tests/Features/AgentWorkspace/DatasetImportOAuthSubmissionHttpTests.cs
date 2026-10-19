@@ -82,7 +82,9 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
         roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(new EffectivePermissions
             {
-                UserId = "uploader", Roles = ["worker"], Permissions =
+                UserId = "uploader",
+                Roles = ["worker"],
+                Permissions =
                 [new() { Service = "agent", Layer = "*", Operation = "workspace" },
                  new() { Service = "admin", Layer = "*", Operation = "read" },
                  new() { Service = "admin", Layer = "*", Operation = "write" }],
@@ -174,8 +176,13 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
             var workspaceId = created.GetProperty("workspaceId").GetString()!;
             var root = $"/api/v1/agent/workspaces/{workspaceId}";
             await Read(await human.PostAsJsonAsync(root + "/turns", new
-                { turnId = "oauth-origin", viewId = "oauth-tab", contextRevision = 0, prompt = "Prepare the selected import",
-                  browserFileSelection = new BrowserImportFileSelection("oauth-selected-file", "roads.geojson", bytes.Length, digest) }));
+            {
+                turnId = "oauth-origin",
+                viewId = "oauth-tab",
+                contextRevision = 0,
+                prompt = "Prepare the selected import",
+                browserFileSelection = new BrowserImportFileSelection("oauth-selected-file", "roads.geojson", bytes.Length, digest)
+            }));
             client.DefaultRequestHeaders.Add("X-Honua-Workspace", workspaceId);
             client.DefaultRequestHeaders.Add("X-Honua-Turn", "oauth-origin");
             var taskJson = await Read(await client.PostAsJsonAsync(root + "/dataset-import-tasks", new CreateDatasetImportTask(
@@ -207,7 +214,9 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
             descriptor.GetProperty("authorityRevision").GetInt64().Should().Be(2);
             var initialized = await client.PostAsJsonAsync("/mcp", new
             {
-                jsonrpc = "2.0", id = 1, method = "initialize",
+                jsonrpc = "2.0",
+                id = 1,
+                method = "initialize",
                 @params = new { protocolVersion = "2025-03-26", capabilities = new { }, clientInfo = new { name = "oauth-renewal-test", version = "1" } },
             });
             initialized.EnsureSuccessStatusCode();
@@ -285,9 +294,15 @@ public sealed class DatasetImportOAuthSubmissionHttpTests(RedisFixture redis)
             {
                 var envelope = await Read(await client.PostAsJsonAsync("/mcp", new
                 {
-                    jsonrpc = "2.0", id, method = "tools/call",
-                    @params = new { name = "honua_workspace_renew_dataset_import_authority", arguments = new
-                        { workspaceId, taskId, revision = 1, request } },
+                    jsonrpc = "2.0",
+                    id,
+                    method = "tools/call",
+                    @params = new
+                    {
+                        name = "honua_workspace_renew_dataset_import_authority",
+                        arguments = new
+                        { workspaceId, taskId, revision = 1, request }
+                    },
                 }));
                 envelope.TryGetProperty("error", out _).Should().BeFalse();
                 return envelope.GetProperty("result").GetProperty("structuredContent");

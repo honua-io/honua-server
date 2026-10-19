@@ -100,9 +100,13 @@ public sealed class ImportScratchStorageFenceTests
 
     private static ImportUploadSession Session() => new()
     {
-        Id = Guid.NewGuid().ToString("N"), Scope = new("owner", "tenant", "target", "workspace", "task", 1),
-        IntentSha256 = new string('a', 64), FileName = "source.gpkg", TotalBytes = 64,
-        ChunkBytes = 64 * 1024, ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+        Id = Guid.NewGuid().ToString("N"),
+        Scope = new("owner", "tenant", "target", "workspace", "task", 1),
+        IntentSha256 = new string('a', 64),
+        FileName = "source.gpkg",
+        TotalBytes = 64,
+        ChunkBytes = 64 * 1024,
+        ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
     };
 
     private sealed class Budget : IImportStorageBudget

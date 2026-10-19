@@ -248,18 +248,30 @@ public sealed class DatasetImportSubmissionTests
                 Events.Add("issue");
                 if (RevokeCallerDuringIssuance) CallerAllowed = false;
                 Issued = call.ArgAt<JobExecutionLeaseIssuanceRequest>(0);
-                return Task.FromResult(new JobExecutionLease { LeaseId = "lease-a", JobId = Issued.PreparedJob.OperationId,
-                    IssuedAt = DateTimeOffset.UtcNow, ExpiresAt = Issued.RequestedExpiresAt, ProtectedAuthority = "test-only" });
+                return Task.FromResult(new JobExecutionLease
+                {
+                    LeaseId = "lease-a",
+                    JobId = Issued.PreparedJob.OperationId,
+                    IssuedAt = DateTimeOffset.UtcNow,
+                    ExpiresAt = Issued.RequestedExpiresAt,
+                    ProtectedAuthority = "test-only"
+                });
             });
             Authority.ResolveForObservationAsync(Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(),
                 Arg.Any<JobExecutionLeaseObservationKind>(), Arg.Any<CancellationToken>()).Returns(call =>
             {
                 if (RejectObservation) return Task.FromException<JobExecutionLeaseObservation>(new UnauthorizedAccessException("Revoked"));
                 Events.Add("observe"); Observer = call.ArgAt<ClaimsPrincipal>(1);
-                return Task.FromResult(new JobExecutionLeaseObservation { JobId = Stored!.OperationId, LeaseId = "lease-a",
-                    IntentFingerprint = JobExecutionLeaseIntentFingerprint.Compute(Stored), ExecutorActorId = "agent", TenantId = "tenant",
+                return Task.FromResult(new JobExecutionLeaseObservation
+                {
+                    JobId = Stored!.OperationId,
+                    LeaseId = "lease-a",
+                    IntentFingerprint = JobExecutionLeaseIntentFingerprint.Compute(Stored),
+                    ExecutorActorId = "agent",
+                    TenantId = "tenant",
                     ExpiresAt = Issued!.RequestedExpiresAt,
-                    Admission = WrongObservedAdmission ? Issued.Admission! with { AuthorityRevision = Issued.Admission!.AuthorityRevision + 1 } : Issued.Admission });
+                    Admission = WrongObservedAdmission ? Issued.Admission! with { AuthorityRevision = Issued.Admission!.AuthorityRevision + 1 } : Issued.Admission
+                });
             });
             Service = new DurableImportJobService(Substitute.For<IImportJobService>(),
                 BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false),

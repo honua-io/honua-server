@@ -46,10 +46,17 @@ public sealed class FileImportExecutionLeaseScopeTests
     {
         using var fixture = await Fixture.CreateAsync();
         var authority = fixture.Services.GetRequiredService<IJobExecutionLeaseAuthority>();
-        var lease = await authority.IssueAsync(new() { PreparedJob = fixture.Job, Executor = fixture.Executor,
-            RequestedExpiresAt = DateTimeOffset.UtcNow.AddMinutes(20) });
-        fixture.Stored = fixture.Job with { Audit = fixture.Job.Audit with
-            { SubmitterSecurityContext = fixture.Job.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } } };
+        var lease = await authority.IssueAsync(new()
+        {
+            PreparedJob = fixture.Job,
+            Executor = fixture.Executor,
+            RequestedExpiresAt = DateTimeOffset.UtcNow.AddMinutes(20)
+        });
+        fixture.Stored = fixture.Job with
+        {
+            Audit = fixture.Job.Audit with
+            { SubmitterSecurityContext = fixture.Job.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } }
+        };
         switch (change)
         {
             case "workspace": fixture.Document = fixture.Document with { Members = [] }; break;
@@ -59,8 +66,12 @@ public sealed class FileImportExecutionLeaseScopeTests
             case "occupied": fixture.Occupied = true; break;
             case "source-generation": fixture.Metadata = fixture.Metadata with { ETag = "replacement" }; break;
             case "revoked-during-source": fixture.RevokeOnMetadata = true; break;
-            case "different-request": fixture.Stored = fixture.Stored with { Spec = fixture.Stored.Spec with
-                { Parameters = new Dictionary<string, string>(fixture.Stored.Spec.Parameters) { [FileImportJobParameters.TableName] = "other" } } }; break;
+            case "different-request":
+                fixture.Stored = fixture.Stored with
+                {
+                    Spec = fixture.Stored.Spec with
+                    { Parameters = new Dictionary<string, string>(fixture.Stored.Spec.Parameters) { [FileImportJobParameters.TableName] = "other" } }
+                }; break;
         }
         if (change == "unchanged")
         {
@@ -88,10 +99,20 @@ public sealed class FileImportExecutionLeaseScopeTests
     {
         using var fixture = await Fixture.CreateAsync();
         var leases = fixture.Services.GetRequiredService<IJobExecutionLeaseAuthority>();
-        var lease = await leases.IssueAsync(new() { PreparedJob = fixture.Job, Executor = fixture.Executor,
-            RequestedExpiresAt = DateTimeOffset.UtcNow.AddMinutes(20) });
-        fixture.Stored = fixture.Job with { Status = ExecutionJobStatus.Running, ClaimedBy = "worker", AttemptCount = 1, Audit = fixture.Job.Audit with
-            { SubmitterSecurityContext = fixture.Job.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } } };
+        var lease = await leases.IssueAsync(new()
+        {
+            PreparedJob = fixture.Job,
+            Executor = fixture.Executor,
+            RequestedExpiresAt = DateTimeOffset.UtcNow.AddMinutes(20)
+        });
+        fixture.Stored = fixture.Job with
+        {
+            Status = ExecutionJobStatus.Running,
+            ClaimedBy = "worker",
+            AttemptCount = 1,
+            Audit = fixture.Job.Audit with
+            { SubmitterSecurityContext = fixture.Job.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } }
+        };
         var claimed = fixture.Stored;
         var current = await leases.RevalidateForExecutionAsync(claimed);
         Assert.True(FileImportJobParameters.TryParse(fixture.Stored.Spec.Parameters, out var request, out _, out _));
@@ -130,27 +151,44 @@ public sealed class FileImportExecutionLeaseScopeTests
         using var fixture = await Fixture.CreateAsync();
         var authority = fixture.Services.GetRequiredService<IJobExecutionLeaseAuthority>();
         var prepared = fixture.Document.DatasetImportPreparedAdmissions["task"];
-        var lease = await authority.IssueAsync(new() { PreparedJob = fixture.Job, Executor = fixture.Executor,
-            RequestedExpiresAt = DateTimeOffset.UtcNow.AddMinutes(20), Admission = new()
+        var lease = await authority.IssueAsync(new()
+        {
+            PreparedJob = fixture.Job,
+            Executor = fixture.Executor,
+            RequestedExpiresAt = DateTimeOffset.UtcNow.AddMinutes(20),
+            Admission = new()
             {
-                WorkspaceId = "workspace", TaskId = "task", TaskRevision = 1,
+                WorkspaceId = "workspace",
+                TaskId = "task",
+                TaskRevision = 1,
                 TaskContentHash = fixture.Document.DatasetImportTasks["task"][0].ContentHash,
-                AuthorityRevision = prepared.AuthorityRevision, AuthorityFingerprint = prepared.AuthorityFingerprint,
-                PolicyContextFingerprint = prepared.PolicyContextFingerprint, InitiatingHumanActorId = prepared.InitiatingHumanActorId,
-                OriginatingTurnId = prepared.OriginatingTurnId, OriginalTurnHash = prepared.OriginalTurnHash
-            } });
-        fixture.Stored = fixture.Job with { Status = ExecutionJobStatus.Succeeded, Audit = fixture.Job.Audit with
+                AuthorityRevision = prepared.AuthorityRevision,
+                AuthorityFingerprint = prepared.AuthorityFingerprint,
+                PolicyContextFingerprint = prepared.PolicyContextFingerprint,
+                InitiatingHumanActorId = prepared.InitiatingHumanActorId,
+                OriginatingTurnId = prepared.OriginatingTurnId,
+                OriginalTurnHash = prepared.OriginalTurnHash
+            }
+        });
+        fixture.Stored = fixture.Job with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            Audit = fixture.Job.Audit with
             { SubmitterSecurityContext = fixture.Job.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } },
-            FileImportOutput = new() { Schema = "public", PhysicalTableName = "imported_roads", FeatureCount = 17 } };
-        fixture.Stored = fixture.Stored with { CommittedEffectReferences =
-            [$"honua-import-commit:{fixture.Stored.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(fixture.Stored)}"] };
+            FileImportOutput = new() { Schema = "public", PhysicalTableName = "imported_roads", FeatureCount = 17 }
+        };
+        fixture.Stored = fixture.Stored with
+        {
+            CommittedEffectReferences =
+            [$"honua-import-commit:{fixture.Stored.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(fixture.Stored)}"]
+        };
         fixture.Clock.Now = lease.ExpiresAt.AddHours(1);
         fixture.Occupied = true;
         if (change == "executor-revoked") await fixture.Keys.RevokeAsync(fixture.ExecutorKeyId, default);
         if (change == "human-revoked") await fixture.Keys.RevokeAsync(Guid.Parse(fixture.Human.FindFirst("api_key_id")!.Value), default);
         if (change == "workspace-removed") fixture.Document = fixture.Document with { Members = [] };
         if (change == "source-selection-changed") fixture.Document.Turns["turn"] = fixture.Document.Turns["turn"] with
-            { BrowserFileSelection = new("other", "roads.geojson", 100, new string('a', 64)) };
+        { BrowserFileSelection = new("other", "roads.geojson", 100, new string('a', 64)) };
         if (change == "output-substituted") fixture.Stored = fixture.Stored with { FileImportOutput = fixture.Stored.FileImportOutput! with { PhysicalTableName = "other" } };
         if (change is "unchanged" or "executor-revoked")
         {
@@ -169,19 +207,37 @@ public sealed class FileImportExecutionLeaseScopeTests
         using var fixture = await Fixture.CreateAsync(localSource: true);
         var authority = fixture.Services.GetRequiredService<IJobExecutionLeaseAuthority>();
         var prepared = fixture.Document.DatasetImportPreparedAdmissions["task"];
-        var lease = await authority.IssueAsync(new() { PreparedJob = fixture.Job, Executor = fixture.Executor,
-            RequestedExpiresAt = DateTimeOffset.UtcNow.AddMinutes(20), Admission = new()
+        var lease = await authority.IssueAsync(new()
+        {
+            PreparedJob = fixture.Job,
+            Executor = fixture.Executor,
+            RequestedExpiresAt = DateTimeOffset.UtcNow.AddMinutes(20),
+            Admission = new()
             {
-                WorkspaceId = "workspace", TaskId = "task", TaskRevision = 1, TaskContentHash = prepared.TaskContentHash,
-                AuthorityRevision = prepared.AuthorityRevision, AuthorityFingerprint = prepared.AuthorityFingerprint,
-                PolicyContextFingerprint = prepared.PolicyContextFingerprint, InitiatingHumanActorId = prepared.InitiatingHumanActorId,
-                OriginatingTurnId = prepared.OriginatingTurnId, OriginalTurnHash = prepared.OriginalTurnHash
-            } });
-        fixture.Stored = fixture.Job with { Status = ExecutionJobStatus.Succeeded, Audit = fixture.Job.Audit with
+                WorkspaceId = "workspace",
+                TaskId = "task",
+                TaskRevision = 1,
+                TaskContentHash = prepared.TaskContentHash,
+                AuthorityRevision = prepared.AuthorityRevision,
+                AuthorityFingerprint = prepared.AuthorityFingerprint,
+                PolicyContextFingerprint = prepared.PolicyContextFingerprint,
+                InitiatingHumanActorId = prepared.InitiatingHumanActorId,
+                OriginatingTurnId = prepared.OriginatingTurnId,
+                OriginalTurnHash = prepared.OriginalTurnHash
+            }
+        });
+        fixture.Stored = fixture.Job with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            Audit = fixture.Job.Audit with
             { SubmitterSecurityContext = fixture.Job.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } },
-            FileImportOutput = new() { Schema = "public", PhysicalTableName = "imported_roads", FeatureCount = 17 } };
-        fixture.Stored = fixture.Stored with { CommittedEffectReferences =
-            [$"honua-import-commit:{fixture.Stored.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(fixture.Stored)}"] };
+            FileImportOutput = new() { Schema = "public", PhysicalTableName = "imported_roads", FeatureCount = 17 }
+        };
+        fixture.Stored = fixture.Stored with
+        {
+            CommittedEffectReferences =
+            [$"honua-import-commit:{fixture.Stored.OperationId}:{JobExecutionLeaseIntentFingerprint.Compute(fixture.Stored)}"]
+        };
         fixture.Clock.Now = lease.ExpiresAt.AddHours(1);
         fixture.Occupied = true;
         fixture.DaemonAvailable = false;
@@ -246,9 +302,17 @@ public sealed class FileImportExecutionLeaseScopeTests
             var gateway = Substitute.For<ILocalProcessWorkspaceGateway>();
             gateway.IsConfigured.Returns(true);
             gateway.GetRunAsync(Arg.Any<LocalProcessWorkspaceAccess>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns(_ => new LocalProcessRun { ProjectId = "project", SnapshotId = "snapshot", SnapshotDigest = new string('b', 64),
-                    RunId = "run", Status = "succeeded", Image = "image", ExitCode = 0,
-                    Artifacts = [new("out/roads.geojson", 100, new string('a', 64))] });
+                .Returns(_ => new LocalProcessRun
+                {
+                    ProjectId = "project",
+                    SnapshotId = "snapshot",
+                    SnapshotDigest = new string('b', 64),
+                    RunId = "run",
+                    Status = "succeeded",
+                    Image = "image",
+                    ExitCode = 0,
+                    Artifacts = [new("out/roads.geojson", 100, new string('a', 64))]
+                });
             gateway.GetIdentityAsync(Arg.Any<LocalProcessWorkspaceAccess>(), Arg.Any<CancellationToken>()).Returns(call =>
             {
                 if (state?.DaemonAvailable == false) throw new LocalProcessWorkspaceException(503, "Source daemon unavailable.");
@@ -284,13 +348,19 @@ public sealed class FileImportExecutionLeaseScopeTests
             var now = DateTimeOffset.UtcNow;
             var task = new DatasetImportTask("task", 1, "", owner, null, "target", "workspace", new("public", "roads"),
                 new("browser-file", "roads.geojson", 100, new string('a', 64), BrowserSelectionId: "selection"), new(), now.AddHours(1));
-            if (localSource) task = task with { Source = new("local-process-artifact", "roads.geojson", 100,
-                new string('a', 64), new("project", "snapshot", new string('b', 64), "run", "out/roads.geojson")) };
+            if (localSource) task = task with
+            {
+                Source = new("local-process-artifact", "roads.geojson", 100,
+                new string('a', 64), new("project", "snapshot", new string('b', 64), "run", "out/roads.geojson"))
+            };
             task = task with { ContentHash = DatasetImportTaskState.ContentHash(task) };
             var turn = new AgentWorkspaceTurn("turn", human, "Import roads", new("workspace", "target", "view", 0, [], null), null, BrowserFileSelection: new("selection", "roads.geojson", 100, new string('a', 64)));
-            if (localSource) turn = turn with { BrowserFileSelection = null,
+            if (localSource) turn = turn with
+            {
+                BrowserFileSelection = null,
                 LocalProcessSnapshot = new("project", "snapshot", new string('b', 64), "image", 1),
-                Context = turn.Context with { Task = new("project", 1, "local-process-workspace", ContentHash: new string('b', 64)) } };
+                Context = turn.Context with { Task = new("project", 1, "local-process-workspace", ContentHash: new string('b', 64)) }
+            };
             var turnHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(turn, AgentWorkspaceJsonContext.Default.AgentWorkspaceTurn)));
             var authorityHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(context.AgentCredential!, AgentWorkspaceJsonContext.Default.AgentCredentialSnapshot)));
             var policyHash = JobSecurityContextFingerprint.Compute(context);
@@ -307,15 +377,44 @@ public sealed class FileImportExecutionLeaseScopeTests
             document.Turns[turn.TurnId] = turn;
             var job = new ExecutionJobRecord
             {
-                OperationId = prepared.OperationId, Status = ExecutionJobStatus.Queued, CreatedAt = now, UpdatedAt = now,
+                OperationId = prepared.OperationId,
+                Status = ExecutionJobStatus.Queued,
+                CreatedAt = now,
+                UpdatedAt = now,
                 AcceptanceDeadline = prepared.AcceptBefore,
                 Audit = new() { RequestedBy = owner, OperationInstanceId = prepared.OperationId, SubmitterSecurityContext = context },
-                Spec = new() { Kind = ExecutionJobKind.FileImport, TargetKind = BatchComputeTargetKind.KubernetesJob,
-                    Backend = "local", WorkloadName = "file-import", Parameters = FileImportJobParameters.Build(intent.Request, source.Bytes) }
+                Spec = new()
+                {
+                    Kind = ExecutionJobKind.FileImport,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = "local",
+                    WorkloadName = "file-import",
+                    Parameters = FileImportJobParameters.Build(intent.Request, source.Bytes)
+                }
             };
-            state = new Fixture { Services = services, Executor = executor, Human = humanPrincipal, Keys = keys, ExecutorKeyId = key.Record.Id, Job = job, Document = document,
-                Clock = clock, Metadata = new() { FileId = source.FileId, FileName = "roads.geojson", StoragePath = source.FileId,
-                    ContentType = "application/geo+json", SizeBytes = 100, UploadedAt = now, ETag = source.ETag, ExpiresAt = source.ExpiresAt, Provider = CloudStorageProvider.Local } };
+            state = new Fixture
+            {
+                Services = services,
+                Executor = executor,
+                Human = humanPrincipal,
+                Keys = keys,
+                ExecutorKeyId = key.Record.Id,
+                Job = job,
+                Document = document,
+                Clock = clock,
+                Metadata = new()
+                {
+                    FileId = source.FileId,
+                    FileName = "roads.geojson",
+                    StoragePath = source.FileId,
+                    ContentType = "application/geo+json",
+                    SizeBytes = 100,
+                    UploadedAt = now,
+                    ETag = source.ETag,
+                    ExpiresAt = source.ExpiresAt,
+                    Provider = CloudStorageProvider.Local
+                }
+            };
             return state;
         }
         public void Dispose() => Services.Dispose();

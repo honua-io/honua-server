@@ -183,7 +183,9 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
         }
         var projected = FileImportJobParameters.Build(intent.Request with
         {
-            AuditId = job.Audit.AuditId, ProposalId = job.Audit.ProposalId, CorrelationId = job.Audit.CorrelationId
+            AuditId = job.Audit.AuditId,
+            ProposalId = job.Audit.ProposalId,
+            CorrelationId = job.Audit.CorrelationId
         }, bytes);
         if (bytes != task.Source.TotalBytes || projected.Any(pair => !job.Spec.Parameters.TryGetValue(pair.Key, out var actual) || actual != pair.Value)
             || job.Spec.Parameters.Keys.Any(key => key.StartsWith("import.", StringComparison.Ordinal)
@@ -209,7 +211,8 @@ internal sealed class FileImportExecutionLeaseScopeProvider(IAgentWorkspaceStore
 
     private static JobExecutionLeaseScope Scope(BoundImport bound) => new()
     {
-        Kind = ExecutionJobKind.FileImport, Resources = [],
+        Kind = ExecutionJobKind.FileImport,
+        Resources = [],
         Operations = [new SemanticImportAuthorizationResource(bound.Task.TargetId, true).OperatorRequest],
         ProviderBinding = SerializeBinding(bound.Binding)
     };

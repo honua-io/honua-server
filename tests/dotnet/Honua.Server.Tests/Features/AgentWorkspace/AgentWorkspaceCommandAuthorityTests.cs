@@ -117,8 +117,11 @@ public sealed class AgentWorkspaceCommandAuthorityTests
         var pending = AgentWorkspaceEndpoints.GetCommand(context, workspace);
         pending.IsCompleted.Should().BeFalse();
         if (change == "journal")
-            document = document with { Commands = new(document.Commands, StringComparer.Ordinal)
-            { ["known"] = original with { Fields = new() { ["table"] = "changed-during-read" } } } };
+            document = document with
+            {
+                Commands = new(document.Commands, StringComparer.Ordinal)
+                { ["known"] = original with { Fields = new() { ["table"] = "changed-during-read" } } }
+            };
         else if (change == "deployment-target") workspace.GetTargetIdAsync().Returns("target-2");
         else document = document with { Members = [] };
         delayed.SetResult(Handle("operation-1", "tenant-1"));
@@ -144,8 +147,13 @@ public sealed class AgentWorkspaceCommandAuthorityTests
         var turn = new AgentWorkspaceTurn("turn-1", actor, "original", captured, null);
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = actor, Members = [actor], TenantId = "tenant-1",
-            Turns = new() { [turn.TurnId] = turn }, Messages = [new("message-1", turn.TurnId, "user", "private original prompt")],
+            WorkspaceId = "workspace-1",
+            TargetId = "target-1",
+            OwnerId = actor,
+            Members = [actor],
+            TenantId = "tenant-1",
+            Turns = new() { [turn.TurnId] = turn },
+            Messages = [new("message-1", turn.TurnId, "user", "private original prompt")],
         };
         var workspace = Substitute.For<IAgentWorkspaceStore>();
         workspace.GetTargetIdAsync().Returns("target-1");
@@ -161,8 +169,11 @@ public sealed class AgentWorkspaceCommandAuthorityTests
         if (change == "membership") document = document with { Members = [] };
         else if (change == "turn") document = document with { Version = document.Version + 1, Turns = [] };
         else if (change == "deployment-target") workspace.GetTargetIdAsync().Returns("target-2");
-        else document = document with { Version = document.Version + 1,
-            Views = new() { ["other-view"] = [captured with { ViewId = "other-view", Revision = 7 }] } };
+        else document = document with
+        {
+            Version = document.Version + 1,
+            Views = new() { ["other-view"] = [captured with { ViewId = "other-view", Revision = 7 }] }
+        };
         finalRead.SetResult(document);
         ((IStatusCodeHttpResult)await pending).StatusCode.Should().Be(change == "unrelated-navigation" ? 200 : 404);
         await workspace.DidNotReceive().SaveAsync(Arg.Any<AgentWorkspaceDocument>());
@@ -170,7 +181,12 @@ public sealed class AgentWorkspaceCommandAuthorityTests
 
     private static OperationHandle Handle(string id, string tenant) => new()
     {
-        OperationInstanceId = id, OperationId = "service.publish", TenantId = tenant, Status = OperationHandleStatus.RequiresApproval,
-        CorrelationId = "correlation-1", CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+        OperationInstanceId = id,
+        OperationId = "service.publish",
+        TenantId = tenant,
+        Status = OperationHandleStatus.RequiresApproval,
+        CorrelationId = "correlation-1",
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
     };
 }

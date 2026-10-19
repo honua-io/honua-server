@@ -84,8 +84,14 @@ public sealed class FencedLocalFileStorageTests
     }
 
     private static FileUploadRequest Request(string key, byte[] bytes, long length)
-        => new() { ObjectKeyOverride = key, FileName = "data.bin", ContentType = "application/octet-stream",
-            Content = new MemoryStream(bytes), SizeBytes = length };
+        => new()
+        {
+            ObjectKeyOverride = key,
+            FileName = "data.bin",
+            ContentType = "application/octet-stream",
+            Content = new MemoryStream(bytes),
+            SizeBytes = length
+        };
 
     [UnitTheory]
     [InlineData("a/./b")]
@@ -141,7 +147,7 @@ public sealed class FencedLocalFileStorageTests
         internal string Root { get; } = Path.Join(Path.GetTempPath(), "honua-reserved-object-" + Guid.NewGuid().ToString("N"));
         internal Admission Fence { get; } = new();
         internal LocalFileStorage Storage() => new(Options.Create(new LocalStorageOptions
-            { BasePath = Root, CreateDirectoryIfNotExists = true }), NullLogger<LocalFileStorage>.Instance,
+        { BasePath = Root, CreateDirectoryIfNotExists = true }), NullLogger<LocalFileStorage>.Instance,
             Substitute.For<IUploadProgressStore>(), Fence);
         public void Dispose() { if (Directory.Exists(Root)) Directory.Delete(Root, true); }
     }

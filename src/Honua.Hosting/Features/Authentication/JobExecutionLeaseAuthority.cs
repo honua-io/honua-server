@@ -131,9 +131,14 @@ internal sealed class JobExecutionLeaseAuthority(
         }
         return new()
         {
-            JobId = jobId, LeaseId = live.Binding.LeaseId, IntentFingerprint = live.Binding.IntentFingerprint,
-            ExecutorActorId = original.OwnerActorId!, TenantId = original.TenantId, ExpiresAt = live.Binding.ExpiresAt,
-            InitiatingHumanActorId = live.Binding.Admission?.InitiatingHumanActorId, Admission = live.Binding.Admission
+            JobId = jobId,
+            LeaseId = live.Binding.LeaseId,
+            IntentFingerprint = live.Binding.IntentFingerprint,
+            ExecutorActorId = original.OwnerActorId!,
+            TenantId = original.TenantId,
+            ExpiresAt = live.Binding.ExpiresAt,
+            InitiatingHumanActorId = live.Binding.Admission?.InitiatingHumanActorId,
+            Admission = live.Binding.Admission
         };
     }
 
@@ -149,9 +154,14 @@ internal sealed class JobExecutionLeaseAuthority(
         var original = live.Job.Audit.SubmitterSecurityContext!;
         return new()
         {
-            JobId = live.Job.OperationId, LeaseId = live.Binding.LeaseId, IntentFingerprint = live.Binding.IntentFingerprint,
-            ExecutorActorId = original.OwnerActorId!, TenantId = original.TenantId, ExpiresAt = live.Binding.ExpiresAt,
-            InitiatingHumanActorId = live.Binding.Admission?.InitiatingHumanActorId, Admission = live.Binding.Admission
+            JobId = live.Job.OperationId,
+            LeaseId = live.Binding.LeaseId,
+            IntentFingerprint = live.Binding.IntentFingerprint,
+            ExecutorActorId = original.OwnerActorId!,
+            TenantId = original.TenantId,
+            ExpiresAt = live.Binding.ExpiresAt,
+            InitiatingHumanActorId = live.Binding.Admission?.InitiatingHumanActorId,
+            Admission = live.Binding.Admission
         };
     }
 
@@ -174,7 +184,7 @@ internal sealed class JobExecutionLeaseAuthority(
             throw Denied();
         }
         var request = new OperatorAuthorizationRequest
-            { ResourceType = OperatorResourceType.Job, ResourceId = jobId, Operation = OperatorOperation.Read };
+        { ResourceType = OperatorResourceType.Job, ResourceId = jobId, Operation = OperatorOperation.Read };
         if (!_services.GetRequiredService<IOperatorScopeAuthorizer>().Evaluate(observer, request.ResourceType, request.Operation).IsAllowed
             || !(await _services.GetRequiredService<IOperatorAuthorizationEvaluator>().EvaluateAsync(observer, request, cancellationToken).ConfigureAwait(false)).IsAllowed)
         {
@@ -348,7 +358,7 @@ internal sealed class JobExecutionLeaseAuthority(
         {
             Resources = scope.Resources.Select(resource => resource with { }).ToArray(),
             Operations = scope.Operations.Select(operation => operation with
-                { ApprovalReasonCodes = operation.ApprovalReasonCodes.ToArray() }).ToArray()
+            { ApprovalReasonCodes = operation.ApprovalReasonCodes.ToArray() }).ToArray()
         };
 
     private sealed class CurrentPolicyEvaluation(JobExecutionLeaseAuthority owner, ExecutionJobRecord job,
@@ -376,8 +386,11 @@ internal sealed class JobExecutionLeaseAuthority(
             _ = await RequireSourceAsync(cancellationToken).ConfigureAwait(false);
             ObjectDisposedException.ThrowIf(_disposed, this);
             cancellationToken.ThrowIfCancellationRequested();
-            return new() { Authorization = authorization,
-                Approval = requirement with { ReasonCodes = requirement.ReasonCodes.ToArray() } };
+            return new()
+            {
+                Authorization = authorization,
+                Approval = requirement with { ReasonCodes = requirement.ReasonCodes.ToArray() }
+            };
         }
 
         private async Task<ClaimsPrincipal> RequireSourceAsync(CancellationToken cancellationToken)

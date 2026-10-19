@@ -153,9 +153,14 @@ public sealed class ImportUploadChunkStorageTests
         var chunk = new ImportUploadChunk(0, 0, bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)), "stored-object", "original");
         var before = new CloudFile
         {
-            FileId = chunk.FileId, FileName = "chunk.part", StoragePath = chunk.FileId,
-            ContentType = "application/octet-stream", SizeBytes = bytes.Length,
-            UploadedAt = DateTimeOffset.UtcNow, ETag = chunk.ETag, Provider = CloudStorageProvider.Local
+            FileId = chunk.FileId,
+            FileName = "chunk.part",
+            StoragePath = chunk.FileId,
+            ContentType = "application/octet-stream",
+            SizeBytes = bytes.Length,
+            UploadedAt = DateTimeOffset.UtcNow,
+            ETag = chunk.ETag,
+            Provider = CloudStorageProvider.Local
         };
         var storage = Substitute.For<ICloudFileStorage>();
         storage.GetMetadataAsync(chunk.FileId, Arg.Any<CancellationToken>()).Returns(before, before with { ETag = "replacement" });
@@ -222,8 +227,11 @@ public sealed class ImportUploadChunkStorageTests
     {
         Id = Guid.NewGuid().ToString("N"),
         Scope = new ImportUploadScope("owner", "tenant", "target", "workspace", "task", 1),
-        IntentSha256 = new string('a', 64), FileName = "parcels.gpkg", TotalBytes = 65536 + 17,
-        ChunkBytes = 65536, ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+        IntentSha256 = new string('a', 64),
+        FileName = "parcels.gpkg",
+        TotalBytes = 65536 + 17,
+        ChunkBytes = 65536,
+        ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
     };
 
     private static byte[] Content(int length) => Enumerable.Range(0, length).Select(index => (byte)(index % 251)).ToArray();

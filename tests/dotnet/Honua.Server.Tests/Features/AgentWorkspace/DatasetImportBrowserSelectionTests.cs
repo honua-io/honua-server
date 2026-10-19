@@ -27,7 +27,7 @@ public sealed class DatasetImportBrowserSelectionTests
         original.BrowserFileSelection.Should().Be(Selection);
         AgentWorkspaceState.AddTurn(document, "human", request).Should().BeSameAs(document);
         var changed = () => AgentWorkspaceState.AddTurn(document, "human", request with
-            { BrowserFileSelection = Selection with { SelectionId = "selection-later" } });
+        { BrowserFileSelection = Selection with { SelectionId = "selection-later" } });
         changed.Should().Throw<AgentWorkspaceConflictException>();
         static string Hash(AgentWorkspaceTurn turn) => Convert.ToHexStringLower(SHA256.HashData(
             JsonSerializer.SerializeToUtf8Bytes(turn, AgentWorkspaceJsonContext.Default.AgentWorkspaceTurn)));

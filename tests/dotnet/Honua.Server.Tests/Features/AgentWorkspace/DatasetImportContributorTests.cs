@@ -48,7 +48,7 @@ public sealed class DatasetImportContributorTests
         var authorization = Substitute.For<IAuthorizationService>();
         authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), Arg.Any<string>()).Returns(AuthorizationResult.Success());
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-            { ["AgentWorkspace:ReleaseId"] = "test-release" }).Build();
+        { ["AgentWorkspace:ReleaseId"] = "test-release" }).Build();
         using var services = new ServiceCollection().AddSingleton<IAdminApiKeyStore>(keys).AddSingleton(tenant)
             .AddSingleton(destination).AddSingleton(authorization).AddSingleton<IConfiguration>(configuration).BuildServiceProvider();
         var context = new DefaultHttpContext { User = human, RequestServices = services };
@@ -65,9 +65,15 @@ public sealed class DatasetImportContributorTests
             policy, JobSecurityContextFingerprint.Compute(policy), snapshot);
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = humanActor, AgentActorId = agentActor,
-            TenantId = "tenant-1", Members = [humanActor, agentActor], Turns = new() { [turn.TurnId] = turn },
-            DatasetImportTasks = new() { [task.TaskId] = [task] }, DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
+            WorkspaceId = "workspace-1",
+            TargetId = "target-1",
+            OwnerId = humanActor,
+            AgentActorId = agentActor,
+            TenantId = "tenant-1",
+            Members = [humanActor, agentActor],
+            Turns = new() { [turn.TurnId] = turn },
+            DatasetImportTasks = new() { [task.TaskId] = [task] },
+            DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
         };
         var store = Substitute.For<IAgentWorkspaceStore>();
         var target = "target-1";

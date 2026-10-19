@@ -39,8 +39,11 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
         var x = Reservation(60);
         var y = Reservation(60) with
         {
-            Scope = x.Scope with { ActorId = limit == "owner" ? x.Scope.ActorId : "another-owner",
-                TenantId = limit == "global" ? "another-tenant" : x.Scope.TenantId }
+            Scope = x.Scope with
+            {
+                ActorId = limit == "owner" ? x.Scope.ActorId : "another-owner",
+                TenantId = limit == "global" ? "another-tenant" : x.Scope.TenantId
+            }
         };
         try
         {
@@ -419,9 +422,13 @@ public sealed class RedisImportStorageBudgetTests(RedisFixture redis)
     {
         var session = new ImportUploadSession
         {
-            Id = Guid.NewGuid().ToString("N"), Scope = new("owner", "tenant", "target", "workspace", "task", 1),
-            IntentSha256 = new string('a', 64), FileName = "parcels.gpkg", TotalBytes = bytes,
-            ChunkBytes = RedisImportUploadStore.MaximumChunkBytes, ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+            Id = Guid.NewGuid().ToString("N"),
+            Scope = new("owner", "tenant", "target", "workspace", "task", 1),
+            IntentSha256 = new string('a', 64),
+            FileName = "parcels.gpkg",
+            TotalBytes = bytes,
+            ChunkBytes = RedisImportUploadStore.MaximumChunkBytes,
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
         };
         return RedisImportStorageBudget.ForObject(session, $"imports/resumable/{session.Id}/source-{Guid.NewGuid():N}", bytes);
     }

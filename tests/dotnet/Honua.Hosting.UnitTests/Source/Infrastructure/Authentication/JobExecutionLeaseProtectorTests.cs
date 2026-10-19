@@ -105,9 +105,15 @@ public sealed class JobExecutionLeaseProtectorTests
             Decision(clock) with { IsAllowed = false }, null, clock.GetUtcNow().AddHours(1)));
         Assert.Throws<UnauthorizedAccessException>(() => protector.ProtectValidatedBinding(job, Scope(), Decision(clock), new()
         {
-            WorkspaceId = "workspace", TaskId = "task", TaskRevision = 1, TaskContentHash = "content",
-            AuthorityRevision = 1, AuthorityFingerprint = "authority", PolicyContextFingerprint = "substituted",
-            OriginatingTurnId = "turn", OriginalTurnHash = "turn-hash"
+            WorkspaceId = "workspace",
+            TaskId = "task",
+            TaskRevision = 1,
+            TaskContentHash = "content",
+            AuthorityRevision = 1,
+            AuthorityFingerprint = "authority",
+            PolicyContextFingerprint = "substituted",
+            OriginatingTurnId = "turn",
+            OriginalTurnHash = "turn-hash"
         }, clock.GetUtcNow().AddHours(1)));
     }
 
@@ -116,7 +122,9 @@ public sealed class JobExecutionLeaseProtectorTests
 
     private static JobExecutionLeaseScope Scope() => new()
     {
-        Kind = ExecutionJobKind.Geoprocessing, Resources = [], ProviderBinding = "server-derived-closure",
+        Kind = ExecutionJobKind.Geoprocessing,
+        Resources = [],
+        ProviderBinding = "server-derived-closure",
         Operations = [new() { ResourceType = OperatorResourceType.Process, ResourceId = "analysis", Operation = OperatorOperation.Execute }]
     };
 
@@ -125,16 +133,33 @@ public sealed class JobExecutionLeaseProtectorTests
 
     private static ExecutionJobRecord Job(DateTimeOffset now) => new()
     {
-        OperationId = "job", Status = ExecutionJobStatus.Queued, CreatedAt = now, UpdatedAt = now,
-        Spec = new() { TargetKind = BatchComputeTargetKind.LocalProcess, Backend = "local", Kind = ExecutionJobKind.Geoprocessing,
-            WorkloadName = "analysis", Parameters = new Dictionary<string, string> { ["input"] = "source" } },
+        OperationId = "job",
+        Status = ExecutionJobStatus.Queued,
+        CreatedAt = now,
+        UpdatedAt = now,
+        Spec = new()
+        {
+            TargetKind = BatchComputeTargetKind.LocalProcess,
+            Backend = "local",
+            Kind = ExecutionJobKind.Geoprocessing,
+            WorkloadName = "analysis",
+            Parameters = new Dictionary<string, string> { ["input"] = "source" }
+        },
         Audit = new()
         {
-            RequestedBy = "actor", TenantId = "tenant",
+            RequestedBy = "actor",
+            TenantId = "tenant",
             SubmitterSecurityContext = new("actor", "tenant", [new("department", "planning")])
             {
-                OwnerActorId = "actor", AgentCredential = new() { Kind = "api-key", Id = "key", CredentialVersion = "version",
-                    Permissions = ["agent:workspace"], TokenExpiresAt = now.AddMinutes(5) }
+                OwnerActorId = "actor",
+                AgentCredential = new()
+                {
+                    Kind = "api-key",
+                    Id = "key",
+                    CredentialVersion = "version",
+                    Permissions = ["agent:workspace"],
+                    TokenExpiresAt = now.AddMinutes(5)
+                }
             }
         }
     };

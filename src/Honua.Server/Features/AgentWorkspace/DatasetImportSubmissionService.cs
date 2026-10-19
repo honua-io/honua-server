@@ -176,10 +176,16 @@ internal sealed class DatasetImportSubmissionService(IAgentWorkspaceStore store)
         var prepared = original.Prepared ?? throw new UnauthorizedAccessException();
         var expected = new JobExecutionLeaseAdmissionBinding
         {
-            WorkspaceId = original.Task.WorkspaceId, TaskId = original.Task.TaskId, TaskRevision = original.Task.Revision,
-            TaskContentHash = original.Task.ContentHash, AuthorityRevision = prepared.AuthorityRevision,
-            AuthorityFingerprint = prepared.AuthorityFingerprint, PolicyContextFingerprint = prepared.PolicyContextFingerprint,
-            InitiatingHumanActorId = prepared.InitiatingHumanActorId, OriginatingTurnId = prepared.OriginatingTurnId, OriginalTurnHash = prepared.OriginalTurnHash
+            WorkspaceId = original.Task.WorkspaceId,
+            TaskId = original.Task.TaskId,
+            TaskRevision = original.Task.Revision,
+            TaskContentHash = original.Task.ContentHash,
+            AuthorityRevision = prepared.AuthorityRevision,
+            AuthorityFingerprint = prepared.AuthorityFingerprint,
+            PolicyContextFingerprint = prepared.PolicyContextFingerprint,
+            InitiatingHumanActorId = prepared.InitiatingHumanActorId,
+            OriginatingTurnId = prepared.OriginatingTurnId,
+            OriginalTurnHash = prepared.OriginalTurnHash
         };
         if (!Enum.IsDefined(job.Status) || job.Spec.Kind != ExecutionJobKind.FileImport || job.OperationId != prepared.OperationId ||
             job.AcceptanceDeadline != prepared.AcceptBefore || job.Audit.RequestedBy != prepared.ExecutorActorId || job.Audit.TenantId != original.Task.TenantId ||

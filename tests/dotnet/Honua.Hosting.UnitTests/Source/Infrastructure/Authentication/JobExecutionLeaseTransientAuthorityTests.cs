@@ -79,12 +79,16 @@ public sealed class JobExecutionLeaseTransientAuthorityTests
         var evaluator = new OperatorAuthorizationEvaluator(fixture.Services.GetRequiredService<IServiceScopeFactory>(),
             Options.Create(new RbacOptions()), NullLogger<OperatorAuthorizationEvaluator>.Instance, fixture.Services);
         Assert.True((await evaluator.EvaluateAsync(fixture.Principal, new()
-            { ResourceType = OperatorResourceType.Process, ResourceId = "analysis", Operation = OperatorOperation.Execute })).IsAllowed);
+        { ResourceType = OperatorResourceType.Process, ResourceId = "analysis", Operation = OperatorOperation.Execute })).IsAllowed);
         Assert.False((await evaluator.EvaluateAsync(fixture.Principal, new()
-            { ResourceType = OperatorResourceType.Process, ResourceId = "analysis", Operation = OperatorOperation.Execute,
-                ApprovalReasonCodes = ["changed-approval-reason"] })).IsAllowed);
+        {
+            ResourceType = OperatorResourceType.Process,
+            ResourceId = "analysis",
+            Operation = OperatorOperation.Execute,
+            ApprovalReasonCodes = ["changed-approval-reason"]
+        })).IsAllowed);
         Assert.False((await evaluator.EvaluateAsync(fixture.Principal, new()
-            { ResourceType = OperatorResourceType.Deployment, ResourceId = "other", Operation = OperatorOperation.Publish })).IsAllowed);
+        { ResourceType = OperatorResourceType.Deployment, ResourceId = "other", Operation = OperatorOperation.Publish })).IsAllowed);
         await fixture.Keys.RevokeAsync(fixture.KeyId, default);
         Assert.False((await AccessPolicyHelpers.EvaluateResourceAccessCoreAsync(fixture.Services, fixture.Principal,
             null, false, allowed, null, AuthorizationOperation.Insert, default)).IsAllowed);
@@ -124,14 +128,18 @@ public sealed class JobExecutionLeaseTransientAuthorityTests
             var now = DateTimeOffset.UtcNow;
             var job = new ExecutionJobRecord
             {
-                OperationId = "job", Status = ExecutionJobStatus.Queued, CreatedAt = now, UpdatedAt = now,
+                OperationId = "job",
+                Status = ExecutionJobStatus.Queued,
+                CreatedAt = now,
+                UpdatedAt = now,
                 Spec = new() { TargetKind = BatchComputeTargetKind.LocalProcess, Backend = "local", Kind = ExecutionJobKind.Geoprocessing, WorkloadName = "analysis" },
                 Audit = new() { RequestedBy = context.OwnerActorId, TenantId = context.TenantId, SubmitterSecurityContext = context }
             };
             var protector = new JobExecutionLeaseProtector(new EphemeralDataProtectionProvider(), TimeProvider.System);
             var lease = protector.ProtectValidatedBinding(job, new()
             {
-                Kind = job.Spec.Kind, ProviderBinding = "server-derived-closure",
+                Kind = job.Spec.Kind,
+                ProviderBinding = "server-derived-closure",
                 Resources = [new() { ResourceType = OperatorResourceType.Catalog, ResourceId = "allowed", StorageLayerId = 1, Operation = AuthorizationOperation.Insert }],
                 Operations = [new() { ResourceType = OperatorResourceType.Process, ResourceId = "analysis", Operation = OperatorOperation.Execute }]
             }, new() { IsAllowed = true, DecisionId = "canonical-policy", MaximumExpiresAt = now.AddHours(1) }, null, now.AddMinutes(30));

@@ -530,14 +530,19 @@ public sealed class DelegatedAgentCredentialTests
         var context = await AgentJobSecurityBridge.CaptureAsync(principal, new RbacOptions(), fixture.Services, tenant, default);
         var job = new ExecutionJobRecord
         {
-            OperationId = "lease-job", Status = ExecutionJobStatus.Queued, CreatedAt = clock.GetUtcNow(), UpdatedAt = clock.GetUtcNow(),
+            OperationId = "lease-job",
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = clock.GetUtcNow(),
+            UpdatedAt = clock.GetUtcNow(),
             Spec = new() { TargetKind = BatchComputeTargetKind.LocalProcess, Backend = "local", Kind = ExecutionJobKind.Geoprocessing, WorkloadName = "analysis" },
             Audit = new() { RequestedBy = context.OwnerActorId, TenantId = context.TenantId, SubmitterSecurityContext = context }
         };
         var protector = new JobExecutionLeaseProtector(new EphemeralDataProtectionProvider(), clock);
         var lease = protector.ProtectValidatedBinding(job, new()
         {
-            Kind = job.Spec.Kind, Resources = [], ProviderBinding = "closed-constant-plan",
+            Kind = job.Spec.Kind,
+            Resources = [],
+            ProviderBinding = "closed-constant-plan",
             Operations = [new() { ResourceType = OperatorResourceType.Process, ResourceId = "constant", Operation = OperatorOperation.Execute }]
         }, new() { IsAllowed = true, DecisionId = "benign-canonical-policy", MaximumExpiresAt = clock.GetUtcNow().AddMinutes(30) }, null, clock.GetUtcNow().AddMinutes(30));
         var accepted = job with { Audit = job.Audit with { SubmitterSecurityContext = context with { ExecutionLease = lease } } };

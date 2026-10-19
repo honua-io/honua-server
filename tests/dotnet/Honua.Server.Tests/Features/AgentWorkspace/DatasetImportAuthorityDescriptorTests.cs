@@ -51,8 +51,14 @@ public sealed class DatasetImportAuthorityDescriptorTests
             "human-1", "turn-1", "original-turn-hash", policy, JobSecurityContextFingerprint.Compute(policy), snapshot);
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-1", AgentActorId = actor,
-            TenantId = "tenant-1", Members = [actor, "human-1"], DatasetImportTasks = new() { [task.TaskId] = [task] }, DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
+            WorkspaceId = "workspace-1",
+            TargetId = "target-1",
+            OwnerId = "human-1",
+            AgentActorId = actor,
+            TenantId = "tenant-1",
+            Members = [actor, "human-1"],
+            DatasetImportTasks = new() { [task.TaskId] = [task] },
+            DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
         };
         if (change is "prepared-deadline" or "prepared-authority-after-authorization") document.DatasetImportPreparedAdmissions[task.TaskId] = new(task.TaskId, 1, task.ContentHash,
             new string('c', 32), 1, binding.AuthorityFingerprint, actor, "human-1", binding.OriginatingTurnId, binding.OriginalTurnHash,
@@ -63,10 +69,16 @@ public sealed class DatasetImportAuthorityDescriptorTests
             if (++authorizations == 2)
             {
                 if (change == "task-deleted-after-authorization") document = document with { DatasetImportTasks = [] };
-                else if (change == "task-deadline-after-authorization") document = document with { DatasetImportTasks = new()
-                    { [task.TaskId] = [task with { UploadAdmissionDeadline = task.UploadAdmissionDeadline.AddHours(1) }] } };
-                else if (change == "prepared-authority-after-authorization") document = document with { DatasetImportPreparedAdmissions = new()
-                    { [task.TaskId] = document.DatasetImportPreparedAdmissions[task.TaskId] with { AuthorityRevision = 2, AuthorityFingerprint = "changed" } } };
+                else if (change == "task-deadline-after-authorization") document = document with
+                {
+                    DatasetImportTasks = new()
+                    { [task.TaskId] = [task with { UploadAdmissionDeadline = task.UploadAdmissionDeadline.AddHours(1) }] }
+                };
+                else if (change == "prepared-authority-after-authorization") document = document with
+                {
+                    DatasetImportPreparedAdmissions = new()
+                    { [task.TaskId] = document.DatasetImportPreparedAdmissions[task.TaskId] with { AuthorityRevision = 2, AuthorityFingerprint = "changed" } }
+                };
             }
             return allowed ? task : null;
         });
@@ -82,14 +94,25 @@ public sealed class DatasetImportAuthorityDescriptorTests
                 if (change == "membership") document = document with { Members = ["human-1"] };
                 else if (change == "target") target = "target-2";
                 else if (change == "task") allowed = false;
-                else if (change == "renewal") document = document with { DatasetImportExecutionBindings = new()
-                    { [task.TaskId] = binding with { AuthorityRevision = 2, AuthorityFingerprint = "authority-2" } } };
-                else if (change == "prepared-deadline") document = document with { DatasetImportPreparedAdmissions = new()
-                    { [task.TaskId] = document.DatasetImportPreparedAdmissions[task.TaskId] with { AcceptBefore = task.UploadAdmissionDeadline.AddHours(1) } } };
-                else if (change == "preparation") document = document with { DatasetImportPreparedAdmissions = new()
-                    { [task.TaskId] = new(task.TaskId, 1, task.ContentHash, new string('c', 32), 1, binding.AuthorityFingerprint,
+                else if (change == "renewal") document = document with
+                {
+                    DatasetImportExecutionBindings = new()
+                    { [task.TaskId] = binding with { AuthorityRevision = 2, AuthorityFingerprint = "authority-2" } }
+                };
+                else if (change == "prepared-deadline") document = document with
+                {
+                    DatasetImportPreparedAdmissions = new()
+                    { [task.TaskId] = document.DatasetImportPreparedAdmissions[task.TaskId] with { AcceptBefore = task.UploadAdmissionDeadline.AddHours(1) } }
+                };
+                else if (change == "preparation") document = document with
+                {
+                    DatasetImportPreparedAdmissions = new()
+                    {
+                        [task.TaskId] = new(task.TaskId, 1, task.ContentHash, new string('c', 32), 1, binding.AuthorityFingerprint,
                         actor, "human-1", binding.OriginatingTurnId, binding.OriginalTurnHash, policy,
-                        binding.PolicyContextFingerprint, snapshot, task.UploadAdmissionDeadline) } };
+                        binding.PolicyContextFingerprint, snapshot, task.UploadAdmissionDeadline)
+                    }
+                };
             }
             return observed;
         });

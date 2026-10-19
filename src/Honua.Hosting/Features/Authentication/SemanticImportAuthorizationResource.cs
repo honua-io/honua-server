@@ -16,11 +16,11 @@ internal sealed record SemanticImportAuthorizationResource(string TargetId, bool
     internal OperatorAuthorizationRequest OperatorRequest => SealedOperation is { } exact
         ? exact with { ApprovalReasonCodes = exact.ApprovalReasonCodes.ToArray() }
         : new()
-    {
-        ResourceType = OperatorResourceType.Catalog,
-        ResourceId = TargetId,
-        Operation = RequireWrite ? OperatorOperation.Create : OperatorOperation.Read
-    };
+        {
+            ResourceType = OperatorResourceType.Catalog,
+            ResourceId = TargetId,
+            Operation = RequireWrite ? OperatorOperation.Create : OperatorOperation.Read
+        };
 
     internal bool IsValid => !string.IsNullOrWhiteSpace(TargetId) && TargetId.Length <= 512
         && (SealedOperation is null || SealedOperation.ResourceType == OperatorResourceType.Catalog

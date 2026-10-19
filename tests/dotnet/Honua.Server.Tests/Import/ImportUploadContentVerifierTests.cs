@@ -492,8 +492,10 @@ public sealed class ImportUploadContentVerifierTests(RedisFixture redis)
         {
             Id = Guid.NewGuid().ToString("N"),
             Scope = new ImportUploadScope("owner", "tenant", "target", "workspace", "task", 1),
-            IntentSha256 = new string('a', 64), FileName = "parcels.gpkg",
-            TotalBytes = 65536L * fullChunks + 17, ChunkBytes = 65536,
+            IntentSha256 = new string('a', 64),
+            FileName = "parcels.gpkg",
+            TotalBytes = 65536L * fullChunks + 17,
+            ChunkBytes = 65536,
             ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
         };
         (await store.TryCreateAsync(session)).Should().BeTrue();

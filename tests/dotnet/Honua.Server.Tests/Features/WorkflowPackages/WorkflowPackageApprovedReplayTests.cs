@@ -232,7 +232,8 @@ public sealed class WorkflowPackageApprovedReplayTests
             {
                 Credential = credential,
                 AuthorSecurityContext = new JobSecurityContext(actor, "public",
-                    created.Record.Permissions.Select(permission => new JobSecurityClaim("permission", permission)).ToArray()) { OwnerActorId = actor },
+                    created.Record.Permissions.Select(permission => new JobSecurityClaim("permission", permission)).ToArray())
+                { OwnerActorId = actor },
                 Intent = new() { Action = "delete", PackageId = "package", Version = 1, PackageHash = hash, PublicationId = "publication" },
                 KeyId = created.Record.Id,
                 ActorId = actor,

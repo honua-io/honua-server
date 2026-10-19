@@ -114,7 +114,9 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
             await using var replacement = new MemoryStream(Bytes, writable: false);
             (await disk.Storage.UploadAsync(new FileUploadRequest
             {
-                Content = replacement, FileName = "replacement.part", ContentType = "application/octet-stream",
+                Content = replacement,
+                FileName = "replacement.part",
+                ContentType = "application/octet-stream",
                 ObjectKeyOverride = candidate.FileId
             })).Success.Should().BeTrue();
         }
@@ -210,9 +212,13 @@ public sealed class ImportUploadStorageAdmissionTests(RedisFixture redis)
 
     private static ImportUploadSession Session() => new()
     {
-        Id = Guid.NewGuid().ToString("N"), Scope = new("owner", "tenant", "target", "workspace", "task", 1),
-        IntentSha256 = new string('a', 64), FileName = "parcels.gpkg", TotalBytes = Bytes.Length,
-        ChunkBytes = Bytes.Length, ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+        Id = Guid.NewGuid().ToString("N"),
+        Scope = new("owner", "tenant", "target", "workspace", "task", 1),
+        IntentSha256 = new string('a', 64),
+        FileName = "parcels.gpkg",
+        TotalBytes = Bytes.Length,
+        ChunkBytes = Bytes.Length,
+        ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
     };
 
     private sealed class Disk : IDisposable

@@ -49,19 +49,37 @@ public sealed class AgentWorkspaceDraftLineageTests
         created.IsError.Should().NotBeTrue();
         var draftId = created.StructuredContent!.Value.GetProperty("id").GetString()!;
         var patchTool = AgentWorkspaceTool.All.Single(tool => tool.Name == "honua_workspace_patch_draft");
-        using var patch = JsonDocument.Parse(JsonSerializer.Serialize(new { workspaceId = "workspace-1", viewId = "tab-1", draftId,
-            expectedRevision = 0, changes = new { layerName = "turn-output" } }));
+        using var patch = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            workspaceId = "workspace-1",
+            viewId = "tab-1",
+            draftId,
+            expectedRevision = 0,
+            changes = new { layerName = "turn-output" }
+        }));
         (await patchTool.InvokeAsync(context, patch.RootElement, default)).IsError.Should().NotBeTrue();
         document.Drafts[draftId].Revision.Should().Be(1);
         document.DraftLineages.Values.Should().ContainSingle().Which.Should().Be(new AgentWorkspaceDraftLineage("turn-1", actor, draftId, 1));
         document.Turns["turn-1"].Context.Task.Should().BeNull();
         // Human editing does not advance the old turn's allowed lineage.
         document = AgentWorkspaceState.PatchDraft(document, draftId, new(1, "tab-1", new() { ["layerName"] = "later-human" }));
-        using var laterPatch = JsonDocument.Parse(JsonSerializer.Serialize(new { workspaceId = "workspace-1", viewId = "tab-1", draftId,
-            expectedRevision = 2, changes = new { layerName = "must-not-adopt" } }));
+        using var laterPatch = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            workspaceId = "workspace-1",
+            viewId = "tab-1",
+            draftId,
+            expectedRevision = 2,
+            changes = new { layerName = "must-not-adopt" }
+        }));
         (await patchTool.InvokeAsync(context, laterPatch.RootElement, default)).IsError.Should().BeTrue();
-        using var submit = JsonDocument.Parse(JsonSerializer.Serialize(new { workspaceId = "workspace-1", viewId = "tab-1", draftId,
-            expectedRevision = 2, commandId = "must-not-submit" }));
+        using var submit = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            workspaceId = "workspace-1",
+            viewId = "tab-1",
+            draftId,
+            expectedRevision = 2,
+            commandId = "must-not-submit"
+        }));
         // No operation invoker is registered: refusal must happen before any dispatch.
         (await AgentWorkspaceTool.All.Single(tool => tool.Name == "honua_workspace_submit_draft").InvokeAsync(context, submit.RootElement, default)).IsError.Should().BeTrue();
         document.Drafts[draftId].Fields["layerName"].Should().Be("later-human");
@@ -73,9 +91,16 @@ public sealed class AgentWorkspaceDraftLineageTests
         context.Request.RouteValues["workspaceId"] = "workspace-1";
         context.Request.RouteValues["draftId"] = draftId;
         store.ClearReceivedCalls();
-        var accepted = new OperationHandle { OperationInstanceId = "operation-1", OperationId = "service.publish",
-            Status = OperationHandleStatus.RequiresApproval, CorrelationId = "correlation-1", TenantId = "tenant-1",
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow };
+        var accepted = new OperationHandle
+        {
+            OperationInstanceId = "operation-1",
+            OperationId = "service.publish",
+            Status = OperationHandleStatus.RequiresApproval,
+            CorrelationId = "correlation-1",
+            TenantId = "tenant-1",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
         operations.GetAsync("operation-1", Arg.Any<CancellationToken>()).Returns(accepted);
         // An accepted operation remains observable after later typing and its original
         // retry deadline, without requiring any operation invoker in this composition.

@@ -179,7 +179,7 @@ public sealed class DatasetImportUploadHttpTests(RedisFixture redis)
         await using var fixture = await Fixture.Create(redis.ConnectionString, handoff: true);
         using var bootstrap = fixture.App.CreateAdminClient();
         var keyJson = await Read(await bootstrap.PostAsJsonAsync("/api/v1/admin/api-keys", new
-            { name = "upload-executor", permissions = new[] { "admin:read", "agent:workspace" } }));
+        { name = "upload-executor", permissions = new[] { "admin:read", "agent:workspace" } }));
         var key = keyJson.GetProperty("data");
         var keyId = key.GetProperty("apiKey").GetProperty("id").GetString()!;
         var executor = $"apikey:api-key:{keyId}";
@@ -195,8 +195,13 @@ public sealed class DatasetImportUploadHttpTests(RedisFixture redis)
         var root = $"/api/v1/agent/workspaces/{workspaceId}";
         var bytes = "{\"type\":\"FeatureCollection\",\"features\":[]}"u8.ToArray();
         await Read(await human.PostAsJsonAsync(root + "/turns", new
-            { turnId = "handoff-origin", viewId = "handoff-tab", contextRevision = 0, prompt = "Import the selected dataset",
-              browserFileSelection = new BrowserImportFileSelection("selected-handoff", "handoff.geojson", bytes.Length, Digest(bytes)) }));
+        {
+            turnId = "handoff-origin",
+            viewId = "handoff-tab",
+            contextRevision = 0,
+            prompt = "Import the selected dataset",
+            browserFileSelection = new BrowserImportFileSelection("selected-handoff", "handoff.geojson", bytes.Length, Digest(bytes))
+        }));
         agent.DefaultRequestHeaders.Add("X-Honua-Workspace", workspaceId);
         agent.DefaultRequestHeaders.Add("X-Honua-Turn", "handoff-origin");
         var task = await Read(await agent.PostAsJsonAsync(root + "/dataset-import-tasks", new CreateDatasetImportTask(

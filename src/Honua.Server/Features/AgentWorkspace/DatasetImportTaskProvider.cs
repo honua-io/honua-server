@@ -144,8 +144,12 @@ internal sealed class DatasetImportDestinationAuthorizer(IHttpContextAccessor ac
             SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c
             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
             WHERE n.nspname = @schema AND (c.relname = @table OR c.relname = @legacy))
-            """, new Dictionary<string, object?> { ["schema"] = destination.Schema, ["table"] = ImportPhysicalTableName.Canonical(destination.Table),
-                ["legacy"] = ImportPhysicalTableName.Legacy(destination.Table) is { Length: <= 63 } legacy ? legacy : null }, cancellationToken).ConfigureAwait(false);
+            """, new Dictionary<string, object?>
+        {
+            ["schema"] = destination.Schema,
+            ["table"] = ImportPhysicalTableName.Canonical(destination.Table),
+            ["legacy"] = ImportPhysicalTableName.Legacy(destination.Table) is { Length: <= 63 } legacy ? legacy : null
+        }, cancellationToken).ConfigureAwait(false);
         return !occupied;
     }
 }

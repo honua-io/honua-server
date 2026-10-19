@@ -21,9 +21,12 @@ internal sealed class FileImportExecutionCommitAuthority(IExecutionJobStore jobs
     public async Task<ImportExecutionCommitBinding> RequireCurrentAsync(ImportRequest request,
         string physicalSchema, string physicalTable, CancellationToken cancellationToken = default)
     {
-        if (JobSecurityScope.Current is not { JobId: { } id, IntentFingerprint: { } fingerprint,
-            WorkerId: { } worker, AttemptCount: { } attempt,
-            Submitter: { ExecutionLease: { } envelope, CurrentAgentPrincipal: { } principal } active }
+        if (JobSecurityScope.Current is not
+            {
+                JobId: { } id, IntentFingerprint: { } fingerprint,
+                WorkerId: { } worker, AttemptCount: { } attempt,
+                Submitter: { ExecutionLease: { } envelope, CurrentAgentPrincipal: { } principal } active
+            }
             || attempt < 1 || !JobExecutionLeaseTransientAuthority.MatchesExecutionClaim(principal, worker, attempt)) throw Denied();
         var job = await jobs.GetAsync(id, cancellationToken).ConfigureAwait(false) ?? throw Denied();
         RequireJob(job, id, fingerprint, active, envelope, worker, attempt);

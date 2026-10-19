@@ -75,8 +75,12 @@ internal static class DatasetImportTaskService
             bindings[task.TaskId] = new(task.TaskId, task.Revision, task.ContentHash, 1, authorityHash, actor,
                 workspace.OwnerId == actor ? null : workspace.OwnerId, origin.TurnId, turnHash, policy, policyHash, authority);
         }
-        var next = AgentWorkspaceState.Update(workspace with { DatasetImportTasks = tasks, DatasetImportTaskIntents = intents,
-            DatasetImportExecutionBindings = bindings },
+        var next = AgentWorkspaceState.Update(workspace with
+        {
+            DatasetImportTasks = tasks,
+            DatasetImportTaskIntents = intents,
+            DatasetImportExecutionBindings = bindings
+        },
             new(request.ViewId, request.ContextRevision, workspace.TargetId, current.SelectedResources,
                 new(task.TaskId, task.Revision, "dataset-import", ContentHash: task.ContentHash), "form"));
         if (!await store.SaveAsync(next).ConfigureAwait(false))

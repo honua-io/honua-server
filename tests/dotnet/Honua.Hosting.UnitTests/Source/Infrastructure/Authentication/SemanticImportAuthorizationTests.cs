@@ -43,13 +43,26 @@ public sealed class SemanticImportAuthorizationTests
         var now = DateTimeOffset.UtcNow;
         var job = new ExecutionJobRecord
         {
-            OperationId = "typed-import", Status = ExecutionJobStatus.Running, CreatedAt = now, UpdatedAt = now,
-            Spec = new() { Kind = ExecutionJobKind.FileImport, TargetKind = BatchComputeTargetKind.LocalProcess,
-                Backend = "local", WorkloadName = "file-import" },
+            OperationId = "typed-import",
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Spec = new()
+            {
+                Kind = ExecutionJobKind.FileImport,
+                TargetKind = BatchComputeTargetKind.LocalProcess,
+                Backend = "local",
+                WorkloadName = "file-import"
+            },
             Audit = new() { RequestedBy = original.OwnerActorId, TenantId = original.TenantId, SubmitterSecurityContext = original }
         };
-        var scope = new JobExecutionLeaseScope { Kind = job.Spec.Kind, Resources = [], ProviderBinding = "closed-import-plan",
-            Operations = [new SemanticImportAuthorizationResource("configured-target", true).OperatorRequest] };
+        var scope = new JobExecutionLeaseScope
+        {
+            Kind = job.Spec.Kind,
+            Resources = [],
+            ProviderBinding = "closed-import-plan",
+            Operations = [new SemanticImportAuthorizationResource("configured-target", true).OperatorRequest]
+        };
         var protector = new JobExecutionLeaseProtector(new EphemeralDataProtectionProvider(), TimeProvider.System);
         var lease = protector.ProtectValidatedBinding(job, scope,
             new() { IsAllowed = true, DecisionId = "benign-canonical", MaximumExpiresAt = now.AddHours(1) }, null, now.AddMinutes(30));

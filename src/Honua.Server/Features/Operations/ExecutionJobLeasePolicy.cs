@@ -35,14 +35,16 @@ internal sealed class ExecutionJobLeasePolicy(IOperationProposalStore proposals,
             if (requirements.Any(requirement => requirement.IsRequired)) throw Denied();
             return new()
             {
-                IsAllowed = true, DecisionId = "benign:" + ScopeFingerprint(scope),
+                IsAllowed = true,
+                DecisionId = "benign:" + ScopeFingerprint(scope),
                 MaximumExpiresAt = request.RequestedExpiresAt
             };
         }
         var receipt = await ReadApprovalAsync(job, scope, requirements, cancellationToken).ConfigureAwait(false);
         return new()
         {
-            IsAllowed = true, DecisionId = receipt.Proposal.SealedPlanHash!,
+            IsAllowed = true,
+            DecisionId = receipt.Proposal.SealedPlanHash!,
             ApprovalReceiptId = receipt.Proposal.ProposalId,
             ApprovalPolicyRef = receipt.Proposal.Audit.ApprovalPolicyRef,
             MaximumExpiresAt = receipt.Binding.ExpiresAt < request.RequestedExpiresAt
@@ -146,8 +148,12 @@ internal sealed class ExecutionJobLeasePolicy(IOperationProposalStore proposals,
                 diff.Add($"Verified source SHA-256: {source.Sha256}.");
                 if (source.Transfer is { } transfer) diff.Add($"Import task: {transfer.TaskId}, revision {transfer.TaskRevision}.");
             }
-            return new() { Summary = $"Import {request.FileName} into {request.TargetSchema ?? "default schema"}.{request.TableName}", Diff = diff,
-                RiskLevel = request.EffectiveLoadMode == Honua.Core.Features.Import.Domain.ImportLoadMode.Replace ? ProposalRiskLevel.High : ProposalRiskLevel.Medium };
+            return new()
+            {
+                Summary = $"Import {request.FileName} into {request.TargetSchema ?? "default schema"}.{request.TableName}",
+                Diff = diff,
+                RiskLevel = request.EffectiveLoadMode == Honua.Core.Features.Import.Domain.ImportLoadMode.Replace ? ProposalRiskLevel.High : ProposalRiskLevel.Medium
+            };
         }
         // Other job kinds must supply their existing canonical domain dry-run plan;
         // hashes and a generic job ID alone are not a reviewable human decision.

@@ -613,8 +613,11 @@ internal sealed partial class StreamingFileImportService
         }
         await using var output = new FileStream(path, new FileStreamOptions
         {
-            Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None,
-            BufferSize = _limits.StreamBufferSize, Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            BufferSize = _limits.StreamBufferSize,
+            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
         });
         await source.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
     }

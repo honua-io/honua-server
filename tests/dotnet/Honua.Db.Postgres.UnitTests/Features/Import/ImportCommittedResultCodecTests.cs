@@ -16,9 +16,11 @@ public sealed class ImportCommittedResultCodecTests
     {
         var result = Result() with
         {
-            Warnings = ["One geometry repaired"], RepairedGeometryCount = 1,
+            Warnings = ["One geometry repaired"],
+            RepairedGeometryCount = 1,
             ValidationErrors = [ImportValidationIssue.Create("repaired", "Ring closed", 7, "geometry",
-                ImportValidationSeverity.Warning)], Duration = TimeSpan.FromMilliseconds(1234)
+                ImportValidationSeverity.Warning)],
+            Duration = TimeSpan.FromMilliseconds(1234)
         };
         ImportCommittedResultCodec.Decode(ImportCommittedResultCodec.Encode(result)).Should().BeEquivalentTo(result);
     }

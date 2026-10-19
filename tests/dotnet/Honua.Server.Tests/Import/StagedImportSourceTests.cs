@@ -63,16 +63,35 @@ public sealed class StagedImportSourceTests
         receipt = receipt with { Transfer = receipt.Transfer! with { OwnerActorId = original.OwnerActorId!, TenantId = original.TenantId } };
         var accepted = Request(receipt);
         var clock = new LeaseWorkerClock();
-        var envelope = new JobExecutionLease { JobId = accepted.Acceptance!.OperationId, LeaseId = "controlled-authority-port",
-            IssuedAt = clock.GetUtcNow(), ExpiresAt = clock.GetUtcNow().AddMinutes(30), ProtectedAuthority = "port-contract-fixture" };
+        var envelope = new JobExecutionLease
+        {
+            JobId = accepted.Acceptance!.OperationId,
+            LeaseId = "controlled-authority-port",
+            IssuedAt = clock.GetUtcNow(),
+            ExpiresAt = clock.GetUtcNow().AddMinutes(30),
+            ProtectedAuthority = "port-contract-fixture"
+        };
         var job = new ExecutionJobRecord
         {
-            OperationId = envelope.JobId, Status = ExecutionJobStatus.Running, CreatedAt = clock.GetUtcNow(), UpdatedAt = clock.GetUtcNow(),
+            OperationId = envelope.JobId,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = clock.GetUtcNow(),
+            UpdatedAt = clock.GetUtcNow(),
             AcceptanceDeadline = accepted.Acceptance.AcceptBefore,
-            Audit = new() { RequestedBy = original.OwnerActorId, TenantId = original.TenantId,
-                SubmitterSecurityContext = original with { ExecutionLease = scenario is "no-lease" or "recovery-only-no-lease" ? null : envelope } },
-            Spec = new() { Kind = ExecutionJobKind.FileImport, TargetKind = BatchComputeTargetKind.AwsBatch,
-                Backend = "in-process", WorkloadName = "file-import", Parameters = FileImportJobParameters.Build(accepted, receipt.Bytes) }
+            Audit = new()
+            {
+                RequestedBy = original.OwnerActorId,
+                TenantId = original.TenantId,
+                SubmitterSecurityContext = original with { ExecutionLease = scenario is "no-lease" or "recovery-only-no-lease" ? null : envelope }
+            },
+            Spec = new()
+            {
+                Kind = ExecutionJobKind.FileImport,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "in-process",
+                WorkloadName = "file-import",
+                Parameters = FileImportJobParameters.Build(accepted, receipt.Bytes)
+            }
         };
         var recovered = scenario is "recover-expired" or "recover-revoked" or "recovery-only-committed";
         ImportResult? committed = recovered ? SuccessfulResult() : null;
@@ -87,8 +106,11 @@ public sealed class StagedImportSourceTests
             if (scenario == "receipt-read-failed" || (scenario == "receipt-read-failed-after-commit" && committed is not null))
                 throw new IOException("Database receipt read unavailable.");
             if (scenario == "job-changed-during-read") stored = job with { Audit = job.Audit with { RequestedBy = "changed" } };
-            if (scenario == "lease-changed-during-read") stored = job with { Audit = job.Audit with
-                { SubmitterSecurityContext = job.Audit.SubmitterSecurityContext! with { ExecutionLease = envelope with { ProtectedAuthority = "changed" } } } };
+            if (scenario == "lease-changed-during-read") stored = job with
+            {
+                Audit = job.Audit with
+                { SubmitterSecurityContext = job.Audit.SubmitterSecurityContext! with { ExecutionLease = envelope with { ProtectedAuthority = "changed" } } }
+            };
             return committed;
         });
         var calls = 0;
@@ -211,8 +233,15 @@ public sealed class StagedImportSourceTests
         JobSecurityScope.Current.Should().BeNull("executor scope must be disposed on every path");
     }
 
-    private static ImportResult SuccessfulResult() => new() { Success = true, TableName = "roads", PhysicalTableName = "roads",
-        Schema = "honua_data", FeatureCount = 1, Format = SupportedFileFormat.GeoJson };
+    private static ImportResult SuccessfulResult() => new()
+    {
+        Success = true,
+        TableName = "roads",
+        PhysicalTableName = "roads",
+        Schema = "honua_data",
+        FeatureCount = 1,
+        Format = SupportedFileFormat.GeoJson
+    };
 
     private sealed class LeaseWorkerClock : TimeProvider
     {
@@ -254,8 +283,15 @@ public sealed class StagedImportSourceTests
                 imported.CanSeek.Should().BeTrue();
                 imported.Position.Should().Be(0);
                 Convert.ToHexStringLower(await SHA256.HashDataAsync(imported)).Should().Be(receipt.Sha256);
-                return new ImportResult { Success = true, TableName = "roads", PhysicalTableName = "roads",
-                    Schema = "honua_data", FeatureCount = 1, Format = SupportedFileFormat.GeoJson };
+                return new ImportResult
+                {
+                    Success = true,
+                    TableName = "roads",
+                    PhysicalTableName = "roads",
+                    Schema = "honua_data",
+                    FeatureCount = 1,
+                    Format = SupportedFileFormat.GeoJson
+                };
             });
         using var services = new ServiceCollection().AddSingleton<ICloudFileStorage>(fixture.Storage)
             .AddSingleton(importer).AddSingleton(fixture.Scratch).BuildServiceProvider();
@@ -266,10 +302,18 @@ public sealed class StagedImportSourceTests
         var now = DateTimeOffset.UtcNow;
         var job = new ExecutionJobRecord
         {
-            OperationId = acceptedRequest.Acceptance!.OperationId, Status = ExecutionJobStatus.Running,
-            CreatedAt = now, UpdatedAt = now,
-            Spec = new ExecutionJobSpec { Kind = ExecutionJobKind.FileImport, TargetKind = BatchComputeTargetKind.AwsBatch,
-                Backend = "in-process", WorkloadName = "file-import", Parameters = parameters }
+            OperationId = acceptedRequest.Acceptance!.OperationId,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.FileImport,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "in-process",
+                WorkloadName = "file-import",
+                Parameters = parameters
+            }
         };
 
         var result = await executor.ExecuteAsync(job, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
@@ -475,7 +519,8 @@ public sealed class StagedImportSourceTests
             case "etag": parameters.Remove(FileImportJobParameters.StagedSourceETag); break;
             case "digest": parameters[FileImportJobParameters.StagedSourceSha256] = "not-a-digest"; break;
             case "bytes": parameters[FileImportJobParameters.FileSizeBytes] = "-1"; break;
-            case "mixed": parameters[FileImportJobParameters.ObjectStoreUri] = "s3://bucket/object";
+            case "mixed":
+                parameters[FileImportJobParameters.ObjectStoreUri] = "s3://bucket/object";
                 parameters[FileImportJobParameters.ObjectStoreETag] = "another-generation"; break;
         }
         FileImportJobParameters.TryParse(parameters, out _, out _, out _).Should().BeFalse();
@@ -495,7 +540,10 @@ public sealed class StagedImportSourceTests
 
     private static ImportRequest Request(ImportStagedSourceBinding source) => new()
     {
-        CloudFileId = source.FileId, StagedSource = source, FileName = "roads.geojson", TableName = "roads",
+        CloudFileId = source.FileId,
+        StagedSource = source,
+        FileName = "roads.geojson",
+        TableName = "roads",
         Ownership = source.Transfer is { } transfer ? new(transfer.OwnerActorId, transfer.TenantId) : null,
         Acceptance = source.Transfer is { } origin ? new(Guid.NewGuid().ToString("N"), origin.TaskContentHash, DateTimeOffset.UtcNow.AddHours(1)) : null
     };
@@ -521,8 +569,14 @@ public sealed class StagedImportSourceTests
         public async Task<ImportStagedSourceBinding> StageAsync()
         {
             await using var content = new MemoryStream(Content, writable: false);
-            var result = await Storage.UploadAsync(new FileUploadRequest { Content = content, FileName = "roads.geojson",
-                ContentType = "application/geo+json", SizeBytes = Content.Length, ObjectKeyOverride = $"imports/resumable/{Transfer.UploadId}/source-{_sourceId}" });
+            var result = await Storage.UploadAsync(new FileUploadRequest
+            {
+                Content = content,
+                FileName = "roads.geojson",
+                ContentType = "application/geo+json",
+                SizeBytes = Content.Length,
+                ObjectKeyOverride = $"imports/resumable/{Transfer.UploadId}/source-{_sourceId}"
+            });
             result.Success.Should().BeTrue();
             return new(result.File!.FileId, result.File.ETag!, Content.Length, Convert.ToHexStringLower(SHA256.HashData(Content)), Transfer: Transfer);
         }

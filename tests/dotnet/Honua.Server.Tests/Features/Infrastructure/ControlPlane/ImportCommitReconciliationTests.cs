@@ -57,9 +57,13 @@ public sealed class ImportCommitReconciliationTests
     {
         var fixture = new Fixture();
         await ExecutionJobCommitReconciliation.SetPendingAsync(fixture.Store, fixture.Current, true, default, startExecution: true);
-        fixture.Current = fixture.Current with { CancellationRequestedAt = DateTimeOffset.UtcNow,
-            ClaimedAt = DateTimeOffset.UtcNow.AddHours(-2), LastHeartbeatAt = DateTimeOffset.UtcNow.AddHours(-1),
-            TimeoutPolicy = new() { MaxDuration = timedOut ? TimeSpan.FromMinutes(1) : TimeSpan.FromDays(1) } };
+        fixture.Current = fixture.Current with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow,
+            ClaimedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            LastHeartbeatAt = DateTimeOffset.UtcNow.AddHours(-1),
+            TimeoutPolicy = new() { MaxDuration = timedOut ? TimeSpan.FromMinutes(1) : TimeSpan.FromDays(1) }
+        };
         using var service = new JobReconciliationService(fixture.Store, fixture.Queue, Substitute.For<IQueueClaimReconciler>(),
             new ExecutionJobCancellationTokens(), [], null, NullLogger<JobReconciliationService>.Instance);
         await service.SweepActiveJobsAsync(default);
@@ -123,11 +127,27 @@ public sealed class ImportCommitReconciliationTests
             var id = new string('a', 32);
             // Lease metadata is controlled; no authentication or execution authority
             // is claimed by these persistence-only state transition tests.
-            Current = new() { OperationId = id, Status = ExecutionJobStatus.Running, CreatedAt = now, UpdatedAt = now,
-                ClaimedBy = "worker", ClaimedAt = now, LastHeartbeatAt = now, AttemptCount = 1, RetryPolicy = JobRetryPolicy.None,
+            Current = new()
+            {
+                OperationId = id,
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = now,
+                UpdatedAt = now,
+                ClaimedBy = "worker",
+                ClaimedAt = now,
+                LastHeartbeatAt = now,
+                AttemptCount = 1,
+                RetryPolicy = JobRetryPolicy.None,
                 Spec = new() { Kind = ExecutionJobKind.FileImport, Backend = "local", TargetKind = BatchComputeTargetKind.KubernetesJob, WorkloadName = "import" },
-                Audit = new() { SubmitterSecurityContext = new("actor", null, []) { ExecutionLease = new()
-                    { LeaseId = "lease", JobId = id, IssuedAt = now, ExpiresAt = now.AddHours(1), ProtectedAuthority = "controlled" } } } };
+                Audit = new()
+                {
+                    SubmitterSecurityContext = new("actor", null, [])
+                    {
+                        ExecutionLease = new()
+                        { LeaseId = "lease", JobId = id, IssuedAt = now, ExpiresAt = now.AddHours(1), ProtectedAuthority = "controlled" }
+                    }
+                }
+            };
             Store.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => Current);
             Store.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>()).Returns(_ => (IReadOnlyList<ExecutionJobRecord>)[Current]);
             Store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(call =>

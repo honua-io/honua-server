@@ -198,8 +198,13 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             // The retained old turn cannot silently adopt the human's revision2 edit.
             (await agent.PostAsJsonAsync(draftPath + "/submit", submit)).StatusCode.Should().Be(HttpStatusCode.Conflict);
             var reviewContext = await Read(await human.GetAsync(root + "?viewId=tab-a"), HttpStatusCode.OK);
-            await Read(await human.PostAsJsonAsync(root + "/turns", new { turnId = "turn-review", viewId = "tab-a",
-                contextRevision = reviewContext.GetProperty("revision").GetInt64(), prompt = "Publish this newly reviewed revision" }), HttpStatusCode.OK);
+            await Read(await human.PostAsJsonAsync(root + "/turns", new
+            {
+                turnId = "turn-review",
+                viewId = "tab-a",
+                contextRevision = reviewContext.GetProperty("revision").GetInt64(),
+                prompt = "Publish this newly reviewed revision"
+            }), HttpStatusCode.OK);
             agent.DefaultRequestHeaders.Remove("X-Honua-Turn");
             agent.DefaultRequestHeaders.Add("X-Honua-Turn", "turn-review");
             var first = await Read(await agent.PostAsJsonAsync(draftPath + "/submit", submit), HttpStatusCode.OK);
@@ -283,10 +288,18 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             var laterHuman = await Read(await human.PatchAsJsonAsync(draftPath,
                 new { viewId = "tab-a", expectedRevision = retryRevision, changes = new { layerName = "later-human-edit" } }), HttpStatusCode.OK);
             var laterRevision = laterHuman.GetProperty("revision").GetInt64();
-            (await agent.PatchAsJsonAsync(draftPath, new { viewId = "tab-a", expectedRevision = laterRevision,
-                changes = new { layerName = "must-not-adopt" } })).StatusCode.Should().Be(HttpStatusCode.Conflict);
-            (await agent.PostAsJsonAsync(draftPath + "/submit", new { commandId = "must-not-adopt", expectedRevision = laterRevision,
-                viewId = "tab-a" })).StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await agent.PatchAsJsonAsync(draftPath, new
+            {
+                viewId = "tab-a",
+                expectedRevision = laterRevision,
+                changes = new { layerName = "must-not-adopt" }
+            })).StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await agent.PostAsJsonAsync(draftPath + "/submit", new
+            {
+                commandId = "must-not-adopt",
+                expectedRevision = laterRevision,
+                viewId = "tab-a"
+            })).StatusCode.Should().Be(HttpStatusCode.Conflict);
             // A known command and a same-revision alias observe the original receipt only.
             var knownAfterEdit = await Read(await agent.PostAsJsonAsync(draftPath + "/submit", submit), HttpStatusCode.OK);
             knownAfterEdit.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(instanceId);
@@ -348,13 +361,23 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             var created = await Read(await human.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "tab-a" }), HttpStatusCode.OK);
             var workspaceId = created.GetProperty("workspaceId").GetString()!;
             var root = $"/api/v1/agent/workspaces/{workspaceId}";
-            var draft = await Read(await human.PostAsJsonAsync(root + "/drafts", new { kind = "publish-layer", viewId = "tab-a", contextRevision = 0,
-                fields = new { connectionId = sourceConnection!.Value.ToString(), schema = "public", table = sourceTable, serviceName = "journal-recovery", layerName = "original-frozen" } }), HttpStatusCode.OK);
+            var draft = await Read(await human.PostAsJsonAsync(root + "/drafts", new
+            {
+                kind = "publish-layer",
+                viewId = "tab-a",
+                contextRevision = 0,
+                fields = new { connectionId = sourceConnection!.Value.ToString(), schema = "public", table = sourceTable, serviceName = "journal-recovery", layerName = "original-frozen" }
+            }), HttpStatusCode.OK);
             var draftId = draft.GetProperty("id").GetString()!;
             var draftPath = root + "/drafts/" + draftId;
             var current = await Read(await human.GetAsync(root + "?viewId=tab-a"), HttpStatusCode.OK);
-            await Read(await human.PostAsJsonAsync(root + "/turns", new { turnId = "turn-crash", viewId = "tab-a",
-                contextRevision = current.GetProperty("revision").GetInt64(), prompt = "Publish this exact original draft" }), HttpStatusCode.OK);
+            await Read(await human.PostAsJsonAsync(root + "/turns", new
+            {
+                turnId = "turn-crash",
+                viewId = "tab-a",
+                contextRevision = current.GetProperty("revision").GetInt64(),
+                prompt = "Publish this exact original draft"
+            }), HttpStatusCode.OK);
             var store = fixture.Services.GetRequiredService<IAgentWorkspaceStore>();
             var document = (await store.GetAsync(workspaceId))!;
             (await store.SaveAsync(document with { Members = [.. document.Members, $"apikey:api-key:{observerKey.Id}"] })).Should().BeTrue();
@@ -372,8 +395,12 @@ public sealed class AgentWorkspaceHttpIntegrationTests(RedisFixture redis)
             (await operations.GetAsync(journal.OperationInstanceId)).Should().BeNull();
             (await agent.GetAsync(root + "/commands/command-crash")).StatusCode.Should().Be(HttpStatusCode.NotFound);
             (await operations.GetAsync(journal.OperationInstanceId)).Should().BeNull();
-            await Read(await human.PatchAsJsonAsync(draftPath, new { viewId = "tab-a", expectedRevision = 0,
-                changes = new { layerName = "later-human-edit" } }), HttpStatusCode.OK);
+            await Read(await human.PatchAsJsonAsync(draftPath, new
+            {
+                viewId = "tab-a",
+                expectedRevision = 0,
+                changes = new { layerName = "later-human-edit" }
+            }), HttpStatusCode.OK);
             var recovered = await Read(await agent.PostAsJsonAsync(draftPath + "/submit", submit), HttpStatusCode.OK);
             recovered.GetProperty("data").GetProperty("operationInstanceId").GetString().Should().Be(journal.OperationInstanceId);
             var proposalId = recovered.GetProperty("data").GetProperty("proposalId").GetString()!;

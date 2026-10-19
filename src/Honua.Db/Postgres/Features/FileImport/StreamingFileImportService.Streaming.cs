@@ -98,37 +98,37 @@ internal sealed partial class StreamingFileImportService
                     await EnsureUpsertKeyAsync(connection, targetSchema, loadTableName, request.KeyColumns, cancellationToken);
             }
             else switch (loadMode)
-            {
-                case ImportLoadMode.Append:
-                    await EnsureTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
-                    if (await TargetIsImporterOwnedAsync(connection, targetSchema, allowedTableName, cancellationToken))
-                    {
+                {
+                    case ImportLoadMode.Append:
+                        await EnsureTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
+                        if (await TargetIsImporterOwnedAsync(connection, targetSchema, allowedTableName, cancellationToken))
+                        {
+                            loadTableName = await CreateStagingTableAsync(
+                                connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
+                            appendUsesStaging = true;
+                        }
+                        else
+                        {
+                            loadTableName = allowedTableName;
+                        }
+
+                        break;
+                    case ImportLoadMode.Upsert:
+                        await EnsureTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
+                        await EnsureUpsertKeyAsync(connection, targetSchema, allowedTableName, request.KeyColumns, cancellationToken);
+                        loadTableName = allowedTableName;
+                        break;
+                    default:
+                        // Replace via transactional staging-table swap. Record whether a live
+                        // target already existed before this request: a first-ever replace into a
+                        // brand-new target has no prior complete dataset to protect (#4006), so it
+                        // must still promote if the load imported rows even if it dropped others.
+                        hadExistingTarget = await ImportTableExistsAsync(
+                            connection, targetSchema, allowedTableName, cancellationToken);
                         loadTableName = await CreateStagingTableAsync(
                             connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
-                        appendUsesStaging = true;
-                    }
-                    else
-                    {
-                        loadTableName = allowedTableName;
-                    }
-
-                    break;
-                case ImportLoadMode.Upsert:
-                    await EnsureTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
-                    await EnsureUpsertKeyAsync(connection, targetSchema, allowedTableName, request.KeyColumns, cancellationToken);
-                    loadTableName = allowedTableName;
-                    break;
-                default:
-                    // Replace via transactional staging-table swap. Record whether a live
-                    // target already existed before this request: a first-ever replace into a
-                    // brand-new target has no prior complete dataset to protect (#4006), so it
-                    // must still promote if the load imported rows even if it dropped others.
-                    hadExistingTarget = await ImportTableExistsAsync(
-                        connection, targetSchema, allowedTableName, cancellationToken);
-                    loadTableName = await CreateStagingTableAsync(
-                        connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
-                    break;
-            }
+                        break;
+                }
 
             // A Replace load streams into a <table>__staging sibling (loadTableName) rather than
             // the live table. Before this try, the only path that ever reclaimed that sibling on

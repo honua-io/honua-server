@@ -52,7 +52,7 @@ public sealed class JobExecutionLeaseAuthorityTests
     {
         using var fixture = await Fixture.CreateAsync();
         fixture.Stored = fixture.Accept(await fixture.Authority.IssueAsync(fixture.Request)) with
-            { Status = ExecutionJobStatus.Running, ClaimedBy = "worker", AttemptCount = 1 };
+        { Status = ExecutionJobStatus.Running, ClaimedBy = "worker", AttemptCount = 1 };
         var expected = fixture.Stored;
         var current = await fixture.Authority.RevalidateForExecutionAsync(expected);
         using var execution = JobSecurityScope.BeginExecution(expected, current);
@@ -91,8 +91,11 @@ public sealed class JobExecutionLeaseAuthorityTests
         var observer = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(human.Record);
         var lease = await fixture.Authority.IssueAsync(fixture.Request);
         var accepted = fixture.Accept(lease);
-        fixture.Stored = accepted with { Status = ExecutionJobStatus.Queued,
-            CommitRecovery = new(JobExecutionLeaseIntentFingerprint.Compute(accepted), "worker", 1, clock.GetUtcNow()) };
+        fixture.Stored = accepted with
+        {
+            Status = ExecutionJobStatus.Queued,
+            CommitRecovery = new(JobExecutionLeaseIntentFingerprint.Compute(accepted), "worker", 1, clock.GetUtcNow())
+        };
         fixture.Services.GetRequiredService<IOperatorScopeAuthorizer>()
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorResourceType>(), Arg.Any<OperatorOperation>())
             .Returns(OperatorScopeDecision.Allowed());
@@ -107,7 +110,7 @@ public sealed class JobExecutionLeaseAuthorityTests
             {
                 if (change == "cleared") fixture.Stored = fixture.Stored! with { CommitRecovery = null };
                 if (change == "disposition") fixture.Stored = fixture.Stored! with
-                    { CommitRecovery = fixture.Stored.CommitRecovery! with { RetryAllowed = false } };
+                { CommitRecovery = fixture.Stored.CommitRecovery! with { RetryAllowed = false } };
                 return Task.CompletedTask;
             });
         if (change != "unchanged")
@@ -165,12 +168,22 @@ public sealed class JobExecutionLeaseAuthorityTests
         var human = await fixture.Keys.CreateAsync("initiator", ["admin:read"], null, null, default);
         var observer = ApiKeyAuthenticationHandler.CreateStoredKeyPrincipal(human.Record);
         var humanActor = CanonicalSecurityActor.Resolve(observer)!.ActorId;
-        var request = fixture.Request with { Admission = new()
+        var request = fixture.Request with
         {
-            WorkspaceId = "workspace", TaskId = "task", TaskRevision = 1, TaskContentHash = new string('a', 64),
-            AuthorityRevision = 1, AuthorityFingerprint = new string('b', 64), PolicyContextFingerprint = new string('c', 64),
-            InitiatingHumanActorId = humanActor, OriginatingTurnId = "turn", OriginalTurnHash = new string('d', 64)
-        } };
+            Admission = new()
+            {
+                WorkspaceId = "workspace",
+                TaskId = "task",
+                TaskRevision = 1,
+                TaskContentHash = new string('a', 64),
+                AuthorityRevision = 1,
+                AuthorityFingerprint = new string('b', 64),
+                PolicyContextFingerprint = new string('c', 64),
+                InitiatingHumanActorId = humanActor,
+                OriginatingTurnId = "turn",
+                OriginalTurnHash = new string('d', 64)
+            }
+        };
         var lease = await fixture.Authority.IssueAsync(request);
         fixture.Stored = fixture.Accept(lease) with { Status = ExecutionJobStatus.Succeeded };
         fixture.Services.GetRequiredService<IOperatorScopeAuthorizer>()
@@ -298,7 +311,8 @@ public sealed class JobExecutionLeaseAuthorityTests
             case "revoked": await fixture.Keys.RevokeAsync(fixture.KeyId, default); break;
             case "cancelled": fixture.Stored = accepted with { CancellationRequestedAt = DateTimeOffset.UtcNow }; break;
             case "intent": fixture.Stored = accepted with { Spec = accepted.Spec with { Backend = "different" } }; break;
-            case "policy": fixture.Policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<IJobExecutionLeaseCurrentPolicy>(), Arg.Any<CancellationToken>())
+            case "policy":
+                fixture.Policy.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeasePolicyDecision>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<IJobExecutionLeaseCurrentPolicy>(), Arg.Any<CancellationToken>())
                     .Returns(Task.FromException(new UnauthorizedAccessException("Approval withdrawn."))); break;
             case "missing": fixture.Stored = null; break;
         }
@@ -356,7 +370,9 @@ public sealed class JobExecutionLeaseAuthorityTests
         provider.Kind.Returns(ExecutionJobKind.Geoprocessing);
         provider.PrepareAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(new JobExecutionLeaseScope
         {
-            Kind = ExecutionJobKind.Geoprocessing, Resources = [], ProviderBinding = "constant-plan",
+            Kind = ExecutionJobKind.Geoprocessing,
+            Resources = [],
+            ProviderBinding = "constant-plan",
             Operations = [new() { ResourceType = OperatorResourceType.Process, Operation = OperatorOperation.Execute }]
         });
         provider.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<JobSecurityContext>(),
@@ -376,7 +392,10 @@ public sealed class JobExecutionLeaseAuthorityTests
         var now = DateTimeOffset.UtcNow;
         var job = new ExecutionJobRecord
         {
-            OperationId = "scoped-job", Status = ExecutionJobStatus.Queued, CreatedAt = now, UpdatedAt = now,
+            OperationId = "scoped-job",
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
             Spec = new() { TargetKind = BatchComputeTargetKind.LocalProcess, Backend = "local", Kind = ExecutionJobKind.Geoprocessing, WorkloadName = "constant" },
             Audit = new() { RequestedBy = context.OwnerActorId, TenantId = context.TenantId, SubmitterSecurityContext = context }
         };
@@ -402,7 +421,7 @@ public sealed class JobExecutionLeaseAuthorityTests
         {
             ObjectDisposedException.ThrowIf(Disposed, this);
             return Task.FromResult(new JobExecutionLeasePolicyDecision
-                { IsAllowed = true, DecisionId = "benign", MaximumExpiresAt = DateTimeOffset.UtcNow.AddHours(1) });
+            { IsAllowed = true, DecisionId = "benign", MaximumExpiresAt = DateTimeOffset.UtcNow.AddHours(1) });
         }
         public Task RequireCurrentAsync(ExecutionJobRecord job, JobExecutionLeasePolicyDecision decision, JobExecutionLeaseScope scope, IJobExecutionLeaseCurrentPolicy currentPolicy, CancellationToken cancellationToken = default)
         {
@@ -424,8 +443,11 @@ public sealed class JobExecutionLeaseAuthorityTests
         internal ExecutionJobRecord? Stored { get; set; }
 
         internal ExecutionJobRecord Accept(JobExecutionLease lease)
-            => Request.PreparedJob with { Audit = Request.PreparedJob.Audit with
-                { SubmitterSecurityContext = Request.PreparedJob.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } } };
+            => Request.PreparedJob with
+            {
+                Audit = Request.PreparedJob.Audit with
+                { SubmitterSecurityContext = Request.PreparedJob.Audit.SubmitterSecurityContext! with { ExecutionLease = lease } }
+            };
 
         internal static async Task<Fixture> CreateAsync(TimeProvider? clock = null, ExecutionJobKind kind = ExecutionJobKind.Geoprocessing)
         {
@@ -446,13 +468,18 @@ public sealed class JobExecutionLeaseAuthorityTests
             var now = clock.GetUtcNow();
             var job = new ExecutionJobRecord
             {
-                OperationId = "job", Status = ExecutionJobStatus.Queued, CreatedAt = now, UpdatedAt = now,
+                OperationId = "job",
+                Status = ExecutionJobStatus.Queued,
+                CreatedAt = now,
+                UpdatedAt = now,
                 Spec = new() { TargetKind = BatchComputeTargetKind.LocalProcess, Backend = "local", Kind = kind, WorkloadName = "constant" },
                 Audit = new() { RequestedBy = context.OwnerActorId, TenantId = context.TenantId, SubmitterSecurityContext = context }
             };
             var scope = new JobExecutionLeaseScope
             {
-                Kind = job.Spec.Kind, Resources = [], ProviderBinding = "server-verified-constant-plan",
+                Kind = job.Spec.Kind,
+                Resources = [],
+                ProviderBinding = "server-verified-constant-plan",
                 Operations = [new() { ResourceType = OperatorResourceType.Process, ResourceId = "constant", Operation = OperatorOperation.Execute }]
             };
             var policy = Substitute.For<IJobExecutionLeasePolicy>();
@@ -469,7 +496,12 @@ public sealed class JobExecutionLeaseAuthorityTests
             currentAuthority = authority;
             var fixture = new Fixture
             {
-                Services = services, Keys = keys, KeyId = created.Record.Id, Policy = policy, Provider = provider, Authority = authority,
+                Services = services,
+                Keys = keys,
+                KeyId = created.Record.Id,
+                Policy = policy,
+                Provider = provider,
+                Authority = authority,
                 Request = new() { PreparedJob = job, Executor = principal, RequestedExpiresAt = now.AddMinutes(30) }
             };
             store.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(fixture.Stored));

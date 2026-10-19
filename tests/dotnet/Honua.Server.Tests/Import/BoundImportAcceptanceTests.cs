@@ -286,8 +286,10 @@ public sealed class BoundImportAcceptanceTests(RedisFixture redis)
     {
         Acceptance = new ImportAcceptanceBinding(Guid.NewGuid().ToString("N"), new string('a', 64), DateTimeOffset.UtcNow.AddHours(1)),
         Ownership = new ImportOperationOwnership("owner", "tenant"),
-        CloudFileId = "imports/server-generated-verified-source", FileName = "data.geojson",
-        TableName = "accepted_data", TargetSchema = "honua_data"
+        CloudFileId = "imports/server-generated-verified-source",
+        FileName = "data.geojson",
+        TableName = "accepted_data",
+        TargetSchema = "honua_data"
     };
 
     private sealed class Harness : IDisposable

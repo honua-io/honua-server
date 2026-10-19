@@ -64,8 +64,11 @@ internal sealed class JobExecutionLeaseProtector(IDataProtectionProvider protect
         {
             return new JobExecutionLease
             {
-                LeaseId = binding.LeaseId, JobId = binding.JobId, IssuedAt = binding.IssuedAt,
-                ExpiresAt = binding.ExpiresAt, ProtectedAuthority = Convert.ToBase64String(_protector.Protect(plaintext))
+                LeaseId = binding.LeaseId,
+                JobId = binding.JobId,
+                IssuedAt = binding.IssuedAt,
+                ExpiresAt = binding.ExpiresAt,
+                ProtectedAuthority = Convert.ToBase64String(_protector.Protect(plaintext))
             };
         }
         finally

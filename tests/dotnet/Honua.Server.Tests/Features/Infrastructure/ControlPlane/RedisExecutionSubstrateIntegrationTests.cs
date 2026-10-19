@@ -75,8 +75,10 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
                 {
                     ExecutionLease = new JobExecutionLease
                     {
-                        LeaseId = "test-deadline-only", JobId = job.OperationId,
-                        IssuedAt = expired.AddMinutes(-1), ExpiresAt = expiredLease ? expired : future,
+                        LeaseId = "test-deadline-only",
+                        JobId = job.OperationId,
+                        IssuedAt = expired.AddMinutes(-1),
+                        ExpiresAt = expiredLease ? expired : future,
                         ProtectedAuthority = "not-execution-authority"
                     }
                 }

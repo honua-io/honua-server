@@ -254,8 +254,12 @@ public sealed class AcceptedImportCommitIntegrationTests(PostgresFixture fixture
             schemaConfiguration: _schemas, commitAuthority: new CommitAuthority(job), processingScratchFactory: processing);
         var result = await service.ImportFileAsync(new ImportRequest
         {
-            FileStream = source, FileName = "roads.kmz", TableName = "roads", TargetSchema = "honua_data",
-            SourceSrid = 4326, TargetSrid = 4326,
+            FileStream = source,
+            FileName = "roads.kmz",
+            TableName = "roads",
+            TargetSchema = "honua_data",
+            SourceSrid = 4326,
+            TargetSrid = 4326,
             StagedSource = new($"imports/resumable/{transfer.UploadId}/source-{new string('c', 32)}", "generation", source.Length,
                 Convert.ToHexStringLower(SHA256.HashData(source.ToArray())), Transfer: transfer)
         });
@@ -315,9 +319,15 @@ public sealed class AcceptedImportCommitIntegrationTests(PostgresFixture fixture
         await using var source = new MemoryStream(Encoding.UTF8.GetBytes(GeoJson));
         return await service.ImportFileAsync(new ImportRequest
         {
-            FileStream = source, FileName = "roads.geojson", TableName = "roads", TargetSchema = "honua_data",
-            SourceSrid = 4326, TargetSrid = 4326, LoadMode = mode,
-            OverwriteExisting = mode == ImportLoadMode.Replace, KeyColumns = mode == ImportLoadMode.Upsert ? ["code"] : []
+            FileStream = source,
+            FileName = "roads.geojson",
+            TableName = "roads",
+            TargetSchema = "honua_data",
+            SourceSrid = 4326,
+            TargetSrid = 4326,
+            LoadMode = mode,
+            OverwriteExisting = mode == ImportLoadMode.Replace,
+            KeyColumns = mode == ImportLoadMode.Upsert ? ["code"] : []
         }, progress, cancellationToken);
     }
 
@@ -345,14 +355,28 @@ public sealed class AcceptedImportCommitIntegrationTests(PostgresFixture fixture
         var context = new JobSecurityContext("executor", null, [])
         {
             OwnerActorId = "executor",
-            ExecutionLease = new() { LeaseId = "controlled-provider-test", JobId = OperationId,
-                IssuedAt = now, ExpiresAt = now.AddMinutes(30), ProtectedAuthority = "controlled-Core-port-not-a-Host-proof" }
+            ExecutionLease = new()
+            {
+                LeaseId = "controlled-provider-test",
+                JobId = OperationId,
+                IssuedAt = now,
+                ExpiresAt = now.AddMinutes(30),
+                ProtectedAuthority = "controlled-Core-port-not-a-Host-proof"
+            }
         };
         return new()
         {
-            OperationId = OperationId, Status = ExecutionJobStatus.Running, CreatedAt = now, UpdatedAt = now,
-            Spec = new() { Kind = ExecutionJobKind.FileImport, TargetKind = BatchComputeTargetKind.LocalProcess,
-                Backend = "local", WorkloadName = "file-import" },
+            OperationId = OperationId,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Spec = new()
+            {
+                Kind = ExecutionJobKind.FileImport,
+                TargetKind = BatchComputeTargetKind.LocalProcess,
+                Backend = "local",
+                WorkloadName = "file-import"
+            },
             Audit = new() { RequestedBy = "executor", SubmitterSecurityContext = context }
         };
     }

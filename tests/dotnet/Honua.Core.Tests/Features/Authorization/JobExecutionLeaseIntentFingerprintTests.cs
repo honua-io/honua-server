@@ -72,8 +72,14 @@ public sealed class JobExecutionLeaseIntentFingerprintTests
             {
                 SubmitterSecurityContext = job.Audit.SubmitterSecurityContext! with
                 {
-                    ExecutionLease = new() { LeaseId = "lease", JobId = job.OperationId, IssuedAt = job.CreatedAt,
-                        ExpiresAt = job.CreatedAt.AddHours(1), ProtectedAuthority = "protected" }
+                    ExecutionLease = new()
+                    {
+                        LeaseId = "lease",
+                        JobId = job.OperationId,
+                        IssuedAt = job.CreatedAt,
+                        ExpiresAt = job.CreatedAt.AddHours(1),
+                        ProtectedAuthority = "protected"
+                    }
                 }
             }
         };
@@ -99,16 +105,34 @@ public sealed class JobExecutionLeaseIntentFingerprintTests
         var now = DateTimeOffset.Parse("2026-10-18T12:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
         return new()
         {
-            OperationId = "job", Status = ExecutionJobStatus.Queued, CreatedAt = now, UpdatedAt = now,
-            Spec = new() { TargetKind = BatchComputeTargetKind.LocalProcess, Backend = "local", Kind = ExecutionJobKind.Geoprocessing,
-                WorkloadName = "analysis", Parameters = new Dictionary<string, string> { ["a"] = "1", ["b"] = "2" } },
+            OperationId = "job",
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Spec = new()
+            {
+                TargetKind = BatchComputeTargetKind.LocalProcess,
+                Backend = "local",
+                Kind = ExecutionJobKind.Geoprocessing,
+                WorkloadName = "analysis",
+                Parameters = new Dictionary<string, string> { ["a"] = "1", ["b"] = "2" }
+            },
             Audit = new()
             {
-                RequestedBy = "actor", TenantId = "tenant", ProposalId = "proposal",
+                RequestedBy = "actor",
+                TenantId = "tenant",
+                ProposalId = "proposal",
                 SubmitterSecurityContext = new("actor", "tenant", [new("department", "planning")])
                 {
-                    OwnerActorId = "actor", AgentCredential = new() { Kind = "api-key", Id = "key", CredentialVersion = "version",
-                        Permissions = ["agent:workspace"], TokenExpiresAt = now.AddHours(1) }
+                    OwnerActorId = "actor",
+                    AgentCredential = new()
+                    {
+                        Kind = "api-key",
+                        Id = "key",
+                        CredentialVersion = "version",
+                        Permissions = ["agent:workspace"],
+                        TokenExpiresAt = now.AddHours(1)
+                    }
                 }
             }
         };

@@ -253,9 +253,13 @@ public sealed class LocalImportStorageDomainTests(RedisFixture redis)
 
     private static ImportUploadSession Session() => new()
     {
-        Id = Guid.NewGuid().ToString("N"), Scope = new("actor", "tenant", "target", "workspace", "task", 1),
-        IntentSha256 = new string('a', 64), FileName = "source.geojson", TotalBytes = 16,
-        ChunkBytes = 65536, ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+        Id = Guid.NewGuid().ToString("N"),
+        Scope = new("actor", "tenant", "target", "workspace", "task", 1),
+        IntentSha256 = new string('a', 64),
+        FileName = "source.geojson",
+        TotalBytes = 16,
+        ChunkBytes = 65536,
+        ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
     };
 
     private sealed class Disk : IAsyncDisposable
@@ -282,7 +286,7 @@ public sealed class LocalImportStorageDomainTests(RedisFixture redis)
         internal LocalImportStorageJournal Journal() => new(JournalPath, _domainId, _limits.MaximumObjects);
         internal async Task<RedisImportStorageBudget> LedgerAsync() => new(_connection, _domainId, _limits, await Journal().ReadEpochAsync());
         internal LocalFileStorage Storage(LocalImportStorageDomain domain) => new(Options.Create(new LocalStorageOptions
-            { BasePath = Roots[ImportStorageRootKind.ProviderObjects], CreateDirectoryIfNotExists = true }),
+        { BasePath = Roots[ImportStorageRootKind.ProviderObjects], CreateDirectoryIfNotExists = true }),
             NullLogger<LocalFileStorage>.Instance, Substitute.For<IUploadProgressStore>(), domain);
         public async ValueTask DisposeAsync()
         {

@@ -74,9 +74,14 @@ public sealed class DatasetImportAdmissionRaceTests(RedisFixture redis)
             humanActor, turn.TurnId, turnHash, policy, JobSecurityContextFingerprint.Compute(policy), snapshot);
         var document = new AgentWorkspaceDocument
         {
-            WorkspaceId = workspaceId, TargetId = target, OwnerId = humanActor, AgentActorId = actor,
-            Members = [actor, humanActor], TenantId = "tenant-1",
-            Turns = new() { [turn.TurnId] = turn }, DatasetImportTasks = new() { [task.TaskId] = [task] },
+            WorkspaceId = workspaceId,
+            TargetId = target,
+            OwnerId = humanActor,
+            AgentActorId = actor,
+            Members = [actor, humanActor],
+            TenantId = "tenant-1",
+            Turns = new() { [turn.TurnId] = turn },
+            DatasetImportTasks = new() { [task.TaskId] = [task] },
             DatasetImportExecutionBindings = new() { [task.TaskId] = binding },
         };
         var tasks = Substitute.For<IDatasetImportTaskProvider>();
@@ -93,8 +98,11 @@ public sealed class DatasetImportAdmissionRaceTests(RedisFixture redis)
                 : provider.PrepareAsync(caller, workspaceId, task.TaskId, 1, task.ContentHash, 1, fingerprint);
             await paused.Ready.Task.WaitAsync(TimeSpan.FromSeconds(10));
             var stale = (await store.GetAsync(workspaceId))!;
-            var nextAuthority = stale with { DatasetImportExecutionBindings = new(stale.DatasetImportExecutionBindings)
-                { [task.TaskId] = binding with { AuthorityRevision = 2 } } };
+            var nextAuthority = stale with
+            {
+                DatasetImportExecutionBindings = new(stale.DatasetImportExecutionBindings)
+                { [task.TaskId] = binding with { AuthorityRevision = 2 } }
+            };
             if (authorityWins) (await store.SaveAsync(nextAuthority)).Should().BeTrue();
             paused.Continue.SetResult();
             if (authorityWins) await FluentActions.Awaiting(async () => await preparation).Should().ThrowAsync<AgentWorkspaceConflictException>();

@@ -27,8 +27,12 @@ internal static class ExecutionJobCommitReconciliation
             if (actual.CommitRecovery is { } old && old.IntentFingerprint != intent)
                 throw new InvalidOperationException("The unresolved commit belongs to a changed immutable intent.");
             var state = pending ? (actual.CommitRecovery ?? new(intent, claimed.ClaimedBy!, claimed.AttemptCount, DateTimeOffset.UtcNow))
-                with { WorkerId = claimed.ClaimedBy!, AttemptCount = claimed.AttemptCount,
-                    ExecutionStarted = startExecution || actual.CommitRecovery?.ExecutionStarted == true } : null;
+                with
+            {
+                WorkerId = claimed.ClaimedBy!,
+                AttemptCount = claimed.AttemptCount,
+                ExecutionStarted = startExecution || actual.CommitRecovery?.ExecutionStarted == true
+            } : null;
             var starting = startExecution && !(actual.CommitRecovery is { ExecutionStarted: true } existing
                 && existing.WorkerId == claimed.ClaimedBy && existing.AttemptCount == claimed.AttemptCount);
             var updated = actual with
@@ -60,9 +64,15 @@ internal static class ExecutionJobCommitReconciliation
                 ForceRetry = current.CommitRecovery.ForceRetry || forceRetry,
                 FailureMessage = current.CommitRecovery.FailureMessage ?? (reason is { Length: <= 2048 } ? reason : null)
             },
-            Status = ExecutionJobStatus.Queued, ClaimedBy = null, ClaimedAt = null, LastHeartbeatAt = null,
-            UpdatedAt = now, CompletedAt = null, CurrentPhase = PendingPhase,
-            NextRetryAt = now.AddSeconds(5), ErrorMessage = "The database commit outcome has not yet been reconciled."
+            Status = ExecutionJobStatus.Queued,
+            ClaimedBy = null,
+            ClaimedAt = null,
+            LastHeartbeatAt = null,
+            UpdatedAt = now,
+            CompletedAt = null,
+            CurrentPhase = PendingPhase,
+            NextRetryAt = now.AddSeconds(5),
+            ErrorMessage = "The database commit outcome has not yet been reconciled."
         };
         if (!await store.TrySetAsync(queued, cancellationToken: cancellationToken).ConfigureAwait(false)) return false;
         await queue.RequeueAsync(queued.OperationId, queued.Priority, TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);

@@ -65,6 +65,8 @@ public sealed class JobSecurityContextFingerprintTests
     private static JobSecurityContext Context(IReadOnlyList<JobSecurityClaim> claims)
         => new("actor", "tenant", claims, ClaimTypes.Role)
         {
-            OwnerActorId = "actor", WorkspaceOwnerId = "workspace", AgentPolicyRoleClaimTypes = [ClaimTypes.Role, "roles"]
+            OwnerActorId = "actor",
+            WorkspaceOwnerId = "workspace",
+            AgentPolicyRoleClaimTypes = [ClaimTypes.Role, "roles"]
         };
 }

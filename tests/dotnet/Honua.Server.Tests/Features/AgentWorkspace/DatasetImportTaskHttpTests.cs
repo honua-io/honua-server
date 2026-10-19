@@ -102,8 +102,14 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             (await client.GetAsync(root + "/dataset-import-task-intents/intent-1")).StatusCode.Should().Be(HttpStatusCode.NotFound);
             policy.AllowRead = true;
             var context = AgentWorkspaceState.Current(retained, "tab-1");
-            (await client.PutAsJsonAsync(root + "/context", new { viewId = "tab-1", expectedRevision = context.Revision,
-                targetId = retained.TargetId, selectedResources = Array.Empty<object>(), task = (object?)null })).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await client.PutAsJsonAsync(root + "/context", new
+            {
+                viewId = "tab-1",
+                expectedRevision = context.Revision,
+                targetId = retained.TargetId,
+                selectedResources = Array.Empty<object>(),
+                task = (object?)null
+            })).StatusCode.Should().Be(HttpStatusCode.OK);
             var afterNavigation = await Json(await client.GetAsync(root + "/dataset-import-task-intents/intent-1"));
             afterNavigation.GetProperty("taskId").GetString().Should().Be(taskId);
             AgentWorkspaceState.Current((await store.GetAsync(workspaceId))!, "tab-1").Task.Should().BeNull();
@@ -170,8 +176,13 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             var task = await Json(await human.PostAsJsonAsync(root + "/dataset-import-tasks", request));
             var taskId = task.GetProperty("taskId").GetString()!;
             var current = await Json(await human.GetAsync(root + "?viewId=tab-1"));
-            await Json(await human.PostAsJsonAsync(root + "/turns", new { turnId = "turn-explain", viewId = "tab-1",
-                contextRevision = current.GetProperty("revision").GetInt64(), prompt = "Explain this upload target" }));
+            await Json(await human.PostAsJsonAsync(root + "/turns", new
+            {
+                turnId = "turn-explain",
+                viewId = "tab-1",
+                contextRevision = current.GetProperty("revision").GetInt64(),
+                prompt = "Explain this upload target"
+            }));
             var observed = await Json(await agent.GetAsync(root + "/turns/turn-explain"));
             observed.GetProperty("datasetImportContext").GetProperty("taskId").GetString().Should().Be(taskId);
             observed.GetProperty("datasetImportContext").GetProperty("contentHash").GetString().Should().Be(task.GetProperty("contentHash").GetString());
@@ -182,11 +193,20 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             var executionWorkspace = await Json(await human.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "execution-tab" }));
             var executionId = executionWorkspace.GetProperty("workspaceId").GetString()!;
             var executionRoot = $"/api/v1/agent/workspaces/{executionId}";
-            await Json(await human.PostAsJsonAsync(executionRoot + "/turns", new { turnId = "turn-create-import", viewId = "execution-tab",
-                contextRevision = 0, prompt = "Prepare an import for my selected file",
-                browserFileSelection = new BrowserImportFileSelection("selected-roads", request.Source.FileName, request.Source.TotalBytes, request.Source.ExpectedSha256!) }));
-            var executionRequest = request with { IntentId = "agent-import-intent", ViewId = "execution-tab",
-                Source = request.Source with { BrowserSelectionId = "selected-roads" } };
+            await Json(await human.PostAsJsonAsync(executionRoot + "/turns", new
+            {
+                turnId = "turn-create-import",
+                viewId = "execution-tab",
+                contextRevision = 0,
+                prompt = "Prepare an import for my selected file",
+                browserFileSelection = new BrowserImportFileSelection("selected-roads", request.Source.FileName, request.Source.TotalBytes, request.Source.ExpectedSha256!)
+            }));
+            var executionRequest = request with
+            {
+                IntentId = "agent-import-intent",
+                ViewId = "execution-tab",
+                Source = request.Source with { BrowserSelectionId = "selected-roads" }
+            };
             agent.DefaultRequestHeaders.Add("X-Honua-Workspace", executionId);
             agent.DefaultRequestHeaders.Add("X-Honua-Turn", "turn-create-import");
             var originalSelection = await Json(await agent.GetAsync(executionRoot + "/turns/turn-create-import"));
@@ -203,24 +223,39 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
                 var refused = await agent.PostAsJsonAsync(executionRoot + "/dataset-import-tasks", executionRequest with { Source = changedSource });
                 refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
             }
-            (await human.PostAsJsonAsync(executionRoot + "/turns", new { turnId = "turn-create-import", viewId = "execution-tab",
-                contextRevision = 0, prompt = "Prepare an import for my selected file",
-                browserFileSelection = new BrowserImportFileSelection("later-selection", request.Source.FileName, request.Source.TotalBytes, request.Source.ExpectedSha256!) }))
+            (await human.PostAsJsonAsync(executionRoot + "/turns", new
+            {
+                turnId = "turn-create-import",
+                viewId = "execution-tab",
+                contextRevision = 0,
+                prompt = "Prepare an import for my selected file",
+                browserFileSelection = new BrowserImportFileSelection("later-selection", request.Source.FileName, request.Source.TotalBytes, request.Source.ExpectedSha256!)
+            }))
                 .StatusCode.Should().Be(HttpStatusCode.Conflict);
-            (await agent.PostAsJsonAsync(executionRoot + "/turns", new { turnId = "agent-forged-selection", viewId = "execution-tab",
-                contextRevision = 0, prompt = "Claim a human file", browserFileSelection = new BrowserImportFileSelection(
-                    "forged-selection", request.Source.FileName, request.Source.TotalBytes, request.Source.ExpectedSha256!) }))
+            (await agent.PostAsJsonAsync(executionRoot + "/turns", new
+            {
+                turnId = "agent-forged-selection",
+                viewId = "execution-tab",
+                contextRevision = 0,
+                prompt = "Claim a human file",
+                browserFileSelection = new BrowserImportFileSelection(
+                    "forged-selection", request.Source.FileName, request.Source.TotalBytes, request.Source.ExpectedSha256!)
+            }))
                 .StatusCode.Should().Be(HttpStatusCode.Forbidden);
             var initialized = await agent.PostAsJsonAsync("/mcp", new
             {
-                jsonrpc = "2.0", id = 1, method = "initialize",
+                jsonrpc = "2.0",
+                id = 1,
+                method = "initialize",
                 @params = new { protocolVersion = "2025-03-26", capabilities = new { }, clientInfo = new { name = "dataset-task-test", version = "1" } },
             });
             initialized.EnsureSuccessStatusCode();
             agent.DefaultRequestHeaders.Add("Mcp-Session-Id", initialized.Headers.GetValues("Mcp-Session-Id").Single());
             var envelope = await Json(await agent.PostAsJsonAsync("/mcp", new
             {
-                jsonrpc = "2.0", id = 2, method = "tools/call",
+                jsonrpc = "2.0",
+                id = 2,
+                method = "tools/call",
                 @params = new { name = "honua_workspace_create_dataset_import_task", arguments = new { workspaceId = executionId, request = executionRequest } },
             }));
             envelope.TryGetProperty("error", out _).Should().BeFalse();
@@ -256,9 +291,15 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             authority.TryGetProperty("executorPolicyContext", out _).Should().BeFalse();
             var authorityEnvelope = await Json(await agent.PostAsJsonAsync("/mcp", new
             {
-                jsonrpc = "2.0", id = 4, method = "tools/call",
-                @params = new { name = "honua_workspace_get_dataset_import_authority", arguments = new
-                    { workspaceId = executionId, taskId = executionTaskId, revision = 1, contentHash = binding.TaskContentHash } },
+                jsonrpc = "2.0",
+                id = 4,
+                method = "tools/call",
+                @params = new
+                {
+                    name = "honua_workspace_get_dataset_import_authority",
+                    arguments = new
+                    { workspaceId = executionId, taskId = executionTaskId, revision = 1, contentHash = binding.TaskContentHash }
+                },
             }));
             authorityEnvelope.GetProperty("result").GetProperty("structuredContent").GetProperty("authorityFingerprint").GetString()
                 .Should().Be(binding.AuthorityFingerprint);
@@ -281,17 +322,29 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             }
             var nullRenewalEnvelope = await Json(await agent.PostAsJsonAsync("/mcp", new
             {
-                jsonrpc = "2.0", id = 6, method = "tools/call",
-                @params = new { name = "honua_workspace_renew_dataset_import_authority", arguments = new
-                    { workspaceId = executionId, taskId = executionTaskId, revision = 1, request = (object?)null } },
+                jsonrpc = "2.0",
+                id = 6,
+                method = "tools/call",
+                @params = new
+                {
+                    name = "honua_workspace_renew_dataset_import_authority",
+                    arguments = new
+                    { workspaceId = executionId, taskId = executionTaskId, revision = 1, request = (object?)null }
+                },
             }));
             (nullRenewalEnvelope.TryGetProperty("error", out _) ||
                 nullRenewalEnvelope.GetProperty("result").GetProperty("isError").GetBoolean()).Should().BeTrue();
             var rejectedRenewal = await Json(await agent.PostAsJsonAsync("/mcp", new
             {
-                jsonrpc = "2.0", id = 5, method = "tools/call",
-                @params = new { name = "honua_workspace_renew_dataset_import_authority", arguments = new
-                    { workspaceId = executionId, taskId = executionTaskId, revision = 1, request = renewal } },
+                jsonrpc = "2.0",
+                id = 5,
+                method = "tools/call",
+                @params = new
+                {
+                    name = "honua_workspace_renew_dataset_import_authority",
+                    arguments = new
+                    { workspaceId = executionId, taskId = executionTaskId, revision = 1, request = renewal }
+                },
             }));
             rejectedRenewal.GetProperty("result").GetProperty("isError").GetBoolean().Should().BeTrue();
             using var oversizedRenewal = new UnknownLengthJson(Encoding.UTF8.GetBytes("{\"renewalId\":\"" + new string('x', 70000) + "\"}"));
@@ -302,13 +355,20 @@ public sealed class DatasetImportTaskHttpTests(RedisFixture redis)
             (await human.PostAsJsonAsync(renewalPath, renewal)).StatusCode.Should().Be(HttpStatusCode.NotFound);
             var recoveredEnvelope = await Json(await agent.PostAsJsonAsync("/mcp", new
             {
-                jsonrpc = "2.0", id = 3, method = "tools/call",
+                jsonrpc = "2.0",
+                id = 3,
+                method = "tools/call",
                 @params = new { name = "honua_workspace_get_dataset_import_intent", arguments = new { workspaceId = executionId, intentId = executionRequest.IntentId } },
             }));
             recoveredEnvelope.GetProperty("result").GetProperty("structuredContent").GetProperty("taskId").GetString().Should().Be(executionTaskId);
             (await fixture.Services.GetRequiredService<IAgentWorkspaceStore>().GetAsync(executionId))!.Version.Should().Be(executionDocument.Version);
-            var humanObservation = await Json(await human.PostAsJsonAsync(executionRoot + "/turns", new { turnId = "turn-human-observe",
-                viewId = "execution-tab", contextRevision = 1, prompt = "Explain the agent's prepared import target" }));
+            var humanObservation = await Json(await human.PostAsJsonAsync(executionRoot + "/turns", new
+            {
+                turnId = "turn-human-observe",
+                viewId = "execution-tab",
+                contextRevision = 1,
+                prompt = "Explain the agent's prepared import target"
+            }));
             humanObservation.GetProperty("datasetImportContext").GetProperty("taskId").GetString().Should().Be(executionTaskId);
             (await human.GetAsync(executionRoot + $"/dataset-import-tasks/{executionTaskId}/versions/1")).StatusCode.Should().Be(HttpStatusCode.NotFound);
             agent.DefaultRequestHeaders.Remove("X-Honua-Workspace");

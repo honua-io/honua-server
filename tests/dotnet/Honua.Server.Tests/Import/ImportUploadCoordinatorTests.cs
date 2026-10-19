@@ -361,8 +361,11 @@ public sealed class ImportUploadCoordinatorTests(RedisFixture redis)
         fixture.EnableContributor();
         var bytes = new byte[RedisImportUploadStore.MaximumChunkBytes + 17];
         for (var index = 0; index < bytes.Length; index++) bytes[index] = (byte)(index % 251);
-        fixture.Task = fixture.Task with { Source = fixture.Task.Source with
-        { TotalBytes = bytes.Length, ExpectedSha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)) } };
+        fixture.Task = fixture.Task with
+        {
+            Source = fixture.Task.Source with
+            { TotalBytes = bytes.Length, ExpectedSha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)) }
+        };
         var created = await fixture.Coordinator.CreateAsync(fixture.Human, fixture.Reference);
         var firstBytes = bytes.AsMemory(0, RedisImportUploadStore.MaximumChunkBytes);
         await using var first = new MemoryStream(firstBytes.ToArray(), writable: false);

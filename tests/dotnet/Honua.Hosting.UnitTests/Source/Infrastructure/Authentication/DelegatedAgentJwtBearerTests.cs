@@ -170,14 +170,22 @@ public sealed class DelegatedAgentJwtBearerTests
         var clock = new LeasePipelineClock();
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Oidc:Enabled"] = "true", ["Oidc:Generic:Enabled"] = "true",
-            ["Oidc:Generic:Authority"] = "https://issuer.example", ["Oidc:Generic:ClientId"] = "honua",
+            ["Oidc:Enabled"] = "true",
+            ["Oidc:Generic:Enabled"] = "true",
+            ["Oidc:Generic:Authority"] = "https://issuer.example",
+            ["Oidc:Generic:ClientId"] = "honua",
             ["Oidc:TokenValidation:EnableTokenReplayProtection"] = "false"
         }).Build();
         var profile = new OidcDelegatedAgentProfile
         {
-            Id = "worker", Generation = 1, Enabled = true, Issuer = "https://issuer.example", Audience = "honua",
-            Subject = "subject", Tenant = "tenant", ExpiresAt = clock.GetUtcNow().AddHours(1),
+            Id = "worker",
+            Generation = 1,
+            Enabled = true,
+            Issuer = "https://issuer.example",
+            Audience = "honua",
+            Subject = "subject",
+            Tenant = "tenant",
+            ExpiresAt = clock.GetUtcNow().AddHours(1),
             Permissions = ["agent:workspace", "admin:write"]
         };
         var membership = Substitute.For<IPrincipalMembershipSource>();
@@ -185,9 +193,14 @@ public sealed class DelegatedAgentJwtBearerTests
             .Returns(new PrincipalMembership(true, ["worker"]));
         var roles = Substitute.For<IRoleStore>();
         roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions = [
+            .Returns(new EffectivePermissions
+            {
+                UserId = "subject",
+                Roles = ["worker"],
+                Permissions = [
                 new PermissionGrant { Service = "agent", Layer = "*", Operation = "workspace" },
-                new PermissionGrant { Service = "admin", Layer = "*", Operation = "write" }] });
+                new PermissionGrant { Service = "admin", Layer = "*", Operation = "write" }]
+            });
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns("tenant");
         var store = Substitute.For<IExecutionJobStore>();
@@ -197,7 +210,9 @@ public sealed class DelegatedAgentJwtBearerTests
         scopeProvider.Kind.Returns(ExecutionJobKind.Geoprocessing);
         scopeProvider.PrepareAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(new JobExecutionLeaseScope
         {
-            Kind = ExecutionJobKind.Geoprocessing, Resources = [], ProviderBinding = "server-verified-constant-plan",
+            Kind = ExecutionJobKind.Geoprocessing,
+            Resources = [],
+            ProviderBinding = "server-verified-constant-plan",
             Operations = [new() { ResourceType = OperatorResourceType.Process, Operation = OperatorOperation.Execute }]
         });
         scopeProvider.RequireCurrentAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<JobExecutionLeaseScope>(), Arg.Any<JobSecurityContext>(),
@@ -263,7 +278,10 @@ public sealed class DelegatedAgentJwtBearerTests
         var context = await AgentJobSecurityBridge.CaptureAsync(executor, new RbacOptions(), requestServices, tenant, default);
         var job = new ExecutionJobRecord
         {
-            OperationId = "jwt-lease-job", Status = ExecutionJobStatus.Queued, CreatedAt = clock.GetUtcNow(), UpdatedAt = clock.GetUtcNow(),
+            OperationId = "jwt-lease-job",
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = clock.GetUtcNow(),
+            UpdatedAt = clock.GetUtcNow(),
             Spec = new() { TargetKind = BatchComputeTargetKind.LocalProcess, Backend = "local", Kind = ExecutionJobKind.Geoprocessing, WorkloadName = "constant" },
             Audit = new() { RequestedBy = context.OwnerActorId, TenantId = context.TenantId, SubmitterSecurityContext = context }
         };
@@ -275,7 +293,8 @@ public sealed class DelegatedAgentJwtBearerTests
         switch (change)
         {
             case "membership": membership.ResolveMembershipAsync("subject", "https://issuer.example", Arg.Any<CancellationToken>()).Returns(new PrincipalMembership(false, [])); break;
-            case "grant": roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            case "grant":
+                roles.GetEffectivePermissionsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
                     .Returns(new EffectivePermissions { UserId = "subject", Roles = ["worker"], Permissions = [] }); break;
             case "generation": profile.Generation++; break;
             case "ceiling": profile.Permissions = ["agent:workspace"]; break;

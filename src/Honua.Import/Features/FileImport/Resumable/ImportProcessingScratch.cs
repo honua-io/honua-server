@@ -113,8 +113,11 @@ internal sealed class ImportProcessingScratch(string directory, ImportTransferPr
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
             await using var output = new FileStream(fullPath, new FileStreamOptions
             {
-                Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None,
-                Options = FileOptions.Asynchronous | FileOptions.SequentialScan, PreallocationSize = expectedBytes
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan,
+                PreallocationSize = expectedBytes
             });
             var buffer = new byte[64 * 1024];
             long written = 0;

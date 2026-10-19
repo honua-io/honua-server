@@ -21,15 +21,26 @@ public sealed class DatasetImportPreparedRenewalPolicyTests
     [InlineData("scope", false)]
     public void RefreshedTransportRetainsOriginalPolicyInputsAndExactPreparedCredential(string change, bool allowed)
     {
-        var credential = new AgentCredentialSnapshot { Kind = "oidc-delegated-agent", Id = "profile", Generation = 1,
-            Binding = ["issuer", "audience", "subject", "tenant"], Permissions = ["agent:workspace", "admin:write"],
-            OAuthScopes = ["honua.admin.write"], MembershipRoles = ["editor"], TokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1) };
+        var credential = new AgentCredentialSnapshot
+        {
+            Kind = "oidc-delegated-agent",
+            Id = "profile",
+            Generation = 1,
+            Binding = ["issuer", "audience", "subject", "tenant"],
+            Permissions = ["agent:workspace", "admin:write"],
+            OAuthScopes = ["honua.admin.write"],
+            MembershipRoles = ["editor"],
+            TokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+        };
         var original = new JobSecurityContext("actor", "tenant", [new("exp", "original"), new("iat", "original"),
             new("jti", "original"), new("department", "roads"), new("roles", "editor")], "roles")
-            { OwnerActorId = "actor", AgentCredential = credential, AgentPolicyRoleClaimTypes = ["roles"] };
+        { OwnerActorId = "actor", AgentCredential = credential, AgentPolicyRoleClaimTypes = ["roles"] };
         var originalFingerprint = JobSecurityContextFingerprint.Compute(original);
-        var fresh = original with { Claims = [new("exp", "refreshed"), new("iat", "refreshed"), new("jti", "refreshed"),
-            new("department", "roads"), new("roles", "editor")] };
+        var fresh = original with
+        {
+            Claims = [new("exp", "refreshed"), new("iat", "refreshed"), new("jti", "refreshed"),
+            new("department", "roads"), new("roles", "editor")]
+        };
         fresh = change switch
         {
             "tenant" => fresh with { TenantId = "other" },

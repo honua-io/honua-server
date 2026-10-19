@@ -38,8 +38,15 @@ public sealed class DatasetImportTaskContextReaderTests
         var task = new DatasetImportTask("import-task-1", 1, "", "human-owner", "tenant-1", "target-1", "workspace-1",
             new("public", "roads"), new("browser-file", "roads.geojson", 5, new string('a', 64)), new(), DateTimeOffset.UtcNow.AddHours(24));
         task = task with { ContentHash = DatasetImportTaskState.ContentHash(task) };
-        var document = new AgentWorkspaceDocument { WorkspaceId = "workspace-1", TargetId = "target-1", OwnerId = "human-owner",
-            AgentActorId = actor, Members = ["human-owner", actor], TenantId = "tenant-1" };
+        var document = new AgentWorkspaceDocument
+        {
+            WorkspaceId = "workspace-1",
+            TargetId = "target-1",
+            OwnerId = "human-owner",
+            AgentActorId = actor,
+            Members = ["human-owner", actor],
+            TenantId = "tenant-1"
+        };
         document.DatasetImportTasks[task.TaskId] = [task];
         store.GetAsync("workspace-1").Returns(_ => document);
         var provider = new DatasetImportTaskProvider(store, new HttpContextAccessor { HttpContext = context });

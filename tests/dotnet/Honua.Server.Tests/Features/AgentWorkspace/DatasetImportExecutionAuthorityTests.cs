@@ -61,9 +61,15 @@ public sealed class DatasetImportExecutionAuthorityTests
 
     private static AgentCredentialSnapshot Snapshot() => new()
     {
-        Kind = "oidc-delegated-agent", Id = "profile", Generation = 1, ActorId = "executor",
-        Binding = ["issuer", "audience", "subject", "tenant"], OAuthScopes = ["agent:workspace"],
-        RoleGrantFingerprints = ["grant-sha256"], MembershipRoles = ["managed-agent"],
-        Permissions = ["agent:workspace", "admin:write"], TokenExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
+        Kind = "oidc-delegated-agent",
+        Id = "profile",
+        Generation = 1,
+        ActorId = "executor",
+        Binding = ["issuer", "audience", "subject", "tenant"],
+        OAuthScopes = ["agent:workspace"],
+        RoleGrantFingerprints = ["grant-sha256"],
+        MembershipRoles = ["managed-agent"],
+        Permissions = ["agent:workspace", "admin:write"],
+        TokenExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
     };
 }
