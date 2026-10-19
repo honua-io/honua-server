@@ -166,6 +166,7 @@ internal sealed partial class GeoservicesLayerPublicationService
             // as provenance; it is not re-run against the target (#4826).
             TargetContainsOnlyImportedFeatures = true,
             FilterMirror = string.IsNullOrWhiteSpace(request.WhereClause) ? null : request.WhereClause,
+            FilterFieldMappings = BuildFilterFieldMappings(layerInfo),
             SourceGeometry = sourceGeometry,
             QueriedSourceExtent = queriedSourceExtent
         };
@@ -176,6 +177,38 @@ internal sealed partial class GeoservicesLayerPublicationService
             SourceKind = "arcgis-geoservices-rest",
             Layers = [layerInput]
         };
+    }
+
+    /// <summary>
+    /// Source name to physical column when the import renamed the field. A dedicated target
+    /// does not execute the filter; the map is there for a shared-target compiler. Object ids
+    /// stay unmapped because the target surrogate key is not the source OBJECTID.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string>? BuildFilterFieldMappings(GeoservicesLayerInfo layerInfo)
+    {
+        var map = GeoservicesImportColumns.Map(layerInfo);
+        var mappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var column in map.Columns)
+        {
+            if (!string.Equals(column.Field.Name, column.ColumnName, StringComparison.Ordinal))
+            {
+                mappings[column.Field.Name] = column.ColumnName;
+            }
+        }
+
+        if (map.Spatial)
+        {
+            foreach (var field in layerInfo.Fields)
+            {
+                if (GeoservicesImportService.IsGeometryField(field) &&
+                    !string.Equals(field.Name, "geom", StringComparison.Ordinal))
+                {
+                    mappings[field.Name] = "geom";
+                }
+            }
+        }
+
+        return mappings.Count == 0 ? null : mappings;
     }
 
     /// <summary>
