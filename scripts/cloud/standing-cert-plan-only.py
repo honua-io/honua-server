@@ -75,14 +75,14 @@ def run_producer(args, source, child_env, timeout=2100, grace_seconds=75):
     except BaseException:
         try:
             os.killpg(process.pid, signal.SIGINT)
-            stdout, stderr = process.communicate(timeout=grace_seconds)
+            process.communicate(timeout=grace_seconds)
         except ProcessLookupError:
             process.wait()
         except (subprocess.TimeoutExpired, KeyboardInterrupt, OSError):
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
-                pass
+                process.wait()
             process.communicate()
         raise
     return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
