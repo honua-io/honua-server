@@ -41,6 +41,15 @@ public sealed class QueuedOperationReconcilerTests
         completed.Should().NotBeNull();
         completed!.Status.Should().Be(OperationHandleStatus.Completed);
         completed.AuditId.Should().Be("audit-reconciled");
+        completed.MetadataRevision.Should().Be(12);
+        completed.ResourceIds["serviceName"].Should().Be("roads");
+        completed.Result!.Details["serviceUri"].Should().Be("honua://published-services/roads");
+
+        // A terminal envelope must retain its readback identity without polling
+        // the backend again on subsequent sweeps.
+        await reconciler.SweepOnceAsync();
+        executor.StatusReads.Should().Be(1);
+        (await store.GetAsync(queued.OperationInstanceId))!.MetadataRevision.Should().Be(12);
         audit.Events.Should().ContainSingle(entry => entry.Action == "operation.completed");
     }
 
@@ -110,7 +119,17 @@ public sealed class QueuedOperationReconcilerTests
                 UpdatedAt = DateTimeOffset.UtcNow,
                 Status = OperationHandleStatus.Completed,
                 JobId = handle.JobId,
-                Result = new OperationResultSummary { Summary = "Backend completed." },
+                MetadataRevision = 12,
+                ResourceIds = new Dictionary<string, string> { ["serviceName"] = "roads" },
+                Result = new OperationResultSummary
+                {
+                    Summary = "Backend completed.",
+                    Details = new Dictionary<string, string>
+                    {
+                        ["serviceUri"] = "honua://published-services/roads",
+                        ["metadataRevision"] = "12"
+                    }
+                },
             });
         }
     }

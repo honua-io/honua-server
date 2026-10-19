@@ -121,6 +121,7 @@ internal sealed partial class QueuedOperationReconciler(
             Result = observed.Result,
             Reason = observed.Reason,
             ResourceIds = observed.ResourceIds,
+            MetadataRevision = observed.MetadataRevision,
             EvidenceRefs = [.. observed.EvidenceRefs, $"backend-transition-audit:{auditId}"],
         };
         if (!await instanceStore.TrySetAsync(updated, envelope.Version, cancellationToken).ConfigureAwait(false))

@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Security.Abstractions;
@@ -238,6 +239,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             ["status"] = progress.Status.ToString(),
         };
         var resourceIds = new Dictionary<string, string>(handle.ResourceIds, StringComparer.Ordinal);
+        var metadataRevision = handle.MetadataRevision;
         if (progress.LayerId is int layerId)
         {
             var layerText = layerId.ToString(CultureInfo.InvariantCulture);
@@ -245,9 +247,32 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             resourceIds["layerId"] = layerText;
         }
 
+        if (progress.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Completed &&
+            progress.LayerId is int committedLayerId)
+        {
+            var graph = await _metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (TryResolvePublishedService(graph, committedLayerId, progress.TenantId, out var serviceName))
+            {
+                metadataRevision = graph.Revision;
+                details["serviceName"] = serviceName;
+                details["serviceUri"] = McpResourceUris.PublishedServiceUri(serviceName);
+                details["metadataRevision"] = graph.Revision.ToString(CultureInfo.InvariantCulture);
+                details["readbackStatus"] = "Resolved";
+                resourceIds["serviceName"] = serviceName;
+            }
+            else
+            {
+                // The publication committed, but a missing or ambiguous catalog
+                // identity cannot truthfully produce a service URI. Never retry it.
+                details["readbackStatus"] = "Unavailable";
+                details["readbackReason"] = "The committed layer has no unique persisted feature-service identity.";
+            }
+        }
+
         return Echo(handle) with
         {
             Status = MapStatus(progress.Status),
+            MetadataRevision = metadataRevision,
             UpdatedAt = progress.CompletedAt ?? handle.UpdatedAt,
             Reason = progress.ErrorMessage ?? handle.Reason,
             ResourceIds = resourceIds,
@@ -259,6 +284,66 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
                 Details = details,
             },
         };
+    }
+
+    private static bool TryResolvePublishedService(
+        MetadataV2GraphSnapshot? snapshot,
+        int storageLayerId,
+        string? tenantId,
+        out string serviceName)
+    {
+        serviceName = string.Empty;
+        if (snapshot is null)
+        {
+            return false;
+        }
+
+        // Durable completion records the storage-layer identity. A public layer
+        // index can differ, and the submitted service name may have been an alias.
+        // Reconstruct only from the committed graph, including after a restart.
+        var publications = snapshot.Graph.Publications
+            .Where(publication =>
+                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.LayerIndex is >= 0 &&
+                snapshot.ResolveResource(publication) is not null &&
+                snapshot.ResolveStorageBinding(publication) is { } binding &&
+                binding.ResourceId == publication.ResourceId &&
+                binding.StorageLayerId is >= 0 &&
+                (string.IsNullOrEmpty(publication.StorageBindingId) ||
+                    publication.StorageBindingId == binding.Metadata.Id) &&
+                snapshot.Index.ServicesById.ContainsKey(publication.ServiceId))
+            .Where(publication => MetadataV2TenantVisibility.IsVisibleToTenant(
+                publication, snapshot.ResolveResource(publication),
+                snapshot.Index.ServicesById[publication.ServiceId], tenantId))
+            .ToArray();
+        var services = publications
+            .Where(publication => snapshot.ResolveStorageBinding(publication)!.StorageLayerId == storageLayerId)
+            .Select(publication => snapshot.Index.ServicesById[publication.ServiceId])
+            .DistinctBy(service => service.Metadata.Id, StringComparer.Ordinal)
+            .Take(2)
+            .ToArray();
+        if (services.Length != 1 || string.IsNullOrWhiteSpace(services[0].Metadata.Name))
+        {
+            return false;
+        }
+
+        // A resource URI uses the public name, so a different storage layer in
+        // another service with that same name is still an ambiguous readback.
+        var selected = services[0];
+        if (publications.Any(publication =>
+                publication.ServiceId != selected.Metadata.Id &&
+                string.Equals(snapshot.Index.ServicesById[publication.ServiceId].Metadata.Name,
+                    selected.Metadata.Name, StringComparison.OrdinalIgnoreCase)) ||
+            publications.Where(publication => publication.ServiceId == selected.Metadata.Id)
+                .GroupBy(publication => publication.LayerIndex).Any(group => group.Count() > 1))
+        {
+            return false;
+        }
+
+        // Publishing into a stopped service can complete successfully. Returning
+        // its identity does not reactivate it; the resource reports its lifecycle.
+        serviceName = services[0].Metadata.Name;
+        return true;
     }
 
     private static OperationStatus Echo(OperationHandle handle)
