@@ -8,6 +8,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -114,7 +115,8 @@ internal static partial class WmsRequestHandlers
         MetadataV2Resource Resource,
         MetadataV2Publication Publication,
         int StorageLayerId,
-        string Identifier);
+        string Identifier,
+        MetadataV2GraphSnapshot Snapshot);
 
     private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
         => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
@@ -311,7 +313,7 @@ internal static partial class WmsRequestHandlers
                 ? publication.LayerIndex.Value.ToString(CultureInfo.InvariantCulture)
                 : publication.ServiceLocalId ?? publication.Metadata.Name ?? routableResource.Metadata.Name;
 
-            var candidate = new WmsLayer(routableResource, publication, storageLayerId.Value, identifier);
+            var candidate = new WmsLayer(routableResource, publication, storageLayerId.Value, identifier, snapshot);
             if (!byResource.TryGetValue(routableResource.Metadata.Id, out var existing) ||
                 (publication.IsPrimary && !existing.Publication.IsPrimary))
             {
@@ -322,6 +324,43 @@ internal static partial class WmsRequestHandlers
         return byResource.Values
             .OrderBy(static l => l.StorageLayerId)
             .ToArray();
+    }
+
+    /// <summary>
+    /// Selects the reader for one WMS layer. Publications with a storage binding resolve
+    /// through <see cref="FeatureProviderQueryRouter"/>; the injected reader remains the
+    /// fallback when that router is unwired or the binding is the managed features table.
+    /// </summary>
+    private static async Task<IFeatureReader> ResolveLayerReaderAsync(
+        HttpContext context,
+        WmsLayer layer,
+        IFeatureReader fallback,
+        CancellationToken cancellationToken)
+    {
+        var router = context.RequestServices.GetService<FeatureProviderQueryRouter>();
+        var graphProvider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (router is null || graphProvider is null)
+        {
+            return fallback;
+        }
+
+        if (!layer.Snapshot.Index.ServicesById.TryGetValue(layer.Publication.ServiceId, out var service))
+        {
+            return fallback;
+        }
+
+        var read = await StorageBoundFeatureReader.ResolveAsync(
+                fallback,
+                router,
+                layer.Snapshot,
+                service,
+                layer.Resource,
+                layer.Publication,
+                layer.StorageLayerId,
+                FeatureProviderReadOperation.Query,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return read.UseInjectedReader ? fallback : read.Reader;
     }
 
     /// <summary>
@@ -544,6 +583,7 @@ internal static partial class WmsRequestHandlers
                 // (for example, SQL Server/MySQL temporal pushdown) do not expose a
                 // TIME dimension and must therefore ignore TIME for this layer.
                 var range = await ResolveTemporalRangeSafeAsync(
+                    context,
                     layers[i],
                     featureReader,
                     logger,
@@ -621,8 +661,13 @@ internal static partial class WmsRequestHandlers
 
             if (hasExplicitTime && effectiveStart is DateTimeOffset instant && effectiveEnd == instant)
             {
-                var nearest = await FindNearestWmsTemporalValueAsync(
+                var nearestReader = await ResolveLayerReaderAsync(
+                    context,
+                    layer,
                     featureReader,
+                    cancellationToken).ConfigureAwait(false);
+                var nearest = await FindNearestWmsTemporalValueAsync(
+                    nearestReader,
                     layer,
                     startFieldName,
                     selection.EndFieldName,

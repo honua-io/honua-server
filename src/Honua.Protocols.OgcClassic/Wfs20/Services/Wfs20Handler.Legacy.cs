@@ -529,7 +529,7 @@ internal sealed partial class Wfs20Handler
         var queryResults = new List<(LayerQueryPlan Plan, ImmutableArray<Feature> Features)>(planSet.Plans.Length);
         foreach (var plan in planSet.Plans)
         {
-            var result = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken)
+            var result = await ReaderFor(plan).QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken)
                 .ConfigureAwait(false);
             queryResults.Add((plan, result.Items));
         }
@@ -780,35 +780,72 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private static void WriteGml31Geometry(XmlWriter writer, Geometry geometry, string srsName, AxisOrder axisOrder, bool includeSrsName)
+    private static string? BuildGeometryGmlFragment(byte[]? geometryWkb, LayerQueryPlan plan, string gmlNamespace)
+    {
+        if (geometryWkb is null || geometryWkb.Length == 0)
+        {
+            return null;
+        }
+
+        // A fresh reader: NTS WKBReader is not safe to share across requests.
+        var geometry = new WKBReader().Read(geometryWkb);
+        var outputSrid = plan.Query.OutputSrid ??
+            plan.Query.SpatialReferenceSrid ??
+            plan.Descriptor.Resource.ReadSrid() ??
+            SpatialReference.WGS84.Wkid;
+        var axisOrder = plan.Query.OutputAxisOrder ?? AxisOrder.EastNorth;
+        var srsName = FormatCrs(outputSrid, axisOrder);
+        var settings = new XmlWriterSettings
+        {
+            OmitXmlDeclaration = true,
+            ConformanceLevel = ConformanceLevel.Fragment,
+            Indent = false
+        };
+        var builder = new StringBuilder();
+        using (var writer = XmlWriter.Create(builder, settings))
+        {
+            WriteGml31Geometry(writer, geometry, srsName, axisOrder, includeSrsName: true, gmlNamespace);
+            writer.Flush();
+        }
+
+        return builder.ToString();
+    }
+
+    private static void WriteGml31Geometry(
+        XmlWriter writer,
+        Geometry geometry,
+        string srsName,
+        AxisOrder axisOrder,
+        bool includeSrsName,
+        string gmlNamespace = GmlLegacyNamespace)
     {
         switch (geometry)
         {
             case Point point:
-                writer.WriteStartElement("gml", "Point", GmlLegacyNamespace);
+                writer.WriteStartElement("gml", "Point", gmlNamespace);
                 WriteSrsName(writer, srsName, includeSrsName);
-                writer.WriteElementString("gml", "pos", GmlLegacyNamespace, FormatCoordinatePair(point.Coordinate, axisOrder, separator: " "));
+                writer.WriteElementString("gml", "pos", gmlNamespace, FormatCoordinatePair(point.Coordinate, axisOrder, separator: " "));
                 writer.WriteEndElement();
                 break;
             case LineString line:
-                writer.WriteStartElement("gml", "LineString", GmlLegacyNamespace);
+                writer.WriteStartElement("gml", "LineString", gmlNamespace);
                 WriteSrsName(writer, srsName, includeSrsName);
-                writer.WriteElementString("gml", "posList", GmlLegacyNamespace, FormatPosList(line.Coordinates, axisOrder));
+                writer.WriteElementString("gml", "posList", gmlNamespace, FormatPosList(line.Coordinates, axisOrder));
                 writer.WriteEndElement();
                 break;
             case Polygon polygon:
-                writer.WriteStartElement("gml", "Polygon", GmlLegacyNamespace);
+                writer.WriteStartElement("gml", "Polygon", gmlNamespace);
                 WriteSrsName(writer, srsName, includeSrsName);
-                writer.WriteStartElement("gml", "exterior", GmlLegacyNamespace);
-                writer.WriteStartElement("gml", "LinearRing", GmlLegacyNamespace);
-                writer.WriteElementString("gml", "posList", GmlLegacyNamespace, FormatPosList(polygon.ExteriorRing.Coordinates, axisOrder));
+                writer.WriteStartElement("gml", "exterior", gmlNamespace);
+                writer.WriteStartElement("gml", "LinearRing", gmlNamespace);
+                writer.WriteElementString("gml", "posList", gmlNamespace, FormatPosList(polygon.ExteriorRing.Coordinates, axisOrder));
                 writer.WriteEndElement();
                 writer.WriteEndElement();
                 foreach (var interior in Enumerable.Range(0, polygon.NumInteriorRings).Select(polygon.GetInteriorRingN))
                 {
-                    writer.WriteStartElement("gml", "interior", GmlLegacyNamespace);
-                    writer.WriteStartElement("gml", "LinearRing", GmlLegacyNamespace);
-                    writer.WriteElementString("gml", "posList", GmlLegacyNamespace, FormatPosList(interior.Coordinates, axisOrder));
+                    writer.WriteStartElement("gml", "interior", gmlNamespace);
+                    writer.WriteStartElement("gml", "LinearRing", gmlNamespace);
+                    writer.WriteElementString("gml", "posList", gmlNamespace, FormatPosList(interior.Coordinates, axisOrder));
                     writer.WriteEndElement();
                     writer.WriteEndElement();
                 }
@@ -823,16 +860,16 @@ internal sealed partial class Wfs20Handler
             // and MultiSurface, which is also what MapGeometryPropertyType advertises for
             // these geometry types; the GML 2 writer below keeps the older spellings.
             case MultiPoint multiPoint:
-                WriteGml31Aggregate(writer, multiPoint, "MultiPoint", "pointMember", srsName, axisOrder, includeSrsName);
+                WriteGml31Aggregate(writer, multiPoint, "MultiPoint", "pointMember", srsName, axisOrder, includeSrsName, gmlNamespace);
                 break;
             case MultiLineString multiLineString:
-                WriteGml31Aggregate(writer, multiLineString, "MultiCurve", "curveMember", srsName, axisOrder, includeSrsName);
+                WriteGml31Aggregate(writer, multiLineString, "MultiCurve", "curveMember", srsName, axisOrder, includeSrsName, gmlNamespace);
                 break;
             case MultiPolygon multiPolygon:
-                WriteGml31Aggregate(writer, multiPolygon, "MultiSurface", "surfaceMember", srsName, axisOrder, includeSrsName);
+                WriteGml31Aggregate(writer, multiPolygon, "MultiSurface", "surfaceMember", srsName, axisOrder, includeSrsName, gmlNamespace);
                 break;
             case GeometryCollection collection:
-                WriteGml31Aggregate(writer, collection, "MultiGeometry", "geometryMember", srsName, axisOrder, includeSrsName);
+                WriteGml31Aggregate(writer, collection, "MultiGeometry", "geometryMember", srsName, axisOrder, includeSrsName, gmlNamespace);
                 break;
         }
     }
@@ -844,14 +881,15 @@ internal sealed partial class Wfs20Handler
         string memberElementName,
         string srsName,
         AxisOrder axisOrder,
-        bool includeSrsName)
+        bool includeSrsName,
+        string gmlNamespace = GmlLegacyNamespace)
     {
-        writer.WriteStartElement("gml", elementName, GmlLegacyNamespace);
+        writer.WriteStartElement("gml", elementName, gmlNamespace);
         WriteSrsName(writer, srsName, includeSrsName);
         for (var i = 0; i < aggregate.NumGeometries; i++)
         {
-            writer.WriteStartElement("gml", memberElementName, GmlLegacyNamespace);
-            WriteGml31Geometry(writer, aggregate.GetGeometryN(i), srsName, axisOrder, includeSrsName: false);
+            writer.WriteStartElement("gml", memberElementName, gmlNamespace);
+            WriteGml31Geometry(writer, aggregate.GetGeometryN(i), srsName, axisOrder, includeSrsName: false, gmlNamespace);
             writer.WriteEndElement();
         }
 
