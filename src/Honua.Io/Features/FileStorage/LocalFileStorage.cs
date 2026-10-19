@@ -45,6 +45,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     {
         if (domainFence is not null && domainFence is not IStorageDomainObjectMutationFence)
             throw new ArgumentException("A fenced local provider requires object-specific reservation admission.", nameof(domainFence));
+        if (domainFence is not null && !OperatingSystem.IsLinux())
+            throw new PlatformNotSupportedException("Fenced local storage requires Linux directory durability.");
         _domainFence = domainFence;
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
         _basePath = string.IsNullOrWhiteSpace(_options.BasePath)
@@ -603,6 +605,17 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
 
     private void InitializeStorage()
     {
+        if (_domainFence is not null)
+        {
+            // Reject a substituted root before creating its private metadata directory.
+            try
+            {
+                if ((File.GetAttributes(_basePath) & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException("Reserved storage directories cannot be symbolic links.");
+            }
+            catch (FileNotFoundException) { }
+            catch (DirectoryNotFoundException) { }
+        }
         if (_options.CreateDirectoryIfNotExists && !Directory.Exists(_basePath))
         {
             Directory.CreateDirectory(_basePath);
@@ -638,9 +651,10 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                     throw new IOException("Invalid immutable object metadata.");
                 var json = File.ReadAllText(file);
                 var cloudFile = JsonSerializer.Deserialize(json, FileStorageJsonContext.Default.CloudFile);
-                if (_domainFence is not null && (cloudFile is null || cloudFile.StoragePath != cloudFile.FileId ||
+                if (_domainFence is not null && (cloudFile is null || cloudFile.SizeBytes < 0 || cloudFile.StoragePath != cloudFile.FileId ||
                     GetMetadataFilePath(cloudFile.FileId) != file || string.IsNullOrWhiteSpace(cloudFile.ETag)))
                     throw new IOException("Immutable object metadata does not match the reserved key.");
+                if (_domainFence is not null) ValidateReservedObjectKey(cloudFile!.FileId);
                 if (cloudFile is not null)
                 {
                     // Metadata written before generation validators were introduced has no

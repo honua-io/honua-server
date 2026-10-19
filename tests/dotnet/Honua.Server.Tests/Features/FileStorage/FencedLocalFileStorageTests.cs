@@ -117,6 +117,25 @@ public sealed class FencedLocalFileStorageTests
         Assert.Null(await provider.GetMetadataAsync("redirect/object"));
     }
 
+    [UnitTest]
+    public void SymbolicLinkRootIsRejectedBeforePrivateDirectoryCreation()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using var fixture = new Fixture();
+        using var outside = new Fixture();
+        Directory.CreateDirectory(outside.Root);
+        Directory.CreateSymbolicLink(fixture.Root, outside.Root);
+        try
+        {
+            Assert.Throws<IOException>(() => fixture.Storage());
+            Assert.Empty(Directory.EnumerateFileSystemEntries(outside.Root));
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root);
+        }
+    }
+
     private sealed class Fixture : IDisposable
     {
         internal string Root { get; } = Path.Join(Path.GetTempPath(), "honua-reserved-object-" + Guid.NewGuid().ToString("N"));
