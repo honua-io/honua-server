@@ -211,12 +211,16 @@ class StandingCertPlanWorkflow(unittest.TestCase):
             os.environ["CERT_DEPLOY_ROLE_ARN"] = "arn:aws:iam::123456789012:role/other"
             with self.assertRaisesRegex(ValueError, "hosted-request-invalid"):
                 hosted.fixed_request()
-            hosted_request["varFile"] = str(stage / "terraform.tfvars.json")
+            os.environ["CERT_DEPLOY_ROLE_ARN"] = deploy_role
+            self.assertEqual(hosted.fixed_request(), hosted_request)
+            future_expiry = hosted_request["sessionExpiresAtUtc"]
             hosted_request["sessionExpiresAtUtc"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
             (stage / "request.json").write_text(json.dumps(hosted_request))
             with self.assertRaisesRegex(ValueError, "hosted-request-invalid"):
                 hosted.fixed_request()
-            os.environ["CERT_DEPLOY_ROLE_ARN"] = deploy_role
+            hosted_request["sessionExpiresAtUtc"] = future_expiry
+            (stage / "request.json").write_text(json.dumps(hosted_request))
+            self.assertEqual(hosted.fixed_request(), hosted_request)
             hosted_request["varFile"] = str(self.base / "wrong-file")
             (stage / "request.json").write_text(json.dumps(hosted_request))
             with self.assertRaisesRegex(ValueError, "hosted-request-invalid"):
