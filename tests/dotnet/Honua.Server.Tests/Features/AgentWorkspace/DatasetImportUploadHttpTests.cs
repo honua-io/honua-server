@@ -13,6 +13,8 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.FileStorage;
+using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.Configuration;
 using Honua.Import.FileImport.Resumable;
 using Honua.Server.Features.AgentWorkspace;
 using Honua.TestKit;
@@ -169,6 +171,58 @@ public sealed class DatasetImportUploadHttpTests(RedisFixture redis)
         response.StatusCode.Should().Be(install ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.NotFound);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/agent/workspaces/{workspaceId}/dataset-import-tasks/{taskId}/versions/{revision}/upload")]
+    public async Task ActualHumanAndExecutorShareOriginalTransferWithSeparateMutationAudit()
+    {
+        await using var fixture = await Fixture.Create(redis.ConnectionString, handoff: true);
+        using var bootstrap = fixture.App.CreateAdminClient();
+        var keyJson = await Read(await bootstrap.PostAsJsonAsync("/api/v1/admin/api-keys", new
+            { name = "upload-executor", permissions = new[] { "admin:read", "agent:workspace" } }));
+        var key = keyJson.GetProperty("data");
+        var keyId = key.GetProperty("apiKey").GetProperty("id").GetString()!;
+        var executor = $"apikey:api-key:{keyId}";
+        fixture.App.Services.GetRequiredService<IConfiguration>()["AgentWorkspace:LocalAgentPrincipalId"] = executor;
+        var bearer = fixture.App.Services.GetRequiredService<OperatorBearerTokenService>().Issue(
+            [new() { Type = ClaimTypes.NameIdentifier, Value = "upload-human" }, new() { Type = ClaimTypes.Role, Value = "admin" },
+             new() { Type = "tenant_id", Value = "public" }], DateTimeOffset.UtcNow.AddMinutes(5));
+        bearer.Should().NotBeNull();
+        using var human = fixture.App.CreateClient(client => client.DefaultRequestHeaders.Authorization = new("Bearer", bearer!.Token));
+        using var agent = fixture.App.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", key.GetProperty("key").GetString()));
+        var workspace = await Read(await human.PostAsJsonAsync("/api/v1/agent/workspaces", new { viewId = "handoff-tab" }));
+        var workspaceId = workspace.GetProperty("workspaceId").GetString()!;
+        var root = $"/api/v1/agent/workspaces/{workspaceId}";
+        await Read(await human.PostAsJsonAsync(root + "/turns", new
+            { turnId = "handoff-origin", viewId = "handoff-tab", contextRevision = 0, prompt = "Import the selected dataset" }));
+        agent.DefaultRequestHeaders.Add("X-Honua-Workspace", workspaceId);
+        agent.DefaultRequestHeaders.Add("X-Honua-Turn", "handoff-origin");
+        var bytes = "{\"type\":\"FeatureCollection\",\"features\":[]}"u8.ToArray();
+        var task = await Read(await agent.PostAsJsonAsync(root + "/dataset-import-tasks", new CreateDatasetImportTask(
+            "executor-import-intent", "handoff-tab", 0, new("public", "new_handoff_table"),
+            new("browser-file", "handoff.geojson", bytes.Length, Digest(bytes)), new())));
+        task.GetProperty("ownerActorId").GetString().Should().Be(executor);
+        var path = UploadPath(task);
+        var hash = task.GetProperty("contentHash").GetString()!;
+        var original = await Read(await human.PostAsJsonAsync(path, new CreateDatasetImportUpload(hash)));
+        using (var chunk = new UnknownLengthContent(bytes, "application/octet-stream"))
+            (await agent.PutAsync(path + $"/chunks?contentHash={hash}&expectedVersion=1&offset=0&sha256={Digest(bytes)}", chunk)).EnsureSuccessStatusCode();
+        var accepted = await Read(await human.GetAsync(path + "?contentHash=" + hash));
+        accepted.GetProperty("uploadId").GetString().Should().Be(original.GetProperty("uploadId").GetString());
+        var sealedReceipt = await Read(await human.PostAsJsonAsync(path + "/seal", new MutateDatasetImportUpload(hash, accepted.GetProperty("version").GetInt64())));
+        sealedReceipt.GetProperty("state").GetString().Should().Be("sealed");
+        var storedWorkspace = (await fixture.App.Services.GetRequiredService<IAgentWorkspaceStore>().GetAsync(workspaceId))!;
+        var immutableTask = storedWorkspace.DatasetImportTasks[task.GetProperty("taskId").GetString()!].Single();
+        var mutations = await new RedisImportUploadStore(fixture.Connection).ReadMutationsAsync(original.GetProperty("uploadId").GetString()!,
+            new(executor, immutableTask.TenantId, immutableTask.TargetId, workspaceId, immutableTask.TaskId, immutableTask.Revision), 1, 3);
+        mutations.Select(mutation => mutation.ContributorActorId).Should().Equal(storedWorkspace.OwnerId, executor, storedWorkspace.OwnerId);
+        immutableTask.OwnerActorId.Should().Be(executor);
+        storedWorkspace.DatasetImportPreparedAdmissions.Should().BeEmpty();
+        (await human.GetAsync(root + "/dataset-import-task-intents/executor-import-intent")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // Revocation of the actual executor also stops human contributor observations.
+        (await bootstrap.PostAsync($"/api/v1/admin/api-keys/{keyId}/revoke", null)).EnsureSuccessStatusCode();
+        (await human.GetAsync(path + "?contentHash=" + hash)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     [UnitTest]
     public void ScratchBindingAndEffectiveCapsUseCanonicalLimitsWithoutAllocation()
     {
@@ -211,7 +265,7 @@ public sealed class DatasetImportUploadHttpTests(RedisFixture redis)
         internal DestinationPolicy Policy { get; } = new();
         internal IConnectionMultiplexer Connection { get; private set; } = null!;
         internal LocalFileStorage Storage { get; private set; } = null!;
-        internal static async Task<Fixture> Create(string redisConnection, bool install = true, bool mismatch = false)
+        internal static async Task<Fixture> Create(string redisConnection, bool install = true, bool mismatch = false, bool handoff = false)
         {
             var fixture = new Fixture();
             fixture.Connection = await ConnectionMultiplexer.ConnectAsync(redisConnection);
@@ -228,12 +282,18 @@ public sealed class DatasetImportUploadHttpTests(RedisFixture redis)
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                if (handoff)
+                {
+                    builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+                    builder.UseSetting("Authentication:OperatorBearer:SigningKey", "upload-http-human-handoff-test-key-at-least-32-bytes");
+                }
                 builder.UseSetting("AgentWorkspace:DeploymentId", "upload-http-" + Guid.NewGuid().ToString("N"));
                 builder.ConfigureServices(services =>
                 {
                     services.AddSingleton<IDatasetImportDestinationAuthorizer>(fixture.Policy);
                     if (!install) return;
                     services.AddSingleton<IImportStorageBudget>(budget);
+                    if (handoff) services.AddScoped<IDatasetImportContributorAuthorizer, DatasetImportContributorAuthorizer>();
                     services.AddSingleton(scratch);
                     services.AddSingleton(new DatasetImportUploadTransportOptions(Path.Join(fixture.Root, mismatch ? "wrong-scratch" : "scratch"),
                         32L * 1024 * 1024, 48L * 1024 * 1024));

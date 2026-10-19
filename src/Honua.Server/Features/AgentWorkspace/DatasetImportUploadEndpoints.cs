@@ -19,7 +19,8 @@ internal static class DatasetImportUploadEndpoints
             !services.IsService(typeof(IImportStorageBudget)) || !services.IsService(typeof(ImportScratchStorage)) ||
             !services.IsService(typeof(DatasetImportUploadTransportOptions))) return;
 
-        var upload = agent.MapGroup("/workspaces/{workspaceId}/dataset-import-tasks/{taskId}/versions/{revision:long}/upload");
+        var upload = agent.MapGroup("/workspaces/{workspaceId}/dataset-import-tasks/{taskId}/versions/{revision:long}/upload")
+            .RequireAuthorization();
         upload.AddEndpointFilter(async (invocation, next) =>
         {
             var context = invocation.HttpContext;
