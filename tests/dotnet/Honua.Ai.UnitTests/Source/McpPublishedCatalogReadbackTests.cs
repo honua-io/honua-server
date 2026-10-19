@@ -42,6 +42,37 @@ public sealed class McpPublishedCatalogReadbackTests
 
     [UnitTest]
     [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
+    public async Task CatalogComposition_WithoutPromotionStores_ReadsPublishedResourcesOnly()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(_jobs);
+        services.AddMcpCatalogPublicationSurface();
+        services.AddMcpCatalogPublicationSurface();
+        using var provider = services.BuildServiceProvider();
+        provider.GetService<IPublishedServiceStore>().Should().BeNull();
+        provider.GetService<IDeploymentStore>().Should().BeNull();
+        var resources = provider.GetServices<IMcpResource>().ToArray();
+        resources.Should().HaveCount(2);
+        resources.SelectMany(resource => resource.Describe()).Select(descriptor => descriptor.Uri)
+            .Should().Equal("honua://published-services");
+        resources.Any(resource => resource.CanHandle("honua://deployments")).Should().BeFalse();
+        resources.Any(resource => resource.CanHandle("honua://map-packages")).Should().BeFalse();
+        resources.Any(resource => resource.CanHandle("honua://app-packages")).Should().BeFalse();
+
+        var context = Context(Catalog());
+        var detail = await resources.Single(resource => resource.CanHandle(ServiceUri))
+            .ReadAsync(context, ServiceUri, CancellationToken.None);
+        McpTestFactory.ParseJson(detail.Contents[0].Text).GetProperty("resourceUri").GetString()
+            .Should().Be(ServiceUri);
+        var index = await resources.Single(resource => resource.CanHandle("honua://published-services"))
+            .ReadAsync(context, "honua://published-services", CancellationToken.None);
+        McpTestFactory.ParseJson(index.Contents[0].Text).GetProperty("items")[0]
+            .GetProperty("resourceUri").GetString().Should().Be(ServiceUri);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task Read_PersistedCatalogFromFreshProvider_ExposesPublicIdentityWithoutInventedPromotion()
     {
         var graph = Catalog();

@@ -26,14 +26,14 @@ internal sealed class PublishedServiceResource : IMcpResource
 {
     public const string Template = McpResourceUris.PublishedServicesPrefix + "{serviceId}";
 
-    private readonly IPublishedServiceStore _services;
-    private readonly IDeploymentStore _deployments;
+    private readonly IPublishedServiceStore? _services;
+    private readonly IDeploymentStore? _deployments;
     private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<PublishedServiceResource> _logger;
 
     public PublishedServiceResource(
-        IPublishedServiceStore services,
-        IDeploymentStore deployments,
+        IPublishedServiceStore? services,
+        IDeploymentStore? deployments,
         IGeoprocessingJobService jobService,
         ILogger<PublishedServiceResource> logger)
     {
@@ -78,7 +78,9 @@ internal sealed class PublishedServiceResource : IMcpResource
 
         McpLog.ResourceRead(_logger, Family, uri);
 
-        var record = await _services.GetAsync(serviceId, cancellationToken).ConfigureAwait(false);
+        var record = _services is null
+            ? null
+            : await _services.GetAsync(serviceId, cancellationToken).ConfigureAwait(false);
         var graphProvider = httpContext.RequestServices.GetService<IMetadataV2GraphProvider>();
         if (graphProvider is not null)
         {
@@ -108,7 +110,9 @@ internal sealed class PublishedServiceResource : IMcpResource
             throw new GeoprocessingNotFoundException($"Published service '{serviceId}' not found.");
         }
 
-        var deployments = await _deployments
+        var deploymentStore = _deployments
+            ?? throw new InvalidOperationException("Published promotion records require a deployment store.");
+        var deployments = await deploymentStore
             .ListBySourceAsync(DeploymentSourceKind.PublishedService, serviceId, cancellationToken)
             .ConfigureAwait(false);
         deployments = PackageViewFactory.FilterPublished(deployments);

@@ -20,6 +20,7 @@ using Honua.Db.Postgres.Features.Metadata;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Operations;
+using Honua.Server.Startup;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -75,6 +76,21 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+
+        // Test hosts skip DbUp, and the shared seed only supplies the snapshot
+        // tables. Install the complete production Metadata v2 migration before
+        // the real store writes its five sidecar indexes.
+        var assembly = typeof(ServerCoreSchemaMigrations).Assembly;
+        var migrationName = ServerCoreSchemaMigrations.Manifest.MetadataV2SnapshotMigration;
+        await using (var stream = assembly.GetManifestResourceStream(migrationName)
+            ?? throw new InvalidOperationException($"Embedded migration '{migrationName}' was not found."))
+        using (var reader = new StreamReader(stream))
+        {
+            var ddl = (await reader.ReadToEndAsync())
+                .Replace("$HonuaSchema$", "honua", StringComparison.Ordinal);
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync(ddl);
+        }
+
         _client = _fixture.CreateAdminClient();
         _connectionId = await _fixture.GetTestSecureConnectionIdAsync()
             ?? throw new InvalidOperationException("The fixture did not register a secure test connection.");

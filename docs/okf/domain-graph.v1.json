@@ -4,7 +4,7 @@
   "okfVersion": "0.2",
   "sourceRepository": "https://github.com/honua-io/honua-server",
   "contentNormalization": "UTF-8/LF",
-  "bundleDigest": "sha256:28b7c2fe1726525bc4330a2504baa7edb787b3a9b9f1764504a609f8c3d64beb",
+  "bundleDigest": "sha256:f21d2b53baf7667554666dd6cc7303a728451599fdce1ea5c818d9bc10160611",
   "nodes": [
     {
       "id": "CAPACITY-ENVELOPE-2026.1",
@@ -2060,7 +2060,7 @@
     {
       "id": "guides/connect/ai-agents-mcp",
       "path": "guides/connect/ai-agents-mcp.md",
-      "documentDigest": "sha256:2743bef16be095456fd7dd01f163e766c285a3d7aa1c26ec20e2a104ee8b3836",
+      "documentDigest": "sha256:02a32cc5152a967c317bdefa51d8ef3641c4133702c9b582faed81d38d640a64",
       "metadata": {
         "type": "guide",
         "title": "Connect AI agents to Honua over MCP",
