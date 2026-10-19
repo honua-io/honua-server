@@ -31,7 +31,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Features.Protocols.Mcp;
+namespace Honua.Server.Tests.Features.Eval;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
@@ -56,6 +56,7 @@ public sealed class McpQueryWildcardPostgresIntegrationTests(PostgresFixture fix
     public Task DisposeAsync() => fixture.DropSchemaAsync(_schema);
 
     [IntegrationTest]
+    [Trait("Category", "RemoteSourceExecutionProof")]
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_query_features")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
