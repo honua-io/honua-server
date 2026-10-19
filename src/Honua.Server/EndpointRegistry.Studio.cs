@@ -43,8 +43,9 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/console/maps/{mapId}/collab/comments/{threadId}/resolve"),
         new("GET", "/api/v1/console/maps/{mapId}/collab/activity"),
 
-        // v1 content publication registry for Studio-generated artifacts (#1183)
+        // v1 content publication registry for Studio-generated artifacts (#1183, list #3357)
         new("POST", "/api/v1/console/publications"),
+        new("GET", "/api/v1/console/publications"),
         new("GET", "/api/v1/console/publications/{publicationId}"),
         new("GET", "/api/v1/console/publications/{publicationId}/versions/{versionSelector}"),
         new("POST", "/api/v1/console/publications/{publicationId}/republish"),

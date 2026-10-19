@@ -100,6 +100,28 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
     }
 
     /// <inheritdoc />
+    public Task<(IReadOnlyList<ContentPublicationRouteState> Routes, int Total)> ListRoutesAsync(
+        ContentPublicationLifecycle? lifecycle,
+        int offset,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            var filtered = _routesByPublicationId.Values
+                .Where(route => lifecycle is null || route.Lifecycle == lifecycle)
+                .OrderBy(route => route.CreatedAt)
+                .ThenBy(route => route.PublicationId, StringComparer.Ordinal)
+                .ToArray();
+            var page = filtered
+                .Skip(Math.Max(0, offset))
+                .Take(Math.Max(0, limit))
+                .ToArray();
+            return Task.FromResult<(IReadOnlyList<ContentPublicationRouteState> Routes, int Total)>((page, filtered.Length));
+        }
+    }
+
+    /// <inheritdoc />
     public Task<long> GetMaxRevisionAsync(string publicationId, CancellationToken cancellationToken = default)
     {
         lock (_gate)

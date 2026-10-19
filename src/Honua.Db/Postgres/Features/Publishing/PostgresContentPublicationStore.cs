@@ -135,6 +135,57 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
     }
 
     /// <inheritdoc />
+    public async Task<(IReadOnlyList<ContentPublicationRouteState> Routes, int Total)> ListRoutesAsync(
+        ContentPublicationLifecycle? lifecycle,
+        int offset,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        var where = lifecycle is null ? string.Empty : " WHERE lifecycle = @lifecycle";
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var count = new NpgsqlCommand($"SELECT COUNT(*) FROM {_routesTable}{where}", connection);
+        if (lifecycle is not null)
+        {
+            count.Parameters.Add(new NpgsqlParameter("@lifecycle", NpgsqlDbType.Text) { Value = LifecycleToDb(lifecycle.Value) });
+        }
+
+        var countValue = await count.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var totalLong = countValue switch
+        {
+            long value => value,
+            int value => value,
+            _ => 0L,
+        };
+        var total = totalLong > int.MaxValue ? int.MaxValue : (int)totalLong;
+
+        await using var command = new NpgsqlCommand(
+            $"""
+            SELECT {RouteColumns}
+            FROM {_routesTable}{where}
+            ORDER BY created_at ASC, publication_id ASC
+            LIMIT @limit OFFSET @offset
+            """,
+            connection);
+        if (lifecycle is not null)
+        {
+            command.Parameters.Add(new NpgsqlParameter("@lifecycle", NpgsqlDbType.Text) { Value = LifecycleToDb(lifecycle.Value) });
+        }
+
+        command.Parameters.AddWithValue("@limit", Math.Max(0, limit));
+        command.Parameters.AddWithValue("@offset", Math.Max(0, offset));
+
+        var routes = new List<ContentPublicationRouteState>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            routes.Add(MapRoute(reader));
+        }
+
+        return (routes, total);
+    }
+
+    /// <inheritdoc />
     public async Task<long> GetMaxRevisionAsync(string publicationId, CancellationToken cancellationToken = default)
     {
         if (!TryParsePublicationId(publicationId, out var publicationGuid))
