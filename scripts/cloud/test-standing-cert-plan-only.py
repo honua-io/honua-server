@@ -91,6 +91,15 @@ class StandingCertPlanWorkflow(unittest.TestCase):
             token.assert_not_called()
         self.assertFalse(self.token.exists())
 
+    def test_python_startup_override_refused_before_token(self):
+        for name in ("PYTHONUSERBASE", "PYTHONWARNINGS", "PYTHONINSPECT"):
+            with self.subTest(name=name), mock.patch.dict(os.environ,
+                    dict(self.env, **{name: "unsafe"}), clear=True), \
+                 mock.patch.object(entry, "oidc_token") as token:
+                with self.assertRaisesRegex(ValueError, "environment override"):
+                    entry.main()
+                token.assert_not_called()
+
     def test_dirty_checkout_refused_before_token(self):
         with mock.patch.dict(os.environ, self.env, clear=True), \
              mock.patch.object(entry.subprocess, "check_output", side_effect=[(self.revision + "\n").encode(), b" M unreviewed.tf\n"]), \
@@ -167,7 +176,8 @@ class StandingCertPlanWorkflow(unittest.TestCase):
     def test_hosted_refuses_ambient_backend_and_shell_routing(self):
         for name in ("TF_CLI_ARGS_init", "TF_CLI_CONFIG_FILE", "TF_DATA_DIR", "TF_WORKSPACE",
                      "AWS_ENDPOINT_URL_STS", "AWS_CA_BUNDLE", "AWS_PROFILE", "AWS_ROLE_ARN",
-                     "https_proxy", "BASH_FUNC_terraform%%", "BASHOPTS", "GIT_CONFIG_COUNT"):
+                     "https_proxy", "BASH_FUNC_terraform%%", "BASHOPTS", "GIT_CONFIG_COUNT",
+                     "PYTHONUSERBASE", "PYTHONWARNINGS", "PYTHONINSPECT"):
             with self.subTest(name=name), mock.patch.dict(os.environ, {name: "unsafe"}, clear=True):
                 with self.assertRaisesRegex(ValueError, "ambient-override-refused"):
                     hosted.reject_runtime_overrides()

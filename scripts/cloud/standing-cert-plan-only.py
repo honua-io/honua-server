@@ -69,9 +69,9 @@ def main():
     if os.environ.get("GITHUB_REPOSITORY") != "honua-io/honua-server" or os.environ.get("GITHUB_REF") != "refs/heads/trunk":
         raise ValueError("workflow identity")
     if any(k.upper() in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "AWS_CA_BUNDLE",
-                         "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE", "PYTHONPATH",
-                         "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH", "BASH_ENV", "ENV")
-           or k.startswith("GIT_") for k in os.environ):
+                         "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE",
+                         "LD_PRELOAD", "LD_LIBRARY_PATH", "BASH_ENV", "ENV")
+           or k.startswith(("GIT_", "PYTHON")) for k in os.environ):
         raise ValueError("environment override")
     revision = os.environ["CERT_IAC_REVISION"]
     request_sha = os.environ["CERT_REQUEST_SHA256"]

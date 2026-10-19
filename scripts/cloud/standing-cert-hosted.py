@@ -34,8 +34,7 @@ def require(value, reason):
 def reject_runtime_overrides():
     """Refuse inherited routing/startup controls before Terraform or AWS calls."""
     prefixes = ("TF_CLI_ARGS", "TF_VAR_", "TF_LOG", "GIT_", "HONUA_IAC_", "AWS_ENDPOINT_URL",
-                "BASH_ENV", "BASH_FUNC_", "BASHOPTS", "SHELLOPTS", "LD_", "PYTHONPATH",
-                "PYTHONHOME", "ENV")
+                "BASH_ENV", "BASH_FUNC_", "BASHOPTS", "SHELLOPTS", "LD_", "PYTHON", "ENV")
     exact = {"TF_DATA_DIR", "TF_WORKSPACE", "TF_CLI_CONFIG_FILE", "TERRAFORM_CONFIG",
              "TF_REATTACH_PROVIDERS", "AWS_CA_BUNDLE", "AWS_PROFILE", "AWS_DEFAULT_PROFILE",
              "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_WEB_IDENTITY_TOKEN_FILE",
