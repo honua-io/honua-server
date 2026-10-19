@@ -13,6 +13,11 @@ namespace Honua.Infrastructure.Authentication;
 /// </summary>
 internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
 {
+    /// <summary>
+    /// Denial recorded when an explicit role list excludes the principal.
+    /// </summary>
+    internal const string RequiredRoleDeniedReason = "User does not have the required role.";
+
     /// <inheritdoc />
     public Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, string resource, string action)
         => Task.FromResult(Evaluate(principal, resource, action));
@@ -103,7 +108,7 @@ internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
 
         if (allowedRoles is { Length: > 0 } && !IsInAnyRole(principal, allowedRoles))
         {
-            return AccessDecision.Forbidden("User does not have the required role.");
+            return AccessDecision.Forbidden(RequiredRoleDeniedReason);
         }
 
         return AccessDecision.Allowed();
