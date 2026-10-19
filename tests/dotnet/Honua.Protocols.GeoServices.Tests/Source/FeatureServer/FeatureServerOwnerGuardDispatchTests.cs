@@ -142,10 +142,18 @@ public sealed class FeatureServerOwnerGuardDispatchTests : IAsyncLifetime
 
     private async Task<long> AddFeatureAsync(HttpClient client, string name)
     {
-        var result = await ApplyEditsAsync(client, $$$"""
-            {"adds":[{"attributes":{"name":"{{{name}}}"},
-                      "geometry":{"x":-122.4194,"y":37.7749,"spatialReference":{"wkid":4326}}}]}
-            """);
+        var json = JsonSerializer.Serialize(new
+        {
+            adds = new[]
+            {
+                new
+                {
+                    attributes = new { name },
+                    geometry = new { x = -122.4194, y = 37.7749, spatialReference = new { wkid = 4326 } }
+                }
+            }
+        });
+        var result = await ApplyEditsAsync(client, json);
         return result.AddResults.Should().ContainSingle(add => add.Success).Subject.ObjectId!.Value;
     }
 
