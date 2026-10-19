@@ -1,12 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
@@ -19,6 +22,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 
 namespace Honua.Server.Tests.Features.Studio;
@@ -31,6 +35,12 @@ namespace Honua.Server.Tests.Features.Studio;
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
 {
+    private const string Issuer = "https://idp.example.com";
+    private const string Audience = "honua-mcp-client-id";
+    private const string SigningKey = "studio-deployment-signing-key-at-least-32-characters";
+    private const string TenantA = "tenant-a";
+    private const string TenantB = "tenant-b";
+
     private readonly WebAppFixture _fixture = new();
     private readonly RedisFixture _redis = new();
 
@@ -44,6 +54,15 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
             builder.UseSetting("Licensing:Mode", "Disabled");
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.UseSetting("Studio:EndUserAuthorization:Enabled", "true");
+            builder.UseSetting("Oidc:Enabled", "true");
+            builder.UseSetting("Oidc:RequireHttps", "true");
+            builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
+            builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
+            builder.UseSetting("Oidc:Generic:Enabled", "true");
+            builder.UseSetting("Oidc:Generic:Authority", Issuer);
+            builder.UseSetting("Oidc:Generic:ClientId", Audience);
+            builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
         });
         _fixture.ConfigureServices(services =>
         {
@@ -83,7 +102,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
     [Endpoint("POST /mcp resources/read honua://deployments/{deploymentId}")]
     public async Task PublishedMap_ExactReturnedDeploymentResourceSurvivesHostRestart()
     {
-        using var admin = _fixture.CreateAdminClient();
+        using var admin = CreateTenantAdminClient("studio-alice", TenantA);
         var packageKey = $"deployment-map-{Guid.NewGuid():N}";
         var route = $"/maps/{packageKey}";
         var created = await CallToolAsync(admin, "honua_studio_create_draft",
@@ -114,10 +133,27 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
         await AssertPersistedRowAsync(deploymentId!);
 
         await _fixture.RestartHostAsync();
-        using var restartedAdmin = _fixture.CreateAdminClient();
+        using var restartedAdmin = CreateTenantAdminClient("studio-alice", TenantA);
         var restartedRead = await ReadDeploymentAsync(restartedAdmin, resourceUri!);
         AssertDeployment(restartedRead, deploymentId!, itemId, versionId, contentHash!);
         restartedRead.GetProperty("etag").GetString().Should().Be(firstRead.GetProperty("etag").GetString());
+
+        // The exact URI remains present after restart, but a different tenant's
+        // admin must not learn its source identity or deployment state.
+        using var otherTenant = CreateTenantAdminClient("studio-bob", TenantB);
+        using var crossTenant = await PostRpcAsync(otherTenant,
+            JsonSerializer.Serialize(new { jsonrpc = "2.0", id = "other-tenant", method = "resources/read", @params = new { uri = resourceUri } }));
+        var crossTenantPayload = await crossTenant.Content.ReadAsStringAsync();
+        if (crossTenant.StatusCode == HttpStatusCode.OK)
+        {
+            using var document = JsonDocument.Parse(crossTenantPayload);
+            document.RootElement.GetProperty("error").GetProperty("data").GetProperty("code")
+                .GetString().Should().Be("not_found");
+        }
+        else
+        {
+            crossTenant.StatusCode.Should().Be(HttpStatusCode.NotFound, crossTenantPayload);
+        }
 
         using var anonymous = _fixture.CreateClient();
         using var denied = await PostRpcAsync(anonymous,
@@ -233,5 +269,32 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
             Content = new StringContent(body, Encoding.UTF8) { Headers = { ContentType = new MediaTypeHeaderValue("application/json") } },
         };
         return await client.SendAsync(request);
+    }
+
+    private HttpClient CreateTenantAdminClient(string subject, string tenantId)
+    {
+        var client = _fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", CreateToken(subject, tenantId));
+        return client;
+    }
+
+    private static string CreateToken(string subject, string tenantId)
+    {
+        var credentials = new SigningCredentials(
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SigningKey)), SecurityAlgorithms.HmacSha256);
+        var token = new JwtSecurityToken(
+            issuer: Issuer,
+            audience: Audience,
+            claims:
+            [
+                new Claim("sub", subject),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("D")),
+                new Claim("tid", tenantId),
+                new Claim("roles", "admin"),
+                new Claim("scope", OperatorScopeCatalog.Full),
+            ],
+            expires: DateTime.UtcNow.AddMinutes(30),
+            signingCredentials: credentials);
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
