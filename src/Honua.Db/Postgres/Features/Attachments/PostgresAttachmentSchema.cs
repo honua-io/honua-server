@@ -16,6 +16,7 @@ internal static class PostgresAttachmentSchema
 {
     internal const string CreateMigration = "Honua.Server.Migrations.002_CreateAttachmentsTable.sql";
     internal const string ImportMigration = "Honua.Server.Migrations.125_AddImportedAttachmentIdentity.sql";
+    private static readonly string[] _cleanupColumns = ["storage_path", "layer_id", "feature_id"];
 
     internal static async Task<string> ResolveAsync(
         NpgsqlConnection connection,
@@ -25,7 +26,7 @@ internal static class PostgresAttachmentSchema
         bool requireImportCleanup = false,
         CancellationToken cancellationToken = default)
     {
-        var configured = configuredSchema ?? "honua";
+        var configured = string.IsNullOrWhiteSpace(configuredSchema) ? "honua" : configuredSchema;
         _ = SchemaSearchPath.ValidateAndQuote(configured);
         var objects = new Dictionary<(string Schema, string Table), char>();
         await using (var command = new NpgsqlCommand("""
@@ -132,7 +133,7 @@ internal static class PostgresAttachmentSchema
             ((imported || requireImportCleanup) && importColumnCount != importColumns.Length) ||
             (objects.ContainsKey((physical, "import_attachment_cleanup")) &&
              (!columns.TryGetValue("import_attachment_cleanup", out var cleanupColumns) ||
-              !new[] { "storage_path", "layer_id", "feature_id" }.All(cleanupColumns.Contains))))
+              !_cleanupColumns.All(cleanupColumns.Contains))))
         {
             throw new AttachmentSchemaBindingException("Attachment import authority has an incomplete migration shape.");
         }

@@ -632,6 +632,11 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         if (succeeds)
         {
             (await resolve()).Should().Be("honua");
+            foreach (var defaultSchema in new string?[] { null, string.Empty, "   " })
+            {
+                (await PostgresAttachmentSchema.ResolveAsync(connection, defaultSchema)).Should().Be("honua",
+                    "the existing store API treats omitted and whitespace schema names as the default");
+            }
         }
         else
         {
