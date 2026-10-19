@@ -662,10 +662,10 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_WithContextSpatialReferences_ThreadsThemOntoJobMetadata()
+    public async Task SubmitJob_WithContextOutputSpatialReference_ThreadsItOntoJobMetadata()
     {
-        // #4030: on the async route context.outSR/processSR land on the same job metadata
-        // keys env:outSR/env:processSR use, which results/{param} reads to reproject
+        // On the async route context.outSR lands on the same job metadata
+        // key env:outSR uses, which results/{param} reads to reproject
         // (JobResult_WithEnvOutSR_ReprojectsAsyncGeometryOutput proves that half).
         var recordingService = new RecordingGeoprocessingJobService();
         var submitFixture = new WebAppFixture()
@@ -679,7 +679,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         try
         {
             using var client = submitFixture.CreateAdminClient();
-            const string contextValue = "{\"outSR\":3857,\"processSR\":{\"latestWkid\":32610},\"extent\":null}";
+            const string contextValue = "{\"outSR\":3857,\"processSR\":null,\"extent\":null}";
             using var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["f"] = "json",
@@ -698,7 +698,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
 
             recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("gpserver.env.outSR", "3857"));
-            recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("gpserver.env.processSR", "32610"));
+            recordingService.LastProtocolMetadata.Should().NotContainKey("gpserver.env.processSR");
             recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("gpserver.context", contextValue));
             recordingService.LastPlan!.Steps[0].Inputs.Should().NotContainKey("context");
         }
@@ -721,6 +721,9 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             (new() { ["context"] = "{\"outSR\":3857,\"parallelProcessingFactor\":\"50%\"}" }, "context.parallelProcessingFactor"),
             // A spatial reference Honua cannot resolve to a WKID (WKT-only) is rejected by name.
             (new() { ["context"] = "{\"outSR\":{\"wkt\":\"PROJCS[\\\"unknown\\\"]\"}}" }, "context.outSR value"),
+            (new() { ["env:processSR"] = "invalid" }, "env:processSR value"),
+            (new() { ["context"] = "{\"processSR\":true}" }, "context.processSR value"),
+            (new() { ["context"] = "{\"processSR\":3857}", ["env:processSR"] = "4326" }, "env:processSR=4326 conflicts with context.processSR=3857"),
             (new() { ["context"] = "not-json" }, "context must be a JSON object"),
             (new() { ["context"] = "[3857]" }, "context must be a JSON object"),
             (new() { ["context"] = "{\"outSR\":3857}", ["env:outSR"] = "4326" }, "env:outSR=4326 conflicts with context.outSR=3857"),
@@ -1754,17 +1757,66 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.Create)]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJobGet_WithEnvProcessSR_IsAccepted()
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task ProcessingSpatialReference_IsRejectedBeforeExecutionOrSubmission()
     {
-        var response = await _client.GetAsync(
-            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob?f=json&wkb={Uri.EscapeDataString(PointWkbBase64)}&srid=4326&distance=10&env:processSR=3857");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse("env:processSR must not be rejected on submitJob");
-        doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
+        var jobs = new RecordingGeoprocessingJobService();
+        var requestFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(jobs);
+            });
+        await requestFixture.InitializeAsync();
+        try
+        {
+            using var client = requestFixture.CreateAdminClient();
+            var controls = new Dictionary<string, string>[]
+            {
+                new() { ["env:processSR"] = "3857" },
+                new() { ["context"] = "{\"processSR\":{\"latestWkid\":32610}}" },
+                new() { ["env:processSR"] = "3857", ["context"] = "{\"processSR\":3857}" }
+            };
+            foreach (var route in new[] { "execute", "submitJob" })
+            {
+                foreach (var post in new[] { false, true })
+                {
+                    foreach (var control in controls)
+                    {
+                        var parameters = new Dictionary<string, string>(control)
+                        {
+                            ["f"] = "json",
+                            ["wkb"] = PointWkbBase64,
+                            ["srid"] = "4326",
+                            ["distance"] = "10"
+                        };
+                        using var content = new FormUrlEncodedContent(parameters);
+                        var url = $"/rest/services/{ServiceId}/GPServer/geometry.buffer/{route}";
+                        using var response = post
+                            ? await client.PostAsync(url, content)
+                            : await client.GetAsync(url + "?" + await content.ReadAsStringAsync());
+                        var body = await response.Content.ReadAsStringAsync();
+                        // GeoServices REST transports its error envelope with HTTP 200.
+                        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+                        using var doc = JsonDocument.Parse(body);
+                        doc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+                        body.Should().Contain("processing CRS");
+                        doc.RootElement.TryGetProperty("jobId", out _).Should().BeFalse();
+                        doc.RootElement.TryGetProperty("results", out _).Should().BeFalse();
+                        jobs.LastPlan.Should().BeNull("a refused processing CRS must never create a job");
+                        jobs.LastProtocolMetadata.Should().BeNull();
+                    }
+                }
+            }
+        }
+        finally
+        {
+            await requestFixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
