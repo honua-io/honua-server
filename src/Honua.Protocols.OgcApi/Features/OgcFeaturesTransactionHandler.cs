@@ -1044,7 +1044,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
     }
 
-    private async Task<FeatureEditResult> ExecuteEditAsync(
+    internal async Task<FeatureEditResult> ExecuteEditAsync(
         HttpContext context,
         int layerId,
         MetadataV2Resource resource,
@@ -1070,6 +1070,21 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
+        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+            _featureReader,
+            layerId,
+            resource.OwnerEditPolicy,
+            editBatch,
+            ServiceDataEditorAuthorization.ResolveEditPrincipal(context),
+            cancellationToken).ConfigureAwait(false);
+        if (!prepared.IsAllowed)
+        {
+            return OwnerEditPolicyFieldAccess.DeniedEditResult(
+                editBatch,
+                prepared.DenialReason ?? "Edit not permitted.");
+        }
+
+        editBatch = prepared.Batch;
         // Per-row geometry-change semantics: a single-op caller (PATCH, single-op
         // Replace) passes geometryChangedOverride so the attribute-only or replace-of-
         // null cases are tracked precisely without inferring from the merged feature's

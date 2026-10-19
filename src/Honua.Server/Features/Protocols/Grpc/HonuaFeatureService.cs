@@ -6,6 +6,7 @@ using Grpc.Core;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -362,6 +363,24 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var grpcHttpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
+
+        // The same owner policy the REST edit protocols apply. A gRPC editor must not
+        // update or delete another principal's row, and inserts stamp the owner (#6357).
+        var ownerPrepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+            _featureReader,
+            layer.StorageLayerId,
+            layer.Resource.OwnerEditPolicy,
+            editBatch,
+            ServiceDataEditorAuthorization.ResolveEditPrincipal(grpcHttpContext),
+            context.CancellationToken).ConfigureAwait(false);
+        if (!ownerPrepared.IsAllowed)
+        {
+            throw new RpcException(new Status(
+                StatusCode.PermissionDenied,
+                ownerPrepared.DenialReason ?? "Edit not permitted."));
+        }
+
+        editBatch = ownerPrepared.Batch;
 
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             grpcHttpContext,

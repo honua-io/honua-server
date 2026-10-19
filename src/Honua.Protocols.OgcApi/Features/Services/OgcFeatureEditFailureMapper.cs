@@ -24,6 +24,7 @@ internal static class OgcFeatureEditFailureMapper
         {
             404 => StandardErrorHelpers.CreateNotFound(context, clientDetail),
             409 => StandardErrorHelpers.CreateConflict(context, clientDetail),
+            403 => StandardErrorHelpers.CreateForbidden(context, clientDetail),
             400 => StandardErrorHelpers.CreateBadRequest(context, clientDetail),
             _ => StandardErrorHelpers.CreateInternalServerError(context, serverDetail)
         };
@@ -50,6 +51,11 @@ internal static class OgcFeatureEditFailureMapper
             string.Equals(editResult.ErrorMessage, GeometryRequiredMessage, StringComparison.Ordinal))
         {
             return 400;
+        }
+
+        if (editResult.ErrorCode == EditOperationResult.NotPermittedErrorCode)
+        {
+            return 403;
         }
 
         return editResult.ErrorCode >= 500 ? 500 : 400;
